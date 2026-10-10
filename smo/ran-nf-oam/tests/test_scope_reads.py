@@ -383,6 +383,8 @@ ABOUT_ELEMENTS = {
     # PR-GUI-9.3/9.4/9.8: the console's aggregates count only the caller's elements
     "/alarms/counts", "/alarms/stats", "/alarms/{alarm_id}/correlated", "/managed-entities/health", "/managed-entities/scopes", "/managed-entities/worst",
     "/topology/links/counts",
+    # MGT-8.2 / 8.3: an alarm's history and comments, read as the alarm itself is
+    "/alarms/{alarm_id}/history", "/alarms/{alarm_id}/comments",
 }
 NOT_ABOUT_ELEMENTS = {            # route: why a claim has nothing to match on (a new read route must be put in one of the two sets, with its reason)
     "/health": "probe", "/live": "probe", "/ready": "probe", "/version": "build information",

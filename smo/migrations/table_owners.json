@@ -53,6 +53,8 @@
   "kpi_definition",
   "kpi_schedule",
   "lifecycle_subscription",
+  "alarm_history",
+  "alarm_comment",
   "managed_entity",
   "managed_object",
   "msac_access_rule",

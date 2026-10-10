@@ -51,6 +51,30 @@
         "title": "AccessRuleAttributes",
         "type": "object"
       },
+      "AlarmCommentRequest": {
+        "additionalProperties": false,
+        "description": "MGT-8.3: a comment on an alarm. `author` is who wrote it (the GUI BFF sets it to `smo-gui:<user>`, never the browser's value).",
+        "properties": {
+          "author": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Author",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "author",
+          "text"
+        ],
+        "title": "AlarmCommentRequest",
+        "type": "object"
+      },
       "ApplyRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3629,6 +3653,312 @@
         "summary": "Clear Alarm"
       }
     },
+    "/alarms/{alarm_id}/comments": {
+      "get": {
+        "description": "MGT-8.3: the comments on the alarm, oldest first, paged with `total`. 404 as `GET /alarms/{id}/history`.",
+        "operationId": "alarm_comments_alarms__alarm_id__comments_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alarm_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Alarm Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
+            "in": "query",
+            "name": "total",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
+              "title": "Total",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Alarm Comments"
+      },
+      "post": {
+        "description": "MGT-8.3: add a comment to the alarm (201, the comment). The same check as acknowledging it (404 outside the scope; MGT-2.3, an `update` on\nthe alarm's element for a managed caller). Comments are only added: there is no edit or delete.",
+        "operationId": "add_alarm_comment_alarms__alarm_id__comments_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alarm_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Alarm Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlarmCommentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Add Alarm Comment"
+      }
+    },
     "/alarms/{alarm_id}/correlated": {
       "get": {
         "description": "PR-GUI-9.8 (PR-MGT-9): the alarms that probably belong with this one, by a stated heuristic rather than a root-cause analysis: the other alarms\non the same managed element raised within `window_seconds` before or after it (cleared ones included), oldest first, at most 200.\n`{\"alarmId\", \"rule\": \"same-element-within-window\", \"windowSeconds\", \"items\", \"truncated\"}`. 404 `ALARM_NOT_FOUND` for an unknown alarm or one\noutside the caller's scope claim or on an element its access rules do not let it read (MGT-2.6).",
@@ -3768,6 +4098,175 @@
           }
         },
         "summary": "Correlated Alarms"
+      }
+    },
+    "/alarms/{alarm_id}/history": {
+      "get": {
+        "description": "MGT-8.2: what happened to the alarm, oldest first: `{items: [{at, event, from, to, by}], total, limit, offset}`. `event` is RAISED,\nACKNOWLEDGED, UNACKNOWLEDGED, CLEARED or SEVERITY_CHANGED; `from` / `to` the ack state or severity before and after; `by` who, when known.\nWritten by `alarm_history.py` wherever the alarm changes. An alarm raised before revision 0039 has no rows for what happened before it. 404\nas `GET /alarms/{id}/correlated`.",
+        "operationId": "alarm_history_list_alarms__alarm_id__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alarm_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Alarm Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
+            "in": "query",
+            "name": "total",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
+              "title": "Total",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Alarm History List"
       }
     },
     "/approval-subscriptions": {

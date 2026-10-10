@@ -54,7 +54,8 @@ from smo_shared.roles import ROLE_INTERNAL, ROLE_RAPP, role_of
 from smo_shared import scope as authz_scope
 from smo_shared import audit
 
-from .models import Alarm, ApprovalSubscription, RAppActionApproval, RAppApprovalPolicy, RAppDecisionRecord, RAppKill, RAppLimit, SafeguardRefusal, SafeguardSubscription, CMSchemaCache, CMSnapshot, FileSubscription, KpiDefinition, KpiSchedule, VendorCapability, FMSubscription, ManagedEntity, ManagedObject, O1AdaptorEndpoint, O1AdaptorHostKey, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
+from .models import Alarm, AlarmComment, AlarmHistory, ApprovalSubscription, RAppActionApproval, RAppApprovalPolicy, RAppDecisionRecord, RAppKill, RAppLimit, SafeguardRefusal, SafeguardSubscription, CMSchemaCache, CMSnapshot, FileSubscription, KpiDefinition, KpiSchedule, VendorCapability, FMSubscription, ManagedEntity, ManagedObject, O1AdaptorEndpoint, O1AdaptorHostKey, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
+from . import alarm_history  # noqa: F401  (MGT-8.2: registers the ORM listeners that write every alarm change to alarm_history)
 from . import alarm_query
 from . import fleet
 from . import msac
@@ -2756,16 +2757,74 @@ def alarm_stats(request: Request, window_hours: int = Query(24, ge=1, le=24 * 31
     return {"windowHours": window_hours, "mttaSeconds": round(float(mean), 1) if mean is not None and n else None, "acked": n, "open": open_count}
 
 
+def _readable_alarm(db: Session, alarm_id: uuid.UUID, request: Request) -> Alarm:
+    """An alarm the caller may read: 404 `ALARM_NOT_FOUND` for an unknown one, one outside its scope claim (PR-SEC-10.6) or one on an element its
+    access rules do not let it read (MGT-2.6), as the list leaves it out."""
+    alarm = db.get(Alarm, alarm_id)
+    if alarm is None or not scoping.element_permitted(db, scoping.request_scope(request), alarm.managed_element_ref) \
+            or not msac.may_read(db, request, alarm.managed_element_ref):
+        raise framework_error(FrameworkError.ALARM_NOT_FOUND, detail=f"no such alarm {alarm_id}")
+    return alarm
+
+
+@app.get("/alarms/{alarm_id}/history")
+def alarm_history_list(alarm_id: uuid.UUID, request: Request, limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    """MGT-8.2: what happened to the alarm, oldest first: `{items: [{at, event, from, to, by}], total, limit, offset}`. `event` is RAISED,
+    ACKNOWLEDGED, UNACKNOWLEDGED, CLEARED or SEVERITY_CHANGED; `from` / `to` the ack state or severity before and after; `by` who, when known.
+    Written by `alarm_history.py` wherever the alarm changes. An alarm raised before revision 0039 has no rows for what happened before it. 404
+    as `GET /alarms/{id}/correlated`."""
+    _readable_alarm(db, alarm_id, request)
+    page = paginate(db, select(AlarmHistory).where(AlarmHistory.alarm_id == alarm_id).order_by(AlarmHistory.at, AlarmHistory.history_id), limit, offset)
+    return {**page, "items": [{"at": as_utc(h.at).isoformat(), "event": h.event, "from": h.from_value, "to": h.to_value, "by": h.by} for h in page["items"]]}
+
+
+class AlarmCommentRequest(BaseModel):
+    """MGT-8.3: a comment on an alarm. `author` is who wrote it (the GUI BFF sets it to `smo-gui:<user>`, never the browser's value)."""
+    model_config = ConfigDict(extra="forbid")
+    author: str = Field(min_length=1, max_length=200)
+    text: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("text")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        """A comment says something: surrounding space is trimmed and a blank one is refused (422)."""
+        value = value.strip()
+        if not value:
+            raise ValueError("a comment cannot be blank")
+        return value
+
+
+def _comment_view(c: AlarmComment) -> dict:
+    """The JSON of one comment."""
+    return {"commentId": str(c.comment_id), "alarmId": str(c.alarm_id), "createdAt": as_utc(c.created_at).isoformat(), "author": c.author, "text": c.text}
+
+
+@app.get("/alarms/{alarm_id}/comments")
+def alarm_comments(alarm_id: uuid.UUID, request: Request, limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    """MGT-8.3: the comments on the alarm, oldest first, paged with `total`. 404 as `GET /alarms/{id}/history`."""
+    _readable_alarm(db, alarm_id, request)
+    page = paginate(db, select(AlarmComment).where(AlarmComment.alarm_id == alarm_id).order_by(AlarmComment.created_at, AlarmComment.comment_id), limit, offset)
+    return {**page, "items": [_comment_view(c) for c in page["items"]]}
+
+
+@app.post("/alarms/{alarm_id}/comments", status_code=201)
+def add_alarm_comment(alarm_id: uuid.UUID, body: AlarmCommentRequest, request: Request, db: Session = Depends(get_session)):
+    """MGT-8.3: add a comment to the alarm (201, the comment). The same check as acknowledging it (404 outside the scope; MGT-2.3, an `update` on
+    the alarm's element for a managed caller). Comments are only added: there is no edit or delete."""
+    alarm = _get_alarm(db, alarm_id, request)
+    comment = AlarmComment(alarm_id=alarm.alarm_id, created_at=datetime.datetime.now(datetime.UTC), author=body.author, text=body.text)
+    db.add(comment)
+    db.commit()
+    return _comment_view(comment)
+
+
 @app.get("/alarms/{alarm_id}/correlated")
 def correlated_alarms(alarm_id: uuid.UUID, request: Request, window_seconds: int = Query(60, ge=1, le=3600), db: Session = Depends(get_session)):
     """PR-GUI-9.8 (PR-MGT-9): the alarms that probably belong with this one, by a stated heuristic rather than a root-cause analysis: the other alarms
     on the same managed element raised within `window_seconds` before or after it (cleared ones included), oldest first, at most 200.
     `{"alarmId", "rule": "same-element-within-window", "windowSeconds", "items", "truncated"}`. 404 `ALARM_NOT_FOUND` for an unknown alarm or one
     outside the caller's scope claim or on an element its access rules do not let it read (MGT-2.6)."""
-    alarm = db.get(Alarm, alarm_id)
-    if alarm is None or not scoping.element_permitted(db, scoping.request_scope(request), alarm.managed_element_ref) \
-            or not msac.may_read(db, request, alarm.managed_element_ref):
-        raise framework_error(FrameworkError.ALARM_NOT_FOUND, detail=f"no such alarm {alarm_id}")
+    alarm = _readable_alarm(db, alarm_id, request)
     raised, window = as_utc(alarm.raised_at), datetime.timedelta(seconds=window_seconds)
     rows = db.scalars(select(Alarm).where(Alarm.managed_element_ref == alarm.managed_element_ref, Alarm.alarm_id != alarm.alarm_id,
                                           Alarm.raised_at >= raised - window, Alarm.raised_at <= raised + window)

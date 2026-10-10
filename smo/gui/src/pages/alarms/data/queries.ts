@@ -92,6 +92,23 @@ export function useCorrelated(alarmId: string | null) {
   return q as unknown as Omit<typeof q, "data"> & { data: Correlated | undefined };
 }
 
+/** MGT-8.2: one change of an alarm (`GET /alarms/{id}/history`, oldest first). */
+export interface AlarmHistoryEntry { at: string; event: "RAISED" | "ACKNOWLEDGED" | "UNACKNOWLEDGED" | "CLEARED" | "SEVERITY_CHANGED"; from: string | null; to: string | null; by: string | null }
+/** MGT-8.3: one comment on an alarm (`GET /alarms/{id}/comments`, oldest first). */
+export interface AlarmComment { commentId: string; alarmId: string; createdAt: string; author: string; text: string }
+/** How many history rows and comments the detail panel reads (the newest past it are behind "all on the …" — no alarm here has that many). */
+export const NOTES_LIMIT = 100;
+
+/** GUI-2.4: the history of the selected alarm, every change with who and when (null: nothing selected, no call). */
+export function useAlarmHistory(alarmId: string | null) {
+  return useSmoPage<AlarmHistoryEntry>(alarmId ? `${RAN_ALARMS}/${alarmId}/history` : null, { limit: NOTES_LIMIT }, { refetchInterval: POLL.lists });
+}
+
+/** GUI-2.3: the comments on the selected alarm (null: nothing selected, no call). */
+export function useAlarmComments(alarmId: string | null) {
+  return useSmoPage<AlarmComment>(alarmId ? `${RAN_ALARMS}/${alarmId}/comments` : null, { limit: NOTES_LIMIT }, { refetchInterval: POLL.lists });
+}
+
 /** The O1 endpoints for the FM subscription form's element picker. */
 export function useO1Endpoints() {
   return useSmo<O1Endpoint[]>(O1_ENDPOINTS);

@@ -177,7 +177,7 @@ and HA much later).
 | Northbound | `PR-NB` | NB-1 alarm forwarding · NB-2 inventory export · NB-3 TS 28.532 facade · NB-4 slicing · NB-5 TM Forum · NB-6 ONAP · NB-7 federation |
 | AI/ML | `PR-AI` | AI-1 executor protocol · AI-2 K8s training executor · AI-3 MLflow bridge · AI-4 serving adaptor · AI-5 feature store · AI-6 data sink · AI-7 drift · AI-8 weighted triggers · AI-9 runtime gate · AI-10 action safeguards · AI-11 approvals · AI-12 shadow mode · AI-13 decision audit |
 | rApp ecosystem | `PR-RAPP` | RAPP-1 signing (done) · RAPP-2 sandbox (RAPP-2.2 open) · RAPP-3 conformance pack (done) · RAPP-4 Java and Go SDK · RAPP-5 portal · RAPP-6 metering · RAPP-7 new-rApp recipe |
-| GUI | `PR-GUI` | GUI-1 live updates (1.5 left) · GUI-2 alarm console (2.3-2.4 left) · GUI-3 topology · GUI-4 KPI dashboards · GUI-5 scoped views · GUI-6 a11y/i18n (6.3-6.4 left) · GUI-7 approval inbox · GUI-9/10 console redesign (done) |
+| GUI | `PR-GUI` | GUI-1 live updates (1.5 left) · GUI-2 alarm console (done) · GUI-3 topology · GUI-4 KPI dashboards · GUI-5 scoped views · GUI-6 a11y/i18n (6.3-6.4 left) · GUI-7 approval inbox · GUI-9/10 console redesign (done) |
 | Standards / compliance | `PR-STD` | STD-1 close §3 items · STD-2 spec currency · STD-3 O-RAN test plan · STD-4 privacy · STD-5 assurance mapping · STD-6 residency |
 | Quality | `PR-QA` | QA-1 load · QA-2 contract tests · QA-3 failure injection · QA-4 upgrade test · QA-5 soak · QA-6 authz matrix · QA-7 coverage · QA-8 simulator lane |
 
@@ -853,12 +853,10 @@ No steps open.
 
 #### PR-MGT-8 — Alarm lifecycle depth
 
-Ack and clear exist (`PATCH /alarms/{id}/ack`, `/clear`); an unknown alarm is a 404 and `new_state` must be `ACKNOWLEDGED` or `UNACKNOWLEDGED` (`MGT-8.1`, `HISTORY.md` §10). The list filters of MGT-8.4 are built (`HISTORY.md` "PR-GUI-1, 2 and 6 steps closed by the redesign").
+Ack and clear exist (`PATCH /alarms/{id}/ack`, `/clear`); an unknown alarm is a 404 and `new_state` must be `ACKNOWLEDGED` or `UNACKNOWLEDGED` (`MGT-8.1`, `HISTORY.md` §10). The list filters of MGT-8.4 are built (`HISTORY.md` "PR-GUI-1, 2 and 6 steps closed by the redesign"). The history and the comments (MGT-8.2, 8.3) are built (`HISTORY.md` "MGT-8.2, 8.3 / GUI-2.3, 2.4").
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| MGT-8.2 | `alarm_history` table: every ack, clear and severity change | Migration; row per change | – |
-| MGT-8.3 | Comments: add and list | Route tests | – |
 | MGT-8.5 | Repeat raise of the same `source_alarm_id`: update count and time instead of a new row (confirm today's behaviour first) **(verify)** | Test | – |
 | MGT-8.6 | Aging policy: auto-clear after N hours without a repeat | One run per interval | – |
 | MGT-8.7 | Suppression windows per element (planned work) | Alarm in a window is flagged | MGT-8.2 |
@@ -1202,12 +1200,7 @@ GUI-1.1 to 1.4 are done by the console redesign (`HISTORY.md` "PR-GUI-1, 2 and 6
 
 #### PR-GUI-2 — Alarm console
 
-GUI-2.1 and 2.2 are done by the console redesign (same `HISTORY.md` entry), GUI-2.5 by the alarm export (`HISTORY.md` GUI-2.5). What remains:
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| GUI-2.3 | Comments panel | Component test | MGT-8.3 |
-| GUI-2.4 | History tab | Component test | MGT-8.2 |
+Done: GUI-2.1 and 2.2 by the console redesign (same `HISTORY.md` entry), GUI-2.5 by the alarm export (`HISTORY.md` GUI-2.5), GUI-2.3 and 2.4 with MGT-8.2 and 8.3 (`HISTORY.md` "MGT-8.2, 8.3 / GUI-2.3, 2.4"). Nothing open.
 
 #### PR-GUI-3 — Topology view
 

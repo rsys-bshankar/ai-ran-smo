@@ -20,7 +20,7 @@ from smo_shared.outbox import NotificationOutbox
 
 from app.main import app
 from smo_shared.audit import AuditEntry, AuditHead
-from app.models import ElementOnboarding, LifecycleSubscription, OnboardingTemplate, SoftwareCampaign, ApprovalSubscription, RAppActionApproval, RAppApprovalPolicy, RAppDecisionRecord, KpiDefinition, KpiSchedule, RAppKill, SafeguardRefusal, SafeguardSubscription, RAppLimit, ManagedObject, Alarm, CMSchemaCache, CMSnapshot, FMSubscription, FileSubscription, ManagedEntity, MsacAccessRule, MsacIdentity, MsacRole, PMFile, O1AdaptorEndpoint, PMSubscription, SoftwareManagementJob, VendorCapability, WriteConfigJob, WriteConfigSubChange
+from app.models import AlarmComment, AlarmHistory, ElementOnboarding, LifecycleSubscription, OnboardingTemplate, SoftwareCampaign, ApprovalSubscription, RAppActionApproval, RAppApprovalPolicy, RAppDecisionRecord, KpiDefinition, KpiSchedule, RAppKill, SafeguardRefusal, SafeguardSubscription, RAppLimit, ManagedObject, Alarm, CMSchemaCache, CMSnapshot, FMSubscription, FileSubscription, ManagedEntity, MsacAccessRule, MsacIdentity, MsacRole, PMFile, O1AdaptorEndpoint, PMSubscription, SoftwareManagementJob, VendorCapability, WriteConfigJob, WriteConfigSubChange
 
 
 @pytest.fixture
@@ -29,7 +29,7 @@ def db_session_factory():
     """
     engine = make_test_engine()
     Base.metadata.create_all(engine, tables=[
-        O1AdaptorEndpoint.__table__, ManagedEntity.__table__, Alarm.__table__, CMSchemaCache.__table__,
+        O1AdaptorEndpoint.__table__, ManagedEntity.__table__, Alarm.__table__, AlarmHistory.__table__, AlarmComment.__table__, CMSchemaCache.__table__,
         WriteConfigJob.__table__, WriteConfigSubChange.__table__, CMSnapshot.__table__, PMSubscription.__table__, FMSubscription.__table__, SoftwareManagementJob.__table__,
         VendorCapability.__table__, MsacIdentity.__table__, MsacRole.__table__, MsacAccessRule.__table__, PMFile.__table__,
         FileSubscription.__table__, IdempotencyKey.__table__, NotificationOutbox.__table__, ManagedObject.__table__, OnboardingTemplate.__table__, ElementOnboarding.__table__, LifecycleSubscription.__table__, SoftwareCampaign.__table__, KpiDefinition.__table__, KpiSchedule.__table__, RAppLimit.__table__, RAppKill.__table__, SafeguardRefusal.__table__, SafeguardSubscription.__table__,

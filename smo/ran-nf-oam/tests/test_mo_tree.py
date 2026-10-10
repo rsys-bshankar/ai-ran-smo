@@ -13,7 +13,7 @@ from smo_shared.testing import make_test_engine
 
 from app import mo_tree
 from app.main import app
-from app.models import (ElementOnboarding, LifecycleSubscription, OnboardingTemplate, SoftwareCampaign, Alarm, CMSchemaCache, CMSnapshot, ManagedEntity, ManagedObject, MsacAccessRule, MsacIdentity, MsacRole,
+from app.models import (AlarmComment, AlarmHistory, ElementOnboarding, LifecycleSubscription, OnboardingTemplate, SoftwareCampaign, Alarm, CMSchemaCache, CMSnapshot, ManagedEntity, ManagedObject, MsacAccessRule, MsacIdentity, MsacRole,
                         O1AdaptorEndpoint, O1AdaptorHostKey, VendorCapability, WriteConfigJob, WriteConfigSubChange)
 
 
@@ -24,7 +24,7 @@ def db_session_factory():
     engine = make_test_engine()
     event.listen(engine, "connect", lambda dbapi, record: dbapi.execute("PRAGMA foreign_keys=ON"))   # so ON DELETE CASCADE is enforced as in Postgres
     Base.metadata.create_all(engine, tables=[
-        O1AdaptorEndpoint.__table__, ManagedEntity.__table__, Alarm.__table__, CMSchemaCache.__table__, WriteConfigJob.__table__,
+        O1AdaptorEndpoint.__table__, ManagedEntity.__table__, Alarm.__table__, AlarmHistory.__table__, AlarmComment.__table__, CMSchemaCache.__table__, WriteConfigJob.__table__,
         WriteConfigSubChange.__table__, CMSnapshot.__table__, VendorCapability.__table__, MsacIdentity.__table__, MsacRole.__table__,
         MsacAccessRule.__table__, IdempotencyKey.__table__, NotificationOutbox.__table__, ManagedObject.__table__, OnboardingTemplate.__table__, ElementOnboarding.__table__, LifecycleSubscription.__table__, SoftwareCampaign.__table__, O1AdaptorHostKey.__table__])
     return sessionmaker(bind=engine)

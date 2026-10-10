@@ -137,6 +137,38 @@ class Alarm(Base):
     changed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+# MGT-8.2 / MGT-8.3 (revision 0039): what happened to an alarm, and what operators said about it.
+ALARM_HISTORY_EVENTS = ("RAISED", "ACKNOWLEDGED", "UNACKNOWLEDGED", "CLEARED", "SEVERITY_CHANGED")
+
+
+class AlarmHistory(Base):
+    """MGT-8.2: one change of one alarm, written by `alarm_history.py`'s ORM listeners in the transaction that made the change, so no path that
+    raises, acknowledges, clears or re-grades an alarm can skip it. `event` is one of `ALARM_HISTORY_EVENTS` (a CHECK); `from_value` / `to_value`
+    are the ack state or the severity before and after (null where there was none); `by` is who did it, when the alarm says (`ack_user_id`,
+    `clear_user_id`), else null (a raise or a re-grade comes from the network). Deleted with its alarm."""
+    __tablename__ = "alarm_history"
+
+    history_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    alarm_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("alarm.alarm_id", ondelete="CASCADE"), nullable=False, index=True)
+    at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    event: Mapped[str] = mapped_column(String, nullable=False)
+    from_value: Mapped[str | None] = mapped_column(String)
+    to_value: Mapped[str | None] = mapped_column(String)
+    by: Mapped[str | None] = mapped_column(String)
+
+
+class AlarmComment(Base):
+    """MGT-8.3: a note an operator left on an alarm (`POST /alarms/{id}/comments`): who (`author`, the GUI user through the BFF), when, and the
+    text (1 to 2000 characters, checked by the route). Comments are only added: there is no edit or delete. Deleted with its alarm."""
+    __tablename__ = "alarm_comment"
+
+    comment_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    alarm_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("alarm.alarm_id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    author: Mapped[str] = mapped_column(String, nullable=False)
+    text: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class MsacIdentity(Base):
     """TS 28.319 Identity. `credential` is write-only: only its hash is kept."""
     __tablename__ = "msac_identity"

@@ -13,7 +13,7 @@ import rules from "../../../auth/permissions.fixture.json";
 import { ToastProvider } from "../../../components/Toast";
 import { KEYS } from "../../../data/keys";
 import { fakeBff, mountWith, newClient, type Call } from "../../../testing/bff";
-import { byText, cleanup, click, mount, settle } from "../../../testing/dom";
+import { byText, cleanup, click, mount, settle, typeArea } from "../../../testing/dom";
 import { Alarms } from "..";
 import { formatDuration, ranAlarmFilters, withDelta } from "../data/queries";
 import { newSince } from "../sections/AlarmTable";
@@ -123,6 +123,45 @@ describe("the alarm page", () => {
     const patch = calls.find((c) => c.method === "PATCH")!;
     expect(patch.path).toBe("/smo/ran-nf-oam/alarms/a-1/ack");
     expect(patch.query.get("new_state")).toBe("ACKNOWLEDGED");
+  });
+
+  // GUI-2.4 / 2.3: the detail shows the server's history (who did what) and the comments; an operator adds one (the text sent, the box emptied),
+  // a viewer reads them with no box.
+  it("shows the alarm's history and comments, and lets an operator add a comment", async () => {
+    const notes = {
+      "GET /smo/ran-nf-oam/alarms/a-1/history": { items: [
+        { at: plus(0), event: "RAISED", from: null, to: "critical", by: null },
+        { at: plus(60), event: "ACKNOWLEDGED", from: "UNACKNOWLEDGED", to: "ACKNOWLEDGED", by: "bob" },
+        { at: plus(90), event: "SEVERITY_CHANGED", from: "critical", to: "major", by: null },
+      ], total: 3, limit: 100, offset: 0 },
+      "GET /smo/ran-nf-oam/alarms/a-1/comments": { items: [{ commentId: "c-1", alarmId: "a-1", createdAt: plus(70), author: "bob", text: "fibre cut, crew sent" }], total: 1, limit: 100, offset: 0 },
+      "POST /smo/ran-nf-oam/alarms/a-1/comments": { status: 201, body: { commentId: "c-2", alarmId: "a-1", createdAt: plus(100), author: "ana", text: "crew on site" } },
+    };
+    const calls = bff("operator", notes);
+    const { container } = await open();
+    await settle();
+    await click(container.querySelector("tbody tr") as HTMLElement);
+    await settle();
+    const history = container.querySelector("[data-section='alarms.history']") as HTMLElement;
+    const lines = Array.from(history.querySelectorAll("li > span:first-child")).map((n) => n.textContent);
+    expect(lines).toEqual(["Raised as critical", "Acknowledged · by bob", "Severity critical → major"]);
+    const comments = container.querySelector("[data-section='alarms.comments']") as HTMLElement;
+    expect(comments.textContent).toContain("fibre cut, crew sent");
+    const box = comments.querySelector("textarea") as HTMLTextAreaElement;
+    await typeArea(box, "  crew on site ");
+    await click(byText(comments, "button", "Add comment")!);
+    await settle();
+    expect(calls.find((c) => c.method === "POST" && c.path === "/smo/ran-nf-oam/alarms/a-1/comments")!.body).toEqual({ author: "smo-gui", text: "crew on site" });
+    expect(box.value).toBe("");
+    cleanup();
+    bff("viewer", notes);
+    const viewer = await open();
+    await settle();
+    await click(viewer.container.querySelector("tbody tr") as HTMLElement);
+    await settle();
+    const readOnly = viewer.container.querySelector("[data-section='alarms.comments']") as HTMLElement;
+    expect(readOnly.textContent).toContain("fibre cut, crew sent");
+    expect(readOnly.querySelector("textarea")).toBeNull();
   });
 
   // Pins down: a viewer sees alarms but no Ack/Clear button.

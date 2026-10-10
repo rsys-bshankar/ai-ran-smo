@@ -177,6 +177,9 @@ RULES: list[Rule] = [
           query_overrides=lambda u: {"ack_user_id": u.username}),
     _rule("PATCH", "/ran-nf-oam/alarms/{id}/clear", O,
           query_overrides=lambda u: {"clear_user_id": u.username}),
+    # MGT-8.3 / GUI-2.3: a comment on an alarm, written by the signed-in user (as the ack and clear above), never the browser's `author`
+    _rule("POST", "/ran-nf-oam/alarms/{id}/comments", O,
+          json_overrides=lambda u: {"author": u.username}),
     _rule("POST", "/ran-nf-oam/alarms/ingest", A),                   # test-data injection
     # CM writes: who asked, and the MSAC access tier that entire-RAN scope
     # requires, come from the GUI identity (an admin holds the tier; an

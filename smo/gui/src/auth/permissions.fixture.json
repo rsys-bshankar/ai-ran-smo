@@ -323,6 +323,12 @@
   },
   {
     "method": "POST",
+    "pattern": "^/ran-nf-oam/alarms/[^/]+/comments$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
     "pattern": "^/ran-nf-oam/alarms/ingest$",
     "role": "admin",
     "queryMatch": {}

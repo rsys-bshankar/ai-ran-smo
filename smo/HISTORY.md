@@ -2426,4 +2426,24 @@ Bookkeeping after PR-GUI-9 (#430), checked against the code before each step was
   the badge's sum.
 - **Not taken.** Moving the decisions into the inbox's detail panel (the AI/ML page already shows a model's metrics and history beside its
   buttons, so the row links there); a separate approval queue table in AIMgF (the lifecycle state and the gate flags already are the queue).
+### MGT-8.2, 8.3 / GUI-2.3, 2.4 — an alarm's history and comments, in the alarm console
+
+- **History (MGT-8.2, revision 0039).** `ran_nf_oam.alarm_history` holds one row per change of an alarm: RAISED, ACKNOWLEDGED, UNACKNOWLEDGED,
+  CLEARED, SEVERITY_CHANGED (a CHECK), the ack state or severity before and after, who (the ack or clear user; null for what the network
+  did) and when (the alarm's own `changed_at`, so the two agree). It is written by two ORM listeners on `Alarm` (`app/alarm_history.py`,
+  `after_insert` and `after_update`) in the flush that made the change, so every path is recorded without being told: the ingest route, the
+  VES receiver's raise, re-grade and clear, a failed O1 config job, the onboarding flow, the ack and clear routes. A field set to the value it
+  already had writes nothing. `GET /alarms/{id}/history` answers it oldest first, paged.
+- **Comments (MGT-8.3, same revision).** `ran_nf_oam.alarm_comment` and `GET` / `POST /alarms/{id}/comments`: 1 to 2000 characters, trimmed,
+  a blank one refused; only added (no edit or delete, so the record stays what operators said). The POST is checked as an ack (scope, MSAC
+  `update`); the reads as the correlated-alarms read, now one helper (`_readable_alarm`). The BFF lets an operator post and writes the
+  signed-in user's name as the author (the name an ack records on the same alarm).
+- **Console (GUI-2.4, 2.3).** The alarm detail panel shows the history ("Raised as critical", "Acknowledged · by bob", "Severity critical →
+  major", "Cleared (was major)") and the comments, with "Add a comment" for an operator (`pages/alarms/sections/AlarmNotes.tsx`).
+- **Expand only.** Two new tables with FKs to `alarm` ON DELETE CASCADE (retention takes the history and comments with the alarm). The previous
+  release's code neither reads nor writes them; an alarm it changes during a rolling upgrade gets no history row for that change. No backfill:
+  an alarm raised before the revision has history from then on, and the panel says so.
+- **Not taken.** A history row per comment (the two lists answer different questions, and a comment is already dated and signed); editing or
+  deleting comments; recording changes made by a bulk SQL UPDATE (none touches the ack state or the severity; one that did would bypass the
+  listener, which the module's docstring says).
 

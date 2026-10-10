@@ -1,12 +1,13 @@
-/** Section `alarms.detail`: the selected RAN alarm. Ack / Clear, the 3GPP TS 28.532 / 28.111 fault fields the alarm carries, and a lifecycle
- * timeline built from its own timestamps and users (raised → acknowledged → last changed → cleared). No call of its own: the row comes from the
- * table's current page. */
+/** Section `alarms.detail`: the selected RAN alarm. Ack / Clear, the 3GPP TS 28.532 / 28.111 fault fields the alarm carries, a lifecycle
+ * timeline built from its own timestamps and users (raised → acknowledged → last changed → cleared), and (GUI-2.4, GUI-2.3) the server's
+ * history of every change and the operators' comments (`AlarmNotes.tsx`, two calls). The row itself comes from the table's current page. */
 import type { Alarm } from "../../../api/types";
 import { Card, Id, KeyValue, SeverityChip } from "../../../components/ui";
 import { Empty } from "../../../kit/states";
 import { Timeline, type TimelineItem } from "../../../kit/Timeline";
 import { formatTime } from "../../../lib/domain";
 import { AlarmActions } from "./AlarmActions";
+import { AlarmComments, AlarmHistory } from "./AlarmNotes";
 
 /** The lifecycle of an alarm, from the fields it carries: raised, acknowledged (who, and when: `ackTime`), last changed, cleared (`clearTime`). */
 export function alarmLifecycle(alarm: Alarm): TimelineItem[] {
@@ -47,6 +48,10 @@ export function AlarmDetail({ alarm, onClose }: { alarm: Alarm | null; onClose: 
       ]} />
       <h3>Lifecycle</h3>
       <Timeline label="Alarm lifecycle" items={alarmLifecycle(alarm)} />
+      <h3>History</h3>
+      <AlarmHistory alarmId={alarm.alarmId} />
+      <h3>Comments</h3>
+      <AlarmComments alarmId={alarm.alarmId} />
     </Card>
   );
 }

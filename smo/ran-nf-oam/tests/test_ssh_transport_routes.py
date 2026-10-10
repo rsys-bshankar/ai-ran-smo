@@ -11,7 +11,7 @@ from smo_shared.outbox import NotificationOutbox
 from smo_shared.testing import make_test_engine
 
 from app.main import app
-from app.models import (ElementOnboarding, LifecycleSubscription, OnboardingTemplate, SoftwareCampaign, ManagedObject, O1AdaptorHostKey, Alarm, CMSchemaCache, CMSnapshot, ManagedEntity, O1AdaptorEndpoint, VendorCapability, WriteConfigJob, WriteConfigSubChange,
+from app.models import (AlarmComment, AlarmHistory, ElementOnboarding, LifecycleSubscription, OnboardingTemplate, SoftwareCampaign, ManagedObject, O1AdaptorHostKey, Alarm, CMSchemaCache, CMSnapshot, ManagedEntity, O1AdaptorEndpoint, VendorCapability, WriteConfigJob, WriteConfigSubChange,
                         MsacAccessRule, MsacIdentity, MsacRole)
 
 from netconf_ssh_server import Behaviour, NetconfTestServer
@@ -24,7 +24,7 @@ def db_session_factory():
     """Fixture: a SQLite session factory with the tables the registration, write and tree routes touch."""
     engine = make_test_engine()
     Base.metadata.create_all(engine, tables=[
-        O1AdaptorEndpoint.__table__, ManagedEntity.__table__, Alarm.__table__, CMSchemaCache.__table__, WriteConfigJob.__table__,
+        O1AdaptorEndpoint.__table__, ManagedEntity.__table__, Alarm.__table__, AlarmHistory.__table__, AlarmComment.__table__, CMSchemaCache.__table__, WriteConfigJob.__table__,
         WriteConfigSubChange.__table__, CMSnapshot.__table__, VendorCapability.__table__, MsacIdentity.__table__, MsacRole.__table__, MsacAccessRule.__table__,
         IdempotencyKey.__table__, NotificationOutbox.__table__, ManagedObject.__table__, OnboardingTemplate.__table__, ElementOnboarding.__table__, LifecycleSubscription.__table__, SoftwareCampaign.__table__, O1AdaptorHostKey.__table__])
     return sessionmaker(bind=engine)

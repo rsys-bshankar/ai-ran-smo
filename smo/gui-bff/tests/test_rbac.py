@@ -248,6 +248,14 @@ def test_the_global_stop_is_attributed_to_the_gui_user():
     assert decision.allowed and decision.rule.json_overrides(type("U", (), {"username": "alice", "role": Role.OPERATOR})()) == {"requestedBy": "smo-gui:alice"}
 
 
+def test_an_alarm_comment_is_an_operators_and_attributed_to_the_gui_user():
+    """MGT-8.3 / GUI-2.3: commenting on an alarm needs an operator, and its `author` is the signed-in user (as an ack is), never the browser's."""
+    assert not decide("POST", "/ran-nf-oam/alarms/a-1/comments", {}, Role.VIEWER).allowed
+    decision = decide("POST", "/ran-nf-oam/alarms/a-1/comments", {}, Role.OPERATOR)
+    assert decision.allowed and decision.rule.json_overrides(type("U", (), {"username": "ana", "role": Role.OPERATOR})()) == {"author": "ana"}
+    assert decide("GET", "/ran-nf-oam/alarms/a-1/comments", {}, Role.VIEWER).allowed and decide("GET", "/ran-nf-oam/alarms/a-1/history", {}, Role.VIEWER).allowed
+
+
 def test_a_host_key_pin_is_attributed_to_the_gui_user():
     """GUI-9.7 / STD-4.6: who re-pinned an SSH host key is the signed-in admin, never a `pinnedBy` the browser chose."""
     rule = decide("PUT", "/ran-nf-oam/o1-adaptor-endpoints/e/host-keys", {}, Role.ADMIN).rule
