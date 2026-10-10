@@ -10,7 +10,7 @@
 | Called by | Operators and GUI BFF; the rApp container itself (`bootstrap-complete`, `performance` and `operator-api`, each for its own instance only, and reads of its own `config`; the gateway refuses an rApp the other changes, `PUT config` and `fault`, which are an operator's); R1 Termination (`GET operator-api`, to resolve `/rapps/{instanceId}/operator/...`); Intent Service (reads an instance's `autonomyMode` and `regionScope`); SA SMOS (`rollback`, `versions`); the reference rApps (read their own instance) |
 | Database tables | `rapp_instance` (versioned), `rapp_instance_version`, `rapp_fault_report`, `rapp_performance_report` |
 | Idempotency | `POST /instances` accept an `Idempotency-Key` header (`smo_shared/idempotency.py`; the `idempotency_key` table is shared, not this module's) |
-| Unit tests | 198 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 213 passed (`tests/`, SQLite, standalone) |
 | Status | Done. No open item in [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md) names this module; limits in 2.8 |
 | Time-driven behaviour | On request, never on a timer: an overdue upgrade is rolled back the next time either row is touched |
 
@@ -78,7 +78,7 @@ Cross-module references (`package_id`, `package_usage_registration_id`, `workloa
 | `operatorApiBase` is optional and registered by the instance (a caller with the rApp role may set it only for the instance whose `oauthClientId` is its invoker id: 403 `NOT_THIS_INSTANCE`) or by an operator; a terminated instance refuses and reports none. | The base is a URL a workload supplied and the platform calls later, so it is checked as every such destination is (`is_safe_webhook_destination`, plus no credentials, query, fragment, `..`, `%` or `//`) and the gateway checks it again; a workload that cannot speak for the instance (the sample rApps in compose serve many instances under one identity) is given the address by the operator. |
 | `autonomyMode`, `regionScope` and `authzScope` are fixed at create (and inherited by upgrades, restored by a rollback); there is no route to change them here (an operator edits a scope claim on the invoker at SME, `PUT /sme/invoker-registrations/{id}/authz-scope`). | A per-instance property chosen at onboarding, not per inference call. |
 | A critical fault fires `CRASH`; a non-critical fault is only recorded. | Only a critical fault takes an instance out of `RUNNING`. |
-| No authorization beyond R1's token check and role policy; the GUI BFF limits create, config, upgrade, rollback, recover and bootstrap-complete to operators, terminate, delete, performance and fault to admins. An rApp may call `bootstrap-complete` and `performance` for its own instance only (403 `NOT_THIS_INSTANCE` for another's), the same rule as `operator-api`. | The rApp itself calls some of these through R1; it must not act for another instance. |
+| No authorization beyond R1's token check and role policy; the GUI BFF limits create, config, upgrade, rollback, recover and bootstrap-complete to operators, terminate, delete, performance and fault to admins. An rApp may call `bootstrap-complete`, `performance`, `fault` and `config` (PUT) for its own instance only (403 `NOT_THIS_INSTANCE` for another's), the same rule as `operator-api` (`SEC-15.9`; the gateway's change allow-list does not let an rApp reach `fault` and `config` at all, so the check there is the second line). | The rApp itself calls some of these through R1; it must not act for another instance. |
 
 **Autonomy modes.** An inference outcome is handed to Intent Service's `POST /intent-service/autonomy-dispatches`, which reads the instance from here and acts on its mode (behaviour is Intent Service's; summarised because the mode is set here):
 
@@ -190,12 +190,12 @@ Upgrade choreography (`upgrade.py`):
 | GET | `/instances/{id}/versions` | Current instance, `rollbackTarget`, and the version list newest first; resolves a superseded id | 404 |
 | POST | `/instances/{id}/terminate` | `{instanceId, state, lastTeardown}` | 409 |
 | DELETE | `/instances/{id}` (204) | Delete the row and its reports | 404; 409 `RAPP_INSTANCE_NOT_UNDEPLOYED` |
-| GET, PUT | `/instances/{id}/config` | Read, replace `configuration` (any JSON object) | 404 |
+| GET, PUT | `/instances/{id}/config` | Read, replace `configuration` (any JSON object). `PUT` from an rApp: own instance only | 403 `NOT_THIS_INSTANCE` (PUT); 404 |
 | POST | `/instances/{id}/performance` | Record a metrics object. Own instance only for an rApp, as `bootstrap-complete` | 403 `NOT_THIS_INSTANCE`; 404 |
 | GET | `/instances/{id}/performance` | Paged, newest first | 404 |
 | GET | `/instances/{id}/performance/latest` | `GUI-9.8`, the rApp's headline KPI: `{instanceId, at, metrics: {name: number}}`, the numeric top-level values of its newest report. Never 404: `at` null and `metrics` `{}` when there is no report or no such instance | |
 | GET | `/instances/performance/latest?ids=a,b,c` | The same for up to 50 instances in one query: `{items: [...]}` one per id, in the order given, duplicates once | 422 `SCHEMA_VALIDATION_FAILED` (more than 50 ids, or one that is not a UUID) |
-| POST | `/instances/{id}/fault?severity=&description=` | Record; `severity=critical` fires `CRASH` | 409 (critical on a non-`RUNNING` instance) |
+| POST | `/instances/{id}/fault?severity=&description=` | Record; `severity=critical` fires `CRASH`. Own instance only for an rApp (checked before the crash is fired) | 403 `NOT_THIS_INSTANCE`; 409 (critical on a non-`RUNNING` instance) |
 | GET | `/instances/{id}/faults` | Paged, newest first | 404 |
 
 `GET /health` is liveness. Config, performance and fault routes use a plain 404 lookup and do not apply the lazy upgrade timeout.
@@ -229,7 +229,7 @@ rApp Management reads one environment variable of its own: `RAPP_CREDENTIAL_DELI
 | `LIFECYCLE_ILLEGAL_TRANSITION` | 409 | See 2.3 |
 | `RAPP_INSTANCE_NOT_UNDEPLOYED` | 409 | Delete while not `UNDEPLOYED` |
 | `OPERATOR_API_BASE_INVALID` | 422 | `operatorApiBase` is not an http or https URL without credentials, query or fragment, or is a loopback, link-local or metadata address (at create, or `PUT .../operator-api`) |
-| `NOT_THIS_INSTANCE` | 403 | A caller with the rApp role tried to register or forget the operator API of an instance that is not its own |
+| `NOT_THIS_INSTANCE` | 403 | A caller with the rApp role tried to register or forget the operator API, report performance or a fault for, or set the configuration of, an instance that is not its own |
 | `RAPP_UPGRADE_TIMED_OUT` | 409 | Commit after the deadline; the upgrade was rolled back |
 | `ROLLBACK_HISTORY_UNAVAILABLE` | 409 | No upgrade left to roll back |
 | FastAPI request validation | 422 | Invalid `autonomyMode`, malformed body |
@@ -269,10 +269,11 @@ cd smo/rapp-mgmt && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | `tests/test_upgrade.py` | FSM and credential behaviour: bootstrap success, revocation on terminate, terminate legality, crash and manual recovery | 7 |
 | | Upgrade orchestration: complete replacement, refused packages (409, 404), refused non-running instance before provisioning, commit retires old, commit of an already bootstrapped replacement, commit refused for a crashed replacement, auto rollback, lazy timeout, NFO failure recorded not raised | 11 |
 | `tests/test_approval_policy.py` | `AI-11.4`: an `ASSIST` instance with a policy has it pushed under its client id at bootstrap (nothing before), the defaults are the conservative ones, a policy on `AUTONOMOUS` or `SHADOW` is a 422, bounds, an instance without a policy behaves as before in every mode, a policy that cannot be put in force keeps the instance `DEPLOYING` (never running and writing at once), terminate removes it, an upgrade keeps it and the version snapshot holds it; `requiredApprovals`: 2 is stored, pushed and returned, 1 is the policy as before (no key), any other number is a 422, a RAN NF OAM that does not echo the 2 keeps the instance from running, and 2 on an `AUTONOMOUS` instance is refused | 25 |
+| `tests/test_own_instance_checks.py` | `SEC-15.9` (2): another instance's rApp token is 403 `NOT_THIS_INSTANCE` on `fault` (nothing recorded, the target not crashed, also with no invoker id) and on `PUT config` (unchanged); the instance itself, an `internal` caller and a call without a role are accepted | 2 |
 | `tests/test_business_metrics.py` | `smo_rapp_instances` counts instances by state with every `InstanceState` present | 1 |
 | `tests/test_global_stop_and_latest_kpi.py` | `GUI-9.6` global stop: every live instance stopped through the per-instance call, an already stopped one keeps its first stop, a terminated one is left out, a refusal is listed while the others stay stopped, an unreadable stop list (500, unreachable) changes nothing on stop, resume and count, the list is read page by page, resume lifts only this module's stopped instances and lists a refusal, the count. `GUI-9.8` latest KPI: the newest report's numbers only, no report and no instance are an empty answer (never 404), the batched read in the given order, more than 50 or malformed ids are 422 | 15 |
 | `tests/test_scope.py` | `SEC-10.3`: the claim at create (put on the invoker, shown on the instance, refused when not valid or not recorded by SME), kept by an upgrade and restored by a rollback, own-instance-only `bootstrap-complete` and performance; `GUI-9.3`: `GET /instances?region=` with and without the unscoped instances (a claim of tenants only counts as unscoped), `total`, `include_unscoped` alone filters nothing, an empty `region` 422 | 21 |
-| | Total (the whole suite, `PYTHONPATH=.:../shared python -m pytest tests/ -q`; some files predate this table and have no row) | 202 |
+| | Total (the whole suite, `PYTHONPATH=.:../shared python -m pytest tests/ -q`; some files predate this table and have no row) | 213 |
 
 ### 3.3 What is not covered here
 

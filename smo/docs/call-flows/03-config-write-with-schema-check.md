@@ -45,7 +45,7 @@ sequenceDiagram
         NFOAM-->>rApp: 202 PENDING_APPROVAL, approvalId
         Operator->>NFOAM: GET /rapp-approvals?status=PENDING
         alt the operator approves
-            Operator->>NFOAM: POST /rapp-approvals/id/approve (decidedBy = the signed-in user)
+            Operator->>NFOAM: POST /rapp-approvals/id/approve (the decider = the signed-in user, X-R1-Acting-User)
             NFOAM->>NFOAM: safeguards again, MSAC, schema, job created and dispatched, decision record APPROVED
             NFOAM-->>Operator: 200 request APPROVED with jobId
         else the operator rejects

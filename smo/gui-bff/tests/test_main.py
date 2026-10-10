@@ -379,6 +379,13 @@ def test_an_approval_is_attributed_to_the_signed_in_user_and_not_to_what_the_bro
     assert len(smo.proxied) == 2
 
 
+def test_every_proxied_call_names_the_signed_in_user_in_a_header_the_browser_cannot_choose(app, smo):
+    """SEC-15.8: each call to the SMO carries `X-R1-Acting-User: smo-gui:<signed-in user>`, so a module can name the person behind the BFF's token; a value the browser sent is replaced."""
+    login(app, "operator").post("/api/smo/ran-nf-oam/rapp-approvals/a-1/approve", json={"reason": "ok"}, headers={"X-R1-Acting-User": "smo-gui:admin"})
+    login(app, "admin").get("/api/smo/ran-nf-oam/alarms", headers={"X-R1-Acting-User": "smo-gui:operator"})
+    assert [r.headers["x-r1-acting-user"] for r in smo.proxied] == ["smo-gui:operator", "smo-gui:admin"]
+
+
 def test_a_policy_asking_for_two_approvals_reaches_ran_nf_oam_from_an_admin_only_with_the_setter_pinned(app, smo):
     """Two-person approval is a field of the approval policy: the BFF passes it through, pins who set the policy, and leaves the policy to an admin."""
     body = {"timeoutSeconds": 600, "onTimeout": "EXPIRE", "requiredApprovals": 2, "requestedBy": "someone-else"}

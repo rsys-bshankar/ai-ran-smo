@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from smo_shared import invoker, r1_client
 from smo_shared.correlation import apply_correlation_id
-from smo_shared.invoker import INVOKER_ID_HEADER, ON_BEHALF_OF_HEADER, get_originator, invoker_id, originator_of
+from smo_shared.invoker import ACTING_USER_HEADER, INVOKER_ID_HEADER, ON_BEHALF_OF_HEADER, acting_user, get_originator, invoker_id, originator_of
 from smo_shared.roles import ROLE_HEADER
 
 RAPP = {ROLE_HEADER: "rapp", INVOKER_ID_HEADER: "es-client"}
@@ -154,3 +154,16 @@ def test_leaving_the_own_account_block_by_an_error_restores_the_originator():
 
     TestClient(app).get("/inside", headers=RAPP)
     assert seen["after"] == "es-client"
+
+
+def test_the_acting_user_is_believed_only_from_an_internal_caller():
+    """SEC-15.8: `acting_user` returns the person the console named (stripped) for the `internal` role, and None for an rApp that sent the header, for a call with no role and for an
+    empty or blank value, so a module that reads it cannot be given a person by anyone but an SMO module.
+    """
+    def request(headers):
+        return type("R", (), {"headers": headers})()
+    assert acting_user(request({**MODULE, ACTING_USER_HEADER: " smo-gui:alice "})) == "smo-gui:alice"
+    assert acting_user(request({**RAPP, ACTING_USER_HEADER: "smo-gui:alice"})) is None
+    assert acting_user(request({ACTING_USER_HEADER: "smo-gui:alice"})) is None
+    assert acting_user(request({**MODULE, ACTING_USER_HEADER: "   "})) is None
+    assert acting_user(request(MODULE)) is None

@@ -1698,7 +1698,7 @@
     },
     "/instances/{instance_id}/fault": {
       "post": {
-        "description": "Records every fault report; severity=critical additionally fires\nCRASH (RUNNING -> FAULTED). A critical fault on an instance that is not\nRUNNING is refused with 409 and not recorded.",
+        "description": "Records every fault report; severity=critical additionally fires\nCRASH (RUNNING -> FAULTED). A critical fault on an instance that is not\nRUNNING is refused with 409 and not recorded. A rApp may report for its\nown instance only (403 `NOT_THIS_INSTANCE` for another rApp's); an operator may for any.",
         "operationId": "report_fault_instances__instance_id__fault_post",
         "parameters": [
           {

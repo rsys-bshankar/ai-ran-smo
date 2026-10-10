@@ -46,11 +46,13 @@ def _parked(client, **kw):
 
 
 def _approve(client, approval_id, by=APPROVER, headers=GUI, **extra):
-    return client.post(f"/rapp-approvals/{approval_id}/approve", headers=headers, json={"decidedBy": by, **extra})
+    """Approves as `by`: the console says so in `X-R1-Acting-User` (the decider, SEC-15.8) and the deprecated body field repeats it."""
+    return client.post(f"/rapp-approvals/{approval_id}/approve", headers={**headers, "X-R1-Acting-User": by}, json={"decidedBy": by, **extra})
 
 
 def _reject(client, approval_id, by=APPROVER, headers=GUI, **extra):
-    return client.post(f"/rapp-approvals/{approval_id}/reject", headers=headers, json={"decidedBy": by, **extra})
+    """Rejects as `by`, the same way as `_approve`."""
+    return client.post(f"/rapp-approvals/{approval_id}/reject", headers={**headers, "X-R1-Acting-User": by}, json={"decidedBy": by, **extra})
 
 
 def _age(fleet, approval_id, seconds):

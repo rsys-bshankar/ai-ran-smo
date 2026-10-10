@@ -67,7 +67,7 @@ from .oidc import LOGIN_TTL_SECONDS, MAX_PENDING_LOGINS, OidcClient, OidcConfig,
 from .rbac import MODULES, RULES, Role, Rule, User, decide
 from .security import decode_jwt, hash_password, issue_jwt, verify_password
 from .signing import build_signer
-from .smo_client import R1Gateway, SmoAuthError
+from .smo_client import ACTING_USER_HEADER, R1Gateway, SmoAuthError
 
 log = logging.getLogger("smo-gui-bff")
 
@@ -944,6 +944,10 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
             body = json.dumps({**payload, **rule.json_overrides(session.user)}).encode()
 
         headers = {k: v for k, v in request.headers.items() if k.lower() in _FORWARD_REQUEST}
+        # SEC-15.8: every module sees the BFF as the caller, so the signed-in person goes with each call in `X-R1-Acting-User` (the same `smo-gui:<username>` the rules write into
+        # `requestedBy` and `decidedBy`). R1 Termination forwards it to a module because the BFF's token is `internal`; the two-person approval takes the decider from it instead
+        # of from the body. Set after the browser's headers were filtered above, so the browser cannot choose it.
+        headers[ACTING_USER_HEADER] = f"smo-gui:{session.user.username}"
         try:
             upstream = await app.state.gateway.request(request.method, path, params=params, content=body or None, headers=headers)
         except SmoAuthError as exc:

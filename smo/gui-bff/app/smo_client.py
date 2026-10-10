@@ -28,6 +28,7 @@ from .db import Database, SmoCredential
 
 # smo_shared/roles.py's header, and `read_secret` for this one value: the BFF's image does not install smo_shared (see main.py).
 ENROLLMENT_HEADER = "X-SMO-Enrollment"
+ACTING_USER_HEADER = "X-R1-Acting-User"      # smo_shared/invoker.py's header: who is signed in, for the modules that must name a person (SEC-15.8)
 
 
 def _enrollment_secret() -> str | None:

@@ -7,9 +7,10 @@ shows the whole pipeline at a high level and call flow 17 the serving runtime; t
 covers what each governance event does, what it writes, and what it leaves unchanged.
 
 Every governance and end-of-life event goes through one route, `POST
-/aimgf/models/{id}/advance?event=…&decided_by=…&rationale=…`. Producer rApps call it through
+/aimgf/models/{id}/advance?event=…&decided_by=…&rationale=…`. An SMO module or a tool with an internal token calls it through
 `sdk.lifecycle.LifecycleClient.advance_model_lifecycle(model_id, event, decided_by,
-rationale)`, and the GUI calls it through the BFF. `advance` accepts only
+rationale)`, and the GUI calls it through the BFF. A caller with the rApp role is refused with 403
+`ROLE_NOT_PERMITTED` (SEC-15.1): the decisions are the operator's. `advance` accepts only
 `ADVANCEABLE_EVENTS` (`aimgf/app/statemachine.py`): the eight `GOVERNANCE_EVENTS` plus
 `DEPRECATE` and `RETIRE`. A job-driven event (`CREATE_TRAINING`, `TRAINING_COMPLETE`,
 `CREATE_VALIDATION`, …) is refused with 422 `SCHEMA_VALIDATION_FAILED` whose detail names the
@@ -294,7 +295,7 @@ sequenceDiagram
 ```
 
 **Key decisions this flow depends on:**
-- One route, `POST /models/{id}/advance`, carries every governance and end-of-life event, and only those (`ADVANCEABLE_EVENTS`). Job-driven events are fired only by their job routes. `advance` refuses them, and unknown events, with 422, so it cannot bypass the OI-6.1 approval gates. The SDK's `advance_model_lifecycle` is a thin pass-through, and the GUI BFF's RBAC is the only place that separates admin-only events from operator-tier ones. The GUI completes a running stage through its job's `/complete` route.
+- One route, `POST /models/{id}/advance`, carries every governance and end-of-life event, and only those (`ADVANCEABLE_EVENTS`). Job-driven events are fired only by their job routes. `advance` refuses them, and unknown events, with 422, so it cannot bypass the OI-6.1 approval gates. The SDK's `advance_model_lifecycle` is a thin pass-through (AIMgF refuses it for an rApp token, 403, SEC-15.1), and the GUI BFF's RBAC is the only place that separates admin-only events from operator-tier ones. The GUI completes a running stage through its job's `/complete` route.
 - The eight `GOVERNANCE_EVENTS` (`SUBMIT_FOR_APPROVAL`, `APPROVE`, `REJECT`, `CERTIFY`, `PROMOTE`, `ROLLBACK`, `APPROVE_TRAINING`, `APPROVE_VALIDATION`) require `decidedBy` and each writes a `CertificationRecord` (`GET /models/{id}/governance-history`). Every transition, governance or not, writes a `LifecycleTransition` (`GET /models/{id}/lifecycle-history?fsm=MODEL`). `DEPRECATE` and `RETIRE` appear only in the latter (HISTORY.md OI-6.1).
 - `ModelLifecycle` and `RuntimeLifecycle` are independent FSMs on one row. `ROLLBACK`, `DEPRECATE` and retraining never change `runtimeLifecycleState`, never call NFO and never notify anyone. `RETIRE` is the one exception: it terminates a deployed runtime through the same `_terminate_runtime` path as `runtime/terminate` (NFO teardown plus `REQUEST_TERMINATION`/`TERMINATION_COMPLETE`). The model state does gate the runtime: a `DEPRECATED` or `RETIRED` model's runtime cannot be activated or scaled, and a `RETIRED` model serves no inference. A `DEPRECATED` model keeps serving from an already-`ACTIVE` runtime until it is retired (or its runtime is terminated explicitly). OPEN_ITEMS.md OI-6.1-runtime-gate covers the related open question of operator gates on runtime transitions.
 - The deploy gate is `CERTIFIED` or `PROMOTED`, applied in three places: AIMgF `runtime/deploy` (before any NFO call), MLLF `POST /models/{id}/deploy`, and NRM loading (`_check_loadable`). A rolled-back (`CERTIFIED`) model therefore stays deployable.

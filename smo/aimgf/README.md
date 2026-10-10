@@ -10,7 +10,7 @@
 | Called by | rApps through the SDK (`sdk/smo_sdk/lifecycle.py`), MLLF (lifecycle read + node-group write), MLMR (`nrm-refs` join), MDAF (MLMF subscriptions and reports), SA SMOS and SO SMOS (training / validation / emulation / deploy / inference steps), GUI via the BFF |
 | Database tables | `model_lifecycle` (versioned), `training_job`, `validation_job`, `emulation_job`, `inference_job`, `certification_record`, `lifecycle_transition`, `mlmf_subscription`, `performance_report`, `feature_group`, `ml_training_function`, `ml_training_process`, `ml_training_report`, `ml_testing_function`, `ml_testing_report`, `aiml_inference_function`, `aiml_inference_emulation_function`, `aiml_inference_report`, `ml_model_loading_policy`, `ml_model_loading_request`, `ml_model_loading_process`, `ml_update_function`, `ml_update_request`, `ml_update_process`, `ml_update_report` |
 | Idempotency | `POST /training-jobs`, `/validation-jobs`, `/emulation-jobs`, `/models/{id}/inference-jobs` accept an `Idempotency-Key` header (`smo_shared/idempotency.py`; the `idempotency_key` table is shared, not this module's) |
-| Unit tests | 215 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 222 passed (`tests/`, SQLite, standalone) |
 | Status | Done. Open: `OI-1-weighted-triggers` (group-retrain `WEIGHTED_TRIGGERS` raises `NotImplementedError`), `OI-6.1-runtime-gate` (no operator gate on RuntimeLifecycle transitions); runtime scale takes no target size (NFO's scale has no argument) |
 
 ## 1. High-level design (HLD)
@@ -100,7 +100,7 @@ Cross-module references are bare UUIDs (for example `TrainingJob.model_id` into 
 - **Timeouts are lazy plus a sweep.** Defaults: training 30 min, validation 15 min, emulation 30 min, inference 5 s. Expiry is enforced on every job read and completion, and on demand by `POST /execution-timeouts/sweep`. A timed-out run fails cleanly (see 2.5); a late completion or resolve is refused with 409.
 - **Failure behaviour.** Request handlers make NFO / MLMR / DME / Onboarding calls before `commit`. A failing call raises and the session is closed without commit, so no AIMgF state is persisted for that request. Notifications (job completion, MLMF report) are rows in the transactional outbox (`smo_shared.outbox`, `PR-MSG-1.7`), committed with the change and sent right after it, at least once; they never fail the triggering call. See 2.8 for the gaps (NFO error responses are not inspected).
 - **Idempotency.** `DELETE` on training jobs and on NRM function / policy resources is a no-op for an unknown id; deleting an already `CANCELLED` job is a no-op, a `FINISHED` / `FAILED` job is refused with 409. `POST` creates are not idempotent.
-- **Security.** Authentication is R1 Termination's bearer introspection; the module itself has no RBAC. Role tiers are enforced in the GUI BFF (`gui-bff/app/rbac.py`): governance decisions `SUBMIT_FOR_APPROVAL` / `APPROVE` / `REJECT` / `CERTIFY` / `PROMOTE` / `ROLLBACK` / `DEPRECATE` / `RETIRE`, `runtime/terminate` and fake MLMF reports need the admin tier; other writes need operator. Governance events require `decidedBy` (422 otherwise) and every governance decision writes a `CertificationRecord`. Feature-group `token` is stored and returned in clear text by the list and create responses.
+- **Security.** Authentication is R1 Termination's bearer introspection; the module itself has no RBAC except one rule: `POST /models/{id}/advance` refuses a caller with the rApp role (`X-R1-Role: rapp`) with 403 `ROLE_NOT_PERMITTED` (`SEC-15.1`), because governing a model and ending its life are an operator's decisions; the console and SMO modules (role `internal`) and a call that did not come through the gateway are let through. The gateway's change allow-list (`smo_shared/roles.py`) still names `advance`, so the SDK's `advance_model_lifecycle` reaches this route and is refused here; the entry is removed there in the change that follows the shared-library hardening. Role tiers are enforced in the GUI BFF (`gui-bff/app/rbac.py`): governance decisions `SUBMIT_FOR_APPROVAL` / `APPROVE` / `REJECT` / `CERTIFY` / `PROMOTE` / `ROLLBACK` / `DEPRECATE` / `RETIRE`, `runtime/terminate` and fake MLMF reports need the admin tier; other writes need operator. Governance events require `decidedBy` (422 otherwise) and every governance decision writes a `CertificationRecord`. Feature-group `token` is stored and returned in clear text by the list and create responses.
 
 ## 2. Low-level design (LLD)
 
@@ -237,7 +237,7 @@ Paths are relative to `/aimgf`. Lists are `{items, total, limit, offset}` with `
 | GET | `/models/{id}/lifecycle` | Lifecycle view; creates the row lazily. 404 `MODEL_NOT_FOUND` if MLMR does not know the model |
 | GET | `/model-lifecycles` | Every touched model (GUI table) |
 | GET | `/model-lifecycles/counts` | `GUI-9.4`, models by stage: `{groups: [{state, count}]}`, one `GROUP BY` over `model_lifecycle`, largest first. A model AIMgF never touched has no row and is not counted |
-| POST | `/models/{id}/advance?event=&decided_by=&rationale=` | Governance, `DEPRECATE`, `RETIRE`. 422 for job-driven / unknown event or missing `decidedBy`; 409 illegal transition |
+| POST | `/models/{id}/advance?event=&decided_by=&rationale=` | Governance, `DEPRECATE`, `RETIRE`. 403 `ROLE_NOT_PERMITTED` for an rApp (checked first); 422 for job-driven / unknown event or missing `decidedBy`; 409 illegal transition |
 | GET | `/models/{id}/governance-history` | `CertificationRecord`s, oldest first |
 | GET | `/models/{id}/lifecycle-history?fsm=` | `LifecycleTransition`s, `fsm` = `MODEL` or `RUNTIME` |
 
@@ -364,6 +364,7 @@ Errors are RFC 7807 ProblemDetails from `framework_error()`; the code is carried
 | `FEATURE_GROUP_NAME_INVALID` | 400 | name not 3-63 word characters |
 | `COORDINATION_GROUP_MISMATCH` | 422 | not exactly one of model / group target |
 | `GOVERNANCE_DECIDER_REQUIRED` | 422 | governance event without `decidedBy` |
+| `ROLE_NOT_PERMITTED` | 403 | `advance` called with the rApp role |
 | `DME_ARTIFACT_NOT_FOUND` | 422 | a `dmeDataJobIds` entry does not resolve |
 | `SCHEMA_VALIDATION_FAILED` | 422 | job-driven or unknown `advance` event; empty `mLModelRefList`; report without exactly one function ref |
 | (FastAPI validation) | 422 | request body outside the spec datatypes or enums |
@@ -394,13 +395,14 @@ NFO, MLMR and the webhook are faked in-process; the database is SQLite.
 | Test file | Covers | Count |
 |---|---|---|
 | `tests/test_main.py` | training / validation / emulation request, complete, cancel, suspend / resume, supersede, DME check, completion notifications; advance, governance records, operator gates, lifecycle history; runtime deploy / activate / scale / terminate and end-of-life; inference gating; NFO execution runtime create / teardown per job kind; MLMF subscribe / report / notify / unsubscribe and group retrain; feature groups; health | 100 |
+| `tests/test_advance_role.py` | `SEC-15.1`: an rApp token is 403 `ROLE_NOT_PERMITTED` on `advance` for a governance decision, `DEPRECATE`, `RETIRE` and an unknown event (the role comes before the event), with the lifecycle and the governance history unchanged; the console (`internal`) and a call without a role advance as before |
 | `tests/test_nrm.py` | TS 28.105 requests as real jobs, spec enum rejection, process flags and progress, chained training reports, testing requests, loading request / policy / process, inference-function gating, emulation reports, update request / report, 404 for unknown NRM objects | 21 `?total=false` on an NRM list and on the in-memory inference-report list. |
 | `tests/test_runtime.py` | `containerResources` beside the raw profile (package, explicit, inference, unsized has none, memory that is not a quantity is 422); runtime profile sizing (package, explicit, unknown package), per-mode profiles, stage timeouts, lazy expiry, suspended runs pausing, timeouts never forcing an illegal transition, 5 s inference default, clock restart on NRM resume | 13 |
 | `tests/test_training_progress_and_counts.py` | `GUI-9.8` epoch progress: no epochs and no ETA at first, the ETA from the pace so far (status, list and progress answers), epoch-only and partial reports, no ETA before the first epoch or once suspended, refused reports (empty, beyond the total, negative, not `IN_PROGRESS`), the metrics writeback records whole-number epochs and ignores others. `GUI-9.4` models by stage: counts per state largest first, none is an empty list | 9 |
 | `tests/test_steps_and_feature_groups.py` | training steps (start, forward progress, no going back, suspended and ended runs, how a run ended, a finished run, validation); feature-group DME job (created with the group, none without `enableDme`, a refusal means no group, duplicate name first, delete terminates it, delete without a job) | 13 |
 | `tests/test_statemachine.py` | both FSMs (full pipeline, no shortcuts, retrain re-entry, rollback, reject, terminal states, state counts), inference FSM, retrain propagation policies, `ADVANCEABLE_EVENTS`, `TRAINABLE_STATES` | 25 |
 
-The totals are counted as test functions (172); the suite reports 189 passed because some tests are parametrised.
+The totals are counted as test functions (174); the suite reports 222 passed because some tests are parametrised.
 
 ### 3.3 What is not covered here
 

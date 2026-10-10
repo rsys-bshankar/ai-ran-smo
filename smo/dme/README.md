@@ -9,7 +9,7 @@
 | Depends on (over R1) | RAN NF OAM (`POST /ran-nf-oam/config-jobs`, action path only); caller-registered callback URLs (producers, type subscribers, offer termination) |
 | Called by | rApps and the SDK `data` namespace; MDAF (checks `input_sources` against `GET /dme/data-jobs/{id}`); RAN NF OAM (registers PM types, ingests records into jobs); SA SMOS O1-CM handler (`POST /dme/actions`); rApp Management (producer deregistration); GUI BFF |
 | Database tables | `dme_producer`, `dme_type`, `dme_producer_type`, `dme_type_subscription`, `dme_delivery_schema`, `data_job`, `data_offer`, `data_record`, `dme_action_record` |
-| Unit tests | 100 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 112 passed (`tests/`, SQLite, standalone) |
 | Status | Done. `dme_delivery_schema` is defined but unused (see 2.8) |
 
 ## 1. High-level design (HLD)
@@ -76,7 +76,7 @@ Inference runs inside the rApp. O-RAN WG4 (O-RU M-plane YANG) is out of scope ap
 
 **Multi-vendor principle.** Every dataset, record and control operation DME brokers carries enough source identity that a multi-vendor, multi-Digital-Twin deployment never mixes data across producers. Data-model conformance is chosen per vendor (own model, the O-RAN WG5 / 3GPP model, or combined), never hard-coded; the registry that realises this is in RAN NF OAM (see its README and [call flow 21](../docs/call-flows/21-o1-vendor-onboarding.md)). DME's part is to keep the source identity attached (`sourceDomain`, `sourceContext` on types; `sourceContext` and `requestedBy` on actions) and to pass a refused write back to the caller.
 
-**Producers and types are separate, many-to-many.** The earlier single-table shape made a second producer for a type impossible. Now a second producer registering a known type, and a producer re-registering after a restart, both succeed. Deregistering a producer removes only the producer and its links: types and their jobs and offers survive, and a type left with no producer reads `DISABLED`. Only `DELETE /dme-types/{id}` removes a type, and only when no producer still supports it (`DME_TYPE_HAS_ACTIVE_PRODUCERS`, 409); that also deletes its jobs and offers. Registration notifies type subscribers only when the type is new, not when a producer joins it.
+**Producers and types are separate, many-to-many.** The earlier single-table shape made a second producer for a type impossible. Now a second producer registering a known type, and a producer re-registering after a restart, both succeed. Deregistering a producer removes only the producer and its links: types and their jobs and offers survive, and a type left with no producer reads `DISABLED`. Only `DELETE /dme-types/{id}` removes a type, and only when no producer still supports it (`DME_TYPE_HAS_ACTIVE_PRODUCERS`, 409); that also deletes its jobs and offers. Registration notifies type subscribers only when the type is new, not when a producer joins it. **Who may change a type (`SEC-15.10`).** Registering the definition a type already has (a second producer joining, the first one again) is open to every caller, as before. Registering a *different* definition (`typeName`, `dataProductionSchema`, `collectionSpec`, `sourceDomain` or `sourceContext`) of an existing type is 403 `DME_TYPE_NOT_OWNER` unless the caller is the one that registered it first (`registered_by`, compared with the invoker id the gateway vouches for), an `internal` caller (an SMO module or the operator's console; the GUI backend lets only an admin register a type) or a call that did not come through the gateway (no role). For a type from before revision `0036` the producers linked to it stand in for the first one. The check comes before the producer row is touched. Not covered: `producerId` is still the caller's own word, so a rApp can name another producer's id and replace that producer's callback URLs (the same finding class, not in this change).
 
 **Notifications.** Job push, type-change notifications and offer-termination notices are rows in the transactional outbox (`smo_shared.outbox`, `PR-MSG-1.5`): written in the same transaction as the change that caused them and sent right after it commits, so a crash between the commit and the send leaves a pending row instead of losing the notification, and a change that rolls back announces nothing. Delivery is at least once (a consumer may see one twice after a crash) and an unreachable destination never fails the primary call. Job stop (a DELETE) and health probing go straight through `smo_shared.webhook` (SSRF guard: http/https only, no loopback or link-local literals), the first because an outbox row carries only a POST body, the second because the answer is the point. Health probing is the exception in direction: a failed or non-2xx probe is the signal (`DISABLED`).
 
@@ -120,6 +120,7 @@ Cross-module references are bare UUIDs or strings; there are none to other modul
 | `data_production_schema` (JSON) | JSON Schema a job's `productionJobDefinition` must satisfy |
 | `collection_spec` (JSON, null) | |
 | `source_domain` (null), `source_context` (JSON, null) | provenance; `source_domain` is `LIVE_RAN` or `DIGITAL_TWIN` |
+| `registered_by` (null) | `SEC-15.10`, revision `0039`: the invoker id the gateway vouched for when the type was first registered (the `producerId` of the request when the call did not come through the gateway). NULL for a type registered before the revision |
 
 **`dme_producer_type`**: PK `(producer_id, dme_type_id)`; both FKs `ON DELETE CASCADE`.
 
@@ -179,7 +180,7 @@ All routes sit under `/dme`. Lists marked "paged" return `{items, total, limit, 
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
-| POST | `/production-capabilities` (201) | Register or re-register a producer and a type, and link them; body: `namespace, name, version, typeName, producerId, dataProductionSchema, collectionSpec?, producerHealthCallbackUrl, jobCallbackUrl, sourceDomain?, sourceContext?`. Returns `{registrationId}` (the type id). Notifies type subscribers if the type is new. | 422 `SCHEMA_VALIDATION_FAILED` (unknown `sourceDomain`) |
+| POST | `/production-capabilities` (201) | Register or re-register a producer and a type, and link them; body: `namespace, name, version, typeName, producerId, dataProductionSchema, collectionSpec?, producerHealthCallbackUrl, jobCallbackUrl, sourceDomain?, sourceContext?`. Returns `{registrationId}` (the type id). Notifies type subscribers if the type is new. | 422 `SCHEMA_VALIDATION_FAILED` (unknown `sourceDomain`); 403 `DME_TYPE_NOT_OWNER` (a different definition of a type another producer registered) |
 | GET | `/production-capabilities` | List producers (not paged) | |
 | GET | `/production-capabilities/{producer_id}` | Producer with `supportedTypeIds` | 404 `PRODUCER_NOT_FOUND` |
 | GET | `/production-capabilities/{producer_id}/status` | `{producerId, operationalState}` from a live health probe | 404 `PRODUCER_NOT_FOUND` |
@@ -262,6 +263,7 @@ ProblemDetails `title` / status (see [R1 API conventions](../docs/ARCHITECTURE.m
 | `DIGITAL_TWIN_INFERENCE_NOT_ELIGIBLE` | 422 | Job on a `DIGITAL_TWIN` type with stage `INFERENCE` (create or update) |
 | `DELIVERY_METHOD_NOT_OFFERED` | 409 | Unknown method; or a method no `DataOffer` for the type committed to (only checked when the type has an offer); offer lists a method outside the wire set |
 | `DME_TYPE_HAS_ACTIVE_PRODUCERS` | 409 | Delete of a type that still has a producer |
+| `DME_TYPE_NOT_OWNER` | 403 | `POST /production-capabilities` changes the definition of a type another producer registered, from a caller that is neither that producer nor `internal` (defined in `app/main.py`, not in `smo_shared.errors`) |
 | `DME_TYPE_VERSION_CONFLICT` | 409 | Used only for `POST /offers/{id}/notify` on an unknown offer (the registration conflict it was named for no longer exists, since registration is an upsert) |
 | `DATA_JOB_TARGET_IMMUTABLE` | 400 | `PUT /data-jobs` changes `dmeTypeId`, `consumerId` or `dataDeliveryMode` |
 | `PRODUCER_NOT_FOUND`, `DME_TYPE_NOT_FOUND`, `TYPE_SUBSCRIPTION_NOT_FOUND`, `DATA_JOB_NOT_FOUND`, `DATA_OFFER_NOT_FOUND`, `DME_ACTION_NOT_FOUND` | 404 | Unknown id on a read, update or ingest (deletes of unknown ids are silent 204s, except `DELETE /dme-types`) |
@@ -292,6 +294,7 @@ cd smo/dme && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | Test file | Covers | Count |
 |---|---|---|
 | `tests/test_scope.py` | `PR-SEC-10.7` (6): an unscoped caller asks RAN NF OAM nothing and sees every action; a scoped caller sees the actions all of whose elements are inside its claim (one element outside, or none named, hides the action), `total`, paging, the element list read in pages of 500; one by id is a 404 like an absent one; RAN NF OAM unable to answer is a 502 and shows nothing; a claim that could not be passed on shows nothing | 6 |
+| `tests/test_type_ownership.py` | `SEC-15.10` (6): a second rApp's different schema is 403 and the stored schema and owner are unchanged, a refused overwrite leaves the producer row alone, the same definition by another producer still joins (which then cannot change it), an `internal` caller and a call without a role overwrite, a rApp without an invoker id cannot, a type from before the owner was recorded is open to its linked producers only | 6 |
 | `tests/test_main.py` | Producer/type registry: registration, re-registration, second producer, discovery and `data_category` filter, deregistration keeping types, type deletion guard and cascade, producer status | 22 |
 | | Type status from producer health (unreachable, non-2xx, healthy, active job does not override) | 4 |
 | | Type subscriptions and notifications (CRUD, owner filter, registered / deregistered, none when no subscribers, unreachable subscriber) | 9 |
@@ -302,7 +305,7 @@ cd smo/dme && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | | Action mediation: forward and record, RAN NF OAM refusal surfaced, empty changes, unknown action, list filter, replayed `actionId` ignored | 6 |
 | | Health probe | 1 |
 | `tests/test_delivery_health.py` | `GUI-9.8` delivery health: no interval means no verdict, LATE two intervals after the last delivery and on time again after the next, a job that never delivered turns LATE, PUT declares or drops the interval, the `late` list filter both ways, a non-positive interval is 422 | 6 |
-| | Total | 91 |
+| | Total | 112 |
 
 ### 3.3 What is not covered here
 

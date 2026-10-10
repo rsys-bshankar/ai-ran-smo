@@ -66,6 +66,10 @@ class DMEType(Base):
     # of those fields individually.
     source_domain: Mapped[str | None] = mapped_column(String)
     source_context: Mapped[dict | None] = mapped_column(JSON)
+    # SEC-15.10: who registered the type first: the invoker id the gateway vouched for (an rApp's own id, or an SMO module's), else the `producerId` of the request when it did not
+    # come through the gateway. Only that caller (or an SMO module / the operator) may change the type's definition later. NULL on a row made before revision 0039: for those the
+    # producers linked to the type stand in for it (`main._may_redefine_type`).
+    registered_by: Mapped[str | None] = mapped_column(String)
 
     @property
     def dme_type_id_struct(self) -> dict:

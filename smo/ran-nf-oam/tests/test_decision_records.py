@@ -109,7 +109,7 @@ def test_an_approved_job_names_the_approver_and_the_approval(client, fleet):
     """A job made from an approved request has an APPROVED record that names the approver, the approval and the original context."""
     client.put("/rapp-approval-policy/es-client", json={"requestedBy": "admin"})
     approval_id = _write(client).json()["approvalId"]
-    approved = client.post(f"/rapp-approvals/{approval_id}/approve", headers=GUI, json={"decidedBy": "smo-gui:alice"}).json()
+    approved = client.post(f"/rapp-approvals/{approval_id}/approve", headers={**GUI, "X-R1-Acting-User": "smo-gui:alice"}, json={}).json()
     [record] = _records(client, job_id=approved["jobId"])["items"]
     assert record["disposition"] == "APPROVED" and record["approvedBy"] == "smo-gui:alice" and record["approvalId"] == approval_id
     assert record["decidedAt"] and record["modelVersion"] == CONTEXT["modelVersion"] and record["rationale"] == CONTEXT["rationale"]
@@ -120,7 +120,7 @@ def test_a_rejected_request_leaves_a_record_with_no_job(client, fleet):
     client.put("/rapp-approval-policy/es-client", json={"requestedBy": "admin"})
     approval_id = _write(client).json()["approvalId"]
     assert _records(client)["total"] == 0                                                  # waiting is not yet a decision
-    client.post(f"/rapp-approvals/{approval_id}/reject", headers=GUI, json={"decidedBy": "smo-gui:alice", "reason": "no"})
+    client.post(f"/rapp-approvals/{approval_id}/reject", headers={**GUI, "X-R1-Acting-User": "smo-gui:alice"}, json={"reason": "no"})
     [record] = _records(client, approval_id=approval_id)["items"]
     assert record["disposition"] == "REJECTED" and record["jobId"] is None and record["approvedBy"] is None and record["decidedBy"] == "smo-gui:alice"
 

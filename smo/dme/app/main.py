@@ -23,6 +23,8 @@ from smo_shared.health import database_check, install_health, sme_token_check
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
+from smo_shared.invoker import invoker_id
+from smo_shared.roles import ROLE_INTERNAL, role_of
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate, paginate_list
@@ -128,8 +130,36 @@ class TypeSubscriptionRequest(BaseModel):
     owner: str
 
 
+DME_TYPE_NOT_OWNER = ("DME_TYPE_NOT_OWNER", 403)       # kept here, not in smo_shared.errors, as ran-nf-oam keeps its approval codes
+
+
+def _redefines(t: DMEType, body: DMETypeRegistration) -> bool:
+    """True when registering `body` would change the stored definition of the existing type `t` (its name, schema, collection spec or source), as opposed to re-stating it."""
+    return (t.type_name, t.data_production_schema, t.collection_spec, t.source_domain, t.source_context) != (
+        body.typeName, body.dataProductionSchema, body.collectionSpec, body.sourceDomain, body.sourceContext)
+
+
+def _may_redefine_type(db: Session, request: Request, t: DMEType) -> bool:
+    """Whether the caller may change the definition of the existing type `t` (SEC-15.10).
+
+    Allowed: a call that did not come through the gateway (no role: a test or an in-process call, trusted as elsewhere in this module); an SMO module or the operator's console
+    (role `internal`: the GUI BFF lets only an admin register a type, and RAN NF OAM registers its own KPI types); and the caller that registered the type first
+    (`registered_by` equals the invoker id the gateway vouched for). Any other rApp is refused. For a type registered before revision 0039 (`registered_by` is NULL) the
+    producers linked to the type stand in for the first one, which is the best this build knows.
+    """
+    role = role_of(request)
+    if role is None or role == ROLE_INTERNAL:
+        return True
+    caller = invoker_id(request)
+    if not caller:
+        return False
+    if t.registered_by is not None:
+        return t.registered_by == caller
+    return db.get(DMEProducerType, (caller, t.dme_type_id)) is not None
+
+
 @app.post("/production-capabilities", status_code=201)
-def register_dme_type(body: DMETypeRegistration, db: Session = Depends(get_session)):
+def register_dme_type(body: DMETypeRegistration, request: Request, db: Session = Depends(get_session)):
     """HISTORY.md §7 — DME vs. the real ICS API, Producer/Type conflation
     finding, closed: ICS's own `PUT .../info-producers/{id}` and
     `PUT .../info-types/{id}` are two separate, idempotent create-or-update
@@ -141,8 +171,18 @@ def register_dme_type(body: DMETypeRegistration, db: Session = Depends(get_sessi
     type identity, or the same producer re-registering after a restart,
     both succeed instead of the old global `DME_TYPE_VERSION_CONFLICT`.
     """
+    # Route notes. 422 for an unknown `sourceDomain`; then, for a type that is already registered (SEC-15.10), 403 `DME_TYPE_NOT_OWNER` when the request would change its
+    # definition (`typeName`, `dataProductionSchema`, `collectionSpec`, `sourceDomain`, `sourceContext`) and the caller is not allowed to (`_may_redefine_type`); the same
+    # definition by a second producer, or by the first one again, is the join / idempotent re-registration it always was. The check comes before the producer row is touched, so a
+    # refusal changes nothing. A new type records its first caller in `registered_by`. Order after that, as before: producer upsert, type upsert, link, `REGISTERED` notice (new
+    # type only), one commit.
     if body.sourceDomain is not None and body.sourceDomain not in SOURCE_DOMAINS:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"unknown sourceDomain {body.sourceDomain!r}")
+
+    existing = db.scalar(select(DMEType).where(DMEType.namespace == body.namespace, DMEType.name == body.name, DMEType.version == body.version))
+    if existing is not None and _redefines(existing, body) and not _may_redefine_type(db, request, existing):
+        raise framework_error(DME_TYPE_NOT_OWNER, detail=f"the type {body.namespace}/{body.name}/{body.version} was registered by another producer: only that producer, "
+                                                          "an SMO module or the operator may change its definition")
 
     producer = db.get(DMEProducer, body.producerId)
     if producer is None:
@@ -156,7 +196,7 @@ def register_dme_type(body: DMETypeRegistration, db: Session = Depends(get_sessi
     t = db.scalar(select(DMEType).where(DMEType.namespace == body.namespace, DMEType.name == body.name, DMEType.version == body.version))
     is_new_type = t is None
     if t is None:
-        t = DMEType(namespace=body.namespace, name=body.name, version=body.version)
+        t = DMEType(namespace=body.namespace, name=body.name, version=body.version, registered_by=invoker_id(request) or body.producerId)
         db.add(t)
     t.type_name = body.typeName
     t.data_production_schema = body.dataProductionSchema

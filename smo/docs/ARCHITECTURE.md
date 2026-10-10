@@ -265,7 +265,7 @@ R1 Termination introspects every bearer token and **vouches** for who is calling
 | `X-R1-Role` | `internal` (an SMO module or the operator's GUI backend, registered with the enrollment secret) or `rapp` (every other invoker) | SME's `role` (`PR-SEC-14`) |
 | `X-R1-Scope` | The caller's **scope claim**, `{"regions": [...], "tenants": [...]}` in compact JSON; absent: unscoped | SME's `authz_scope` (`PR-SEC-10`) |
 
-An SMO module that acts for an rApp (DME writes a config job for it) says so in `X-R1-On-Behalf-Of`, with the rApp's claim in `X-R1-On-Behalf-Scope`; `R1Client` adds both by itself, and the gateway forwards them only from an `internal` caller. A module reads the effective caller with `invoker_id(request)` and `scope_of(request.headers)`.
+An SMO module that acts for an rApp (DME writes a config job for it) says so in `X-R1-On-Behalf-Of`, with the rApp's claim in `X-R1-On-Behalf-Scope`; `R1Client` adds both by itself, and the gateway forwards them only from an `internal` caller. A module reads the effective caller with `invoker_id(request)` and `scope_of(request.headers)`. The operator's console calls every module with one SMO token, so for a decision that must be a named person's (the approval of an rApp's action) it also sends `X-R1-Acting-User: smo-gui:<username>`, which the gateway forwards from an `internal` caller only and a module reads with `acting_user(request)`; RAN NF OAM takes the decider of an approval from it and not from the request body (`SEC-15.8`).
 
 **What each layer decides.**
 

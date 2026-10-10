@@ -19,6 +19,11 @@ is dropped, so an rApp cannot pose as another), and a backend reads the effectiv
                              rather than for it, such as setting the rApp's own limits when the rApp reports that it is up (a module acting "for" the rApp there would be
                              refused by RAN NF OAM's rule that a caller cannot change its own limit)
   apply_invoker_context(app) installs the middleware that records it; `apply_correlation_id` calls it, so every service already has it
+
+**The person behind an operator's call.** The operator's console (GUI BFF) calls every module with one SMO token, so the invoker id of all its calls is the console's. For the
+few decisions that must be a named person's (the two-person approval of an rApp's action, SEC-15.8) the console says who is signed in: `X-R1-Acting-User`
+(`smo-gui:<username>`). R1 Termination forwards it only from an `internal` caller and drops any value another caller sent, as it does `X-R1-On-Behalf-Of`, so a module may read it with
+`acting_user` when the role is `internal`. It is a different header from On-Behalf-Of because that one names an rApp and the safeguards (kill switch, limits, ownership, scope) key on it.
 """
 
 from contextlib import contextmanager
@@ -31,6 +36,7 @@ from .roles import ROLE_HEADER, ROLE_INTERNAL, ROLE_RAPP
 
 INVOKER_ID_HEADER = "X-R1-Invoker-Id"
 ON_BEHALF_OF_HEADER = "X-R1-On-Behalf-Of"
+ACTING_USER_HEADER = "X-R1-Acting-User"
 
 _current_originator: ContextVar[str | None] = ContextVar("_current_originator", default=None)
 
@@ -52,6 +58,17 @@ def invoker_id(request: Request) -> str | None:
         if behalf:
             return behalf
     return request.headers.get(INVOKER_ID_HEADER) or None
+
+
+def acting_user(request: Request) -> str | None:
+    """The person the operator's console says it is acting for (`X-R1-Acting-User`), only when the caller's role is `internal`; None otherwise.
+
+    R1 Termination forwards the header from an `internal` caller alone, so behind the gateway a value here is the console's. The role is checked again here so that a request
+    that carries the header without the `internal` role (a test, a direct call) is not believed.
+    """
+    if request.headers.get(ROLE_HEADER) != ROLE_INTERNAL:
+        return None
+    return request.headers.get(ACTING_USER_HEADER, "").strip() or None
 
 
 def get_originator() -> str | None:

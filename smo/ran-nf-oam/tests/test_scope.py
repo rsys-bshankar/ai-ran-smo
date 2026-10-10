@@ -239,7 +239,7 @@ def _hold(client):
 
 
 def _approve(client, approval_id):
-    return client.post(f"/rapp-approvals/{approval_id}/approve", headers=GUI, json={"decidedBy": "smo-gui:alice"})
+    return client.post(f"/rapp-approvals/{approval_id}/approve", headers={**GUI, "X-R1-Acting-User": "smo-gui:alice"}, json={"decidedBy": "smo-gui:alice"})
 
 
 def test_a_request_is_checked_when_it_is_made_and_the_claim_is_kept_with_it(client, places):

@@ -445,16 +445,15 @@ of what the routes accept, PR 4 = clients, tooling and migrations; "none yet" me
 
 | ID | Finding | Where | Planned PR |
 |---|---|---|---|
-| SEC-15.1 | An rApp token can call `POST /aimgf/models/{id}/advance` (model-advance): the admin check is made only in the GUI BFF, and the role allow-list (`RAPP_MAY_CHANGE`) lists `advance` for an rApp | `aimgf/app`, `shared/smo_shared/roles.py`, `gui-bff` | PR 2 |
 | SEC-15.2 | The AIMgF feature-group token is stored and returned in clear text | `aimgf/app` (feature groups) | PR 3 |
-| SEC-15.3 | AIMgF runtime routes (deploy, activate, inference) do not check MLMR for the model (whether it exists, its phase, who owns it) | `aimgf/app` | PR 2 |
-| SEC-15.4 | RAN NF OAM config-job `kpi-check`, `continue`, `halt`, `abort` and the software-update routes lack the ownership and scope checks the other config-job routes have | `ran-nf-oam/app` | PR 2 |
+| SEC-15.3 | AIMgF runtime routes (deploy, activate, inference) do not check MLMR for the model (whether it exists, its phase, who owns it) | `aimgf/app` | PR 3 |
 | SEC-15.5 | `build_edit_config_rpc` builds the NETCONF `edit-config` XML without escaping values | `ran-nf-oam/app` (NETCONF client) | PR 3 |
 | SEC-15.6 | MSAC `check_credential` is never called, and compares without a constant-time function | `ran-nf-oam/app` (MSAC) | PR 3 |
-| SEC-15.7 | Vendor models: get and delete are not filtered by the caller's scope | `sme/app` | PR 2 |
-| SEC-15.8 | Two-person approval trusts `decidedBy` from the client instead of the authenticated caller | `ran-nf-oam/app` (approvals) | PR 3 |
-| SEC-15.9 | rApp Management `report_fault` and `set_config` do not check that the instance is the caller's own | `rapp-mgmt/app` | PR 2 |
-| SEC-15.10 | DME: `register_dme_type` can be overwritten by any caller; `mediate_action` leaves the action in `FORWARDED` when the forward fails; an unregistered `dmeTypeId` is accepted | `dme/app` | PR 2 (overwrite), PR 3 (the other two) |
+| SEC-15.10 | DME: `mediate_action` leaves the action in `FORWARDED` when the forward fails; an unregistered `dmeTypeId` is accepted (the overwrite of a type is closed, `HISTORY.md` "PR-SEC-15 (part 2)") | `dme/app` | PR 3 |
+| SEC-15.1b | The gateway's allow-list (`roles.RAPP_MAY_CHANGE`, `/aimgf`) still names `POST /models/{id}/advance`, so the SDK's `advance_model_lifecycle` reaches AIMgF and is refused there; remove the entry and retire the method for rApps | see `HISTORY.md` "PR-SEC-15 (part 2)" | The shared-library hardening change merged (it edits `roles.py`) |
+| SEC-15.8b | The deprecated body field `decidedBy` of `POST /rapp-approvals/{id}/approve|reject` is accepted for one minor release; drop it. Other places that take a person from the body or a query (AIMgF's `decided_by`, `requestedBy` forced by the console) can read `X-R1-Acting-User` the same way | see `HISTORY.md` "PR-SEC-15 (part 2)" | A release |
+| SEC-15.10b | DME `producerId` is the caller's own word: a rApp can name another producer's id and replace that producer's callback URLs on `POST /production-capabilities`. A check that an rApp's `producerId` is its own invoker id would break producers that register under a name of their own (RAN NF OAM) | see `HISTORY.md` "PR-SEC-15 (part 2)" | A decision on how SMO modules name themselves |
+| SEC-15.7b | `DELETE` and `PUT /vendor-capabilities/{vendor}` act on a registry entry that is global: a scoped caller whose elements use a vendor can change what the elements of other tenants of that vendor are checked against | see `HISTORY.md` "PR-SEC-15 (part 2)" | A decision |
 | SEC-15.11 | GUI-BFF login lockout is keyed by user name only, so one attacker locks out a user from anywhere and a spread attack is not slowed | `gui-bff/app` | PR 3 |
 | SEC-15.12 | The audit record's path includes query values (which can carry secrets or personal data) | `shared/smo_shared/audit.py`, `r1-termination` | PR 3 |
 | SEC-15.13 | Java SDK registration retries without an idempotency key, so a retry after a lost answer can register twice | `sdk-java/` | PR 4 |

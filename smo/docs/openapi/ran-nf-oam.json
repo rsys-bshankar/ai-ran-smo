@@ -83,10 +83,18 @@
       "ApprovalDecisionRequest": {
         "properties": {
           "decidedBy": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Decidedby",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "deprecated": true,
+            "title": "Decidedby"
           },
           "reason": {
             "anyOf": [
@@ -101,9 +109,6 @@
             "title": "Reason"
           }
         },
-        "required": [
-          "decidedBy"
-        ],
         "title": "ApprovalDecisionRequest",
         "type": "object"
       },
@@ -18770,7 +18775,7 @@
     },
     "/rapp-approvals/{approval_id}/approve": {
       "post": {
-        "description": "AI-11.2: approve a waiting request. The safeguards are checked again now (a kill switch thrown while it waited refuses it: 403 `RAPP_KILLED`, the\nrequest is closed REFUSED), then MSAC, the schema check and the dispatch run as for any write, and the job is made from the request as the rApp\nsent it. 200 with the request (now APPROVED, `jobId`) and the job's status. 404, 403 (an rApp, or the requester), 409 (not pending).\n\nA request parked under a policy of `requiredApprovals: 2` needs two different people: the first approval is recorded and the request stays PENDING (200,\n`jobStatus` null, the approvals so far in `approvals`), a second approval by the same person is 409 `APPROVAL_ALREADY_GIVEN`, and the second person's approval\nruns everything above. The requester's own approval never counts (403 `APPROVAL_SELF_DECISION`). The first approval checks nothing and writes nothing.",
+        "description": "AI-11.2: approve a waiting request. The safeguards are checked again now (a kill switch thrown while it waited refuses it: 403 `RAPP_KILLED`, the\nrequest is closed REFUSED), then MSAC, the schema check and the dispatch run as for any write, and the job is made from the request as the rApp\nsent it. 200 with the request (now APPROVED, `jobId`) and the job's status. 404, 403 (an rApp, or the requester), 409 (not pending).\n\nA request parked under a policy of `requiredApprovals: 2` needs two different people: the first approval is recorded and the request stays PENDING (200,\n`jobStatus` null, the approvals so far in `approvals`), a second approval by the same person is 409 `APPROVAL_ALREADY_GIVEN`, and the second person's approval\nruns everything above. The requester's own approval never counts (403 `APPROVAL_SELF_DECISION`). The first approval checks nothing and writes nothing.\n\nWho decides is the signed-in user the gateway vouches for (the operator console's `X-R1-Acting-User`), not the body: a call from an SMO module with no such user is 403\n`APPROVER_IDENTITY_REQUIRED`, and the body's `decidedBy`, deprecated and optional, is accepted only when it names that same user (else 403 `APPROVER_IDENTITY_MISMATCH`).",
         "operationId": "approve_action_rapp_approvals__approval_id__approve_post",
         "parameters": [
           {
@@ -18909,7 +18914,7 @@
     },
     "/rapp-approvals/{approval_id}/reject": {
       "post": {
-        "description": "AI-11.2: reject a waiting request. Nothing is written; the rApp reads the outcome (`status` REJECTED, the reason) from the request. 404, 403, 409 as for approve.",
+        "description": "AI-11.2: reject a waiting request. Nothing is written; the rApp reads the outcome (`status` REJECTED, the reason) from the request. 404, 403, 409 as for approve, and the decider is taken from the gateway in the same way.",
         "operationId": "reject_action_rapp_approvals__approval_id__reject_post",
         "parameters": [
           {

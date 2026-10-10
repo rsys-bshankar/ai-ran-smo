@@ -15,7 +15,7 @@ transactional outbox (`smo_shared.outbox`, PR-MSG-1.7), never directly from a ro
 
 Owns: the model and runtime lifecycle state, the job tables, governance and audit records, MLMF subscriptions and feature groups (`models.py`). Does not own: model
 identity and artifacts (MLMR), where and how a workload runs (NFO), the deploy-request gate and node-group decision (MLLF), who may call what (R1 Termination and
-the roles in `smo_shared.roles`; this module has no RBAC, the GUI BFF enforces role tiers).
+the roles in `smo_shared.roles`; this module has no RBAC of its own beyond refusing an rApp on `POST /models/{id}/advance`, the GUI BFF enforces the role tiers).
 
 Before editing: (1) The docstring of a route function and of a request model is published in `docs/openapi/aimgf.json`; changing one makes
 `tests_integration/test_openapi_specs.py` fail until `scripts/generate_openapi_specs.py` is rerun, which is why maintainer notes for routes are `#` blocks. (2)
@@ -46,6 +46,7 @@ from smo_shared.runtime_resources import QUANTITY_PATTERN, container_resources
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
+from smo_shared.roles import ROLE_RAPP, role_of
 from smo_shared.statemachine import IllegalTransition
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
@@ -1216,7 +1217,7 @@ _JOB_ROUTE_FOR_EVENT = {
 
 
 @app.post("/models/{model_id}/advance")
-def advance_model_lifecycle(model_id: uuid.UUID, event: str, decided_by: str | None = None, rationale: str | None = None,
+def advance_model_lifecycle(model_id: uuid.UUID, event: str, request: Request, decided_by: str | None = None, rationale: str | None = None,
                              db: Session = Depends(get_session)):
     """Fires the ModelLifecycle events that have no job behind them
     (`ADVANCEABLE_EVENTS`): the eight governance decisions
@@ -1236,11 +1237,16 @@ def advance_model_lifecycle(model_id: uuid.UUID, event: str, decided_by: str | N
     RuntimeLifecycle REQUEST_TERMINATION/TERMINATION_COMPLETE), when one
     is deployed. DEPRECATE leaves a live runtime serving (call flow 26).
     """
-    # Route notes. `event`, `decided_by` and `rationale` are query parameters. Order: an unknown event name (422 `SCHEMA_VALIDATION_FAILED`, the message lists
+    # Route notes. `event`, `decided_by` and `rationale` are query parameters. Order: a caller with the rApp role (`X-R1-Role: rapp`, stamped by R1 Termination) is refused with
+    # 403 `ROLE_NOT_PERMITTED` before anything else is read (SEC-15.1): governing a model and ending its life are an operator's decisions (the GUI BFF's admin and operator tiers), so
+    # an rApp must not decide for itself; an SMO module or the operator's console (role `internal`) and a call that did not come through the gateway (no role) are let through, as
+    # in the other modules. Then: an unknown event name (422 `SCHEMA_VALIDATION_FAILED`, the message lists
     # the accepted events); a job-driven event (422, naming the job route from `_JOB_ROUTE_FOR_EVENT`); the model exists (404 `MODEL_NOT_FOUND`);
     # `_fire_model_event` (422 `GOVERNANCE_DECIDER_REQUIRED`, 409 `LIFECYCLE_ILLEGAL_TRANSITION`); for RETIRE of a model whose runtime is DEPLOYMENT_REQUESTED,
     # DEPLOYED or ACTIVE, `_terminate_runtime` (NFO delete) in the same request; then one commit. `decided_by` is whatever the caller sends and is recorded as
     # the decider: it is not checked against the authenticated caller here, and who may call this route is decided at the gateway and in the GUI BFF.
+    if role_of(request) == ROLE_RAPP:
+        raise framework_error(FrameworkError.ROLE_NOT_PERMITTED, detail="an rApp cannot advance a model's lifecycle: governance and end-of-life decisions are an operator's")
     try:
         ev = ModelLifecycleEvent(event)
     except ValueError as exc:

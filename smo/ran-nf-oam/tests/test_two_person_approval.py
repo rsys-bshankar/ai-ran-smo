@@ -53,11 +53,13 @@ def _park(client, value=25):
 
 
 def _approve(client, approval_id, by=ALICE, **extra):
-    return client.post(f"/rapp-approvals/{approval_id}/approve", headers=GUI, json={"decidedBy": by, **extra})
+    """Approves as `by`: the console says so in `X-R1-Acting-User` (the decider, SEC-15.8) and the deprecated body field repeats it."""
+    return client.post(f"/rapp-approvals/{approval_id}/approve", headers={**GUI, "X-R1-Acting-User": by}, json={"decidedBy": by, **extra})
 
 
 def _reject(client, approval_id, by=ALICE, **extra):
-    return client.post(f"/rapp-approvals/{approval_id}/reject", headers=GUI, json={"decidedBy": by, **extra})
+    """Rejects as `by`, the same way as `_approve`."""
+    return client.post(f"/rapp-approvals/{approval_id}/reject", headers={**GUI, "X-R1-Acting-User": by}, json={"decidedBy": by, **extra})
 
 
 def _view(client, approval_id):
@@ -168,7 +170,7 @@ def test_the_requesters_own_approval_never_counts_and_a_refused_try_changes_noth
     for who in ("es-rapp", "es-client", "ES-RAPP", " Es-Client "):
         resp = _approve(client, approval_id, who)
         assert resp.status_code == 403 and resp.json()["detail"]["title"] == "APPROVAL_SELF_DECISION", who
-    as_the_rapp_itself = client.post(f"/rapp-approvals/{approval_id}/approve", headers={**GUI, "X-R1-Invoker-Id": "es-client"}, json={"decidedBy": ALICE})
+    as_the_rapp_itself = client.post(f"/rapp-approvals/{approval_id}/approve", headers={**GUI, "X-R1-Invoker-Id": "es-client", "X-R1-Acting-User": ALICE}, json={"decidedBy": ALICE})
     assert as_the_rapp_itself.status_code == 403
     view = _view(client, approval_id)
     assert view["status"] == "PENDING" and view["approvals"] == []

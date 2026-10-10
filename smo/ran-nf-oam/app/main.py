@@ -49,7 +49,7 @@ from smo_shared.outbox import enqueue
 from smo_shared.webhook import is_safe_webhook_destination
 from smo_shared.versioning import install_concurrency_handler
 from smo_shared.idempotency import idempotent
-from smo_shared.invoker import ON_BEHALF_OF_HEADER, invoker_id
+from smo_shared.invoker import ON_BEHALF_OF_HEADER, acting_user, invoker_id
 from smo_shared.roles import ROLE_INTERNAL, ROLE_RAPP, role_of
 from smo_shared import scope as authz_scope
 from smo_shared import audit
@@ -1292,6 +1292,26 @@ def _job_elements(db: Session, job_id: uuid.UUID) -> list[str]:
     return list(db.scalars(select(WriteConfigSubChange.managed_element_ref).where(WriteConfigSubChange.job_id == job_id).distinct()).all())
 
 
+def _job_in_reach(db: Session, request: Request, job_id: uuid.UUID, requested_by: str | None) -> WriteConfigJob:
+    """The configuration job `job_id` when the caller may act on it, else the error the other job routes answer with (SEC-15.4).
+
+    404 `CONFIG_JOB_NOT_FOUND` for an unknown job and for another rApp's job when the caller is a scoped rApp (PR-SEC-10.11: it is not the caller's to act on, nor to know
+    of, and the two answers are the same); then 403 `SCOPE_DENIED` when the job wrote to an element outside the caller's scope (PR-SEC-10.4: acting on a job touches every
+    element it wrote to; the detail names none of them), recorded as a safeguard refusal when the caller is known. An unscoped caller and an SMO module on its own account are
+    asked nothing. The ownership test comes first so a caller learns nothing about a job that is not its own; the job's state is checked by the caller after this.
+    """
+    job = db.get(WriteConfigJob, job_id)
+    if job is None or not _job_owned(db, request, job):
+        raise framework_error(FrameworkError.CONFIG_JOB_NOT_FOUND, detail=f"no configuration job {job_id}")
+    if scoping.denied_refs(db, scoping.request_scope(request), _job_elements(db, job_id)):
+        error = scoping.scope_denied("the job wrote to managed elements outside the caller's scope")
+        caller = invoker_id(request)
+        if caller:
+            _refuse(db, caller, requested_by, error)
+        raise error
+    return job
+
+
 def _rollback_plan(db: Session, job: WriteConfigJob, elements: set[str] | None = None) -> tuple[list[dict], dict, list[str]]:
     """(changes that undo the job, in reverse order; the values each target should hold now if nothing touched it since (None: absent);
     problems that make an undo impossible). Only sub-changes that were applied, and only what the snapshots recorded, can be undone. `elements`
@@ -1369,17 +1389,9 @@ def rollback_configuration_job(job_id: uuid.UUID, body: RollbackRequest, request
     """MGT-1.6: undo a job with a new write job built from its snapshots (reverse order, the recorded before values), which goes through MSAC,
     the schema check and dispatch like any other write: `requestedBy` is the actor and the new job names `rollbackOf`. MGT-1.7: if what the job
     wrote has been changed since, 409 `CONFIG_CHANGED_SINCE` unless `force`; `dryRun` returns the plan and the differences without writing."""
-    job = db.get(WriteConfigJob, job_id)
-    if job is None or not _job_owned(db, request, job):         # PR-SEC-10.11: another rApp's job is not the caller's to undo, nor to know of: 404, before the scope is asked
-        raise framework_error(FrameworkError.CONFIG_JOB_NOT_FOUND, detail=f"no configuration job {job_id}")
-    # PR-SEC-10.4: undoing a job writes to every element it wrote to, so every one of them must be inside the caller's scope (a dry run too). The detail names none
-    # of them: the caller did not send them.
-    if scoping.denied_refs(db, scoping.request_scope(request), _job_elements(db, job_id)):
-        error = scoping.scope_denied("the job wrote to managed elements outside the caller's scope")
-        caller = invoker_id(request)
-        if caller:
-            _refuse(db, caller, body.requestedBy, error)
-        raise error
+    # PR-SEC-10.11 and PR-SEC-10.4: another rApp's job is a 404, and undoing a job writes to every element it wrote to, so every one of them must be inside the caller's
+    # scope (a dry run too): 403 (`_job_in_reach`)
+    job = _job_in_reach(db, request, job_id, body.requestedBy)
     changes, expected, problems = _rollback_plan(db, job)
     if problems:
         raise framework_error(FrameworkError.ROLLBACK_NOT_POSSIBLE, detail="; ".join(problems))
@@ -1414,16 +1426,16 @@ class KpiCheckRequest(BaseModel):
 
 
 @app.post("/config-jobs/{job_id}/kpi-check")
-def check_configuration_job_kpi(job_id: uuid.UUID, body: KpiCheckRequest, db: Session = Depends(get_session)):
+def check_configuration_job_kpi(job_id: uuid.UUID, body: KpiCheckRequest, request: Request, db: Session = Depends(get_session)):
     """AI-10.5: did a KPI regress where this job wrote? For each element the job applied changes to, the KPI over the window before the job
     (`baselineMinutes`) is compared with the KPI over the window from the job on (`observationMinutes`); a worse result than
     `maxRegressionPercent` is REGRESSED. With `revert`, the regressed elements are rolled back with the rollback of MGT-1.6 (a new job,
     MSAC, the changed-since guard); where the data is too thin the verdict is INSUFFICIENT_DATA and nothing is reverted. This is a check
     to call, by an rApp, the SMO's autonomy or a scheduler, once the observation window has some data. A job that declared a `kpiGuard`
     is checked by the worker without anyone calling this (`run_due_kpi_guards`)."""
-    job = db.get(WriteConfigJob, job_id)
-    if job is None:
-        raise framework_error(FrameworkError.CONFIG_JOB_NOT_FOUND, detail=f"no configuration job {job_id}")
+    # SEC-15.4: the same ownership and scope rules as the rollback, because a `revert` writes to the job's elements: 404 `CONFIG_JOB_NOT_FOUND` for an unknown job or another
+    # scoped rApp's, 403 `SCOPE_DENIED` for a job that wrote outside the caller's scope (`_job_in_reach`). The worker's own check (`run_due_kpi_guards`) does not come through here.
+    job = _job_in_reach(db, request, job_id, body.requestedBy)
     return _kpi_check(db, job, body)
 
 
@@ -1519,12 +1531,12 @@ class WaveActionRequest(BaseModel):
     force: bool = False                       # continue: go on although the pause has not elapsed
 
 
-def _halted_job(db: Session, job_id: uuid.UUID, event: JobEvent) -> WriteConfigJob:
-    """The job with this id if it is HALTED: 404 CONFIG_JOB_NOT_FOUND for an unknown id, 409 (illegal transition for `event`) for a job in any other state.
+def _halted_job(db: Session, request: Request, job_id: uuid.UUID, event: JobEvent, requested_by: str | None) -> WriteConfigJob:
+    """The job with this id if the caller may act on it and it is HALTED: 404 CONFIG_JOB_NOT_FOUND for an unknown id or another scoped rApp's job, 403 SCOPE_DENIED for a job
+    that wrote outside the caller's scope (`_job_in_reach`, SEC-15.4), 409 (illegal transition for `event`) for a job in any other state. The state is checked last, so a caller
+    that may not act on the job cannot learn it.
     """
-    job = db.get(WriteConfigJob, job_id)
-    if job is None:
-        raise framework_error(FrameworkError.CONFIG_JOB_NOT_FOUND, detail=f"no configuration job {job_id}")
+    job = _job_in_reach(db, request, job_id, requested_by)
     if job.status != JobState.HALTED:
         raise illegal_transition_error(IllegalTransition(JobState(job.status), event), f"configuration job {job_id}")
     return job
@@ -1542,10 +1554,11 @@ def _resume(db: Session, job: WriteConfigJob) -> dict:
 
 
 @app.post("/config-jobs/{job_id}/continue", status_code=202)
-def continue_configuration_job(job_id: uuid.UUID, body: WaveActionRequest, db: Session = Depends(get_session)):
+def continue_configuration_job(job_id: uuid.UUID, body: WaveActionRequest, request: Request, db: Session = Depends(get_session)):
     """MGT-5.4: run the next wave of a halted job. A job held by its wave pause goes on only once the pause has elapsed, unless `force`; after a
     failed gate or an operator's halt, calling this is the operator's decision to go on."""
-    job = _halted_job(db, job_id, JobEvent.RESUME)
+    # SEC-15.4: 404 for an unknown job or another scoped rApp's, 403 `SCOPE_DENIED` for a job that wrote outside the caller's scope, then 409 when it is not HALTED (`_halted_job`).
+    job = _halted_job(db, request, job_id, JobEvent.RESUME, body.requestedBy)
     _refuse_if_killed(db, job.invoker_id, body.requestedBy)               # AI-10.4: a stopped rApp's job does not go on to its next wave
     if job.halted_reason == "WAVE_PAUSE" and job.next_wave_at and as_utc(job.next_wave_at) > datetime.datetime.now(datetime.UTC) and not body.force:
         raise framework_error(FrameworkError.WAVE_PAUSE_NOT_ELAPSED,
@@ -1555,10 +1568,11 @@ def continue_configuration_job(job_id: uuid.UUID, body: WaveActionRequest, db: S
 
 
 @app.post("/config-jobs/{job_id}/halt")
-def halt_configuration_job(job_id: uuid.UUID, body: WaveActionRequest, db: Session = Depends(get_session)):
+def halt_configuration_job(job_id: uuid.UUID, body: WaveActionRequest, request: Request, db: Session = Depends(get_session)):
     """MGT-5.4: stop a job that is waiting between waves from going on by itself (a pause becomes an operator halt). A job already halted for
     another reason stays as it is. A job is only ever between waves while HALTED, so any other state is 409."""
-    job = _halted_job(db, job_id, JobEvent.HALT)
+    # SEC-15.4: 404 for an unknown job or another scoped rApp's, 403 `SCOPE_DENIED` for a job that wrote outside the caller's scope, then 409 when it is not HALTED (`_halted_job`).
+    job = _halted_job(db, request, job_id, JobEvent.HALT, body.requestedBy)
     if job.halted_reason == "WAVE_PAUSE":
         job.halted_reason, job.halted_detail, job.next_wave_at = "OPERATOR_HALT", f"halted by {body.requestedBy}", None
         db.commit()
@@ -1566,10 +1580,11 @@ def halt_configuration_job(job_id: uuid.UUID, body: WaveActionRequest, db: Sessi
 
 
 @app.post("/config-jobs/{job_id}/abort")
-def abort_configuration_job(job_id: uuid.UUID, body: WaveActionRequest, db: Session = Depends(get_session)):
+def abort_configuration_job(job_id: uuid.UUID, body: WaveActionRequest, request: Request, db: Session = Depends(get_session)):
     """MGT-5.4: end a halted job here. The waves that have run stay as they are (undo them with the rollback route); the waves that have not run
     are rejected `WAVE_NOT_RUN`, and the job ends `PARTIAL_SUCCESS` or `FAILED` from what it did."""
-    job = _halted_job(db, job_id, JobEvent.AGGREGATE_MIXED)
+    # SEC-15.4: 404 for an unknown job or another scoped rApp's, 403 `SCOPE_DENIED` for a job that wrote outside the caller's scope, then 409 when it is not HALTED (`_halted_job`).
+    job = _halted_job(db, request, job_id, JobEvent.AGGREGATE_MIXED, body.requestedBy)
     for row in db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job_id, WriteConfigSubChange.status == "PENDING")).all():
         row.status, row.rejection_reason = "REJECTED", "WAVE_NOT_RUN"
     db.flush()
@@ -1888,6 +1903,8 @@ APPROVAL_STATUSES = ("PENDING", "APPROVED", "REJECTED", "EXPIRED", "REFUSED")
 SYSTEM_DECIDER = "system:timeout"
 APPROVAL_ALREADY_GIVEN = ("APPROVAL_ALREADY_GIVEN", 409)       # kept here, not in smo_shared.errors (a mutation-tested module), as lifecycle.py keeps its own codes
 APPROVAL_SWEEP_BATCH = 100
+APPROVER_IDENTITY_REQUIRED = ("APPROVER_IDENTITY_REQUIRED", 403)     # SEC-15.8; kept here with the other approval codes
+APPROVER_IDENTITY_MISMATCH = ("APPROVER_IDENTITY_MISMATCH", 403)
 
 
 class ApprovalPolicyRequest(BaseModel):
@@ -2038,9 +2055,10 @@ def _approvals_given(row: RAppActionApproval) -> list[dict]:
     return []
 
 
-def _same_person(a: str, b: str) -> bool:
-    """Two decider names that differ only in case or surrounding space are one person (`smo-gui:Alice` is `smo-gui:alice `): an approver cannot count twice by typing."""
-    return a.strip().casefold() == b.strip().casefold()
+def _same_person(a: str, b: str | None) -> bool:
+    """Two decider names that differ only in case or surrounding space are one person (`smo-gui:Alice` is `smo-gui:alice `): an approver cannot count twice by typing.
+    A missing name (None; `body.decidedBy` before `_decidable` has set it) is nobody."""
+    return b is not None and a.strip().casefold() == b.strip().casefold()
 
 
 def _vote(body: "ApprovalDecisionRequest", now: datetime.datetime) -> dict:
@@ -2136,17 +2154,42 @@ def read_approval(approval_id: uuid.UUID, request: Request, db: Session = Depend
     return _approval_view(row, detail=True)
 
 
-# Request body of the approve and reject routes: who decides (as the decider names themselves) and an optional reason. A decider equal to the requester is refused.
+# Request body of the approve and reject routes: an optional reason and, deprecated, who decides. The decider is the person the operator's console vouches for in
+# `X-R1-Acting-User` (`_decider`), never what the body says: `decidedBy` is accepted for this minor release only when it equals that person (any other value is 403
+# APPROVER_IDENTITY_MISMATCH) and is dropped in the next. It is kept in the schema, optional and marked deprecated, so a client written against the previous release still
+# validates. A decider equal to the requester is refused.
 class ApprovalDecisionRequest(BaseModel):
-    decidedBy: str = Field(min_length=1, max_length=200)
+    decidedBy: str | None = Field(default=None, min_length=1, max_length=200, json_schema_extra={"deprecated": True})
     reason: str | None = Field(default=None, max_length=1000)
 
 
+def _decider(request: Request, claimed: str | None) -> str:
+    """Who is deciding, from what the gateway vouches for and not from the body (SEC-15.8).
+
+    Behind the gateway the caller is the operator's console, an SMO module with one token for all its users; the person is the `X-R1-Acting-User` it sends and R1 Termination
+    forwards from an `internal` caller alone (`smo_shared.invoker.acting_user`). So for a request with the `internal` role: no acting user is 403 `APPROVER_IDENTITY_REQUIRED` (an
+    SMO module on its own account is not a person and cannot approve); a `claimed` (body) `decidedBy` that is not that person is 403 `APPROVER_IDENTITY_MISMATCH`; and the answer is
+    the acting user, as the console wrote it. A request that did not come through the gateway (no role: a test, an in-process call) has nothing to verify and is taken at its word,
+    as the rest of this module takes such a call, and then needs `decidedBy` (422). The comparison is `_same_person`'s: case and surrounding space do not make two people.
+    """
+    if role_of(request) != ROLE_INTERNAL:
+        if claimed is None:
+            raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="decidedBy is required when the call does not come through the gateway")
+        return claimed
+    verified = acting_user(request)
+    if verified is None:
+        raise framework_error(APPROVER_IDENTITY_REQUIRED, detail="a decision is a person's: the call carries no X-R1-Acting-User (the operator's console sets it)")
+    if claimed is not None and not _same_person(claimed, verified):
+        raise framework_error(APPROVER_IDENTITY_MISMATCH, detail="decidedBy is not the signed-in user; it is taken from the gateway and the field is deprecated")
+    return verified
+
+
 def _decidable(db: Session, approval_id: uuid.UUID, request: Request, body: ApprovalDecisionRequest) -> RAppActionApproval:
-    """The request to decide, locked: 404, 403 for an rApp (it can never decide, whatever it is deciding) or for the requester itself, and 409 when it is
-    no longer pending (decided, or lapsed just now)."""
+    """The request to decide, locked: 404, 403 for an rApp (it can never decide, whatever it is deciding), for an unverifiable or mismatching decider (`_decider`) or for the
+    requester itself, and 409 when it is no longer pending (decided, or lapsed just now). Sets `body.decidedBy` to the verified decider, which the route then records."""
     if role_of(request) == ROLE_RAPP:
         raise framework_error(FrameworkError.ROLE_NOT_PERMITTED, detail="an rApp cannot decide an approval request")
+    body.decidedBy = _decider(request, body.decidedBy)       # from here the field is the verified person: the vote, the record and the self-decision test below read it
     row = _approval_or_404(db, approval_id, lock=True)
     if body.decidedBy in (row.invoker_id, row.requested_by) or invoker_id(request) == row.invoker_id or (
             row.required_approvals > 1 and (_same_person(body.decidedBy, row.invoker_id) or _same_person(body.decidedBy, row.requested_by))):
@@ -2169,7 +2212,10 @@ def approve_action(approval_id: uuid.UUID, body: ApprovalDecisionRequest, reques
 
     A request parked under a policy of `requiredApprovals: 2` needs two different people: the first approval is recorded and the request stays PENDING (200,
     `jobStatus` null, the approvals so far in `approvals`), a second approval by the same person is 409 `APPROVAL_ALREADY_GIVEN`, and the second person's approval
-    runs everything above. The requester's own approval never counts (403 `APPROVAL_SELF_DECISION`). The first approval checks nothing and writes nothing."""
+    runs everything above. The requester's own approval never counts (403 `APPROVAL_SELF_DECISION`). The first approval checks nothing and writes nothing.
+
+    Who decides is the signed-in user the gateway vouches for (the operator console's `X-R1-Acting-User`), not the body: a call from an SMO module with no such user is 403
+    `APPROVER_IDENTITY_REQUIRED`, and the body's `decidedBy`, deprecated and optional, is accepted only when it names that same user (else 403 `APPROVER_IDENTITY_MISMATCH`)."""
     row = _decidable(db, approval_id, request, body)
     now = datetime.datetime.now(datetime.UTC)
     if row.required_approvals > 1:
@@ -2218,7 +2264,7 @@ def _close_refused(db: Session, approval_id: uuid.UUID, body: ApprovalDecisionRe
 
 @app.post("/rapp-approvals/{approval_id}/reject")
 def reject_action(approval_id: uuid.UUID, body: ApprovalDecisionRequest, request: Request, db: Session = Depends(get_session)):
-    """AI-11.2: reject a waiting request. Nothing is written; the rApp reads the outcome (`status` REJECTED, the reason) from the request. 404, 403, 409 as for approve."""
+    """AI-11.2: reject a waiting request. Nothing is written; the rApp reads the outcome (`status` REJECTED, the reason) from the request. 404, 403, 409 as for approve, and the decider is taken from the gateway in the same way."""
     row = _decidable(db, approval_id, request, body)
     row.status, row.decided_by, row.decided_at, row.decision_reason = "REJECTED", body.decidedBy, datetime.datetime.now(datetime.UTC), body.reason
     _record_decision(db, row.invoker_id, WriteConfigRequest.model_validate(row.request), "REJECTED", approval=row)
@@ -3128,7 +3174,9 @@ def stop_dme_job(data_job_id: str):
 
 @app.post("/software-management-jobs", status_code=202)
 def software_update(managed_element_ref: str, request: Request, ru_instance_id: str | None = None, db: Session = Depends(get_session)):
-    # 202 with the new job, started at once (IN_PROGRESS, phase DOWNLOAD). With the MSAC switch on a managed caller needs `exec` on the element; 409 O1_SERVICE_NOT_SUPPORTED when the element's services lack SWM. The element's registration is not checked here and the caller's scope is not asked.
+    # 202 with the new job, started at once (IN_PROGRESS, phase DOWNLOAD). With the MSAC switch on a managed caller needs `exec` on the element; 409 O1_SERVICE_NOT_SUPPORTED when the element's services lack SWM. The element's registration is not checked here.
+    # SEC-15.4: 403 `SCOPE_DENIED` when the element is outside the caller's scope claim or not registered (a scoped caller cannot tell the two apart), as for the other routes that name an element; an unscoped caller is not asked.
+    scoping.require_elements(db, scoping.request_scope(request), [managed_element_ref])
     _require_msac(db, request, "exec", managed_element_ref)                                    # MGT-2.4: a software job runs a procedure on the element
     require_service(db, managed_element_ref, "SWM")  # Wave 9 (W9-01)
     job = lifecycle.start_software_job(db, managed_element_ref, ru_instance_id)
@@ -3137,10 +3185,11 @@ def software_update(managed_element_ref: str, request: Request, ru_instance_id: 
 
 
 @app.post("/software-management-jobs/{job_id}/advance")
-def advance_software_job(job_id: uuid.UUID, succeeded: bool, db: Session = Depends(get_session)):
-    # Reports the outcome of the job's current phase: `succeeded=false` fails the job; true completes the phase (DOWNLOAD moves to INSTALL, INSTALL to ACTIVATE, ACTIVATE completes the job). 404 SOFTWARE_JOB_NOT_FOUND; 409 when the job has already ended (a late report after a campaign timed it out). After the commit, a job that belongs to a campaign lets the campaign go on, in its own transaction. The caller's scope is not asked.
+def advance_software_job(job_id: uuid.UUID, succeeded: bool, request: Request, db: Session = Depends(get_session)):
+    # Reports the outcome of the job's current phase: `succeeded=false` fails the job; true completes the phase (DOWNLOAD moves to INSTALL, INSTALL to ACTIVATE, ACTIVATE completes the job). 404 SOFTWARE_JOB_NOT_FOUND; 409 when the job has already ended (a late report after a campaign timed it out). After the commit, a job that belongs to a campaign lets the campaign go on, in its own transaction.
+    # SEC-15.4: a job on an element outside the caller's scope is a 404, as if it did not exist (an item addressed by an id the system made, PR-SEC-10); an unscoped caller is not asked.
     job = db.get(SoftwareManagementJob, job_id)
-    if job is None:
+    if job is None or not scoping.element_permitted(db, scoping.request_scope(request), job.managed_element_ref):
         raise framework_error(FrameworkError.SOFTWARE_JOB_NOT_FOUND, detail=f"unknown jobId {job_id}")
     event = {"DOWNLOAD": SwmEvent.DOWNLOAD_OK, "INSTALL": SwmEvent.INSTALL_OK, "ACTIVATE": SwmEvent.ACTIVATE_OK}[job.phase]
     try:

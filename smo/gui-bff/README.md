@@ -9,7 +9,7 @@
 | Depends on (over R1) | R1 Termination (`/bootstrap`, `/health`, every proxied `/<module>/...`) and, for its own token, SME's `/invoker-registrations` and `/oauth2/token` (URL discovered via R1 `/bootstrap`, or `SME_URL`) |
 | Called by | The GUI SPA (`../gui/`), and scripts via `POST /api/token` |
 | Database tables | `gui_user`, `gui_audit_log`, `gui_smo_credential`, `gui_setting`, `gui_login_failure`, `gui_revoked_session`, `gui_oidc_login`, `gui_user_totp`, `gui_recovery_code`, `gui_login_challenge`, `gui_rapp_pin`, `gui_user_preference`, `gui_export_job`, `gui_export_chunk` (own SQLite/SQLAlchemy store, not the SMO Postgres schema) |
-| Unit tests | 1157 passed (`tests/`, SQLite, standalone; R1 and SME faked with `httpx.MockTransport`; 3 more run only when `SMO_TEST_POSTGRES_URL` is set) |
+| Unit tests | 1189 passed (`tests/`, SQLite, standalone; R1 and SME faked with `httpx.MockTransport`; 3 more run only when `SMO_TEST_POSTGRES_URL` is set) |
 | Status | Done. OIDC login (SEC-6, opt-in) and multi-factor sign-in (SEC-7: one-time codes for local accounts, `GUI_LOGIN_MODE`, break-glass, `GUI_ADMIN_MFA_REQUIRED`, admin revoke-sessions and reset-code) are built; open: SEC-6.8 (LDAP bind, optional). Sessions are signed JWTs with a logout revocation list. Several instances work against one shared `GUI_DATABASE_URL`: signing key, lockout counters and SME credential live in it; see 2.8 |
 
 The console as a whole (pages, screenshots, role matrix, run instructions, `GUI_*` quick reference) is described in [`../gui/README.md`](../gui/README.md). This file documents only the BFF's own design and does not repeat the role tables there; the authoritative permission table is `app/rbac.py`.
@@ -243,6 +243,8 @@ Rule evaluation (`decide`): rules are scanned in order; a rule matches on method
 
 GUI-9.7 opened to the console the writes its redesigned pages showed read-only: `POST /intent-service/intents/{id}/negotiation-feedback`, `POST /mdaf/mda-requests` and `DELETE /mdaf/mda-requests/{id}`, `POST /ran-nf-oam/config-jobs/{id}/kpi-check` and `POST /ran-nf-oam/managed-entities/{id}/managed-objects/refresh` (operator); `PUT` and `DELETE /ran-nf-oam/o1-adaptor-endpoints/{id}/host-keys[/{keyType}]` and `POST|PUT|DELETE /ran-nf-oam/msac/(roles|identities|access-rules)[/{id}]` (admin); with them `PUT /rapp-mgmt/kill-all` (operator) and `DELETE /rapp-mgmt/kill-all` (admin) of GUI-9.6, and `PUT /ran-nf-oam/managed-entities/{id}/site-cluster` (admin) of GUI-9.8. GUI-10.1 added `POST /ran-nf-oam/fm-subscriptions` and `DELETE /ran-nf-oam/(fm-subscriptions|pm-subscriptions)/{id}` (operator), so the Alarms page's FM subscription form and the FM and PM Unsubscribe buttons are drawn. `POST /ran-nf-oam/kpis/{id}/publish` and the sweep `config-jobs/advance-due` stay unexposed.
 
+Every forwarded call (the generic proxy and a rApp's declared operator action, `rapps.py`; the console's own reads, `summary`, `search`, `events` and the export jobs, are reads and send none) also carries `X-R1-Acting-User: smo-gui:<username>` (`ACTING_USER_HEADER`, `SEC-15.8`; set after the browser's own headers were filtered, so the browser cannot choose it). The BFF's SMO token is one `internal` invoker for all users, so this header is how a module learns which signed-in person is behind a call; R1 Termination forwards it from an `internal` caller only. RAN NF OAM uses it to name who decided an approval; no other module reads it yet.
+
 Override rules (`Rule.query_overrides` / `json_overrides`), applied before forwarding:
 
 | Route | Forced from the session |
@@ -252,7 +254,7 @@ Override rules (`Rule.query_overrides` / `json_overrides`), applied before forwa
 | `POST /dme/actions` | body `requestedBy` = `smo-gui:<user>` |
 | `POST /intent-service/intents`, `PATCH .../intents/{id}/admin-state` | body `rmioId` / `requesterId` = `smo-gui` |
 | `POST /intent-service/autonomy-dispatches/{id}/reject` | body `rejectedBy` = `smo-gui:<user>` |
-| `POST /ran-nf-oam/rapp-approvals/{id}/approve` and `.../reject` | body `decidedBy` = `smo-gui:<user>` (`AI-11`: operator; the sweep `rapp-approvals/expire-due` is not exposed) |
+| `POST /ran-nf-oam/rapp-approvals/{id}/approve` and `.../reject` | body `decidedBy` = `smo-gui:<user>` (`AI-11`: operator; the sweep `rapp-approvals/expire-due` is not exposed). Since `SEC-15.8` RAN NF OAM takes the decider from the `X-R1-Acting-User` header below and treats the body field as deprecated (it is still sent, equal to the header, for one minor release so that an older RAN NF OAM keeps working) |
 | `PUT /rapp-mgmt/kill-all` | body `requestedBy` = `smo-gui:<user>` (GUI-9.6: the global stop of every rApp's writes, operator like the per-instance kill; `DELETE /rapp-mgmt/kill-all`, resuming them all, is admin) |
 | `PUT /ran-nf-oam/o1-adaptor-endpoints/{id}/host-keys` | body `pinnedBy` = `smo-gui:<user>` (GUI-9.7, admin: the SSH host key is the O1 session's trust anchor; `DELETE .../host-keys/{keyType}` is admin too) |
 | `PUT /ran-nf-oam/rapp-approval-policy/{id}` | body `requestedBy` = `smo-gui:<user>` (admin; so is `DELETE` and the approval subscriptions); `requiredApprovals` (1 or 2) is passed through. For the approve and reject routes above, `decidedBy` is what makes two approvals two people: it is always the signed-in user, never the browser's value |

@@ -27,7 +27,7 @@ from fastapi.responses import JSONResponse
 from . import operator_ui
 from .db import MAX_PINS
 from .rbac import RANK, Role
-from .smo_client import SmoAuthError
+from .smo_client import ACTING_USER_HEADER, SmoAuthError
 
 log = logging.getLogger("smo-gui-bff")
 
@@ -266,7 +266,7 @@ def install(app: FastAPI, *, current_session: Callable, audit: Callable, problem
         if change:
             audit("RAPP_ACTION", user, method=method, path=target, detail=f"{label} phase=requested")
         content = json.dumps(decision.body).encode() if decision.body is not None else None
-        headers = {"accept": "application/json"}
+        headers = {"accept": "application/json", ACTING_USER_HEADER: f"smo-gui:{user.username}"}      # SEC-15.8: the person behind the BFF's token, as on the generic proxy
         if content is not None:
             headers["content-type"] = "application/json"
         try:

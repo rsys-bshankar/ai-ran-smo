@@ -639,10 +639,12 @@ def get_config(instance_id: uuid.UUID, db: Session = Depends(get_session)):
 
 
 @app.put("/instances/{instance_id}/config")
-def set_config(instance_id: uuid.UUID, config: dict, db: Session = Depends(get_session)):
-    # Replaces the whole configuration of an instance with the body (no merge, no schema check) and answers 200 `{status: updated}`; 404 for an unknown instance. It does not restart the workload, and
-    # it does not check which caller it is (the operator GUI's rule table allows operators and admins).
+def set_config(instance_id: uuid.UUID, config: dict, request: Request, db: Session = Depends(get_session)):
+    # Replaces the whole configuration of an instance with the body (no merge, no schema check) and answers 200 `{status: updated}`; 404 for an unknown instance. It does not restart the workload.
+    # A caller with the rApp role may replace only its own instance's configuration (403 `NOT_THIS_INSTANCE` otherwise, `_own_instance_or_operator`); any other caller is trusted
+    # (the operator GUI's rule table allows operators and admins). The gateway does not let an rApp change this route at all (`roles.RAPP_MAY_CHANGE`): this is the second line.
     inst = _get_or_404(db, instance_id)
+    _own_instance_or_operator(request, inst)
     inst.configuration = config
     db.commit()
     return {"status": "updated"}
@@ -658,12 +660,14 @@ def report_performance(instance_id: uuid.UUID, metrics: dict, request: Request, 
 
 
 @app.post("/instances/{instance_id}/fault")
-def report_fault(instance_id: uuid.UUID, severity: str, description: str = "", db: Session = Depends(get_session)):
+def report_fault(instance_id: uuid.UUID, request: Request, severity: str, description: str = "", db: Session = Depends(get_session)):
     """Records every fault report; severity=critical additionally fires
     CRASH (RUNNING -> FAULTED). A critical fault on an instance that is not
-    RUNNING is refused with 409 and not recorded.
+    RUNNING is refused with 409 and not recorded. A rApp may report for its
+    own instance only (403 `NOT_THIS_INSTANCE` for another rApp's); an operator may for any.
     """
     inst = _load_instance(db, instance_id)
+    _own_instance_or_operator(request, inst)      # before the CRASH below: another instance's token must not be able to fault this one
     if severity == "critical":
         inst.state = _fire(inst, InstanceEvent.CRASH)
     db.add(RAppFaultReport(instance_id=instance_id, severity=severity, description=description))

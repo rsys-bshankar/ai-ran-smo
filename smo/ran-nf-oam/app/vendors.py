@@ -287,9 +287,11 @@ def get_vendor_capability(vendor_name: str, request: Request, db: Session = Depe
 
 
 @router.delete("/vendor-capabilities/{vendor_name}", status_code=204)
-def delete_vendor_capability(vendor_name: str, db: Session = Depends(get_session)):
-    # 204 whether or not the entry existed. Elements of the vendor stay registered and are then unchecked (no entry means the permissive default). Not filtered by scope.
-    cap = db.get(VendorCapability, vendor_name)
+def delete_vendor_capability(vendor_name: str, request: Request, db: Session = Depends(get_session)):
+    # 204 whether or not the entry existed. Elements of the vendor stay registered and are then unchecked (no entry means the permissive default).
+    # SEC-15.7: filtered by scope as the get is: a caller with a scope claim can delete only the entry of a vendor one of its own elements uses; any other entry is left alone and
+    # the 204 says nothing, as when a subscription outside the scope is unsubscribed (the answer must not tell it which vendors exist). An unscoped caller is not asked.
+    cap = db.scalars(_vendor_capabilities(scoping.request_scope(request)).where(VendorCapability.vendor_name == vendor_name)).one_or_none()
     if cap is not None:
         db.delete(cap)
         db.commit()

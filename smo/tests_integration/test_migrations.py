@@ -21,7 +21,7 @@ MIGRATE = SMO_ROOT / "scripts" / "migrate.py"
 CHECK = SMO_ROOT / "scripts" / "check_migration_matches_models.py"
 ADMIN_URL = os.environ.get("SMO_TEST_POSTGRES_URL")
 needs_postgres = pytest.mark.skipif(not ADMIN_URL, reason="SMO_TEST_POSTGRES_URL not set")
-HEAD = "0038"         # raise this with every new revision: the tests below then check it is the head
+HEAD = "0039"         # raise this with every new revision: the tests below then check it is the head
 
 
 def _scripts() -> ScriptDirectory:

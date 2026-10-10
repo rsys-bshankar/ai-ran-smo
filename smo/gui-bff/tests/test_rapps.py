@@ -293,6 +293,7 @@ def test_a_change_by_an_operator_is_audited_before_and_after_with_the_session_us
     assert sent.method == "POST" and sent.url.path == f"/rapps/{I_RUN}/operator/instances/{I_RUN}/cells/C1/override"
     assert json.loads(sent.content) == {"operator": "operator", "reason": "manual override"}
     assert sent.headers["content-type"] == "application/json"
+    assert sent.headers["x-r1-acting-user"] == "smo-gui:operator"                              # SEC-15.8: the person behind the BFF's token
     rows = audit_rows(app.state.test_db, "RAPP_ACTION")
     assert [(r.username, r.role, r.status_code, r.detail.split(" phase=")[1]) for r in rows] == [("operator", "operator", None, "requested"), ("operator", "operator", 200, "done")]
     assert rows[0].path == f"/rapps/{I_RUN}/operator/instances/{I_RUN}/cells/C1/override" and "action=unlock-cell" in rows[0].detail and I_RUN in rows[0].detail

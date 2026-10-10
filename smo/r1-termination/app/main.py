@@ -41,7 +41,7 @@ from smo_shared.correlation import apply_correlation_id, get_correlation_id
 from smo_shared.audit import audit_enabled, write_audit
 from smo_shared.health import install_health
 from smo_shared import killswitch, mtls, roles, scope as authz_scope
-from smo_shared.invoker import INVOKER_ID_HEADER, ON_BEHALF_OF_HEADER
+from smo_shared.invoker import ACTING_USER_HEADER, INVOKER_ID_HEADER, ON_BEHALF_OF_HEADER
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.ratelimit import SharedTokenBuckets, TokenBuckets, store_from_environment
 from smo_shared.secretfile import read_secret
@@ -390,7 +390,7 @@ async def _proxy(full_path: str, request: Request):
     # ID threaded through its own request's whole downstream fan-out.
     forwarded_headers = {k: v for k, v in request.headers.items()
                           if k.lower() not in ("host", CORRELATION_ID_HEADER.lower(), INVOKER_ID_HEADER.lower(), roles.ROLE_HEADER.lower(),
-                                               ON_BEHALF_OF_HEADER.lower(), authz_scope.SCOPE_HEADER.lower(), authz_scope.ON_BEHALF_SCOPE_HEADER.lower(),
+                                               ON_BEHALF_OF_HEADER.lower(), ACTING_USER_HEADER.lower(), authz_scope.SCOPE_HEADER.lower(), authz_scope.ON_BEHALF_SCOPE_HEADER.lower(),
                                                tracing.TRACEPARENT, tracing.TRACESTATE)}
     forwarded_headers[roles.ROLE_HEADER] = role              # PR-SEC-14: never a value the caller sent (dropped above)
     forwarded_headers[CORRELATION_ID_HEADER] = get_correlation_id()
@@ -405,6 +405,11 @@ async def _proxy(full_path: str, request: Request):
     on_behalf_of = request.headers.get(ON_BEHALF_OF_HEADER)
     if on_behalf_of and role == roles.ROLE_INTERNAL:
         forwarded_headers[ON_BEHALF_OF_HEADER] = on_behalf_of
+    # The person the operator's console acts for (SEC-15.8): believed from an `internal` caller only, like the header above, and dropped from every other (above), so a
+    # module that reads it in an `internal` request reads the console's word and never an rApp's.
+    acting_user = request.headers.get(ACTING_USER_HEADER)
+    if acting_user and role == roles.ROLE_INTERNAL:
+        forwarded_headers[ACTING_USER_HEADER] = acting_user
     try:
         # PR-OBS-3: the caller's traceparent is replaced by this hop's own (the gateway's CLIENT span when spans are on, else the caller's unchanged)
         with tracing.span(f"{request.method} {prefix}", "client", {"http.request.method": request.method, "smo.target": prefix,
