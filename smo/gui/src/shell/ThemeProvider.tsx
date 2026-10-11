@@ -3,7 +3,8 @@
  * On mount it applies the browser copy (`data/preferences.ts`; `public/theme-boot.js` already did so before React), then, once signed in,
  * fetches the server copy (`GET /api/me/preferences`), applies it and refreshes the browser copy. `save` writes through the BFF (`PUT`).
  * The Preferences page previews unsaved changes with `preview`: they are applied to `<html>` only while that page holds them, and dropped when
- * it unmounts. "system" follows `prefers-color-scheme` live. */
+ * it unmounts. "system" follows `prefers-color-scheme` live. The `language` preference is handed to `I18nProvider` (i18n/index.tsx), so every page
+ * below answers `useT()` in it. */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -11,6 +12,7 @@ import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { KEYS } from "../data/keys";
 import { applyToDocument, readCached, sanitize, writeCached, type Preferences } from "../data/preferences";
+import { I18nProvider } from "../i18n";
 
 /** What `usePreferences` hands a component. */
 export interface PreferencesApi {
@@ -63,7 +65,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   });
   const save = useCallback(async (p: Preferences) => { await mutation.mutateAsync(p); }, [mutation]);
   const value = useMemo<PreferencesApi>(() => ({ prefs, preview: setDraft, save, saving: mutation.isPending }), [prefs, save, mutation.isPending]);
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  // GUI-6.3: the words follow the shown preferences too, so the Preferences page previews a language before it is saved
+  return <Ctx.Provider value={value}><I18nProvider language={shown.language}>{children}</I18nProvider></Ctx.Provider>;
 }
 
 /** The current user's preferences. Outside a `ThemeProvider` (a component test) it answers the browser copy and saves nothing. */

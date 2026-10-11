@@ -6,6 +6,7 @@ Route: `/preferences`    Design: handoff `Preferences.dc.html` (BRIEF §4d)
 
 | id | file | what it shows | API | refresh | budget |
 | --- | --- | --- | --- | --- | --- |
+| preferences.language | sections/LanguagePicker.tsx | English / Deutsch (GUI-6.3); previews at once | — (draft) | — | 0 |
 | preferences.theme | sections/ThemePicker.tsx | dark / light / system | — (draft) | — | 0 |
 | preferences.accent | sections/AccentPicker.tsx | five accents | — (draft) | — | 0 |
 | preferences.size | sections/TextSize.tsx | s / m / l / xl root text size | — (draft) | — | 0 |
@@ -13,7 +14,8 @@ Route: `/preferences`    Design: handoff `Preferences.dc.html` (BRIEF §4d)
 | preferences.preview | sections/LivePreview.tsx | sample tiles, chips, buttons | — | — | 0 |
 
 The page reads the saved preferences from `shell/ThemeProvider.tsx` (`GET /api/me/preferences`, one call per session, shared by every page) and
-writes them with `PUT /api/me/preferences` (gui-bff/app/preferences.py).
+writes them with `PUT /api/me/preferences` (gui-bff/app/preferences.py). Every word on the page comes from the catalog (`src/i18n/en/preferences.ts`,
+`de/preferences.ts`); the page is the first one translated (GUI-6.3) and its literal count is 0.
 
 ## Known limits
 

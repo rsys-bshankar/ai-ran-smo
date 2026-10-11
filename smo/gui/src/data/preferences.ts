@@ -16,11 +16,13 @@ export interface Preferences {
   clock: "12h" | "24h";
   reduceMotion: boolean;
   alarmSound: boolean;
+  /** The language of the console's words (GUI-6.3, i18n/index.tsx). */
+  language: "en" | "de";
 }
 
 /** The values a user who never saved gets (the same as the BFF's). */
 export const DEFAULT_PREFERENCES: Preferences = {
-  theme: "dark", size: "m", accent: "volt", startPage: "/", rowsPerPage: 50, timeZone: "local", clock: "24h", reduceMotion: false, alarmSound: false,
+  theme: "dark", size: "m", accent: "volt", startPage: "/", rowsPerPage: 50, timeZone: "local", clock: "24h", reduceMotion: false, alarmSound: false, language: "en",
 };
 
 /** The closed set of each enumerated field, in the order the Preferences page offers them. */
@@ -31,16 +33,10 @@ export const CHOICES = {
   rowsPerPage: [25, 50, 100] as const,
   timeZone: ["local", "UTC"] as const,
   clock: ["24h", "12h"] as const,
+  language: ["en", "de"] as const,
   startPage: ["/", "/flows", "/rapps", "/approvals", "/decisions", "/safeguards", "/aiml", "/policy", "/alarms", "/kpis", "/topology",
     "/configuration", "/software", "/infrastructure", "/data"] as const,
 };
-
-/** The label of each text size and accent, as the Preferences page shows it. */
-export const LABELS = {
-  size: { s: "Small · 90 %", m: "Default · 100 %", l: "Large · 112 %", xl: "Extra large · 125 %" },
-  accent: { volt: "Volt", blue: "Blue", teal: "Teal", amber: "Amber", radisys: "Radisys" },
-  theme: { dark: "Dark", light: "Light", system: "Match system" },
-} as const;
 
 export const STORAGE_KEY = "smo.prefs";
 
@@ -51,7 +47,7 @@ export function sanitize(raw: unknown): Preferences {
     ((CHOICES[k] as readonly unknown[]).includes(r[k]) ? r[k] : DEFAULT_PREFERENCES[k as keyof Preferences]) as Preferences[K];
   return {
     theme: pick("theme"), size: pick("size"), accent: pick("accent"), startPage: pick("startPage"), rowsPerPage: pick("rowsPerPage"),
-    timeZone: pick("timeZone"), clock: pick("clock"),
+    timeZone: pick("timeZone"), clock: pick("clock"), language: pick("language"),
     reduceMotion: typeof r.reduceMotion === "boolean" ? r.reduceMotion : false,
     alarmSound: typeof r.alarmSound === "boolean" ? r.alarmSound : false,
   };
