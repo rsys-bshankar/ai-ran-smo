@@ -76,7 +76,9 @@ INTERNAL_ONLY_CALLS = [("PUT", "/ran-nf-oam/rapp-limits/x"), ("DELETE", "/ran-nf
                        # MGT-14.7 / MGT-15.6: where the platform calls when an onboarding fails or a campaign halts
                        ("GET", "/ran-nf-oam/lifecycle-subscriptions"), ("POST", "/ran-nf-oam/lifecycle-subscriptions"), ("DELETE", "/ran-nf-oam/lifecycle-subscriptions/s"),
                        # SEC-10: the scope of a caller and of a target is set by the platform
-                       ("PUT", "/sme/invoker-registrations/i/authz-scope"), ("PUT", "/ran-nf-oam/managed-entities/e/scope")]
+                       ("PUT", "/sme/invoker-registrations/i/authz-scope"), ("PUT", "/ran-nf-oam/managed-entities/e/scope"),
+                       # MSG-3.2: the SMO's event feed names every module's entities
+                       ("GET", "/dme/smo-events")]
 
 
 @pytest.mark.parametrize("method, path", INTERNAL_ONLY_CALLS)

@@ -2579,3 +2579,39 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Narrowing the BFF's own data (audit log, users, exports list, preferences) by the claim: an admin's console is the place users and roles are
   managed. Scoping the modules that have nothing to match (rApp Management, AIMgF, MLMR, DME's types), as for an rApp (ADR section 9). A claim per group mapped
   from the identity provider's groups (one claim in the token is what an identity provider can already compute).
+
+### MSG-3.1, 3.2, 3.3, 3.5, 3.6 / GUI-1.5 — the SMO event bus, and the console's live updates following it
+
+- **What.** What happens in a module is published as an event, in the transaction of the change, and can be followed: by DME's feed for the platform, and by the
+  operator console, which now pushes a raised alarm or a job waiting for approval as soon as it is committed instead of at its next poll. `docs/EVENTS.md`
+  is the reader's guide.
+- **The envelope (MSG-3.1).** CloudEvents 1.0 in its JSON form (`specversion`, `id`, `source` `/smo/<module>`, `type` `org.oran.smo.<what>.<change>`,
+  `subject`, `time`, `datacontenttype`, `data`) plus `smoseq` (the position in the feed) and `smoregion` / `smotenant` (where the element is). Schema and two
+  examples: `docs/schemas/event-envelope.schema.json`.
+- **The publisher (MSG-3.2).** `smo_shared/events.py`: `EventPublisher` (publish in the transaction of a `Session` or a `Connection`), `TablePublisher`,
+  `InMemoryPublisher` (a list with a wait, for tests), `NullPublisher`; `SMO_EVENT_BUS` picks one (`table` by default). On a database without the table (a
+  module's SQLite unit tests) the table publisher keeps the event in memory, so no module's unit tests needed the table to keep passing.
+- **Postgres (MSG-3.3).** Revision 0042 adds the shared table `smo_event` (`seq` an identity column, the feed's order; indexed by `time`), granted to the
+  modules that publish or read it (onboarding, rApp Management, RAN NF OAM, DME; `scripts/db_roles.py` grants the identity's sequence with the table). A
+  publish inserts the row and runs `pg_notify('smo_events', seq)`, delivered at commit; `wait_after` `LISTEN`s on a connection of its own (psycopg's
+  `notifies()`), reads again after subscribing so nothing committed in between is missed, and is woken within a second (the Postgres CI job proves it). It
+  polls every 0.5 s where it cannot listen (`SMO_DB_POOLER=transaction`: a transaction-pooling PgBouncer accepts `LISTEN` and never delivers; or a connection
+  that refuses it); `SMO_EVENT_LISTEN_URL` names a direct connection to listen on. The feed is
+  `GET /dme/smo-events?after&limit&wait&types` (a long poll of at most 25 s, below the 30 s a module allows a call and R1 Termination's 60 s), internal-only at R1, narrowed to a
+  scoped caller's claim. Events are kept `SMO_EVENT_RETENTION_HOURS` (24) and deleted by the shared worker task `event-purge`.
+- **State changes (MSG-3.5).** `StateMachine.fire` calls the functions of `TRANSITION_LISTENERS` for every transition taken with a context; the default one
+  (`events.on_transition`) finds the mapped object in the context and publishes `<table>.state-changed` about it in its session. rApp instances (already given
+  `instance=`) publish with no change; CM jobs now pass `job=`. A machine not given its entity publishes nothing, so adding one is a one-word change.
+- **Alarms (MSG-3.6).** The alarm history listeners (MGT-8.2) publish `alarm.raised` on insert (not for an alarm that arrives already cleared) and
+  `alarm.cleared` when the severity becomes cleared, with the element's region and tenant, whichever path made the change.
+- **The console (GUI-1.5).** The BFF's event hub keeps its poll and, while a stream is open, long-polls the feed through R1 as the console. An event drops the
+  summary cache and starts a round at once (at most one per second, so a burst of alarms is one recompute). A feed that cannot be read (DME down, an older DME)
+  is retried every 30 s and the poll carries the streams meanwhile: what a browser is sent is unchanged.
+- **Tests.** Shared `test_events.py` (the envelope, the three publishers, a rollback taking its event back, read and wait, the purge, the hook; on Postgres a
+  commit waking a listener and a connection that cannot listen falling back), `test_worker.py` (the purge task); DME `test_event_feed.py` (start position,
+  order, types, pages, the long poll, a scoped caller); rApp Management (a RECOVER published); RAN NF OAM (raise and clear published with the place; a job's
+  hold and rejection published); BFF `test_events_search.py` (an event pushes a change with a one-minute poll and cache; no feed, no change).
+- **Not taken.** Kafka (`MSG-3.4`, still open). Pushing events to a caller's URL: a reader follows the feed, and a notification to the outside stays the
+  outbox's. Exact delivery under out-of-order commits: two transactions that commit in the reverse order of their sequence numbers can make a reader that read
+  between them skip the earlier; the console uses an event only as a cue to recompute, and `docs/EVENTS.md` says what a consumer that needs every event must
+  do. Showing raw events in the console: the counts are what it patches. Moving the console off its poll: not every count has an event behind it.

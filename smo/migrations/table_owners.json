@@ -7,7 +7,8 @@
   "module_identity",
   "notification_outbox",
   "periodic_run",
-  "rate_bucket"
+  "rate_bucket",
+  "smo_event"
  ],
  "r1-termination": [],
  "sme": [

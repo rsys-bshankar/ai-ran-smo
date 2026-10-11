@@ -188,6 +188,44 @@ def test_a_revoked_session_ends_the_stream_at_the_next_ping(app, smo, quick, mon
     assert not any(e == "ping" for e, _ in parse(resp.text))     # it ended at the check, before sending the ping
 
 
+
+def test_an_event_on_the_smo_feed_pushes_the_change_before_the_next_poll(app, smo, monkeypatch):
+    """GUI-1.5: the hub follows DME's event feed; an event there drops the summary cache and recomputes at once, so with a poll of a minute and a cache
+    of a minute the raised alarm still reaches the stream within its one second. The first read only learns the newest position."""
+    monkeypatch.setattr(events, "STREAM_MAX_SECONDS", 1.0)
+    monkeypatch.setattr(events, "POLL_SECONDS", 60.0)
+    monkeypatch.setattr(events, "PING_SECONDS", 0.3)
+    monkeypatch.setattr(events, "KICK_SECONDS", 0.05)
+    monkeypatch.setattr(events, "FEED_RETRY_SECONDS", 10.0)
+    monkeypatch.setattr(summary, "CACHE_SECONDS", 60.0)
+    original = smo.handler
+    reads: list[dict] = []
+
+    def with_feed(request):
+        # the feed answers its position, then one alarm raised (and the count moves with it), then fails: the hub retries later, the stream goes on
+        if request.url.path == events.FEED_PATH:
+            reads.append(dict(request.url.params))
+            if len(reads) == 1:
+                return httpx.Response(200, json={"items": [], "next": 41})
+            if len(reads) == 2:
+                smo.totals[("/ran-nf-oam/alarms", "severity=critical")] = 1300
+                return httpx.Response(200, json={"items": [{"type": "org.oran.smo.alarm.raised", "smoseq": 42}], "next": 42})
+            raise httpx.ConnectError("dme down")
+        return original(request)
+
+    app.state.gateway = R1Gateway(R1, app.state.db, transport=httpx.MockTransport(with_feed))
+    summaries = [d for e, d in parse(login(app, "viewer").get("/api/events", params={"topics": "summary:nav"}).text) if e == "summary"]
+    assert [s["counts"]["alarms.critical"] for s in summaries] == [1234, 1300] and summaries[1]["changed"] == ["alarms.critical"]
+    assert "after" not in reads[0] and reads[1]["after"] == "41" and float(reads[1]["wait"]) == events.FEED_WAIT_SECONDS
+    hub = app.state.event_hub
+    assert hub.subscribers == set() and (hub.follower is None or hub.follower.done())
+
+
+def test_without_a_readable_feed_the_stream_polls_as_before(app, smo, quick):
+    """An SMO whose DME has no event feed (404) changes nothing for a stream: the counts still come by the poll, and the hub says it is not following."""
+    summaries = [d for e, d in parse(login(app, "viewer").get("/api/events", params={"topics": "summary:nav"}).text) if e == "summary"]
+    assert summaries and summaries[0]["counts"]["alarms.critical"] == 1234 and app.state.event_hub.following is False
+
 def test_a_subscriber_merges_changes_it_has_not_sent_yet():
     """Two changes before the browser reads: one event with the newest counts and the union of the changed keys, never a backlog."""
     sub = events._Subscriber("viewer", ("nav",))

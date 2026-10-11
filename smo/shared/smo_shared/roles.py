@@ -64,6 +64,8 @@ INTERNAL_ONLY: tuple[tuple[str, frozenset[str], re.Pattern], ...] = tuple(
         # SEC-10: what a caller (or a target) is scoped to is set by the platform, never by an rApp
         ("/sme", ("PUT",), r"^/invoker-registrations/[^/]+/authz-scope$"),
         ("/ran-nf-oam", ("PUT",), r"^/managed-entities/[^/]+/scope$"),
+        # MSG-3.2: the SMO's event feed names every module's entities; the platform and its console follow it, an rApp subscribes through DME's data jobs
+        ("/dme", ("GET",), r"^/smo-events$"),
     ))
 
 

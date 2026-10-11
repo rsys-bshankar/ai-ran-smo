@@ -24,6 +24,9 @@ first send failed, or whose sender died mid-send, is delivered by whichever work
 lease, `outbox.LEASE_SECONDS`, runs out). It is one task for the whole database, not one per module, and runs every `SMO_OUTBOX_SWEEP_SECONDS` (default 5);
 `SMO_OUTBOX_SWEEP=false` leaves it out of a worker.
 
+Every worker also runs the **event purge** (PR-MSG-3, `event-purge`): the events of the shared feed `smo_event` older than `SMO_EVENT_RETENTION_HOURS` are deleted
+(events.py). One task for the whole database, every `SMO_EVENT_PURGE_SECONDS` (default 300); `SMO_EVENT_PURGE=false` leaves it out of a worker.
+
   tick(tasks, ...)   offer every task once; returns {name: "ran" | "skipped" | "failed"}. The loop's body, and what the tests call.
 """
 
@@ -120,10 +123,26 @@ def outbox_sweep_task() -> Task | None:
     return Task("outbox-sweep", _seconds("SMO_OUTBOX_SWEEP_SECONDS", 5.0), sweep, shared=True)
 
 
+def event_purge_task() -> Task | None:
+    """The purge of old events from the shared feed, or None when `SMO_EVENT_PURGE` turns it off."""
+    if os.environ.get("SMO_EVENT_PURGE", "true").strip().lower() in ("0", "false", "no", "off"):
+        return None
+
+    def purge() -> None:
+        from . import events
+        from .db import session_scope
+        with session_scope() as session:
+            removed = events.purge(session)
+        if removed:
+            log.info("event feed purged", extra={"removed": removed})
+
+    return Task("event-purge", _seconds("SMO_EVENT_PURGE_SECONDS", 300.0), purge, shared=True)
+
+
 def main(tasks: list[Task] | None = None, *, module: str | None = None, stop: threading.Event | None = None) -> int:
     """The worker process: ticks until told to stop; returns 0.
 
-    Configures logging, loads the module's tasks (unless given) and adds the outbox sweep, optionally starts the metrics port, installs
+    Configures logging, loads the module's tasks (unless given) and adds the outbox sweep and the event purge, optionally starts the metrics port, installs
     SIGTERM/SIGINT handlers that end the loop after the current tick, then every tick offers the tasks (`tick`), backs off a task that failed for
     `SMO_WORKER_FAILURE_BACKOFF_SECONDS` and touches the heartbeat file the container health check reads. `tasks`, `module` and `stop` are for
     tests.
@@ -132,10 +151,10 @@ def main(tasks: list[Task] | None = None, *, module: str | None = None, stop: th
     module = module or os.environ.get("MODULE", "")
     configure_logging(f"{module}-worker")
     tasks = load_tasks() if tasks is None else tasks
-    sweep = outbox_sweep_task()
-    # The sweep is added to every worker unless the module already declared a task of that name.
-    if sweep is not None and all(t.name != sweep.name for t in tasks):
-        tasks = [*tasks, sweep]
+    # The shared tasks are added to every worker unless the module already declared a task of that name.
+    for shared_task in (outbox_sweep_task(), event_purge_task()):
+        if shared_task is not None and all(t.name != shared_task.name for t in tasks):
+            tasks = [*tasks, shared_task]
     port = os.environ.get("SMO_WORKER_METRICS_PORT", "").strip()
     if port:
         from prometheus_client import start_http_server
