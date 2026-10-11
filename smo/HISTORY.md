@@ -2558,9 +2558,46 @@ The third of four changes that close the security review of October 2026 (`OPEN_
 - **Tests.** RAN NF OAM `test_change_windows.py` (8) and two FSM cases; BFF the rule, the decider override and the `configJobs.PENDING_APPROVAL`
   count on the nav, approvals and configuration pages; GUI the inbox tab (count, list, approve, start, nothing for a viewer) and `windowPayload`.
   Postgres: migrate to 0041, the models check, the migration and status-check tests.
-- **Not taken.** Starting a scheduled job by itself at the window and expiring one after it (`MGT-4.4`, `4.5`): the wave sweep has no
-  cross-replica claim, and a job must start once however many workers run, which is the job runner's (`MSG-4.2`). Two approvers for a change window
+- **Not taken.** Starting a scheduled job by itself at the window and expiring one after it: built afterwards ("MGT-4.4, 4.5" below). Two approvers for a change window
   (the rApp approvals' opt-in): one approver other than the requester is what MGT-4.3 asks. Recurring windows: a window is one interval.
+
+### MGT-4.4, 4.5 — an approved job starts by itself at its window, and a waiting one expires after it
+
+- **What.** Two tasks in the existing RAN NF OAM worker (`app/tasks.py`, with `advance-waves`, the KPI tasks and the purges): `start-due-windows` (default every 15 s,
+  `RAN_NF_OAM_WINDOW_START_SECONDS`) starts every `SCHEDULED` job whose window has opened and not closed; `expire-windows` (default 30 s, `RAN_NF_OAM_WINDOW_EXPIRE_SECONDS`) moves every job still
+  `PENDING_APPROVAL` or `SCHEDULED` whose `window_end` has passed to `EXPIRED`. Both are `main.start_due_windows` and `main.expire_due_windows`, which take `now` so the tests set the clock.
+- **No generic job table.** `MSG-4.1`..`4.6` (a `job` table with its own claim and lease) were not built. The worker already gives "one replica per interval" (`PR-MSG-4`, the claim row of
+  `run_once_per_interval`, freed when a worker dies); each job is then claimed on its own with `SELECT ... FOR UPDATE SKIP LOCKED` (`_claim_job`), the pattern of `lapse_due_approvals`, and its state and
+  window are read again under the lock, because the list was read earlier. One job per transaction. The `row_version` (`PR-ST-2`) is the second guard, and the only one on SQLite: a worker whose write
+  loses to another's gets `StaleDataError` and drops that job. A worker that dies mid-start rolls back (the start is one transaction, as `_resume` is), so the job is still `SCHEDULED` and the next run
+  starts it; edits already sent to an element are merges and may be sent again, as for a wave resumed after a crash.
+- **One start path.** `_start_scheduled_job` is the only way a `SCHEDULED` job starts. `POST /config-jobs/{id}/continue` (`_start_scheduled`) now takes the same lock (waiting, not skipping, for a worker
+  that is starting this very job, then seeing the state it committed: 409) and calls it, so a manual and an automatic start check the same things in the same order (an approval is recorded; window not
+  closed, `CHANGE_WINDOW_CLOSED`; window open unless `force`, `CHANGE_WINDOW_NOT_OPEN`; the rApp not stopped, `RAPP_KILLED`), fire `START`, stamp the KPI guard's anchor and run the waves. The rate,
+  blast-radius, magnitude, scope and MSAC checks are those of the request that made the job and are not repeated at the start by either path (a deliberate carry-over from `MGT-4.3`; see below).
+- **The edges.** `_window_closed` (`window_end <= now`) and `_window_open` (`scheduled_at <= now`) are the only comparisons, used by the approval, both starts and the expiry: the window is
+  `[start, end)`. At `now == end` the job does not start and expires; one microsecond before, it starts. A window over when the job is asked is 422 (as before); one that closes while the job waits makes
+  the approval 409 `CHANGE_WINDOW_CLOSED` and the job, still `PENDING_APPROVAL`, is expired by the next sweep, so a job approved after `window_end` never starts. A job with no `window_end`
+  (`requireApproval` alone, or a window with a start only) never expires. A window with only an end is open at approval, so the approval runs the job at once and the runner has nothing to do.
+- **EXPIRED.** A new `JobState` and event (`EXPIRE`, from both waiting states); revision `0044` widens the status CHECK (expand only; `test_status_checks.py` keeps it equal to `JobState`). The job
+  keeps `decided_by` (the approver of a `SCHEDULED` job; nobody for a held one), every change is `REJECTED` `WINDOW_EXPIRED`, and `halted_reason` `WINDOW_EXPIRED` with the time the window closed and the
+  state the job was in in `halted_detail`. No new column. The FSM publishes `write-config-job.state-changed` as for every other transition (`MSG-3.5`).
+- **When the worker's start is refused.** The only start-time refusal is the kill switch (`RAPP_KILLED`: the rApp that owns the job was stopped while it waited). A person's `continue` answers 403 and
+  leaves the job `SCHEDULED` as in `MGT-4.3` (they read the answer and may withdraw it). The worker has nobody to answer and would be refused every 15 s, so `START_REFUSED` ends the job `FAILED` (the
+  new FSM event; every change `REJECTED` with the refusal's code, `halted_reason` `START_REFUSED`, the code and text in `halted_detail`). The refusal is recorded and announced by `_refuse`
+  (`GET /safeguard-refusals`, `RAPP_SAFEGUARD_REFUSAL`) before the job is failed; a later run does not try it again. Any other error (a defect, a database fault) rolls that job back, is logged with its id
+  and leaves it `SCHEDULED` for the next run: it stops when the window closes (the job expires) and, for a job with no end, is retried for ever and logged each time, which is meant to be noticed.
+- **No decision record, no audit row.** `rapp_decision_record.job_id` is unique and an rApp's job already has its record from `_execute_write`; the reject route of `MGT-4.3` writes none either. The job
+  row, the event and the refusal record say how it ended. Chart and compose: nothing, the worker's tasks and their intervals are code, not chart values (only the retention days are).
+- **Console.** No component changed. `EXPIRED` already has its tone, the Change windows tab lists only the two waiting states (an expired job leaves both lists), `FAILED` was shown already. The one stale text,
+  the sub-title of the approved list saying that the automatic start "is MGT-4.4", is rewritten in the English and German catalogs and in the page's README.
+- **Tests.** RAN NF OAM `test_window_runner.py` (18) and one FSM case: window not open, job not approved, open window starts once and a second run is a no-op, the boundary at both ends, both states
+  expire, an expired job takes no decision, no `window_end` never expires and a job approved after the close never starts, manual and automatic start end the same (state, outcomes, events), two replicas
+  racing (re-read under the lock; `concurrent_commit_on`; a locked row passed over), a worker dying mid-start, a refused start fails the job once, the event, the tasks and their interval variables.
+- **Not taken.** A decision record or audit row for an expiry or a refused start (above). A retry limit for an unexpected error at start (the window's close is the limit; none for a job without one).
+  `POST .../start-due` and `.../expire-due` routes for an external scheduler (the worker is the runner; `advance-due` and `expire-due` exist for other tasks only because a scheduler once ran them).
+  Re-checking MSAC, scope and the rate limits at the start: they were checked when the job was asked, the window can be days away and the manual start never re-checked them; to re-check is a decision
+  for the owner (a role changed in between would then fail the job). A `count` of `EXPIRED` jobs on the console's sidebar. Recurring windows.
 
 ### GUI-5.1, 5.2 — a console user's region/tenant scope, enforced by the modules
 

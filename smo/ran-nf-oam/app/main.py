@@ -34,6 +34,7 @@ from smo_shared.statemachine import IllegalTransition
 from sqlalchemy import ColumnElement, and_, delete, func, or_, select
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import InstrumentedAttribute, Session
+from sqlalchemy.orm.exc import StaleDataError
 
 from smo_shared.logconfig import install_logging
 from smo_shared.metrics import install_metrics
@@ -1614,7 +1615,7 @@ def continue_configuration_job(job_id: uuid.UUID, body: WaveActionRequest, reque
     # SEC-15.4: 404 for an unknown job or another scoped rApp's, 403 `SCOPE_DENIED` for a job that wrote outside the caller's scope, then 409 when it is not HALTED (`_halted_job`).
     scheduled = _job_in_reach(db, request, job_id, body.requestedBy)
     if scheduled.status == JobState.SCHEDULED:
-        return _start_scheduled(db, scheduled, body)                        # MGT-4.3: an approved job whose window is open is started here (MGT-4.4 will start it by itself)
+        return _start_scheduled(db, scheduled, body)                        # MGT-4.3: an approved job whose window is open is started here (the worker starts it by itself, MGT-4.4, by the same code)
     job = _halted_job(db, request, job_id, JobEvent.RESUME, body.requestedBy)
     _refuse_if_killed(db, job.invoker_id, body.requestedBy)               # AI-10.4: a stopped rApp's job does not go on to its next wave
     if job.halted_reason == "WAVE_PAUSE" and job.next_wave_at and as_utc(job.next_wave_at) > datetime.datetime.now(datetime.UTC) and not body.force:
@@ -2276,12 +2277,12 @@ def _window_view(job: WriteConfigJob) -> dict:
 
 def _approve_window(db: Session, job: WriteConfigJob, decider: str, reason: str | None) -> None:
     """Record the approval of a PENDING_APPROVAL job and move it on: SCHEDULED when its window has not opened yet, else PROCESSING with its waves run now
-    (409 `CHANGE_WINDOW_CLOSED` when the window has already closed: an approval after the close would run it outside it). The caller commits."""
+    (409 `CHANGE_WINDOW_CLOSED` when the window has already closed: an approval after the close would run it outside it, so a job approved after `window_end` can never start; it stays PENDING_APPROVAL until `expire_due_windows` ends it EXPIRED). The caller commits."""
     now = datetime.datetime.now(datetime.UTC)
-    if job.window_end is not None and as_utc(job.window_end) <= now:
-        raise framework_error(CHANGE_WINDOW_CLOSED, detail=f"the change window closed at {as_utc(job.window_end).isoformat()}")
+    if _window_closed(job, now):
+        raise framework_error(CHANGE_WINDOW_CLOSED, detail=f"the change window closed at {as_utc(cast(datetime.datetime, job.window_end)).isoformat()}")
     job.decided_by, job.decided_at, job.decision_reason = decider, now, reason
-    if job.scheduled_at is not None and as_utc(job.scheduled_at) > now:
+    if not _window_open(job, now):
         job.status = WRITE_CONFIG_JOB_FSM.fire(JobState(job.status), JobEvent.APPROVE_FOR_WINDOW, job=job)
         db.flush()
         return
@@ -2292,22 +2293,171 @@ def _approve_window(db: Session, job: WriteConfigJob, decider: str, reason: str 
     _advance(db, job)
 
 
-def _start_scheduled(db: Session, job: WriteConfigJob, body: "WaveActionRequest") -> dict:
-    """Start an approved job whose window is open (MGT-4.3): 409 `CHANGE_WINDOW_NOT_OPEN` before it opens unless `force`, 409 `CHANGE_WINDOW_CLOSED` after it
-    closes. Runs its waves and commits."""
-    now = datetime.datetime.now(datetime.UTC)
-    if job.window_end is not None and as_utc(job.window_end) <= now:
-        raise framework_error(CHANGE_WINDOW_CLOSED, detail=f"the change window closed at {as_utc(job.window_end).isoformat()}")
-    if job.scheduled_at is not None and as_utc(job.scheduled_at) > now and not body.force:
-        raise framework_error(CHANGE_WINDOW_NOT_OPEN, detail=f"the change window opens at {as_utc(job.scheduled_at).isoformat()}; send force=true to start now")
-    _refuse_if_killed(db, job.invoker_id, body.requestedBy)
+def _window_closed(job: WriteConfigJob, now: datetime.datetime) -> bool:
+    """Whether the job's change window has closed at `now`. `window_end` is the first instant the window is over: at `now == window_end` the job may no longer start
+    and is due to expire; this one comparison is used by approval, both starts and the expiry, so they cannot disagree about the boundary (MGT-4.5)."""
+    return job.window_end is not None and as_utc(job.window_end) <= now
+
+
+def _window_open(job: WriteConfigJob, now: datetime.datetime) -> bool:
+    """Whether the job's change window has opened at `now` (`scheduled_at` is the first instant it is open; no start means open). Closing is `_window_closed`'s."""
+    return job.scheduled_at is None or as_utc(job.scheduled_at) <= now
+
+
+def _claim_job(db: Session, job_id: uuid.UUID, *, skip_locked: bool) -> WriteConfigJob | None:
+    """Select the job FOR UPDATE and reload it from the database (not from the session's identity map), so what the caller then checks is what is committed now.
+    This is the claim of the change-window runner (MGT-4.4/4.5) and of the manual start: whoever holds the row's lock decides, and a second claimant that gets the
+    lock afterwards sees the state the first one committed. With `skip_locked` (the worker) a row another replica holds is passed over and None is returned, as
+    `lapse_due_approvals` does; without it (a person's request) the call waits for that replica. None also when the job does not exist. The row's `row_version`
+    is the second line of defence (a flush of a stale copy raises StaleDataError), and the only one on SQLite, which ignores FOR UPDATE."""
+    stmt = select(WriteConfigJob).where(WriteConfigJob.job_id == job_id).with_for_update(skip_locked=skip_locked).execution_options(populate_existing=True)
+    return db.scalars(stmt).one_or_none()
+
+
+def _start_scheduled_job(db: Session, job: WriteConfigJob, *, started_by: str, force: bool = False, now: datetime.datetime | None = None) -> None:
+    """The one way an approved (SCHEDULED) job starts, for a person's `continue` (MGT-4.3) and for the worker's `start-due-windows` (MGT-4.4), so both run the same checks in
+    the same order and cannot behave differently. The caller holds the claim (`_claim_job`) and commits.
+
+    Raises 409 `APPROVAL_NOT_PENDING` for a job with no recorded approval (SCHEDULED is only reached by an approval, so this is a guard, not a path), 409
+    `CHANGE_WINDOW_CLOSED` once the window has closed, 409 `CHANGE_WINDOW_NOT_OPEN` before it opens unless `force` (a person's), and 403 `RAPP_KILLED` when the rApp that
+    owns the job was stopped while it waited (AI-10.4; recorded as a safeguard refusal like any other, and committed by `_refuse`). Then fires START, stamps
+    `schema_validated_at` (the KPI guard measures from when the job ran, not when it was asked) and runs its waves. The other safeguards (rate, blast radius,
+    magnitude, scope, MSAC) were applied when the job was asked and are not repeated, here or in the manual start."""
+    now = now or datetime.datetime.now(datetime.UTC)
+    if job.decided_by is None:
+        raise framework_error(FrameworkError.APPROVAL_NOT_PENDING, detail="the job has no recorded approval")
+    if _window_closed(job, now):
+        raise framework_error(CHANGE_WINDOW_CLOSED, detail=f"the change window closed at {as_utc(cast(datetime.datetime, job.window_end)).isoformat()}")
+    if not _window_open(job, now) and not force:
+        raise framework_error(CHANGE_WINDOW_NOT_OPEN,
+                              detail=f"the change window opens at {as_utc(cast(datetime.datetime, job.scheduled_at)).isoformat()}; send force=true to start now")
+    _refuse_if_killed(db, job.invoker_id, started_by)
     job.status = WRITE_CONFIG_JOB_FSM.fire(JobState.SCHEDULED, JobEvent.START, job=job)
-    job.schema_validated_at = now                                           # the KPI guard measures from when the job ran, not when it was asked
+    job.schema_validated_at = now
     db.flush()
-    log.info("config job %s started in its change window by %s", job.job_id, body.requestedBy)
+    log.info("config job %s started in its change window by %s", job.job_id, started_by)
     _advance(db, job)
+
+
+def _start_scheduled(db: Session, job: WriteConfigJob, body: "WaveActionRequest") -> dict:
+    """Start an approved job whose window is open (MGT-4.3): the claim and checks of `_start_scheduled_job`, so 409 `CHANGE_WINDOW_NOT_OPEN` before the window opens
+    unless `force`, 409 `CHANGE_WINDOW_CLOSED` after it closes, and 409 (illegal transition) when the worker, or another request, started or ended the job first.
+    Runs its waves and commits."""
+    claimed = _claim_job(db, job.job_id, skip_locked=False)                    # waits for a worker that is starting this very job, then sees what it committed
+    if claimed is None or claimed.status != JobState.SCHEDULED:
+        raise illegal_transition_error(IllegalTransition(JobState(job.status), JobEvent.START), f"configuration job {job.job_id}")
+    _start_scheduled_job(db, claimed, started_by=body.requestedBy, force=body.force)
     db.commit()
-    return _job_summary(job)
+    return _job_summary(claimed)
+
+
+# The name the worker's start is made in when a requester is asked for (the kill-switch refusal record names who tried to start the job).
+SYSTEM_WINDOW_RUNNER = "system:change-window"
+
+
+def _fail_unstartable(db: Session, job_id: uuid.UUID, refusal: HTTPException) -> bool:
+    """MGT-4.4: the worker was refused when it tried to start a SCHEDULED job (`refusal`, the error `_start_scheduled_job` raised, 403 `RAPP_KILLED` today). The job is
+    not left SCHEDULED to be refused again every few seconds: it ends FAILED, every change REJECTED with the refusal's code as the reason, `halted_reason`
+    `START_REFUSED` and the refusal's text in `halted_detail`. Nothing was sent. The refusal itself is already recorded and announced by the safeguard that raised it
+    (`GET /safeguard-refusals`, `RAPP_SAFEGUARD_REFUSAL`). The claim is taken again because `_refuse` committed and so gave up the lock; a job that is no longer SCHEDULED
+    is left. Commits. True when the job was failed."""
+    db.rollback()
+    job = _claim_job(db, job_id, skip_locked=True)
+    if job is None or job.status != JobState.SCHEDULED:
+        db.rollback()
+        return False
+    problem = cast(dict, refusal.detail)                              # `framework_error` puts the ProblemDetails dict in `detail`
+    code, detail = problem["title"], problem.get("detail")
+    job.status = WRITE_CONFIG_JOB_FSM.fire(JobState.SCHEDULED, JobEvent.START_REFUSED, job=job)
+    job.halted_reason, job.halted_detail = "START_REFUSED", f"{code}: {detail}" if detail else code
+    for change in db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job.job_id)):
+        change.status, change.rejection_reason = "REJECTED", code
+    db.commit()
+    log.warning("config job %s was not started in its change window: %s", job_id, job.halted_detail)
+    return True
+
+
+def start_due_windows(db: Session, now: datetime.datetime | None = None) -> dict[str, list[str]]:
+    """MGT-4.4: what the worker's `start-due-windows` task runs. Every SCHEDULED job whose window has opened and not closed is started, once however many workers run.
+
+    A candidate is claimed FOR UPDATE SKIP LOCKED, so a job another replica is starting is passed over, and its state and window are checked again under the lock
+    (the list was read earlier). It then starts through `_start_scheduled_job`, the same checks as a person's `continue`, and is committed on its own, one job
+    per transaction. A job whose window has closed is not started: `expire_due_windows` takes it. A start that is refused (the rApp was stopped while the job waited)
+    fails the job (`_fail_unstartable`). Any other error rolls that job back, is logged and leaves it SCHEDULED for the next run; it is retried until its window closes,
+    and one with no `window_end` that keeps failing is retried (and logged) every run: that is a defect to fix, not a state to hide.
+    `now` is for tests; the clock is read again for each job otherwise, since starting one can take a while. Returns the ids `{"started": [...], "refused": [...]}`."""
+    reference = now or datetime.datetime.now(datetime.UTC)
+    ids = list(db.scalars(select(WriteConfigJob.job_id).where(
+        WriteConfigJob.status == JobState.SCHEDULED, or_(WriteConfigJob.scheduled_at.is_(None), WriteConfigJob.scheduled_at <= reference),
+        or_(WriteConfigJob.window_end.is_(None), WriteConfigJob.window_end > reference)).order_by(WriteConfigJob.scheduled_at).limit(APPROVAL_SWEEP_BATCH)).all())
+    db.rollback()                                                         # ends the read; each job below is its own transaction
+    started: list[str] = []
+    refused: list[str] = []
+    for job_id in ids:
+        at = now or datetime.datetime.now(datetime.UTC)
+        try:
+            job = _claim_job(db, job_id, skip_locked=True)
+            if job is None or job.status != JobState.SCHEDULED or _window_closed(job, at) or not _window_open(job, at):
+                db.rollback()                                             # another replica has it, or it moved on, or the window shut since the list was read
+                continue
+            try:
+                _start_scheduled_job(db, job, started_by=SYSTEM_WINDOW_RUNNER, now=at)
+            except HTTPException as refusal:
+                if cast(dict, refusal.detail)["title"] == CHANGE_WINDOW_CLOSED[0]:     # cannot happen after the check above; if it did, expiry owns the job
+                    db.rollback()
+                    continue
+                if _fail_unstartable(db, job_id, refusal):
+                    refused.append(str(job_id))
+                continue
+            db.commit()
+            started.append(str(job_id))
+        except StaleDataError:
+            db.rollback()                                                 # a person or another replica changed the job under us: theirs stands
+        except Exception:                                                 # noqa: BLE001 — one job's failure must not stop the others
+            db.rollback()
+            log.exception("config job %s could not be started in its change window; it stays SCHEDULED and is tried again", job_id)
+    if started or refused:
+        log.info("change windows: %d job(s) started, %d refused", len(started), len(refused))
+    return {"started": started, "refused": refused}
+
+
+def expire_due_windows(db: Session, now: datetime.datetime | None = None) -> list[str]:
+    """MGT-4.5: what the worker's `expire-windows` task runs. Every job still PENDING_APPROVAL or SCHEDULED when its `window_end` has passed (`window_end <= now`: the
+    close is exclusive, see `_window_closed`) moves to EXPIRED, its changes REJECTED `WINDOW_EXPIRED`, `halted_reason` `WINDOW_EXPIRED` and the time and state it
+    was in written to `halted_detail`. Nothing was sent. The approver of a SCHEDULED job stays on the job (`decided_by`); nobody is named for one nobody decided.
+    A job with no `window_end` (held with `requireApproval` only, or a window with a start only) never expires.
+
+    The FSM transition publishes `write-config-job.state-changed` (MSG-3.5). No decision record is written: a record exists once per job and was made when the job was asked
+    (`_execute_write`), and the job row and the event say how it ended. Each job is claimed FOR UPDATE SKIP LOCKED, checked again under the lock, and committed on its own,
+    so two replicas expire it once. Returns the ids expired. `now` is for tests; the clock is read again for each job otherwise."""
+    reference = now or datetime.datetime.now(datetime.UTC)
+    ids = list(db.scalars(select(WriteConfigJob.job_id).where(
+        WriteConfigJob.status.in_((JobState.PENDING_APPROVAL, JobState.SCHEDULED)), WriteConfigJob.window_end <= reference)
+        .order_by(WriteConfigJob.window_end).limit(APPROVAL_SWEEP_BATCH)).all())
+    db.rollback()
+    expired: list[str] = []
+    for job_id in ids:
+        at = now or datetime.datetime.now(datetime.UTC)
+        try:
+            job = _claim_job(db, job_id, skip_locked=True)
+            if job is None or job.status not in (JobState.PENDING_APPROVAL, JobState.SCHEDULED) or not _window_closed(job, at):
+                db.rollback()
+                continue
+            was = job.status
+            job.status = WRITE_CONFIG_JOB_FSM.fire(JobState(was), JobEvent.EXPIRE, job=job)
+            job.halted_reason = "WINDOW_EXPIRED"
+            job.halted_detail = f"the change window closed at {as_utc(cast(datetime.datetime, job.window_end)).isoformat()} while the job was {was}"
+            for change in db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job.job_id)):
+                change.status, change.rejection_reason = "REJECTED", "WINDOW_EXPIRED"
+            db.commit()
+            expired.append(str(job_id))
+            log.info("config job %s expired: %s", job_id, job.halted_detail)
+        except StaleDataError:
+            db.rollback()
+        except Exception:                                                 # noqa: BLE001 — one job's failure must not stop the others
+            db.rollback()
+            log.exception("config job %s could not be expired; it is tried again", job_id)
+    return expired
 
 
 def _waiting_job(db: Session, request: Request, job_id: uuid.UUID, body: ApprovalDecisionRequest, states: tuple[JobState, ...]) -> WriteConfigJob:

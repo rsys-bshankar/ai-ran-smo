@@ -814,14 +814,12 @@ No steps open.
 | Step | What | Done when | Needs |
 |---|---|---|---|
 
-#### PR-MGT-4 — Change windows and approvals
+#### PR-MGT-4 — Change windows and approvals (done: `HISTORY.md` "MGT-4.1, 4.2, 4.3 / GUI-7.1" and "MGT-4.4, 4.5")
 
-MGT-4.1 to 4.3 are built (`HISTORY.md` "MGT-4.1, 4.2, 4.3 / GUI-7.1"): the window, the hold, approve and reject, and starting an approved job in its window by hand. What remains starts and ends it by itself:
+No steps open.
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| MGT-4.4 | Start at the window | Job starts once across replicas | MGT-4.1, MSG-4.2 |
-| MGT-4.5 | Expire after `window_end` | Job moves to `EXPIRED` | MGT-4.4 |
 
 #### PR-MGT-6 — Drift detection
 
