@@ -37,7 +37,7 @@ export const approvals: Partial<Record<MessageKey, string>> = {
   "approvals.windows.reject.confirm": "Diese Änderung ablehnen? Es wurde nichts gesendet; der Job endet mit REJECTED.",
   "approvals.windows.rejected": "Änderung abgelehnt",
   "approvals.scheduled.title": "Freigegeben, warten auf ihr Fenster",
-  "approvals.scheduled.sub": "im Fenster mit „Starten“ gestartet (automatischer Start im Fenster ist MGT-4.4)",
+  "approvals.scheduled.sub": "startet automatisch, wenn das Fenster öffnet, oder von Hand mit „Starten“; verfällt, wenn das Fenster vorher schließt",
   "approvals.scheduled.empty": "Kein freigegebener Job wartet auf sein Fenster.",
   "approvals.scheduled.approvedBy": "Freigegeben von",
   "approvals.scheduled.state": "Status",

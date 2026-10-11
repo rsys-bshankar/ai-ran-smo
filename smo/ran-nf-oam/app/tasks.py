@@ -3,6 +3,10 @@ process. Each task finds what is due from the database, does it in committed ste
 
   advance-waves             every 15 s   the next wave of every staged CM job whose pause has elapsed (`POST /config-jobs/advance-due`), and of every software campaign
                                          (`POST /software-campaigns/advance-due`, which also fails the software jobs of a campaign with a `jobTimeoutSeconds` that have not reported in time, MGT-15.7)
+  start-due-windows         every 15 s   the approved (SCHEDULED) config jobs whose change window has opened, started by the worker itself and once however many replicas run (MGT-4.4);
+                                         `RAN_NF_OAM_WINDOW_START_SECONDS`
+  expire-windows            every 30 s   the config jobs still PENDING_APPROVAL or SCHEDULED when their `window_end` has passed, ended EXPIRED with nothing sent (MGT-4.5);
+                                         `RAN_NF_OAM_WINDOW_EXPIRE_SECONDS`
   publish-kpis              every 30 s   the KPI schedules whose interval has passed (`PUT /kpi-schedules/{id}`)
   run-kpi-guards            every minute the KPI guards of finished CM jobs whose observation window has passed (`kpiGuard` on `POST /config-jobs`)
   expire-approvals          every minute the rApp action approvals nobody decided in time (EXPIRED or REJECTED by the policy they were parked under; AI-11.3)
@@ -18,11 +22,22 @@ A purge task whose retention is `0` still estimates its table's rows (`smo_share
 and one WARNING a day above `SMO_RETENTION_WARN_ROWS`.
 """
 
+import os
+
 from smo_shared.db import SessionLocal
 from smo_shared.retention import purge, report_retention_off, retention_days
 from smo_shared.worker import Task
 
 from .models import Alarm, PMFile, RAppActionApproval, RAppDecisionRecord, SafeguardRefusal
+
+
+def _interval(variable: str, default: float) -> float:
+    """The interval in seconds the environment variable `variable` sets for a task, or `default` when it is unset, not a number or below one second.
+    Read once, when this module is imported by the worker; a change needs a restart. The worker still ticks only every `SMO_WORKER_TICK_SECONDS`."""
+    try:
+        return max(1.0, float(os.environ.get(variable, default)))
+    except ValueError:
+        return default
 
 
 def advance_waves() -> None:
@@ -32,6 +47,22 @@ def advance_waves() -> None:
     with SessionLocal() as db:
         main.advance_due(db)
         lifecycle.advance_due(db)                  # MGT-15: the software campaigns whose pause has elapsed, and the running ones that have fallen behind
+
+
+def start_due_windows() -> None:
+    """Task `start-due-windows`: starts the approved config jobs whose change window has opened (`main.start_due_windows`); each job is claimed and committed on its own and a
+    job another replica holds is skipped, so a job starts once across all workers. A start the safeguards refuse ends that job FAILED (MGT-4.4)."""
+    from . import main
+    with SessionLocal() as db:
+        main.start_due_windows(db)
+
+
+def expire_windows() -> None:
+    """Task `expire-windows`: ends the config jobs that are still waiting (PENDING_APPROVAL or SCHEDULED) when their `window_end` has passed (`main.expire_due_windows`), EXPIRED
+    with nothing sent (MGT-4.5); each is claimed and committed on its own."""
+    from . import main
+    with SessionLocal() as db:
+        main.expire_due_windows(db)
 
 
 def publish_kpis() -> None:
@@ -122,7 +153,11 @@ def purge_decision_records() -> None:
         report_retention_off(db, "rapp_decision_record", RAppDecisionRecord, days)
 
 
-TASKS = [Task("advance-waves", 15, advance_waves), Task("publish-kpis", 30, publish_kpis), Task("run-kpi-guards", 60, run_kpi_guards),
+# The two change-window tasks run at their own interval (`RAN_NF_OAM_WINDOW_START_SECONDS`, default 15; `RAN_NF_OAM_WINDOW_EXPIRE_SECONDS`, default 30). A window
+# therefore starts its job at most one interval plus a worker tick late, and a job is expired at most as late.
+TASKS = [Task("advance-waves", 15, advance_waves),
+         Task("start-due-windows", _interval("RAN_NF_OAM_WINDOW_START_SECONDS", 15), start_due_windows),
+         Task("expire-windows", _interval("RAN_NF_OAM_WINDOW_EXPIRE_SECONDS", 30), expire_windows), Task("publish-kpis", 30, publish_kpis), Task("run-kpi-guards", 60, run_kpi_guards),
          Task("expire-approvals", 60, expire_approvals), Task("chain-decisions", 60, chain_decisions),
          Task("purge-safeguard-refusals", 3600, purge_safeguard_refusals), Task("purge-cleared-alarms", 3600, purge_cleared_alarms),
          Task("purge-pm-files", 3600, purge_pm_files), Task("purge-approvals", 3600, purge_approvals),

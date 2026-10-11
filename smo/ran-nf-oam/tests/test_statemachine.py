@@ -74,6 +74,17 @@ def test_a_job_waiting_for_approval_takes_no_dispatch_event():
         WRITE_CONFIG_JOB_FSM.fire(JobState.REJECTED, JobEvent.APPROVE)
 
 
+# MGT-4.4/4.5: the worker's two ways of ending a wait, and that nothing leaves EXPIRED.
+def test_a_job_whose_window_closes_expires_and_a_refused_start_fails():
+    """Both waiting states EXPIRE, a SCHEDULED job whose start is refused FAILS, an unapproved job has no START_REFUSED, and EXPIRED is final."""
+    assert WRITE_CONFIG_JOB_FSM.fire(JobState.PENDING_APPROVAL, JobEvent.EXPIRE) == JobState.EXPIRED == WRITE_CONFIG_JOB_FSM.fire(JobState.SCHEDULED, JobEvent.EXPIRE)
+    assert WRITE_CONFIG_JOB_FSM.fire(JobState.SCHEDULED, JobEvent.START_REFUSED) == JobState.FAILED
+    for state, event in ((JobState.PENDING_APPROVAL, JobEvent.START_REFUSED), (JobState.PROCESSING, JobEvent.EXPIRE), (JobState.EXPIRED, JobEvent.START),
+                         (JobState.EXPIRED, JobEvent.APPROVE), (JobState.EXPIRED, JobEvent.REJECT), (JobState.EXPIRED, JobEvent.EXPIRE)):
+        with pytest.raises(IllegalTransition):
+            WRITE_CONFIG_JOB_FSM.fire(state, event)
+
+
 # ------------------------------------------------------------ SoftwareManagementJob
 
 def test_software_management_full_sequence():
