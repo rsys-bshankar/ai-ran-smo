@@ -9,7 +9,7 @@ description: "The AI-RAN SMO (service management and orchestration) platform: th
 type: application
 # The chart's own version moves when the chart changes; appVersion is the SMO release whose images it installs
 # (ghcr.io/<owner>/<repo>/smo-<module>:<appVersion>). The release PR of docs/RELEASES.md raises both.
-version: 0.7.0
-appVersion: "0.7.0"
+version: 0.8.0
+appVersion: "0.8.0"
 kubeVersion: ">=1.27.0-0"
 keywords: [smo, o-ran, r1, rapp]
