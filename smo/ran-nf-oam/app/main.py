@@ -2332,8 +2332,9 @@ def _enforce_start_safeguards(db: Session, job: WriteConfigJob, started_by: str)
     The kill switch is checked by the caller first. Not repeated: MSAC (decided at the request and again at the approval, and the approver is not the requester), and the ownership
     of the job, which a person's `continue` has already been asked (`_job_in_reach`) and which the worker, acting for nobody, is not."""
     caller = job.invoker_id
-    changes = [{"managedElementRef": r.managed_element_ref, "managedFunctionRef": r.managed_function_ref, "attributeChanges": r.attribute_changes, "operation": r.operation}
-               for r in db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job.job_id).order_by(WriteConfigSubChange.position)).all()]
+    changes: list[dict[str, Any]] = [{"managedElementRef": r.managed_element_ref, "managedFunctionRef": r.managed_function_ref, "attributeChanges": r.attribute_changes,
+                                      "operation": r.operation}
+                                     for r in db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job.job_id).order_by(WriteConfigSubChange.position)).all()]
     _enforce_scope(db, authz_scope.from_introspection(job.requester_scope), caller, started_by, [c["managedElementRef"] for c in changes])
     _enforce_rapp_limit(db, caller, started_by, exclude_job=job.job_id)
     _enforce_limits_of(db, changes, started_by, caller)
