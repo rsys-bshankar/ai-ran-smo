@@ -249,3 +249,26 @@ def test_a_row_naming_something_that_does_not_exist_stops_the_downgrade_across_0
     engine.dispose()
     assert _run(MIGRATE, url, "--downgrade", "0021").returncode == 0
     assert _run(MIGRATE, url, "--current").stdout.strip() == "0021"
+
+
+@needs_postgres
+def test_downgrading_0017_keeps_every_rapp_limit_row_including_one_without_an_hourly_cap(databases):
+    """SEC-15.14: 0017's downgrade used to DELETE the `rapp_limit` rows that have no hourly cap (a blast radius only), destroying rows the revision did not create. It now keeps them
+    (the cap becomes the largest INTEGER, meaning none), keeps the other rows' values untouched, and the database upgrades again afterwards."""
+    url = databases["fresh"]
+    assert _run(MIGRATE, url).returncode == 0
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        table = connection.execute(text("SELECT table_schema || '.rapp_limit' FROM information_schema.tables WHERE table_name = 'rapp_limit'")).scalar_one()
+        connection.execute(text(f"INSERT INTO {table} (invoker_id, max_config_jobs_per_hour, max_elements_per_job, max_change_percent, updated_at) VALUES "
+                                "('capped', 7, 3, 12.5, now()), ('blast-only', NULL, 4, NULL, now())"))
+    down = _run(MIGRATE, url, "--downgrade", "0016")
+    assert down.returncode == 0 and "downgraded to 0016" in down.stdout, down.stderr
+    with engine.connect() as connection:
+        rows = dict(connection.execute(text("SELECT invoker_id, max_config_jobs_per_hour FROM rapp_limit")).all())
+        nullable = connection.execute(text("SELECT is_nullable FROM information_schema.columns WHERE table_name = 'rapp_limit' AND column_name = 'max_config_jobs_per_hour'")).scalar_one()
+    assert rows == {"capped": 7, "blast-only": 2147483647}
+    assert nullable == "NO"                                                                    # the old schema's NOT NULL is back
+    assert _run(MIGRATE, url).returncode == 0                                                  # and it goes up again
+    assert _run(MIGRATE, url, "--current").stdout.strip() == HEAD
+    engine.dispose()

@@ -7,10 +7,10 @@ shows the whole pipeline at a high level and call flow 17 the serving runtime; t
 covers what each governance event does, what it writes, and what it leaves unchanged.
 
 Every governance and end-of-life event goes through one route, `POST
-/aimgf/models/{id}/advance?event=…&decided_by=…&rationale=…`. An SMO module or a tool with an internal token calls it through
-`sdk.lifecycle.LifecycleClient.advance_model_lifecycle(model_id, event, decided_by,
-rationale)`, and the GUI calls it through the BFF. A caller with the rApp role is refused with 403
-`ROLE_NOT_PERMITTED` (SEC-15.1): the decisions are the operator's. `advance` accepts only
+/aimgf/models/{id}/advance?event=…&decided_by=…&rationale=…`. An SMO module or a tool with an internal token calls it directly, and the GUI calls it
+through the BFF. A caller with the rApp role is refused with 403
+`ROLE_NOT_PERMITTED` (SEC-15.1; the gateway's rApp allow-list does not name the route, SEC-15.1b): the decisions are the operator's. The SDK's
+`sdk.lifecycle.LifecycleClient.advance_model_lifecycle` is deprecated for that reason and raises the same 403 without sending anything. `advance` accepts only
 `ADVANCEABLE_EVENTS` (`aimgf/app/statemachine.py`): the eight `GOVERNANCE_EVENTS` plus
 `DEPRECATE` and `RETIRE`. A job-driven event (`CREATE_TRAINING`, `TRAINING_COMPLETE`,
 `CREATE_VALIDATION`, …) is refused with 422 `SCHEMA_VALIDATION_FAILED` whose detail names the

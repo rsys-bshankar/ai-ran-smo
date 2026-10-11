@@ -9,8 +9,8 @@
 | Depends on (over R1) | R1 Termination (`/bootstrap` and the proxied routes of SME, DME, MLMR, rApp Management) |
 | Called by | Any Java rApp; the example `examples/hello-rapp`. No SMO module uses it |
 | Database tables | None |
-| Retries and idempotency | 4 attempts with exponential backoff on 429/502/503/504 and transport errors; every POST carries an `Idempotency-Key` its repeats reuse; one repeat on `409 CONCURRENT_MODIFICATION` |
-| Unit tests | 48 (`smo-sdk` 42, `hello-rapp` 6), JUnit 6, no network beyond loopback; CI job `sdk-java` |
+| Retries and idempotency | 4 attempts with exponential backoff on 429/502/503/504 and transport errors; every POST carries an `Idempotency-Key` its repeats reuse; the invoker registration is repeated only on 429/503; one repeat on `409 CONCURRENT_MODIFICATION` |
+| Unit tests | 52 (`smo-sdk` 46, `hello-rapp` 6), JUnit 6, no network beyond loopback; CI job `sdk-java` |
 | Status | RAPP-4.2 to 4.5 done for Java. Open: a run against the live compose stack, mTLS from the environment, the analytics / lifecycle / intent namespaces (`OPEN_ITEMS.md`, PR-RAPP-4) |
 
 ## 1. High-level design (HLD)
@@ -45,8 +45,8 @@ rApp code --> SmoSdk --> R1Client --(Bearer)--> R1 Termination --> module
 | Identity | `SMO_INVOKER_ID` + `SMO_INVOKER_SECRET` pin an identity (the pair `POST /rapp-mgmt/instances/{id}/credentials` issues, the right choice for a deployed instance: the gateway lets a rApp register the operator API of its own instance only, by invoker id). Unset, the SDK enrols a new invoker (`smo-rapp:<MODULE>:<random>`) on first use and removes it on `close()` |
 | Token | Cached until 30 s before `expires_in`; one fresh grant and one repeat of the call on a 401; a second 401 is the answer. Failing to get a token is an `SdkException` |
 | Stale invoker | Self-enrolled and SME says `invalid_client`: enrol again, once. Pinned: error (the SDK never swaps an identity the operator issued) |
-| Retry | `RetryPolicy.defaults()`: 4 attempts, 200 ms, doubling, capped at 5 s, full jitter; `Retry-After` (seconds) wins, capped at 30 s. Retried: 429, 502, 503, 504 and I/O errors (including timeouts). Not retried: every other status (a 4xx is final) |
-| POST | `Idempotency-Key` (generated, or the caller's) on every POST, reused by every repeat, so the platform answers a repeat of a completed POST from the stored first answer (PR-ST-3) |
+| Retry | `RetryPolicy.defaults()`: 4 attempts, 200 ms, doubling, capped at 5 s, full jitter; `Retry-After` (seconds) wins, capped at 30 s. Retried: 429, 502, 503, 504 and I/O errors (including timeouts). Not retried: every other status (a 4xx is final). The enrolment POST is the exception to the exception: it is repeated only on 429 and 503 (SME did not run it), never after an I/O error, 502 or 504, because a repeat after a lost answer would register a second invoker (`SEC-15.13`) |
+| POST | `Idempotency-Key` (generated, or the caller's) on every POST, reused by every repeat, so the platform answers a repeat of a completed POST from the stored first answer (PR-ST-3). The invoker registration (`POST /invoker-registrations`) carries one key generated per registration (a re-enrolment gets a new one); SME does not store an answer for that route (it would hold the onboarding secret), so the limit on repeats above is what keeps it to one registration |
 | Lost write race | A mutating call answered `409` with ProblemDetails title `CONCURRENT_MODIFICATION` is sent once more (as the Python SDK's `_RetryOnConflict`). Reads are not |
 | Responses | `>= 400` raises `SdkException` (status, raw body); 204 or an empty body is a missing JSON node; an object with a list `items` is unwrapped to the list (`total`, `limit`, `offset` are dropped, as in Python) |
 | Secrets | None in code or logs: `SmoConfig.toString()` omits the secret and the bootstrap key; `SMO_BOOTSTRAP_KEY_FILE` / `SMO_ENROLLMENT_SECRET_FILE` read compose secrets |
@@ -179,7 +179,7 @@ The CSAR is the same as any other (`../docs/RAPP_PACKAGING.md`, §7.2 for the Ja
 
 | Test class | Covers |
 |---|---|
-| `TokenProviderTest` (11) | enrol then grant (body, scope, label, no enrollment header for a rApp), module scope and `X-SMO-Enrollment`, cache until lifetime minus 30 s, refresh, pinned identity never enrolled or offboarded, re-enrolment on `invalid_client` (self-enrolled only), a refused grant keeps status and body, bootstrap without token endpoint, retry during enrolment, offboard |
+| `TokenProviderTest` (15) | enrol then grant (body, scope, label, no enrollment header for a rApp), module scope and `X-SMO-Enrollment`, cache until lifetime minus 30 s, refresh, pinned identity never enrolled or offboarded, re-enrolment on `invalid_client` (self-enrolled only), a refused grant keeps status and body, bootstrap without token endpoint, retry during enrolment, the enrolment's one Idempotency-Key reused by repeats and new per re-enrolment, a lost answer or a 504 on the enrolment not repeated, offboard |
 | `R1ClientTest` (15) | bearer and `Accept`, `{items}` unwrapping, 401 refresh once and a second 401 final, retry with backoff and `Retry-After`, attempts exhausted, a 4xx not retried and mapped with its body, an unreachable gateway (status 0), `Idempotency-Key` on POST reused by repeats and a caller's own wins, repeat on `CONCURRENT_MODIFICATION` only, reads not repeated, 204, query encoding, `close()` offboards |
 | `RetryPolicyTest` (5) | backoff doubling and cap, jitter bound, `Retry-After` cap, retryable statuses |
 | `SmoConfigTest` (6) | defaults equal the Python client's, variable names, `_FILE` secrets, module vs rApp, id and secret together, `toString` hides secrets |

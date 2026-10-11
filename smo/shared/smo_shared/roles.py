@@ -101,7 +101,8 @@ RAPP_MAY_CHANGE: dict[str, tuple[tuple[frozenset[str], re.Pattern], ...] | None]
             (("POST",), r"^/training-jobs/[^/]+/(suspend|resume|progress|model-metrics|complete)$"),
             (("POST",), r"^/(validation|emulation)-jobs/[^/]+/complete$"),
             (("POST",), r"^/mlmf/subscriptions/[^/]+/reports$"),
-            (("POST",), r"^/models/[^/]+/(advance|inference-jobs|runtime/deploy|runtime/activate)$"),
+            # not `/models/{id}/advance`: the governance and end-of-life decisions are the operator's (SEC-15.1, SEC-15.1b); AIMgF refuses an rApp there too
+            (("POST",), r"^/models/[^/]+/(inference-jobs|runtime/deploy|runtime/activate)$"),
             (("POST",), r"^/inference-jobs/[^/]+/resolve$"),
         ),
         "/mlmr": (

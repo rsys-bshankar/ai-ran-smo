@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * The process's OAuth2 identity at SME and its cached access token: the Java counterpart of the Python client's
@@ -165,8 +166,11 @@ public final class TokenProvider {
     /**
      * Registers a new API invoker at SME and keeps the id and secret it returns as the identity, marked as self-enrolled. The
      * request carries an opaque label in place of a public key; a module identity also sends its enrollment secret in
-     * {@code X-SMO-Enrollment}. The call goes through {@link HttpCaller#send} with the configured retry policy, like every
-     * other call, and carries no {@code Idempotency-Key}. Throws {@link SdkException} for an error status or an answer without
+     * {@code X-SMO-Enrollment}. Every registration mints a new invoker, so a repeat after a lost answer would leave an orphan
+     * and an identity nobody holds (SEC-15.13): the call carries an {@code Idempotency-Key} generated once for this registration
+     * (all its repeats send the same one, a re-enrolment gets a new one) and is repeated only on 429 and 503, which prove SME did
+     * not run it; a transport failure, 502 or 504 is raised. SME does not store an answer for this route (it would hold the
+     * onboarding secret), so today the key is a promise to a platform that may and the limit on repeats is what keeps it single. Throws {@link SdkException} for an error status or an answer without
      * an id and secret. The caller holds {@code lock}.
      */
     private void enrol(String endpoint) {
@@ -179,8 +183,9 @@ public final class TokenProvider {
         if (config.module() && config.enrollmentSecret() != null) {
             headers.put("X-SMO-Enrollment", config.enrollmentSecret());
         }
+        headers.put("Idempotency-Key", UUID.randomUUID().toString().replace("-", ""));
         R1Response response = http.send("POST", smeBase(endpoint) + "/invoker-registrations", headers,
-                Json.write(Map.of("apiInvokerPublicKey", label)), config.retry());
+                Json.write(Map.of("apiInvokerPublicKey", label)), config.retry(), false);
         if (!response.isSuccess()) {
             throw new SdkException(response.status(), response.body());
         }
