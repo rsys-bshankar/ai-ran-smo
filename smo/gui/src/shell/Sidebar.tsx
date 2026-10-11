@@ -14,12 +14,13 @@ import { roleAtLeast } from "../auth/rbac";
 import { KEYS } from "../data/keys";
 import { useScope, withScopeSearch } from "../data/scope";
 import { count, sum, useSummary, type Summary } from "../data/summary";
+import { navKey, useT } from "../i18n";
 import { Icon } from "../kit/icons";
 import { formatCount } from "../kit/Kpi";
 import { NAV_GROUPS, type NavBadge } from "./nav";
 
 /** A badge's number (`nav.ts` NavBadge): the sum of its `keys` (null when one is unknown), plus each of its `extra` counts that is known. */
-export function badgeCount(summary: Summary | undefined, badge: NavBadge): number | null {
+export function badgeCount(summary: Summary | undefined, badge: Pick<NavBadge, "keys" | "extra">): number | null {
   const base = sum(summary, badge.keys);
   if (base === null) return null;
   return (badge.extra ?? []).reduce((total, key) => total + (count(summary, key) ?? 0), base);
@@ -27,12 +28,13 @@ export function badgeCount(summary: Summary | undefined, badge: NavBadge): numbe
 
 /** The rApps the user pinned (at most 5, kept by the GUI backend), listed under the one "rApps" entry. */
 export function PinnedRapps() {
+  const t = useT();
   const pins = usePins();
   const search = withScopeSearch("", useScope());
   const items = pins.data?.items ?? [];
   if (items.length === 0) return null;
   return (
-    <ul className="pins" aria-label="Pinned rApps">
+    <ul className="pins" aria-label={t("shell.sidebar.pinned")}>
       {items.map((p) => (
         <li key={p.instanceId}>
           <NavLink to={{ pathname: `/rapps/${p.instanceId}`, search }} className={({ isActive }) => (isActive ? "nav sub active" : "nav sub")} title={`${p.name ?? ""} ${p.version ?? ""} ${p.state ?? ""}`.trim()}>
@@ -46,31 +48,33 @@ export function PinnedRapps() {
 
 /** "21/21 modules" with a dot coloured by whether every module answered its health probe. */
 function EnvChip() {
+  const t = useT();
   const status = useQuery<ModulesStatus>({ queryKey: KEYS.modulesStatus, queryFn: () => api("/modules/status"), refetchInterval: POLL.status });
   const mods = status.data?.modules ?? [];
   const healthy = mods.filter((m) => m.healthy).length;
   const tone = !status.data ? "d-mute" : healthy === mods.length ? "d-ok" : healthy >= mods.length - 2 ? "d-warn" : "d-bad";
   return (
-    <NavLink to="/#health" className="env-chip" title="SMO module health (GET /<module>/health via R1 Termination)">
+    <NavLink to="/#health" className="env-chip" title={t("shell.sidebar.health")}>
       <span className={`dot ${tone}`} />
-      <span className="grow">Phase 1 · SMO {status.data ? `${healthy}/${mods.length}` : "…"}</span>
-      <span className="mono xs muted">modules</span>
+      <span className="grow">{t("shell.sidebar.phase", { modules: status.data ? `${healthy}/${mods.length}` : "…" })}</span>
+      <span className="mono xs muted">{t("shell.sidebar.modules")}</span>
     </NavLink>
   );
 }
 
 /** The sidebar. `onChangePassword` opens the password dialog the layout owns. */
 export function Sidebar({ onChangePassword }: { onChangePassword: () => void }) {
+  const t = useT();
   const { me, logout } = useAuth();
   const enrolOnly = !!me?.mfaEnrolmentRequired;
   const nav = useSummary("nav", { enabled: !!me && !enrolOnly, refetchInterval: 30_000 });
   const search = withScopeSearch("", useScope());
   if (!me) return null;
   return (
-    <nav className="sidebar" aria-label="Main">
+    <nav className="sidebar" aria-label={t("shell.sidebar.aria")}>
       <div className="brand">
-        <img src="/brand/radisys-mark.png" alt="Radisys" width={36} height={36} />
-        <div><strong>AI-RAN SMO</strong><span>Radisys · Operator Console</span></div>
+        <img src="/brand/radisys-mark.png" alt={t("shell.sidebar.logoAlt")} width={36} height={36} />
+        <div><strong>AI-RAN SMO</strong><span>{t("shell.sidebar.product")}</span></div>
       </div>
       {!enrolOnly && <EnvChip />}
       {NAV_GROUPS.map((g) => {
@@ -78,7 +82,7 @@ export function Sidebar({ onChangePassword }: { onChangePassword: () => void }) 
         if (items.length === 0) return null;
         return (
           <div key={g.title} className="nav-group">
-            <div className="eyebrow">{g.title}</div>
+            <div className="eyebrow">{t(g.titleKey)}</div>
             <ul>
               {items.map((n) => {
                 const n_ = n.badge ? badgeCount(nav.data, n.badge) : null;
@@ -86,8 +90,8 @@ export function Sidebar({ onChangePassword }: { onChangePassword: () => void }) 
                   <li key={n.to}>
                     <NavLink to={{ pathname: n.to, search }} end={n.to === "/"} className={({ isActive }) => (isActive ? "nav active" : "nav")}>
                       <Icon name={n.icon} />
-                      <span className="nav-label">{n.label}</span>
-                      {n.badge && n_ !== null && n_ > 0 && <span className={`nav-count ${n.badge.tone}`} title={`${n_} ${n.badge.title}`}>{formatCount(n_, 999)}</span>}
+                      <span className="nav-label">{t(navKey(n.to))}</span>
+                      {n.badge && n_ !== null && n_ > 0 && <span className={`nav-count ${n.badge.tone}`} title={t(n.badge.titleKey, { n: n_ })}>{formatCount(n_, 999)}</span>}
                     </NavLink>
                     {n.to === "/rapps" && !enrolOnly && <PinnedRapps />}
                   </li>
@@ -103,11 +107,11 @@ export function Sidebar({ onChangePassword }: { onChangePassword: () => void }) 
           <span className="avatar" aria-hidden>{me.username.slice(0, 1).toUpperCase()}</span>
           <div>
             <strong>{me.username}</strong>
-            <span className={`role role-${me.role}`}>{me.role}{me.local !== false && <> · MFA {me.totpEnrolled ? "on" : "off"}</>}</span>
+            <span className={`role role-${me.role}`}>{me.role}{me.local !== false && <> · MFA {me.totpEnrolled ? t("shell.sidebar.mfaOn") : t("shell.sidebar.mfaOff")}</>}</span>
           </div>
-          <button type="button" className="btn ghost small icon" onClick={() => logout()} aria-label="Sign out" title="Sign out"><Icon name="signout" size={16} /></button>
+          <button type="button" className="btn ghost small icon" onClick={() => logout()} aria-label={t("shell.sidebar.signOut")} title={t("shell.sidebar.signOut")}><Icon name="signout" size={16} /></button>
         </div>
-        {me.local !== false && <button type="button" className="btn ghost small" onClick={onChangePassword}>Change password</button>}
+        {me.local !== false && <button type="button" className="btn ghost small" onClick={onChangePassword}>{t("shell.password.title")}</button>}
       </div>
     </nav>
   );

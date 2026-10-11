@@ -6,9 +6,17 @@
  * The state machines are copies of the modules' own (aimgf/app/statemachine.py, onboarding/app/statemachine.py): when a module's machine changes, the matching function
  * here changes with it, and `domain.test.ts` pins each state. The `...Payload` builders only save a round trip: the modules and the BFF validate again and are the authority,
  * and the bounds written here are the ones they enforce. Covered by `domain.test.ts`.
+ *
+ * Words come from the catalog (`i18n/en/common.ts` and `i18n/en/lib.ts`, `domain.*`, GUI-6.4): a function that answers in words takes a last
+ * `t` (English when omitted), and a `..._MEANING` map holds catalog keys a caller shows with `t(...)`.
  */
 
 import type { Alarm, AuthzScope, ConfigJob, KpiCounterSpec, KpiGuardResult, ModuleStatus, RollbackPreview } from "../api/types";
+import { translate, type Params, type TKey, type Translator } from "../i18n";
+
+/** The English translator: the default of the helpers here (and in `data/scope.ts`) that callers and tests use without one; a page passes its
+ * own `useT()` so the words follow the user's language (GUI-6.4). */
+export const ENGLISH: Translator = Object.assign((key: TKey, params?: Params) => translate("en", key, params), { language: "en" as const });
 
 // ---------------------------------------------------------------- AI/ML model FSMs
 // aimgf/app/statemachine.py — Wave 2 split ModelLifecycle (a model's own
@@ -45,14 +53,14 @@ export function completionRoute(stage: CompletionStage): { jobsPath: string; run
   }
 }
 
-/** GUI-7.3: the governance decision a model waits for, by its lifecycle state, in words; the same rule as AIMgF's `awaiting_decision` filter
- * (TRAINED and VALIDATED wait only until their gate is approved). */
-export const GATE_DECISION: Record<string, string> = {
-  TRAINED: "Training finished: approve it before validation can start",
-  VALIDATED: "Validation finished: approve it before emulation can start",
-  EMULATED: "Emulation finished: submit it for approval",
-  PENDING_APPROVAL: "Submitted: approve or reject it",
-  APPROVED: "Approved: certify it, so it can be promoted",
+/** GUI-7.3: the governance decision a model waits for, by its lifecycle state: the catalog key of the sentence (`domain.gate.*`, shown with `t`);
+ * the same rule as AIMgF's `awaiting_decision` filter (TRAINED and VALIDATED wait only until their gate is approved). */
+export const GATE_DECISION: Record<string, TKey> = {
+  TRAINED: "domain.gate.TRAINED",
+  VALIDATED: "domain.gate.VALIDATED",
+  EMULATED: "domain.gate.EMULATED",
+  PENDING_APPROVAL: "domain.gate.PENDING_APPROVAL",
+  APPROVED: "domain.gate.APPROVED",
 };
 
 /** Whether a lifecycle waits for a person's governance decision (the AI/ML page's "Waiting for governance" card and the Approvals inbox). */
@@ -75,39 +83,39 @@ export function awaitsDecision(l: { modelLifecycleState: string; trainingApprove
  * `gate` reflects ModelLifecycle.trainingApproved/validationApproved —
  * TRAINED/VALIDATED only offer the next request route once an operator
  * has already approved the stage that just finished; omitting it (e.g. a
- * caller with no lifecycle row yet) defaults to "not yet approved". */
-export function modelActions(state: string, gate?: { trainingApproved: boolean; validationApproved: boolean }): ModelAction[] {
+ * caller with no lifecycle row yet) defaults to "not yet approved". The labels are in `t`'s language (English when omitted). */
+export function modelActions(state: string, gate?: { trainingApproved: boolean; validationApproved: boolean }, t: Translator = ENGLISH): ModelAction[] {
   switch (state) {
-    case "REGISTERED": return [{ kind: "train", label: "Request training" }];
-    case "TRAINING": return [{ kind: "complete", stage: "training", label: "Training complete" }];
+    case "REGISTERED": return [{ kind: "train", label: t("domain.action.requestTraining") }];
+    case "TRAINING": return [{ kind: "complete", stage: "training", label: t("domain.action.trainingComplete") }];
     case "TRAINED":
       return gate?.trainingApproved
-        ? [{ kind: "validate", label: "Request validation" }]
-        : [{ kind: "advance", event: "APPROVE_TRAINING", label: "Approve training", governance: true }];
-    case "VALIDATING": return [{ kind: "complete", stage: "validation", label: "Validation complete" }];
+        ? [{ kind: "validate", label: t("domain.action.requestValidation") }]
+        : [{ kind: "advance", event: "APPROVE_TRAINING", label: t("domain.action.approveTraining"), governance: true }];
+    case "VALIDATING": return [{ kind: "complete", stage: "validation", label: t("domain.action.validationComplete") }];
     case "VALIDATED":
       return gate?.validationApproved
-        ? [{ kind: "emulate", label: "Request emulation" }]
-        : [{ kind: "advance", event: "APPROVE_VALIDATION", label: "Approve validation", governance: true }];
-    case "EMULATING": return [{ kind: "complete", stage: "emulation", label: "Emulation complete" }];
-    case "EMULATED": return [{ kind: "advance", event: "SUBMIT_FOR_APPROVAL", label: "Submit for approval", governance: true }];
+        ? [{ kind: "emulate", label: t("domain.action.requestEmulation") }]
+        : [{ kind: "advance", event: "APPROVE_VALIDATION", label: t("domain.action.approveValidation"), governance: true }];
+    case "EMULATING": return [{ kind: "complete", stage: "emulation", label: t("domain.action.emulationComplete") }];
+    case "EMULATED": return [{ kind: "advance", event: "SUBMIT_FOR_APPROVAL", label: t("domain.action.submitForApproval"), governance: true }];
     case "PENDING_APPROVAL": return [
-      { kind: "advance", event: "APPROVE", label: "Approve", governance: true },
-      { kind: "advance", event: "REJECT", label: "Reject", governance: true },
+      { kind: "advance", event: "APPROVE", label: t("domain.action.approve"), governance: true },
+      { kind: "advance", event: "REJECT", label: t("domain.action.reject"), governance: true },
     ];
-    case "APPROVED": return [{ kind: "advance", event: "CERTIFY", label: "Certify", governance: true }];
+    case "APPROVED": return [{ kind: "advance", event: "CERTIFY", label: t("domain.action.certify"), governance: true }];
     case "CERTIFIED": return [
-      { kind: "advance", event: "PROMOTE", label: "Promote", governance: true },
-      { kind: "train", label: "Retrain" },  // e.g. after a ROLLBACK
-      { kind: "advance", event: "DEPRECATE", label: "Deprecate" },
+      { kind: "advance", event: "PROMOTE", label: t("domain.action.promote"), governance: true },
+      { kind: "train", label: t("domain.action.retrain") },  // e.g. after a ROLLBACK
+      { kind: "advance", event: "DEPRECATE", label: t("domain.action.deprecate") },
     ];
     case "PROMOTED": return [
-      { kind: "train", label: "Retrain" },
-      { kind: "advance", event: "ROLLBACK", label: "Rollback", governance: true },
-      { kind: "advance", event: "DEPRECATE", label: "Deprecate" },
+      { kind: "train", label: t("domain.action.retrain") },
+      { kind: "advance", event: "ROLLBACK", label: t("domain.action.rollback"), governance: true },
+      { kind: "advance", event: "DEPRECATE", label: t("domain.action.deprecate") },
     ];
-    case "DEPRECATED": return [{ kind: "advance", event: "RETIRE", label: "Retire" }];
-    case "FAILED": return [{ kind: "train", label: "Retry training" }, { kind: "advance", event: "RETIRE", label: "Retire" }];
+    case "DEPRECATED": return [{ kind: "advance", event: "RETIRE", label: t("domain.action.retire") }];
+    case "FAILED": return [{ kind: "train", label: t("domain.action.retryTraining") }, { kind: "advance", event: "RETIRE", label: t("domain.action.retire") }];
     default: return [];
   }
 }
@@ -137,26 +145,28 @@ export const DEPLOYABLE_MODEL_STATES = ["CERTIFIED", "PROMOTED"];
 export const RUNTIME_PIPELINE = ["NOT_DEPLOYED", "DEPLOYMENT_REQUESTED", "DEPLOYED", "ACTIVATING", "ACTIVE"] as const;
 
 /** The operator actions legal from a RuntimeLifecycleState — jointly owned
- * with NFO (docs/ARCHITECTURE.md's AIMgF "NFO invocation" list). */
-export function runtimeActions(state: string): { action: "deploy" | "activate" | "scale" | "terminate"; label: string }[] {
+ * with NFO (docs/ARCHITECTURE.md's AIMgF "NFO invocation" list). The labels are in `t`'s language (English when omitted). */
+export function runtimeActions(state: string, t: Translator = ENGLISH): { action: "deploy" | "activate" | "scale" | "terminate"; label: string }[] {
+  const terminate = { action: "terminate" as const, label: t("domain.action.terminate") };
   switch (state) {
-    case "NOT_DEPLOYED": return [{ action: "deploy", label: "Deploy runtime" }];
-    case "DEPLOYMENT_REQUESTED": return [{ action: "terminate", label: "Terminate" }];
-    case "DEPLOYED": return [{ action: "activate", label: "Activate" }, { action: "terminate", label: "Terminate" }];
-    case "ACTIVE": return [{ action: "scale", label: "Scale" }, { action: "terminate", label: "Terminate" }];
+    case "NOT_DEPLOYED": return [{ action: "deploy", label: t("domain.action.deployRuntime") }];
+    case "DEPLOYMENT_REQUESTED": return [terminate];
+    case "DEPLOYED": return [{ action: "activate", label: t("domain.action.activate") }, terminate];
+    case "ACTIVE": return [{ action: "scale", label: t("domain.action.scale") }, terminate];
     default: return [];
   }
 }
 
 // ---------------------------------------------------------------- packages / instances
 
-/** onboarding/app/statemachine.py — which lifecycle calls a package state allows. */
-export function packageActions(state: string): { action: "prime" | "deprime" | "deprecate" | "cancel-delete" | "delete"; label: string }[] {
+/** onboarding/app/statemachine.py — which lifecycle calls a package state allows; the labels in `t`'s language (English when omitted). */
+export function packageActions(state: string, t: Translator = ENGLISH): { action: "prime" | "deprime" | "deprecate" | "cancel-delete" | "delete"; label: string }[] {
+  const del = { action: "delete" as const, label: t("domain.action.delete") };
   switch (state) {
-    case "AVAILABLE": return [{ action: "prime", label: "Prime" }, { action: "deprecate", label: "Deprecate" }, { action: "delete", label: "Delete" }];
-    case "PRIMED": return [{ action: "deprime", label: "Deprime" }];
-    case "DEPRECATED": return [{ action: "cancel-delete", label: "Restore" }, { action: "delete", label: "Delete" }];
-    case "FAILED": return [{ action: "delete", label: "Delete" }];
+    case "AVAILABLE": return [{ action: "prime", label: t("domain.action.prime") }, { action: "deprecate", label: t("domain.action.deprecate") }, del];
+    case "PRIMED": return [{ action: "deprime", label: t("domain.action.deprime") }];
+    case "DEPRECATED": return [{ action: "cancel-delete", label: t("domain.action.restore") }, del];
+    case "FAILED": return [del];
     default: return [];
   }
 }
@@ -232,11 +242,11 @@ export function formatTime(iso: string | null | undefined): string {
 /**
  * Reads a text field that must hold a JSON object: blank is an empty object, a JSON value that is not an object (an array, null, a scalar) or invalid JSON returns the problem to show.
  */
-export function parseJsonObject(text: string): { ok: true; value: Record<string, unknown> } | { ok: false; error: string } {
+export function parseJsonObject(text: string, t: Translator = ENGLISH): { ok: true; value: Record<string, unknown> } | { ok: false; error: string } {
   if (!text.trim()) return { ok: true, value: {} };
   try {
     const v = JSON.parse(text);
-    if (v === null || typeof v !== "object" || Array.isArray(v)) return { ok: false, error: "must be a JSON object" };
+    if (v === null || typeof v !== "object" || Array.isArray(v)) return { ok: false, error: t("domain.json.notObject") };
     return { ok: true, value: v };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
@@ -251,29 +261,29 @@ export function splitList(text: string): string[] {
 
 export const REFUSAL_CODES = ["RAPP_KILLED", "RAPP_RATE_LIMITED", "RAPP_BLAST_RADIUS_EXCEEDED", "RAPP_MAGNITUDE_EXCEEDED", "SCOPE_DENIED"] as const;
 
-/** What a refusal code means, in the operator's words. */
-export const REFUSAL_MEANING: Record<(typeof REFUSAL_CODES)[number], string> = {
-  RAPP_KILLED: "The rApp was stopped by an operator",
-  RAPP_RATE_LIMITED: "It started too many config jobs in the last hour",
-  RAPP_BLAST_RADIUS_EXCEEDED: "One job touched more managed elements than allowed",
-  RAPP_MAGNITUDE_EXCEEDED: "A value moved further than allowed in one write",
-  SCOPE_DENIED: "It named a managed element outside its region or tenant scope",
+/** What a refusal code means, in the operator's words: the catalog key of the sentence (`domain.refusal.*`, shown with `t`). */
+export const REFUSAL_MEANING: Record<(typeof REFUSAL_CODES)[number], TKey> = {
+  RAPP_KILLED: "domain.refusal.RAPP_KILLED",
+  RAPP_RATE_LIMITED: "domain.refusal.RAPP_RATE_LIMITED",
+  RAPP_BLAST_RADIUS_EXCEEDED: "domain.refusal.RAPP_BLAST_RADIUS_EXCEEDED",
+  RAPP_MAGNITUDE_EXCEEDED: "domain.refusal.RAPP_MAGNITUDE_EXCEEDED",
+  SCOPE_DENIED: "domain.refusal.SCOPE_DENIED",
 };
 
 // ---------------------------------------------------------------- tenant and region scope (SEC-10)
 
 /** One line for a scope claim: "regions eu-west, eu-north · tenants acme"; "Unscoped (every managed element)" when there is none. */
-export function describeScope(scope: { regions?: string[] | null; tenants?: string[] | null } | null | undefined): string {
+export function describeScope(scope: { regions?: string[] | null; tenants?: string[] | null } | null | undefined, t: Translator = ENGLISH): string {
   const parts: string[] = [];
-  if (scope?.regions?.length) parts.push(`regions ${scope.regions.join(", ")}`);
-  if (scope?.tenants?.length) parts.push(`tenants ${scope.tenants.join(", ")}`);
-  return parts.length ? parts.join(" · ") : "Unscoped (every managed element)";
+  if (scope?.regions?.length) parts.push(t("domain.scope.regions", { list: scope.regions.join(", ") }));
+  if (scope?.tenants?.length) parts.push(t("domain.scope.tenants", { list: scope.tenants.join(", ") }));
+  return parts.length ? parts.join(" · ") : t("domain.scope.none");
 }
 
 /** GUI-5: a console user's scope in words: "Whole network" when unscoped, the regions and tenants, or that a damaged claim permits nothing. */
-export function describeUserScope(scope: AuthzScope | "INVALID" | null | undefined): string {
-  if (scope === "INVALID") return "Invalid claim: sees nothing";
-  return scope && (scope.regions?.length || scope.tenants?.length) ? describeScope(scope) : "Whole network";
+export function describeUserScope(scope: AuthzScope | "INVALID" | null | undefined, t: Translator = ENGLISH): string {
+  if (scope === "INVALID") return t("domain.userScope.invalid");
+  return scope && (scope.regions?.length || scope.tenants?.length) ? describeScope(scope, t) : t("domain.userScope.whole");
 }
 
 /** GUI-5: the `scope` of a user from the admin's two comma- or line-separated fields: null (unscoped) when both are empty. */
@@ -297,37 +307,39 @@ export interface LimitsLike {
 }
 
 /** One line for a limits row: "20/h (3 used) · ≤5 elements · ≤10%"; "No limits" when none is set. */
-export function describeLimits(limits: LimitsLike | null | undefined): string {
-  if (!limits) return "No limits";
+export function describeLimits(limits: LimitsLike | null | undefined, t: Translator = ENGLISH): string {
+  if (!limits) return t("domain.limits.none");
   const parts: string[] = [];
   if (limits.maxConfigJobsPerHour != null) {
-    parts.push(`${limits.maxConfigJobsPerHour}/h${limits.configJobsLastHour != null ? ` (${limits.configJobsLastHour} used)` : ""}`);
+    parts.push(limits.configJobsLastHour != null
+      ? t("domain.limits.perHourUsed", { n: limits.maxConfigJobsPerHour, used: limits.configJobsLastHour })
+      : t("domain.limits.perHour", { n: limits.maxConfigJobsPerHour }));
   }
-  if (limits.maxElementsPerJob != null) parts.push(`≤${limits.maxElementsPerJob} elements`);
-  if (limits.maxChangePercent != null) parts.push(`≤${limits.maxChangePercent}%`);
-  return parts.length ? parts.join(" · ") : "No limits";
+  if (limits.maxElementsPerJob != null) parts.push(t("domain.limits.elements", { n: limits.maxElementsPerJob }));
+  if (limits.maxChangePercent != null) parts.push(t("domain.limits.percent", { n: limits.maxChangePercent }));
+  return parts.length ? parts.join(" · ") : t("domain.limits.none");
 }
 
 export interface LimitsForm { jobsPerHour: string; elementsPerJob: string; changePercent: string }
 
 /** The body of PUT /ran-nf-oam/rapp-limits/{id} from the three form fields, or the problem to show. A blank field is "no such limit"; the
- * bounds are the ones RAN NF OAM enforces (it replaces the whole set, so a blank removes that limit). */
-export function limitsPayload(form: LimitsForm): { ok: true; body: Record<string, number> } | { ok: false; error: string } {
+ * bounds are the ones RAN NF OAM enforces (it replaces the whole set, so a blank removes that limit). The problem is in `t`'s language. */
+export function limitsPayload(form: LimitsForm, t: Translator = ENGLISH): { ok: true; body: Record<string, number> } | { ok: false; error: string } {
   const body: Record<string, number> = {};
   const read = (text: string, name: string, key: string, integer: boolean, min: number, max: number): string | null => {
     const raw = text.trim();
     if (raw === "") return null;
     const n = Number(raw);
-    if (!Number.isFinite(n) || (integer && !Number.isInteger(n))) return `${name} must be ${integer ? "a whole number" : "a number"}`;
-    if (n < min || n > max) return `${name} must be between ${min} and ${max}`;
+    if (!Number.isFinite(n) || (integer && !Number.isInteger(n))) return t(integer ? "domain.form.wholeNumber" : "domain.form.number", { name });
+    if (n < min || n > max) return t("domain.form.between", { name, min, max });
     body[key] = n;
     return null;
   };
-  const problem = read(form.jobsPerHour, "Config jobs per hour", "maxConfigJobsPerHour", true, 1, 100_000)
-    ?? read(form.elementsPerJob, "Elements per job", "maxElementsPerJob", true, 1, 10_000)
-    ?? read(form.changePercent, "Change percent", "maxChangePercent", false, 0.0001, 10_000);
+  const problem = read(form.jobsPerHour, t("domain.limits.field.jobsPerHour"), "maxConfigJobsPerHour", true, 1, 100_000)
+    ?? read(form.elementsPerJob, t("domain.limits.field.elementsPerJob"), "maxElementsPerJob", true, 1, 10_000)
+    ?? read(form.changePercent, t("domain.limits.field.changePercent"), "maxChangePercent", false, 0.0001, 10_000);
   if (problem) return { ok: false, error: problem };
-  if (Object.keys(body).length === 0) return { ok: false, error: "Set at least one limit (to remove them all, use Remove limits)" };
+  if (Object.keys(body).length === 0) return { ok: false, error: t("domain.limits.atLeastOne") };
   return { ok: true, body };
 }
 
@@ -353,16 +365,17 @@ export function waveActions(job: Pick<ConfigJob, "status" | "haltedReason" | "ne
 }
 
 /** "Wave 2 of 4", or "One wave" for a job that was not staged. */
-export function waveProgress(job: Pick<ConfigJob, "waveCount" | "currentWave" | "waveSize">): string {
+export function waveProgress(job: Pick<ConfigJob, "waveCount" | "currentWave" | "waveSize">, t: Translator = ENGLISH): string {
   const count = job.waveCount ?? 1;
-  return count <= 1 ? "One wave" : `Wave ${Math.min(job.currentWave ?? 0, count)} of ${count}`;
+  return count <= 1 ? t("domain.wave.one") : t("domain.wave.progress", { current: Math.min(job.currentWave ?? 0, count), total: count });
 }
 
-export const HALT_MEANING: Record<string, string> = {
-  WAVE_PAUSE: "Waiting between waves",
-  GATE_FAILED: "The health gate failed after a wave",
-  OPERATOR_HALT: "Halted by an operator",
-  REVERT_REFUSED: "The automatic revert could not be done safely",
+/** Why a staged CM job is HALTED, by `haltedReason`: the catalog key of its meaning (resolve it with `t`). */
+export const HALT_MEANING: Record<string, TKey> = {
+  WAVE_PAUSE: "domain.halt.WAVE_PAUSE",
+  GATE_FAILED: "domain.halt.GATE_FAILED",
+  OPERATOR_HALT: "domain.halt.OPERATOR_HALT",
+  REVERT_REFUSED: "domain.halt.REVERT_REFUSED",
 };
 
 /** A job can be undone when it applied something; a job that only had rejections has nothing to restore. */
@@ -371,20 +384,24 @@ export function canRollback(job: Pick<ConfigJob, "subChanges">): boolean {
 }
 
 /** The differences of a rollback preview in words: "ME-1 txPower: expected 20, found 99". */
-export function describeDifferences(preview: Pick<RollbackPreview, "changedSince">): string[] {
-  return preview.changedSince.map((d) => `${d.managedFunctionRef ?? d.managedElementRef} ${d.attribute}: expected ${JSON.stringify(d.expected)}, found ${JSON.stringify(d.actual)}`);
+export function describeDifferences(preview: Pick<RollbackPreview, "changedSince">, t: Translator = ENGLISH): string[] {
+  return preview.changedSince.map((d) => t("domain.difference", {
+    target: d.managedFunctionRef ?? d.managedElementRef, attribute: d.attribute, expected: JSON.stringify(d.expected), actual: JSON.stringify(d.actual),
+  }));
 }
 
 /** One line for the KPI guard's last answer. */
-export function describeGuardResult(result: KpiGuardResult | null | undefined, checkedAt: string | null | undefined): string {
-  if (!result) return "Not checked yet";
-  const pending = checkedAt ? "" : " (will be tried again)";
+export function describeGuardResult(result: KpiGuardResult | null | undefined, checkedAt: string | null | undefined, t: Translator = ENGLISH): string {
+  if (!result) return t("domain.guard.none");
+  const retry = !checkedAt;
   switch (result.verdict) {
-    case "OK": return "The KPI held";
-    case "REGRESSED": return result.reverted ? "The KPI regressed; the regressed elements were rolled back"
-      : `The KPI regressed; not reverted${result.error ? `: ${result.error}` : ""}`;
-    case "INSUFFICIENT_DATA": return `Too little data to say${pending}`;
-    default: return `The check failed${result.error ? `: ${result.error}` : ""}${pending}`;
+    case "OK": return t("domain.guard.ok");
+    case "REGRESSED": return result.reverted ? t("domain.guard.reverted")
+      : result.error ? t("domain.guard.notReverted.error", { error: result.error }) : t("domain.guard.notReverted");
+    case "INSUFFICIENT_DATA": return t(retry ? "domain.guard.insufficient.retry" : "domain.guard.insufficient");
+    default: return result.error
+      ? t(retry ? "domain.guard.failed.error.retry" : "domain.guard.failed.error", { error: result.error })
+      : t(retry ? "domain.guard.failed.retry" : "domain.guard.failed");
   }
 }
 
@@ -397,18 +414,18 @@ export function describeSeconds(seconds: number): string {
 }
 
 /** The counters text of the define-a-KPI form: an array of {counter, variable?, aggregation?}, or the problem to show. */
-export function parseCounters(text: string): { ok: true; value: KpiCounterSpec[] } | { ok: false; error: string } {
+export function parseCounters(text: string, t: Translator = ENGLISH): { ok: true; value: KpiCounterSpec[] } | { ok: false; error: string } {
   let raw: unknown;
-  try { raw = JSON.parse(text); } catch (e) { return { ok: false, error: `Not valid JSON: ${(e as Error).message}` }; }
-  if (!Array.isArray(raw)) return { ok: false, error: "Counters must be a JSON array" };
+  try { raw = JSON.parse(text); } catch (e) { return { ok: false, error: t("domain.counters.notJson", { error: (e as Error).message }) }; }
+  if (!Array.isArray(raw)) return { ok: false, error: t("domain.counters.notArray") };
   const aggregations = ["sum", "avg", "min", "max", "last", "count"];
   const out: KpiCounterSpec[] = [];
   for (const [i, item] of raw.entries()) {
     if (!item || typeof item !== "object" || typeof (item as { counter?: unknown }).counter !== "string" || !(item as { counter: string }).counter) {
-      return { ok: false, error: `Counter ${i + 1} needs a "counter" name` };
+      return { ok: false, error: t("domain.counters.needsName", { n: i + 1 }) };
     }
     const { counter, variable, aggregation } = item as { counter: string; variable?: unknown; aggregation?: unknown };
-    if (aggregation !== undefined && !aggregations.includes(String(aggregation))) return { ok: false, error: `Counter ${i + 1}: aggregation must be one of ${aggregations.join(", ")}` };
+    if (aggregation !== undefined && !aggregations.includes(String(aggregation))) return { ok: false, error: t("domain.counters.aggregation", { n: i + 1, list: aggregations.join(", ") }) };
     out.push({ counter, variable: typeof variable === "string" ? variable : null, aggregation: (aggregation as KpiCounterSpec["aggregation"]) ?? "sum" });
   }
   return { ok: true, value: out };
@@ -423,40 +440,40 @@ export interface WindowForm { held: boolean; start: string; end: string }
 
 /** The `changeWindow` / `requireApproval` fields of `POST /config-jobs` from the form: nothing when the job is not held, `requireApproval` when it is
  * held with no bound, else the window with each bound as an ISO time (the browser's local time converted). An end not after the start is an error. */
-export function windowPayload(form: WindowForm): { ok: true; body: Record<string, unknown> } | { ok: false; error: string } {
+export function windowPayload(form: WindowForm, t: Translator = ENGLISH): { ok: true; body: Record<string, unknown> } | { ok: false; error: string } {
   if (!form.held) return { ok: true, body: {} };
   const iso = (v: string) => (v.trim() ? new Date(v).toISOString() : null);
   const start = iso(form.start), end = iso(form.end);
   if (!start && !end) return { ok: true, body: { requireApproval: true } };
-  if (start && end && Date.parse(end) <= Date.parse(start)) return { ok: false, error: "The window must end after it starts" };
+  if (start && end && Date.parse(end) <= Date.parse(start)) return { ok: false, error: t("domain.window.endAfterStart") };
   return { ok: true, body: { changeWindow: { ...(start ? { start } : {}), ...(end ? { end } : {}) } } };
 }
 
 /** The optional staged-rollout and KPI-guard fields of POST /config-jobs from the form; blank staged fields are left out so a plain job stays plain. */
-export function stagedPayload(staged: StagedForm, guard: GuardForm | null): { ok: true; body: Record<string, unknown> } | { ok: false; error: string } {
+export function stagedPayload(staged: StagedForm, guard: GuardForm | null, t: Translator = ENGLISH): { ok: true; body: Record<string, unknown> } | { ok: false; error: string } {
   const body: Record<string, unknown> = {};
   const whole = (text: string, name: string, min: number, key: string): string | null => {
     const raw = text.trim();
     if (raw === "") return null;
     const n = Number(raw);
-    if (!Number.isInteger(n) || n < min) return `${name} must be a whole number, at least ${min}`;
+    if (!Number.isInteger(n) || n < min) return t("domain.form.atLeast", { name, min });
     body[key] = n;
     return null;
   };
-  const problem = whole(staged.waveSize, "Wave size", 1, "waveSize") ?? whole(staged.wavePauseSeconds, "Pause between waves", 0, "wavePauseSeconds")
-    ?? whole(staged.gateMaxNewAlarms, "New alarms allowed", 0, "gateMaxNewAlarms");
+  const problem = whole(staged.waveSize, t("domain.staged.field.waveSize"), 1, "waveSize") ?? whole(staged.wavePauseSeconds, t("domain.staged.field.pause"), 0, "wavePauseSeconds")
+    ?? whole(staged.gateMaxNewAlarms, t("domain.staged.field.newAlarms"), 0, "gateMaxNewAlarms");
   if (problem) return { ok: false, error: problem };
   if (body.waveSize !== undefined) body.onGateFailure = staged.onGateFailure;
   if (guard && guard.kpi) {
-    const minutes = (text: string, name: string): number | string => { const n = Number(text); return Number.isInteger(n) && n >= 1 && n <= 10_080 ? n : `${name} must be a whole number of minutes, 1 to 10080`; };
-    const baseline = minutes(guard.baselineMinutes, "Baseline");
-    const observation = minutes(guard.observationMinutes, "Observation");
+    const minutes = (text: string, name: string): number | string => { const n = Number(text); return Number.isInteger(n) && n >= 1 && n <= 10_080 ? n : t("domain.form.minutes", { name }); };
+    const baseline = minutes(guard.baselineMinutes, t("domain.staged.field.baseline"));
+    const observation = minutes(guard.observationMinutes, t("domain.staged.field.observation"));
     // GUI-10.3: Number("") and Number("  ") are 0, so a blank field would be sent as "no regression allowed"; it is refused instead
     const percentText = guard.maxRegressionPercent.trim();
     const percent = percentText === "" ? NaN : Number(percentText);
     if (typeof baseline === "string") return { ok: false, error: baseline };
     if (typeof observation === "string") return { ok: false, error: observation };
-    if (!Number.isFinite(percent) || percent < 0) return { ok: false, error: "Allowed regression must be a number, 0 or more" };
+    if (!Number.isFinite(percent) || percent < 0) return { ok: false, error: t("domain.staged.regression") };
     body.kpiGuard = { kpi: guard.kpi, baselineMinutes: baseline, observationMinutes: observation, maxRegressionPercent: percent, direction: guard.direction, revert: guard.revert };
   }
   return { ok: true, body };
@@ -465,9 +482,9 @@ export function stagedPayload(staged: StagedForm, guard: GuardForm | null): { ok
 // ---------------------------------------------------------------- KPI definitions and schedules
 
 /** The name rule of RAN NF OAM (`kpi.NAME`), plus "standard", which names the seeded set. */
-export function kpiNameProblem(name: string): string | null {
-  if (!/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(name)) return "A KPI name starts with a letter and uses letters, digits, _ . - (64 at most)";
-  if (name === "standard") return "'standard' names the seeded set, not a KPI";
+export function kpiNameProblem(name: string, t: Translator = ENGLISH): string | null {
+  if (!/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(name)) return t("domain.kpi.nameRule");
+  if (name === "standard") return t("domain.kpi.standard");
   return null;
 }
 
@@ -477,14 +494,14 @@ export interface ScheduleForm {
 }
 
 /** The body of PUT /kpi-schedules/{id}; the bounds are RAN NF OAM's. A blank look-back means "the interval". */
-export function schedulePayload(f: ScheduleForm): { ok: true; body: Record<string, unknown> } | { ok: false; error: string } {
-  if (!f.kpi) return { ok: false, error: "Choose a KPI" };
+export function schedulePayload(f: ScheduleForm, t: Translator = ENGLISH): { ok: true; body: Record<string, unknown> } | { ok: false; error: string } {
+  if (!f.kpi) return { ok: false, error: t("domain.schedule.chooseKpi") };
   const interval = Number(f.intervalSeconds);
-  if (!Number.isInteger(interval) || interval < 60 || interval > 86_400) return { ok: false, error: "The interval must be a whole number of seconds, 60 to 86400" };
+  if (!Number.isInteger(interval) || interval < 60 || interval > 86_400) return { ok: false, error: t("domain.schedule.interval") };
   const body: Record<string, unknown> = { kpi: f.kpi, intervalSeconds: interval, groupBy: f.groupBy, enabled: f.enabled };
   if (f.lookbackSeconds.trim() !== "") {
     const look = Number(f.lookbackSeconds);
-    if (!Number.isInteger(look) || look < 60 || look > 604_800) return { ok: false, error: "The look-back must be a whole number of seconds, 60 to 604800" };
+    if (!Number.isInteger(look) || look < 60 || look > 604_800) return { ok: false, error: t("domain.schedule.lookback") };
     body.lookbackSeconds = look;
   }
   if (f.managedElementRef.trim()) body.managedElementRef = f.managedElementRef.trim();
@@ -525,44 +542,44 @@ export function moduleRows(modules: ModuleStatus[]): ModuleRow[] {
 
 // ---------------------------------------------------------------- approval of rApp actions (AI-11) and the decision record (AI-13)
 
-/** What an approval request's status means, in the operator's words. */
-export const APPROVAL_MEANING: Record<string, string> = {
-  PENDING: "Waiting for a person to approve or reject it; nothing has been written",
-  APPROVED: "Approved: the config job was made from the request",
-  REJECTED: "Rejected: nothing was written",
-  EXPIRED: "Nobody decided in time: it lapsed and nothing was written",
-  REFUSED: "Approved, but a safeguard or a check refused it when it was run: nothing was written",
+/** What an approval request's status means, in the operator's words: the catalog key of the sentence (`domain.approval.*`, shown with `t`). */
+export const APPROVAL_MEANING: Record<string, TKey> = {
+  PENDING: "domain.approval.PENDING",
+  APPROVED: "domain.approval.APPROVED",
+  REJECTED: "domain.approval.REJECTED",
+  EXPIRED: "domain.approval.EXPIRED",
+  REFUSED: "domain.approval.REFUSED",
 };
 
-/** What a decision record's disposition means. */
-export const DISPOSITION_MEANING: Record<string, string> = {
-  DIRECT: "Written at once: this rApp's changes are not held for approval",
-  APPROVED: "Written after a person approved it",
-  ROLLBACK: "An undo of an earlier job",
-  REJECTED: "A person (or the timeout policy) rejected it: nothing was written",
-  EXPIRED: "Nobody decided in time: nothing was written",
-  REFUSED: "Approved, then refused by a safeguard or a check: nothing was written",
+/** What a decision record's disposition means: the catalog key of the sentence (`domain.disposition.*`, shown with `t`). */
+export const DISPOSITION_MEANING: Record<string, TKey> = {
+  DIRECT: "domain.disposition.DIRECT",
+  APPROVED: "domain.disposition.APPROVED",
+  ROLLBACK: "domain.disposition.ROLLBACK",
+  REJECTED: "domain.disposition.REJECTED",
+  EXPIRED: "domain.disposition.EXPIRED",
+  REFUSED: "domain.disposition.REFUSED",
 };
 
-/** What the integrity check of a decision record says. */
-export const INTEGRITY_MEANING: Record<string, string> = {
-  VERIFIED: "The record still matches the hash written to the audit chain",
-  UNCHAINED: "Not yet written to the audit chain (a moment after the job; the worker retries)",
-  MISMATCH: "The record, or its audit row, was changed after it was written",
+/** What the integrity check of a decision record says: the catalog key of the sentence (`domain.integrity.*`, shown with `t`). */
+export const INTEGRITY_MEANING: Record<string, TKey> = {
+  VERIFIED: "domain.integrity.VERIFIED",
+  UNCHAINED: "domain.integrity.UNCHAINED",
+  MISMATCH: "domain.integrity.MISMATCH",
 };
 
 /** How long until a request lapses, for a table: "in 12 min", "in 2 h 5 min", or "overdue" (the platform lapses it on the next look). */
-export function timeLeft(expiresAt: string | null | undefined, now: number = Date.now()): string {
+export function timeLeft(expiresAt: string | null | undefined, now: number = Date.now(), t: Translator = ENGLISH): string {
   if (!expiresAt) return "—";
-  const t = new Date(expiresAt).getTime();
-  if (Number.isNaN(t)) return expiresAt;
-  const minutes = Math.floor((t - now) / 60_000);
-  if (minutes < 0) return "overdue";
-  if (minutes < 1) return "under a minute";
-  if (minutes < 60) return `in ${minutes} min`;
+  const at = new Date(expiresAt).getTime();
+  if (Number.isNaN(at)) return expiresAt;
+  const minutes = Math.floor((at - now) / 60_000);
+  if (minutes < 0) return t("domain.timeLeft.overdue");
+  if (minutes < 1) return t("domain.timeLeft.underMinute");
+  if (minutes < 60) return t("domain.timeLeft.minutes", { n: minutes });
   const hours = Math.floor(minutes / 60);
-  if (hours < 48) return `in ${hours} h${minutes % 60 ? ` ${minutes % 60} min` : ""}`;
-  return `in ${Math.floor(hours / 24)} days`;
+  if (hours < 48) return minutes % 60 ? t("domain.timeLeft.hoursMinutes", { h: hours, m: minutes % 60 }) : t("domain.timeLeft.hours", { h: hours });
+  return t("domain.timeLeft.days", { n: Math.floor(hours / 24) });
 }
 
 /** The managed elements of an action, for a table cell: the first three, then "+N". */
@@ -580,12 +597,12 @@ export function describeChange(change: { managedElementRef: string; managedFunct
 }
 
 /** One line for an approval policy: "held for approval · lapses after 60 min (rejected)"; "Writes at once" when there is none. */
-export function describeApprovalPolicy(policy: { timeoutSeconds: number; onTimeout: "EXPIRE" | "REJECT"; requiredApprovals?: number } | null | undefined): string {
-  if (!policy) return "Writes at once";
+export function describeApprovalPolicy(policy: { timeoutSeconds: number; onTimeout: "EXPIRE" | "REJECT"; requiredApprovals?: number } | null | undefined, t: Translator = ENGLISH): string {
+  if (!policy) return t("domain.policy.atOnce");
   const minutes = Math.round(policy.timeoutSeconds / 60);
   const after = minutes >= 60 && minutes % 60 === 0 ? `${minutes / 60} h` : `${minutes} min`;
-  const people = policy.requiredApprovals === 2 ? " · two different people must approve" : "";
-  return `Held for approval${people} · lapses after ${after} (${policy.onTimeout === "REJECT" ? "rejected" : "expires"})`;
+  const outcome = t(policy.onTimeout === "REJECT" ? "domain.policy.rejected" : "domain.policy.expires");
+  return t(policy.requiredApprovals === 2 ? "domain.policy.held.two" : "domain.policy.held", { after, outcome });
 }
 
 /** `twoApprovals` is only present when two different people must approve: a form for the usual single approval is what it was. */
@@ -608,15 +625,15 @@ export function decidedByText(a: { decidedBy: string | null; requiredApprovals?:
 }
 
 /** "1 of 2 approvals" for a waiting request that needs two; null for the usual single approval (nothing to show). */
-export function approvalProgress(a: { requiredApprovals?: number; approvals?: unknown[] }): string | null {
+export function approvalProgress(a: { requiredApprovals?: number; approvals?: unknown[] }, t: Translator = ENGLISH): string | null {
   const needed = a.requiredApprovals ?? 1;
-  return needed > 1 ? `${a.approvals?.length ?? 0} of ${needed} approvals` : null;
+  return needed > 1 ? t("domain.approvalProgress", { n: a.approvals?.length ?? 0, needed }) : null;
 }
 
-/** The body of PUT /ran-nf-oam/rapp-approval-policy/{id} from the form (a minute to a week), or the problem to show. `requestedBy` is pinned by the BFF. */
-export function approvalPolicyPayload(form: ApprovalPolicyForm): { ok: true; body: { timeoutSeconds: number; onTimeout: "EXPIRE" | "REJECT"; requiredApprovals?: 2 } } | { ok: false; error: string } {
+/** The body of PUT /ran-nf-oam/rapp-approval-policy/{id} from the form (a minute to a week), or the problem to show (in `t`'s language). `requestedBy` is pinned by the BFF. */
+export function approvalPolicyPayload(form: ApprovalPolicyForm, t: Translator = ENGLISH): { ok: true; body: { timeoutSeconds: number; onTimeout: "EXPIRE" | "REJECT"; requiredApprovals?: 2 } } | { ok: false; error: string } {
   const minutes = Number(form.minutes.trim());
-  if (!form.minutes.trim() || !Number.isInteger(minutes) || minutes < 1 || minutes > 10_080) return { ok: false, error: "How long a request may wait is a whole number of minutes, 1 to 10080 (a week)." };
+  if (!form.minutes.trim() || !Number.isInteger(minutes) || minutes < 1 || minutes > 10_080) return { ok: false, error: t("domain.policy.minutes") };
   return { ok: true, body: { timeoutSeconds: minutes * 60, onTimeout: form.onTimeout, ...(form.twoApprovals ? { requiredApprovals: 2 as const } : {}) } };
 }
 

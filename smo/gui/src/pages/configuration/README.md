@@ -20,6 +20,9 @@ Route: `/configuration` (tabs in the hash: `#jobs`, `#new`, `#vendors`, `#trust`
 Only the visible tab's boxes load. Every action is a role-gated `ActionButton` / `Can` against `src/auth/permissions.fixture.json`
 (the mirror of `gui-bff/app/rbac.py`); the BFF sets `requestedBy` (and an admin's MSAC tier).
 
+Every word on the page comes from the catalog (`src/i18n/en/configuration.ts`, `de/configuration.ts`; GUI-6.4); its literal count is 0 (the
+watcher box keeps its `software.` keys: it is the Software page's `LifecycleWatchers`).
+
 ## Known limits
 
 - **Run KPI check** repeats the job's own declared guard; checking a job without a guard, or with other settings, is API-only.

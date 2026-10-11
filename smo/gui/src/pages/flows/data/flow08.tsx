@@ -7,18 +7,20 @@ import { unwrapPage, useSmo } from "../../../api/hooks";
 import type { AnalyticsProducer, AnalyticsReport, AnalyticsSubscription, SmeService } from "../../../api/types";
 import { ActionButton } from "../../../components/ui";
 import { flow08 } from "../../../lib/flows";
+import { useT } from "../../../i18n";
 import { go } from "./go";
 import { choose, SUBJECT_LIMIT } from "./subjects";
 import type { FlowBoardData } from "./types";
 
 /** The board of flow 08 for analytics type `subjectId`. */
 export function useFlow08(subjectId: string | null): FlowBoardData {
+  const t = useT();
   const producers = useSmo<AnalyticsProducer[]>("/ran-analytics/producers", { limit: SUBJECT_LIMIT });
   const subs = useSmo<AnalyticsSubscription[]>("/mdaf/subscriptions", { limit: SUBJECT_LIMIT });
   const reports = useSmo<AnalyticsReport[]>("/mdaf/reports", { limit: SUBJECT_LIMIT });
   const loaded = producers.data && subs.data && reports.data;
   const types = loaded ? [...new Set([...producers.data!, ...subs.data!, ...reports.data!].map((x) => x.analyticsType))] : undefined;
-  const type = choose(types, subjectId, (t) => t) ?? "";
+  const type = choose(types, subjectId, (x) => x) ?? "";
   const producerIds = [...new Set((producers.data ?? []).filter((p) => p.analyticsType === type).map((p) => p.producerId))];
   const services = useQueries({
     queries: producerIds.map((pid) => ({
@@ -29,16 +31,16 @@ export function useFlow08(subjectId: string | null): FlowBoardData {
   const names = services.flatMap((s) => s.data ?? []).map((s) => s.serviceName);
   const error = producers.error ?? subs.error ?? reports.error;
   return {
-    subjects: types?.map((t) => ({ id: t, label: t })),
+    subjects: types?.map((x) => ({ id: x, label: x })),
     subjectsError: error, retry: () => { void producers.refetch(); void subs.refetch(); void reports.refetch(); },
     selected: type ? { id: type, label: type } : undefined,
-    steps: flow08(type, producers.data ?? [], subs.data ?? [], reports.data ?? [], names),
-    empty: <>No analytics producers, subscriptions or reports yet. {go("/kpis#analytics", "Register a producer")}</>,
+    steps: flow08(type, producers.data ?? [], subs.data ?? [], reports.data ?? [], names, t),
+    empty: <>{t("flows.f08.empty")} {go("/kpis#analytics", t("flows.registerProducer"))}</>,
     actions: {
-      producer: go("/kpis#analytics", "Register a producer"),
-      sme: go("/data#sme", "SME registry"),
-      subscribe: <ActionButton label="Subscribe (poll)" action={{ method: "POST", path: "/mdaf/subscriptions", query: { analytics_type: type, requested_by: "smo-gui" }, success: "Subscribed" }} />,
-      publish: go("/kpis#analytics", "Publish a report"),
+      producer: go("/kpis#analytics", t("flows.registerProducer")),
+      sme: go("/data#sme", t("flows.f08.sme")),
+      subscribe: <ActionButton label={t("flows.f08.subscribe")} action={{ method: "POST", path: "/mdaf/subscriptions", query: { analytics_type: type, requested_by: "smo-gui" }, success: t("flows.f08.subscribed") }} />,
+      publish: go("/kpis#analytics", t("flows.f08.publish")),
     },
   };
 }

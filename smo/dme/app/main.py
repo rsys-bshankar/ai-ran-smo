@@ -11,7 +11,7 @@ import uuid
 
 import httpx
 import jsonschema
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -28,6 +28,7 @@ from smo_shared.roles import ROLE_INTERNAL, role_of
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate, paginate_list
+from smo_shared import events as smo_events
 from smo_shared import scope as authz_scope
 from smo_shared.outbox import enqueue
 from smo_shared.webhook import get_webhook
@@ -984,3 +985,27 @@ def _action_view(a: DmeActionRecord) -> dict:
             "className": a.class_name, "changes": a.changes, "sourceContext": a.source_context,
             "forwardedJobId": str(a.forwarded_job_id) if a.forwarded_job_id else None, "status": a.status,
             "correlationId": a.correlation_id, "createdAt": a.created_at.isoformat()}
+
+
+@app.get("/smo-events")
+def smo_event_feed(request: Request, after: int | None = Query(None, ge=0), limit: int = Query(100, ge=1, le=smo_events.MAX_READ),
+                   wait: float = Query(0, ge=0, le=smo_events.MAX_WAIT_SECONDS), types: str | None = Query(None, max_length=2000),
+                   db: Session = Depends(get_session)):
+    """The SMO's event feed (PR-MSG-3.2, docs/EVENTS.md): the events after sequence number `after`, oldest first, at most `limit` (500), as CloudEvents envelopes,
+    and `next`, the `after` of the following call. Without `after` it answers nothing and the newest sequence number, where a reader that wants only what comes next
+    starts. `wait` (seconds, at most 25) long-polls: the answer comes when an event is committed or the wait ends. `types` is a comma-separated list of event types.
+    Internal-only at R1 (roles.py): the feed names every module's entities. A caller with a scope claim (a console user's, GUI-5) is given only the events of the
+    entities inside it; `next` still moves past the others. A negative `after`, a `limit` outside 1-500 or a `wait` outside 0-25 is a 422."""
+    if after is None:
+        return {"items": [], "next": smo_events.latest(db)}
+    wanted = [t.strip() for t in (types or "").split(",") if t.strip()] or None
+    start: int = after
+
+    def read() -> list[dict]:
+        db.rollback()                     # a fresh snapshot each time, and no connection held between reads
+        return smo_events.read_after(db, start, limit, wanted)
+
+    found = smo_events.wait_after(db.get_bind(), start, wait, read)
+    scope = authz_scope.request_scope(request)
+    shown = [e for e in found if authz_scope.permits(scope, e.get("smoregion"), e.get("smotenant"))]
+    return {"items": shown, "next": found[-1]["smoseq"] if found else start}

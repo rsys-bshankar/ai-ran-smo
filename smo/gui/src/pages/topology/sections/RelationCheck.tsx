@@ -4,23 +4,25 @@
 import { useState } from "react";
 
 import { Card, Field } from "../../../components/ui";
+import { useT, type TKey } from "../../../i18n";
 import { Badge } from "../../../kit/Badge";
 import { Callout } from "../../../kit/Callout";
 import { rootDn } from "../../element/data/types";
 import { useRelation, useTopologyParams } from "../data/queries";
 
-/** What each relation means, in words. */
-const MEANING: Record<string, string> = {
-  SAME: "the same managed object",
-  ANCESTOR: "A contains B",
-  DESCENDANT: "B contains A",
-  SIBLING: "same parent",
-  SAME_ELEMENT: "different branches of one element (one box, one fault domain)",
-  DIFFERENT_ELEMENT: "different managed elements (a fault may spread by radio, not through the box)",
+/** What each relation means, in words (its catalog key). */
+const MEANING: Record<string, TKey> = {
+  SAME: "topology.check.SAME",
+  ANCESTOR: "topology.check.ANCESTOR",
+  DESCENDANT: "topology.check.DESCENDANT",
+  SIBLING: "topology.check.SIBLING",
+  SAME_ELEMENT: "topology.check.SAME_ELEMENT",
+  DIFFERENT_ELEMENT: "topology.check.DIFFERENT_ELEMENT",
 };
 
 /** The check card. */
 export function RelationCheck() {
+  const t = useT();
   const { me } = useTopologyParams();
   const seed = me ? `${rootDn(me)},` : "ManagedElement=";
   const [a, setA] = useState("");
@@ -28,16 +30,16 @@ export function RelationCheck() {
   const [asked, setAsked] = useState<{ a: string; b: string }>({ a: "", b: "" });
   const relation = useRelation(asked.a, asked.b);
   return (
-    <Card section="topology.check" title="Relation check" sub="/topology/relation">
+    <Card section="topology.check" title={t("topology.check.title")} sub={t("topology.check.sub")}>
       <form className="form" onSubmit={(e) => { e.preventDefault(); setAsked({ a: a.trim(), b: b.trim() }); }}>
         <Field label="A (DN)"><input className="mono" value={a} placeholder={seed} onChange={(e) => setA(e.target.value)} /></Field>
         <Field label="B (DN)"><input className="mono" value={b} placeholder={seed} onChange={(e) => setB(e.target.value)} /></Field>
-        <div className="row"><button type="submit" className="btn small" disabled={!a.trim() || !b.trim()}>Check</button></div>
+        <div className="row"><button type="submit" className="btn small" disabled={!a.trim() || !b.trim()}>{t("topology.check.button")}</button></div>
       </form>
-      {relation.isFetching && !relation.data && <p className="muted small">Checking…</p>}
-      {relation.error && <Callout tone="warn" title={relation.error.status === 404 ? "Not in the containment tree" : "The check failed"}>{relation.error.message}</Callout>}
+      {relation.isFetching && !relation.data && <p className="muted small">{t("topology.check.checking")}</p>}
+      {relation.error && <Callout tone="warn" title={relation.error.status === 404 ? t("topology.check.notInTree") : t("topology.check.failed")}>{relation.error.message}</Callout>}
       {relation.data && (
-        <Callout tone="volt" title={<span className="row wrap"><Badge tone="volt">{relation.data.relation}</Badge>{MEANING[relation.data.relation] ?? ""}</span>} />
+        <Callout tone="volt" title={<span className="row wrap"><Badge tone="volt">{relation.data.relation}</Badge>{relation.data.relation in MEANING ? t(MEANING[relation.data.relation]) : ""}</span>} />
       )}
     </Card>
   );

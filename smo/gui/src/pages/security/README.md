@@ -11,6 +11,8 @@ Route: `/security`    Design: handoff `Security.dc.html` (PR-SEC-7)
 | security.recovery | sections/RecoveryCodes.tsx | how many recovery codes are left; one masked slot per code, used ones struck through with their time | `GET /api/me/totp` | on change | 1 call (shared key `["bff","totp"]`) |
 | security.signins | sections/SignIns.tsx | your newest 20 sign-ins, failed sign-ins and sign-outs, with a warning on a failed one | `GET /api/me/sign-ins?limit=20` | 30 s stale | 1 call |
 
+Every word on the page comes from the catalog (`src/i18n/en/security.ts`, `de/security.ts`; GUI-6.4); its literal count is 0.
+
 ## Known limits
 
 - **Recent sign-ins** come from the console's audit log: no IP address or device is recorded beyond what the BFF writes in `detail`.

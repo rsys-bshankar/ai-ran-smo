@@ -8,6 +8,7 @@
 import { useState, type ReactNode } from "react";
 
 import { Card, StateBadge } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { Badge } from "../../../kit/Badge";
 import { formatCount } from "../../../kit/Kpi";
 import { ErrorRetry, Skeleton } from "../../../kit/states";
@@ -25,6 +26,7 @@ export function StageBoard({ selected, onSelect, actions }: { selected: string |
   const subs = useMlmfSubscriptionIndex();
   const reports = useRecentMlmfReports();
   const counted = useLifecycleCounts();
+  const t = useT();
   const failed = models.error ?? lifecycles.error;
   const ready = models.data && lifecycles.data;
   const board = ready ? buildBoard(models.data!.items, lifecycles.data!.items, breachedModels(subs.data?.items ?? [], reports.data?.items ?? [])) : null;
@@ -33,26 +35,26 @@ export function StageBoard({ selected, onSelect, actions }: { selected: string |
   const server = counted.data ? stageCounts(counted.data.groups, total) : null;
   const off = server?.off ?? board?.off ?? {};
   return (
-    <Card section="aiml.board" title="Models by stage" sub="AIMgF lifecycle · MLMF guard floor" actions={actions}>
+    <Card section="aiml.board" title={t("aiml.board.title")} sub={t("aiml.board.sub")} actions={actions}>
       {failed && !ready ? <ErrorRetry error={failed} onRetry={() => { void models.refetch(); void lifecycles.refetch(); }} />
         : !board ? <Skeleton lines={4} />
-          : board.columns.every((c) => c.cards.length === 0) && Object.keys(off).length === 0 ? <p className="muted">No models registered.</p>
+          : board.columns.every((c) => c.cards.length === 0) && Object.keys(off).length === 0 ? <p className="muted">{t("aiml.table.empty")}</p>
             : <>
-              <div className="kanban" role="list" aria-label="Models by stage">
+              <div className="kanban" role="list" aria-label={t("aiml.board.title")}>
                 {board.columns.map((c) => <Column key={c.id} column={c} count={server?.columns[c.id]} selected={selected} onSelect={onSelect} />)}
               </div>
               <div className="row between wrap">
                 <span className="small muted">
-                  {Object.entries(off).filter(([, n]) => n > 0).map(([s, n]) => `${formatCount(n)} ${s.toLowerCase()}`).join(" · ") || "No failed, deprecated or retired models."}
-                  {Object.values(off).some((n) => n > 0) && " (off the board; find them in the table view)"}
+                  {Object.entries(off).filter(([, n]) => n > 0).map(([s, n]) => `${formatCount(n)} ${s.toLowerCase()}`).join(" · ") || t("aiml.board.offNone")}
+                  {Object.values(off).some((n) => n > 0) && t("aiml.board.offNote")}
                 </span>
-                {(subs.error || reports.error) && <span className="gap-note">Guard-floor outlines unavailable: MLMF did not answer.</span>}
+                {(subs.error || reports.error) && <span className="gap-note">{t("aiml.board.mlmfDown")}</span>}
               </div>
               <p className="gap-note">
-                Cards are in registry order: the backend serves no "last changed" time per model.
-                {server ? " Column counts are AIMgF's, by lifecycle state; a model with an active runtime is counted in its state's column and drawn under Active runtime."
-                  : counted.error ? " Stage counts unavailable from AIMgF: the columns count their cards." : ""}
-                {cut && ` Cards cover the first ${formatCount(BOARD_LIMIT)} of ${formatCount(total)} models.`}
+                {t("aiml.board.order")}
+                {server ? t("aiml.board.serverCounts")
+                  : counted.error ? t("aiml.board.noCounts") : ""}
+                {cut && t("aiml.board.cut", { count: total ?? 0, limit: formatCount(BOARD_LIMIT), total: formatCount(total) })}
               </p>
             </>}
     </Card>
@@ -64,19 +66,20 @@ function Column({ column, count, selected, onSelect }: { column: BoardColumn; co
   const [open, setOpen] = useState(false);
   const shown = open ? column.cards : column.cards.slice(0, TOP);
   const more = column.cards.length - TOP;
+  const t = useT();
   return (
-    <div className="kanban-col" role="listitem" aria-label={`${column.title}: ${count ?? column.cards.length}`} data-stage={column.id}>
-      <div className="row between"><span className="eyebrow">{column.title}</span><Badge plain>{formatCount(count ?? column.cards.length)}</Badge></div>
+    <div className="kanban-col" role="listitem" aria-label={`${t(column.titleKey)}: ${count ?? column.cards.length}`} data-stage={column.id}>
+      <div className="row between"><span className="eyebrow">{t(column.titleKey)}</span><Badge plain>{formatCount(count ?? column.cards.length)}</Badge></div>
       {shown.map((m) => (
         <button key={m.modelId} type="button" className={`kanban-card${m.breach ? " breach" : ""}${selected === m.modelId ? " on" : ""}`}
           aria-pressed={selected === m.modelId} onClick={() => onSelect(m.modelId)}>
           <span className="row between"><strong className="small">{m.name}</strong><span className="mono xs muted">{m.version}</span></span>
           {m.useCase && <span className="xs muted">{m.useCase}</span>}
-          <span className="row between wrap"><StateBadge state={m.state} />{m.breach && <Badge tone="bad">under floor</Badge>}</span>
+          <span className="row between wrap"><StateBadge state={m.state} />{m.breach && <Badge tone="bad">{t("aiml.board.underFloor")}</Badge>}</span>
         </button>
       ))}
-      {column.cards.length === 0 && <span className="xs muted">None</span>}
-      {more > 0 && <button type="button" className="btn ghost small" onClick={() => setOpen(!open)}>{open ? "Show fewer" : `+ ${more} more in this stage`}</button>}
+      {column.cards.length === 0 && <span className="xs muted">{t("aiml.board.empty")}</span>}
+      {more > 0 && <button type="button" className="btn ghost small" onClick={() => setOpen(!open)}>{open ? t("aiml.board.fewer") : t("aiml.board.more", { n: more })}</button>}
     </div>
   );
 }

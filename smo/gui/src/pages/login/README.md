@@ -9,6 +9,8 @@ Route: `/login`    Design: handoff `Login.dc.html` (BRIEF §4 "Sign in")
 | login.brand | sections/BrandPanel.tsx | product name ("Operator Console"), headline, sector-ring graphic, "A product of Radisys" wordmark chip | — (static, `/brand/*.png`) | — | 0 |
 | login.form | sections/SignInForm.tsx | SSO button first (when OIDC is on), local account form, one-time-code note; the code step (`components/LoginCodeStep`); break-glass link in oidc mode | `GET /api/auth/config`; `POST /api/login`, `POST /api/login/totp` through `auth/AuthContext` | — | 1 call |
 
+Every word on the page comes from the catalog, `src/i18n/en/login.ts` and `de/login.ts` (GUI-6.4); the product name "AI-RAN SMO" is not translated.
+
 ## Known limits
 
 - "Keep me signed in on this device" from the mockup is not offered: the BFF has no such session option.

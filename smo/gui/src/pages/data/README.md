@@ -4,6 +4,8 @@ Route: /data    Owner: SMO GUI    Design: `docs/redesign/designs/Data.dc.html`, 
 Tabs (URL hash): `#dme` Flow & jobs (default; the pre-redesign DME tab id), `#offers` Producers & offers, `#sme` SME. Links to `/data#sme` keep
 working. Each tab mounts only its own sections.
 
+Every word on the page comes from the catalog (`src/i18n/en/data.ts`, `de/data.ts`; GUI-6.4); its literal count is 0.
+
 ## Sections
 | id | file | what it shows | API (via data/queries.ts) | refresh | budget |
 | --- | --- | --- | --- | --- | --- |

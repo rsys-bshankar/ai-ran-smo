@@ -118,3 +118,16 @@ def test_a_window_must_close_after_it_opens(client, fleet):
     dry = client.post("/config-jobs", json={"requestedBy": ALICE, "scope": "cell", "requireApproval": True, "dryRun": True,
                                             "changes": [{"managedElementRef": "ME-1", "attributeChanges": {"txPower": 20}}]})
     assert dry.status_code == 200 and dry.json()["dryRun"] is True and fleet["edits"] == []
+
+
+def test_the_jobs_waiting_and_its_decision_are_published(client, fleet, monkeypatch):
+    """MSG-3.5: a job held for approval, then rejected, publishes `write-config-job.state-changed` about the job for each transition, the console's cue to
+    refresh its approvals."""
+    from smo_shared import events
+    monkeypatch.setenv("SMO_EVENT_BUS", "memory")
+    monkeypatch.setattr(events.MEMORY, "events", [])
+    job = _ask(client, requireApproval=True)
+    assert _decide(client, job["jobId"], "reject", BOB, reason="not tonight").status_code == 200
+    mine = [e for e in events.MEMORY.events if e["subject"] == job["jobId"]]
+    assert {e["type"] for e in mine} == {"org.oran.smo.write-config-job.state-changed"}
+    assert [(e["data"]["from"], e["data"]["to"]) for e in mine] == [("PENDING", "PENDING_APPROVAL"), ("PENDING_APPROVAL", "REJECTED")]

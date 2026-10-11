@@ -20,6 +20,8 @@ are also used by `pages/rapp-detail`.
 The lifecycle column (`data/lifecycle.ts`) maps the row's own state onto five segments of flow 07 (deploy, run, fault/recover, upgrade,
 terminate) and links to `/flows/07?subject=<instance>`; it costs no call.
 
+Every word on the page comes from the catalog (`src/i18n/en/rapps.ts`, `de/rapps.ts`; GUI-6.4); its literal count is 0.
+
 ## Known limits
 
 - Autonomy mix, actions in 24 h and refusals per rApp: not served by the backend (no per-mode count, no per-rApp decision/refusal count in the summary). Tiles say so.

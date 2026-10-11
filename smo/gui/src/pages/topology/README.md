@@ -2,6 +2,8 @@
 
 Route: `/topology` (`?me=<element>` focuses one element, `?problem=external|ambiguous` picks the problem table's filter)    Design: handoff `Topology.dc.html` (BRIEF §4e feature 1)
 
+Every word on the page comes from the catalog (`src/i18n/en/topology.ts`, `de/topology.ts`, GUI-6.4); its literal count is 0.
+
 The Dashboard's "Open topology" link lands here. Every element in a graph node, a problem row or the summary links to its Element detail page (`/elements/<me>`).
 
 ## Sections

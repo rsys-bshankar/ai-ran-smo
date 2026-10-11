@@ -24,7 +24,7 @@ import json, sys
 sys.path.insert(0, "tests_integration"); sys.path.insert(0, "sdk")
 from loader import load_app_module
 from smo_shared.db import Base
-import smo_shared.audit, smo_shared.idempotency, smo_shared.module_identity, smo_shared.outbox, smo_shared.ratelimit, smo_shared.single_runner
+import smo_shared.audit, smo_shared.events, smo_shared.idempotency, smo_shared.module_identity, smo_shared.outbox, smo_shared.ratelimit, smo_shared.single_runner
 result = {"shared": sorted(Base.metadata.tables)}
 seen = set(result["shared"])
 for module in json.loads(sys.argv[1]):

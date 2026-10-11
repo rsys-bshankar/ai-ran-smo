@@ -22,6 +22,8 @@ Tabs (URL hash): `#topology` (default), `#nfo`, `#ocloud`, `#o1`, `#orders`. The
 
 First-load calls per tab: Topology 4 (topology, workloads, alarms, summary), NF deployments 3, O-Cloud inventory 3, O1 4, Service orders 2.
 
+Every word on the page comes from the catalog (`src/i18n/en/infrastructure.ts`, `de/infrastructure.ts`; GUI-6.4); its literal count is 0.
+
 ## Known limits
 - **Node utilisation** (GUI-9.8b) is FOCOM's: the newest `CPU_UTILIZATION` and `MEMORY_UTILIZATION` performance records ingested for a
   resource (`focom/README.md`), shown for a resource in the inspector and per row of a pool's resource table; "—" where none was ingested. GPU

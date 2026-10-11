@@ -16,6 +16,8 @@ Tabs (URL hash): `#limits` · `#refusals` · `#watchers`. "Stop all rApp writes"
 | safeguards.refusals | sections/Refusals.tsx | refusals, range 24 h / 7 d (default) / 30 d / all, reason, invoker | `/ran-nf-oam/safeguard-refusals?code&invoker_id&since` | 15 s | 1 call |
 | safeguards.watchers | sections/Watchers.tsx | webhooks told about refusals, Add / Remove | `/ran-nf-oam/safeguard-subscriptions` | 15 s | 1 call |
 
+Every word on the page comes from the catalog (`src/i18n/en/safeguards.ts`, `de/safeguards.ts`; GUI-6.4); its literal count is 0.
+
 ## Known limits
 
 - **Stop all** keeps the first stop of an rApp already stopped (its reason and author are not replaced). **Resume all** resumes every stopped

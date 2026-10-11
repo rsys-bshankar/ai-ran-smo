@@ -22,6 +22,11 @@ Installed by app/main.py. Reads only. What a maintainer must know:
   The tests shorten the three timings to read a whole stream with the buffering TestClient.
 - What each stream has been sent is kept per stream (`_Subscriber.seen`), so "changed" is relative to what that browser holds, and a stream that
   opens later than another gets the full counts first, then only changes.
+- GUI-1.5: while a stream is open the hub also follows the SMO's event feed (`GET /dme/smo-events`, PR-MSG-3, docs/EVENTS.md) with a long poll of
+  `FEED_WAIT_SECONDS`. When the feed answers an event (an alarm raised or cleared, an rApp instance or a CM job changing state), the summary cache is
+  dropped and the subscribed pages are recomputed at once (at most once per `KICK_SECONDS`), so a stream hears of the change within about a second
+  instead of at the next poll. The poll every `POLL_SECONDS` stays: not every count has an event behind it, and a feed that cannot be read (DME down,
+  an older DME without the route) is retried after `FEED_RETRY_SECONDS` while the streams carry on as before. What a stream is sent is unchanged.
 - The response carries `X-Accel-Buffering: no`, and smo/gui/nginx.conf has its own location for `/api/events` with buffering off: a buffering
   proxy would hold every event until its buffer fills.
 """
@@ -48,6 +53,10 @@ START_GRACE_SECONDS = 30.0      # a stream reserved by the route but never start
 RETRY_MS = 3000
 MAX_TOPICS = 4
 MAX_STREAMS_PER_USER = 5
+FEED_PATH = "/dme/smo-events"
+FEED_WAIT_SECONDS = 25.0        # DME caps a wait at 25 s; the call itself is allowed 30 s (R1 Termination allows 60)
+FEED_RETRY_SECONDS = 30.0       # after the feed failed, the next try; the poll carries the streams meanwhile
+KICK_SECONDS = 1.0              # the least time between two recomputes started by events: a burst of alarms is one recompute
 TOPIC_PREFIX = "summary:"
 CLAIM_SEP = "|"                 # GUI-5: separates a topic's key from the subscriber's scope claim in the hub's key (no topic or claim value holds it)
 ATTENTION = "attention"
@@ -148,10 +157,18 @@ class EventHub:
     """The streams of this process and the one poller that feeds them. The poller runs only while a stream is open: the first stream starts it,
     the last one to close cancels it."""
 
-    def __init__(self, page_counts: Callable[[Topic], Awaitable[dict]]):
+    def __init__(self, page_counts: Callable[[Topic], Awaitable[dict]], follow: Callable[[int | None], Awaitable[tuple[list, int]]] | None = None,
+                 invalidate: Callable[[], None] | None = None):
+        """`page_counts` computes a topic's body; `follow` (GUI-1.5, optional) reads the SMO's event feed once after a position; `invalidate` drops the
+        summary cache when the feed says something changed."""
         self.page_counts = page_counts
+        self.follow = follow                          # GUI-1.5: one long poll of the event feed after a position; answers (events, next position)
+        self.invalidate = invalidate or (lambda: None)
         self.subscribers: set[_Subscriber] = set()
         self.task: asyncio.Task | None = None
+        self.follower: asyncio.Task | None = None
+        self.kick: asyncio.Event | None = None
+        self.following = False                        # whether the last read of the feed succeeded
 
     def open_streams(self, username: str) -> int:
         return sum(1 for s in self.subscribers if s.username == username)
@@ -166,12 +183,18 @@ class EventHub:
         if not self.subscribers and self.task is not None and not self.task.done() and asyncio.current_task() is not self.task:
             self.task.cancel()
             self.task = None
+        if not self.subscribers and self.follower is not None and not self.follower.done() and asyncio.current_task() is not self.follower:
+            self.follower.cancel()
+            self.follower = None
 
     def ensure_poller(self) -> None:
         """Start the poller on the running loop unless one is already running there (a test client may run each request on its own loop)."""
         loop = asyncio.get_running_loop()
         if self.task is None or self.task.done() or self.task.get_loop() is not loop:
+            self.kick = asyncio.Event()
             self.task = loop.create_task(self._run())
+        if self.follow is not None and (self.follower is None or self.follower.done() or self.follower.get_loop() is not loop):
+            self.follower = loop.create_task(self._follow())
 
     async def _page(self, key: str) -> dict | None:
         """The summary body of the topic `key` (app/summary.py's cached computation), or None when the key does not parse or computing it raised.
@@ -202,7 +225,43 @@ class EventHub:
                 for s in live:
                     if key in s.pages:
                         s.offer(body, key)
+            await self._until_next_round()
+
+    async def _until_next_round(self) -> None:
+        """Wait `POLL_SECONDS`, or less when the event feed kicks: then, no sooner than `KICK_SECONDS` after the round before, drop the summary cache so
+        the next round computes afresh."""
+        kick = self.kick
+        if kick is None:
             await asyncio.sleep(POLL_SECONDS)
+            return
+        started = time.monotonic()
+        try:
+            await asyncio.wait_for(kick.wait(), timeout=POLL_SECONDS)
+        except TimeoutError:
+            return
+        await asyncio.sleep(max(0.0, KICK_SECONDS - (time.monotonic() - started)))
+        kick.clear()
+        self.invalidate()
+
+    async def _follow(self) -> None:
+        """GUI-1.5: follow the event feed while a stream is open. The first read only learns the newest position (what came before is in the counts
+        already); each later one long-polls after it and kicks the poller when it answers an event. A failed read is logged and retried after
+        `FEED_RETRY_SECONDS`, from the newest position again."""
+        after: int | None = None
+        while self.subscribers and self.follow is not None:
+            try:
+                found, after = await self.follow(after)
+                self.following = True
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:      # deliberate catch-all: an unreadable feed must never end a stream; the poll carries on
+                if self.following or after is None:
+                    log.warning("event stream: the SMO event feed is not readable, polling only: %r", exc)
+                self.following, after = False, None
+                await asyncio.sleep(FEED_RETRY_SECONDS)
+                continue
+            if found and self.kick is not None:
+                self.kick.set()
 
 
 def install(app: FastAPI, *, current_session: Callable, problem: Callable[..., JSONResponse]) -> None:
@@ -213,7 +272,16 @@ def install(app: FastAPI, *, current_session: Callable, problem: Callable[..., J
             return await app.state.summary_attention(topic.region, topic.site_cluster, claim=topic.claim)
         return await app.state.summary_page(topic.page, topic.region, topic.site_cluster, topic.claim)
 
-    hub = EventHub(fetch)
+    async def follow(after: int | None) -> tuple[list, int]:
+        # One read of the SMO's event feed through R1, as the console itself (unscoped: the events are only a cue to recompute, never shown).
+        params = {"limit": "100"} if after is None else {"after": str(after), "wait": str(FEED_WAIT_SECONDS), "limit": "100"}
+        resp = await app.state.gateway.request("GET", FEED_PATH, params=params, timeout=FEED_WAIT_SECONDS + 5)
+        if resp.status_code != 200:
+            raise RuntimeError(f"{FEED_PATH} answered {resp.status_code}")
+        body = resp.json()
+        return list(body.get("items") or []), int(body["next"])
+
+    hub = EventHub(fetch, follow, lambda: app.state.summary_invalidate())
     app.state.event_hub = hub
 
     def session_still_valid(request: Request, claim: str | None) -> bool:

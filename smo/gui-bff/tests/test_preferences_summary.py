@@ -85,11 +85,19 @@ def test_saved_preferences_come_back_and_belong_to_their_user_only(app):
 
 
 @pytest.mark.parametrize("bad", [{"theme": "neon"}, {"accent": "#ff0000"}, {"size": "xxl"}, {"rowsPerPage": 1000}, {"startPage": "https://evil"},
-                                 {"colour": "red"}])
+                                 {"colour": "red"}, {"language": "fr"}, {"language": "<script>"}])
 # Values outside their closed set, and unknown fields, are refused, because theme, accent and size are written onto <html> as they are.
 def test_preferences_outside_their_sets_are_refused(app, bad):
     """Every field is validated against its enum and an unknown field is a 422, so nothing unvalidated reaches the page."""
     assert login(app, "viewer").put("/api/me/preferences", json=bad).status_code == 422
+
+
+def test_the_language_defaults_to_english_and_is_saved(app):
+    """GUI-6.3: `language` is "en" until the user saves another one of the offered languages, and a saved one comes back."""
+    viewer = login(app, "viewer")
+    assert viewer.get("/api/me/preferences").json()["language"] == "en"
+    assert viewer.put("/api/me/preferences", json={"language": "de"}).json()["language"] == "de"
+    assert viewer.get("/api/me/preferences").json()["language"] == "de"
 
 
 def test_saving_preferences_needs_the_csrf_token(app):

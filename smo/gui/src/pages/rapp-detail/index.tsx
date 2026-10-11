@@ -8,6 +8,7 @@ import "./rapp-detail.css";
 
 import { useRapp } from "../../api/rapps";
 import { ErrorBox, PageHeader } from "../../components/ui";
+import { useT } from "../../i18n";
 import { SectionBoundary } from "../../kit/SectionBoundary";
 import { Skeleton } from "../../kit/states";
 import { CellStateDistribution } from "./sections/CellStateDistribution";
@@ -24,13 +25,14 @@ import { Safeguards } from "./sections/Safeguards";
 
 /** The page. */
 export function RappDetail() {
+  const t = useT();
   const { instanceId = "" } = useParams();
   const rapp = useRapp(instanceId);
   const data = rapp.data;
   if (rapp.error) {
     return (
       <>
-        <PageHeader title="rApp" actions={<Link className="btn" to="/rapps">← Directory</Link>} />
+        <PageHeader title={t("rappDetail.title")} actions={<Link className="btn" to="/rapps">{t("rappDetail.back")}</Link>} />
         <ErrorBox error={rapp.error} />
       </>
     );
@@ -41,7 +43,7 @@ export function RappDetail() {
     <div className="stack">
       <SectionBoundary id="rapp.header"><Header data={data} /></SectionBoundary>
       <SectionBoundary id="rapp.kpis"><KpiTiles id={id} /></SectionBoundary>
-      <h2 className="section-title">Platform overview</h2>
+      <h2 className="section-title">{t("rappDetail.overview")}</h2>
       <div className="grid g-main-side">
         <div className="stack">
           <SectionBoundary id="rapp.flows"><LifecycleFlows rapp={data} /></SectionBoundary>

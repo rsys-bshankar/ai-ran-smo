@@ -5,6 +5,7 @@
 import { useState } from "react";
 
 import { ActionButton, Card, Id, Json, Modal, StateBadge } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { formatTime } from "../../../lib/domain";
 import { Badge } from "../../../kit/Badge";
 import { ServerTable } from "../../../kit/ServerTable";
@@ -13,13 +14,14 @@ import type { MdaFunction, MdaReport, MdaRequest } from "../data/types";
 
 /** MDA functions. */
 export function MdaFunctions() {
+  const t = useT();
   return (
-    <Card section="kpis.mdaFunctions" title="MDA functions" sub="What MDAF can analyse">
-      <ServerTable<MdaFunction> path={MDA_FUNCTIONS} rowKey={(f) => f.id} empty="No MDA function registered." columns={[
-        { header: "Function", render: (f) => <div className="col" style={{ gap: 2 }}>{f.attributes.userLabel && <strong className="small">{f.attributes.userLabel}</strong>}<Id value={f.id} /></div> },
-        { header: "Domain", render: (f) => f.attributes.supportedMDADomain ?? <span className="muted">—</span> },
-        { header: "Capabilities", render: (f) => <span className="xs">{f.attributes.supportedMDACapabilities.join(", ") || "—"}</span> },
-        { header: "Models", render: (f) => <span className="num">{f.attributes.mLModelRefList.length}</span> },
+    <Card section="kpis.mdaFunctions" title={t("kpis.mda.functions.title")} sub={t("kpis.mda.functions.sub")}>
+      <ServerTable<MdaFunction> path={MDA_FUNCTIONS} rowKey={(f) => f.id} empty={t("kpis.mda.functions.empty")} columns={[
+        { header: t("kpis.mda.functions.function"), render: (f) => <div className="col" style={{ gap: 2 }}>{f.attributes.userLabel && <strong className="small">{f.attributes.userLabel}</strong>}<Id value={f.id} /></div> },
+        { header: t("kpis.mda.functions.domain"), render: (f) => f.attributes.supportedMDADomain ?? <span className="muted">—</span> },
+        { header: t("kpis.mda.functions.capabilities"), render: (f) => <span className="xs">{f.attributes.supportedMDACapabilities.join(", ") || "—"}</span> },
+        { header: t("kpis.mda.functions.models"), render: (f) => <span className="num">{f.attributes.mLModelRefList.length}</span> },
       ]} />
     </Card>
   );
@@ -27,17 +29,18 @@ export function MdaFunctions() {
 
 /** MDA requests. */
 export function MdaRequests() {
+  const t = useT();
   return (
-    <Card section="kpis.mdaRequests" title="Analysis requests" sub="MDAF · TS 28.104 MDARequest">
-      <ServerTable<MdaRequest> path={MDA_REQUESTS} rowKey={(r) => r.id} empty="No analysis requested." columns={[
-        { header: "Request", render: (r) => <Id value={r.id} /> },
-        { header: "Outputs", render: (r) => <span className="xs">{r.attributes.requestedMDAOutputs.map((o) => o.mDAType).join(", ")}</span> },
-        { header: "Scope", render: (r) => <span className="mono xs">{r.attributes.analyticsScope?.managedEntitiesScope?.join(", ") ?? (r.attributes.analyticsScope?.areaScope ? "area" : "all")}</span> },
-        { header: "Delivery", render: (r) => r.attributes.reportingMethod },
-        { header: "Requested by", render: (r) => r.attributes.requestedBy ?? <span className="muted">—</span> },
-        { header: "State", render: (r) => <StateBadge state={r.attributes.active ? "ACTIVE" : "EXPIRED"} /> },
-        { header: "", className: "actions", render: (r) => <ActionButton label="Cancel" confirm="Cancel this analysis request? MDAF stops reporting on it."
-          action={{ method: "DELETE", path: `${MDA_REQUESTS}/${r.id}`, success: "Analysis request cancelled" }} /> },
+    <Card section="kpis.mdaRequests" title={t("kpis.mda.requests.title")} sub={t("kpis.mda.requests.sub")}>
+      <ServerTable<MdaRequest> path={MDA_REQUESTS} rowKey={(r) => r.id} empty={t("kpis.mda.requests.empty")} columns={[
+        { header: t("kpis.common.request"), render: (r) => <Id value={r.id} /> },
+        { header: t("kpis.mda.requests.outputs"), render: (r) => <span className="xs">{r.attributes.requestedMDAOutputs.map((o) => o.mDAType).join(", ")}</span> },
+        { header: t("kpis.common.scope"), render: (r) => <span className="mono xs">{r.attributes.analyticsScope?.managedEntitiesScope?.join(", ") ?? (r.attributes.analyticsScope?.areaScope ? t("kpis.mda.requests.area") : t("kpis.mda.requests.all"))}</span> },
+        { header: t("kpis.common.delivery"), render: (r) => r.attributes.reportingMethod },
+        { header: t("kpis.common.requestedBy"), render: (r) => r.attributes.requestedBy ?? <span className="muted">—</span> },
+        { header: t("kpis.common.state"), render: (r) => <StateBadge state={r.attributes.active ? "ACTIVE" : "EXPIRED"} /> },
+        { header: "", className: "actions", render: (r) => <ActionButton label={t("kpis.common.cancel")} confirm={t("kpis.mda.requests.cancel.confirm")}
+          action={{ method: "DELETE", path: `${MDA_REQUESTS}/${r.id}`, success: t("kpis.mda.requests.cancel.success") }} /> },
       ]} />
     </Card>
   );
@@ -45,19 +48,20 @@ export function MdaRequests() {
 
 /** MDA reports, with a kind filter, an output viewer and the file download. */
 export function MdaReports() {
+  const t = useT();
   const [kind, setKind] = useState("");
   const [shown, setShown] = useState<MdaReport | null>(null);
   return (
-    <Card section="kpis.mdaReports" title="MDA reports" actions={
-      <select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Report kind"><option value="">All kinds</option>{REPORT_KINDS.map((k) => <option key={k}>{k}</option>)}</select>}>
-      <ServerTable<MdaReport> path={MDA_REPORTS} query={{ report_kind: kind || undefined }} rowKey={(r) => r.id} empty="No MDA report published." onRowClick={setShown} columns={[
-        { header: "Report", render: (r) => <Id value={r.id} /> },
-        { header: "Kind", render: (r) => <Badge tone={r.attributes.reportKind === "DRIFT" ? "warn" : r.attributes.reportKind === "PREDICTION" ? "info" : "volt"} plain>{r.attributes.reportKind}</Badge> },
-        { header: "Request", render: (r) => <Id value={r.attributes.mDARequestRef} /> },
-        { header: "Generated", render: (r) => <span className="mono xs muted">{formatTime(r.attributes.generatedAt)}</span> },
-        { header: "File", render: (r) => <a className="small" href={mdaReportFileHref(r.id)} download onClick={(e) => e.stopPropagation()}>Download</a> },
+    <Card section="kpis.mdaReports" title={t("kpis.mda.reports.title")} actions={
+      <select value={kind} onChange={(e) => setKind(e.target.value)} aria-label={t("kpis.mda.reports.kind.aria")}><option value="">{t("kpis.mda.reports.allKinds")}</option>{REPORT_KINDS.map((k) => <option key={k}>{k}</option>)}</select>}>
+      <ServerTable<MdaReport> path={MDA_REPORTS} query={{ report_kind: kind || undefined }} rowKey={(r) => r.id} empty={t("kpis.mda.reports.empty")} onRowClick={setShown} columns={[
+        { header: t("kpis.common.report"), render: (r) => <Id value={r.id} /> },
+        { header: t("kpis.mda.reports.kind"), render: (r) => <Badge tone={r.attributes.reportKind === "DRIFT" ? "warn" : r.attributes.reportKind === "PREDICTION" ? "info" : "volt"} plain>{r.attributes.reportKind}</Badge> },
+        { header: t("kpis.common.request"), render: (r) => <Id value={r.attributes.mDARequestRef} /> },
+        { header: t("kpis.mda.reports.generated"), render: (r) => <span className="mono xs muted">{formatTime(r.attributes.generatedAt)}</span> },
+        { header: t("kpis.mda.reports.file"), render: (r) => <a className="small" href={mdaReportFileHref(r.id)} download onClick={(e) => e.stopPropagation()}>{t("kpis.mda.reports.download")}</a> },
       ]} />
-      {shown && <Modal title={`${shown.attributes.reportKind} report`} onClose={() => setShown(null)}><Json value={shown.attributes.mDAOutputs} /></Modal>}
+      {shown && <Modal title={t("kpis.common.reportOf", { kind: shown.attributes.reportKind })} onClose={() => setShown(null)}><Json value={shown.attributes.mDAOutputs} /></Modal>}
     </Card>
   );
 }

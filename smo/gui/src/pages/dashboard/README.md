@@ -30,6 +30,8 @@ parameters, the RAN NF OAM aggregates as their own filters, the latest decisions
 "network-wide": the model breaches tile, the MLMF and escalation groups, the O-Cloud alarm total and the fleet rows of packages, NF deployments,
 intents, models and training jobs (the BFF's `unscoped` keys).
 
+Every word on the page comes from the catalog (`src/i18n/en/dashboard.ts`, `de/dashboard.ts`; GUI-6.4); its literal count is 0.
+
 ## Known limits
 
 - **Network health** is RAN NF OAM's definition (share of managed elements without an open critical or major alarm); it says nothing about

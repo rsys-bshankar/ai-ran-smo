@@ -6,6 +6,7 @@ import { Link } from "react-router-dom";
 
 import { usePins, type RappSummary } from "../../../api/rapps";
 import { Card, StateBadge } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { Icon } from "../../../kit/icons";
 import { Empty, Skeleton } from "../../../kit/states";
 import { count } from "../../../data/summary";
@@ -31,6 +32,7 @@ export function pickAttention(pins: RappSummary[], faulted: RappSummary[], upgra
 
 /** The strip. */
 export function PinnedAttention() {
+  const t = useT();
   const summary = useRappsSummary();
   const pins = usePins();
   const nFaulted = count(summary.data, "instances.FAULTED") ?? 0;
@@ -41,9 +43,9 @@ export function PinnedAttention() {
   const loading = !pins.data && pins.isLoading;
   const kpis = useLatestKpis(cards.map((c) => c.instanceId));
   return (
-    <Card section="rapps.pinned" title="Pinned & needs attention" sub={`your pins, then faulted and upgrading · max ${MAX_CARDS} here`}>
+    <Card section="rapps.pinned" title={t("rapps.pinned.title")} sub={t("rapps.pinned.sub", { max: MAX_CARDS })}>
       {loading ? <Skeleton lines={2} /> : cards.length === 0
-        ? <Empty title="Nothing pinned and nothing needs attention.">Pin an rApp with ☆ in the directory; faulted and upgrading rApps show up here on their own.</Empty>
+        ? <Empty title={t("rapps.pinned.empty")}>{t("rapps.pinned.empty.body")}</Empty>
         : (
           <div className="tiles">
             {cards.map((r) => (

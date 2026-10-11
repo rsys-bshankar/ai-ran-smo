@@ -167,7 +167,7 @@ and HA much later).
 |---|---|---|
 | Stateless / scale-out | `PR-ST` | ST-7 readiness (schema check) · ST-8 single-runner (adoption) · ST-9 inline retry (move to job runner) |
 | Database | `PR-DB` | DB-2 per-module schemas · DB-3 retention · DB-4 indexes/pagination · DB-5 pooler · DB-6 backup · DB-7 Postgres HA |
-| Messaging and jobs | `PR-MSG` | MSG-1 outbox · MSG-2 delivery worker · MSG-3 event bus · MSG-4 job runner · MSG-5 signing/log · MSG-6 SSRF at send |
+| Messaging and jobs | `PR-MSG` | MSG-1 outbox · MSG-2 delivery worker · MSG-3 event bus (3.4 Kafka left) · MSG-4 job runner · MSG-5 signing/log · MSG-6 SSRF at send |
 | Security | `PR-SEC` | SEC-1 edge TLS · SEC-2 mTLS · SEC-3 mesh · SEC-4 secrets · SEC-5 signing keys · SEC-6 OIDC · SEC-7 MFA/revocation · SEC-8 rate limits · SEC-9 bootstrap exposure · SEC-10 tenant/region authz · SEC-11 audit · SEC-12 supply chain · SEC-13 container hardening · SEC-14 threat model |
 | Observability | `PR-OBS` | OBS-2 metrics · OBS-3 traces · OBS-4 business metrics · OBS-5 alerts/SLOs · OBS-6 log shipping · OBS-7 runbooks · OBS-8 self-monitoring |
 | Packaging / ops | `PR-OPS` | OPS-1 migrations · OPS-2 Helm · OPS-3 migrate hook · OPS-4 releases · OPS-5 rolling upgrade · OPS-6 GitOps · OPS-7 config reference · OPS-8 flags · OPS-9 sizing · OPS-10 dev-sanity pipeline (Actions) · OPS-11 demo environment (Codespaces) |
@@ -177,7 +177,7 @@ and HA much later).
 | Northbound | `PR-NB` | NB-1 alarm forwarding · NB-2 inventory export · NB-3 TS 28.532 facade · NB-4 slicing · NB-5 TM Forum · NB-6 ONAP · NB-7 federation |
 | AI/ML | `PR-AI` | AI-1 executor protocol · AI-2 K8s training executor · AI-3 MLflow bridge · AI-4 serving adaptor · AI-5 feature store · AI-6 data sink · AI-7 drift · AI-8 weighted triggers · AI-9 runtime gate · AI-10 action safeguards · AI-11 approvals · AI-12 shadow mode · AI-13 decision audit |
 | rApp ecosystem | `PR-RAPP` | RAPP-1 signing (done) · RAPP-2 sandbox (RAPP-2.2 open) · RAPP-3 conformance pack (done) · RAPP-4 Java and Go SDK · RAPP-5 portal · RAPP-6 metering · RAPP-7 new-rApp recipe |
-| GUI | `PR-GUI` | GUI-1 live updates (1.5 left) · GUI-2 alarm console (done) · GUI-3 topology (done) · GUI-4 KPI dashboards (done) · GUI-5 scoped views (done) · GUI-6 a11y/i18n (6.3-6.4 left) · GUI-7 approval inbox (done) · GUI-9/10 console redesign (done) |
+| GUI | `PR-GUI` | GUI-1 live updates (done) · GUI-2 alarm console (done) · GUI-3 topology (done) · GUI-4 KPI dashboards (done) · GUI-5 scoped views (done) · GUI-6 a11y/i18n (done) · GUI-7 approval inbox (done) · GUI-9/10 console redesign (done) |
 | Standards / compliance | `PR-STD` | STD-1 close §3 items · STD-2 spec currency · STD-3 O-RAN test plan · STD-4 privacy · STD-5 assurance mapping · STD-6 residency |
 | Quality | `PR-QA` | QA-1 load · QA-2 contract tests · QA-3 failure injection · QA-4 upgrade test · QA-5 soak · QA-6 authz matrix · QA-7 coverage · QA-8 simulator lane |
 
@@ -293,14 +293,12 @@ Done (`HISTORY.md` §10): `smo_shared/outbox.py` (table, `enqueue`, `drain`, inl
 
 #### PR-MSG-3 — Event bus
 
+MSG-3.1, 3.2, 3.3, 3.5 and 3.6 are built (`HISTORY.md` "MSG-3.1, 3.2, 3.3, 3.5, 3.6 / GUI-1.5"; `docs/EVENTS.md`): the envelope, the publisher interface, the
+Postgres table with `NOTIFY` at commit, the feed on DME, the state-machine hook and the alarm events. What remains:
+
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| MSG-3.1 | CloudEvents-shaped envelope schema (type, source, id, time, data) | Schema and examples in `docs/` | – |
-| MSG-3.2 | `EventPublisher` interface in `smo_shared` | Unit test with an in-memory publisher | MSG-3.1 |
-| MSG-3.3 | Postgres implementation (outbox rows plus `LISTEN/NOTIFY` wake-up) | Subscriber receives within a second | MSG-3.2, MSG-1.2 |
 | MSG-3.4 | Kafka implementation behind an optional extra | Round trip against a Kafka container in a compose profile | MSG-3.2 |
-| MSG-3.5 | Publish FSM state-change events from one hook in `smo_shared/statemachine.py` | Event seen for `rapp_instance` transitions | MSG-3.2 |
-| MSG-3.6 | Publish alarm raised / cleared events | Event seen | MSG-3.2 |
 
 #### PR-MSG-4 — Durable job runner (the periodic part is done: `HISTORY.md` PR-MSG-4, the worker; open: the generic `job` table and its queue-shaped users)
 
@@ -1187,11 +1185,8 @@ the README tables. Each rApp is one piece of work per bullet, in that order.
 
 #### PR-GUI-1 — Live updates
 
-GUI-1.1 to 1.4 are done by the console redesign (`HISTORY.md` "PR-GUI-1, 2 and 6 steps closed by the redesign"). What remains:
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| GUI-1.5 | Source switches to the event bus | Same behaviour | GUI-1.1, MSG-3.5 |
+Nothing open: GUI-1.1 to 1.4 by the console redesign (`HISTORY.md` "PR-GUI-1, 2 and 6 steps closed by the redesign"), GUI-1.5 by the event bus (`HISTORY.md`
+"MSG-3.1, 3.2, 3.3, 3.5, 3.6 / GUI-1.5"): the event stream follows the SMO's event feed and pushes a change as soon as it is committed.
 
 #### PR-GUI-2 — Alarm console
 
@@ -1213,12 +1208,9 @@ narrowed by it at the module (`HISTORY.md` GUI-5.1, 5.2; `docs/adr/0005-tenant-r
 
 #### PR-GUI-6 — Accessibility and localization
 
-GUI-6.1 and 6.2 are done by the console redesign (same `HISTORY.md` entry). What remains:
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| GUI-6.3 | i18n library scaffold | One page translated | – |
-| GUI-6.4 | Extract strings page by page | Per page: no literals | GUI-6.3 |
+Nothing open: GUI-6.1 and 6.2 by the console redesign (same `HISTORY.md` entry), GUI-6.3 by the message catalogs and GUI-6.4 by moving every page's
+words into them (`HISTORY.md` GUI-6.3, GUI-6.4): the whole console is in English and German, and `gui/src/i18n/literals.test.ts` keeps every area at 0
+words written in the code.
 
 #### PR-GUI-7 — Approval inbox
 

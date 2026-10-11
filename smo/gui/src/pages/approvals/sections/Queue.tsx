@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import type { Approval } from "../../../api/types";
 import { Card, Id } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { Meter } from "../../../kit/Meter";
 import { Pager } from "../../../kit/Pager";
 import { QueryState } from "../../../kit/states";
@@ -16,6 +17,7 @@ import { useNow } from "../data/useNow";
 
 /** The queue; `selectedId` is highlighted, `onSelect` opens a request in the detail panel. */
 export function Queue({ selectedId, onSelect }: { selectedId: string | null; onSelect: (id: string) => void }) {
+  const t = useT();
   const { prefs } = usePreferences();
   const [limit, setLimit] = useState<number>(prefs.rowsPerPage);
   const [offset, setOffset] = useState(0);
@@ -24,9 +26,9 @@ export function Queue({ selectedId, onSelect }: { selectedId: string | null; onS
   const now = useNow(15_000);
   useEffect(() => { if (!selectedId && items?.[0]) onSelect(items[0].approvalId); }, [items]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <Card section="approvals.queue" title="Waiting for a decision" sub="Nothing below has been written">
-      <p className="muted small">A request that nobody decides lapses at its time (the policy of the rApp says whether it expires or is rejected) and writes nothing.</p>
-      <QueryState q={waiting} isEmpty={() => (items?.length ?? 0) === 0} empty="Nothing is waiting for a decision.">
+    <Card section="approvals.queue" title={t("approvals.queue.title")} sub={t("approvals.queue.sub")}>
+      <p className="muted small">{t("approvals.queue.note")}</p>
+      <QueryState q={waiting} isEmpty={() => (items?.length ?? 0) === 0} empty={t("approvals.queue.empty")}>
         <div className="stack approvals-queue">
           {items?.map((a) => <QueueCard key={a.approvalId} approval={a} now={now} selected={a.approvalId === selectedId} onOpen={() => onSelect(a.approvalId)} />)}
         </div>
@@ -39,6 +41,7 @@ export function Queue({ selectedId, onSelect }: { selectedId: string | null; onS
 
 /** One waiting request. */
 function QueueCard({ approval: a, now, selected, onOpen }: { approval: Approval; now: number; selected: boolean; onOpen: () => void }) {
+  const t = useT();
   const share = lapseShare(a.createdAt, a.expiresAt, now);
   const tone = share === null ? "mute" : share < 0.2 ? "bad" : share < 0.5 ? "warn" : "ok";
   return (
@@ -47,15 +50,15 @@ function QueueCard({ approval: a, now, selected, onOpen }: { approval: Approval;
         <strong>{a.requestedBy}</strong>
         <Id value={a.invokerId} />
       </div>
-      <div className="small" title={a.managedElements.join(", ")}>{a.changeCount} on {describeElements(a.managedElements)}</div>
-      <div className="small">{a.decision?.rationale ?? <span className="muted">no rationale given</span>}</div>
+      <div className="small" title={a.managedElements.join(", ")}>{t("approvals.queue.changes", { n: a.changeCount, elements: describeElements(a.managedElements) })}</div>
+      <div className="small">{a.decision?.rationale ?? <span className="muted">{t("approvals.queue.noRationale")}</span>}</div>
       {/* two-person approval (#401): "1 of 2 approvals"; a request that needs one (or a RAN NF OAM that sends neither field) reads "one needed" */}
-      <div className="small" data-approvals>{approvalProgress(a) ?? <span className="muted">one needed</span>}</div>
-      {share !== null && <Meter parts={[{ key: "time left", value: Math.round(share * 100), tone }]} total={100} label={`${Math.round(share * 100)} % of its waiting time left`} />}
+      <div className="small" data-approvals>{approvalProgress(a, t) ?? <span className="muted">{t("approvals.queue.oneNeeded")}</span>}</div>
+      {share !== null && <Meter parts={[{ key: t("approvals.queue.meter"), value: Math.round(share * 100), tone }]} total={100} label={t("approvals.queue.timeLeft", { percent: Math.round(share * 100) })} />}
       <div className="row between wrap small">
-        <span title={formatTime(a.expiresAt)}>{timeLeft(a.expiresAt, now)} <span className="muted">({a.onTimeout === "REJECT" ? "rejected" : "expires"})</span></span>
-        <span className="muted">asked {formatTime(a.createdAt)}</span>
-        <button type="button" className="btn small" onClick={onOpen}>Review…</button>
+        <span title={formatTime(a.expiresAt)}>{timeLeft(a.expiresAt, now, t)} <span className="muted">({a.onTimeout === "REJECT" ? t("approvals.queue.rejected") : t("approvals.queue.expires")})</span></span>
+        <span className="muted">{t("approvals.queue.asked", { time: formatTime(a.createdAt) })}</span>
+        <button type="button" className="btn small" onClick={onOpen}>{t("approvals.queue.review")}</button>
       </div>
     </div>
   );

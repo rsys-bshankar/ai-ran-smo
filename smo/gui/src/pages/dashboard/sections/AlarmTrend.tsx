@@ -6,6 +6,7 @@ import { Link } from "react-router-dom";
 import { StackedBars } from "../../../components/charts";
 import { Card } from "../../../components/ui";
 import { count } from "../../../data/summary";
+import { useT } from "../../../i18n";
 import { formatCount } from "../../../kit/Kpi";
 import { Meter } from "../../../kit/Meter";
 import { ScopeNote } from "../../../kit/ScopeNote";
@@ -24,16 +25,17 @@ export function hourSeries(hours: AlarmHour[]): { buckets: string[]; series: { k
 
 /** The card. */
 export function AlarmTrend() {
+  const t = useT();
   const summary = useDashboardSummary();
   const hours = useAlarmHours();
   const s = summary.data;
   const groups = hours.data?.groups ?? [];
   const raised = groups.reduce((a, h) => a + h.count, 0);
   return (
-    <Card section="dashboard.alarms" title="Alarms raised · 24 h" sub={hours.data ? `${formatCount(raised)} raised, by hour (UTC) and severity` : "by hour and severity"}
-      actions={<Link to="/alarms" className="small">Alarm console →</Link>}>
-      {hours.data ? <StackedBars label="Alarms raised per hour, last 24 hours" height={120} {...hourSeries(groups)} />
-        : hours.error ? <p className="small t-warn">Hourly counts unavailable: {hours.error.message}</p> : <Skeleton lines={3} />}
+    <Card section="dashboard.alarms" title={t("dashboard.alarms.title")} sub={hours.data ? t("dashboard.alarms.sub", { n: formatCount(raised) }) : t("dashboard.alarms.sub.loading")}
+      actions={<Link to="/alarms" className="small">{t("dashboard.alarms.console")}</Link>}>
+      {hours.data ? <StackedBars label={t("dashboard.alarms.chart")} height={120} {...hourSeries(groups)} />
+        : hours.error ? <p className="small t-warn">{t("dashboard.alarms.unavailable", { error: hours.error.message })}</p> : <Skeleton lines={3} />}
       {!s ? <Skeleton lines={2} /> : (
         <>
           <div className="sev-counts">
@@ -42,7 +44,7 @@ export function AlarmTrend() {
             ))}
           </div>
           <Meter thick parts={SEVERITY_PARTS.map((p) => ({ key: p.key, tone: p.tone, value: count(s, `alarms.${p.key}`) ?? 0 }))} />
-          <p className="muted small">Unacknowledged: {formatCount(count(s, "alarms.unacked"))} · O-Cloud (FOCOM) alarms: {formatCount(count(s, "ocloudAlarms.total"))} <ScopeNote summary={s} keys={["ocloudAlarms"]} /></p>
+          <p className="muted small">{t("dashboard.alarms.footer", { unacked: formatCount(count(s, "alarms.unacked")), ocloud: formatCount(count(s, "ocloudAlarms.total")) })} <ScopeNote summary={s} keys={["ocloudAlarms"]} /></p>
         </>
       )}
     </Card>

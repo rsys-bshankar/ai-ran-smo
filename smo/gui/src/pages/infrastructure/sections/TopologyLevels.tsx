@@ -5,6 +5,7 @@
 import { useMemo, useState } from "react";
 
 import { Card } from "../../../components/ui";
+import { useT, type TKey } from "../../../i18n";
 import { Badge } from "../../../kit/Badge";
 import { Empty, QueryState } from "../../../kit/states";
 import { TOPOLOGY_LIMIT, useTopology, useTopologyAlarms, useTopologyWorkloads } from "../data/queries";
@@ -14,21 +15,22 @@ import type { NodeKind, TopoNode, TopoTree } from "../data/types";
 /** The most tiles one level draws (SCALE.md: about 200 visible nodes). */
 export const CAP = 200;
 
-const GROUPS: { kind: NodeKind; label: string }[] = [
-  { kind: "dm", label: "Deployment managers" }, { kind: "pool", label: "Resource pools" }, { kind: "resource", label: "Resources" },
-  { kind: "workload", label: "Workloads (NF deployments)" }, { kind: "ocloud", label: "O-Clouds" },
+const GROUPS: { kind: NodeKind; labelKey: TKey }[] = [
+  { kind: "dm", labelKey: "infrastructure.topology.group.dm" }, { kind: "pool", labelKey: "infrastructure.topology.group.pool" }, { kind: "resource", labelKey: "infrastructure.topology.group.resource" },
+  { kind: "workload", labelKey: "infrastructure.topology.group.workload" }, { kind: "ocloud", labelKey: "infrastructure.topology.group.ocloud" },
 ];
 
 /** The tree the box and its inspector share; `null` until the topology export has answered. */
 export function useTopologyTree(): { tree: TopoTree | null; q: ReturnType<typeof useTopology> } {
+  const t = useT();
   const q = useTopology();
   const workloads = useTopologyWorkloads();
   const alarms = useTopologyAlarms();
   const tree = useMemo(() => {
     if (!q.data) return null;
     const cut = (p: { items: unknown[]; total?: number; hasMore?: boolean } | undefined) => p && (p.total !== undefined ? p.total > p.items.length : !!p.hasMore) ? { shown: p.items.length, total: p.total ?? null } : null;
-    return buildTopology({ topology: q.data, workloads: workloads.data?.items, workloadsCut: cut(workloads.data), alarms: alarms.data?.items, alarmsCut: cut(alarms.data) });
-  }, [q.data, workloads.data, alarms.data]);
+    return buildTopology({ topology: q.data, workloads: workloads.data?.items, workloadsCut: cut(workloads.data), alarms: alarms.data?.items, alarmsCut: cut(alarms.data) }, t);
+  }, [q.data, workloads.data, alarms.data, t]);
   return { tree, q };
 }
 
@@ -36,6 +38,7 @@ export function useTopologyTree(): { tree: TopoTree | null; q: ReturnType<typeof
 export function TopologyLevels({ tree, q, path, onPath, selected, onSelect }: {
   tree: TopoTree | null; q: ReturnType<typeof useTopology>; path: string[]; onPath: (p: string[]) => void; selected: string | null; onSelect: (id: string) => void;
 }) {
+  const t = useT();
   const [search, setSearch] = useState("");
   const open = path.length ? tree?.nodes.get(path[path.length - 1]) : undefined;
   const ids = (open ? open.children : tree?.roots) ?? [];
@@ -52,17 +55,17 @@ export function TopologyLevels({ tree, q, path, onPath, selected, onSelect }: {
     if (n.children.length) onPath([...path, n.id]);
   };
   return (
-    <Card section="infrastructure.topology" title="TEIV topology" sub={`collapsed by level · one level at a time · at most ${CAP} nodes on screen`}
-      actions={<label className="search" style={{ width: 240 }}><input aria-label="Jump to node" placeholder="Jump to node, pool, NF…" value={search} onChange={(e) => setSearch(e.target.value)} /></label>}>
+    <Card section="infrastructure.topology" title={t("infrastructure.topology.title")} sub={t("infrastructure.topology.sub", { cap: CAP })}
+      actions={<label className="search" style={{ width: 240 }}><input aria-label={t("infrastructure.topology.jump")} placeholder={t("infrastructure.topology.jump.placeholder")} value={search} onChange={(e) => setSearch(e.target.value)} /></label>}>
       {matches.length > 0 && (
-        <ul className="list" aria-label="Matching nodes">
-          {matches.map((n) => <li key={n.id}><button type="button" className="btn small ghost" onClick={() => jump(n)}>{n.name}</button><span className="xs muted">{KIND_LABEL[n.kind]}</span></li>)}
+        <ul className="list" aria-label={t("infrastructure.topology.matches")}>
+          {matches.map((n) => <li key={n.id}><button type="button" className="btn small ghost" onClick={() => jump(n)}>{n.name}</button><span className="xs muted">{t(KIND_LABEL[n.kind])}</span></li>)}
         </ul>
       )}
-      <QueryState q={q} isEmpty={() => !tree || tree.roots.length === 0} empty={<Empty title="FOCOM exports an empty topology.">Register a resource pool or provision a resource on the O-Cloud inventory tab.</Empty>}>
+      <QueryState q={q} isEmpty={() => !tree || tree.roots.length === 0} empty={<Empty title={t("infrastructure.topology.empty.title")}>{t("infrastructure.topology.empty.body")}</Empty>}>
         {tree && <>
-          <nav className="crumb" aria-label="Topology level">
-            <button type="button" className="btn small ghost" onClick={() => onPath([])} aria-current={path.length === 0 ? "page" : undefined}>All O-Clouds</button>
+          <nav className="crumb" aria-label={t("infrastructure.topology.level")}>
+            <button type="button" className="btn small ghost" onClick={() => onPath([])} aria-current={path.length === 0 ? "page" : undefined}>{t("infrastructure.topology.allOClouds")}</button>
             {path.map((id, i) => (
               <span key={id} className="row">
                 <span aria-hidden>›</span>
@@ -71,19 +74,19 @@ export function TopologyLevels({ tree, q, path, onPath, selected, onSelect }: {
               </span>
             ))}
           </nav>
-          {GROUPS.map(({ kind, label }) => {
+          {GROUPS.map(({ kind, labelKey }) => {
             const group = shown.map((id) => tree.nodes.get(id)!).filter((n) => n.kind === kind);
             if (!group.length) return null;
             return (
               <div key={kind} className="stack" style={{ gap: 8 }}>
-                <div className="eyebrow">{open ? `${open.name} · ` : ""}{label} · {group.length}</div>
+                <div className="eyebrow">{open ? `${open.name} · ` : ""}{t(labelKey)} · {group.length}</div>
                 <div className="topo-tiles">
                   {group.map((n) => (
                     <button key={n.id} type="button" className={`tile topo-tile h-${n.health}${selected === n.id ? " on" : ""}`} onClick={() => pick(n)}
-                      aria-pressed={selected === n.id} title={`${KIND_LABEL[n.kind]} ${n.ref} · ${HEALTH_LABEL[n.health]}`}>
+                      aria-pressed={selected === n.id} title={`${t(KIND_LABEL[n.kind])} ${n.ref} · ${t(HEALTH_LABEL[n.health])}`}>
                       <span className="mono xs topo-name">{n.name}</span>
                       <span className="row between xs">
-                        <Badge tone={HEALTH_TONE[n.health]} plain>{n.kind === "workload" ? n.state : HEALTH_LABEL[n.health]}</Badge>
+                        <Badge tone={HEALTH_TONE[n.health]} plain>{n.kind === "workload" ? n.state : t(HEALTH_LABEL[n.health])}</Badge>
                         {n.children.length > 0 && <span className="muted">{n.children.length} ›</span>}
                       </span>
                     </button>
@@ -92,13 +95,13 @@ export function TopologyLevels({ tree, q, path, onPath, selected, onSelect }: {
               </div>
             );
           })}
-          {ids.length > CAP && <span className="xs muted">+{(ids.length - CAP).toLocaleString("en-US")} more · sorted by worst health · use “Jump to node” to reach the rest</span>}
-          {ids.length === 0 && <Empty title="Nothing under this node." />}
+          {ids.length > CAP && <span className="xs muted">{t("infrastructure.topology.more", { n: (ids.length - CAP).toLocaleString("en-US") })}</span>}
+          {ids.length === 0 && <Empty title={t("infrastructure.topology.nothingUnder")} />}
           <div className="legend">
-            <span><i className="h-ok" />Healthy</span><span><i className="h-warn" />Degraded</span><span><i className="h-bad" />Faulty</span><span><i className="h-unknown" />No health data</span>
+            <span><i className="h-ok" />{t("infrastructure.health.ok")}</span><span><i className="h-warn" />{t("infrastructure.health.warn")}</span><span><i className="h-bad" />{t("infrastructure.health.bad")}</span><span><i className="h-unknown" />{t("infrastructure.health.unknown")}</span>
           </div>
           {tree.notes.map((n) => <p key={n} className="gap-note">{n}</p>)}
-          <p className="gap-note">Colour by utilisation is not offered (CPU and memory are read per resource, in the inspector; GPU is measured by no module). At most {TOPOLOGY_LIMIT} workloads and alarms are read.</p>
+          <p className="gap-note">{t("infrastructure.topology.gap", { limit: TOPOLOGY_LIMIT })}</p>
         </>}
       </QueryState>
     </Card>

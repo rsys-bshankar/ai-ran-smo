@@ -5,6 +5,7 @@
 import type { Intent } from "../../../api/types";
 import { RingGauge } from "../../../components/charts";
 import { Id, StateBadge } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { formatTime } from "../../../lib/domain";
 import { Badge } from "../../../kit/Badge";
 import { Callout } from "../../../kit/Callout";
@@ -16,6 +17,7 @@ import { NegotiationFeedback } from "./NegotiationFeedback";
 
 /** The card. `onReports` opens the reports drawer. */
 export function IntentCard({ intent, onReports }: { intent: Intent; onReports: (i: Intent) => void }) {
+  const t = useT();
   const reports = useIntentReports(intent.intentId);
   const f = fulfilment(reports.data);
   const c = conflicts(reports.data);
@@ -24,36 +26,36 @@ export function IntentCard({ intent, onReports }: { intent: Intent; onReports: (
     <article className="card" data-section="intents.card" data-intent={intent.intentId}>
       <div className="row between top">
         <div className="col">
-          <div className="row wrap"><StateBadge state={intent.intentAdminState} /><Badge plain>priority {intent.intentPriority}</Badge><Id value={intent.intentId} /></div>
-          <h2>{intent.userLabel ?? <span className="muted">No label</span>}</h2>
+          <div className="row wrap"><StateBadge state={intent.intentAdminState} /><Badge plain>{t("intents.card.priority", { priority: intent.intentPriority })}</Badge><Id value={intent.intentId} /></div>
+          <h2>{intent.userLabel ?? <span className="muted">{t("intents.card.noLabel")}</span>}</h2>
         </div>
         <div className="col" style={{ alignItems: "center", gap: 2 }}>
-          <RingGauge value={intent.fulfilmentPercent ?? f?.pct ?? null} size={72} label="Targets fulfilled" />
-          <span className="xs muted">{f ? (f.targetsTotal ? `${f.targetsMet}/${f.targetsTotal} targets met` : f.status) : "no fulfilment report"}</span>
+          <RingGauge value={intent.fulfilmentPercent ?? f?.pct ?? null} size={72} label={t("intents.card.targetsFulfilled")} />
+          <span className="xs muted">{f ? (f.targetsTotal ? t("intents.card.targetsMet", { met: f.targetsMet, total: f.targetsTotal }) : f.status) : t("intents.card.noReport")}</span>
         </div>
       </div>
       {reports.error && !reports.data && <ErrorRetry error={reports.error} onRetry={() => void reports.refetch()} />}
       <div className="inset col">
-        <span className="xs muted">Expectation</span>
+        <span className="xs muted">{t("intents.card.expectation")}</span>
         {exps.length === 0 ? <span className="muted small">—</span> : exps.map((e, i) => (
-          <div key={i} className="col" style={{ gap: 2 }}><span className="mono small">{e.objectType}</span><span className="xs muted">{e.targets.join(" · ") || "no targets"}</span></div>
+          <div key={i} className="col" style={{ gap: 2 }}><span className="mono small">{e.objectType}</span><span className="xs muted">{e.targets.join(" · ") || t("intents.card.noTargets")}</span></div>
         ))}
       </div>
       <div className="row between wrap">
-        <span className="small muted">Handler <strong>{intent.rmihId}</strong>{f ? ` · reported ${formatTime(f.at)}` : ""}</span>
+        <span className="small muted">{t("intents.col.handler")} <strong>{intent.rmihId}</strong>{f ? ` · ${t("intents.card.reported", { time: formatTime(f.at) })}` : ""}</span>
         <div className="row wrap">
           {f && <StateBadge state={f.status === "FULFILLED" ? "FULFILLED" : f.state ?? f.status} />}
-          <button type="button" className="btn small" onClick={() => onReports(intent)}>Reports</button>
+          <button type="button" className="btn small" onClick={() => onReports(intent)}>{t("intents.reports")}</button>
           <IntentActions intent={intent} />
         </div>
       </div>
       <NegotiationFeedback intentId={intent.intentId} negotiation={negotiation(reports.data)} />
-      {c.length === 0 && intent.inConflict && <Callout tone="warn" title="In conflict">The handler reported a conflict; its details are in an older report (Reports).</Callout>}
+      {c.length === 0 && intent.inConflict && <Callout tone="warn" title={t("intents.inConflict")}>{t("intents.card.conflictOlder")}</Callout>}
       {c.length > 0 && (
-        <Callout tone="warn" title={`Conflict${c.length > 1 ? `s (${c.length})` : ""}`}>
+        <Callout tone="warn" title={t("intents.card.conflicts", { count: c.length })}>
           {c.map((x) => (
-            <div key={x.conflictId}>{x.conflictType.replace(/_/g, " ").toLowerCase()} with {x.conflictingIntent ? <Id value={x.conflictingIntent} /> : x.conflictingExpectation ?? x.conflictingTarget ?? "—"}
-              {x.recommendedSolutions ? ` · recommended: ${x.recommendedSolutions}` : ""}</div>
+            <div key={x.conflictId}>{x.conflictType.replace(/_/g, " ").toLowerCase()} {t("intents.card.with")} {x.conflictingIntent ? <Id value={x.conflictingIntent} /> : x.conflictingExpectation ?? x.conflictingTarget ?? "—"}
+              {x.recommendedSolutions ? ` · ${t("intents.card.recommended", { solutions: x.recommendedSolutions })}` : ""}</div>
           ))}
         </Callout>
       )}

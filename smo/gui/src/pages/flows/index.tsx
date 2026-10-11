@@ -6,6 +6,7 @@ import { useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { PageHeader } from "../../components/ui";
+import { useT } from "../../i18n";
 import { SectionBoundary } from "../../kit/SectionBoundary";
 import { FLOWS } from "../../lib/flows";
 import { FlowBoard } from "./sections/FlowBoard";
@@ -29,14 +30,15 @@ export function Flows() {
   const flow = FLOWS.find((f) => f.id === flowId)!;
   const [prog, setProg] = useState<ListProgress | null>(null);
   const subject = params.get("subject");
+  const t = useT();
   const onSubject = (id: string) => {
     if (!param) navigate(`/flows/${flowId}?subject=${encodeURIComponent(id)}`, { replace: true });
     else setParams({ subject: id }, { replace: true });
   };
   return (
     <>
-      <PageHeader eyebrow="End-to-end journeys · smo/docs/call-flows" title="Lifecycle flows"
-        subtitle={<>Every end-to-end journey in <code>smo/docs/call-flows</code>, tracked live against real SMO state. Pick a flow, then the subject to follow; each step is proved by live state.</>} />
+      <PageHeader eyebrow={t("flows.eyebrow")} title={t("nav./flows")}
+        subtitle={<>{t("flows.subtitle")} <code>{t("flows.subtitle.doc")}</code>{t("flows.subtitle.end")}</>} />
       <div className="flows-layout">
         <SectionBoundary id="flows.list"><FlowList selected={flowId} progress={prog} /></SectionBoundary>
         <SectionBoundary id="flows.board">

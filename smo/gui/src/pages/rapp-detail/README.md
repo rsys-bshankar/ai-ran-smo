@@ -2,6 +2,8 @@
 
 Route: `/rapps/<instance>`    Design: handoff `RappDetail.dc.html`, SCALE.md "rApp detail"
 
+Every word on the page comes from the catalog (`src/i18n/en/rapp-detail.ts`, `de/rapp-detail.ts`, GUI-6.4); its literal count is 0.
+
 ## Sections
 
 | id | file | what it shows | API (via data/queries.ts) | refresh | budget |

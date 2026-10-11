@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { Card, Json, KeyValue, StateBadge } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { QueryState } from "../../../kit/states";
 import { describeScope } from "../../../lib/domain";
 import { InstanceActions } from "../../rapps/sections/InstanceActions";
@@ -11,19 +12,20 @@ import { useInstance } from "../data/queries";
 
 /** The box of instance `id`. */
 export function InstanceState({ id }: { id: string }) {
+  const t = useT();
   const inst = useInstance(id);
   const [upgrading, setUpgrading] = useState(false);
   const d = inst.data;
   return (
-    <Card section="rapp.instance" title="Lifecycle" actions={d ? <InstanceActions inst={d} withUpgrade={() => setUpgrading(true)} /> : undefined}>
+    <Card section="rapp.instance" title={t("rappDetail.instance.title")} actions={d ? <InstanceActions inst={d} withUpgrade={() => setUpgrading(true)} /> : undefined}>
       <QueryState q={inst} isEmpty={() => false}>
         {d && <KeyValue items={[
-          ["State", <StateBadge key="s" state={d.state} />], ["Package", <code key="p">{d.packageId}</code>],
-          ["NFO deployment", d.workloadRef && <code key="w">{d.workloadRef}</code>],
-          ["Pending upgrade to", d.pendingUpgradeInstanceId && <code key="u">{d.pendingUpgradeInstanceId}</code>],
-          ["Autonomy mode", <StateBadge key="a" state={d.autonomyMode} />],
-          ["Region scope", d.regionScope ? <Json value={d.regionScope} /> : <span className="muted">—</span>],
-          ["Access scope", <span key="z" title="Which managed elements, by region and tenant, this rApp may touch (set when the instance was created)">{describeScope(d.authzScope)}</span>],
+          [t("rappDetail.instance.state"), <StateBadge key="s" state={d.state} />], [t("rappDetail.instance.package"), <code key="p">{d.packageId}</code>],
+          [t("rappDetail.instance.nfo"), d.workloadRef && <code key="w">{d.workloadRef}</code>],
+          [t("rappDetail.instance.pendingUpgrade"), d.pendingUpgradeInstanceId && <code key="u">{d.pendingUpgradeInstanceId}</code>],
+          [t("rappDetail.instance.autonomy"), <StateBadge key="a" state={d.autonomyMode} />],
+          [t("rappDetail.instance.regionScope"), d.regionScope ? <Json value={d.regionScope} /> : <span className="muted">—</span>],
+          [t("rappDetail.instance.accessScope"), <span key="z" title={t("rappDetail.instance.accessScopeTitle")}>{describeScope(d.authzScope, t)}</span>],
         ]} />}
       </QueryState>
       {upgrading && d && <UpgradeModal inst={d} onClose={() => setUpgrading(false)} />}

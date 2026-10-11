@@ -4,17 +4,19 @@ import { useState } from "react";
 
 import type { NfDeployment } from "../../../api/types";
 import { ActionButton, Can, DataTable, Drawer, Field, Id, KeyValue, StateBadge } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { useDeploymentDetail } from "../data/queries";
 
 /** The lifecycle buttons a deployment's state allows. */
 export function DeploymentActions({ d }: { d: NfDeployment }) {
+  const t = useT();
   const base = `/nfo/deployments/${d.nfDeploymentId}`;
   return (
     <div className="row gap end">
-      {(d.state === "RUNNING" || d.state === "ABNORMAL") && <ActionButton label="Heal" action={{ method: "POST", path: `${base}/heal`, success: "Heal requested" }} />}
-      {d.state === "RUNNING" && <ActionButton label="Scale" action={{ method: "POST", path: `${base}/scale`, success: "Scale requested" }} />}
-      {d.state !== "DELETING" && <ActionButton label="Terminate" tone="danger" confirm={`Terminate deployment ${d.name}?`} action={{ method: "DELETE", path: base, success: "Terminate requested" }} />}
-      {!["TERMINATING", "DELETING"].includes(d.state) && <ActionButton label="Terminate (async)" tone="danger" title="Leaves the deployment TERMINATING until the deployment manager reports (OI-3-nfo-abnormal)" confirm={`Start an asynchronous uninstall of ${d.name}?`} action={{ method: "DELETE", path: base, query: { async_uninstall: true }, success: "Uninstall started — the deployment manager completes it" }} />}
+      {(d.state === "RUNNING" || d.state === "ABNORMAL") && <ActionButton label={t("infrastructure.deployment.heal")} action={{ method: "POST", path: `${base}/heal`, success: t("infrastructure.deployment.heal.requested") }} />}
+      {d.state === "RUNNING" && <ActionButton label={t("infrastructure.deployment.scale")} action={{ method: "POST", path: `${base}/scale`, success: t("infrastructure.deployment.scale.requested") }} />}
+      {d.state !== "DELETING" && <ActionButton label={t("infrastructure.deployment.terminate")} tone="danger" confirm={t("infrastructure.deployment.terminate.confirm", { name: d.name })} action={{ method: "DELETE", path: base, success: t("infrastructure.deployment.terminate.requested") }} />}
+      {!["TERMINATING", "DELETING"].includes(d.state) && <ActionButton label={t("infrastructure.deployment.terminateAsync")} tone="danger" title={t("infrastructure.deployment.terminateAsync.title")} confirm={t("infrastructure.deployment.terminateAsync.confirm", { name: d.name })} action={{ method: "DELETE", path: base, query: { async_uninstall: true }, success: t("infrastructure.deployment.terminateAsync.started") }} />}
     </div>
   );
 }
@@ -27,16 +29,17 @@ const DMS_EVENTS: Record<string, string[]> = {
 
 /** The buttons that stand in for the deployment manager's report on this deployment's state. */
 function DmsReport({ d }: { d: NfDeployment }) {
+  const t = useT();
   const events = DMS_EVENTS[d.state] ?? [];
   const [detail, setDetail] = useState("");
   if (events.length === 0) return null;
   return (
     <>
-      <h3>Deployment manager report</h3>
+      <h3>{t("infrastructure.deployment.dms.title")}</h3>
       <div className="form inline">
-        <Field label="Detail" hint="why, for a failure"><input value={detail} onChange={(e) => setDetail(e.target.value)} /></Field>
+        <Field label={t("infrastructure.deployment.dms.detail")} hint={t("infrastructure.deployment.dms.detail.hint")}><input value={detail} onChange={(e) => setDetail(e.target.value)} /></Field>
         {events.map((event) => <ActionButton key={event} label={event} tone={event.endsWith("FAILED") || event === "RUNTIME_FAILURE" ? "danger" : undefined}
-          action={{ method: "POST", path: `/nfo/deployments/${d.nfDeploymentId}/dms-notifications`, json: { event, detail: detail || null }, success: `${event} reported` }} />)}
+          action={{ method: "POST", path: `/nfo/deployments/${d.nfDeploymentId}/dms-notifications`, json: { event, detail: detail || null }, success: t("infrastructure.deployment.dms.reported", { event }) }} />)}
       </div>
     </>
   );
@@ -44,24 +47,25 @@ function DmsReport({ d }: { d: NfDeployment }) {
 
 /** The drawer of one deployment. */
 export function DeploymentDrawer({ d, onClose }: { d: NfDeployment; onClose: () => void }) {
+  const t = useT();
   const { resources, operations: ops } = useDeploymentDetail(d.nfDeploymentId);
   return (
     <Drawer title={d.name} onClose={onClose}>
       <div className="row between"><StateBadge state={d.state} /><DeploymentActions d={d} /></div>
       <KeyValue items={[
-        ["Deployment ID", <code>{d.nfDeploymentId}</code>], ["Descriptor", <code>{d.nfDeploymentDescriptorId}</code>],
-        ["Cluster (placement)", d.clusterId], ["Workload ref", d.workloadRef], ["Required resource type", d.requiredResourceTypeId],
-        ["Abnormal because", d.abnormalReason && <span className="text-bad">{d.abnormalReason}</span>],
+        [t("infrastructure.deployment.id"), <code>{d.nfDeploymentId}</code>], [t("infrastructure.col.descriptor"), <code>{d.nfDeploymentDescriptorId}</code>],
+        [t("infrastructure.deployment.placement"), d.clusterId], [t("infrastructure.deployment.workloadRef"), d.workloadRef], [t("infrastructure.deployment.requiredType"), d.requiredResourceTypeId],
+        [t("infrastructure.deployment.abnormal"), d.abnormalReason && <span className="text-bad">{d.abnormalReason}</span>],
       ]} />
       <Can method="POST" path={`/nfo/deployments/${d.nfDeploymentId}/dms-notifications`}><DmsReport d={d} /></Can>
-      <h3>LCM operations</h3>
-      <DataTable rows={ops.data} error={ops.error} rowKey={(o) => o.operationId} empty="No operations recorded." columns={[
-        { header: "Operation", render: (o) => <code>{o.operationType}</code> }, { header: "Status", render: (o) => <StateBadge state={o.status} /> },
+      <h3>{t("infrastructure.deployment.operations")}</h3>
+      <DataTable rows={ops.data} error={ops.error} rowKey={(o) => o.operationId} empty={t("infrastructure.deployment.noOperations")} columns={[
+        { header: t("infrastructure.col.operation"), render: (o) => <code>{o.operationType}</code> }, { header: t("infrastructure.col.status"), render: (o) => <StateBadge state={o.status} /> },
         { header: "ID", render: (o) => <Id value={o.operationId} /> },
       ]} />
-      <h3>O-Cloud resources</h3>
-      <DataTable rows={resources.data} error={resources.error} rowKey={(r) => r.resourceLinkId} empty="No linked resources." columns={[
-        { header: "Resource", render: (r) => <code>{r.resourceRef}</code> }, { header: "Type", render: (r) => r.vresourceType },
+      <h3>{t("infrastructure.deployment.resources")}</h3>
+      <DataTable rows={resources.data} error={resources.error} rowKey={(r) => r.resourceLinkId} empty={t("infrastructure.deployment.noResources")} columns={[
+        { header: t("infrastructure.col.resource"), render: (r) => <code>{r.resourceRef}</code> }, { header: t("infrastructure.col.type"), render: (r) => r.vresourceType },
       ]} />
     </Drawer>
   );

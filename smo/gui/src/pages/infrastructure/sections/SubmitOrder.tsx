@@ -4,13 +4,17 @@
 import { useState } from "react";
 
 import { ActionButton, Card, Field } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { PATHS, useOrderPrefill } from "../data/queries";
+
+/** The INFRA template's resource description: a value sent to FOCOM (the operator edits it in the JSON), not a word of the page. */
+const INFRA_DESCRIPTION = "GPU node";
 
 /** A step template per "Add step" button. */
 const STEP_TEMPLATES: Record<string, Record<string, unknown>> = {
   CONFIG: { stepType: "CONFIG", targetModule: "RAN_NF_OAM", scope: "cell", changes: [] },
   DEPLOY: { stepType: "DEPLOY", targetModule: "NFO", nfDeploymentDescriptorId: "<descriptor uuid>", name: "so-deploy-1" },
-  INFRA: { stepType: "INFRA", targetModule: "FOCOM", spec: { description: "GPU node" } },
+  INFRA: { stepType: "INFRA", targetModule: "FOCOM", spec: { description: INFRA_DESCRIPTION } },
   TRAINING: { stepType: "TRAINING", targetModule: "AI_ML_WORKFLOW", modelId: "<model uuid>" },
   // HISTORY.md OI-6.6, closed: previously only TRAINING had a
   // dispatch entry, so this was the only AI/ML step an order could
@@ -26,17 +30,19 @@ const STEP_TEMPLATES: Record<string, Record<string, unknown>> = {
 
 /** The box: a "New service order" button, then the form. */
 export function SubmitOrder() {
+  const t = useT();
   const [open, setOpen] = useState(false);
   return (
-    <Card section="infrastructure.submit-order" title="Submit service order"
-      actions={!open && <button type="button" className="btn primary" onClick={() => setOpen(true)}>New service order</button>}>
-      {open ? <OrderForm onClose={() => setOpen(false)} /> : <p className="small muted">An order runs its steps in sequence through FOCOM, AI/ML, NFO and RAN NF OAM.</p>}
+    <Card section="infrastructure.submit-order" title={t("infrastructure.submit.title")}
+      actions={!open && <button type="button" className="btn primary" onClick={() => setOpen(true)}>{t("infrastructure.submit.new")}</button>}>
+      {open ? <OrderForm onClose={() => setOpen(false)} /> : <p className="small muted">{t("infrastructure.submit.intro")}</p>}
     </Card>
   );
 }
 
 /** The form itself. */
 function OrderForm({ onClose }: { onClose: () => void }) {
+  const t = useT();
   const [scope, setScope] = useState("");
   const [steps, setSteps] = useState(JSON.stringify([STEP_TEMPLATES.CONFIG], null, 2));
   const { models, descriptors, deployments } = useOrderPrefill(true);
@@ -47,28 +53,28 @@ function OrderForm({ onClose }: { onClose: () => void }) {
   // deployment names are unique too), instead of placeholders the operator
   // has to go and look up.
   const fill = (k: string) => {
-    const t = { ...STEP_TEMPLATES[k] };
+    const step = { ...STEP_TEMPLATES[k] };
     const model = models.data?.at(-1);
     const used = new Set((deployments.data ?? []).map((d) => d.nfDeploymentDescriptorId));
     const descriptor = descriptors.data?.filter((d) => !used.has(d.nfDeploymentDescriptorId)).at(-1);
-    if (["TRAINING", "VALIDATION", "EMULATION", "MODEL_DEPLOY", "INFERENCE"].includes(k) && model) t.modelId = model.modelId;
+    if (["TRAINING", "VALIDATION", "EMULATION", "MODEL_DEPLOY", "INFERENCE"].includes(k) && model) step.modelId = model.modelId;
     if (k === "DEPLOY") {
-      if (descriptor) t.nfDeploymentDescriptorId = descriptor.nfDeploymentDescriptorId;
-      t.name = `so-deploy-${Date.now().toString(36)}`;
+      if (descriptor) step.nfDeploymentDescriptorId = descriptor.nfDeploymentDescriptorId;
+      step.name = `so-deploy-${Date.now().toString(36)}`;
     }
-    return t;
+    return step;
   };
   const add = (k: string) => setSteps(JSON.stringify([...(parsed ?? []), fill(k)], null, 2));
   return (
     <>
-      <div className="row gap wrap"><span className="muted small">Add step:</span>{Object.keys(STEP_TEMPLATES).map((k) => <button type="button" key={k} className="btn small" onClick={() => add(k)}>{k}</button>)}</div>
+      <div className="row gap wrap"><span className="muted small">{t("infrastructure.submit.addStep")}</span>{Object.keys(STEP_TEMPLATES).map((k) => <button type="button" key={k} className="btn small" onClick={() => add(k)}>{k}</button>)}</div>
       <div className="form">
-        <Field label="Scope"><input value={scope} onChange={(e) => setScope(e.target.value)} placeholder="cell-cluster-7 rollout" /></Field>
-        <Field label="Steps (JSON array)" hint={parsed ? "TRAINING/VALIDATION/EMULATION/MODEL_DEPLOY/INFERENCE steps are prefilled with the newest model; DEPLOY (NFO) with a not-yet-deployed NF descriptor" : <span className="text-bad">must be a JSON array</span>}><textarea rows={8} value={steps} onChange={(e) => setSteps(e.target.value)} spellCheck={false} /></Field>
+        <Field label={t("infrastructure.col.scope")}><input value={scope} onChange={(e) => setScope(e.target.value)} placeholder={t("infrastructure.submit.scope.placeholder")} /></Field>
+        <Field label={t("infrastructure.submit.steps")} hint={parsed ? t("infrastructure.submit.steps.hint") : <span className="text-bad">{t("infrastructure.submit.steps.invalid")}</span>}><textarea rows={8} value={steps} onChange={(e) => setSteps(e.target.value)} spellCheck={false} /></Field>
       </div>
       <div className="row gap">
-        <ActionButton label="Submit order" tone="primary" disabled={!parsed || !scope} action={{ method: "POST", path: PATHS.orders, json: { scope, steps: parsed ?? [] }, success: "Order executed" }} />
-        <button type="button" className="btn ghost" onClick={onClose}>Close</button>
+        <ActionButton label={t("infrastructure.submit.submit")} tone="primary" disabled={!parsed || !scope} action={{ method: "POST", path: PATHS.orders, json: { scope, steps: parsed ?? [] }, success: t("infrastructure.submit.executed") }} />
+        <button type="button" className="btn ghost" onClick={onClose}>{t("components.close")}</button>
       </div>
     </>
   );

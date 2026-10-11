@@ -5,11 +5,13 @@ import { useMemo } from "react";
 
 import { Card } from "../../../components/ui";
 import { count } from "../../../data/summary";
+import { useT } from "../../../i18n";
 import { formatCount, Kpi } from "../../../kit/Kpi";
 import { refusalSince, useInstanceSummary, useRefusalCount, useStoppedCount } from "../data/queries";
 
 /** The tiles. */
 export function SummaryTiles() {
+  const t = useT();
   const since = useMemo(() => refusalSince("24h") ?? "", []);
   const summary = useInstanceSummary();
   const stopped = useStoppedCount();
@@ -18,9 +20,9 @@ export function SummaryTiles() {
   return (
     <Card section="safeguards.tiles">
       <div className="grid g3">
-        <Kpi label="rApp instances" value={summary.data ? formatCount(count(summary.data, "instances.total")) : summary.error ? null : "…"} foot="every instance, any state" />
-        <Kpi label="Stopped" value={shown(stopped)} foot="writes refused until resumed" tone={(stopped.data?.total ?? 0) > 0 ? "warm" : undefined} />
-        <Kpi label="Refusals · 24 h" value={shown(refusals)} foot="every write a safeguard stopped" />
+        <Kpi label={t("safeguards.tiles.instances")} value={summary.data ? formatCount(count(summary.data, "instances.total")) : summary.error ? null : "…"} foot={t("safeguards.tiles.instances.foot")} />
+        <Kpi label={t("safeguards.tiles.stopped")} value={shown(stopped)} foot={t("safeguards.tiles.stopped.foot")} tone={(stopped.data?.total ?? 0) > 0 ? "warm" : undefined} />
+        <Kpi label={t("safeguards.tiles.refusals")} value={shown(refusals)} foot={t("safeguards.tiles.refusals.foot")} />
       </div>
     </Card>
   );

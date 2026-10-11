@@ -8,6 +8,7 @@ import { useState } from "react";
 import { useSmoAction } from "../../../api/hooks";
 import { useAuth } from "../../../auth/AuthContext";
 import { Can, Card, Field } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { Callout } from "../../../kit/Callout";
 import { Segmented } from "../../../kit/Segmented";
 import { CAMPAIGNS_PATH, useVendorNames } from "../data/queries";
@@ -16,6 +17,7 @@ import { campaignBody, EMPTY_FORM, type CampaignForm } from "../data/form";
 
 /** The form card; `onStarted` gets the new campaign's id. */
 export function NewCampaignForm({ onStarted }: { onStarted: (id: string) => void }) {
+  const t = useT();
   const { can } = useAuth();
   const vendors = useVendorNames();
   const [f, setF] = useState<CampaignForm>(EMPTY_FORM);
@@ -31,43 +33,44 @@ export function NewCampaignForm({ onStarted }: { onStarted: (id: string) => void
   const input = (k: keyof CampaignForm, label: string, hint?: string, mono?: boolean) => (
     <Field label={label} hint={hint}><input className={mono ? "mono" : undefined} value={String(f[k])} onChange={(e) => set({ [k]: e.target.value } as Partial<CampaignForm>)} /></Field>
   );
+  const waves = preview?.plan.waves ?? [];
   return (
-    <Card section="software.new" title="New software campaign" sub="POST /software-campaigns · run a dry run first to see the waves">
+    <Card section="software.new" title={t("software.new.title")} sub={t("software.new.sub")}>
       <Can method="POST" path={CAMPAIGNS_PATH}>
         <form className="form" onSubmit={(e) => e.preventDefault()}>
-          <div className="grid g2">{input("name", "Name")}{input("softwareVersion", "Software version", "Optional", true)}</div>
-          <div className="eyebrow">Which elements</div>
-          <Segmented label="Target" value={f.mode} onChange={(mode) => set({ mode })}
-            options={[{ id: "selector", label: "Select by attributes" }, { id: "list", label: "List elements" }]} />
+          <div className="grid g2">{input("name", t("software.new.name"))}{input("softwareVersion", t("software.new.version"), t("software.new.optional"), true)}</div>
+          <div className="eyebrow">{t("software.new.which")}</div>
+          <Segmented label={t("software.new.target")} value={f.mode} onChange={(mode) => set({ mode })}
+            options={[{ id: "selector", label: t("software.new.target.selector") }, { id: "list", label: t("software.new.target.list") }]} />
           {f.mode === "selector" ? (
             <div className="grid g4">
-              <Field label="Vendor">
+              <Field label={t("software.new.vendor")}>
                 <input list="sw-vendors" value={f.vendorName} onChange={(e) => set({ vendorName: e.target.value })} />
                 <datalist id="sw-vendors">{vendors.data?.map((v) => <option key={v.vendorName} value={v.vendorName} />)}</datalist>
               </Field>
-              {input("region", "Region")}{input("entityType", "Entity type", "e.g. DU, RU")}{input("tenant", "Tenant")}
+              {input("region", t("software.new.region"))}{input("entityType", t("software.new.entityType"), t("software.new.entityType.hint"))}{input("tenant", t("software.new.tenant"))}
             </div>
           ) : (
-            <Field label="Managed element refs" hint="One per line">
+            <Field label={t("software.new.elements")} hint={t("software.new.elements.hint")}>
               <textarea rows={4} className="mono" value={f.elements} onChange={(e) => set({ elements: e.target.value })} spellCheck={false} />
             </Field>
           )}
-          <div className="eyebrow">Waves and gate</div>
+          <div className="eyebrow">{t("software.new.waves")}</div>
           <div className="grid g4">
-            {input("waveSize", "Wave size", "Elements per wave; blank: one wave")}
-            {input("wavePauseSeconds", "Pause between waves, seconds")}
-            {input("gateMaxNewAlarms", "Gate: max new alarms", "More new critical/major alarms on a wave's elements fails it")}
-            <Field label="On gate failure">
+            {input("waveSize", t("software.new.waveSize"), t("software.new.waveSize.hint"))}
+            {input("wavePauseSeconds", t("software.new.pause"))}
+            {input("gateMaxNewAlarms", t("software.new.gate"), t("software.new.gate.hint"))}
+            <Field label={t("software.new.onGateFailure")}>
               <select value={f.onGateFailure} onChange={(e) => set({ onGateFailure: e.target.value as "halt" | "rollback" })}>
-                <option value="halt">Halt and ask me</option><option value="rollback">Roll back automatically</option>
+                <option value="halt">{t("software.new.onGateFailure.halt")}</option><option value="rollback">{t("software.new.onGateFailure.rollback")}</option>
               </select>
             </Field>
           </div>
           <div className="grid g4">
-            {input("jobTimeoutSeconds", "Job timeout, seconds", "Blank: wait for every job however long. A job still running then is failed, and the gate sees it")}
-            <Field label="A rollback undoes" hint="Last wave first: each earlier wave is reverted once the later one has ended">
+            {input("jobTimeoutSeconds", t("software.new.timeout"), t("software.new.timeout.hint"))}
+            <Field label={t("software.new.rollback")} hint={t("software.new.rollback.hint")}>
               <select value={f.rollbackOrder} onChange={(e) => set({ rollbackOrder: e.target.value as "all" | "reverse" })}>
-                <option value="reverse">Last wave first</option><option value="all">Every wave at once</option>
+                <option value="reverse">{t("software.new.rollback.reverse")}</option><option value="all">{t("software.new.rollback.all")}</option>
               </select>
             </Field>
           </div>
@@ -76,24 +79,23 @@ export function NewCampaignForm({ onStarted }: { onStarted: (id: string) => void
             <button type="button" className="btn" disabled={!built.ok || dry.isPending} title={built.ok ? undefined : built.error}
               onClick={() => built.ok && dry.mutate({ method: "POST", path: CAMPAIGNS_PATH, json: { ...built.body, dryRun: true } },
                 { onSuccess: (d) => setPreview({ key, plan: d as CampaignDryRun }) })}>
-              {dry.isPending ? "…" : "Dry run"}
+              {dry.isPending ? "…" : t("software.new.dryRun")}
             </button>
-            <button type="button" className="btn primary" disabled={!built.ok || !fresh || start.isPending} title={fresh ? undefined : "Run a dry run of these values first"}
-              onClick={() => built.ok && start.mutate({ method: "POST", path: CAMPAIGNS_PATH, json: built.body, success: "Campaign started" },
+            <button type="button" className="btn primary" disabled={!built.ok || !fresh || start.isPending} title={fresh ? undefined : t("software.new.dryRun.first")}
+              onClick={() => built.ok && start.mutate({ method: "POST", path: CAMPAIGNS_PATH, json: built.body, success: t("software.new.started") },
                 { onSuccess: (d) => { setPreview(null); onStarted((d as { campaignId: string }).campaignId); } })}>
-              {start.isPending ? "…" : "Start campaign"}
+              {start.isPending ? "…" : t("software.new.start")}
             </button>
           </div>
           {preview && (
-            <Callout tone={fresh ? "volt" : "warn"} title={fresh ? "Dry run: nothing written." : "The values changed since the dry run: run it again."}>
-              {preview.plan.waves.flat().length} element(s) match · {preview.plan.waveCount} wave(s) of {preview.plan.waves[0]?.length ?? 0}{preview.plan.waves.length > 1 && preview.plan.waves[preview.plan.waves.length - 1].length !== preview.plan.waves[0].length ? ` (last ${preview.plan.waves[preview.plan.waves.length - 1].length})` : ""}
-              {preview.plan.waves[0]?.length ? ` · first wave: ${preview.plan.waves[0].slice(0, 5).join(", ")}${preview.plan.waves[0].length > 5 ? "…" : ""}` : ""}
+            <Callout tone={fresh ? "volt" : "warn"} title={fresh ? t("software.new.preview.fresh") : t("software.new.preview.stale")}>
+              {t("software.new.preview.match", { count: waves.flat().length })} · {t("software.new.preview.waves", { count: preview.plan.waveCount, size: waves[0]?.length ?? 0 })}{waves.length > 1 && waves[waves.length - 1].length !== waves[0].length ? t("software.new.preview.last", { n: waves[waves.length - 1].length }) : ""}
+              {waves[0]?.length ? t("software.new.preview.first", { elements: `${waves[0].slice(0, 5).join(", ")}${waves[0].length > 5 ? "…" : ""}` }) : ""}
             </Callout>
           )}
         </form>
       </Can>
-      {!can("POST", CAMPAIGNS_PATH) && <p className="muted small">Starting a software campaign needs the operator role.</p>}
+      {!can("POST", CAMPAIGNS_PATH) && <p className="muted small">{t("software.new.needsOperator")}</p>}
     </Card>
   );
 }
-

@@ -1,6 +1,8 @@
 /** Pure rules of the containment viewer (`topology.containment`, GUI-3.2 to 3.4): the answer of RAN NF OAM's `GET /topology/graph` turned into
  * a tree, the worst open alarm under each node (so a folded node still shows what is below it), and the rows the viewer draws for the nodes that
  * are unfolded. No React here: the section and the tests use the same functions. */
+import type { Translator } from "../../../i18n";
+import { ENGLISH } from "../../../lib/domain";
 
 /** One node of `GET /topology/graph`: a managed object with its open alarms per severity and the worst of them. */
 export interface GraphMo {
@@ -74,6 +76,6 @@ export function visibleRows(tree: Tree, isOpen: (dn: string) => boolean, limit =
 }
 
 /** "2 critical, 1 minor" for a node's own open alarms, worst first; "" when it has none. */
-export function describeAlarms(alarms: Partial<Record<string, number>>): string {
-  return SEVERITY_ORDER.filter((s) => alarms[s]).map((s) => `${alarms[s]} ${s}`).join(", ");
+export function describeAlarms(alarms: Partial<Record<string, number>>, t: Translator = ENGLISH): string {
+  return SEVERITY_ORDER.filter((s) => alarms[s]).map((s) => t("domain.alarms.count", { n: alarms[s]!, severity: s })).join(", ");
 }

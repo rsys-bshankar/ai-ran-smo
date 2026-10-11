@@ -339,9 +339,14 @@ def install(app: FastAPI, *, current_session, problem) -> None:
         """The attention groups in the scope, `limit` rows each, at most `CACHE_SECONDS` old. The scope must already be checked; `claim` as for `page_counts`."""
         return await cached(("attention", region, site_cluster, limit, claim), lambda: compute_attention(limit, region, site_cluster, claim))
 
+    def invalidate() -> None:
+        """Forget every cached answer, so the next ask computes afresh (GUI-1.5: the event stream calls it when the SMO's event feed says something changed)."""
+        cache.clear()
+
     page_counts.cache = cache        # type: ignore[attr-defined]  # read by the tests (its bound), never written through
     app.state.summary_page = page_counts
     app.state.summary_attention = attention
+    app.state.summary_invalidate = invalidate
 
     scope_docs = {"region": "Only what lies in this region (GUI-9.3), where the module's list accepts it.",
                   "site_cluster": "Only what lies in this site cluster, where the module's list accepts it."}

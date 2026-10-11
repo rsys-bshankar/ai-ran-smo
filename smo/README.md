@@ -314,6 +314,7 @@ smo/
 | [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) | Distributed traces (W3C `traceparent`, OpenTelemetry to Tempo), log shipping (Fluent Bit to Loki), Grafana, queries by trace id and correlation id |
 | [`deploy/gitops/README.md`](deploy/gitops/README.md) | Kustomize overlays and Argo CD Applications for the Helm chart |
 | [`docs/NOTIFICATIONS.md`](docs/NOTIFICATIONS.md) | Every outbound call to a caller-registered destination, classified (outbox or inline), kept in step with the code by a test |
+| [`docs/EVENTS.md`](docs/EVENTS.md) | The SMO event bus: the CloudEvents envelope, the published types, the feed on DME (`GET /dme/smo-events`) and how events are delivered and kept |
 | [`docs/adr/`](docs/adr/) | Architecture decision records (`0001`: Alembic, one history; `0002`: NETCONF over SSH; `0003`: Postgres HA; `0004`: the operator page a rApp declares; `0005`: tenant and region authorization) |
 | [`docs/CODE_DOCUMENTATION.md`](docs/CODE_DOCUMENTATION.md) | The rule for the comments and docstrings inside the source files, and how CI holds it: `scripts/check_code_docs.py` (the gate and its baseline) and `scripts/verify_docs_only.py` (the proof that a `Docs(code):` pull request changes only comments) |
 | [`docs/VALIDATION.md`](docs/VALIDATION.md) | The validation program: what is tested today in each category (unit, integration, interface, DB, security, load, stress, upgrade, rollback, HA, GUI), what is not, and the order gaps are closed |

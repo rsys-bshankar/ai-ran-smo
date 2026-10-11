@@ -2,9 +2,11 @@
  * waves with an alarm gate and an optional KPI guard, and the data that makes a write possible. Tabs (hash): Config jobs (tiles, the paged job
  * list with halted first, the selected job's waves and controls), New job, Vendors & schemas, Endpoint trust (pinned SSH host keys) and Element
  * onboarding (MGT-14.6/14.7: the onboarding templates, each element's onboarding, and who is told when one fails; the watcher box is the
- * Software page's `LifecycleWatchers`, shared because one subscription covers onboarding and campaign failures). Only the visible tab's boxes load. Layout only: the boxes are `sections/`, their data `data/queries.ts`. Sections: README.md. */
+ * Software page's `LifecycleWatchers`, shared because one subscription covers onboarding and campaign failures). Only the visible tab's boxes load. Layout only: the boxes are `sections/`, their data `data/queries.ts`. Sections: README.md.
+ * Every word comes from the catalog (`i18n/en/configuration.ts`, GUI-6.4). */
 import { PageHeader, Tabs, useHashTab } from "../../components/ui";
 import { count, useSummary } from "../../data/summary";
+import { useT } from "../../i18n";
 import { SectionBoundary } from "../../kit/SectionBoundary";
 import { useSelectedJob } from "./data/queries";
 import { CmSchemas } from "./sections/CmSchemas";
@@ -23,21 +25,22 @@ const TABS = ["jobs", "new", "vendors", "trust", "onboarding"] as const;
 
 /** The Configuration page. */
 export function Configuration() {
+  const t = useT();
   const [tab, setTab] = useHashTab(TABS, "jobs");
   const [, select] = useSelectedJob();
   const summary = useSummary("configuration");
   const halted = count(summary.data, "configJobs.HALTED");
   return (
     <>
-      <PageHeader eyebrow="RAN NF OAM · config jobs · vendors · schemas · endpoint trust" title="Configuration"
-        subtitle="Every write to the RAN, staged in waves with an alarm gate and an optional KPI guard. Pause, continue, stop or roll back while it runs."
-        actions={<button type="button" className="btn primary" onClick={() => setTab("new")}>New config job</button>} />
+      <PageHeader eyebrow={t("configuration.eyebrow")} title={t("configuration.title")}
+        subtitle={t("configuration.subtitle")}
+        actions={<button type="button" className="btn primary" onClick={() => setTab("new")}>{t("configuration.newJob")}</button>} />
       <Tabs value={tab} onChange={setTab} tabs={[
-        { id: "jobs", label: "Config jobs", count: halted || null, tone: halted ? "bad" : undefined },
-        { id: "new", label: "New job" },
-        { id: "vendors", label: "Vendors & schemas" },
-        { id: "trust", label: "Endpoint trust" },
-        { id: "onboarding", label: "Element onboarding" },
+        { id: "jobs", label: t("configuration.tab.jobs"), count: halted || null, tone: halted ? "bad" : undefined },
+        { id: "new", label: t("configuration.tab.new") },
+        { id: "vendors", label: t("configuration.tab.vendors") },
+        { id: "trust", label: t("configuration.tab.trust") },
+        { id: "onboarding", label: t("configuration.tab.onboarding") },
       ]} />
       {tab === "jobs" && <>
         <SectionBoundary id="configuration.tiles"><ConfigTiles /></SectionBoundary>

@@ -1,0 +1,51 @@
+/** German — the Account security page (see `../en/security.ts`). */
+import type { MessageKey } from "../en";
+
+/** The page's German messages, by key. */
+export const security: Partial<Record<MessageKey, string>> = {
+  "security.eyebrow": "Ihre Anmeldung",
+  "security.title": "Kontosicherheit",
+  "security.subtitle": "Ihre Anmeldung: der Einmalcode nach Ihrem Passwort und die Wiederherstellungscodes dahinter",
+
+  "security.tiles.twoStep": "Zweistufige Anmeldung",
+  "security.tiles.twoStep.provider": "Über Ihren Anbieter",
+  "security.tiles.twoStep.on": "Ein",
+  "security.tiles.twoStep.started": "Begonnen",
+  "security.tiles.twoStep.off": "Aus",
+  "security.tiles.twoStep.providerFoot": "der Identitätsanbieter fragt nach dem zweiten Faktor",
+  "security.tiles.twoStep.onFoot": "Authenticator-App · nach Ihrem Passwort",
+  "security.tiles.twoStep.unavailable": "auf diesem Server nicht verfügbar",
+  "security.tiles.twoStep.setUp": "unten einrichten",
+  "security.tiles.recovery": "Verbleibende Wiederherstellungscodes",
+  "security.tiles.recovery.sso": "bei Single Sign-On nicht verwendet",
+  "security.tiles.recovery.low": "werden knapp: unten neue erzeugen",
+  "security.tiles.recovery.once": "jeder gilt nur einmal",
+  "security.tiles.recovery.notYet": "werden beim Einrichten des Codes erzeugt",
+  "security.tiles.method": "Anmeldeverfahren",
+  "security.tiles.method.sso": "Single Sign-On",
+  "security.tiles.method.local": "Lokales Konto",
+  "security.tiles.method.signedInAs": "angemeldet als",
+
+  "security.recovery.title": "Wiederherstellungscodes",
+  "security.recovery.sub": "jeder meldet Sie einmal an, falls Sie Ihr Gerät verlieren",
+  "security.recovery.none.title": "Noch keine Wiederherstellungscodes.",
+  "security.recovery.none.body": "Sie werden erzeugt, wenn Sie den Einmalcode einrichten.",
+  "security.recovery.unused": "{left} unbenutzte Wiederherstellungscodes",
+  "security.recovery.usedAt": "benutzt {time}",
+  "security.recovery.notUsed": "noch nicht benutzt",
+  "security.recovery.note": "Die Codes werden nur einmal angezeigt; der Server speichert nur, welche Plätze benutzt wurden. Erzeugen Sie oben neue, falls Sie sie verloren haben.",
+
+  "security.signins.title": "Letzte Anmeldungen",
+  "security.signins.sub": "Ihre neuesten {limit} · aus dem Audit-Protokoll der Konsole",
+  "security.signins.failed_one": "{count} fehlgeschlagene Anmeldung darunter",
+  "security.signins.failed_other": "{count} fehlgeschlagene Anmeldungen darunter",
+  "security.signins.failed.body": "Wenn Sie eine davon nicht wiedererkennen, ändern Sie Ihr Passwort.",
+  "security.signins.empty": "Noch keine Anmeldung erfasst.",
+  "security.signins.when": "Wann",
+  "security.signins.what": "Was",
+  "security.signins.detail": "Detail",
+  "security.signins.action.login": "angemeldet",
+  "security.signins.action.loginFailed": "fehlgeschlagene Anmeldung",
+  "security.signins.action.logout": "abgemeldet",
+  "security.signins.action.token": "Token ausgestellt",
+};

@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Card } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { Segmented } from "../../../kit/Segmented";
 import { Empty, ErrorRetry, Skeleton } from "../../../kit/states";
 import { elementHref } from "../../element/data/types";
@@ -15,6 +16,7 @@ import { useElementOptions, useEntity, useLinks, useTopologyParams } from "../da
 
 /** The graph card. */
 export function NeighbourGraph() {
+  const t = useT();
   const { me, setMe } = useTopologyParams();
   const [text, setText] = useState(me ?? "");
   const options = useElementOptions(useDebounced(text, SEARCH_DEBOUNCE_MS));
@@ -22,32 +24,34 @@ export function NeighbourGraph() {
   useEffect(() => { setText(me ?? ""); }, [me]);
   const entity = useEntity(me);
   const links = useLinks(me, me !== null);
-  const graph = useMemo(() => (me && links.data ? buildGraph(me, Object.keys(entity.data?.cellGuards ?? {}), links.data, filter) : null),
-    [me, links.data, entity.data, filter]);
+  const graph = useMemo(() => (me && links.data ? buildGraph(me, Object.keys(entity.data?.cellGuards ?? {}), links.data, filter, t) : null),
+    [me, links.data, entity.data, filter, t]);
   const picker = (
     <form className="row wrap" onSubmit={(e) => { e.preventDefault(); setMe(text.trim() || null); }}>
       <label className="search" style={{ width: 220 }}>
-        <input aria-label="Focus element" list="topology-elements" placeholder="Managed element ref" value={text} onChange={(e) => setText(e.target.value)} />
+        <input aria-label={t("topology.graph.focusElement")} list="topology-elements" placeholder={t("topology.graph.placeholder")} value={text} onChange={(e) => setText(e.target.value)} />
       </label>
       <datalist id="topology-elements">{options.data?.map((o) => <option key={o.managedElementRef} value={o.managedElementRef} />)}</datalist>
-      <button type="submit" className="btn small">Focus</button>
-      <Segmented label="Show" value={filter} onChange={setFilter}
-        options={[{ id: "all", label: "All" }, { id: "problems", label: "Problems only" }, { id: "inter", label: "Inter-element" }]} />
+      <button type="submit" className="btn small">{t("topology.graph.focus")}</button>
+      <Segmented label={t("topology.graph.show")} value={filter} onChange={setFilter}
+        options={[{ id: "all", label: t("topology.graph.all") }, { id: "problems", label: t("topology.graph.problems") }, { id: "inter", label: t("topology.graph.inter") }]} />
     </form>
   );
-  const title = me && graph ? `Neighbours of ${me} · ${graph.nodes.filter((n) => n.kind === "own").length} cells, ${graph.edges.length} relations` : "Neighbours";
+  const title = me && graph
+    ? t("topology.graph.titleOf", { me, cells: t("topology.graph.cells", { count: graph.nodes.filter((n) => n.kind === "own").length }), relations: t("topology.graph.relations", { count: graph.edges.length }) })
+    : t("topology.graph.title");
   return (
-    <Card section="topology.graph" title={title} sub="focus one element at a time · its cells in the centre, neighbours around" actions={picker}>
-      {!me && <Empty title="Pick a managed element to see its neighbours.">Type its ref, or choose one of the suggestions.</Empty>}
+    <Card section="topology.graph" title={title} sub={t("topology.graph.sub")} actions={picker}>
+      {!me && <Empty title={t("topology.graph.pick")}>{t("topology.graph.pickHint")}</Empty>}
       {me && links.error && !links.data && <ErrorRetry error={links.error} onRetry={() => void links.refetch()} />}
       {me && !links.data && !links.error && <Skeleton lines={6} />}
       {me && graph && (graph.edges.length === 0 && graph.nodes.length <= 1
-        ? <Empty title={`${me} declares no neighbour relations.`}>Relations come from the cell guards' neighbour lists (Element detail → Cell guards).</Empty>
+        ? <Empty title={t("topology.graph.noRelations", { me })}>{t("topology.graph.noRelationsHint")}</Empty>
         : <GraphSvg nodes={graph.nodes} edges={graph.edges} width={graph.width} height={graph.height} />)}
-      {graph && graph.hidden > 0 && <p className="gap-note">{graph.hidden} more neighbour(s) not drawn (the graph stops at 200 nodes); the table below lists every relation.</p>}
+      {graph && graph.hidden > 0 && <p className="gap-note">{t("topology.graph.hidden", { count: graph.hidden })}</p>}
       <div className="legend">
-        <span><i style={{ background: "var(--volt)" }} />focused element</span><span><i style={{ background: "var(--ok)" }} />managed neighbour</span>
-        <span><i style={{ background: "var(--warn)" }} />external</span><span><i style={{ background: "var(--bad)" }} />ambiguous</span><span>dashed = not reciprocal</span>
+        <span><i style={{ background: "var(--volt)" }} />{t("topology.graph.legend.focused")}</span><span><i style={{ background: "var(--ok)" }} />{t("topology.graph.legend.managed")}</span>
+        <span><i style={{ background: "var(--warn)" }} />{t("topology.graph.legend.external")}</span><span><i style={{ background: "var(--bad)" }} />{t("topology.graph.legend.ambiguous")}</span><span>{t("topology.graph.legend.dashed")}</span>
       </div>
     </Card>
   );
@@ -64,10 +68,11 @@ function tone(n: GraphNode): string {
 /** The SVG drawing (`.graph`, `.g-edge`, `.g-node`). Nodes of managed elements are keyboard-reachable links to their detail page. */
 function GraphSvg({ nodes, edges, width, height }: { nodes: GraphNode[]; edges: { key: string; from: string; to: string; linkType: string; oneWay: boolean }[]; width: number; height: number }) {
   const navigate = useNavigate();
+  const t = useT();
   const at = new Map(nodes.map((n) => [n.key, n]));
   return (
     <div className="graph">
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Neighbour graph">
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={t("topology.graph.aria")}>
         {edges.map((e) => {
           const a = at.get(e.from), b = at.get(e.to);
           if (!a || !b) return null;

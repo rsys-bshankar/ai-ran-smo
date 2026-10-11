@@ -3,25 +3,30 @@
  * record against its own audit row, not the whole chain, and serves no "previous hash"; the box says how to verify the chain. */
 import type { DecisionRecord } from "../../../api/types";
 import { Card, KeyValue, StateBadge } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { QueryState } from "../../../kit/states";
 import { INTEGRITY_MEANING } from "../../../lib/domain";
 import { useDecisionRecord } from "../data/queries";
 
+/** The command that verifies the whole audit chain (a command, not a word to translate). */
+const VERIFY_COMMAND = "python -m smo_shared.audit verify";
+
 /** The integrity card of a record that was read with its check. */
 export function Integrity({ record: r }: { record: DecisionRecord }) {
+  const t = useT();
   return (
-    <Card section="decisions.integrity" title="Integrity">
+    <Card section="decisions.integrity" title={t("decisions.integrity.title")}>
       <div className="row gap wrap" role="status">
         <StateBadge state={r.integrity?.status} />
-        <span className="small">{r.integrity ? INTEGRITY_MEANING[r.integrity.status] : ""}</span>
+        <span className="small">{r.integrity && INTEGRITY_MEANING[r.integrity.status] ? t(INTEGRITY_MEANING[r.integrity.status]) : ""}</span>
       </div>
       {r.integrity?.reason && <p className="small">{r.integrity.reason}</p>}
       <KeyValue items={[
-        ["Record hash", <code key="h" className="id">{r.contentHash}</code>],
-        ["Audit chain row", r.integrity?.auditSeq ?? r.auditSeq],
-        ["Audit row hash", r.integrity?.auditHash ? <code key="a" className="id">{r.integrity.auditHash}</code> : null],
+        [t("decisions.integrity.recordHash"), <code key="h" className="id">{r.contentHash}</code>],
+        [t("decisions.integrity.auditRow"), r.integrity?.auditSeq ?? r.auditSeq],
+        [t("decisions.integrity.auditHash"), r.integrity?.auditHash ? <code key="a" className="id">{r.integrity.auditHash}</code> : null],
       ]} />
-      <p className="muted small">This checks the record against the one row of the audit chain that carries its hash. To verify the whole chain, run <code>python -m smo_shared.audit verify</code>.</p>
+      <p className="muted small">{t("decisions.integrity.note")} <code>{VERIFY_COMMAND}</code>.</p>
     </Card>
   );
 }

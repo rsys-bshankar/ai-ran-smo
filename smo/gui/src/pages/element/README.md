@@ -20,6 +20,8 @@ RAN pages share.
 | element.guards | sections/CellGuards.tsx | each cell's guard: class, sector group, incident zone, neighbours; Edit / Add (admin) | `/cell-guards?managed_element_ref=` | 15 s | 1 call/page |
 | element.guard-editor | sections/GuardEditor.tsx | class NORMAL / COVERAGE_CRITICAL / EMERGENCY, sector group, incident zone, neighbours; Save, Remove | `PUT` / `DELETE /managed-entities/{me}/cells/{cell}/guards` | — | 0 (reads the element, shared) |
 
+Every word on the page comes from the catalog (`src/i18n/en/element.ts`, `de/element.ts`; GUI-6.4); its literal count is 0.
+
 ## Known limits
 
 - **Refresh from element** walks the element's server synchronously; a large element can take a while and the button waits for it.

@@ -479,6 +479,18 @@ def test_recover_route_fires_recover_transition(client, db_session_factory):
     assert resp.json()["state"] == "DEPLOYING"
 
 
+
+def test_an_instance_transition_is_published_on_the_event_bus(client, db_session_factory, monkeypatch):
+    """MSG-3.5: the RECOVER transition is published as `org.oran.smo.rapp-instance.state-changed` about the instance, from the state machine's one hook."""
+    from smo_shared import events
+    monkeypatch.setenv("SMO_EVENT_BUS", "memory")
+    monkeypatch.setattr(events.MEMORY, "events", [])
+    inst_id = _make_instance(db_session_factory, InstanceState.FAULTED)
+    assert client.post(f"/instances/{inst_id}/recover").status_code == 200
+    [event] = [e for e in events.MEMORY.events if e["subject"] == str(inst_id)]
+    assert event["type"] == "org.oran.smo.rapp-instance.state-changed"
+    assert (event["data"]["from"], event["data"]["event"], event["data"]["to"]) == ("FAULTED", "RECOVER", "DEPLOYING")
+
 def test_terminate_lands_in_undeployed_and_keeps_the_row(client, db_session_factory, monkeypatch):
     """HISTORY.md §5: TERMINATE used to delete the instance row
     outright, in the same call as the workload teardown. The reference's

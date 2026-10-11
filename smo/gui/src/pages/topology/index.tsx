@@ -6,6 +6,7 @@
 import { Link } from "react-router-dom";
 
 import { PageHeader } from "../../components/ui";
+import { useT } from "../../i18n";
 import { SectionBoundary } from "../../kit/SectionBoundary";
 import { ContainmentGraph } from "./sections/ContainmentGraph";
 import { ElementSummary } from "./sections/ElementSummary";
@@ -17,11 +18,12 @@ import { RelationTiles } from "./sections/RelationTiles";
 
 /** The RAN topology page. */
 export function Topology() {
+  const t = useT();
   return (
     <>
-      <PageHeader eyebrow="RAN NF OAM · /topology · /topology/links · /topology/relation" title="RAN topology"
-        subtitle="Managed elements, their cells and every declared neighbour relation. Problems in the relations show here before they show as handover failures."
-        actions={<><SectionBoundary id="topology.export"><ExportTeiv /></SectionBoundary><Link className="btn" to="/">Back to health map</Link></>} />
+      <PageHeader eyebrow={t("topology.eyebrow")} title={t("topology.title")}
+        subtitle={t("topology.subtitle")}
+        actions={<><SectionBoundary id="topology.export"><ExportTeiv /></SectionBoundary><Link className="btn" to="/">{t("topology.back")}</Link></>} />
       <SectionBoundary id="topology.tiles"><RelationTiles /></SectionBoundary>
       <div className="grid g-main-side">
         <SectionBoundary id="topology.graph"><NeighbourGraph /></SectionBoundary>

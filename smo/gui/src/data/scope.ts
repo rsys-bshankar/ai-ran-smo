@@ -9,6 +9,8 @@
 import { createContext, useContext } from "react";
 
 import type { Query } from "../api/client";
+import type { Translator } from "../i18n";
+import { ENGLISH } from "../lib/domain";
 
 /** A scope: no region means the whole network; a cluster needs a region. */
 export interface Scope { region: string | null; cluster: string | null }
@@ -71,8 +73,8 @@ export function withScopeSearch(search: string, scope: Scope): string {
 }
 
 /** "eu-west / metro-a", "eu-west", or "All network". */
-export function scopeLabel(s: Scope): string {
-  if (!s.region) return "All network";
+export function scopeLabel(s: Scope, t: Translator = ENGLISH): string {
+  if (!s.region) return t("domain.scope.all");
   return s.cluster ? `${s.region} / ${s.cluster}` : s.region;
 }
 

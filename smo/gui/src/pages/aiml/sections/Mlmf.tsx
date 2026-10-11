@@ -7,6 +7,7 @@ import type { MlmfSubscription } from "../../../api/types";
 import { useSmoAction } from "../../../api/hooks";
 import { Sparkline } from "../../../components/charts";
 import { ActionButton, Can, Card, DataTable, Field, Id } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { formatTime, metricSeries, numericMetricKeys, parseJsonObject, splitList } from "../../../lib/domain";
 import { ServerTable } from "../../../kit/ServerTable";
 import { MLMF_SUBSCRIPTIONS, useDmeTypes, useModelIndex, useModelNames, useSubscriptionReports } from "../data/queries";
@@ -15,18 +16,19 @@ import { MLMF_SUBSCRIPTIONS, useDmeTypes, useModelIndex, useModelNames, useSubsc
 export function Mlmf() {
   const modelName = useModelNames();
   const [selected, setSelected] = useState<MlmfSubscription | null>(null);
+  const t = useT();
   return (
     <>
       <Can method="POST" path={MLMF_SUBSCRIPTIONS}><SubscribeMlmf /></Can>
-      <Card section="aiml.mlmf" title="MLMF subscriptions" actions={<span className="muted small">Model performance, distinct from RAN Analytics' MDAF</span>}>
-        <ServerTable<MlmfSubscription> path={MLMF_SUBSCRIPTIONS} rowKey={(s) => s.subscriptionId} empty="No MLMF subscriptions."
+      <Card section="aiml.mlmf" title={t("aiml.mlmf.title")} actions={<span className="muted small">{t("aiml.mlmf.note")}</span>}>
+        <ServerTable<MlmfSubscription> path={MLMF_SUBSCRIPTIONS} rowKey={(s) => s.subscriptionId} empty={t("aiml.mlmf.empty")}
           onRowClick={setSelected} selectedKey={selected?.subscriptionId} columns={[
-            { header: "Subscription", render: (s) => <Id value={s.subscriptionId} /> },
-            { header: "Model", render: (s) => modelName(s.modelId) ?? <Id value={s.modelId} /> },
-            { header: "Metrics", render: (s) => s.metricTypes.join(", ") },
-            { header: "Guard KPI floor", render: (s) => s.guardKpiFloor ? Object.entries(s.guardKpiFloor).map(([k, v]) => `${k} ≥ ${v}`).join(", ") : <span className="muted">none</span> },
-            { header: "Delivery", render: (s) => s.notificationDestination ?? <span className="muted">poll</span> },
-            { header: "", className: "actions", render: (s) => <ActionButton label="Unsubscribe" action={{ method: "DELETE", path: `${MLMF_SUBSCRIPTIONS}/${s.subscriptionId}`, success: "Unsubscribed" }} onDone={() => setSelected(null)} /> },
+            { header: t("aiml.col.subscription"), render: (s) => <Id value={s.subscriptionId} /> },
+            { header: t("aiml.col.model"), render: (s) => modelName(s.modelId) ?? <Id value={s.modelId} /> },
+            { header: t("aiml.col.metrics"), render: (s) => s.metricTypes.join(", ") },
+            { header: t("aiml.col.guardFloor"), render: (s) => s.guardKpiFloor ? Object.entries(s.guardKpiFloor).map(([k, v]) => `${k} ≥ ${v}`).join(", ") : <span className="muted">{t("aiml.none")}</span> },
+            { header: t("aiml.col.delivery"), render: (s) => s.notificationDestination ?? <span className="muted">{t("aiml.mlmf.poll")}</span> },
+            { header: "", className: "actions", render: (s) => <ActionButton label={t("aiml.mlmf.unsubscribe")} action={{ method: "DELETE", path: `${MLMF_SUBSCRIPTIONS}/${s.subscriptionId}`, success: t("aiml.mlmf.unsubscribed") }} onDone={() => setSelected(null)} /> },
           ]} />
       </Card>
       {selected && <MlmfReports sub={selected} />}
@@ -38,24 +40,25 @@ export function Mlmf() {
 function MlmfReports({ sub }: { sub: MlmfSubscription }) {
   const reports = useSubscriptionReports(sub.subscriptionId, 100);
   const [metrics, setMetrics] = useState("{}");
-  const parsed = parseJsonObject(metrics);
+  const t = useT();
+  const parsed = parseJsonObject(metrics, t);
   const keys = numericMetricKeys(reports.data ?? []);
   return (
-    <Card section="aiml.mlmfReports" title={<>Reports for <Id value={sub.subscriptionId} /></>}>
-      {keys.length === 0 ? <p className="muted">No reports yet.</p> : (
+    <Card section="aiml.mlmfReports" title={<>{t("aiml.mlmf.reportsFor")} <Id value={sub.subscriptionId} /></>}>
+      {keys.length === 0 ? <p className="muted">{t("aiml.noReports")}</p> : (
         <div className="spark-list">{keys.map((k) => <Sparkline key={k} points={metricSeries(reports.data!, k)} floor={sub.guardKpiFloor?.[k]} label={k} width={320} height={60} />)}</div>
       )}
       <DataTable rows={reports.data} loading={reports.isLoading} error={reports.error} rowKey={(r) => r.reportId} empty="—" columns={[
-        { header: "Reported", render: (r) => formatTime(r.reportedAt) },
-        { header: "Metrics", render: (r) => <code className="small">{JSON.stringify(r.metrics)}</code> },
-        { header: "Floor", render: (r) => r.breachedFloor ? <span className="badge b-bad tone-bad">BREACHED</span> : <span className="badge b-ok tone-ok">ok</span> },
+        { header: t("aiml.col.reported"), render: (r) => formatTime(r.reportedAt) },
+        { header: t("aiml.col.metrics"), render: (r) => <code className="small">{JSON.stringify(r.metrics)}</code> },
+        { header: t("aiml.col.floor"), render: (r) => r.breachedFloor ? <span className="badge b-bad tone-bad">BREACHED</span> : <span className="badge b-ok tone-ok">{t("aiml.mlmf.ok")}</span> },
       ]} />
       <Can method="POST" path={`${MLMF_SUBSCRIPTIONS}/${sub.subscriptionId}/reports`}>
         <details className="admin-tools">
-          <summary>Admin: inject a performance report</summary>
-          <p className="muted small">A report under a guard floor marks the model for retrain — and, for a coordination-group member, retrains every PROMOTED member.</p>
-          <Field label="Metrics (JSON)"><textarea rows={2} value={metrics} onChange={(e) => setMetrics(e.target.value)} placeholder='{"accuracy": 0.82}' spellCheck={false} /></Field>
-          <ActionButton label="Report" disabled={!parsed.ok} action={{ method: "POST", path: `${MLMF_SUBSCRIPTIONS}/${sub.subscriptionId}/reports`, json: parsed.ok ? parsed.value : {}, success: "Report recorded" }} />
+          <summary>{t("aiml.mlmf.inject")}</summary>
+          <p className="muted small">{t("aiml.mlmf.injectNote")}</p>
+          <Field label={t("aiml.mlmf.metricsJson")}><textarea rows={2} value={metrics} onChange={(e) => setMetrics(e.target.value)} placeholder={t("aiml.mlmf.metricsJson.placeholder")} spellCheck={false} /></Field>
+          <ActionButton label={t("aiml.mlmf.report")} disabled={!parsed.ok} action={{ method: "POST", path: `${MLMF_SUBSCRIPTIONS}/${sub.subscriptionId}/reports`, json: parsed.ok ? parsed.value : {}, success: t("aiml.mlmf.reported") }} />
         </details>
       </Can>
     </Card>
@@ -71,26 +74,27 @@ function SubscribeMlmf() {
   const [metricTypes, setMetricTypes] = useState("accuracy");
   const [floor, setFloor] = useState('{"accuracy": 0.9}');
   const [notificationDestination, setNotificationDestination] = useState("");
-  const parsed = parseJsonObject(floor);
+  const t = useT();
+  const parsed = parseJsonObject(floor, t);
   const action = useSmoAction();
   return (
-    <Card section="aiml.mlmfSubscribe" title="Subscribe to model performance">
+    <Card section="aiml.mlmfSubscribe" title={t("aiml.mlmf.subscribe.title")}>
       <form className="form inline" onSubmit={(e) => {
         e.preventDefault();
         if (!parsed.ok) return;
         action.mutate({ method: "POST", path: MLMF_SUBSCRIPTIONS,
           query: { model_id: modelId, dme_type_id: dmeTypeId, notification_destination: notificationDestination || undefined },
-          json: { metric_types: splitList(metricTypes), guard_kpi_floor: Object.keys(parsed.value).length ? parsed.value : null }, success: "MLMF subscription created" });
+          json: { metric_types: splitList(metricTypes), guard_kpi_floor: Object.keys(parsed.value).length ? parsed.value : null }, success: t("aiml.mlmf.subscribe.created") });
       }}>
-        <Field label="Model"><select value={modelId} onChange={(e) => setModelId(e.target.value)} required><option value="">Choose…</option>{models.data?.items.map((m) => <option key={m.modelId} value={m.modelId}>{m.modelType} {m.version}</option>)}</select></Field>
-        <Field label="DME type" hint="Data type the metrics arrive on">
-          <input list="dme-types" value={dmeTypeId} onChange={(e) => setDmeTypeId(e.target.value)} required placeholder="dmeTypeId (UUID)" pattern="[0-9a-fA-F\-]{36}" />
-          <datalist id="dme-types">{dmeTypes.data?.map((t) => <option key={t.dmeTypeId} value={t.dmeTypeId}>{t.typeName}</option>)}</datalist>
+        <Field label={t("aiml.col.model")}><select value={modelId} onChange={(e) => setModelId(e.target.value)} required><option value="">{t("aiml.choose")}</option>{models.data?.items.map((m) => <option key={m.modelId} value={m.modelId}>{m.modelType} {m.version}</option>)}</select></Field>
+        <Field label={t("aiml.dmeType")} hint={t("aiml.mlmf.dmeType.hint")}>
+          <input list="dme-types" value={dmeTypeId} onChange={(e) => setDmeTypeId(e.target.value)} required placeholder={t("aiml.mlmf.dmeType.placeholder")} pattern="[0-9a-fA-F\-]{36}" />
+          <datalist id="dme-types">{dmeTypes.data?.map((d) => <option key={d.dmeTypeId} value={d.dmeTypeId}>{d.typeName}</option>)}</datalist>
         </Field>
-        <Field label="Metric types"><input value={metricTypes} onChange={(e) => setMetricTypes(e.target.value)} /></Field>
-        <Field label="Guard KPI floor (JSON)" hint={parsed.ok ? undefined : <span className="text-bad">{parsed.error}</span>}><input value={floor} onChange={(e) => setFloor(e.target.value)} /></Field>
-        <Field label="Notification URL (optional)" hint="Leave blank to poll instead"><input value={notificationDestination} onChange={(e) => setNotificationDestination(e.target.value)} placeholder="http://consumer/mlmf-events" /></Field>
-        <button type="submit" className="btn primary" disabled={!parsed.ok || action.isPending}>Subscribe</button>
+        <Field label={t("aiml.mlmf.metricTypes")}><input value={metricTypes} onChange={(e) => setMetricTypes(e.target.value)} /></Field>
+        <Field label={t("aiml.mlmf.floorJson")} hint={parsed.ok ? undefined : <span className="text-bad">{parsed.error}</span>}><input value={floor} onChange={(e) => setFloor(e.target.value)} /></Field>
+        <Field label={t("aiml.mlmf.notify")} hint={t("aiml.mlmf.notify.hint")}><input value={notificationDestination} onChange={(e) => setNotificationDestination(e.target.value)} placeholder={t("aiml.mlmf.notify.placeholder")} /></Field>
+        <button type="submit" className="btn primary" disabled={!parsed.ok || action.isPending}>{t("aiml.mlmf.subscribe")}</button>
       </form>
     </Card>
   );

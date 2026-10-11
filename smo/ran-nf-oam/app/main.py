@@ -1060,7 +1060,7 @@ def _execute_write(body: WriteConfigRequest, db: Session, rollback_of: uuid.UUID
 
     # schema check — cache hit or fetch via Configuration Schema Info (clause 8.3)
     job.schema_validated_at = datetime.datetime.now(datetime.UTC)
-    job.status = WRITE_CONFIG_JOB_FSM.fire(JobState.PENDING, JobEvent.REQUEST_APPROVAL if hold else JobEvent.PRECHECK_PASS)
+    job.status = WRITE_CONFIG_JOB_FSM.fire(JobState.PENDING, JobEvent.REQUEST_APPROVAL if hold else JobEvent.PRECHECK_PASS, job=job)
     db.flush()
 
     # MGT-5.2: every sub-change exists from the start, PENDING, with its place in the request and its wave; a wave dispatches its own.
@@ -1173,12 +1173,12 @@ HEALTH_GATES = [_gate_rejections, _gate_alarms]
 
 def _finish(db: Session, job: WriteConfigJob) -> None:
     statuses = [sc.status for sc in db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job.job_id)).all()]
-    job.status = WRITE_CONFIG_JOB_FSM.fire(JobState(job.status), aggregate_event(statuses))
+    job.status = WRITE_CONFIG_JOB_FSM.fire(JobState(job.status), aggregate_event(statuses), job=job)
     job.next_wave_at = None
 
 
 def _halt(db: Session, job: WriteConfigJob, reason: str, detail: str | None, next_at: datetime.datetime | None = None) -> None:
-    job.status = WRITE_CONFIG_JOB_FSM.fire(JobState(job.status), JobEvent.HALT)
+    job.status = WRITE_CONFIG_JOB_FSM.fire(JobState(job.status), JobEvent.HALT, job=job)
     job.halted_reason, job.halted_detail, job.next_wave_at = reason, detail, next_at
     log.warning("config job %s halted after wave %s of %s: %s %s", job.job_id, job.current_wave, job.wave_count, reason, detail or "")
 
@@ -1598,7 +1598,7 @@ def _halted_job(db: Session, request: Request, job_id: uuid.UUID, event: JobEven
 def _resume(db: Session, job: WriteConfigJob) -> dict:
     """Moves a HALTED job back to PROCESSING, clears the halt, and runs the waves from the next one until the job ends or halts again; commits and returns the job summary.
     """
-    job.status = WRITE_CONFIG_JOB_FSM.fire(JobState.HALTED, JobEvent.RESUME)
+    job.status = WRITE_CONFIG_JOB_FSM.fire(JobState.HALTED, JobEvent.RESUME, job=job)
     job.halted_reason = job.halted_detail = job.next_wave_at = None
     db.flush()
     _advance(db, job)
@@ -2282,11 +2282,11 @@ def _approve_window(db: Session, job: WriteConfigJob, decider: str, reason: str 
         raise framework_error(CHANGE_WINDOW_CLOSED, detail=f"the change window closed at {as_utc(job.window_end).isoformat()}")
     job.decided_by, job.decided_at, job.decision_reason = decider, now, reason
     if job.scheduled_at is not None and as_utc(job.scheduled_at) > now:
-        job.status = WRITE_CONFIG_JOB_FSM.fire(JobState(job.status), JobEvent.APPROVE_FOR_WINDOW)
+        job.status = WRITE_CONFIG_JOB_FSM.fire(JobState(job.status), JobEvent.APPROVE_FOR_WINDOW, job=job)
         db.flush()
         return
     _refuse_if_killed(db, job.invoker_id, job.requested_by)                 # AI-10.4: a stopped rApp's job does not start, approved or not
-    job.status = WRITE_CONFIG_JOB_FSM.fire(JobState(job.status), JobEvent.APPROVE)
+    job.status = WRITE_CONFIG_JOB_FSM.fire(JobState(job.status), JobEvent.APPROVE, job=job)
     job.schema_validated_at = now                                           # the KPI guard measures from when the job ran, not when it was asked
     db.flush()
     _advance(db, job)
@@ -2301,7 +2301,7 @@ def _start_scheduled(db: Session, job: WriteConfigJob, body: "WaveActionRequest"
     if job.scheduled_at is not None and as_utc(job.scheduled_at) > now and not body.force:
         raise framework_error(CHANGE_WINDOW_NOT_OPEN, detail=f"the change window opens at {as_utc(job.scheduled_at).isoformat()}; send force=true to start now")
     _refuse_if_killed(db, job.invoker_id, body.requestedBy)
-    job.status = WRITE_CONFIG_JOB_FSM.fire(JobState.SCHEDULED, JobEvent.START)
+    job.status = WRITE_CONFIG_JOB_FSM.fire(JobState.SCHEDULED, JobEvent.START, job=job)
     job.schema_validated_at = now                                           # the KPI guard measures from when the job ran, not when it was asked
     db.flush()
     log.info("config job %s started in its change window by %s", job.job_id, body.requestedBy)
@@ -2342,7 +2342,7 @@ def reject_configuration_job(job_id: uuid.UUID, body: ApprovalDecisionRequest, r
     """MGT-4.3: refuse a job waiting for approval, or withdraw an approved one before it starts (PENDING_APPROVAL or SCHEDULED). Nothing was sent: the job ends
     REJECTED and each of its changes REJECTED `APPROVAL_REJECTED`. The requester may withdraw its own; an rApp may not decide (403). 409 in any other state."""
     job = _waiting_job(db, request, job_id, body, (JobState.PENDING_APPROVAL, JobState.SCHEDULED))
-    job.status = WRITE_CONFIG_JOB_FSM.fire(JobState(job.status), JobEvent.REJECT)
+    job.status = WRITE_CONFIG_JOB_FSM.fire(JobState(job.status), JobEvent.REJECT, job=job)
     job.decided_by, job.decided_at, job.decision_reason = body.decidedBy, datetime.datetime.now(datetime.UTC), body.reason
     for change in db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job.job_id)):
         change.status, change.rejection_reason = "REJECTED", "APPROVAL_REJECTED"

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://smo.example/schemas/event-envelope.schema.json",
+  "title": "SMO event envelope",
+  "description": "One event of the SMO's event bus (PR-MSG-3, docs/EVENTS.md): a CloudEvents 1.0 event in its JSON form, with three extension attributes. smo_shared/events.py builds it; GET /dme/smo-events answers a list of them.",
+  "type": "object",
+  "required": ["specversion", "id", "source", "type", "time", "datacontenttype", "data"],
+  "additionalProperties": false,
+  "properties": {
+    "specversion": {"const": "1.0"},
+    "id": {"type": "string", "format": "uuid", "description": "Unique per event; a reader that sees an id twice has seen the same event."},
+    "source": {"type": "string", "pattern": "^/smo/[a-z0-9-]+$", "description": "The module that published it, as /smo/<module>."},
+    "type": {"type": "string", "pattern": "^org\\.oran\\.smo\\.[a-z0-9-]+\\.[a-z0-9-]+$", "description": "org.oran.smo.<what>.<change>."},
+    "subject": {"type": "string", "description": "The entity the event is about (its id); absent when it has none."},
+    "time": {"type": "string", "format": "date-time", "description": "When the module published it (its transaction's time, UTC)."},
+    "datacontenttype": {"const": "application/json"},
+    "data": {"type": "object", "description": "What the type carries (docs/EVENTS.md, 'Types')."},
+    "smoseq": {"type": "integer", "minimum": 1, "description": "The event's position in the feed: what a reader passes as `after` to read on."},
+    "smoregion": {"type": "string", "description": "The region of the managed element the event is about, when it is one's."},
+    "smotenant": {"type": "string", "description": "The tenant of that element, when it has one."}
+  },
+  "examples": [
+    {"specversion": "1.0", "id": "0b9c1e0e-6f0c-4d8e-9a55-2d0f1b6f7c11", "source": "/smo/ran-nf-oam", "type": "org.oran.smo.alarm.raised",
+     "subject": "5f1d2c3b-8a7e-4c6d-9b0a-1e2f3a4b5c6d", "time": "2026-10-11T08:15:02.481+00:00", "datacontenttype": "application/json",
+     "data": {"alarmId": "5f1d2c3b-8a7e-4c6d-9b0a-1e2f3a4b5c6d", "managedElementRef": "gnb-du-01", "managedFunctionRef": "GNBDU-1", "severity": "major",
+              "probableCause": "LINK_DOWN"},
+     "smoseq": 1042, "smoregion": "north", "smotenant": "acme"},
+    {"specversion": "1.0", "id": "7c2a9e4f-1b3d-4e5f-8a6b-9c0d1e2f3a4b", "source": "/smo/rapp-mgmt", "type": "org.oran.smo.rapp-instance.state-changed",
+     "subject": "c3d4e5f6-a7b8-4c9d-8e0f-1a2b3c4d5e6f", "time": "2026-10-11T08:16:40.002+00:00", "datacontenttype": "application/json",
+     "data": {"machine": "InstanceState", "from": "FAULTED", "event": "RECOVER", "to": "DEPLOYING"}, "smoseq": 1043}
+  ]
+}

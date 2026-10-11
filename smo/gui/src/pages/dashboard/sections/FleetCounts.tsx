@@ -6,6 +6,7 @@ import { Link } from "react-router-dom";
 
 import { Card, StateBadge } from "../../../components/ui";
 import { byState, count, type Summary } from "../../../data/summary";
+import { useT } from "../../../i18n";
 import { formatCount } from "../../../kit/Kpi";
 import { ScopeNote } from "../../../kit/ScopeNote";
 import { useDashboardSummary } from "../data/queries";
@@ -27,17 +28,18 @@ const family = (s: Summary | undefined, prefix: string) => ({ total: count(s, `$
 
 /** The card. */
 export function FleetCounts() {
+  const t = useT();
   const s = useDashboardSummary().data;
   return (
-    <Card section="dashboard.fleet" title="Fleet" sub="counts by state">
+    <Card section="dashboard.fleet" title={t("dashboard.fleet.title")} sub={t("dashboard.fleet.sub")}>
       <div className="stack" style={{ gap: 8 }}>
-        <Row label="rApp instances" to="/rapps#instances" {...family(s, "instances")} />
-        <Row label="rApp packages" to="/rapps#packages" {...family(s, "packages")} />
-        <Row label="NF deployments (NFO)" to="/infrastructure#nfo" {...family(s, "deployments")} />
-        <Row label="Intents" to="/policy#intents" {...family(s, "intents")} />
-        <Row label="AI/ML models" to="/aiml#models" total={count(s, "models.total")} s={s} keys={["models.total"]} />
-        <Row label="Training jobs" to="/aiml#training" total={count(s, "trainingJobs.total")} s={s} keys={["trainingJobs.total"]} />
-        <Row label="Managed elements" to="/topology" total={count(s, "elements.total")} s={s} keys={["elements.total"]} />
+        <Row label={t("dashboard.fleet.instances")} to="/rapps#instances" {...family(s, "instances")} />
+        <Row label={t("dashboard.fleet.packages")} to="/rapps#packages" {...family(s, "packages")} />
+        <Row label={t("dashboard.fleet.deployments")} to="/infrastructure#nfo" {...family(s, "deployments")} />
+        <Row label={t("dashboard.fleet.intents")} to="/policy#intents" {...family(s, "intents")} />
+        <Row label={t("dashboard.fleet.models")} to="/aiml#models" total={count(s, "models.total")} s={s} keys={["models.total"]} />
+        <Row label={t("dashboard.fleet.training")} to="/aiml#training" total={count(s, "trainingJobs.total")} s={s} keys={["trainingJobs.total"]} />
+        <Row label={t("dashboard.fleet.elements")} to="/topology" total={count(s, "elements.total")} s={s} keys={["elements.total"]} />
       </div>
     </Card>
   );

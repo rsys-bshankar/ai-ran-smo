@@ -5,6 +5,7 @@
 import { useParams } from "react-router-dom";
 
 import { Tabs, useHashTab } from "../../components/ui";
+import { useT } from "../../i18n";
 import { SectionBoundary } from "../../kit/SectionBoundary";
 import { CellGuards } from "./sections/CellGuards";
 import { ConfigHistory } from "./sections/ConfigHistory";
@@ -22,12 +23,13 @@ const TABS = ["overview", "history", "mo", "guards"] as const;
 export function ElementDetail() {
   const me = useParams<{ me: string }>().me ?? "";
   const [tab, setTab] = useHashTab(TABS, "overview");
+  const t = useT();
   return (
     <>
       <SectionBoundary id="element.header"><Header me={me} /></SectionBoundary>
       <Tabs value={tab} onChange={setTab} tabs={[
-        { id: "overview", label: "Overview" }, { id: "history", label: "Config history" },
-        { id: "mo", label: "Managed objects" }, { id: "guards", label: "Cell guards" },
+        { id: "overview", label: t("element.tabs.overview") }, { id: "history", label: t("element.tabs.history") },
+        { id: "mo", label: t("element.tabs.mo") }, { id: "guards", label: t("element.tabs.guards") },
       ]} />
       {tab === "overview" && <SectionBoundary id="element.overview"><Overview me={me} /></SectionBoundary>}
       {tab === "history" && <div className="grid g-main-side">

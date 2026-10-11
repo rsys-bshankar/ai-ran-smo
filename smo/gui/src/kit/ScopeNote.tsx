@@ -4,14 +4,16 @@
  * which record no element). Nothing is drawn without a scope. */
 import { isScoped, useScope } from "../data/scope";
 import { networkWide, type Summary } from "../data/summary";
+import { useT } from "../i18n";
 
 /** Props of {@link ScopeNote}: `always` for a route the scope cannot narrow, or the summary and the count keys (or prefixes) the box shows. */
 export interface ScopeNoteProps { always?: boolean; summary?: Pick<Summary, "unscoped">; keys?: string[] }
 
 /** The note, or nothing. */
 export function ScopeNote({ always = false, summary, keys = [] }: ScopeNoteProps) {
+  const t = useT();
   const scope = useScope();
   if (!isScoped(scope)) return null;
   if (!always && !networkWide(summary, keys)) return null;
-  return <span className="scope-note" role="note" title="The scope picked in the top bar does not narrow this: it counts the whole network">network-wide</span>;
+  return <span className="scope-note" role="note" title={t("kit.scopeNote.title")}>{t("kit.scopeNote")}</span>;
 }

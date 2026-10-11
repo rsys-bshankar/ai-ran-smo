@@ -6,6 +6,8 @@ Model registration → training → validation → certification → deployment 
 (`docs/call-flows/02-aiml-model-train-to-inference.md`). Tabs (URL hash): `models` (default), `training`, `inference`, `features`,
 `groups` (coordination), `mlmf`, `registry`. The pre-redesign ids are unchanged. `Mlmf` is also mounted by the KPIs page (`#mlmf`).
 
+Every word on the page comes from the catalog (`src/i18n/en/aiml.ts`, `de/aiml.ts`; GUI-6.4); its literal count is 0.
+
 ## Sections
 
 | id | file | what it shows | API (via data/queries.ts) | refresh | budget |

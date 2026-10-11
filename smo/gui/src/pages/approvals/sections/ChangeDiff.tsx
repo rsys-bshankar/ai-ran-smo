@@ -2,17 +2,19 @@
  * 50 lines with a count of the rest (SCALE.md, Approvals: page a large diff). The request carries no current values, so there are no "−" lines. */
 import type { ApprovalDetail } from "../../../api/types";
 import { Card } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { Diff } from "../../../kit/Diff";
 import { changeDiff } from "../data/queries";
 
 /** The diff card. */
 export function ChangeDiff({ approval: a }: { approval: ApprovalDetail }) {
+  const t = useT();
   const lines = changeDiff(a.changes);
   return (
-    <Card section="approvals.diff" title={`What it would write (${a.changes.length})`} sub={`O1 config job · ${a.managedElements.length} managed element${a.managedElements.length === 1 ? "" : "s"}`}>
-      <Diff lines={lines} label="Changes" />
-      {a.accessScope && <p className="muted small">Access scope: {a.accessScope}</p>}
-      <p className="gap-note">The current values are not sent with the request, so only the new ones show.</p>
+    <Card section="approvals.diff" title={t("approvals.diff.title", { n: a.changes.length })} sub={t("approvals.diff.sub", { count: a.managedElements.length })}>
+      <Diff lines={lines} label={t("approvals.diff.label")} />
+      {a.accessScope && <p className="muted small">{t("approvals.diff.scope")} {a.accessScope}</p>}
+      <p className="gap-note">{t("approvals.diff.gap")}</p>
     </Card>
   );
 }

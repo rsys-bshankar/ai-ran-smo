@@ -10,6 +10,7 @@ import type { Query } from "../api/client";
 import { POLL, useSmoPage } from "../api/hooks";
 import { DataTable, type Column } from "../components/ui";
 import { scopeKey, useScope } from "../data/scope";
+import { useT } from "../i18n";
 import { usePreferences } from "../shell/ThemeProvider";
 import { Pager } from "./Pager";
 import { Stale } from "./states";
@@ -38,6 +39,7 @@ export function KeysetTable<T>({ path, query, columns, rowKey, refetchInterval =
   const [limit, setLimit] = useState<number>(prefs.rowsPerPage);
   const [cursors, setCursors] = useState<string[]>([""]);
   // a change of the global scope (data/scope.ts, added to the query by useSmoPage) is a filter change too
+  const t = useT();
   const scope = scopeKey(useScope());
   const filterKey = JSON.stringify([query ?? {}, scope]);
   useEffect(() => { setCursors([""]); }, [filterKey, resetKey, limit]);
@@ -57,7 +59,7 @@ export function KeysetTable<T>({ path, query, columns, rowKey, refetchInterval =
     <>
       <DataTable rows={rows} columns={columns} rowKey={rowKey} loading={page.isLoading} error={page.data ? undefined : page.error}
         empty={empty} onRowClick={onRowClick} selectedKey={selectedKey} />
-      {page.error && page.data && <div className="error-box" role="alert">Refresh failed: {page.error.message} <Stale updatedAt={page.dataUpdatedAt} after={0} /></div>}
+      {page.error && page.data && <div className="error-box" role="alert">{t("kit.table.refreshFailed", { error: page.error.message })} <Stale updatedAt={page.dataUpdatedAt} after={0} /></div>}
       {data && (
         <Pager offset={index * limit} limit={limit} shown={data.items.length} hasMore={!!data.nextCursor || !!data.hasMore}
           onOffset={go} onLimit={setLimit} />

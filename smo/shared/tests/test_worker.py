@@ -168,3 +168,30 @@ def test_the_sweep_can_be_turned_off_and_is_added_once(monkeypatch):
     monkeypatch.setenv("SMO_OUTBOX_SWEEP", "true")
     monkeypatch.setenv("SMO_OUTBOX_SWEEP_SECONDS", "7")
     assert worker.outbox_sweep_task().interval_seconds == 7.0
+
+
+# --- the event purge (PR-MSG-3) ---------------------------------------------------------------------------------------------------------------
+
+def test_the_event_purge_removes_old_events_and_can_be_turned_off(tmp_path, monkeypatch):
+    """The shared `event-purge` task deletes the feed's events older than the retention; SMO_EVENT_PURGE=false leaves it out, and SMO_EVENT_PURGE_SECONDS sets its interval."""
+    import uuid as _uuid
+
+    from sqlalchemy import insert, select
+
+    from smo_shared import events
+    engine = create_engine(f"sqlite:///{tmp_path / 'events.db'}", future=True)
+    Base.metadata.create_all(engine, tables=[PeriodicRun.__table__, events.SmoEvent.__table__])
+    old = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=48)
+    with engine.begin() as conn:
+        conn.execute(insert(events.SmoEvent).values(event_id=_uuid.uuid4(), type="t", source="/s", time=old, data={}))
+        conn.execute(insert(events.SmoEvent).values(event_id=_uuid.uuid4(), type="t", source="/s", time=datetime.datetime.now(datetime.UTC), data={}))
+    monkeypatch.setattr("smo_shared.db.SessionLocal", sessionmaker(bind=engine))
+    monkeypatch.delenv("SMO_EVENT_PURGE", raising=False)
+    monkeypatch.setenv("SMO_EVENT_PURGE_SECONDS", "60")
+    purge = worker.event_purge_task()
+    assert purge is not None and purge.shared and purge.name == "event-purge" and purge.interval_seconds == 60.0
+    assert tick([purge], module="m", session_factory=sessionmaker(bind=engine), engine=engine) == {"event-purge": "ran"}
+    with engine.connect() as conn:
+        assert len(conn.execute(select(events.SmoEvent.seq)).all()) == 1
+    monkeypatch.setenv("SMO_EVENT_PURGE", "off")
+    assert worker.event_purge_task() is None

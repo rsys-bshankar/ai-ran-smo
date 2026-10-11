@@ -7,6 +7,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { Card } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { formatCount } from "../../../kit/Kpi";
 import { Icon } from "../../../kit/icons";
 import { ServerTable } from "../../../kit/ServerTable";
@@ -26,24 +27,27 @@ const noGroups = (d: unknown) => ((d as { groups?: unknown[] }).groups ?? []).le
 type Level = { region: null } | { region: string; cluster?: undefined } | { region: string; cluster: string | null };
 
 /** One tile of the map. */
-function GroupTile({ g, kind, onOpen }: { g: HealthGroup; kind: string; onOpen?: () => void }) {
-  const label = g.key ?? `no ${kind}`;
+function GroupTile({ g, kind, onOpen }: { g: HealthGroup; kind: "region" | "siteCluster"; onOpen?: () => void }) {
+  const t = useT();
+  const word = t(`dashboard.map.kind.${kind}`);
+  const label = g.key ?? t(`dashboard.map.no.${kind}`);
   const body = (
     <>
-      <span className="eyebrow">{kind}</span>
+      <span className="eyebrow">{word}</span>
       <b>{label}</b>
-      <span className="small">{formatCount(g.elements)} elements · <span className={g.unhealthy ? "t-bad" : "muted"}>{formatCount(g.unhealthy)} unhealthy</span></span>
-      <span className="xs muted">{g.worstSeverity ? `worst open: ${g.worstSeverity}` : "no open alarm"}</span>
+      <span className="small">{t("dashboard.map.tile.elements", { count: g.elements, total: formatCount(g.elements) })} · <span className={g.unhealthy ? "t-bad" : "muted"}>{t("dashboard.map.tile.unhealthy", { n: formatCount(g.unhealthy) })}</span></span>
+      <span className="xs muted">{g.worstSeverity ? t("dashboard.map.tile.worst", { severity: g.worstSeverity }) : t("dashboard.map.tile.noAlarm")}</span>
     </>
   );
   const cls = `tile ${toneOf(g.worstSeverity)}`;
   return onOpen
-    ? <button type="button" className={cls} onClick={onOpen} title={`Open ${kind} ${label}`}>{body}</button>
-    : <div className={cls} title={`Elements without a ${kind} cannot be listed by ${kind}`}>{body}</div>;
+    ? <button type="button" className={cls} onClick={onOpen} title={t("dashboard.map.tile.open", { kind: word, label })}>{body}</button>
+    : <div className={cls} title={t("dashboard.map.tile.cannotOpen", { kind: word })}>{body}</div>;
 }
 
 /** The map card. */
 export function HealthMap() {
+  const t = useT();
   const [level, setLevel] = useState<Level>({ region: null });
   const regions = useFleetHealth("region");
   const inRegion = level.region !== null;
@@ -51,47 +55,48 @@ export function HealthMap() {
   const atElements = inRegion && "cluster" in level && level.cluster !== undefined;
   const cluster = atElements ? (level as { cluster: string | null }).cluster : undefined;
   const score = regions.data?.healthScore;
+  const elements = regions.data?.groups.reduce((a, g) => a + g.elements, 0) ?? null;
   return (
-    <Card section="dashboard.map" className="s2" title="Network health map"
-      sub={`${formatCount(regions.data?.groups.reduce((a, g) => a + g.elements, 0) ?? null)} managed elements · health score ${score == null ? "—" : `${score} %`} · regions → site clusters → elements`}
-      actions={<Link className="btn small" to="/topology">Open topology</Link>}>
-      <nav className="crumb" aria-label="Map level">
-        {inRegion ? <button type="button" className="btn ghost small" onClick={() => setLevel({ region: null })}>All regions</button> : <strong>All regions</strong>}
+    <Card section="dashboard.map" className="s2" title={t("dashboard.map.title")}
+      sub={t("dashboard.map.sub", { count: elements ?? 0, total: formatCount(elements), score: score == null ? "—" : `${score} %` })}
+      actions={<Link className="btn small" to="/topology">{t("dashboard.map.openTopology")}</Link>}>
+      <nav className="crumb" aria-label={t("dashboard.map.level")}>
+        {inRegion ? <button type="button" className="btn ghost small" onClick={() => setLevel({ region: null })}>{t("dashboard.map.allRegions")}</button> : <strong>{t("dashboard.map.allRegions")}</strong>}
         {inRegion && <><span aria-hidden>›</span>{atElements
           ? <button type="button" className="btn ghost small" onClick={() => setLevel({ region: level.region })}>{level.region}</button>
           : <strong>{level.region}</strong>}</>}
-        {atElements && <><span aria-hidden>›</span><strong>{cluster ?? "all elements"}</strong></>}
-        {!inRegion && <span>· click a region to open its site clusters</span>}
+        {atElements && <><span aria-hidden>›</span><strong>{cluster ?? t("dashboard.map.allElements")}</strong></>}
+        {!inRegion && <span>{t("dashboard.map.clickRegion")}</span>}
       </nav>
       {atElements ? (
         <>
           <ServerTable<ManagedEntity> path={ELEMENTS_PATH} query={{ region: level.region, site_cluster: cluster ?? undefined }}
-            rowKey={(e) => `${e.managedElementRef}|${e.managedFunctionRef ?? ""}`} empty="No elements here." columns={[
-              { header: "Element", render: (e) => <Link to={`/elements/${encodeURIComponent(e.managedElementRef)}`}>{e.managedElementRef}</Link> },
-              { header: "Function", render: (e) => e.managedFunctionRef ? <code className="small">{e.managedFunctionRef}</code> : <span className="muted">—</span> },
-              { header: "Site cluster", render: (e) => e.siteCluster ?? <span className="muted">—</span> },
-              { header: "Type", render: (e) => e.entityType ?? "—" },
-              { header: "Vendor", render: (e) => e.vendorName ?? "—" },
+            rowKey={(e) => `${e.managedElementRef}|${e.managedFunctionRef ?? ""}`} empty={t("dashboard.map.elements.empty")} columns={[
+              { header: t("dashboard.map.elements.element"), render: (e) => <Link to={`/elements/${encodeURIComponent(e.managedElementRef)}`}>{e.managedElementRef}</Link> },
+              { header: t("dashboard.map.elements.function"), render: (e) => e.managedFunctionRef ? <code className="small">{e.managedFunctionRef}</code> : <span className="muted">—</span> },
+              { header: t("dashboard.map.elements.siteCluster"), render: (e) => e.siteCluster ?? <span className="muted">—</span> },
+              { header: t("dashboard.map.elements.type"), render: (e) => e.entityType ?? "—" },
+              { header: t("dashboard.map.elements.vendor"), render: (e) => e.vendorName ?? "—" },
             ]} />
           <div className="row between">
-            <button type="button" className="btn small" onClick={() => setLevel({ region: level.region })}><Icon name="back" size={14} />Back to {level.region}</button>
-            <Link className="small" to="/alarms">Open the alarm console →</Link>
+            <button type="button" className="btn small" onClick={() => setLevel({ region: level.region })}><Icon name="back" size={14} />{t("dashboard.map.back", { region: level.region })}</button>
+            <Link className="small" to="/alarms">{t("dashboard.map.alarmConsole")}</Link>
           </div>
         </>
       ) : inRegion ? (
-        <QueryState q={clusters} isEmpty={noGroups} empty={<p className="muted">No elements in this region.</p>}>
+        <QueryState q={clusters} isEmpty={noGroups} empty={<p className="muted">{t("dashboard.map.region.empty")}</p>}>
           {clusters.data && (
             <>
               <div className="tiles">
-                {clusters.data.groups.map((g) => <GroupTile key={g.key ?? "∅"} g={g} kind="site cluster" onOpen={() => setLevel({ region: level.region, cluster: g.key })} />)}
+                {clusters.data.groups.map((g) => <GroupTile key={g.key ?? "∅"} g={g} kind="siteCluster" onOpen={() => setLevel({ region: level.region, cluster: g.key })} />)}
               </div>
-              {clusters.data.groups.some((g) => g.key === null) && <p className="small muted">"no site cluster" opens every element of {level.region}; an admin sets a cluster on the element page.</p>}
+              {clusters.data.groups.some((g) => g.key === null) && <p className="small muted">{t("dashboard.map.region.noCluster", { region: level.region })}</p>}
             </>
           )}
         </QueryState>
       ) : (
         <QueryState q={regions} isEmpty={noGroups}
-          empty={<p className="muted">No managed elements yet. A region is set with PUT /managed-entities/&#123;me&#125;/scope.</p>}>
+          empty={<p className="muted">{t("dashboard.map.empty")}</p>}>
           {regions.data && (
             <div className="tiles">
               {regions.data.groups.map((g) => <GroupTile key={g.key ?? "∅"} g={g} kind="region" onOpen={g.key === null ? undefined : () => setLevel({ region: g.key! })} />)}

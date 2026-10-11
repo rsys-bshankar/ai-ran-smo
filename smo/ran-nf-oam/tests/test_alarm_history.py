@@ -85,3 +85,41 @@ def test_an_unknown_or_out_of_scope_alarm_is_a_404(client, alarm, route):
     assert client.get(f"/alarms/{uuid.uuid4()}/{route}").status_code == 404
     assert client.get(f"/alarms/{alarm}/{route}", headers=OUTSIDE).status_code == 404
     assert client.post(f"/alarms/{alarm}/comments", json={"author": "a", "text": "x"}, headers=OUTSIDE).status_code == 404
+
+
+@pytest.fixture
+def bus(monkeypatch):
+    """The in-memory event bus, emptied (MSG-3): what the listeners published, as envelopes."""
+    from smo_shared import events
+    monkeypatch.setenv("SMO_EVENT_BUS", "memory")
+    monkeypatch.setattr(events.MEMORY, "events", [])
+    return events.MEMORY.events
+
+
+def test_a_raise_and_a_clear_are_published_with_the_elements_place(client, db_session_factory, bus):
+    """MSG-3.6: an alarm raised through the ORM is published as `alarm.raised`, its clear as `alarm.cleared`, each about the alarm and carrying the element's
+    region; an acknowledgement and a re-grade publish nothing, and an alarm that arrives already cleared is only recorded."""
+    with db_session_factory() as db:
+        db.add(ManagedEntity(managed_element_ref="ME-1", entity_type="O-DU", o1_protocol="NETCONF", region="eu", tenant="acme", managed_function_ref="f"))
+        db.commit()
+        a = Alarm(source_alarm_id="s-1", managed_element_ref="ME-1", severity="major")
+        db.add_all([a, Alarm(source_alarm_id="s-2", managed_element_ref="ME-1", severity="cleared")])
+        db.commit()
+        alarm_id = str(a.alarm_id)
+    client.patch(f"/alarms/{alarm_id}/ack", params={"new_state": "ACKNOWLEDGED", "ack_user_id": "u"})
+    with db_session_factory() as db:
+        db.get(Alarm, uuid.UUID(alarm_id)).severity = "critical"
+        db.commit()
+    assert client.patch(f"/alarms/{alarm_id}/clear", params={"clear_user_id": "u"}).status_code == 200
+    assert [(e["type"], e["subject"]) for e in bus] == [("org.oran.smo.alarm.raised", alarm_id), ("org.oran.smo.alarm.cleared", alarm_id)]
+    assert bus[0]["source"] == "/smo/ran-nf-oam" and (bus[0]["smoregion"], bus[0]["smotenant"]) == ("eu", "acme")
+    assert bus[0]["data"]["severity"] == "major" and bus[0]["data"]["managedElementRef"] == "ME-1"
+
+
+def test_a_raise_on_an_unknown_element_is_published_without_a_place(db_session_factory, bus):
+    """An alarm on an element the inventory does not hold is still published, with no region or tenant."""
+    with db_session_factory() as db:
+        db.add(Alarm(source_alarm_id="s-9", managed_element_ref="ME-unknown", severity="minor"))
+        db.commit()
+    [event] = bus
+    assert event["type"] == "org.oran.smo.alarm.raised" and "smoregion" not in event and "smotenant" not in event

@@ -1,7 +1,9 @@
 /** The Data & Exposure page (route /data, BRIEF §4 and §4b, handoff `Data.dc.html`, SCALE.md "Data & Exposure"): DME and SME / CAPIF — call
  * flows 01 and 08 — in three hash tabs: Flow & jobs (`#dme`, the default and the pre-redesign DME tab id), Producers & offers (`#offers`) and
- * SME (`#sme`). Layout only: each tab mounts its own sections, so only the visible tab's queries run. Sections and limits: README.md. */
+ * SME (`#sme`). Layout only: each tab mounts its own sections, so only the visible tab's queries run. Sections and limits: README.md.
+ * Every word comes from the catalog (`i18n/en/data.ts`, GUI-6.4). */
 import { PageHeader, Tabs, useHashTab } from "../../components/ui";
+import { useT } from "../../i18n";
 import { SectionBoundary } from "../../kit/SectionBoundary";
 import "./data.css";
 import { DataFlow } from "./sections/DataFlow";
@@ -16,13 +18,14 @@ const TABS = ["dme", "offers", "sme"] as const;
 
 /** The page. */
 export function Data() {
+  const t = useT();
   const [tab, setTab] = useHashTab(TABS, "dme");
   return (
     <>
-      <PageHeader eyebrow="DME · SME (CAPIF)" title="Data & Exposure"
-        subtitle={<>Who produces which data, who consumes it, and which services rApps are allowed to call — Data Management & Exposure (DME) and Service Management & Exposure (SME / CAPIF), call flows 01 and 08</>} />
+      <PageHeader eyebrow="DME · SME (CAPIF)" title={t("data.title")}
+        subtitle={<>{t("data.subtitle")}</>} />
       <Tabs value={tab} onChange={setTab} tabs={[
-        { id: "dme", label: "DME: flow & jobs" }, { id: "offers", label: "DME: producers & offers" }, { id: "sme", label: "SME: services & invokers" },
+        { id: "dme", label: t("data.tab.dme") }, { id: "offers", label: t("data.tab.offers") }, { id: "sme", label: t("data.tab.sme") },
       ]} />
       {tab === "dme" && <div className="stack">
         <SectionBoundary id="data.flow"><DataFlow /></SectionBoundary>

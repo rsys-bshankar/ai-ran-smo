@@ -7,12 +7,14 @@ import { Card } from "../../../components/ui";
 import { ScopeNote } from "../../../kit/ScopeNote";
 import { formatCount, Kpi } from "../../../kit/Kpi";
 import { ErrorRetry } from "../../../kit/states";
+import { useT } from "../../../i18n";
 import { count, openAlarms } from "../../../data/summary";
 import { SEVERITIES } from "../../../lib/domain";
 import { formatDuration, useAlarmHours, useAlarmSummary } from "../data/queries";
 
 /** The tiles; `severity` is the active filter ("" for none), `onSeverity` sets it. */
 export function SeverityTiles({ severity, onSeverity }: { severity: string; onSeverity: (s: string) => void }) {
+  const t = useT();
   const summary = useAlarmSummary();
   const hours = useAlarmHours();
   const s = summary.data;
@@ -26,19 +28,19 @@ export function SeverityTiles({ severity, onSeverity }: { severity: string; onSe
           const n = count(s, `alarms.${sev}`);
           return (
             <Kpi key={sev} label={<span className={`sev sev-${sev} alarms-sev-tag`}>{sev}</span>}
-              value={s ? formatCount(n) : "…"} foot={severity === sev ? "filtering the table · click to clear" : "click to filter"}
+              value={s ? formatCount(n) : "…"} foot={severity === sev ? t("alarms.tiles.filtering") : t("alarms.tiles.clickToFilter")}
               tone={sev === "critical" && (n ?? 0) > 0 ? "hot" : sev === "major" && (n ?? 0) > 0 ? "warm" : undefined}
-              active={severity === sev} onClick={() => onSeverity(severity === sev ? "" : sev)} title={`Show only ${sev} alarms`} />
+              active={severity === sev} onClick={() => onSeverity(severity === sev ? "" : sev)} title={t("alarms.tiles.showOnly", { severity: sev })} />
           );
         })}
-        <Kpi label="Open" value={s ? formatCount(openAlarms(s)) : "…"} foot={`${formatCount(count(s, "alarms.unacked"))} unacknowledged`} />
-        <Kpi label="Time to acknowledge" value={s ? formatDuration(mtta) : "…"}
-          foot={mtta === null ? "no alarm acknowledged in 24 h" : "mean over the alarms acknowledged in 24 h"} />
-        <Kpi label="Raised · 24 h" value={hours.data ? formatCount(raised.reduce((a, h) => a + h.count, 0)) : "…"} foot="per hour, UTC">
-          {raised.length > 0 && <Sparkline width={140} height={32} label="alarms raised per hour" points={raised.map((h) => ({ t: h.key, v: h.count }))} />}
+        <Kpi label={t("alarms.tiles.open")} value={s ? formatCount(openAlarms(s)) : "…"} foot={t("alarms.tiles.unacked", { n: formatCount(count(s, "alarms.unacked")) })} />
+        <Kpi label={t("alarms.tiles.mtta")} value={s ? formatDuration(mtta) : "…"}
+          foot={mtta === null ? t("alarms.tiles.mtta.none") : t("alarms.tiles.mtta.foot")} />
+        <Kpi label={t("alarms.tiles.raised")} value={hours.data ? formatCount(raised.reduce((a, h) => a + h.count, 0)) : "…"} foot={t("alarms.tiles.raised.foot")}>
+          {raised.length > 0 && <Sparkline width={140} height={32} label={t("alarms.tiles.raised.aria")} points={raised.map((h) => ({ t: h.key, v: h.count }))} />}
         </Kpi>
       </div>
-      {s && s.partial.length > 0 && <p className="small muted">Partial: {s.partial.join(", ")} did not answer; their counts show "—".</p>}
+      {s && s.partial.length > 0 && <p className="small muted">{t("alarms.tiles.partial", { services: s.partial.join(", ") })}</p>}
       <ScopeNote summary={s} keys={["ocloudAlarms"]} />
     </Card>
   );
