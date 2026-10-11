@@ -3,6 +3,8 @@
 import copy
 import importlib.util
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 SMO = Path(__file__).resolve().parent.parent
@@ -81,3 +83,40 @@ def test_the_committed_waivers_are_well_formed():
     """Every committed waiver carries a reason of more than 20 characters."""
     waivers = json.loads((SMO / "scripts" / "breaking_change_waivers.json").read_text())
     assert all(isinstance(reason, str) and len(reason) > 20 for reason in waivers.values())
+
+
+def _run_checker(*args):
+    """Runs the real script as the CI job does (a subprocess in this checkout) and returns the finished process."""
+    return subprocess.run([sys.executable, str(SMO / "scripts" / "check_breaking_changes.py"), *args], capture_output=True, text=True)
+
+
+def test_a_base_that_does_not_resolve_fails_with_a_clear_error():
+    """SEC-15.15: `--base` naming a ref this checkout cannot resolve used to compare nothing and pass; it now exits non-zero, says the base does not resolve and prints no verdict."""
+    result = _run_checker("--base", "smo-v9.9.9-no-such-ref")
+    assert result.returncode != 0
+    assert "does not resolve to a commit" in result.stderr and "smo-v9.9.9-no-such-ref" in result.stderr
+    assert "unwaived break" not in result.stdout
+
+
+def test_a_base_that_resolves_but_holds_no_specs_fails(monkeypatch):
+    """A base that resolves but has no `docs/openapi` documents (older than them) compares nothing, which is the same silent pass: it exits with an error."""
+    monkeypatch.setattr(checker, "specs_at", lambda ref: [])
+    monkeypatch.setattr(sys, "argv", ["check_breaking_changes.py", "--base", "HEAD"])
+    try:
+        checker.main()
+    except SystemExit as exit_:
+        assert "no smo/docs/openapi" in str(exit_.code)
+    else:
+        raise AssertionError("main() returned without an error")
+
+
+def test_require_base_accepts_a_commit_and_refuses_a_name_that_is_not_one():
+    """`require_base` lets `HEAD` through and exits for a missing name and for the empty string."""
+    checker.require_base("HEAD")
+    for ref in ("no-such-ref-at-all", ""):
+        try:
+            checker.require_base(ref)
+        except SystemExit as exit_:
+            assert "does not resolve" in str(exit_.code)
+        else:
+            raise AssertionError(f"{ref!r} was accepted")

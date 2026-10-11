@@ -1095,3 +1095,10 @@ def test_a_mode_with_only_a_gpu_adds_no_resources_for_that_mode(client, monkeypa
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: sent.append(json) or FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())}))
     client.post("/packages", json={"location": "http://example/pkg.csar"})
     assert list(sent[0]["workloadTemplate"]["containerResourcesByMode"]) == ["TRAINING"]
+
+
+def test_an_unsigned_zip_bomb_ends_the_package_failed_with_the_reason(client, monkeypatch):
+    """SEC-15.17 end to end: a package whose manifest inflates to 60 MiB is FAILED with `failureReason` naming the size, no descriptor is created and no aiCapabilities stored."""
+    answer, pkg = _onboard_raw(client, monkeypatch, "x: " + "0" * (60 * 1024 * 1024))
+    assert pkg["state"] == "FAILED" and "too large to read" in answer["failureReason"]
+    assert pkg["aiCapabilities"] is None and pkg["nfDeploymentDescriptorId"] is None

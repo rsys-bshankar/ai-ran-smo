@@ -32,6 +32,11 @@ final class FakePlatform implements AutoCloseable {
         static Reply of(int status, String body) {
             return new Reply(status, body, Map.of());
         }
+
+        /** A lost answer: the server received the request and closes the connection without answering. */
+        static Reply drop() {
+            return new Reply(0, null, Map.of());
+        }
     }
 
     /**
@@ -106,6 +111,10 @@ final class FakePlatform implements AutoCloseable {
         synchronized (this) {
             Deque<Reply> queue = script.get(method + " " + path);
             reply = queue == null ? Reply.of(404, "{\"title\":\"NOT_FOUND\"}") : queue.size() > 1 ? queue.poll() : queue.peek();
+        }
+        if (reply.status() == 0) {
+            exchange.close();      // no status line: the client sees a broken connection
+            return;
         }
         byte[] bytes = reply.body() == null ? new byte[0] : reply.body().getBytes(StandardCharsets.UTF_8);
         reply.headers().forEach((k, v) -> exchange.getResponseHeaders().add(k, v));

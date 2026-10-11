@@ -20,6 +20,9 @@ comparison with ONE release, so the file is emptied when a release is cut (a wai
 Adding an operation, an optional property, an enum value to a response or a documented error status is never a break.
 
   scripts/check_breaking_changes.py [--base REF] [--list]
+
+Exit status: 0 no break, 1 an unwaived break or a stale waiver, and a non-zero exit with an `error:` message when the base cannot be used: no release tag, a `--base` that does not
+resolve to a commit, or a base that has no OpenAPI documents. A comparison that could not be made never passes.
 """
 
 import argparse
@@ -182,6 +185,19 @@ def base_tag() -> str:
     return tags[0]
 
 
+def require_base(ref: str) -> None:
+    """Ends the script with an error unless `ref` names a commit this checkout can resolve.
+
+    Without this a `--base` that does not resolve (a typo, a tag that was not fetched, a shallow clone) makes `spec_at` and `specs_at` answer "nothing there", the comparison
+    then covers no module and the gate passes having checked nothing (SEC-15.15). The job in `smo-tests.yml` fetches tags and full history and passes no `--base`, so it takes the
+    newest tag (`base_tag`) and this check holds it to the same rule.
+    """
+    result = subprocess.run(["git", "-C", str(REPO), "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"], capture_output=True, text=True)
+    if result.returncode != 0:
+        sys.exit(f"error: the base {ref!r} does not resolve to a commit in this checkout, so the R1 contract was not compared with anything "
+                 "(a typo, a tag that was not fetched, or a shallow clone: fetch tags and history, or pass a ref that exists)")
+
+
 def spec_at(ref: str, name: str) -> dict | None:
     """The OpenAPI document `smo/docs/openapi/<name>` as committed at git `ref`, or None when the file does not exist there (a module the older release did not have)."""
     result = subprocess.run(["git", "-C", str(REPO), "show", f"{ref}:smo/docs/openapi/{name}"], capture_output=True, text=True)
@@ -205,10 +221,15 @@ def main() -> int:
     parser.add_argument("--list", action="store_true", help="print every break with its waiver key and exit 0")
     args = parser.parse_args()
     base = args.base or base_tag()
+    require_base(base)
+    base_specs = specs_at(base)
+    if not base_specs:
+        # A base that resolves but holds no OpenAPI documents (older than `docs/openapi`) would compare nothing and pass; that is the same silent pass as an unresolved ref.
+        sys.exit(f"error: the base {base!r} has no smo/docs/openapi/*.json, so there is nothing to compare the contract with")
     waivers = json.loads(WAIVERS_FILE.read_text()) if WAIVERS_FILE.exists() else {}
     used: set[str] = set()
     breaks = []
-    for name in specs_at(base):
+    for name in base_specs:
         if not (SMO / "docs" / "openapi" / name).exists():
             key = f"{name.removesuffix('.json')} removed-module"
             matching = [w for w in waivers if fnmatch.fnmatchcase(key, w)]
