@@ -196,7 +196,7 @@ All routes sit under `/dme`. Lists marked "paged" return `{items, total, limit, 
 | GET | `/type-subscriptions?owner=` | Paged | |
 | GET | `/type-subscriptions/{id}` | | 404 `TYPE_SUBSCRIPTION_NOT_FOUND` |
 | DELETE | `/type-subscriptions/{id}` (204) | Idempotent | |
-| GET | `/smo-events?after=&limit=&wait=&types=` | `PR-MSG-3.2`: the SMO's event feed (`docs/EVENTS.md`): `{items: [CloudEvents envelopes, oldest first], next}`; no `after`: no items and the newest position; `wait` long-polls up to 25 s; `limit` at most 500; a scoped caller gets only the events inside its claim. Internal-only at R1 (an rApp is 403 `ROLE_NOT_PERMITTED`) | |
+| GET | `/smo-events?after=&limit=&wait=&types=` | `PR-MSG-3.2`: the SMO's event feed (`docs/EVENTS.md`): `{items: [CloudEvents envelopes, oldest first], next}`; no `after`: no items and the newest position; `wait` long-polls up to 25 s; `limit` at most 500; a scoped caller gets only the events inside its claim; out of bounds is 422. Internal-only at R1 (the contract runner waives it: a long poll outlasts its timeout) (an rApp is 403 `ROLE_NOT_PERMITTED`) | |
 
 **Data jobs**
 
@@ -295,7 +295,7 @@ cd smo/dme && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | Test file | Covers | Count |
 |---|---|---|
 | `tests/test_scope.py` | `PR-SEC-10.7` (6): an unscoped caller asks RAN NF OAM nothing and sees every action; a scoped caller sees the actions all of whose elements are inside its claim (one element outside, or none named, hides the action), `total`, paging, the element list read in pages of 500; one by id is a 404 like an absent one; RAN NF OAM unable to answer is a 502 and shows nothing; a claim that could not be passed on shows nothing | 6 |
-| `tests/test_event_feed.py` | `PR-MSG-3.2` (4): without `after` the newest position; order, `types`, pages and `next`; the long poll answers when an event is committed; a scoped caller sees only its regions' events and `next` moves past the others | 4 |
+| `tests/test_event_feed.py` | `PR-MSG-3.2` (9): without `after` the newest position; order, `types`, pages and `next`; the long poll answers when an event is committed; a scoped caller sees only its regions' events and `next` moves past the others; out-of-bounds parameters are 422 (parametrized) | 9 |
 | `tests/test_type_ownership.py` | `SEC-15.10` (6): a second rApp's different schema is 403 and the stored schema and owner are unchanged, a refused overwrite leaves the producer row alone, the same definition by another producer still joins (which then cannot change it), an `internal` caller and a call without a role overwrite, a rApp without an invoker id cannot, a type from before the owner was recorded is open to its linked producers only | 6 |
 | `tests/test_main.py` | Producer/type registry: registration, re-registration, second producer, discovery and `data_category` filter, deregistration keeping types, type deletion guard and cascade, producer status | 22 |
 | | Type status from producer health (unreachable, non-2xx, healthy, active job does not override) | 4 |
@@ -307,7 +307,7 @@ cd smo/dme && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | | Action mediation: forward and record, RAN NF OAM refusal surfaced, empty changes, unknown action, list filter, replayed `actionId` ignored | 6 |
 | | Health probe | 1 |
 | `tests/test_delivery_health.py` | `GUI-9.8` delivery health: no interval means no verdict, LATE two intervals after the last delivery and on time again after the next, a job that never delivered turns LATE, PUT declares or drops the interval, the `late` list filter both ways, a non-positive interval is 422 | 6 |
-| | Total | 116 |
+| | Total | 121 |
 
 ### 3.3 What is not covered here
 

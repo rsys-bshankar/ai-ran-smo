@@ -87,3 +87,11 @@ def test_a_scoped_caller_sees_only_the_events_inside_its_claim(feed):
     body = client.get("/smo-events", params={"after": 0}, headers={authz_scope.SCOPE_HEADER: claim}).json()
     assert [e["subject"] for e in body["items"]] == ["eu-alarm"] and body["next"] == 3
     assert len(client.get("/smo-events", params={"after": 0}).json()["items"]) == 3
+
+
+@pytest.mark.parametrize("params", [{"after": -1}, {"after": 0, "limit": 0}, {"after": 0, "limit": 501}, {"after": 0, "wait": 26}, {"after": 0, "wait": -1}])
+# Each parameter outside its bounds is refused before anything is read.
+def test_out_of_bounds_parameters_are_a_422(feed, params):
+    """A negative position, a page outside 1-500 and a wait outside 0-25 s are 422."""
+    client, _ = feed
+    assert client.get("/smo-events", params=params).status_code == 422

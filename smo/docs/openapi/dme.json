@@ -4130,7 +4130,7 @@
     },
     "/smo-events": {
       "get": {
-        "description": "The SMO's event feed (PR-MSG-3.2, docs/EVENTS.md): the events after sequence number `after`, oldest first, at most `limit` (500), as CloudEvents envelopes,\nand `next`, the `after` of the following call. Without `after` it answers nothing and the newest sequence number, where a reader that wants only what comes next\nstarts. `wait` (seconds, at most 25) long-polls: the answer comes when an event is committed or the wait ends. `types` is a comma-separated list of event types.\nInternal-only at R1 (roles.py): the feed names every module's entities. A caller with a scope claim (a console user's, GUI-5) is given only the events of the\nentities inside it; `next` still moves past the others.",
+        "description": "The SMO's event feed (PR-MSG-3.2, docs/EVENTS.md): the events after sequence number `after`, oldest first, at most `limit` (500), as CloudEvents envelopes,\nand `next`, the `after` of the following call. Without `after` it answers nothing and the newest sequence number, where a reader that wants only what comes next\nstarts. `wait` (seconds, at most 25) long-polls: the answer comes when an event is committed or the wait ends. `types` is a comma-separated list of event types.\nInternal-only at R1 (roles.py): the feed names every module's entities. A caller with a scope claim (a console user's, GUI-5) is given only the events of the\nentities inside it; `next` still moves past the others. A negative `after`, a `limit` outside 1-500 or a `wait` outside 0-25 is a 422.",
         "operationId": "smo_event_feed_smo_events_get",
         "parameters": [
           {
@@ -4140,6 +4140,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "minimum": 0,
                   "type": "integer"
                 },
                 {
@@ -4155,6 +4156,8 @@
             "required": false,
             "schema": {
               "default": 100,
+              "maximum": 500,
+              "minimum": 1,
               "title": "Limit",
               "type": "integer"
             }
@@ -4165,6 +4168,8 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 25.0,
+              "minimum": 0,
               "title": "Wait",
               "type": "number"
             }
@@ -4176,6 +4181,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "maxLength": 2000,
                   "type": "string"
                 },
                 {

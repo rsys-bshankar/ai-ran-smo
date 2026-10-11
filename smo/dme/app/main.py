@@ -11,7 +11,7 @@ import uuid
 
 import httpx
 import jsonschema
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -973,23 +973,24 @@ def _action_view(a: DmeActionRecord) -> dict:
 
 
 @app.get("/smo-events")
-def smo_event_feed(request: Request, after: int | None = None, limit: int = 100, wait: float = 0, types: str | None = None,
+def smo_event_feed(request: Request, after: int | None = Query(None, ge=0), limit: int = Query(100, ge=1, le=smo_events.MAX_READ),
+                   wait: float = Query(0, ge=0, le=smo_events.MAX_WAIT_SECONDS), types: str | None = Query(None, max_length=2000),
                    db: Session = Depends(get_session)):
     """The SMO's event feed (PR-MSG-3.2, docs/EVENTS.md): the events after sequence number `after`, oldest first, at most `limit` (500), as CloudEvents envelopes,
     and `next`, the `after` of the following call. Without `after` it answers nothing and the newest sequence number, where a reader that wants only what comes next
     starts. `wait` (seconds, at most 25) long-polls: the answer comes when an event is committed or the wait ends. `types` is a comma-separated list of event types.
     Internal-only at R1 (roles.py): the feed names every module's entities. A caller with a scope claim (a console user's, GUI-5) is given only the events of the
-    entities inside it; `next` still moves past the others."""
+    entities inside it; `next` still moves past the others. A negative `after`, a `limit` outside 1-500 or a `wait` outside 0-25 is a 422."""
     if after is None:
         return {"items": [], "next": smo_events.latest(db)}
     wanted = [t.strip() for t in (types or "").split(",") if t.strip()] or None
-    size = max(1, min(limit, smo_events.MAX_READ))
+    start: int = after
 
     def read() -> list[dict]:
         db.rollback()                     # a fresh snapshot each time, and no connection held between reads
-        return smo_events.read_after(db, max(0, after), size, wanted)
+        return smo_events.read_after(db, start, limit, wanted)
 
-    found = smo_events.wait_after(db.get_bind(), after, wait, read)
+    found = smo_events.wait_after(db.get_bind(), start, wait, read)
     scope = authz_scope.request_scope(request)
     shown = [e for e in found if authz_scope.permits(scope, e.get("smoregion"), e.get("smotenant"))]
-    return {"items": shown, "next": found[-1]["smoseq"] if found else max(0, after)}
+    return {"items": shown, "next": found[-1]["smoseq"] if found else start}
