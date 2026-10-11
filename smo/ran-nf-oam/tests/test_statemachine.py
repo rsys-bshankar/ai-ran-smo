@@ -54,6 +54,26 @@ def test_write_config_job_precheck_failure_never_reaches_processing():
         WRITE_CONFIG_JOB_FSM.fire(new_state, JobEvent.AGGREGATE_ALL_APPLIED)
 
 
+def test_write_config_job_waits_for_approval_and_its_window():
+    """MGT-4.2/4.3: a job asked for approval waits in PENDING_APPROVAL; approval runs it now or schedules it, a scheduled job starts, and either is rejected."""
+    waiting = WRITE_CONFIG_JOB_FSM.fire(JobState.PENDING, JobEvent.REQUEST_APPROVAL)
+    assert waiting == JobState.PENDING_APPROVAL
+    assert WRITE_CONFIG_JOB_FSM.fire(waiting, JobEvent.APPROVE) == JobState.PROCESSING
+    scheduled = WRITE_CONFIG_JOB_FSM.fire(waiting, JobEvent.APPROVE_FOR_WINDOW)
+    assert scheduled == JobState.SCHEDULED and WRITE_CONFIG_JOB_FSM.fire(scheduled, JobEvent.START) == JobState.PROCESSING
+    assert WRITE_CONFIG_JOB_FSM.fire(waiting, JobEvent.REJECT) == JobState.REJECTED == WRITE_CONFIG_JOB_FSM.fire(scheduled, JobEvent.REJECT)
+
+
+# A rejected job is final, and a waiting one cannot be aggregated or halted: nothing has been sent.
+def test_a_job_waiting_for_approval_takes_no_dispatch_event():
+    """PENDING_APPROVAL takes no aggregate, halt or start event, and REJECTED takes nothing."""
+    for event in (JobEvent.AGGREGATE_ALL_APPLIED, JobEvent.HALT, JobEvent.START, JobEvent.PRECHECK_PASS):
+        with pytest.raises(IllegalTransition):
+            WRITE_CONFIG_JOB_FSM.fire(JobState.PENDING_APPROVAL, event)
+    with pytest.raises(IllegalTransition):
+        WRITE_CONFIG_JOB_FSM.fire(JobState.REJECTED, JobEvent.APPROVE)
+
+
 # ------------------------------------------------------------ SoftwareManagementJob
 
 def test_software_management_full_sequence():

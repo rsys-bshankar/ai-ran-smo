@@ -353,6 +353,12 @@
   },
   {
     "method": "POST",
+    "pattern": "^/ran-nf-oam/config-jobs/[^/]+/(approve|reject)$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
     "pattern": "^/ran-nf-oam/config-jobs/[^/]+/kpi-check$",
     "role": "operator",
     "queryMatch": {}

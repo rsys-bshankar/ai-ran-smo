@@ -243,6 +243,14 @@ def test_the_model_gates_waiting_are_counted_on_the_nav_approvals_and_aiml_pages
     assert asked and all(c.url.params.get("awaiting_decision") == "true" for c in asked)
 
 
+def test_the_change_windows_waiting_are_counted_on_the_nav_and_approvals_pages(app, smo):
+    """GUI-7.1: `configJobs.PENDING_APPROVAL` is RAN NF OAM's total of the CM jobs held for a change-window approval, on the inbox and the sidebar's badge."""
+    smo.totals[("/ran-nf-oam/config-jobs", "status=PENDING_APPROVAL")] = 3
+    viewer = login(app, "viewer")
+    for page in ("nav", "approvals", "configuration"):
+        assert viewer.get(f"/api/summary/{page}").json()["counts"]["configJobs.PENDING_APPROVAL"] == 3
+
+
 # ------------------------------------------------------------------ dashboard panels (GUI-9.11)
 
 PANEL_ANSWERS = {

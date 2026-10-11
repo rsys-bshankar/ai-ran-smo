@@ -10,7 +10,7 @@
 | Called by | rApps through the SDK (`sdk/smo_sdk/lifecycle.py`), MLLF (lifecycle read + node-group write), MLMR (`nrm-refs` join), MDAF (MLMF subscriptions and reports), SA SMOS and SO SMOS (training / validation / emulation / deploy / inference steps), GUI via the BFF |
 | Database tables | `model_lifecycle` (versioned), `training_job`, `validation_job`, `emulation_job`, `inference_job`, `certification_record`, `lifecycle_transition`, `mlmf_subscription`, `performance_report`, `feature_group`, `ml_training_function`, `ml_training_process`, `ml_training_report`, `ml_testing_function`, `ml_testing_report`, `aiml_inference_function`, `aiml_inference_emulation_function`, `aiml_inference_report`, `ml_model_loading_policy`, `ml_model_loading_request`, `ml_model_loading_process`, `ml_update_function`, `ml_update_request`, `ml_update_process`, `ml_update_report` |
 | Idempotency | `POST /training-jobs`, `/validation-jobs`, `/emulation-jobs`, `/models/{id}/inference-jobs` accept an `Idempotency-Key` header (`smo_shared/idempotency.py`; the `idempotency_key` table is shared, not this module's) |
-| Unit tests | 222 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 253 passed (`tests/`, SQLite, standalone) |
 | Status | Done. Open: `OI-1-weighted-triggers` (group-retrain `WEIGHTED_TRIGGERS` raises `NotImplementedError`), `OI-6.1-runtime-gate` (no operator gate on RuntimeLifecycle transitions); runtime scale takes no target size (NFO's scale has no argument) |
 
 ## 1. High-level design (HLD)

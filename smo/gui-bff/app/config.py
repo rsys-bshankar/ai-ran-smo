@@ -160,6 +160,8 @@ class Settings:
     oidc_groups_claim: str = field(default_factory=lambda: os.environ.get("GUI_OIDC_GROUPS_CLAIM", "").strip() or "groups")
     oidc_group_role_map: str = field(default_factory=lambda: os.environ.get("GUI_OIDC_GROUP_ROLE_MAP", ""))
     oidc_default_role: str = field(default_factory=lambda: os.environ.get("GUI_OIDC_DEFAULT_ROLE", "").strip().lower())
+    # GUI-5: the ID-token claim that holds the user's region/tenant scope (`{"regions": [...], "tenants": [...]}`); empty (default): scopes are set by an admin
+    oidc_scope_claim: str = field(default_factory=lambda: os.environ.get("GUI_OIDC_SCOPE_CLAIM", "").strip())
     oidc_provider_name: str = field(default_factory=lambda: os.environ.get("GUI_OIDC_PROVIDER_NAME", "SSO").strip() or "SSO")
     oidc_post_logout_redirect_uri: str = field(default_factory=lambda: os.environ.get("GUI_OIDC_POST_LOGOUT_REDIRECT_URI", "").strip())
     oidc_allow_http: bool = field(default_factory=lambda: _bool("GUI_OIDC_ALLOW_HTTP", False))

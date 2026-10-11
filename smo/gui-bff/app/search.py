@@ -21,6 +21,7 @@ import logging
 import re
 import time
 import uuid
+from contextvars import ContextVar
 from typing import Any, Awaitable, Callable
 from urllib.parse import quote
 
@@ -28,6 +29,7 @@ import httpx
 from fastapi import Depends, FastAPI, Query
 from fastapi.responses import JSONResponse
 
+from . import scoping
 from .rapps import UpstreamFailure
 from .rbac import decide
 from .smo_client import SmoAuthError
@@ -53,12 +55,15 @@ def _item(id_: str, label: str, hint: str | None, to: str) -> dict:
 
 def install(app: FastAPI, *, current_session: Callable, problem: Callable[..., JSONResponse]) -> None:
     """Add `GET /api/search` to `app`. Needs app/rapps.py installed (it reads `app.state.rapp_search`)."""
-    cache: dict[tuple[str, int, str], tuple[float, dict]] = {}
+    cache: dict[tuple[str, int, str, str | None], tuple[float, dict]] = {}
+    # GUI-5: the asking user's stored scope claim, set by the route for the sources it starts (a context variable reaches the tasks `gather` makes)
+    asking_claim: ContextVar[str | None] = ContextVar("asking_claim", default=None)
 
     async def get_json(path: str, params: dict | None = None, *, missing_ok: bool = False) -> Any:
         """The JSON body of a 200 from `path` through the gateway; None for a 404 when `missing_ok`; `_SourceFailed` otherwise."""
         try:
-            resp = await app.state.gateway.request("GET", path, params=params, timeout=PER_SOURCE_TIMEOUT_SECONDS)
+            resp = await app.state.gateway.request("GET", path, params=params, timeout=PER_SOURCE_TIMEOUT_SECONDS,
+                                                   headers=scoping.shared_headers(asking_claim.get()))
         except (SmoAuthError, httpx.HTTPError) as exc:
             raise _SourceFailed(path) from exc
         if missing_ok and resp.status_code in (404, 422):
@@ -139,7 +144,8 @@ def install(app: FastAPI, *, current_session: Callable, problem: Callable[..., J
         q = q.strip()
         if len(q) < MIN_QUERY:
             return problem(400, "QUERY_TOO_SHORT", f"type at least {MIN_QUERY} characters")
-        key = (q.lower(), limit, str(session.user.role))     # per role too, so a read a future rule narrows never leaks through the cache
+        # per role too, so a read a future rule narrows never leaks through the cache; per scope claim (GUI-5), so one user's elements never reach another's
+        key = (q.lower(), limit, str(session.user.role), session.user.scope)
         hit = cache.get(key)
         if hit and time.monotonic() - hit[0] < CACHE_SECONDS:
             return hit[1]
@@ -157,6 +163,7 @@ def install(app: FastAPI, *, current_session: Callable, problem: Callable[..., J
         if is_uuid:
             plan.append(("decision", decision, "/ran-nf-oam/decision-records/x"))
         plan = [p for p in plan if decide("GET", p[2], {}, session.user.role).allowed]
+        asking_claim.set(session.user.scope)
         results = await asyncio.gather(*(guarded(kind, source, q, limit) for kind, source, _ in plan))
         body = {"q": q, "groups": [{"type": kind, "items": items} for kind, items in results if items],
                 "partial": [kind for kind, items in results if items is None]}

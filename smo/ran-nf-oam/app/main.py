@@ -349,6 +349,24 @@ class DecisionContext(BaseModel):
     actionId: str | None = Field(default=None, max_length=100)
 
 
+# MGT-4.1: when a job may run. `start` (NULL: as soon as it is approved) and `end` (NULL: no close); naive times are UTC. A job asked with a window waits for approval
+# (MGT-4.2) and, approved before `start`, until its window opens.
+class ChangeWindow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    start: datetime.datetime | None = None
+    end: datetime.datetime | None = None
+
+    @model_validator(mode="after")
+    def _a_window(self):
+        """Model validator: at least one bound, both as UTC-aware times, and the window closing after it opens (ValueError, which FastAPI answers as 422)."""
+        if self.start is None and self.end is None:
+            raise ValueError("a change window needs a start, an end or both")
+        self.start, self.end = (as_utc(t) if t is not None else None for t in (self.start, self.end))
+        if self.start is not None and self.end is not None and self.end <= self.start:
+            raise ValueError("the change window must end after it starts")
+        return self
+
+
 # Request body of `POST /config-jobs`, also the shape a rollback, a revert and an onboarding apply build internally. `accessScope` is required (`scope` is its deprecated alias; both may be sent only if equal).
 # Each change is a dict with a string `managedElementRef` and optional `managedFunctionRef`, `attributeChanges` and `operation`; a ref containing '=' must be a well-formed DN (checked by the validators). The wave and KPI-guard fields are described where they are used (`_advance`, `run_due_kpi_guards`).
 class WriteConfigRequest(BaseModel):
@@ -382,6 +400,10 @@ class WriteConfigRequest(BaseModel):
     onGateFailure: Literal["halt", "revert"] = "halt"
     # MSG-4: a KPI guard, checked by the worker after the job (ignored by a dry run)
     kpiGuard: KpiGuard | None = None
+    # MGT-4.1/4.2: a job asked with a change window, or with `requireApproval`, is made PENDING_APPROVAL and sends nothing until someone other than its requester
+    # approves it (`POST /config-jobs/{id}/approve`). Both are ignored by a dry run.
+    changeWindow: ChangeWindow | None = None
+    requireApproval: bool = False
 
     @model_validator(mode="after")
     def _scope_and_refs(self):
@@ -1023,17 +1045,22 @@ def _execute_write(body: WriteConfigRequest, db: Session, rollback_of: uuid.UUID
         if policy is not None:
             return _park_for_approval(db, body, invoker, policy, requester_scope)
 
+    window = body.changeWindow if rollback_of is None else None             # MGT-4: a rollback undoes now; it is never held for a window
+    if window is not None and window.end is not None and window.end <= datetime.datetime.now(datetime.UTC):
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="the change window has already closed")
+    hold = rollback_of is None and (window is not None or body.requireApproval)
     job = WriteConfigJob(requested_by=body.requestedBy, scope=body.accessScope, msac_role=body.msacRole, rollback_of=rollback_of,
                          rollback_forced=rollback_forced, wave_size=body.waveSize, wave_pause_seconds=body.wavePauseSeconds,
                          wave_count=max(wave_of.values(), default=1), gate_max_new_alarms=body.gateMaxNewAlarms,
                          on_gate_failure=body.onGateFailure, invoker_id=invoker,
-                         kpi_guard=body.kpiGuard.model_dump() if body.kpiGuard else None)
+                         kpi_guard=body.kpiGuard.model_dump() if body.kpiGuard else None,
+                         scheduled_at=window.start if window else None, window_end=window.end if window else None)
     db.add(job)
     db.flush()
 
     # schema check — cache hit or fetch via Configuration Schema Info (clause 8.3)
     job.schema_validated_at = datetime.datetime.now(datetime.UTC)
-    job.status = WRITE_CONFIG_JOB_FSM.fire(JobState.PENDING, JobEvent.PRECHECK_PASS)
+    job.status = WRITE_CONFIG_JOB_FSM.fire(JobState.PENDING, JobEvent.REQUEST_APPROVAL if hold else JobEvent.PRECHECK_PASS)
     db.flush()
 
     # MGT-5.2: every sub-change exists from the start, PENDING, with its place in the request and its wave; a wave dispatches its own.
@@ -1049,7 +1076,11 @@ def _execute_write(body: WriteConfigRequest, db: Session, rollback_of: uuid.UUID
         approval.status, approval.job_id = "APPROVED", job.job_id
     if actor:
         _record_decision(db, actor, body, "ROLLBACK" if rollback_of else "APPROVED" if approval is not None else "DIRECT", job_id=job.job_id, approval=approval)
-    _advance(db, job)
+    if hold and approval is not None:
+        # an rApp's request a person already approved (AI-11) is not asked a second time: that approval is the job's, and the window still holds it
+        _approve_window(db, job, approval.decided_by or "system:rapp-approval", "approved as rApp request " + str(approval.approval_id))
+    elif not hold:
+        _advance(db, job)
     db.commit()
     if actor:
         _chain_decisions_quietly(db)
@@ -1578,8 +1609,12 @@ def _resume(db: Session, job: WriteConfigJob) -> dict:
 @app.post("/config-jobs/{job_id}/continue", status_code=202)
 def continue_configuration_job(job_id: uuid.UUID, body: WaveActionRequest, request: Request, db: Session = Depends(get_session)):
     """MGT-5.4: run the next wave of a halted job. A job held by its wave pause goes on only once the pause has elapsed, unless `force`; after a
-    failed gate or an operator's halt, calling this is the operator's decision to go on."""
+    failed gate or an operator's halt, calling this is the operator's decision to go on. MGT-4.3: it also starts an approved (SCHEDULED) job once its change
+    window is open (409 `CHANGE_WINDOW_NOT_OPEN` before it, unless `force`; 409 `CHANGE_WINDOW_CLOSED` after it)."""
     # SEC-15.4: 404 for an unknown job or another scoped rApp's, 403 `SCOPE_DENIED` for a job that wrote outside the caller's scope, then 409 when it is not HALTED (`_halted_job`).
+    scheduled = _job_in_reach(db, request, job_id, body.requestedBy)
+    if scheduled.status == JobState.SCHEDULED:
+        return _start_scheduled(db, scheduled, body)                        # MGT-4.3: an approved job whose window is open is started here (MGT-4.4 will start it by itself)
     job = _halted_job(db, request, job_id, JobEvent.RESUME, body.requestedBy)
     _refuse_if_killed(db, job.invoker_id, body.requestedBy)               # AI-10.4: a stopped rApp's job does not go on to its next wave
     if job.halted_reason == "WAVE_PAUSE" and job.next_wave_at and as_utc(job.next_wave_at) > datetime.datetime.now(datetime.UTC) and not body.force:
@@ -2226,6 +2261,96 @@ def _decidable(db: Session, approval_id: uuid.UUID, request: Request, body: Appr
     return row
 
 
+# ---------------------------------------------------------------- change windows and their approval (PR-MGT-4)
+
+CHANGE_WINDOW_CLOSED = ("CHANGE_WINDOW_CLOSED", 409)            # kept here with the other job codes of this module, not in smo_shared.errors (mutation-tested)
+CHANGE_WINDOW_NOT_OPEN = ("CHANGE_WINDOW_NOT_OPEN", 409)
+
+
+def _window_view(job: WriteConfigJob) -> dict:
+    """The change window and approval fields of a job's views (MGT-4): all null for a job that never waited."""
+    iso = lambda t: as_utc(t).isoformat() if t else None  # noqa: E731
+    return {"scheduledAt": iso(job.scheduled_at), "windowEnd": iso(job.window_end), "decidedBy": job.decided_by, "decidedAt": iso(job.decided_at),
+            "decisionReason": job.decision_reason}
+
+
+def _approve_window(db: Session, job: WriteConfigJob, decider: str, reason: str | None) -> None:
+    """Record the approval of a PENDING_APPROVAL job and move it on: SCHEDULED when its window has not opened yet, else PROCESSING with its waves run now
+    (409 `CHANGE_WINDOW_CLOSED` when the window has already closed: an approval after the close would run it outside it). The caller commits."""
+    now = datetime.datetime.now(datetime.UTC)
+    if job.window_end is not None and as_utc(job.window_end) <= now:
+        raise framework_error(CHANGE_WINDOW_CLOSED, detail=f"the change window closed at {as_utc(job.window_end).isoformat()}")
+    job.decided_by, job.decided_at, job.decision_reason = decider, now, reason
+    if job.scheduled_at is not None and as_utc(job.scheduled_at) > now:
+        job.status = WRITE_CONFIG_JOB_FSM.fire(JobState(job.status), JobEvent.APPROVE_FOR_WINDOW)
+        db.flush()
+        return
+    _refuse_if_killed(db, job.invoker_id, job.requested_by)                 # AI-10.4: a stopped rApp's job does not start, approved or not
+    job.status = WRITE_CONFIG_JOB_FSM.fire(JobState(job.status), JobEvent.APPROVE)
+    job.schema_validated_at = now                                           # the KPI guard measures from when the job ran, not when it was asked
+    db.flush()
+    _advance(db, job)
+
+
+def _start_scheduled(db: Session, job: WriteConfigJob, body: "WaveActionRequest") -> dict:
+    """Start an approved job whose window is open (MGT-4.3): 409 `CHANGE_WINDOW_NOT_OPEN` before it opens unless `force`, 409 `CHANGE_WINDOW_CLOSED` after it
+    closes. Runs its waves and commits."""
+    now = datetime.datetime.now(datetime.UTC)
+    if job.window_end is not None and as_utc(job.window_end) <= now:
+        raise framework_error(CHANGE_WINDOW_CLOSED, detail=f"the change window closed at {as_utc(job.window_end).isoformat()}")
+    if job.scheduled_at is not None and as_utc(job.scheduled_at) > now and not body.force:
+        raise framework_error(CHANGE_WINDOW_NOT_OPEN, detail=f"the change window opens at {as_utc(job.scheduled_at).isoformat()}; send force=true to start now")
+    _refuse_if_killed(db, job.invoker_id, body.requestedBy)
+    job.status = WRITE_CONFIG_JOB_FSM.fire(JobState.SCHEDULED, JobEvent.START)
+    job.schema_validated_at = now                                           # the KPI guard measures from when the job ran, not when it was asked
+    db.flush()
+    log.info("config job %s started in its change window by %s", job.job_id, body.requestedBy)
+    _advance(db, job)
+    db.commit()
+    return _job_summary(job)
+
+
+def _waiting_job(db: Session, request: Request, job_id: uuid.UUID, body: ApprovalDecisionRequest, states: tuple[JobState, ...]) -> WriteConfigJob:
+    """The job to decide: 403 `ROLE_NOT_PERMITTED` for an rApp (it never decides), the decider verified as for rApp approvals (`_decider`: `X-R1-Acting-User` behind
+    the gateway), 404/403 as the other job actions (`_job_in_reach`), and 409 `APPROVAL_NOT_PENDING` when the job is not in one of `states`. Sets `body.decidedBy`."""
+    if role_of(request) == ROLE_RAPP:
+        raise framework_error(FrameworkError.ROLE_NOT_PERMITTED, detail="an rApp cannot decide a change window")
+    body.decidedBy = _decider(request, body.decidedBy)
+    job = _job_in_reach(db, request, job_id, body.decidedBy)
+    if job.status not in states:
+        raise framework_error(FrameworkError.APPROVAL_NOT_PENDING, detail=f"the job is {job.status}")
+    return job
+
+
+@app.post("/config-jobs/{job_id}/approve")
+def approve_configuration_job(job_id: uuid.UUID, body: ApprovalDecisionRequest, request: Request, db: Session = Depends(get_session)):
+    """MGT-4.3: approve a job waiting for approval (PENDING_APPROVAL). Its requester cannot (403 `APPROVAL_SELF_DECISION`), nor can an rApp (403). Approved inside
+    its window (or without one) it runs now; before the window opens it becomes SCHEDULED and is started in the window (`POST /config-jobs/{id}/continue`);
+    after the window has closed it is 409 `CHANGE_WINDOW_CLOSED`. 409 `APPROVAL_NOT_PENDING` for a job in any other state. Answers the job summary."""
+    job = _waiting_job(db, request, job_id, body, (JobState.PENDING_APPROVAL,))
+    decider = cast(str, body.decidedBy)
+    if _same_person(decider, job.requested_by) or (job.invoker_id is not None and _same_person(decider, job.invoker_id)):
+        raise framework_error(FrameworkError.APPROVAL_SELF_DECISION, detail="the requester of a change cannot approve it")
+    _approve_window(db, job, decider, body.reason)
+    db.commit()
+    log.info("config job %s approved by %s: %s", job_id, decider, job.status)
+    return {**_job_summary(job), **_window_view(job)}
+
+
+@app.post("/config-jobs/{job_id}/reject")
+def reject_configuration_job(job_id: uuid.UUID, body: ApprovalDecisionRequest, request: Request, db: Session = Depends(get_session)):
+    """MGT-4.3: refuse a job waiting for approval, or withdraw an approved one before it starts (PENDING_APPROVAL or SCHEDULED). Nothing was sent: the job ends
+    REJECTED and each of its changes REJECTED `APPROVAL_REJECTED`. The requester may withdraw its own; an rApp may not decide (403). 409 in any other state."""
+    job = _waiting_job(db, request, job_id, body, (JobState.PENDING_APPROVAL, JobState.SCHEDULED))
+    job.status = WRITE_CONFIG_JOB_FSM.fire(JobState(job.status), JobEvent.REJECT)
+    job.decided_by, job.decided_at, job.decision_reason = body.decidedBy, datetime.datetime.now(datetime.UTC), body.reason
+    for change in db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job.job_id)):
+        change.status, change.rejection_reason = "REJECTED", "APPROVAL_REJECTED"
+    db.commit()
+    log.info("config job %s rejected by %s", job_id, body.decidedBy)
+    return {**_job_summary(job), **_window_view(job)}
+
+
 @app.post("/rapp-approvals/{approval_id}/approve")
 def approve_action(approval_id: uuid.UUID, body: ApprovalDecisionRequest, request: Request, db: Session = Depends(get_session)):
     """AI-11.2: approve a waiting request. The safeguards are checked again now (a kill switch thrown while it waited refuses it: 403 `RAPP_KILLED`, the
@@ -2729,6 +2854,7 @@ def query_write_config_job_status(job_id: uuid.UUID, request: Request, db: Sessi
             "kpiGuard": job.kpi_guard, "kpiGuardResult": job.kpi_guard_result,
             "kpiGuardCheckedAt": as_utc(job.kpi_guard_checked_at).isoformat() if job.kpi_guard_checked_at else None,
             "nextWaveAt": as_utc(job.next_wave_at).isoformat() if job.next_wave_at else None,
+            **_window_view(job),
             "subChanges": [{"managedElementRef": sc.managed_element_ref, "wave": sc.wave, "managedFunctionRef": sc.managed_function_ref,
                             "operation": sc.operation, "status": sc.status, "rejectionReason": sc.rejection_reason,
                             "rejectionDetail": sc.rejection_detail, "attempts": sc.attempts} for sc in sub_changes]}
@@ -3642,7 +3768,8 @@ def list_write_config_jobs(request: Request, status: str | None = None, region: 
         stmt = stmt.where(WriteConfigJob.status == status)
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"jobId": str(j.job_id), "requestedBy": j.requested_by, "accessScope": j.scope, "scope": j.scope,
-             "status": j.status, "msacRole": j.msac_role} for j in page["items"]]}
+             "status": j.status, "msacRole": j.msac_role, "createdAt": as_utc(j.created_at).isoformat() if j.created_at else None,
+             **_window_view(j)} for j in page["items"]]}
 
 
 @app.get("/software-management-jobs")

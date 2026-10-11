@@ -46,6 +46,9 @@ class GuiUser(Base):
     # Added after the first release of this table: `Database._add_missing_columns` adds it to a database made before (default false, so the previous
     # release's code keeps working on it).
     break_glass: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    # GUI-5: the user's region/tenant scope claim (app/scoping.py; compact JSON, NULL: unscoped), sent with every call the BFF makes for the user. Added by
+    # `_add_missing_columns` to a database made before; NULL keeps every existing user unscoped, as before.
+    scope: Mapped[str | None] = mapped_column(String)
 
 
 class GuiUserTotp(Base):
@@ -277,7 +280,8 @@ class Database:
     def _add_missing_columns(self) -> None:
         """`create_all` makes absent tables but never alters a table that exists, so a column added to one later is added here (expand only: nullable or
         with a default, so the previous release's code keeps working on the upgraded database). The BFF's tables are not in the Alembic history."""
-        wanted = {"gui_user": [("break_glass", "BOOLEAN NOT NULL DEFAULT " + ("false" if self.engine.dialect.name == "postgresql" else "0"))]}
+        wanted = {"gui_user": [("break_glass", "BOOLEAN NOT NULL DEFAULT " + ("false" if self.engine.dialect.name == "postgresql" else "0")),
+                               ("scope", "VARCHAR")]}
         for table, columns in wanted.items():
             for name, ddl in columns:
                 if name in {c["name"] for c in inspect(self.engine).get_columns(table)}:

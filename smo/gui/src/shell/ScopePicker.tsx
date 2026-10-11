@@ -2,12 +2,15 @@
  * "eu-west / metro-a") that opens a popover with a region and, once a region is picked, one of its site clusters, each with its element count,
  * from RAN NF OAM's `GET /managed-entities/scopes` (one GROUP BY). "All network" clears it. The choice goes into the URL (`?region=&cluster=`), so
  * a link or a reload keeps it. Elements with no region or no site cluster are counted but cannot be picked (no route filters on "not set"), and a
- * name the BFF would refuse as a scope (`SCOPE_NAME_RE`) is shown disabled. */
+ * name the BFF would refuse as a scope (`SCOPE_NAME_RE`) is shown disabled. GUI-5: a user whose account is limited to some regions or tenants sees that limit
+ * beside the chip (`GET /api/me` `scope`); the modules already narrow every answer to it, so the regions offered here are only theirs. */
 import { useState } from "react";
 
 import { useSmo } from "../api/hooks";
+import { useOptionalAuth } from "../auth/AuthContext";
 import { isScoped, SCOPE_NAME_RE, scopeLabel, useScopeState } from "../data/scope";
 import { formatCount } from "../kit/Kpi";
+import { describeUserScope } from "../lib/domain";
 
 /** One site cluster of a region (`siteCluster` null: the elements with none). */
 export interface ScopeCluster { siteCluster: string | null; elements: number }
@@ -25,6 +28,8 @@ export const pickable = (name: string | null): name is string => name !== null &
 /** The chip and its popover. */
 export function ScopePicker() {
   const { scope, setScope } = useScopeState();
+  const me = useOptionalAuth()?.me;
+  const limited = me?.scope ? describeUserScope(me.scope) : null;
   const [open, setOpen] = useState(false);
   const scopes = useSmo<ScopesAnswer>(SCOPES_PATH, undefined, { refetchInterval: 300_000, staleTime: 60_000, enabled: open || isScoped(scope) });
   const regions = scopes.data?.regions ?? [];
@@ -38,6 +43,7 @@ export function ScopePicker() {
       {isScoped(scope) && (
         <button type="button" className="btn ghost small" onClick={() => setScope({ region: null, cluster: null })} aria-label="Clear the scope: all network">All network</button>
       )}
+      {limited && <span className="badge info small" data-testid="account-scope" title="Your account is limited to these; an administrator sets it">Your access: {limited}</span>}
       {open && (
         <div className="popover" role="dialog" aria-label="Scope">
           <strong>Scope</strong>

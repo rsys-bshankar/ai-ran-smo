@@ -45,6 +45,7 @@ REASONS = {
     "token_invalid": "the ID token did not pass validation",
     "no_role": "the account has no group that maps to a role",
     "account_disabled": "the account is disabled",
+    "invalid_scope": "the token's scope claim is not a valid region/tenant scope",
     "too_many_logins": "too many sign-ins are waiting; try again shortly",
 }
 

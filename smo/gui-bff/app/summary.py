@@ -42,6 +42,7 @@ import httpx
 from fastapi import Depends, FastAPI, Query
 
 from .rbac import decide
+from . import scoping
 from .smo_client import SmoAuthError
 
 log = logging.getLogger("smo-gui-bff")
@@ -87,7 +88,10 @@ STOPPED = {"rappsStopped": Count("/rapp-mgmt/kill-all", field="stopped")}     # 
 PACKAGES = _states("/onboarding/packages", "state", ("ONBOARDING", "AVAILABLE", "PRIMED", "DEPRECATED", "FAILED"), "packages")
 DEPLOYMENTS = _states("/nfo/deployments", "state", ("INSTANTIATING", "RUNNING", "UPDATING", "TERMINATING", "ABNORMAL"), "deployments")
 INTENTS = _states("/intent-service/intents", "admin_state", ("ACTIVATED", "DEACTIVATED"), "intents")
-CONFIG_JOBS = _states("/ran-nf-oam/config-jobs", "status", ("PENDING", "PROCESSING", "HALTED", "COMPLETED", "PARTIAL_SUCCESS", "FAILED"), "configJobs")
+CONFIG_JOBS = _states("/ran-nf-oam/config-jobs", "status", ("PENDING", "PENDING_APPROVAL", "SCHEDULED", "PROCESSING", "HALTED", "COMPLETED",
+                                                           "PARTIAL_SUCCESS", "FAILED", "REJECTED"), "configJobs")
+# MGT-4 / GUI-7.1: the CM jobs held for a change-window approval, the Approvals inbox's third kind of request
+CHANGE_WINDOWS = {"configJobs.PENDING_APPROVAL": CONFIG_JOBS["configJobs.PENDING_APPROVAL"]}
 CAMPAIGNS = _states("/ran-nf-oam/software-campaigns", "status",
                     ("PENDING", "RUNNING", "HALTED", "COMPLETED", "ABORTED", "ROLLING_BACK", "ROLLED_BACK", "ROLLBACK_FAILED"), "campaigns")
 DECISIONS_24H = {f"decisions24h.{d}": Count("/ran-nf-oam/decision-records", (("disposition", d),), since_hours=24)
@@ -100,13 +104,13 @@ ELEMENTS = {"elements.total": Count("/ran-nf-oam/managed-entities")}
 
 # The counts each page asks for, by the page's name in the URL. "nav" is the sidebar's badges, asked on every page, so it is kept small.
 PAGES: dict[str, dict[str, Count]] = {
-    "nav": {"alarms.critical": ALARMS["alarms.critical"], "alarms.major": ALARMS["alarms.major"], **APPROVALS, **MODEL_GATES,
+    "nav": {"alarms.critical": ALARMS["alarms.critical"], "alarms.major": ALARMS["alarms.major"], **APPROVALS, **MODEL_GATES, **CHANGE_WINDOWS,
             "configJobs.HALTED": CONFIG_JOBS["configJobs.HALTED"], "campaigns.HALTED": CAMPAIGNS["campaigns.HALTED"]},
     "dashboard": {**ALARMS, **APPROVALS, **INSTANCES, **PACKAGES, **DEPLOYMENTS, **INTENTS, **DECISIONS_24H, **ESCALATIONS, **BREACHES, **MODELS,
                   **ELEMENTS, **STOPPED},
     "alarms": ALARMS,
     "rapps": {**INSTANCES, **PACKAGES, **STOPPED},
-    "approvals": {**APPROVALS, **MODEL_GATES},
+    "approvals": {**APPROVALS, **MODEL_GATES, **CHANGE_WINDOWS},
     "decisions": DECISIONS_24H,
     "infrastructure": {**DEPLOYMENTS, **ELEMENTS},
     "configuration": CONFIG_JOBS,
@@ -218,7 +222,7 @@ def install(app: FastAPI, *, current_session, problem) -> None:
     cache: dict[tuple, _Cached] = {}
     locks: dict[tuple, asyncio.Lock] = {}
 
-    async def count(name: str, spec: Count, scope: list[tuple[str, str]]) -> tuple[str, int | float | None, bool]:
+    async def count(name: str, spec: Count, scope: list[tuple[str, str]], claim: str | None = None) -> tuple[str, int | float | None, bool]:
         """(`name`, the value, whether the module answered). `scope` is the scope parameters this count's path accepts. The value is None when
         the module could not be asked or answered without one (then `answered` is false), or when a `field` count's module answered null (then it
         is true). Never raises."""
@@ -227,7 +231,7 @@ def install(app: FastAPI, *, current_session, problem) -> None:
             since = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=spec.since_hours)
             params.append(("since", since.strftime("%Y-%m-%dT%H:%M:%SZ")))
         try:
-            resp = await app.state.gateway.request("GET", spec.path, params=params, timeout=COUNT_TIMEOUT_SECONDS)
+            resp = await app.state.gateway.request("GET", spec.path, params=params, timeout=COUNT_TIMEOUT_SECONDS, headers=scoping.shared_headers(claim))
             body = resp.json() if resp.status_code == 200 else None
         except (SmoAuthError, httpx.HTTPError, ValueError) as exc:
             log.warning("summary count %s (%s) failed: %r", name, spec.path, exc)
@@ -243,24 +247,24 @@ def install(app: FastAPI, *, current_session, problem) -> None:
         total = body.get("total")
         return (name, total, True) if isinstance(total, int) and not isinstance(total, bool) else (name, None, False)
 
-    async def panel(name: str, spec: Panel, region: str | None, site_cluster: str | None) -> tuple[str, object, bool]:
+    async def panel(name: str, spec: Panel, region: str | None, site_cluster: str | None, claim: str | None = None) -> tuple[str, object, bool]:
         """(`name`, the module's answer as it came, whether it answered with 200 and JSON). The answer is None when it did not. Never raises."""
         try:
             resp = await app.state.gateway.request("GET", spec.path, params=[*spec.params, *scope_params(spec.path, region, site_cluster)],
-                                                   timeout=COUNT_TIMEOUT_SECONDS)
+                                                   timeout=COUNT_TIMEOUT_SECONDS, headers=scoping.shared_headers(claim))
             return (name, resp.json(), True) if resp.status_code == 200 else (name, None, False)
         except (SmoAuthError, httpx.HTTPError, ValueError) as exc:
             log.warning("summary panel %s (%s) failed: %r", name, spec.path, exc)
             return name, None, False
 
-    async def compute(page: str, region: str | None, site_cluster: str | None) -> dict:
+    async def compute(page: str, region: str | None, site_cluster: str | None, claim: str | None = None) -> dict:
         """Ask every count (and panel) of `page` in parallel, narrowed by the scope where its path accepts it; the body the route answers."""
         specs = PAGES[page]
         names = list(specs)
         panels = PANELS.get(page, {})
         results, panel_results = await asyncio.gather(
-            asyncio.gather(*(count(n, specs[n], scope_params(specs[n].path, region, site_cluster)) for n in names)),
-            asyncio.gather(*(panel(n, panels[n], region, site_cluster) for n in panels)))
+            asyncio.gather(*(count(n, specs[n], scope_params(specs[n].path, region, site_cluster), claim) for n in names)),
+            asyncio.gather(*(panel(n, panels[n], region, site_cluster, claim) for n in panels)))
         scoped = region is not None or site_cluster is not None
         failed = {specs[n].path.split("/")[1] for n, _, answered in results if not answered}
         failed |= {panels[n].path.split("/")[1] for n, _, answered in panel_results if not answered}
@@ -271,12 +275,12 @@ def install(app: FastAPI, *, current_session, problem) -> None:
             body["panels"] = {n: v for n, v, _ in panel_results}
         return body
 
-    async def group(spec: AttentionGroup, limit: int, region: str | None, site_cluster: str | None) -> tuple[dict, bool]:
+    async def group(spec: AttentionGroup, limit: int, region: str | None, site_cluster: str | None, claim: str | None = None) -> tuple[dict, bool]:
         """One attention group and whether its module answered: `{type, total, items}`, the newest `limit` rows trimmed to `spec.fields`.
         A module that failed or answered something that is not a page gives `total` null and no items. Never raises."""
         params = [*spec.params, *scope_params(spec.path, region, site_cluster), ("limit", str(limit))]
         try:
-            resp = await app.state.gateway.request("GET", spec.path, params=params, timeout=COUNT_TIMEOUT_SECONDS)
+            resp = await app.state.gateway.request("GET", spec.path, params=params, timeout=COUNT_TIMEOUT_SECONDS, headers=scoping.shared_headers(claim))
             body = resp.json() if resp.status_code == 200 else None
         except (SmoAuthError, httpx.HTTPError, ValueError) as exc:
             log.warning("attention group %s (%s) failed: %r", spec.type, spec.path, exc)
@@ -288,9 +292,9 @@ def install(app: FastAPI, *, current_session, problem) -> None:
         trimmed = [{f: row.get(f) for f in spec.fields} for row in items[:limit] if isinstance(row, dict)]
         return {"type": spec.type, "total": total, "items": trimmed}, True
 
-    async def compute_attention(limit: int, region: str | None, site_cluster: str | None) -> dict:
+    async def compute_attention(limit: int, region: str | None, site_cluster: str | None, claim: str | None = None) -> dict:
         """Ask every attention group in parallel; the body `GET /api/summary/attention` answers."""
-        results = await asyncio.gather(*(group(g, limit, region, site_cluster) for g in ATTENTION))
+        results = await asyncio.gather(*(group(g, limit, region, site_cluster, claim) for g in ATTENTION))
         scoped = region is not None or site_cluster is not None
         return {"page": "attention", "computedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "groups": [g for g, _ in results],
                 "partial": sorted({spec.path.split("/")[1] for spec, (_, answered) in zip(ATTENTION, results) if not answered}),
@@ -325,14 +329,15 @@ def install(app: FastAPI, *, current_session, problem) -> None:
             remember(key, body)
             return body
 
-    async def page_counts(page: str, region: str | None = None, site_cluster: str | None = None) -> dict:
+    async def page_counts(page: str, region: str | None = None, site_cluster: str | None = None, claim: str | None = None) -> dict:
         """The body of `page` (a key of `PAGES`) in the scope (both None: the whole network), at most `CACHE_SECONDS` old. The scope must
-        already be checked (`valid_scope`)."""
-        return await cached((page, region, site_cluster), lambda: compute(page, region, site_cluster))
+        already be checked (`valid_scope`). GUI-5: `claim` is the asking user's stored scope claim (None: unscoped); the counts are asked with it and
+        cached under it, so users with different claims never share an answer."""
+        return await cached((page, region, site_cluster, claim), lambda: compute(page, region, site_cluster, claim))
 
-    async def attention(region: str | None = None, site_cluster: str | None = None, limit: int = ATTENTION_DEFAULT_LIMIT) -> dict:
-        """The attention groups in the scope, `limit` rows each, at most `CACHE_SECONDS` old. The scope must already be checked."""
-        return await cached(("attention", region, site_cluster, limit), lambda: compute_attention(limit, region, site_cluster))
+    async def attention(region: str | None = None, site_cluster: str | None = None, limit: int = ATTENTION_DEFAULT_LIMIT, claim: str | None = None) -> dict:
+        """The attention groups in the scope, `limit` rows each, at most `CACHE_SECONDS` old. The scope must already be checked; `claim` as for `page_counts`."""
+        return await cached(("attention", region, site_cluster, limit, claim), lambda: compute_attention(limit, region, site_cluster, claim))
 
     page_counts.cache = cache        # type: ignore[attr-defined]  # read by the tests (its bound), never written through
     app.state.summary_page = page_counts
@@ -361,7 +366,7 @@ def install(app: FastAPI, *, current_session, problem) -> None:
             return refusal
         if not page_allowed("attention", session.user.role):
             return problem(403, "FORBIDDEN", "a list on this page needs a read your role does not have")
-        return await attention(region, site_cluster, limit)
+        return await attention(region, site_cluster, limit, session.user.scope)
 
     @app.get("/api/summary/{page}")
     async def summary(page: str, region: str | None = Query(None, description=scope_docs["region"]),
@@ -377,4 +382,4 @@ def install(app: FastAPI, *, current_session, problem) -> None:
             return refusal
         if not page_allowed(page, session.user.role):
             return problem(403, "FORBIDDEN", "a count on this page needs a read your role does not have")
-        return await page_counts(page, region, site_cluster)
+        return await page_counts(page, region, site_cluster, session.user.scope)

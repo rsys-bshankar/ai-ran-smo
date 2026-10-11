@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from smo_shared import roles, scope
-from smo_shared.scope import ON_BEHALF_SCOPE_HEADER, SCOPE_HEADER
+from smo_shared.scope import ACTING_USER_SCOPE_HEADER, ON_BEHALF_SCOPE_HEADER, SCOPE_HEADER
 
 from app import main, operator_api
 from app.main import ROUTES, app
@@ -111,6 +111,20 @@ def test_an_internal_module_may_pass_on_the_claim_of_the_rapp_it_acts_for_and_it
     client.get("/ran-nf-oam/alarms", headers={**AUTH, "X-R1-On-Behalf-Of": "es-client", ON_BEHALF_SCOPE_HEADER: CLAIM_HEADER, SCOPE_HEADER: '{"regions":["x"]}'})
     headers = sent(gateway)
     assert headers[ON_BEHALF_SCOPE_HEADER.lower()] == CLAIM_HEADER and SCOPE_HEADER.lower() not in headers        # its own X-R1-Scope was spoofed: dropped
+
+
+def test_the_console_passes_the_claim_of_the_person_it_acts_for_and_nobody_else_can(gateway):
+    """GUI-5: the console's (an `internal` caller's) `X-R1-Acting-User-Scope` reaches the module beside the acting user; without the acting user, or from an rApp,
+    it is dropped."""
+    person = {**AUTH, "X-R1-Acting-User": "smo-gui:ana", ACTING_USER_SCOPE_HEADER: CLAIM_HEADER}
+    gateway["sme_says"] = {"active": True, "client_id": "gui", "role": "internal"}
+    client.get("/ran-nf-oam/alarms", headers=person)
+    assert sent(gateway)[ACTING_USER_SCOPE_HEADER.lower()] == CLAIM_HEADER and sent(gateway)["x-r1-acting-user"] == "smo-gui:ana"
+    client.get("/ran-nf-oam/alarms", headers={**AUTH, ACTING_USER_SCOPE_HEADER: CLAIM_HEADER})                  # no person named: no claim of one
+    assert ACTING_USER_SCOPE_HEADER.lower() not in sent(gateway, 1)
+    gateway["sme_says"] = {"active": True, "client_id": "inv-1", "role": "rapp", "authz_scope": CLAIM}
+    client.get("/ran-nf-oam/alarms", headers={**person, ACTING_USER_SCOPE_HEADER: '{"regions":["us-east"]}'})      # an rApp cannot narrow or widen anything with it
+    assert ACTING_USER_SCOPE_HEADER.lower() not in sent(gateway, 2) and sent(gateway, 2)[SCOPE_HEADER.lower()] == CLAIM_HEADER
 
 
 def test_a_claim_on_an_internal_invoker_is_forwarded_as_its_own(gateway):

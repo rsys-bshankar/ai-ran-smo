@@ -62,13 +62,13 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 
 from .config import Settings, settings as default_settings
-from . import events, exports, kpi_layouts, preferences, rapps, search, source, summary, totp
+from . import events, exports, kpi_layouts, preferences, rapps, scoping, search, source, summary, totp
 from .db import AuditEntry, Database, GuiUser, LoginFailure
 from .oidc import LOGIN_TTL_SECONDS, MAX_PENDING_LOGINS, OidcClient, OidcConfig, OidcError
 from .rbac import MODULES, RULES, Role, Rule, User, decide
 from .security import decode_jwt, hash_password, issue_jwt, verify_password
 from .signing import build_signer
-from .smo_client import ACTING_USER_HEADER, R1Gateway, SmoAuthError
+from .smo_client import R1Gateway, SmoAuthError
 
 log = logging.getLogger("smo-gui-bff")
 
@@ -409,9 +409,9 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         if (cfg.admin_mfa_required and user.role == Role.ADMIN and user.password_hash != UNUSABLE_HASH and request.url.path not in MFA_OPEN_PATHS
                 and not app.state.db.totp_state(user.username)[0]):
             raise _problem_exception(403, "MFA_ENROLMENT_REQUIRED", "an admin must enrol a one-time code before using the console: open Account security")
-        # Role always read from the user table, never from the token: a role
-        # change or demotion applies on the very next request.
-        return Session(user=User(user.username, Role(user.role)), csrf=claims.get("csrf"), via_cookie=via_cookie)
+        # Role (and, GUI-5, the scope claim) always read from the user table, never from the token: a role
+        # change, a demotion or a narrower scope applies on the very next request.
+        return Session(user=User(user.username, Role(user.role), user.scope), csrf=claims.get("csrf"), via_cookie=via_cookie)
 
     def require_admin(session: Session = Depends(current_session)) -> Session:
         if session.user.role != Role.ADMIN:
@@ -668,15 +668,16 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         response.set_cookie(OIDC_COOKIE, binding, httponly=True, path="/api/oidc", secure=cfg.cookie_secure, samesite="lax", max_age=LOGIN_TTL_SECONDS)
         return response
 
-    def provision_oidc_user(subject: str, role: Role) -> tuple[GuiUser | None, str]:
-        """The user row for `subject`, created on first sign-in (no password) and given `role` at every sign-in; None for a disabled one."""
+    def provision_oidc_user(subject: str, role: Role, scope: str | None = None, set_scope: bool = False) -> tuple[GuiUser | None, str]:
+        """The user row for `subject`, created on first sign-in (no password) and given `role` at every sign-in; None for a disabled one. With `set_scope`
+        (GUI-5: `GUI_OIDC_SCOPE_CLAIM` is configured) the scope claim from the token is given at every sign-in too, as the role is; else an admin's stays."""
         username = OIDC_PREFIX + subject
         for _ in range(2):
             with app.state.db.session() as s:
                 user = s.get(GuiUser, username)
                 if user is None:
                     # a random starting token version, as for any new user: see create_user
-                    user = GuiUser(username=username, password_hash=UNUSABLE_HASH, role=role, token_version=secrets.randbits(30))
+                    user = GuiUser(username=username, password_hash=UNUSABLE_HASH, role=role, token_version=secrets.randbits(30), scope=scope if set_scope else None)
                     s.add(user)
                     try:
                         s.commit()
@@ -690,8 +691,11 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
                 if user.role != role:
                     note = f"role {user.role}->{role}"
                     user.role = role
-                    s.commit()
-                return user, note
+                if set_scope and user.scope != scope:
+                    note = (note if note != "existing" else "") + f" scope {user.scope or 'none'}->{scope or 'none'}"
+                    user.scope = scope
+                s.commit()
+                return user, note.strip()
         raise RuntimeError("could not create or read the OIDC user")
 
     @app.get("/api/oidc/callback")
@@ -727,7 +731,20 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
                         existing.token_version += 1
                         s.commit()
                 raise OidcError("no_role", "no group of the user maps to a role")
-            user, note = provision_oidc_user(claims["sub"], role)
+            scope, set_scope = None, bool(cfg.oidc_scope_claim)
+            if set_scope:
+                # GUI-5: a scope claim the token carries but that breaks the rules refuses the sign-in (a restriction is never dropped because it was damaged), and ends
+                # the person's earlier sessions as a lost role does; no claim at all is an unscoped user
+                try:
+                    scope = scoping.encode(scoping.parse_claim(claims.get(cfg.oidc_scope_claim)))
+                except ValueError as exc:
+                    with app.state.db.session() as s:
+                        existing = s.get(GuiUser, subject)
+                        if existing is not None:
+                            existing.token_version += 1
+                            s.commit()
+                    raise OidcError("invalid_scope", str(exc)) from exc
+            user, note = provision_oidc_user(claims["sub"], role, scope, set_scope)
             if user is None:
                 raise OidcError("account_disabled")
         except OidcError as exc:
@@ -742,7 +759,9 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
     @app.get("/api/me")
     def me(session: Session = Depends(current_session)):
         # mfaEnrolmentRequired: the SPA sends such an admin to the enrolment page, because every other route answers 403 MFA_ENROLMENT_REQUIRED (PR-SEC-7.8)
-        return {"username": session.user.username, "role": session.user.role, "csrfToken": session.csrf, **mfa_view(session.user.username, session.user.role)}
+        # scope (GUI-5): the user's region/tenant claim, null when unscoped; "INVALID" for a stored claim that no longer reads (it permits nothing)
+        return {"username": session.user.username, "role": session.user.role, "csrfToken": session.csrf, "scope": scoping.view(session.user.scope),
+                **mfa_view(session.user.username, session.user.role)}
 
     # ------------------------------------------------------------ one-time code enrolment (PR-SEC-7.1, 7.3)
 
@@ -978,8 +997,9 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         headers = {k: v for k, v in request.headers.items() if k.lower() in _FORWARD_REQUEST}
         # SEC-15.8: every module sees the BFF as the caller, so the signed-in person goes with each call in `X-R1-Acting-User` (the same `smo-gui:<username>` the rules write into
         # `requestedBy` and `decidedBy`). R1 Termination forwards it to a module because the BFF's token is `internal`; the two-person approval takes the decider from it instead
-        # of from the body. Set after the browser's headers were filtered above, so the browser cannot choose it.
-        headers[ACTING_USER_HEADER] = f"smo-gui:{session.user.username}"
+        # of from the body. GUI-5: the person's scope claim goes beside it (`X-R1-Acting-User-Scope`) and the module narrows its answer by it. Both set after the browser's
+        # headers were filtered above, so the browser cannot choose them.
+        headers.update(scoping.headers(session.user.username, session.user.scope))
         try:
             upstream = await app.state.gateway.request(request.method, path, params=params, content=body or None, headers=headers)
         except SmoAuthError as exc:
@@ -1014,16 +1034,27 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
 
     # ------------------------------------------------------------ admin
 
+    # GUI-5: `scope` is the user's region/tenant claim (`{"regions": [...], "tenants": [...]}`, app/scoping.py); absent or null on a create: unscoped. On an update a
+    # `scope` that is sent replaces the claim (null removes it); one that is not sent leaves it. A claim that breaks the rules is 422 `INVALID_SCOPE` with a fixed message.
     class CreateUserRequest(BaseModel):
         username: str
         password: str = Field(min_length=MIN_PASSWORD_LENGTH)
         role: Role
+        scope: dict | None = None
 
     class UpdateUserRequest(BaseModel):
         role: Role | None = None
         active: bool | None = None
         password: str | None = Field(default=None, min_length=MIN_PASSWORD_LENGTH)
         breakGlass: bool | None = None
+        scope: dict | None = None
+
+    def _scope_or_problem(claim: dict | None) -> tuple[str | None, JSONResponse | None]:
+        """(the claim as stored, None) for a valid or absent claim, else (None, the 422 `INVALID_SCOPE` answer)."""
+        try:
+            return scoping.encode(scoping.parse_claim(claim)), None
+        except ValueError as exc:
+            return None, _problem(422, "INVALID_SCOPE", str(exc))
 
     def _user_view(u: GuiUser, enrolled: set[str] | None = None, activity: dict | None = None) -> dict:
         """The admin's view of one user. `enrolled` and `activity` (Database.user_activity) are read for this user alone when not given; the list
@@ -1035,7 +1066,8 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
             activity = app.state.db.user_activity(SIGN_IN_ACTIONS, u.username)
         last_active, last_sign_in = activity.get(u.username, (None, None))
         return {"username": u.username, "role": u.role, "active": u.active, "createdAt": u.created_at.isoformat(),
-                "breakGlass": u.break_glass, "totpEnrolled": u.username in enrolled, "lastActiveAt": _iso(last_active), "lastSignInAt": _iso(last_sign_in)}
+                "breakGlass": u.break_glass, "totpEnrolled": u.username in enrolled, "lastActiveAt": _iso(last_active), "lastSignInAt": _iso(last_sign_in),
+                "scope": scoping.view(u.scope)}
 
     def _active_admins(s) -> int:
         return len(s.scalars(select(GuiUser).where(GuiUser.role == Role.ADMIN, GuiUser.active.is_(True))).all())
@@ -1054,17 +1086,20 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         # user otherwise. The starting `token_version` is random on purpose, so a deleted and re-created name cannot revive the old person's unexpired token. Audit: USER_CREATED.
         if not USERNAME_RE.match(body.username):
             return _problem(400, "INVALID_USERNAME", "2-32 chars: lowercase letter first, then a-z 0-9 _ . -")
+        stored, refused = _scope_or_problem(body.scope)
+        if refused is not None:
+            return refused
         with app.state.db.session() as s:
             if s.get(GuiUser, body.username) is not None:
                 return _problem(409, "USER_EXISTS")
             # A random starting token version, not 0: a session token carries the version it was issued under, so a user deleted
             # and created again under the same name (STD-4.3) must not make the old person's unexpired token valid again.
             user = GuiUser(username=body.username, password_hash=hash_password(body.password), role=body.role,
-                           token_version=secrets.randbits(30))
+                           token_version=secrets.randbits(30), scope=stored)
             s.add(user)
             s.commit()
             view = _user_view(user)
-        audit("USER_CREATED", session.user, detail=f"{body.username} role={body.role}")
+        audit("USER_CREATED", session.user, detail=f"{body.username} role={body.role}" + (f" scope={stored}" if stored else ""))
         return view
 
     @app.patch("/api/admin/users/{username}")
@@ -1072,6 +1107,9 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         # Admin only; changes the fields sent. 404 NO_SUCH_USER; 409 OIDC_USER for a password or break-glass change on an identity-provider user; 409 LAST_ADMIN when the change
         # would demote or deactivate the only active admin. Deactivating or resetting a password bumps `token_version` (every session of that user ends); a role change does not
         # need to, because the role is read from the table on each request. The whole change is one commit. Audit: USER_UPDATED with the list of changes.
+        stored, refused = _scope_or_problem(body.scope)
+        if refused is not None:
+            return refused
         with app.state.db.session() as s:
             user = s.get(GuiUser, username)
             if user is None:
@@ -1094,6 +1132,9 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
                     return _problem(409, "OIDC_USER", "a break-glass account is a local one: this user signs in through the identity provider")
                 changes.append("break-glass on" if body.breakGlass else "break-glass off")
                 user.break_glass = body.breakGlass
+            if "scope" in body.model_fields_set and stored != user.scope:
+                changes.append(f"scope {user.scope or 'none'}->{stored or 'none'}")     # read from the table on the next request: no session needs to end
+                user.scope = stored
             if body.password is not None:
                 changes.append("password reset")
                 user.password_hash = hash_password(body.password)

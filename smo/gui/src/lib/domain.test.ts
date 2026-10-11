@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ModuleStatus } from "../api/types";
 
-import { REFUSAL_CODES, REFUSAL_MEANING, APPROVAL_MEANING, DISPOSITION_MEANING, approvalPolicyForm, approvalPolicyPayload, approvalProgress, decidedByText, describeApprovalPolicy, INTEGRITY_MEANING, completionRoute, decisionQuery, describeChange, describeElements, timeLeft, countBySeverity, canRollback, describeDifferences, describeGuardResult, describeLimits, describePlace, describeScope, describeSeconds, kpiNameProblem, limitsForm, limitsPayload, parseCounters, schedulePayload, stagedPayload, waveActions, waveProgress, metricSeries, moduleRows, modelActions, numericMetricKeys, packageActions, parseJsonObject, pipelineSteps, sortAlarms, splitList, type PipelineStepStatus } from "./domain";
+import { REFUSAL_CODES, REFUSAL_MEANING, APPROVAL_MEANING, DISPOSITION_MEANING, approvalPolicyForm, approvalPolicyPayload, approvalProgress, decidedByText, describeApprovalPolicy, INTEGRITY_MEANING, completionRoute, decisionQuery, describeChange, describeElements, timeLeft, countBySeverity, canRollback, describeDifferences, describeGuardResult, describeLimits, describePlace, describeScope, describeSeconds, describeUserScope, userScopeFromFields, kpiNameProblem, limitsForm, limitsPayload, parseCounters, schedulePayload, stagedPayload, waveActions, windowPayload, waveProgress, metricSeries, moduleRows, modelActions, numericMetricKeys, packageActions, parseJsonObject, pipelineSteps, sortAlarms, splitList, type PipelineStepStatus } from "./domain";
 import type { StepStatus } from "./flows";
 
 describe("model lifecycle", () => {
@@ -424,5 +424,28 @@ describe("step status types", () => {
     const flow: StepStatus[] = ["failed", "blocked", "warn", ...pipeline];
     expect(new Set(pipeline)).toEqual(new Set(["done", "current", "todo"]));
     expect(flow).toContain("failed");
+  });
+});
+
+describe("windowPayload (MGT-4)", () => {
+  // A job not held sends nothing; held with no bound it asks for approval only; with bounds it sends the window in ISO time; an end before the start is an error.
+  it("builds the change-window fields of a new config job", () => {
+    expect(windowPayload({ held: false, start: "2026-10-11T22:00", end: "" })).toEqual({ ok: true, body: {} });
+    expect(windowPayload({ held: true, start: "", end: "" })).toEqual({ ok: true, body: { requireApproval: true } });
+    const both = windowPayload({ held: true, start: "2026-10-11T22:00", end: "2026-10-12T02:00" });
+    expect(both.ok && Object.keys((both.body.changeWindow as Record<string, string>))).toEqual(["start", "end"]);
+    expect(windowPayload({ held: true, start: "2026-10-12T02:00", end: "2026-10-11T22:00" }).ok).toBe(false);
+  });
+});
+
+describe("a console user's scope (GUI-5)", () => {
+  // Unscoped is the whole network; a damaged claim says it permits nothing; two empty fields are no limit, and each field is split on commas.
+  it("describes and builds a user's scope", () => {
+    expect(describeUserScope(null)).toBe("Whole network");
+    expect(describeUserScope("INVALID")).toBe("Invalid claim: sees nothing");
+    expect(describeUserScope({ regions: ["eu-west"] })).toBe("regions eu-west");
+    expect(userScopeFromFields(" ", "")).toBeNull();
+    expect(userScopeFromFields("eu-west, ap", "")).toEqual({ regions: ["eu-west", "ap"] });
+    expect(userScopeFromFields("", "acme")).toEqual({ tenants: ["acme"] });
   });
 });

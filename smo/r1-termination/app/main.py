@@ -382,34 +382,7 @@ async def _proxy(full_path: str, request: Request):
     body = await request.body()
     if dynamic:
         return await _forward_operator_api(request, rest_of_path, body, invoker_id, role, caller_scope)
-    # Every other header forwards verbatim; X-Correlation-ID is
-    # explicitly overridden with this request's own real one (the
-    # caller's, or one apply_correlation_id's middleware just generated
-    # if it sent none) rather than whatever raw casing/value it arrived
-    # with, so a caller that omitted the header still gets a consistent
-    # ID threaded through its own request's whole downstream fan-out.
-    forwarded_headers = {k: v for k, v in request.headers.items()
-                          if k.lower() not in ("host", CORRELATION_ID_HEADER.lower(), INVOKER_ID_HEADER.lower(), roles.ROLE_HEADER.lower(),
-                                               ON_BEHALF_OF_HEADER.lower(), ACTING_USER_HEADER.lower(), authz_scope.SCOPE_HEADER.lower(), authz_scope.ON_BEHALF_SCOPE_HEADER.lower(),
-                                               tracing.TRACEPARENT, tracing.TRACESTATE)}
-    forwarded_headers[roles.ROLE_HEADER] = role              # PR-SEC-14: never a value the caller sent (dropped above)
-    forwarded_headers[CORRELATION_ID_HEADER] = get_correlation_id()
-    # The caller's own id, from the introspected token: any inbound value of
-    # this header is dropped above, so a backend can trust it. Empty when the
-    # token carries no client id.
-    if invoker_id:
-        forwarded_headers[INVOKER_ID_HEADER] = invoker_id
-    _stamp_scope(forwarded_headers, request, role, caller_scope)
-    # Who an SMO module is acting for (smo_shared/invoker.py). Only a module may say it: an rApp's own value was dropped above, so an rApp cannot
-    # pose as another rApp (to escape its own limits, or to spend another's).
-    on_behalf_of = request.headers.get(ON_BEHALF_OF_HEADER)
-    if on_behalf_of and role == roles.ROLE_INTERNAL:
-        forwarded_headers[ON_BEHALF_OF_HEADER] = on_behalf_of
-    # The person the operator's console acts for (SEC-15.8): believed from an `internal` caller only, like the header above, and dropped from every other (above), so a
-    # module that reads it in an `internal` request reads the console's word and never an rApp's.
-    acting_user = request.headers.get(ACTING_USER_HEADER)
-    if acting_user and role == roles.ROLE_INTERNAL:
-        forwarded_headers[ACTING_USER_HEADER] = acting_user
+    forwarded_headers = _forwarded_headers(request, role, invoker_id, caller_scope)
     try:
         # PR-OBS-3: the caller's traceparent is replaced by this hop's own (the gateway's CLIENT span when spans are on, else the caller's unchanged)
         with tracing.span(f"{request.method} {prefix}", "client", {"http.request.method": request.method, "smo.target": prefix,
@@ -445,6 +418,47 @@ _OPERATOR_API_DROP_RESPONSE = frozenset({"connection", "keep-alive", "transfer-e
 def _problem(status: int, title: str, detail: str) -> JSONResponse:
     """A gateway-made error response in the gateway's RFC 7807 shape (`title`, `status`, `detail` at the top level, not under `detail`)."""
     return JSONResponse(status_code=status, content={"title": title, "status": status, "detail": detail})
+
+
+def _forwarded_headers(request: Request, role: str, invoker_id: str | None, caller_scope: authz_scope.Scope | None) -> dict[str, str]:
+    """The headers `_proxy` sends to the backend: the caller's own, minus the ones only the gateway may set, plus the role, the correlation id, the invoker id,
+    the scope stamp and, from an `internal` caller only, who it acts on behalf of and the person (with their scope claim) the console acts for. A function of its
+    own, called after the body is read, so every line is measured on every Python version (on 3.11 coverage stops tracing a coroutine after an await)."""
+    # Every other header forwards verbatim; X-Correlation-ID is
+    # explicitly overridden with this request's own real one (the
+    # caller's, or one apply_correlation_id's middleware just generated
+    # if it sent none) rather than whatever raw casing/value it arrived
+    # with, so a caller that omitted the header still gets a consistent
+    # ID threaded through its own request's whole downstream fan-out.
+    forwarded_headers = {k: v for k, v in request.headers.items()
+                          if k.lower() not in ("host", CORRELATION_ID_HEADER.lower(), INVOKER_ID_HEADER.lower(), roles.ROLE_HEADER.lower(),
+                                               ON_BEHALF_OF_HEADER.lower(), ACTING_USER_HEADER.lower(), authz_scope.SCOPE_HEADER.lower(), authz_scope.ON_BEHALF_SCOPE_HEADER.lower(),
+                                               authz_scope.ACTING_USER_SCOPE_HEADER.lower(),
+                                               tracing.TRACEPARENT, tracing.TRACESTATE)}
+    forwarded_headers[roles.ROLE_HEADER] = role              # PR-SEC-14: never a value the caller sent (dropped above)
+    forwarded_headers[CORRELATION_ID_HEADER] = get_correlation_id()
+    # The caller's own id, from the introspected token: any inbound value of
+    # this header is dropped above, so a backend can trust it. Empty when the
+    # token carries no client id.
+    if invoker_id:
+        forwarded_headers[INVOKER_ID_HEADER] = invoker_id
+    _stamp_scope(forwarded_headers, request, role, caller_scope)
+    # Who an SMO module is acting for (smo_shared/invoker.py). Only a module may say it: an rApp's own value was dropped above, so an rApp cannot
+    # pose as another rApp (to escape its own limits, or to spend another's).
+    on_behalf_of = request.headers.get(ON_BEHALF_OF_HEADER)
+    if on_behalf_of and role == roles.ROLE_INTERNAL:
+        forwarded_headers[ON_BEHALF_OF_HEADER] = on_behalf_of
+    # The person the operator's console acts for (SEC-15.8): believed from an `internal` caller only, like the header above, and dropped from every other (above), so a
+    # module that reads it in an `internal` request reads the console's word and never an rApp's.
+    acting_user = request.headers.get(ACTING_USER_HEADER)
+    if acting_user and role == roles.ROLE_INTERNAL:
+        forwarded_headers[ACTING_USER_HEADER] = acting_user
+        # GUI-5: that person's scope claim goes with them, on the same terms (an `internal` caller, and only beside the person it is for); a module narrows the
+        # console's own claim by it (smo_shared/scope.py `scope_of`), so it can only take away
+        acting_scope = request.headers.get(authz_scope.ACTING_USER_SCOPE_HEADER)
+        if acting_scope:
+            forwarded_headers[authz_scope.ACTING_USER_SCOPE_HEADER] = acting_scope
+    return forwarded_headers
 
 
 def _stamp_scope(headers: dict, request: Request, role: str, caller_scope: authz_scope.Scope | None) -> None:

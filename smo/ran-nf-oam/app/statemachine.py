@@ -21,17 +21,23 @@ from smo_shared.statemachine import StateMachine
 
 class JobState(StrEnum):
     """States of a WriteConfigJob. PENDING and PROCESSING lead to a terminal COMPLETED, PARTIAL_SUCCESS or FAILED; HALTED is the pause of a staged job between waves.
+    A job asked with a change window or for approval (MGT-4) waits in PENDING_APPROVAL for a person other than its requester; approved before its window it waits
+    in SCHEDULED; refused (or withdrawn) it ends REJECTED with nothing sent.
     """
     PENDING = "PENDING"
+    PENDING_APPROVAL = "PENDING_APPROVAL"   # MGT-4.2: nothing is sent until someone other than the requester approves
+    SCHEDULED = "SCHEDULED"                 # MGT-4.3: approved, waiting for its change window to open
     PROCESSING = "PROCESSING"
     HALTED = "HALTED"                   # MGT-5: a staged job waiting between waves (a pause, a failed gate, an operator's halt)
     COMPLETED = "COMPLETED"
     PARTIAL_SUCCESS = "PARTIAL_SUCCESS"
     FAILED = "FAILED"
+    REJECTED = "REJECTED"                   # MGT-4.3: the approval was refused or the request withdrawn; nothing was sent
 
 
 class JobEvent(StrEnum):
-    """Events that move a WriteConfigJob: the pre-check result, the aggregate of the sub-change outcomes, and HALT/RESUME between waves."""
+    """Events that move a WriteConfigJob: the pre-check result, the aggregate of the sub-change outcomes, HALT/RESUME between waves, and the change-window approval
+    (REQUEST_APPROVAL, APPROVE now, APPROVE_FOR_WINDOW, START at the window, REJECT)."""
     PRECHECK_PASS = "PRECHECK_PASS"     # noqa: S105 — an event name, not a credential; schema validation + MSAC gate both pass
     PRECHECK_FAIL = "PRECHECK_FAIL"
     AGGREGATE_ALL_APPLIED = "AGGREGATE_ALL_APPLIED"
@@ -39,6 +45,11 @@ class JobEvent(StrEnum):
     AGGREGATE_MIXED = "AGGREGATE_MIXED"
     HALT = "HALT"                       # MGT-5.3/5.4: stop between waves
     RESUME = "RESUME"                   # MGT-5.4: go on with the next wave
+    REQUEST_APPROVAL = "REQUEST_APPROVAL"   # MGT-4.2: the job was asked with a change window or `requireApproval`
+    APPROVE = "APPROVE"                     # MGT-4.3: approved while its window is open (or it has none): it runs now
+    APPROVE_FOR_WINDOW = "APPROVE_FOR_WINDOW"   # MGT-4.3: approved before its window opens: it waits
+    START = "START"                         # MGT-4.3: a scheduled job's window is open and it is started
+    REJECT = "REJECT"                       # MGT-4.3: refused by an approver, or withdrawn
 
 
 def aggregate_event(sub_change_statuses: list[str]) -> JobEvent:
@@ -58,10 +69,19 @@ def aggregate_event(sub_change_statuses: list[str]) -> JobEvent:
 
 def build_write_config_job_fsm() -> StateMachine[JobState, JobEvent]:
     """The WriteConfigJob transition table: PENDING goes to PROCESSING or FAILED on the pre-check; PROCESSING and HALTED end in COMPLETED, FAILED or PARTIAL_SUCCESS on the aggregate event, and move between each other on HALT and RESUME.
+    MGT-4: PENDING goes to PENDING_APPROVAL when approval is asked; that is approved to PROCESSING (now) or SCHEDULED (before its window), a SCHEDULED job STARTs to PROCESSING,
+    and either is REJECTED.
     """
     fsm: StateMachine[JobState, JobEvent] = StateMachine()
     fsm.add(JobState.PENDING, JobEvent.PRECHECK_PASS, JobState.PROCESSING)
     fsm.add(JobState.PENDING, JobEvent.PRECHECK_FAIL, JobState.FAILED)
+    # MGT-4.2/4.3: a change window, or a request for approval, holds the job until someone other than the requester decides
+    fsm.add(JobState.PENDING, JobEvent.REQUEST_APPROVAL, JobState.PENDING_APPROVAL)
+    fsm.add(JobState.PENDING_APPROVAL, JobEvent.APPROVE, JobState.PROCESSING)
+    fsm.add(JobState.PENDING_APPROVAL, JobEvent.APPROVE_FOR_WINDOW, JobState.SCHEDULED)
+    fsm.add(JobState.PENDING_APPROVAL, JobEvent.REJECT, JobState.REJECTED)
+    fsm.add(JobState.SCHEDULED, JobEvent.START, JobState.PROCESSING)
+    fsm.add(JobState.SCHEDULED, JobEvent.REJECT, JobState.REJECTED)
     fsm.add(JobState.PROCESSING, JobEvent.AGGREGATE_ALL_APPLIED, JobState.COMPLETED)
     fsm.add(JobState.PROCESSING, JobEvent.AGGREGATE_ALL_REJECTED, JobState.FAILED)
     fsm.add(JobState.PROCESSING, JobEvent.AGGREGATE_MIXED, JobState.PARTIAL_SUCCESS)

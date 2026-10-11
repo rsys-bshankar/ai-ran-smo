@@ -25,6 +25,7 @@ const MESSAGES: Record<string, string> = {
   token_invalid: "The identity provider's answer could not be verified. Ask an administrator.",
   no_role: "You signed in, but none of your groups gives access to this console. Ask an administrator.",
   account_disabled: "Your account is disabled. Ask an administrator.",
+  invalid_scope: "Your account's region or tenant scope from the identity provider is not valid, so access was refused. Ask an administrator.",
   too_many_logins: "Too many sign-ins are in progress. Try again in a minute.",
 };
 

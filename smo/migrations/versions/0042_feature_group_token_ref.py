@@ -8,13 +8,13 @@ Expand only: a nullable column nobody on the previous release names, and a NOT N
 upgraded database: its INSERT still supplies `token`, and its read of a group with no token returns null for it. No row is rewritten; groups registered before this revision keep their
 token and have no reference. Removing the `token` column is the contract step of a later release, after the clear-text field has been dropped from the API.
 
-Revision ID: 0041
-Revises: 0040
+Revision ID: 0042
+Revises: 0041
 """
 from alembic import op
 
-revision = "0041"
-down_revision = "0040"
+revision = "0042"
+down_revision = "0041"
 branch_labels = None
 depends_on = None
 

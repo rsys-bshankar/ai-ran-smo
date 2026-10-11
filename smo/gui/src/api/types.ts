@@ -8,7 +8,9 @@
 
 // local / totpEnrolled / mfaEnrolmentRequired: PR-SEC-7 (a user of the identity provider is not local and has no one-time code here;
 // mfaEnrolmentRequired is true for a local admin who must enrol one before anything else, GUI_ADMIN_MFA_REQUIRED)
-export interface Me { username: string; role: "viewer" | "operator" | "admin"; csrfToken?: string; local?: boolean; totpEnrolled?: boolean; mfaEnrolmentRequired?: boolean }
+/** GUI-5: a console user's region/tenant scope as the BFF shows it: the claim, null when unscoped, "INVALID" for a stored claim that no longer reads (it permits nothing). */
+export type UserScope = AuthzScope | "INVALID" | null;
+export interface Me { username: string; role: "viewer" | "operator" | "admin"; csrfToken?: string; local?: boolean; totpEnrolled?: boolean; mfaEnrolmentRequired?: boolean; scope?: UserScope }
 /** `GET /api/me/totp`: whether one-time codes are available and set up for the signed-in user, and the state of the recovery codes. */
 export interface TotpStatus {
   available: boolean; enrolled: boolean; pending: boolean; recoveryCodesLeft: number; reason?: string;
@@ -174,7 +176,11 @@ export interface O1Endpoint {
   // PR-SEC-10.2: where the element is and whom it belongs to; null or absent: not set (such an element is for unscoped callers only).
   region?: string | null; tenant?: string | null;
 }
-export interface ConfigJobSummary { jobId: string; requestedBy: string; scope: string; status: string; msacRole: string | null }
+/** MGT-4: the change window a job was asked for and the approval it waited for (all null for a job that never waited). */
+export interface ChangeWindowFields {
+  scheduledAt?: string | null; windowEnd?: string | null; decidedBy?: string | null; decidedAt?: string | null; decisionReason?: string | null;
+}
+export interface ConfigJobSummary extends ChangeWindowFields { jobId: string; requestedBy: string; scope: string; status: string; msacRole: string | null; createdAt?: string | null }
 /**
  * The KPI guard of a config job: the KPI to watch, the baseline and observation windows in minutes, the regression threshold and its direction, the minimum sample count and whether a regression rolls the job back.
  */
@@ -199,7 +205,7 @@ export interface ConfigSubChange {
 /**
  * A CM write job in full: status, the wave plan and progress, why it is halted, its KPI guard and result, and its sub-changes. Most fields are optional because the list rows and older builds send fewer.
  */
-export interface ConfigJob {
+export interface ConfigJob extends ChangeWindowFields {
   jobId: string; status: string; requestedBy?: string; rollbackOf?: string | null; rollbackForced?: boolean;
   waveSize?: number | null; waveCount?: number; currentWave?: number; wavePauseSeconds?: number; onGateFailure?: string; gateMaxNewAlarms?: number;
   haltedReason?: string | null; haltedDetail?: string | null; nextWaveAt?: string | null;
@@ -278,6 +284,8 @@ export interface GuiUser {
   username: string; role: "viewer" | "operator" | "admin"; active: boolean; createdAt: string; breakGlass?: boolean; totpEnrolled?: boolean;
   // GUI-9.8: the user's newest audit row and newest successful sign-in (null: none; absent on an older BFF)
   lastActiveAt?: string | null; lastSignInAt?: string | null;
+  // GUI-5: the user's region/tenant scope (absent on an older BFF)
+  scope?: UserScope;
 }
 export interface AuditEntry { id: number; at: string; username: string | null; role: string | null; action: string; method: string | null; path: string | null; statusCode: number | null; detail: string | null }
 

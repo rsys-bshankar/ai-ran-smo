@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** Tests of the Admin page (pages/admin): the Users tab (sign-in method, last active and last sign-in, Add user dialog), the Audit log (keyset
  * paging with "Older", time range and filters as query params, the export job, HTTP outcome badge) and the RAN access control (MSAC) tab
- * listing RAN NF OAM's roles, identities and access rules with the admin's create forms and deletes. Uses the fake BFF of
+ * listing RAN NF OAM's roles, identities and access rules with the admin's create forms and deletes; and (GUI-5) each user's region/tenant scope and its dialog. Uses the fake BFF of
  * `src/testing/bff.tsx` and the permission fixture. Run: `npx vitest run src/pages/admin` from smo/gui. */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -26,8 +26,9 @@ function bff() {
     "GET /permissions": { role: "admin", rules },
     "GET /admin/users": [
       { username: "root", role: "admin", active: true, createdAt: "2026-10-01T00:00:00Z", totpEnrolled: true, lastActiveAt: "2026-10-09T10:00:00Z", lastSignInAt: "2026-10-09T09:00:00Z" },
-      { username: "oidc:jane.doe", role: "operator", active: true, createdAt: "2026-10-02T00:00:00Z" },
+      { username: "oidc:jane.doe", role: "operator", active: true, createdAt: "2026-10-02T00:00:00Z", scope: { regions: ["eu-west"], tenants: ["acme"] } },
     ],
+    "PATCH /admin/users/oidc:jane.doe": (c: Call) => ({ username: "oidc:jane.doe", role: "operator", active: true, createdAt: "2026-10-02T00:00:00Z", ...(c.body as object) }),
     "GET /admin/audit": (c: Call) => (c.query.get("after_id") === "1"
       ? { ...page([{ id: 0, at: "2026-10-08T09:00:00Z", username: "old", role: "admin", action: "LOGOUT", method: null, path: null, statusCode: null, detail: null }], 1), nextAfterId: null }
       : { ...page([
@@ -151,5 +152,25 @@ describe("drawn from the BFF (GUI-10.4)", () => {
     await settle();
     const options = Array.from(container.querySelectorAll<HTMLOptionElement>("select[aria-label='Filter by action'] option")).map((o) => o.textContent);
     expect(options).toEqual(["All actions", "LOGIN", "OIDC_LOGIN", "RAPP_ACTION"]);
+  });
+
+  // GUI-5: each user's scope shows in words (unscoped: the whole network), and the dialog sends the regions and tenants typed, or null to remove the limit
+  it("shows and edits a user's scope", async () => {
+    const calls = bff();
+    const { container } = await mountWith(<AuthProvider><Admin /></AuthProvider>);
+    await settle();
+    const rows = Array.from(container.querySelectorAll("[data-section='admin.users'] tbody tr"));
+    expect(rows[0].textContent).toContain("Whole network");
+    expect(rows[1].textContent).toContain("regions eu-west · tenants acme");
+    await click(container.querySelector<HTMLElement>("button[aria-label$=': scope of oidc:jane.doe']")!);
+    const dialog = document.querySelector("[role=dialog]") as HTMLElement;
+    const [regions, tenants] = Array.from(dialog.querySelectorAll("input"));
+    expect(regions.value).toBe("eu-west");
+    await type(regions, "eu-west, eu-north");
+    await type(tenants, "");
+    await click(byText(dialog, "button", "Save")!);
+    await settle();
+    const patch = calls.find((c) => c.method === "PATCH" && c.path === "/admin/users/oidc:jane.doe")!;
+    expect(patch.body).toEqual({ scope: { regions: ["eu-west", "eu-north"] } });
   });
 });

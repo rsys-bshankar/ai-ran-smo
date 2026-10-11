@@ -30,6 +30,7 @@ import datetime
 import io
 import logging
 import uuid
+from contextvars import ContextVar
 from typing import Any, AsyncIterator, Callable, Iterator, Literal
 
 import httpx
@@ -39,7 +40,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, func, select, update
 from starlette.concurrency import run_in_threadpool
 
-from .db import AuditEntry, ExportChunk, ExportJob
+from . import scoping
+from .db import AuditEntry, ExportChunk, ExportJob, GuiUser
 from .rbac import RANK, Role
 from .smo_client import SmoAuthError
 from .summary import SCOPE_RE
@@ -77,6 +79,10 @@ KIND_FILTERS = {
 }
 ALL_FILTERS = tuple(dict.fromkeys(f for fs in KIND_FILTERS.values() for f in fs))
 
+
+# GUI-5: the identity headers of the export the running task writes (the person who asked and their scope claim), set by `run` for its own task: a context variable,
+# because one runner writes several jobs at once
+_job_headers: ContextVar[dict[str, str] | None] = ContextVar("_job_headers", default=None)
 
 class ExportError(RuntimeError):
     """A job cannot go on: the source refused or did not answer. The message is stored in the job's `error`."""
@@ -251,6 +257,10 @@ class ExportRunner:
         with self.db.session() as s:
             job = s.get(ExportJob, job_id)
             kind, params = (job.kind, dict(job.params)) if job is not None else (None, {})
+            # GUI-5: the rows are read as the person who asked, with their scope claim as it is now (a narrower one since they asked applies; an account deleted
+            # since gets a claim that permits nothing, so its export writes no row of anyone's)
+            asker = s.get(GuiUser, job.username) if job is not None else None
+            _job_headers.set(scoping.headers(job.username, asker.scope if asker is not None else '{"regions":[]}') if job is not None else {})
         if kind is None or not await run_in_threadpool(self._update, job_id, state="RUNNING", heartbeat_at=_now(), runner_id=self.runner_id):
             return
         out = _ChunkWriter(self.db, job_id)
@@ -296,7 +306,7 @@ class ExportRunner:
             if attempt:
                 await asyncio.sleep(attempt)       # 1 s, then 2 s: a module restarting under a rolling upgrade is back by then
             try:
-                resp = await self.app.state.gateway.request("GET", path, params=params, timeout=FETCH_TIMEOUT_SECONDS)
+                resp = await self.app.state.gateway.request("GET", path, params=params, timeout=FETCH_TIMEOUT_SECONDS, headers=_job_headers.get() or {})
             except (SmoAuthError, httpx.HTTPError) as exc:
                 last = exc.__class__.__name__
                 log.warning("export: a %s page failed: %r", what, exc)

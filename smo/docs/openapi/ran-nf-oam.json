@@ -480,6 +480,37 @@
         "title": "CellGuardBody",
         "type": "object"
       },
+      "ChangeWindow": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          }
+        },
+        "title": "ChangeWindow",
+        "type": "object"
+      },
       "DecisionContext": {
         "description": "AI-13.1: why the rApp is asking, kept with the job it makes (`GET /decision-records`): a reference to the inputs it decided on (a data job, a dataset,\na feature snapshot: a reference, never the data), the version of the model that decided, its stated rationale, and the id of its own action. All optional.",
         "properties": {
@@ -2146,6 +2177,16 @@
             ],
             "title": "Accessscope"
           },
+          "changeWindow": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChangeWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "changes": {
             "items": {
               "additionalProperties": true,
@@ -2208,6 +2249,11 @@
           "requestedBy": {
             "title": "Requestedby",
             "type": "string"
+          },
+          "requireApproval": {
+            "default": false,
+            "title": "Requireapproval",
+            "type": "boolean"
           },
           "scope": {
             "anyOf": [
@@ -6384,9 +6430,148 @@
         "summary": "Abort Configuration Job"
       }
     },
+    "/config-jobs/{job_id}/approve": {
+      "post": {
+        "description": "MGT-4.3: approve a job waiting for approval (PENDING_APPROVAL). Its requester cannot (403 `APPROVAL_SELF_DECISION`), nor can an rApp (403). Approved inside\nits window (or without one) it runs now; before the window opens it becomes SCHEDULED and is started in the window (`POST /config-jobs/{id}/continue`);\nafter the window has closed it is 409 `CHANGE_WINDOW_CLOSED`. 409 `APPROVAL_NOT_PENDING` for a job in any other state. Answers the job summary.",
+        "operationId": "approve_configuration_job_config_jobs__job_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Approve Configuration Job"
+      }
+    },
     "/config-jobs/{job_id}/continue": {
       "post": {
-        "description": "MGT-5.4: run the next wave of a halted job. A job held by its wave pause goes on only once the pause has elapsed, unless `force`; after a\nfailed gate or an operator's halt, calling this is the operator's decision to go on.",
+        "description": "MGT-5.4: run the next wave of a halted job. A job held by its wave pause goes on only once the pause has elapsed, unless `force`; after a\nfailed gate or an operator's halt, calling this is the operator's decision to go on. MGT-4.3: it also starts an approved (SCHEDULED) job once its change\nwindow is open (409 `CHANGE_WINDOW_NOT_OPEN` before it, unless `force`; 409 `CHANGE_WINDOW_CLOSED` after it).",
         "operationId": "continue_configuration_job_config_jobs__job_id__continue_post",
         "parameters": [
           {
@@ -6799,6 +6984,145 @@
           }
         },
         "summary": "Check Configuration Job Kpi"
+      }
+    },
+    "/config-jobs/{job_id}/reject": {
+      "post": {
+        "description": "MGT-4.3: refuse a job waiting for approval, or withdraw an approved one before it starts (PENDING_APPROVAL or SCHEDULED). Nothing was sent: the job ends\nREJECTED and each of its changes REJECTED `APPROVAL_REJECTED`. The requester may withdraw its own; an rApp may not decide (403). 409 in any other state.",
+        "operationId": "reject_configuration_job_config_jobs__job_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Reject Configuration Job"
       }
     },
     "/config-jobs/{job_id}/rollback": {

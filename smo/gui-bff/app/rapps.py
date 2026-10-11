@@ -24,10 +24,10 @@ import httpx
 from fastapi import Depends, FastAPI, Query, Request, Response
 from fastapi.responses import JSONResponse
 
-from . import operator_ui
+from . import operator_ui, scoping
 from .db import MAX_PINS
 from .rbac import RANK, Role
-from .smo_client import ACTING_USER_HEADER, SmoAuthError
+from .smo_client import SmoAuthError
 
 log = logging.getLogger("smo-gui-bff")
 
@@ -266,7 +266,7 @@ def install(app: FastAPI, *, current_session: Callable, audit: Callable, problem
         if change:
             audit("RAPP_ACTION", user, method=method, path=target, detail=f"{label} phase=requested")
         content = json.dumps(decision.body).encode() if decision.body is not None else None
-        headers = {"accept": "application/json", ACTING_USER_HEADER: f"smo-gui:{user.username}"}      # SEC-15.8: the person behind the BFF's token, as on the generic proxy
+        headers = {"accept": "application/json", **scoping.headers(user.username, user.scope)}   # SEC-15.8 / GUI-5: the person behind the BFF's token and their scope, as on the generic proxy
         if content is not None:
             headers["content-type"] = "application/json"
         try:

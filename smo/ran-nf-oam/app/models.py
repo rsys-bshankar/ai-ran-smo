@@ -455,13 +455,14 @@ class VendorCapability(Base):
 
 
 class WriteConfigJob(Versioned, Base):
-    """A CM write job (`POST /config-jobs`): who asked, its state (`JobState`), the staged-rollout settings and progress (waves, pause, gate), the rollback link, the KPI guard declared with it, and the rApp invoker id that rate limits and job ownership use. Its changes are the `write_config_sub_change` rows.
+    """A CM write job (`POST /config-jobs`): who asked, its state (`JobState`), the staged-rollout settings and progress (waves, pause, gate), the rollback link, the KPI guard declared with it, the change window and its approval (MGT-4), and the rApp invoker id that rate limits and job ownership use. Its changes are the `write_config_sub_change` rows.
     """
     __tablename__ = "write_config_job"
 
     job_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     requested_by: Mapped[str] = mapped_column(String, nullable=False)
     scope: Mapped[str] = mapped_column(String, nullable=False)
+    # when the checks passed and the job was let run; a job held for a change window (MGT-4) is stamped again when it starts, since its KPI guard measures from here
     schema_validated_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String, nullable=False, default="PENDING")
     conflict_resolution: Mapped[str | None] = mapped_column(String)
@@ -491,6 +492,13 @@ class WriteConfigJob(Versioned, Base):
     kpi_guard: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))
     kpi_guard_result: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))
     kpi_guard_checked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    # MGT-4.1/4.3: the change window the job was asked for (`scheduled_at` its opening, `window_end` its close, either NULL: open-ended), and who
+    # decided the approval it waited for (PENDING_APPROVAL), when, and why. NULL on a job that never waited.
+    scheduled_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    window_end: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    decided_by: Mapped[str | None] = mapped_column(String)
+    decided_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_reason: Mapped[str | None] = mapped_column(String)
 
 
 class WriteConfigSubChange(Base):

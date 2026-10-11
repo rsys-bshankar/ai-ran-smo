@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /** Tests of the Approvals page (pages/approvals): the waiting queue (cards with the lapse countdown), the detail panel (impact tiles, the config
  * diff, why the rApp asks, the decision box and its result), RBAC, the Decided tab with its drawer, and the opt-in two-person approval (the
- * progress on a queue card, the approvals so far, no second approval by the same person, both approvers in the decided list). Run: `npx vitest run src/pages/approvals`. */
+ * progress on a queue card, the approvals so far, no second approval by the same person, both approvers in the decided list), the model gates (GUI-7.3)
+ * and the CM jobs held for a change window (GUI-7.1). Run: `npx vitest run src/pages/approvals`. */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider } from "../../../auth/AuthContext";
@@ -61,7 +62,7 @@ describe("the approval inbox", () => {
     expect(asked.query.get("status")).toBe("PENDING");
     expect(asked.query.get("total")).toBe("false");                      // the inbox does not ask for a count it does not show
     expect(container.querySelector("[role=tab] .n")?.textContent?.trim()).toBe("1");          // the pending count comes from the summary
-    expect(container.textContent).toContain("Not in this inbox yet");     // change-window and model gate approvals are said not to be here
+    expect(container.textContent).toContain("A CM job appears under Change windows");     // the note names the three kinds of request now in the inbox
   });
 
   // An empty queue says nothing is waiting.
@@ -296,5 +297,54 @@ describe("two-person approval (opt-in; a request that needs one approval looks a
     const adminRows = admin.container.querySelectorAll("[data-section='approvals.models'] tbody tr");
     expect(byText(adminRows[1] as HTMLElement, "button", "Approve")).toBeTruthy();
     expect(byText(adminRows[1] as HTMLElement, "button", "Reject")).toBeTruthy();
+  });
+});
+
+describe("change windows (GUI-7.1)", () => {
+  const job = (id: string, status: string, extra: Record<string, unknown> = {}) => ({
+    jobId: id, requestedBy: "smo-gui:alice", scope: "cell", accessScope: "cell", status, msacRole: null, createdAt: "2026-10-11T08:00:00Z",
+    scheduledAt: "2026-10-11T22:00:00Z", windowEnd: "2026-10-12T02:00:00Z", decidedBy: null, decidedAt: null, decisionReason: null, ...extra });
+  const windows = {
+    "GET /summary/approvals": { page: "approvals", computedAt: "", counts: { "approvals.PENDING": 0, "configJobs.PENDING_APPROVAL": 1 }, partial: [] },
+    "GET /smo/ran-nf-oam/config-jobs": (c: Call) => ({ items: c.query.get("status") === "PENDING_APPROVAL" ? [job("job-wait", "PENDING_APPROVAL")]
+      : [job("job-sched", "SCHEDULED", { decidedBy: "smo-gui:bob", decidedAt: "2026-10-11T09:00:00Z" })], total: 1, limit: 25, offset: 0 }),
+    "POST /smo/ran-nf-oam/config-jobs/job-wait/approve": { status: 200, body: { jobId: "job-wait", status: "SCHEDULED" } },
+    "POST /smo/ran-nf-oam/config-jobs/job-sched/continue": { status: 202, body: { jobId: "job-sched", status: "COMPLETED" } },
+  };
+
+  // The tab counts the held jobs from the summary, lists them with their window, and an operator approves one (the BFF names the decider).
+  it("lists the jobs waiting with their window and approves one", async () => {
+    const calls = bff("operator", windows);
+    window.location.hash = "#windows";
+    const { container } = await open();
+    await settle();
+    expect(byText(container, "button", /Change windows/)!.textContent).toContain("1");
+    const waiting = container.querySelector("[data-section='approvals.windows']") as HTMLElement;
+    expect(waiting.textContent).toContain("smo-gui:alice");
+    expect(calls.some((c) => c.path === "/smo/ran-nf-oam/config-jobs" && c.query.get("status") === "PENDING_APPROVAL")).toBe(true);
+    await click(byText(waiting, "button", "Approve")!);
+    await settle();
+    expect(calls.some((c) => c.method === "POST" && c.path === "/smo/ran-nf-oam/config-jobs/job-wait/approve")).toBe(true);
+  });
+
+  // An approved job waiting for its window shows who approved it and can be started; a viewer sees both lists and no button.
+  it("starts a scheduled job, and shows a viewer no decision", async () => {
+    const calls = bff("operator", windows);
+    window.location.hash = "#windows";
+    const { container } = await open();
+    await settle();
+    const scheduled = container.querySelector("[data-section='approvals.scheduled']") as HTMLElement;
+    expect(scheduled.textContent).toContain("smo-gui:bob");
+    await click(byText(scheduled, "button", "Start")!);
+    await settle();
+    expect(calls.some((c) => c.method === "POST" && c.path === "/smo/ran-nf-oam/config-jobs/job-sched/continue")).toBe(true);
+    cleanup();
+    bff("viewer", windows);
+    window.location.hash = "#windows";
+    const viewer = await open();
+    await settle();
+    expect(viewer.container.querySelector("[data-section='approvals.windows']")!.textContent).toContain("smo-gui:alice");
+    expect(byText(viewer.container, "button", "Approve")).toBeFalsy();
+    expect(byText(viewer.container, "button", "Start")).toBeFalsy();
   });
 });

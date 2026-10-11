@@ -50,11 +50,12 @@ GUI_RMIO_ID = "smo-gui"
 
 @dataclass(frozen=True)
 class User:
-    """The signed-in identity as the rules need it: the user name and the role read from the user table on this request. The `smo-gui:<username>` string the rules
+    """The signed-in identity as the rules need it: the user name, the role and the scope claim read from the user table on this request. The `smo-gui:<username>` string the rules
     write into forwarded requests is built from `username`.
     """
     username: str
     role: Role
+    scope: str | None = None          # GUI-5: the user's region/tenant claim as stored (app/scoping.py, compact JSON); None: unscoped
 
 
 Overrides = Callable[[User], dict]
@@ -191,6 +192,10 @@ RULES: list[Rule] = [
           json_overrides=lambda u: {"requestedBy": f"smo-gui:{u.username}", "msacRole": "admin" if u.role == Role.ADMIN else None}),
     _rule("POST", "/ran-nf-oam/config-jobs/{id}/(continue|halt|abort)", O,
           json_overrides=lambda u: {"requestedBy": f"smo-gui:{u.username}"}),
+    # MGT-4.3: approving or rejecting a job held for its change window is an operator's decision, like an rApp's action (AI-11); who decided is the signed-in
+    # user (RAN NF OAM also reads it from X-R1-Acting-User and refuses the requester)
+    _rule("POST", "/ran-nf-oam/config-jobs/{id}/(approve|reject)", O,
+          json_overrides=lambda u: {"decidedBy": f"smo-gui:{u.username}"}),
     # GUI-9.7: re-running a job's KPI check only reads PM and records the verdict on the job: operator, like driving the job
     _rule("POST", "/ran-nf-oam/config-jobs/{id}/kpi-check", O),
     # KPI definitions and their schedules are platform configuration (internal-only at R1): admin

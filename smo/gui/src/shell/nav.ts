@@ -21,7 +21,7 @@ export const NAV_GROUPS: NavGroup[] = [
   ] },
   { title: "Automation", items: [
     { to: "/rapps", label: "rApps", icon: "rapps" },
-    { to: "/approvals", label: "Approvals", icon: "approvals", badge: { keys: ["approvals.PENDING"], extra: ["modelGates.waiting"], tone: "warn", title: "approval requests and model gates waiting" } },
+    { to: "/approvals", label: "Approvals", icon: "approvals", badge: { keys: ["approvals.PENDING"], extra: ["modelGates.waiting", "configJobs.PENDING_APPROVAL"], tone: "warn", title: "approval requests, model gates and change windows waiting" } },
     { to: "/decisions", label: "Decisions", icon: "decisions" },
     { to: "/safeguards", label: "Safeguards", icon: "safeguards" },
     { to: "/aiml", label: "AI/ML", icon: "aiml" },

@@ -128,6 +128,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
+/** The auth state when there is a provider, else null: for a shell part that also renders without one (the scope picker in a test). */
+export function useOptionalAuth(): AuthState | null {
+  return useContext(AuthContext);
+}
+
 /** Returns the session state; throws when used outside `AuthProvider`. */
 export function useAuth(): AuthState {
   const ctx = useContext(AuthContext);

@@ -177,7 +177,7 @@ and HA much later).
 | Northbound | `PR-NB` | NB-1 alarm forwarding · NB-2 inventory export · NB-3 TS 28.532 facade · NB-4 slicing · NB-5 TM Forum · NB-6 ONAP · NB-7 federation |
 | AI/ML | `PR-AI` | AI-1 executor protocol · AI-2 K8s training executor · AI-3 MLflow bridge · AI-4 serving adaptor · AI-5 feature store · AI-6 data sink · AI-7 drift · AI-8 weighted triggers · AI-9 runtime gate · AI-10 action safeguards · AI-11 approvals · AI-12 shadow mode · AI-13 decision audit |
 | rApp ecosystem | `PR-RAPP` | RAPP-1 signing (done) · RAPP-2 sandbox (RAPP-2.2 open) · RAPP-3 conformance pack (done) · RAPP-4 Java and Go SDK · RAPP-5 portal · RAPP-6 metering · RAPP-7 new-rApp recipe |
-| GUI | `PR-GUI` | GUI-1 live updates (1.5 left) · GUI-2 alarm console (done) · GUI-3 topology (done) · GUI-4 KPI dashboards (done) · GUI-5 scoped views · GUI-6 a11y/i18n (6.3-6.4 left) · GUI-7 approval inbox · GUI-9/10 console redesign (done) |
+| GUI | `PR-GUI` | GUI-1 live updates (1.5 left) · GUI-2 alarm console (done) · GUI-3 topology (done) · GUI-4 KPI dashboards (done) · GUI-5 scoped views (done) · GUI-6 a11y/i18n (6.3-6.4 left) · GUI-7 approval inbox (done) · GUI-9/10 console redesign (done) |
 | Standards / compliance | `PR-STD` | STD-1 close §3 items · STD-2 spec currency · STD-3 O-RAN test plan · STD-4 privacy · STD-5 assurance mapping · STD-6 residency |
 | Quality | `PR-QA` | QA-1 load · QA-2 contract tests · QA-3 failure injection · QA-4 upgrade test · QA-5 soak · QA-6 authz matrix · QA-7 coverage · QA-8 simulator lane |
 
@@ -818,11 +818,10 @@ No steps open.
 
 #### PR-MGT-4 — Change windows and approvals
 
+MGT-4.1 to 4.3 are built (`HISTORY.md` "MGT-4.1, 4.2, 4.3 / GUI-7.1"): the window, the hold, approve and reject, and starting an approved job in its window by hand. What remains starts and ends it by itself:
+
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| MGT-4.1 | `scheduled_at` and `window_end` on the job | Migration | – |
-| MGT-4.2 | `PENDING_APPROVAL` state in the FSM | Transition tests | – |
-| MGT-4.3 | Approve and reject routes; approver must differ from requester | Same-user approval refused | MGT-4.2 |
 | MGT-4.4 | Start at the window | Job starts once across replicas | MGT-4.1, MSG-4.2 |
 | MGT-4.5 | Expire after `window_end` | Job moves to `EXPIRED` | MGT-4.4 |
 
@@ -1209,10 +1208,8 @@ Nothing open: the chart over time, the region filter and the saved layouts are b
 
 #### PR-GUI-5 — Scoped views
 
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| GUI-5.1 | Scope claim in the session | Claim present | SEC-10.3 |
-| GUI-5.2 | BFF adds the scope filter to proxied reads | Out-of-scope data absent | GUI-5.1 |
+Nothing open: a console user carries a region/tenant claim (set by an admin, or by the identity provider's token) and every call the console makes for them is
+narrowed by it at the module (`HISTORY.md` GUI-5.1, 5.2; `docs/adr/0005-tenant-region-authorization.md` section 11).
 
 #### PR-GUI-6 — Accessibility and localization
 
@@ -1225,11 +1222,8 @@ GUI-6.1 and 6.2 are done by the console redesign (same `HISTORY.md` entry). What
 
 #### PR-GUI-7 — Approval inbox
 
-Steps 7.2 and 7.3 are built (the Approvals page lists pending rApp actions and decides them: `HISTORY.md` PR-AI-11, PR-AI-13; its Model gates tab: `HISTORY.md` GUI-7.3); 7.1 is not, and the page says so.
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| GUI-7.1 | Inbox page listing pending change-window approvals | Component test | MGT-4.3 |
+Nothing open: the rApp actions (7.2, `HISTORY.md` PR-AI-11, PR-AI-13), the model gates (7.3, `HISTORY.md` GUI-7.3) and the change windows of CM jobs
+(7.1, `HISTORY.md` "MGT-4.1, 4.2, 4.3 / GUI-7.1") are all in the inbox.
 
 #### PR-GUI-8 — rApp directory and declared pages (done: `HISTORY.md` PR-GUI-8a, PR-GUI-8b and PR-GUI-8c)
 

@@ -168,6 +168,19 @@ describe("scoped reads", () => {
     expect(container.querySelector("#url")!.textContent).toBe("/alarms");
   });
 
+  // GUI-5: a user whose account is limited sees the limit beside the chip; an unscoped user sees nothing extra
+  it("shows the account's own scope beside the picker", async () => {
+    fakeBff({ "GET /me": { username: "ana", role: "viewer", csrfToken: "c", local: true, scope: { regions: ["north"] } }, "GET /permissions": { role: "viewer", rules } });
+    const { container } = await mountWith(<AuthProvider><ScopeProvider><ScopePicker /></ScopeProvider></AuthProvider>, { at: "/alarms" });
+    await settle();
+    expect(container.querySelector("[data-testid='account-scope']")!.textContent).toBe("Your access: regions north");
+    cleanup();
+    fakeBff({ "GET /me": { username: "bo", role: "viewer", csrfToken: "c", local: true, scope: null }, "GET /permissions": { role: "viewer", rules } });
+    const plain = await mountWith(<AuthProvider><ScopeProvider><ScopePicker /></ScopeProvider></AuthProvider>, { at: "/alarms" });
+    await settle();
+    expect(plain.container.querySelector("[data-testid='account-scope']")).toBeNull();
+  });
+
   // under a scope the Dashboard's summary, attention and fleet reads carry it, and the boxes the scope does not narrow say "network-wide"
   it("scopes the Dashboard and marks what stays network-wide", async () => {
     const calls = fakeBff({

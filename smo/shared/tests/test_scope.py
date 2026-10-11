@@ -1,5 +1,5 @@
-"""Tenant and region authorization (smo_shared/scope.py, docs/adr/0005-tenant-region-authorization.md): the claim, the semantic table, the header, and what an SMO
-module passes on when it acts for an rApp.
+"""Tenant and region authorization (smo_shared/scope.py, docs/adr/0005-tenant-region-authorization.md): the claim, the semantic table, the header, what an SMO
+module passes on when it acts for an rApp, and the claim of the person the operator's console acts for (GUI-5).
 
 Run with: cd smo/shared && PYTHONPATH=. python -m pytest tests/test_scope.py -q
 """
@@ -14,9 +14,9 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from smo_shared import r1_client, scope
 from smo_shared.correlation import apply_correlation_id
-from smo_shared.invoker import INVOKER_ID_HEADER, ON_BEHALF_OF_HEADER
+from smo_shared.invoker import ACTING_USER_HEADER, INVOKER_ID_HEADER, ON_BEHALF_OF_HEADER
 from smo_shared.roles import ROLE_HEADER
-from smo_shared.scope import DENY_ALL, ON_BEHALF_SCOPE_HEADER, SCOPE_HEADER, Scope
+from smo_shared.scope import ACTING_USER_SCOPE_HEADER, DENY_ALL, ON_BEHALF_SCOPE_HEADER, SCOPE_HEADER, Scope
 
 
 def S(regions=None, tenants=None):
@@ -178,6 +178,34 @@ def test_the_claim_that_applies_is_the_callers_own_or_the_one_a_module_passed_on
     assert scope.scope_of({**MODULE_FOR_RAPP, SCOPE_HEADER: '{"regions":["us"]}'}) == S(tenants=["acme"])  # the module's own claim is not the rApp's
     assert scope.scope_of({**MODULE_FOR_RAPP, ON_BEHALF_SCOPE_HEADER: "garbage"}) == DENY_ALL
     assert scope.scope_of({ON_BEHALF_OF_HEADER: "x", ON_BEHALF_SCOPE_HEADER: '{"regions":["eu"]}'}) is None   # no role stamp: not through R1, not believed
+
+
+CONSOLE = {ROLE_HEADER: "internal", INVOKER_ID_HEADER: "gui-client", ACTING_USER_HEADER: "smo-gui:ana"}
+
+
+def test_the_console_passes_the_persons_claim_and_it_only_narrows():
+    """GUI-5: the console's call for a person is limited by that person's claim; a person without one is unscoped; the console's own claim still bounds it; a damaged
+    claim permits nothing; the person's claim is believed only from an internal caller that names the person, and the rApp passed-on claim still comes first."""
+    assert scope.scope_of({**CONSOLE, ACTING_USER_SCOPE_HEADER: '{"regions":["eu"]}'}) == S(["eu"])
+    assert scope.scope_of(CONSOLE) is None                                                         # a person with no claim: unscoped, as before
+    bounded = {**CONSOLE, SCOPE_HEADER: '{"regions":["eu","us"],"tenants":["acme"]}', ACTING_USER_SCOPE_HEADER: '{"regions":["us","ap"]}'}
+    assert scope.scope_of(bounded) == S(["us"], ["acme"])                                          # both: the person can never widen the console's claim
+    assert scope.scope_of({**CONSOLE, SCOPE_HEADER: '{"tenants":["acme"]}'}) == S(tenants=["acme"])  # the console's own claim holds for an unscoped person
+    assert scope.scope_of({**CONSOLE, ACTING_USER_SCOPE_HEADER: "garbage"}) == DENY_ALL
+    assert scope.scope_of({**CONSOLE, ACTING_USER_HEADER: "", ACTING_USER_SCOPE_HEADER: '{"regions":["eu"]}'}) is None   # no person named: not believed
+    assert scope.scope_of({**RAPP, ACTING_USER_HEADER: "x", ACTING_USER_SCOPE_HEADER: '{"regions":["us"]}'}) == S(["eu"])  # an rApp's is not believed
+    assert scope.scope_of({ACTING_USER_HEADER: "x", ACTING_USER_SCOPE_HEADER: '{"regions":["eu"]}'}) is None             # no role stamp: not through R1
+    assert scope.scope_of({**MODULE_FOR_RAPP, ACTING_USER_HEADER: "x", ACTING_USER_SCOPE_HEADER: '{"regions":["eu"]}'}) == S(tenants=["acme"])
+
+
+def test_two_claims_narrow_axis_by_axis():
+    """`narrowed` keeps, per axis, the values both list, the one axis that restricts, or nothing; no shared value permits nothing on that axis."""
+    assert scope.narrowed(None, None) is None
+    assert scope.narrowed(S(["eu"]), None) == S(["eu"]) == scope.narrowed(None, S(["eu"]))
+    assert scope.narrowed(S(["eu", "us"]), S(["us"], ["acme"])) == S(["us"], ["acme"])
+    assert scope.narrowed(S(tenants=["a", "b"]), S(["eu"], ["b", "c"])) == S(["eu"], ["b"])
+    nothing = scope.narrowed(S(["eu"]), S(["us"]))
+    assert nothing == S([]) and not scope.permits(nothing, "eu", None) and not scope.permits(nothing, "us", None)
 
 
 def test_the_claim_of_a_request_is_read_from_its_headers():

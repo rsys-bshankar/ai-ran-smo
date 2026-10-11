@@ -6,11 +6,14 @@ A caller may carry a **scope claim**, set when its invoker is registered at SME 
   - SME returns the claim in the token introspection (`authz_scope`); R1 Termination forwards it as `X-R1-Scope` (JSON), dropping any value a caller sent;
   - an SMO module acting for an rApp passes the rApp's claim on in `X-R1-On-Behalf-Scope` (`R1Client` adds it by itself, like `X-R1-On-Behalf-Of`); R1 Termination
     forwards that header only from an `internal` caller;
+  - the operator's console (the GUI backend, an `internal` caller) passes the signed-in person's claim in `X-R1-Acting-User-Scope` beside `X-R1-Acting-User` (GUI-5); R1
+    Termination forwards it only from an `internal` caller and only with the acting user, and it can only narrow what the console's own claim allows;
   - the module that owns the data calls `scope_of(request.headers)` and then `permits(...)` / `filter_statement(...)`, so every module decides the same way.
 
 The semantics (one rule, no exceptions):
 
-  - **no claim** (`None`): unscoped. Everything is permitted, exactly as before this existed. An SMO module on its own account and the operator's GUI are unscoped.
+  - **no claim** (`None`): unscoped. Everything is permitted, exactly as before this existed. An SMO module on its own account is unscoped, and so is a person of the
+    operator's GUI whose account carries no claim.
   - **a claim**: every axis it names must match. `regions` names the regions the caller may touch, `tenants` the tenants; an axis the claim leaves out is not restricted.
     A target is permitted when, for each restricted axis, its value is set and is one of the listed. Matching is exact and case-sensitive (no wildcards, no hierarchy).
   - **a target with no region (or tenant)** is therefore not permitted to a caller that restricts that axis; only an unscoped caller sees it.
@@ -31,11 +34,12 @@ from sqlalchemy import false, or_, true
 from sqlalchemy.sql import Select
 from sqlalchemy.sql.elements import ColumnElement
 
-from .invoker import ON_BEHALF_OF_HEADER, originator_of
+from .invoker import ACTING_USER_HEADER, ON_BEHALF_OF_HEADER, originator_of
 from .roles import ROLE_HEADER, ROLE_INTERNAL
 
 SCOPE_HEADER = "X-R1-Scope"
 ON_BEHALF_SCOPE_HEADER = "X-R1-On-Behalf-Scope"
+ACTING_USER_SCOPE_HEADER = "X-R1-Acting-User-Scope"       # GUI-5: the claim of the person the console acts for (`X-R1-Acting-User`)
 
 AXES = ("regions", "tenants")
 MAX_VALUES = 100                       # per axis
@@ -115,12 +119,36 @@ def decode(value: str | None) -> Scope | None:
         return DENY_ALL
 
 
+def narrowed(first: Scope | None, second: Scope | None) -> Scope | None:
+    """What both claims permit: per axis, the values both list (an axis one of them leaves out is the other's). `None` only when neither restricts. Two claims that
+    share no value on an axis give an empty set there, which permits nothing."""
+    if first is None:
+        return second
+    if second is None:
+        return first
+    return Scope(regions=_both(first.regions, second.regions), tenants=_both(first.tenants, second.tenants))
+
+
+def _both(first: frozenset[str] | None, second: frozenset[str] | None) -> frozenset[str] | None:
+    """One axis of `narrowed`: the values of both, or the one that restricts, or `None` when neither does."""
+    if first is None:
+        return second
+    if second is None:
+        return first
+    return first & second
+
+
 def scope_of(headers: Mapping[str, str]) -> Scope | None:
     """The scope that applies to the request being handled, by the same rule as `invoker_id`: the rApp an SMO module acts for (the claim it passed on), else the
-    caller's own claim. `None`: unscoped."""
-    if headers.get(ROLE_HEADER) == ROLE_INTERNAL and headers.get(ON_BEHALF_OF_HEADER):
+    caller's own claim. GUI-5: for an `internal` caller acting for a person (`X-R1-Acting-User`), the caller's own claim narrowed by that person's
+    (`X-R1-Acting-User-Scope`; absent: the person is unscoped). `None`: unscoped."""
+    internal = headers.get(ROLE_HEADER) == ROLE_INTERNAL
+    if internal and headers.get(ON_BEHALF_OF_HEADER):
         return decode(headers.get(ON_BEHALF_SCOPE_HEADER))
-    return decode(headers.get(SCOPE_HEADER))
+    own = decode(headers.get(SCOPE_HEADER))
+    if internal and headers.get(ACTING_USER_HEADER):
+        return narrowed(own, decode(headers.get(ACTING_USER_SCOPE_HEADER)))
+    return own
 
 
 def request_scope(request: Request) -> Scope | None:

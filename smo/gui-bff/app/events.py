@@ -15,6 +15,9 @@ Installed by app/main.py. Reads only. What a maintainer must know:
   (alarms, approvals and decisions as raw events would need the modules to publish them; the counts are what the console patches today).
   Within the hub a topic is keyed by what follows `summary:` (`nav`, `nav@north/c1`, `attention`). At most `MAX_TOPICS` per stream, at most
   `MAX_STREAMS_PER_USER` open streams per user in this process (several BFF instances each count their own).
+- GUI-5: a topic is computed for the subscriber's scope claim (app/scoping.py) and keyed in the hub by it too (`nav|{"regions":["eu"]}`), so streams of users
+  with different claims never share counts; the claim never reaches the browser (its events name the topic it asked for). A stream whose user's claim changed
+  ends at the next ping, and the browser reconnects with the new one.
 - A stream ends by itself after `STREAM_MAX_SECONDS`; the browser's EventSource reconnects after `RETRY_MS`, which also re-reads the session.
   The tests shorten the three timings to read a whole stream with the buffering TestClient.
 - What each stream has been sent is kept per stream (`_Subscriber.seen`), so "changed" is relative to what that browser holds, and a stream that
@@ -27,7 +30,7 @@ import asyncio
 import json
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Awaitable, Callable
 
 from fastapi import Depends, FastAPI, Query, Request
@@ -46,16 +49,24 @@ RETRY_MS = 3000
 MAX_TOPICS = 4
 MAX_STREAMS_PER_USER = 5
 TOPIC_PREFIX = "summary:"
+CLAIM_SEP = "|"                 # GUI-5: separates a topic's key from the subscriber's scope claim in the hub's key (no topic or claim value holds it)
 ATTENTION = "attention"
 
 
 @dataclass(frozen=True)
 class Topic:
-    """One parsed topic: its key (what follows `summary:`), the page (a key of `summary.PAGES`, or "attention") and the scope (None: none)."""
+    """One parsed topic: its key (what follows `summary:`), the page (a key of `summary.PAGES`, or "attention"), the place (None: none) and, GUI-5, the
+    subscriber's stored scope claim it is computed for (None: unscoped)."""
     key: str
     page: str
     region: str | None = None
     site_cluster: str | None = None
+    claim: str | None = None
+
+    @property
+    def hub_key(self) -> str:
+        """The key the hub computes and caches this topic under: the topic's key, and the claim when there is one."""
+        return self.key if self.claim is None else f"{self.key}{CLAIM_SEP}{self.claim}"
 
 
 def parse_topic(raw: str) -> Topic | None:
@@ -99,6 +110,7 @@ class _Subscriber:
         carries `topic` and `scope`."""
         page = body["page"]
         key = key or page
+        shown = key.split(CLAIM_SEP, 1)[0]                  # the topic as the browser asked for it: the claim is the hub's, not the browser's
         if page == ATTENTION:
             values = {g["type"]: {"total": g.get("total"), "items": g.get("items")} for g in body.get("groups") or []}
         else:
@@ -120,8 +132,8 @@ class _Subscriber:
             if "panels" in body:
                 event["panels"] = dict(body["panels"])
         event.update({"changed": changed, "computedAt": body.get("computedAt"), "partial": body.get("partial", [])})
-        if body.get("scope") is not None or key != page:
-            event.update({"topic": TOPIC_PREFIX + key, "scope": body.get("scope"), "unscoped": body.get("unscoped", [])})
+        if body.get("scope") is not None or shown != page:
+            event.update({"topic": TOPIC_PREFIX + shown, "scope": body.get("scope"), "unscoped": body.get("unscoped", [])})
         self.pending[key] = event
         self.wake.set()
 
@@ -164,9 +176,11 @@ class EventHub:
     async def _page(self, key: str) -> dict | None:
         """The summary body of the topic `key` (app/summary.py's cached computation), or None when the key does not parse or computing it raised.
         Never raises."""
-        topic = parse_topic(TOPIC_PREFIX + key)
+        base, _, claim = key.partition(CLAIM_SEP)
+        topic = parse_topic(TOPIC_PREFIX + base)
         if topic is None:
             return None
+        topic = replace(topic, claim=claim or None)
         try:
             return await self.page_counts(topic)
         except Exception:        # deliberate catch-all: one bad page must not stop the poller of every other stream
@@ -196,17 +210,17 @@ def install(app: FastAPI, *, current_session: Callable, problem: Callable[..., J
     async def fetch(topic: Topic) -> dict:
         # the attention groups or a page's counts, from app/summary.py's cached computations (shared with the HTTP routes)
         if topic.page == ATTENTION:
-            return await app.state.summary_attention(topic.region, topic.site_cluster)
-        return await app.state.summary_page(topic.page, topic.region, topic.site_cluster)
+            return await app.state.summary_attention(topic.region, topic.site_cluster, claim=topic.claim)
+        return await app.state.summary_page(topic.page, topic.region, topic.site_cluster, topic.claim)
 
     hub = EventHub(fetch)
     app.state.event_hub = hub
 
-    def session_still_valid(request: Request) -> bool:
-        """The same checks as when the stream opened (signature, user active, token version, logout): False once any fails."""
+    def session_still_valid(request: Request, claim: str | None) -> bool:
+        """The same checks as when the stream opened (signature, user active, token version, logout), and the user's scope claim still `claim` (GUI-5): False
+        once any fails."""
         try:
-            current_session(request)
-            return True
+            return current_session(request).user.scope == claim
         except Exception:        # deliberate: whatever the check raises (its HTTP 401 / 403), the stream must end, not fail
             return False
 
@@ -235,8 +249,8 @@ def install(app: FastAPI, *, current_session: Callable, problem: Callable[..., J
         if unknown:
             return problem(400, "UNKNOWN_TOPIC", f"unknown topic {unknown[0]!r}: topics are summary:<page>[@<region>[/<site_cluster>]] with a page of "
                                                  f"{', '.join(sorted([*summary.PAGES, ATTENTION]))}")
-        topics_ = [p for p in parsed if p is not None]
-        pages = tuple(p.key for p in topics_)
+        topics_ = [replace(p, claim=session.user.scope) for p in parsed if p is not None]
+        pages = tuple(p.hub_key for p in topics_)
         if not all(summary.page_allowed(p.page, session.user.role) for p in topics_):
             return problem(403, "FORBIDDEN", "a count on one of these pages needs a read your role does not have")
         if hub.open_streams(session.user.username) >= MAX_STREAMS_PER_USER:
@@ -265,7 +279,7 @@ def install(app: FastAPI, *, current_session: Callable, problem: Callable[..., J
                     if now >= deadline:
                         return
                     if now >= next_ping:
-                        if not await run_in_threadpool(session_still_valid, request):
+                        if not await run_in_threadpool(session_still_valid, request, session.user.scope):
                             return
                         yield sse("ping", {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
                         next_ping = now + PING_SECONDS

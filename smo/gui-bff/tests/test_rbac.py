@@ -110,6 +110,9 @@ def test_every_module_is_readable_by_a_viewer(module):
     # AI-11: a person decides an rApp's action (operator); who waits for a decision, and who is told, is administrative
     ("POST", "/ran-nf-oam/rapp-approvals/a/approve", "operator"),
     ("POST", "/ran-nf-oam/rapp-approvals/a/reject", "operator"),
+    # MGT-4.3: a CM job held for its change window is decided by an operator, like an rApp's action
+    ("POST", "/ran-nf-oam/config-jobs/j/approve", "operator"),
+    ("POST", "/ran-nf-oam/config-jobs/j/reject", "operator"),
     ("PUT", "/ran-nf-oam/rapp-approval-policy/i", "admin"),
     ("DELETE", "/ran-nf-oam/rapp-approval-policy/i", "admin"),
     ("POST", "/ran-nf-oam/approval-subscriptions", "admin"),
@@ -260,3 +263,10 @@ def test_a_host_key_pin_is_attributed_to_the_gui_user():
     """GUI-9.7 / STD-4.6: who re-pinned an SSH host key is the signed-in admin, never a `pinnedBy` the browser chose."""
     rule = decide("PUT", "/ran-nf-oam/o1-adaptor-endpoints/e/host-keys", {}, Role.ADMIN).rule
     assert rule.json_overrides(type("U", (), {"username": "root", "role": Role.ADMIN})()) == {"pinnedBy": "smo-gui:root"}
+
+
+# MGT-4.3: the decider of a change window is the signed-in user, whatever the browser sent (RAN NF OAM also takes it from X-R1-Acting-User).
+def test_a_change_window_decision_carries_the_signed_in_user():
+    """`POST /ran-nf-oam/config-jobs/{id}/approve` forces `decidedBy` to `smo-gui:<user>`."""
+    decision = decide("POST", "/ran-nf-oam/config-jobs/j/approve", {}, Role.OPERATOR)
+    assert decision.allowed and decision.rule.json_overrides(type("U", (), {"username": "alice", "role": Role.OPERATOR})()) == {"decidedBy": "smo-gui:alice"}

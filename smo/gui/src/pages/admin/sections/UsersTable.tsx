@@ -1,7 +1,7 @@
 /** The Users box of Admin (`admin.users`, handoff `Admin.dc.html`): every GUI user with avatar, role (editable), sign-in method (local or the
  * identity provider), status, one-time code state, break-glass flag and the user actions (reset password, revoke sessions, reset the one-time code,
  * (de)activate, delete), and when each was last active (the newest audit row of the user: sign-ins, changes, refusals; plain reads are not
- * audited) and last signed in (`lastActiveAt`, `lastSignInAt` of `GET /api/admin/users`, GUI-9.8). */
+ * audited) and last signed in (`lastActiveAt`, `lastSignInAt` of `GET /api/admin/users`, GUI-9.8), and the regions and tenants each is limited to (GUI-5). */
 import { useState } from "react";
 
 import type { GuiUser } from "../../../api/types";
@@ -10,10 +10,10 @@ import { ROLES } from "../../../auth/rbac";
 import { Card, DataTable, StateBadge } from "../../../components/ui";
 import { Badge } from "../../../kit/Badge";
 import { Icon } from "../../../kit/icons";
-import { formatTime } from "../../../lib/domain";
+import { describeUserScope, formatTime } from "../../../lib/domain";
 import { mfaLabel } from "../../../lib/mfa";
 import { useAdminUsers, useBffMutation } from "../data/queries";
-import { CreateUser, ResetPassword } from "./UserDialogs";
+import { CreateUser, EditScope, ResetPassword } from "./UserDialogs";
 
 /** True for a user the identity provider created (`oidc:<subject>`), who signs in by single sign-on. */
 export const isSsoUser = (u: Pick<GuiUser, "username">) => u.username.startsWith("oidc:");
@@ -32,6 +32,7 @@ export function UsersTable() {
   const m = useBffMutation();
   const [creating, setCreating] = useState(false);
   const [resetting, setResetting] = useState<string | null>(null);
+  const [scoping, setScoping] = useState<GuiUser | null>(null);
   const patch = (username: string, json: Record<string, unknown>, success: string) => m.mutate({ path: `/admin/users/${username}`, opts: { method: "PATCH", json }, success });
   const post = (path: string, ask: string, success: string) => { if (window.confirm(ask)) m.mutate({ path, opts: { method: "POST" }, success }); };
   return (
@@ -49,6 +50,11 @@ export function UsersTable() {
         ) },
         { header: "Sign-in", render: (u) => isSsoUser(u) ? <Badge tone="info">SSO</Badge> : <Badge tone="mute">Local</Badge> },
         { header: "Status", render: (u) => <StateBadge state={u.active ? "ACTIVE" : "DISABLED"} /> },
+        { header: "Scope", render: (u) => (
+          <button type="button" className="btn ghost small" aria-label={`${describeUserScope(u.scope)}: scope of ${u.username}`} title="The regions and tenants this user sees" onClick={() => setScoping(u)}>
+            {u.scope === "INVALID" ? <span className="t-bad">{describeUserScope(u.scope)}</span> : describeUserScope(u.scope)}
+          </button>
+        ) },
         { header: "One-time code", render: (u) => <Badge tone={isSsoUser(u) ? "mute" : u.totpEnrolled ? "ok" : "warn"}>{mfaLabel(u)}</Badge> },
         { header: "Break-glass", render: (u) => (
           <input type="checkbox" checked={Boolean(u.breakGlass)} disabled={isSsoUser(u)} aria-label={`Break-glass for ${u.username}`}
@@ -71,6 +77,7 @@ export function UsersTable() {
       <p className="muted small">Role changes apply on the user's next request; password resets, deactivation and &quot;Revoke sessions&quot; end their existing sessions. A break-glass account can sign in with its password and one-time code even when the console accepts only the identity provider; it needs a one-time code to sign in at all.</p>
       {creating && <CreateUser onClose={() => setCreating(false)} />}
       {resetting && <ResetPassword username={resetting} onClose={() => setResetting(null)} />}
+      {scoping && <EditScope username={scoping.username} scope={scoping.scope} onClose={() => setScoping(null)} />}
     </Card>
   );
 }

@@ -16,6 +16,9 @@ export const DECISION_RECORDS = "/ran-nf-oam/decision-records";
 export const MODEL_GATES = "/aimgf/model-lifecycles";
 /** The query of the model gates tab. */
 export const MODEL_GATES_QUERY = { awaiting_decision: true } as const;
+/** GUI-7.1 (MGT-4): RAN NF OAM's CM jobs; with `status=PENDING_APPROVAL`, the jobs held for a change-window approval, with `SCHEDULED` the approved ones
+ * waiting for their window. Decided with `POST …/{id}/approve|reject`, started in the window with `POST …/{id}/continue`. */
+export const CONFIG_JOBS = "/ran-nf-oam/config-jobs";
 /** Approvals lapse within minutes: the queue and the open request refresh every 5 s. */
 export const APPROVALS_POLL = 5_000;
 /** The statuses a request ends in (the Decided tab's filter). */
