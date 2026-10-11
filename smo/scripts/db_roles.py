@@ -31,6 +31,9 @@ MANIFEST = SMO_ROOT / "migrations" / "db_roles.json"
 PASSWORD_DIR_VARIABLE = "SMO_DB_ROLE_PASSWORD_DIR"  # noqa: S105 — the name of an environment variable, not a credential
 
 
+# The sequences of the shared tables that have one (an identity column): a role given the table is given its sequence too.
+SHARED_SEQUENCES = {"smo_event": "smo_event_seq_seq"}
+
 def short_name(module: str) -> str:
     """The module's name without its directory (`samples/energy-saving-rapp` -> `energy-saving-rapp`): what the role, the password file and the chart's `databaseRole` use."""
     return module.rsplit("/", 1)[-1]
@@ -85,6 +88,9 @@ def statements(module: str, spec: dict, password: str | None, schemas: list[str]
     out.append(sql.SQL("GRANT SELECT ON public.alembic_version TO {}").format(role))
     for table in shared:
         out.append(sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON public.{} TO {}").format(table, role))
+    for name in spec.get("shared", []):
+        if name in SHARED_SEQUENCES:                 # MSG-3.3: inserting a row of a shared table with an identity column needs its sequence
+            out.append(sql.SQL("GRANT USAGE, SELECT ON SEQUENCE public.{} TO {}").format(sql.Identifier(SHARED_SEQUENCES[name]), role))
     for qualified in spec.get("read", []):
         read_schema, read_table = qualified.split(".", 1)
         out.append(sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(sql.Identifier(read_schema), role))

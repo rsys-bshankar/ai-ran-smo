@@ -3,7 +3,8 @@
  "onboarding": {
   "schema": "onboarding",
   "shared": [
-   "module_identity"
+   "module_identity",
+   "smo_event"
   ]
  },
  "mlmr": {
@@ -81,7 +82,8 @@
   "shared": [
    "module_identity",
    "notification_outbox",
-   "idempotency_key"
+   "idempotency_key",
+   "smo_event"
   ]
  },
  "nfo": {
@@ -95,7 +97,8 @@
   "schema": "rapp_mgmt",
   "shared": [
    "module_identity",
-   "idempotency_key"
+   "idempotency_key",
+   "smo_event"
   ]
  },
  "focom": {
@@ -120,7 +123,8 @@
    "idempotency_key",
    "periodic_run",
    "audit_log",
-   "audit_head"
+   "audit_head",
+   "smo_event"
   ]
  },
  "r1-termination": {

@@ -328,8 +328,8 @@ The AI/ML responsibility matrix across AIMgF, MLMR and MLLF is in
 (for example `TrainingJob.model_id` into MLMR), resolved over R1 rather than by
 reading another module's tables. The database holds to the same rule since
 revision `0022`: `migrations/table_owners.json` names the module that owns each of the
-134 tables (and `shared`, for the six every module uses: the outbox, idempotency keys,
-module identity, periodic runs and the audit chain), CI fails on a table with no owner
+142 tables (and `shared`, for the eight every module uses: the outbox, idempotency keys,
+module identity, periodic runs, the audit chain's two, the shared rate limiter's buckets and the event feed, `docs/EVENTS.md`), CI fails on a table with no owner
 and on a foreign key from one module's table into another's, and the column stays a
 plain id. Per-module schemas and roles build on that map.
 

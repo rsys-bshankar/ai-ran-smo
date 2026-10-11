@@ -97,7 +97,7 @@ Every mode notifies the operator, best effort.
 | File | Responsibility |
 |---|---|
 | `app/main.py` | Routes; `_load_instance` (404 plus lazy upgrade timeout); `_fire` (FSM refusal to 409); version views. |
-| `app/statemachine.py` | `InstanceState`, `InstanceEvent`, `RAPP_INSTANCE_FSM`; the transition actions: DME and SME reconsideration, credential revocation. |
+| `app/statemachine.py` | `InstanceState`, `InstanceEvent`, `RAPP_INSTANCE_FSM`; the transition actions: DME and SME reconsideration, credential revocation. Every `fire` passes `instance=`, so each transition is published on the event bus (`MSG-3.5`, `docs/EVENTS.md`). |
 | `app/provisioning.py` | `provision_instance` (package check, identity, NFO Instantiate, usage start); `release_instance_resources` (NFO terminate, usage stop, recorded); `register_sme_declarations` and the two body mappers (this build's own shape or CAPIF `APIProviderEnrolmentDetails` / `ServiceAPIDescription`). |
 | `app/upgrade.py` | `start_upgrade`, `resolve_upgrade`, `expire_overdue_upgrade`, rollback target and history, version recording. |
 | `app/models.py` | The four tables. |
@@ -273,7 +273,8 @@ cd smo/rapp-mgmt && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | `tests/test_business_metrics.py` | `smo_rapp_instances` counts instances by state with every `InstanceState` present | 1 |
 | `tests/test_global_stop_and_latest_kpi.py` | `GUI-9.6` global stop: every live instance stopped through the per-instance call, an already stopped one keeps its first stop, a terminated one is left out, a refusal is listed while the others stay stopped, an unreadable stop list (500, unreachable) changes nothing on stop, resume and count, the list is read page by page, resume lifts only this module's stopped instances and lists a refusal, the count. `GUI-9.8` latest KPI: the newest report's numbers only, no report and no instance are an empty answer (never 404), the batched read in the given order, more than 50 or malformed ids are 422 | 15 |
 | `tests/test_scope.py` | `SEC-10.3`: the claim at create (put on the invoker, shown on the instance, refused when not valid or not recorded by SME), kept by an upgrade and restored by a rollback, own-instance-only `bootstrap-complete` and performance; `GUI-9.3`: `GET /instances?region=` with and without the unscoped instances (a claim of tenants only counts as unscoped), `total`, `include_unscoped` alone filters nothing, an empty `region` 422 | 21 |
-| | Total (the whole suite, `PYTHONPATH=.:../shared python -m pytest tests/ -q`; some files predate this table and have no row) | 213 |
+| `tests/test_main.py` (event bus) | `MSG-3.5`: an instance's RECOVER is published as `org.oran.smo.rapp-instance.state-changed` about the instance, from the state machine's one hook | 1 |
+| | Total (the whole suite, `PYTHONPATH=.:../shared python -m pytest tests/ -q`; some files predate this table and have no row) | 214 |
 
 ### 3.3 What is not covered here
 
