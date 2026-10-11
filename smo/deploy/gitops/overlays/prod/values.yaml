@@ -1,7 +1,7 @@
 # Production values for deploy/helm/smo. Every host, registry and secret name below is a placeholder to replace; nothing here is a credential.
 # A key set here must exist in the chart's values.yaml (tests_integration/test_gitops.py checks it).
 image:
-  tag: "0.7.0"                               # always a pinned release in production: Git, not the chart's appVersion, says what runs
+  tag: "0.8.0"                               # always a pinned release in production: Git, not the chart's appVersion, says what runs
   pullPolicy: IfNotPresent
 
 postgres:
