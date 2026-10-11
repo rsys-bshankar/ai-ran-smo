@@ -170,7 +170,7 @@ and HA much later).
 | Messaging and jobs | `PR-MSG` | MSG-1 outbox · MSG-2 delivery worker · MSG-3 event bus (3.4 Kafka left) · MSG-4 job runner · MSG-5 signing/log · MSG-6 SSRF at send |
 | Security | `PR-SEC` | SEC-1 edge TLS · SEC-2 mTLS · SEC-3 mesh · SEC-4 secrets · SEC-5 signing keys · SEC-6 OIDC · SEC-7 MFA/revocation · SEC-8 rate limits · SEC-9 bootstrap exposure · SEC-10 tenant/region authz · SEC-11 audit · SEC-12 supply chain · SEC-13 container hardening · SEC-14 threat model |
 | Observability | `PR-OBS` | OBS-2 metrics · OBS-3 traces · OBS-4 business metrics · OBS-5 alerts/SLOs · OBS-6 log shipping · OBS-7 runbooks · OBS-8 self-monitoring |
-| Packaging / ops | `PR-OPS` | OPS-1 migrations · OPS-2 Helm · OPS-3 migrate hook · OPS-4 releases · OPS-5 rolling upgrade · OPS-6 GitOps · OPS-7 config reference · OPS-8 flags · OPS-9 sizing · OPS-10 dev-sanity pipeline (Actions) · OPS-11 demo environment (Codespaces) |
+| Packaging / ops | `PR-OPS` | OPS-1 migrations · OPS-2 Helm · OPS-3 migrate hook · OPS-4 releases · OPS-5 rolling upgrade · OPS-6 GitOps · OPS-7 config reference · OPS-8 flags · OPS-9 sizing · OPS-10 dev-sanity pipeline (Actions) · OPS-11 demo environment (Codespaces) · OPS-12 GHCR mirror of third-party images |
 | High availability | `PR-HA` | HA-1 replicas · HA-2 rolling restart · HA-3 DB failover · HA-4 worker failover · HA-5 placement · HA-6 DR · HA-7 geo |
 | Southbound | `PR-SB` | SB-1 NETCONF/SSH · SB-2 adaptor credentials · SB-3 3GPP YANG · SB-4 WG4 YANG · SB-5 YANG validation · SB-6 containment · SB-7 VES · SB-8 streaming · SB-9 conformance kit · SB-10 vendor profile · SB-11 to SB-13 (A1 / Near-RT RIC: out of scope, see below) · SB-14 O2-IMS client · SB-15 async provisioning · SB-16 K8s driver · SB-17 NFO scale size · SB-18 FOCOM PM collector |
 | Management functions | `PR-MGT` | MGT-1 CM history/rollback · MGT-2 MSAC reach · MGT-3 dry-run · MGT-4 change windows · MGT-5 canary · MGT-6 drift · MGT-7 plan mgmt · MGT-8 alarm lifecycle · MGT-9 correlation · MGT-10 topology RCA · MGT-11 KPI engine · MGT-12 PM at scale · MGT-13 trace/QoE · MGT-14 zero-touch · MGT-15 SW campaigns · MGT-16 intent conflicts · MGT-17 SO saga · MGT-18 SLA assurance |
@@ -606,6 +606,16 @@ Purpose: show the GUI and the rApp flows to people. Used **on demand only**: cre
 | OPS-11.4 | Demo procedure in `DEMO_RUNBOOK.md`: create, run, delete after the demo, with the idle timeout set short (30 minutes) | Procedure reviewed and followed once | OPS-11.3 |
 | OPS-11.5 | Optional prebuild of the image on master so a fresh codespace starts quickly (watch prebuild storage; skip if it costs more than it saves) | Start time measured before and after | OPS-11.2 |
 | OPS-11.6 | Once Helm exists: the same script installs the chart on kind so the demo shows the packaged install (check it fits the machine) | Demo runs on the chart | OPS-2.9, OPS-11.3 |
+
+#### PR-OPS-12 — GHCR mirror of third-party images (OPS-12.1 done: `HISTORY.md` §10)
+
+CI jobs pull Postgres, Grafana, Loki, Tempo, Fluent Bit, Keycloak, base images and others anonymously from Docker Hub; concurrent runners share an address and sometimes meet its pull limit (`toomanyrequests`). The mirror (`docs/MIRROR.md`, `deploy/mirror/images.txt`, `.github/workflows/mirror-images.yml`) is built; nothing points at it yet.
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| OPS-12.2 ★ | The owner runs **Mirror images** once and makes each of the 16 `<repo>/mirror/<name>` packages public in the GitHub UI (`docs/MIRROR.md`, "One-time steps for the owner"); a person does this | `docker pull ghcr.io/<owner>/<repo>/mirror/postgres:18-alpine` works without a login | – |
+| OPS-12.3 | One pull request repoints the Dockerfiles, compose file, chart values, workflows and scripts at the mirror, keeping every tag and digest; the drift test learns the prefix | CI green with no Docker Hub pull of a listed image | OPS-12.2 |
+| OPS-12.4 | Pin the five references that have no digest (Tempo, Loki, Fluent Bit, Grafana, Keycloak), and the kind node image (`kindest/node`), and list the node image | `KNOWN_UNPINNED` in `tests_integration/test_image_mirror_list.py` is empty | – |
 
 ### 5.7 High availability and DR (`PR-HA`)
 
