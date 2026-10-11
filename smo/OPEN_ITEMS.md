@@ -609,11 +609,11 @@ Purpose: show the GUI and the rApp flows to people. Used **on demand only**: cre
 
 #### PR-OPS-12 — GHCR mirror of third-party images (OPS-12.1 done: `HISTORY.md` §10)
 
-CI jobs pull Postgres, Grafana, Loki, Tempo, Fluent Bit, Keycloak, base images and others anonymously from Docker Hub; concurrent runners share an address and sometimes meet its pull limit (`toomanyrequests`). The mirror (`docs/MIRROR.md`, `deploy/mirror/images.txt`, `.github/workflows/mirror-images.yml`) is built; nothing points at it yet.
+CI jobs pull Postgres, Grafana, Loki, Tempo, Fluent Bit, Keycloak, base images and others anonymously from Docker Hub; concurrent runners share an address and sometimes meet its pull limit (`toomanyrequests`). The mirror (`docs/MIRROR.md`, `deploy/mirror/images.txt`, `.github/workflows/mirror-images.yml`) is built; nothing points at it yet. Its first run mirrored 14 of 16 images; the two single-platform ones failed verification (the copy tool re-wrapped them under a new digest) and the copy is now `skopeo copy --all --preserve-digests` (`HISTORY.md` PR-OPS-12.1); the fixed workflow has not run yet.
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OPS-12.2 ★ | The owner runs **Mirror images** once and makes each of the 16 `<repo>/mirror/<name>` packages public in the GitHub UI (`docs/MIRROR.md`, "One-time steps for the owner"); a person does this | `docker pull ghcr.io/<owner>/<repo>/mirror/postgres:18-alpine` works without a login | – |
+| OPS-12.2 ★ | The owner runs **Mirror images** (again, after the fix) until all 16 rows of its summary say `mirrored` or `up-to-date`, then makes each of the 16 `<repo>/mirror/<name>` packages public in the GitHub UI (`docs/MIRROR.md`, "One-time steps for the owner"); a person does this | `docker pull ghcr.io/<owner>/<repo>/mirror/postgres:18-alpine` works without a login | – |
 | OPS-12.3 | One pull request repoints the Dockerfiles, compose file, chart values, workflows and scripts at the mirror, keeping every tag and digest; the drift test learns the prefix | CI green with no Docker Hub pull of a listed image | OPS-12.2 |
 | OPS-12.4 | Pin the five references that have no digest (Tempo, Loki, Fluent Bit, Grafana, Keycloak), and the kind node image (`kindest/node`), and list the node image | `KNOWN_UNPINNED` in `tests_integration/test_image_mirror_list.py` is empty | – |
 

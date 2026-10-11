@@ -15,18 +15,34 @@ the workflows are unchanged, and nothing an operator runs changes.
   `ghcr.io/<owner>/<repo>/mirror/`. The mirror's tag is the source's tag (`latest` for a source with none).
 - **`scripts/mirror_images.py`** reads the list and has three commands: `validate` (no network; every entry has a digest or a reason, no duplicate
   source, no two entries on the same mirror tag, valid names), `packages --prefix ...` (the package names) and `sync --prefix ...` (copy).
-  `sync` copies each image **by digest** with `docker buildx imagetools create --tag <mirror>:<tag> <source>@<digest>`, which copies the whole manifest
-  list (every architecture) and keeps the digest. It skips an image whose mirror tag already answers with that digest (so a re-run changes nothing),
-  and after a copy it checks that `<mirror>@<digest>` and `<mirror>:<tag>` both answer with the source's digest; a different digest fails the entry.
+  `sync` copies each image **by digest** with `skopeo copy --all --preserve-digests docker://<source>@<digest> docker://<mirror>:<tag>`, which copies
+  every architecture and writes the source's manifest bytes unchanged, so the digest is the same. It skips an image whose mirror tag already answers
+  with that digest (so a re-run changes nothing); a tag that answers a **different** digest is not "present" and is copied over. After a copy it checks
+  that `<mirror>@<digest>` and `<mirror>:<tag>` both answer with the source's digest; a different digest fails the entry. If skopeo cannot preserve a
+  digest (an old schema 1 manifest, a recompression) it fails that entry rather than push another digest.
   A copy that fails (the source's own pull limit, a network error) is retried three times with a growing pause; one failed image does not stop the
   others, and the run exits 1 if any failed.
-- **Tool: `docker buildx imagetools`**, because it is on the `ubuntu-latest` runner already. `crane` and `skopeo` would each be a download to pin by version
-  and checksum; there is no need while `imagetools` copies manifest lists by digest.
+- **Tool: `skopeo`**, which GitHub's `ubuntu-latest` runner image carries (its software list names Skopeo with Podman and Buildah), so nothing is
+  installed and nothing is downloaded unpinned. It logs in to the destination with `--dest-authfile`, the file `docker login ghcr.io` wrote
+  (`~/.docker/config.json`, the script's `--authfile`); no token is on a command line, and the workflow still passes the token to `docker login`
+  through the environment. The source is read anonymously. **Why not `docker buildx imagetools create`:** for a source that is a manifest list it keeps
+  the digest, but for a source that is a single-platform image manifest it wraps the manifest in a new one, so the tag gets a different digest than
+  `@sha256:` pins in the repository name. The script therefore uses skopeo; if skopeo is not found it still copies a manifest-list source with
+  `imagetools create` (the type is read from `docker buildx imagetools inspect --raw`) and fails a single-platform source with a message saying
+  skopeo is needed. `crane` is not used: it would be a download to pin by version and checksum.
 - **`.github/workflows/mirror-images.yml`** runs the script on `workflow_dispatch` (input `dry_run`: resolve and compare only) and on a push to `main`
   that changes the list, the script or the workflow. It has no `pull_request` trigger, so a fork cannot reach the token that writes packages. Its
   permissions are `contents: read` and, in the one job, `packages: write`; it logs in to `ghcr.io` with `GITHUB_TOKEN`, validates the list, runs `sync`,
-  and writes a table of the mirrored images and the package names below to the job summary. Its only action is `actions/checkout`, pinned by SHA.
+  and writes a table of the mirrored images and the package names below to the job summary. Its only action is `actions/checkout`, pinned by SHA; the job installs nothing.
   It does not run on a schedule: a tag without a digest in the list (see below) moves at the source, and the mirror follows it only when the workflow runs.
+
+## What the first run found
+
+The first run of the workflow (run 38179519262) mirrored and verified 14 of the 16 images and failed two: `sysrepo/sysrepo-netopeer2` (pinned by digest
+only, mirrored as `latest`) and `drwetter/testssl.sh:3.2`. For both, `<mirror>@sha256:<source>` answered the source digest but the **tag** answered a
+different one. Cause: `docker buildx imagetools create` re-wraps a single-platform image manifest into a new manifest; for a manifest list it keeps
+the digest (the other 14). The verification did its job and was not loosened; the copy was changed to `skopeo copy --all --preserve-digests`. Those two
+packages may carry a wrong-digest `latest` / `3.2` from that run: the next run sees the tag answer another digest, copies over it and verifies.
 
 ## The list
 
@@ -65,7 +81,8 @@ GHCR packages are private by default, and a workflow's `GITHUB_TOKEN` cannot cha
 without logging in, so the references stay as they are until the packages are public.
 
 1. Merge this change, then run the workflow once: GitHub, **Actions**, **Mirror images**, **Run workflow** on `main` (a merge that touches the list
-   also runs it). Read the job summary: every row should say `mirrored` (a second run says `up-to-date`).
+   also runs it). Read the job summary: every one of the 16 rows should say `mirrored` or `up-to-date` (a first run says `mirrored`; the images an
+   earlier run already copied and verified say `up-to-date`). A `failed` row names the reason.
 2. Make each of the 16 packages above public. For each: your profile or organisation, **Packages**, the package named `<repo>/mirror/<name>`,
    **Package settings**, **Change visibility**, **Public**, and type the name to confirm. Do not skip one: a missed package fails the job that pulls it.
 3. Tell whoever does the follow-up (below) that the packages are public. The check is `docker pull ghcr.io/<owner>/<repo>/mirror/postgres:18-alpine` from

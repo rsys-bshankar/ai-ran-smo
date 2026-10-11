@@ -5,7 +5,8 @@ name: Mirror images
 # It runs by hand and on a push to main that changes the list, the script or this file; never on a pull request, so a fork's change cannot reach
 # the token that writes packages. The packages are private until the repository owner makes each one public once, in the GitHub UI: the job
 # summary lists their names. Nothing here changes a pin or a reference; it only fills the mirror.
-# No third-party actions: the checkout is the only action, and `docker buildx imagetools` (preinstalled on the runner) does the copy.
+# No third-party actions: the checkout is the only action. The copy is `skopeo copy --all --preserve-digests` (skopeo is preinstalled on the runner; nothing
+# is installed here) because `docker buildx imagetools create` re-wraps a single-platform image under a new digest; skopeo reads the docker login below.
 on:
   push:
     branches: [main]
@@ -61,4 +62,4 @@ jobs:
           prefix="ghcr.io/$(echo "$REPOSITORY" | tr '[:upper:]' '[:lower:]')/mirror"
           args=()
           [ "$DRY_RUN" = "true" ] && args+=(--dry-run)
-          python3 scripts/mirror_images.py sync --prefix "$prefix" --summary-file "$GITHUB_STEP_SUMMARY" "${args[@]}"
+          python3 scripts/mirror_images.py sync --prefix "$prefix" --authfile "$HOME/.docker/config.json" --summary-file "$GITHUB_STEP_SUMMARY" "${args[@]}"
