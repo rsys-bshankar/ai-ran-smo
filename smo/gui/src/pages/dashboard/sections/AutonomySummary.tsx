@@ -5,33 +5,35 @@ import { Link } from "react-router-dom";
 import type { DecisionRecord } from "../../../api/types";
 import { Card, StateBadge } from "../../../components/ui";
 import { count } from "../../../data/summary";
+import { useT } from "../../../i18n";
 import { formatCount } from "../../../kit/Kpi";
 import { QueryState } from "../../../kit/states";
 import { formatTime } from "../../../lib/domain";
 import { useDashboardSummary, useRecentDecisions } from "../data/queries";
 
-/** The dispositions counted, with the word the tile shows. */
-const DISPOSITIONS = [["DIRECT", "autonomous"], ["APPROVED", "approved"], ["REJECTED", "rejected"], ["EXPIRED", "expired"], ["REFUSED", "refused"]] as const;
+/** The dispositions counted, each shown with its word (`dashboard.autonomy.<DISPOSITION>`). */
+const DISPOSITIONS = ["DIRECT", "APPROVED", "REJECTED", "EXPIRED", "REFUSED"] as const;
 
 /** The card. */
 export function AutonomySummary() {
+  const t = useT();
   const s = useDashboardSummary().data;
   const feed = useRecentDecisions();
   return (
-    <Card section="dashboard.autonomy" title="Autonomy · 24 h" actions={<Link className="small" to="/decisions">All {formatCount(count(s, "decisions24h.total"))} →</Link>}>
+    <Card section="dashboard.autonomy" title={t("dashboard.autonomy.title")} actions={<Link className="small" to="/decisions">{t("dashboard.autonomy.all", { n: formatCount(count(s, "decisions24h.total")) })}</Link>}>
       <div className="tiles">
-        {DISPOSITIONS.map(([d, word]) => (
-          <div key={d} className="tile"><b className="num">{formatCount(count(s, `decisions24h.${d}`))}</b><span className="small muted">{word}</span></div>
+        {DISPOSITIONS.map((d) => (
+          <div key={d} className="tile"><b className="num">{formatCount(count(s, `decisions24h.${d}`))}</b><span className="small muted">{t(`dashboard.autonomy.${d}`)}</span></div>
         ))}
       </div>
-      <span className="eyebrow">Latest decisions</span>
-      <QueryState q={feed} empty="No decisions recorded yet.">
+      <span className="eyebrow">{t("dashboard.autonomy.latest")}</span>
+      <QueryState q={feed} empty={t("dashboard.autonomy.empty")}>
         <ul className="list feed">
           {(feed.data ?? []).map((d: DecisionRecord) => (
             <li key={d.decisionId} className="small">
               <StateBadge state={d.disposition} />
               <span className="grow"><Link to={`/decisions/${d.decisionId}`}><strong>{d.invokerId}</strong></Link>
-                <span className="muted"> · {d.changeCount} change{d.changeCount === 1 ? "" : "s"} on {d.managedElements.length} element{d.managedElements.length === 1 ? "" : "s"}</span></span>
+                <span className="muted"> · {t("dashboard.autonomy.item", { changes: t("dashboard.autonomy.item.changes", { count: d.changeCount }), elements: t("dashboard.autonomy.item.elements", { count: d.managedElements.length }) })}</span></span>
               <span className="mono xs muted">{formatTime(d.occurredAt)}</span>
             </li>
           ))}

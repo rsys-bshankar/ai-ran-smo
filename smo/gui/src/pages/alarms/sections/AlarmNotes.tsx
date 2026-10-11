@@ -6,33 +6,35 @@ import { useState } from "react";
 
 import { useSmoAction } from "../../../api/hooks";
 import { Can } from "../../../components/ui";
+import { useT, type Translator } from "../../../i18n";
 import { Empty, ErrorRetry, Skeleton } from "../../../kit/states";
 import { formatTime } from "../../../lib/domain";
 import { RAN_ALARMS, useAlarmComments, useAlarmHistory, type AlarmHistoryEntry } from "../data/queries";
 
-/** The words for one history row. */
-export function describeChange(h: AlarmHistoryEntry): string {
+/** The words for one history row, in the words of `t`. */
+export function describeChange(h: AlarmHistoryEntry, t: Translator): string {
   switch (h.event) {
-    case "RAISED": return `Raised as ${h.to ?? "—"}`;
-    case "ACKNOWLEDGED": return "Acknowledged";
-    case "UNACKNOWLEDGED": return "Acknowledgement withdrawn";
-    case "CLEARED": return `Cleared (was ${h.from ?? "—"})`;
-    case "SEVERITY_CHANGED": return `Severity ${h.from ?? "—"} → ${h.to ?? "—"}`;
+    case "RAISED": return t("alarms.history.raised", { to: h.to ?? "—" });
+    case "ACKNOWLEDGED": return t("alarms.history.acknowledged");
+    case "UNACKNOWLEDGED": return t("alarms.history.unacknowledged");
+    case "CLEARED": return t("alarms.history.cleared", { from: h.from ?? "—" });
+    case "SEVERITY_CHANGED": return t("alarms.history.severity", { from: h.from ?? "—", to: h.to ?? "—" });
     default: return h.event;
   }
 }
 
 /** The history list of one alarm. */
 export function AlarmHistory({ alarmId }: { alarmId: string }) {
+  const t = useT();
   const history = useAlarmHistory(alarmId);
   if (history.error && !history.data) return <ErrorRetry error={history.error} onRetry={() => void history.refetch()} />;
   if (!history.data) return <Skeleton lines={2} />;
-  if (history.data.items.length === 0) return <Empty title="No change recorded.">An alarm raised before the backend kept its history has none for that time.</Empty>;
+  if (history.data.items.length === 0) return <Empty title={t("alarms.history.empty.title")}>{t("alarms.history.empty.body")}</Empty>;
   return (
-    <ol className="list small" aria-label="Alarm history" data-section="alarms.history">
+    <ol className="list small" aria-label={t("alarms.history.aria")} data-section="alarms.history">
       {history.data.items.map((h, i) => (
         <li key={i} className="row between">
-          <span>{describeChange(h)}{h.by ? <span className="muted"> · by {h.by}</span> : null}</span>
+          <span>{describeChange(h, t)}{h.by ? <span className="muted"> · {t("alarms.history.by", { who: h.by })}</span> : null}</span>
           <span className="mono xs muted">{formatTime(h.at)}</span>
         </li>
       ))}
@@ -42,28 +44,29 @@ export function AlarmHistory({ alarmId }: { alarmId: string }) {
 
 /** The comments of one alarm and the box to add one. */
 export function AlarmComments({ alarmId }: { alarmId: string }) {
+  const t = useT();
   const comments = useAlarmComments(alarmId);
   const add = useSmoAction();
   const [text, setText] = useState("");
   const path = `${RAN_ALARMS}/${alarmId}/comments`;
-  const send = () => add.mutate({ method: "POST", path, json: { author: "smo-gui", text: text.trim() }, success: "Comment added" },
+  const send = () => add.mutate({ method: "POST", path, json: { author: "smo-gui", text: text.trim() }, success: t("alarms.comments.added") },
     { onSuccess: () => { setText(""); void comments.refetch(); } });
   return (
     <div className="stack" data-section="alarms.comments">
       {comments.error && !comments.data ? <ErrorRetry error={comments.error} onRetry={() => void comments.refetch()} />
         : !comments.data ? <Skeleton lines={2} />
-          : comments.data.items.length === 0 ? <p className="muted small">No comment yet.</p>
-            : <ul className="list small" aria-label="Alarm comments">
+          : comments.data.items.length === 0 ? <p className="muted small">{t("alarms.comments.empty")}</p>
+            : <ul className="list small" aria-label={t("alarms.comments.aria")}>
               {comments.data.items.map((c) => (
                 <li key={c.commentId}><strong>{c.author}</strong> <span className="mono xs muted">{formatTime(c.createdAt)}</span><div>{c.text}</div></li>
               ))}
             </ul>}
       <Can method="POST" path={path}>
-        <label className="field"><span className="field-label">Add a comment</span>
-          <textarea rows={2} maxLength={2000} value={text} onChange={(e) => setText(e.target.value)} placeholder="What you found or did (kept with the alarm)" />
+        <label className="field"><span className="field-label">{t("alarms.comments.label")}</span>
+          <textarea rows={2} maxLength={2000} value={text} onChange={(e) => setText(e.target.value)} placeholder={t("alarms.comments.placeholder")} />
         </label>
         <div className="row end">
-          <button type="button" className="btn small" disabled={!text.trim() || add.isPending} onClick={send}>{add.isPending ? "…" : "Add comment"}</button>
+          <button type="button" className="btn small" disabled={!text.trim() || add.isPending} onClick={send}>{add.isPending ? "…" : t("alarms.comments.add")}</button>
         </div>
       </Can>
     </div>

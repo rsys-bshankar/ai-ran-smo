@@ -1216,7 +1216,7 @@ German, the Preferences page translated). What remains:
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| GUI-6.4 | Extract strings page by page | Per page: no literals (`gui/src/i18n/literals-baseline.json` at 0 for every area; `node scripts/i18n-literals.mjs` lists them) | GUI-6.3 |
+| GUI-6.4 | Extract strings page by page | Per page: no literals (`gui/src/i18n/literals-baseline.json` at 0 for every area; `node scripts/i18n-literals.mjs` lists them). Done so far, in English and German: Preferences, Exports, Sign in, Account security, Decisions, RAN topology, rApp detail, Element detail, Dashboard, Alarms, Approvals, Software, Admin, and the shared shell, kit and components (2125 literals left, on nine pages) | GUI-6.3 |
 
 #### PR-GUI-7 — Approval inbox
 

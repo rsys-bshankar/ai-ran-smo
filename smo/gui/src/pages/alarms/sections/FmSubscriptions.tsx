@@ -4,33 +4,38 @@ import { useState } from "react";
 
 import type { FmSubscription } from "../../../api/types";
 import { ActionButton, Can, Card, Field, Id } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { ServerTable } from "../../../kit/ServerTable";
 import { FM_SUBSCRIPTIONS, useO1Endpoints } from "../data/queries";
 
+/** The delivery methods SubscribeFM takes (protocol values, shown as they are sent). */
+const DELIVERY_METHODS = ["pull", "push", "stream"] as const;
+
 /** The new-subscription form and the subscription list. */
 export function FmSubscriptions() {
+  const t = useT();
   const endpoints = useO1Endpoints();
   const [f, setF] = useState({ managed_element_ref: "", delivery_method: "push" });
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   return (
     <div className="stack" data-section="alarms.fm">
       <Can method="POST" path={FM_SUBSCRIPTIONS}>
-        <Card title="New FM subscription">
-          <p className="muted small">SubscribeFM registers RAN NF OAM as a DME producer for RAN.FaultRecords (mirrors SubscribePM) — gives an rApp/AI-ML model DME-mediated visibility into outstanding/historical alarms. It never clears an alarm; that stays the Ack/Clear actions on the RAN tab.</p>
+        <Card title={t("alarms.fm.new")}>
+          <p className="muted small">{t("alarms.fm.note")}</p>
           <div className="form inline">
-            <Field label="Managed element"><select value={f.managed_element_ref} onChange={set("managed_element_ref")}><option value="">Choose…</option>{endpoints.data?.map((e) => <option key={e.endpointId}>{e.managedElementRef}</option>)}</select></Field>
-            <Field label="Delivery"><select value={f.delivery_method} onChange={set("delivery_method")}><option value="pull">pull</option><option value="push">push</option><option value="stream">stream</option></select></Field>
-            <ActionButton label="Subscribe" tone="primary" disabled={!f.managed_element_ref} action={{ method: "POST", path: FM_SUBSCRIPTIONS, query: f, success: "FM subscription created" }} />
+            <Field label={t("alarms.fm.managedElement")}><select value={f.managed_element_ref} onChange={set("managed_element_ref")}><option value="">{t("alarms.fm.choose")}</option>{endpoints.data?.map((e) => <option key={e.endpointId}>{e.managedElementRef}</option>)}</select></Field>
+            <Field label={t("alarms.fm.delivery")}><select value={f.delivery_method} onChange={set("delivery_method")}>{DELIVERY_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}</select></Field>
+            <ActionButton label={t("alarms.fm.subscribe")} tone="primary" disabled={!f.managed_element_ref} action={{ method: "POST", path: FM_SUBSCRIPTIONS, query: f, success: t("alarms.fm.created") }} />
           </div>
         </Card>
       </Can>
-      <Card title="FM subscriptions">
-        <ServerTable<FmSubscription> path={FM_SUBSCRIPTIONS} rowKey={(s) => s.subscriptionId} empty="No FM subscriptions." columns={[
-          { header: "Subscription", render: (s) => <Id value={s.subscriptionId} /> },
-          { header: "Managed element", render: (s) => s.managedElementRef },
-          { header: "Delivery", render: (s) => s.deliveryMethod },
-          { header: "Southbound engine", render: (s) => s.southboundEngine },
-          { header: "", className: "actions", render: (s) => <ActionButton label="Unsubscribe" action={{ method: "DELETE", path: `${FM_SUBSCRIPTIONS}/${s.subscriptionId}`, success: "Unsubscribed" }} /> },
+      <Card title={t("alarms.fm.title")}>
+        <ServerTable<FmSubscription> path={FM_SUBSCRIPTIONS} rowKey={(s) => s.subscriptionId} empty={t("alarms.fm.empty")} columns={[
+          { header: t("alarms.fm.subscription"), render: (s) => <Id value={s.subscriptionId} /> },
+          { header: t("alarms.fm.managedElement"), render: (s) => s.managedElementRef },
+          { header: t("alarms.fm.delivery"), render: (s) => s.deliveryMethod },
+          { header: t("alarms.fm.engine"), render: (s) => s.southboundEngine },
+          { header: "", className: "actions", render: (s) => <ActionButton label={t("alarms.fm.unsubscribe")} action={{ method: "DELETE", path: `${FM_SUBSCRIPTIONS}/${s.subscriptionId}`, success: t("alarms.fm.unsubscribed") }} /> },
         ]} />
       </Card>
     </div>

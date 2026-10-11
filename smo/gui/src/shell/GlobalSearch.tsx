@@ -11,6 +11,7 @@ import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { roleAtLeast } from "../auth/rbac";
+import { navKey, translate, useT, type Params, type TKey } from "../i18n";
 import { FLOWS } from "../lib/flows";
 import { Icon } from "../kit/icons";
 import { NAV } from "./nav";
@@ -24,8 +25,17 @@ export type SearchKind = "element" | "rapp" | "alarm" | "model" | "decision";
 /** The body of `GET /api/search`. */
 export interface SearchAnswer { q: string; groups: { type: SearchKind; items: { id: string; label: string; hint?: string | null; to: string }[] }[]; partial: SearchKind[] }
 
-/** The title of each kind's group. */
-export const KIND_TITLE: Record<SearchKind, string> = { element: "Managed elements", rapp: "rApps", alarm: "Alarms", model: "AI/ML models", decision: "Decision records" };
+/** The title of each kind's group (a catalog key). */
+export const KIND_TITLE: Record<SearchKind, TKey> = {
+  element: "shell.search.kind.element", rapp: "shell.search.kind.rapp", alarm: "shell.search.kind.alarm", model: "shell.search.kind.model", decision: "shell.search.kind.decision",
+};
+
+/** A translator, as the helpers below take one (`useT()` in the component; English by default). */
+type Tr = (key: TKey, params?: Params) => string;
+const english: Tr = (key, params) => translate("en", key, params);
+
+/** A kind's title in the language of `t` (the kind itself when this build does not know it). */
+const kindTitle = (kind: SearchKind, t: Tr): string => (KIND_TITLE[kind] ? t(KIND_TITLE[kind]) : kind);
 
 /** The server is asked once the text is this long (the BFF answers 400 below it). */
 export const MIN_SERVER_QUERY = 2;
@@ -35,35 +45,35 @@ export const SEARCH_DEBOUNCE_MS = 200;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The identifier jumps for `text` (a UUID: decision record and rApp instance; one token: managed element and its alarms). */
-export function idJumps(text: string): Jump[] {
+export function idJumps(text: string, t: Tr = english): Jump[] {
   const raw = text.trim();
   if (UUID.test(raw)) {
-    return [{ label: `Decision record ${raw.slice(0, 8)}…`, hint: "Decisions", to: `/decisions/${raw}` },
-      { label: `rApp instance ${raw.slice(0, 8)}…`, hint: "rApps", to: `/rapps/${raw}` }];
+    return [{ label: t("shell.search.decisionRecord", { id: raw.slice(0, 8) }), hint: t(navKey("/decisions")), to: `/decisions/${raw}` },
+      { label: t("shell.search.rappInstance", { id: raw.slice(0, 8) }), hint: t(navKey("/rapps")), to: `/rapps/${raw}` }];
   }
   if (raw.length >= 2 && !/\s/.test(raw)) {
-    return [{ label: `Managed element ${raw}`, hint: "Element detail", to: `/elements/${encodeURIComponent(raw)}` },
-      { label: `Alarms on ${raw}`, hint: "Alarms", to: `/alarms?me=${encodeURIComponent(raw)}` }];
+    return [{ label: t("shell.search.element", { id: raw }), hint: t("shell.crumb.elementDetail"), to: `/elements/${encodeURIComponent(raw)}` },
+      { label: t("shell.search.alarmsOn", { id: raw }), hint: t(navKey("/alarms")), to: `/alarms?me=${encodeURIComponent(raw)}` }];
   }
   return [];
 }
 
-/** The jumps for `text` without a server answer: matching pages and flows, then identifier jumps. At most 8. */
-export function jumpsFor(text: string, pages: Jump[]): Jump[] {
+/** The jumps for `text` without a server answer: matching pages and flows, then identifier jumps (in the language of `t`). At most 8. */
+export function jumpsFor(text: string, pages: Jump[], t: Tr = english): Jump[] {
   const q = text.trim().toLowerCase();
   if (!q) return pages.slice(0, 8);
   const hits = pages.filter((p) => p.label.toLowerCase().includes(q) || p.hint.toLowerCase().includes(q));
-  return [...hits, ...idJumps(text)].slice(0, 8);
+  return [...hits, ...idJumps(text, t)].slice(0, 8);
 }
 
 /** The whole list for `text`: up to 5 matching pages and flows, then the server's groups (each item titled by its kind); with no server
- * answer, the identifier jumps instead. */
-export function resultsFor(text: string, pages: Jump[], answer: SearchAnswer | undefined): Jump[] {
-  if (!answer) return jumpsFor(text, pages);
+ * answer, the identifier jumps instead (titles and jumps in the language of `t`). */
+export function resultsFor(text: string, pages: Jump[], answer: SearchAnswer | undefined, t: Tr = english): Jump[] {
+  if (!answer) return jumpsFor(text, pages, t);
   const q = text.trim().toLowerCase();
   const hits = pages.filter((p) => p.label.toLowerCase().includes(q) || p.hint.toLowerCase().includes(q)).slice(0, 5);
-  const found = answer.groups.flatMap((g) => g.items.map((i) => ({ label: i.label, hint: i.hint ?? "", to: i.to, group: KIND_TITLE[g.type] ?? g.type })));
-  return [...hits, ...(found.length > 0 ? found : idJumps(text))];
+  const found = answer.groups.flatMap((g) => g.items.map((i) => ({ label: i.label, hint: i.hint ?? "", to: i.to, group: kindTitle(g.type, t) })));
+  return [...hits, ...(found.length > 0 ? found : idJumps(text, t))];
 }
 
 /** `value`, once it has stopped changing for `ms`. */
@@ -90,6 +100,7 @@ export function useServerSearch(q: string) {
 
 /** The search box and its result list. */
 export function GlobalSearch() {
+  const t = useT();
   const { me } = useAuth();
   const navigate = useNavigate();
   const input = useRef<HTMLInputElement>(null);
@@ -97,13 +108,13 @@ export function GlobalSearch() {
   const [open, setOpen] = useState(false);
   const [cursor, setCursor] = useState(0);
   const pages = useMemo<Jump[]>(() => [
-    ...NAV.filter((n) => !n.minRole || (me && roleAtLeast(me.role, n.minRole))).map((n) => ({ label: n.label, hint: "Page", to: n.to })),
-    ...FLOWS.map((f) => ({ label: `Flow ${f.id} · ${f.title}`, hint: "Lifecycle flow", to: `/flows/${f.id}` })),
-  ], [me]);
+    ...NAV.filter((n) => !n.minRole || (me && roleAtLeast(me.role, n.minRole))).map((n) => ({ label: t(navKey(n.to)), hint: t("shell.search.page"), to: n.to })),
+    ...FLOWS.map((f) => ({ label: t("shell.search.flow", { id: f.id, title: f.title }), hint: t("shell.search.lifecycleFlow"), to: `/flows/${f.id}` })),
+  ], [me, t]);
   const debounced = useDebounced(text, SEARCH_DEBOUNCE_MS);
   const server = useServerSearch(debounced);
   const answer = debounced.trim() === text.trim() && text.trim().length >= MIN_SERVER_QUERY ? server.data : undefined;
-  const results = useMemo(() => resultsFor(text, pages, answer), [text, pages, answer]);
+  const results = useMemo(() => resultsFor(text, pages, answer, t), [text, pages, answer, t]);
 
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
@@ -128,7 +139,7 @@ export function GlobalSearch() {
     <div className="topbar-search">
       <label className="search">
         <Icon name="search" size={16} />
-        <input ref={input} type="search" aria-label="Search" placeholder="Search elements, rApps, alarms, models, decisions or pages…" value={text}
+        <input ref={input} type="search" aria-label={t("shell.search.aria")} placeholder={t("shell.search.placeholder")} value={text}
           role="combobox" aria-expanded={open} aria-controls="global-search-results" aria-autocomplete="list"
           onChange={(e) => { setText(e.target.value); setCursor(0); setOpen(true); }} onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)} onKeyDown={onKey} />
@@ -139,9 +150,9 @@ export function GlobalSearch() {
           {results.map((r, i) => (
             <SearchRow key={`${r.group ?? ""}${r.to}${r.label}`} jump={r} on={i === cursor} first={!!r.group && results[i - 1]?.group !== r.group} onGo={go} />
           ))}
-          {server.isFetching && <li className="xs muted search-note" aria-live="polite">Searching…</li>}
-          {answer && answer.partial.length > 0 && <li className="xs muted search-note">Not searched: {answer.partial.map((k) => KIND_TITLE[k] ?? k).join(", ")} did not answer.</li>}
-          {server.isError && <li className="xs muted search-note">Search unavailable ({server.error.message}); showing jumps only.</li>}
+          {server.isFetching && <li className="xs muted search-note" aria-live="polite">{t("shell.search.searching")}</li>}
+          {answer && answer.partial.length > 0 && <li className="xs muted search-note">{t("shell.search.notSearched", { kinds: answer.partial.map((k) => kindTitle(k, t)).join(", ") })}</li>}
+          {server.isError && <li className="xs muted search-note">{t("shell.search.unavailable", { error: server.error.message })}</li>}
         </ul>
       )}
     </div>

@@ -6,6 +6,7 @@ import { useState } from "react";
 
 import { PageHeader, Tabs, useHashTab } from "../../components/ui";
 import { count } from "../../data/summary";
+import { useT } from "../../i18n";
 import { SectionBoundary } from "../../kit/SectionBoundary";
 import { useApprovalSummary } from "./data/queries";
 import { ChangeWindows } from "./sections/ChangeWindows";
@@ -21,6 +22,7 @@ const TABS = ["waiting", "models", "windows", "decided"] as const;
 
 /** The page. */
 export function Approvals() {
+  const t = useT();
   const [tab, setTab] = useHashTab(TABS, "waiting");
   const [selected, setSelected] = useState<string | null>(null);
   const summary = useApprovalSummary();
@@ -29,12 +31,12 @@ export function Approvals() {
   const windows = count(summary.data, "configJobs.PENDING_APPROVAL");
   return (
     <>
-      <PageHeader eyebrow="Human in the loop" title="Approvals" subtitle="What is waiting for a person to decide before anything is written to the network" />
+      <PageHeader eyebrow={t("approvals.eyebrow")} title={t("approvals.title")} subtitle={t("approvals.subtitle")} />
       <Tabs value={tab} onChange={setTab} tabs={[
-        { id: "waiting", label: "rApp actions waiting", count: pending, tone: pending ? "bad" : undefined },
-        { id: "models", label: "Model gates", count: gates, tone: gates ? "bad" : undefined },
-        { id: "windows", label: "Change windows", count: windows, tone: windows ? "bad" : undefined },
-        { id: "decided", label: "Decided" },
+        { id: "waiting", label: t("approvals.tabs.waiting"), count: pending, tone: pending ? "bad" : undefined },
+        { id: "models", label: t("approvals.tabs.models"), count: gates, tone: gates ? "bad" : undefined },
+        { id: "windows", label: t("approvals.tabs.windows"), count: windows, tone: windows ? "bad" : undefined },
+        { id: "decided", label: t("approvals.tabs.decided") },
       ]} />
       {tab === "waiting" && (
         <div className="grid g-side-main">
@@ -45,10 +47,7 @@ export function Approvals() {
       {tab === "models" && <SectionBoundary id="approvals.models"><ModelGates /></SectionBoundary>}
       {tab === "windows" && <SectionBoundary id="approvals.windows"><ChangeWindows /></SectionBoundary>}
       {tab === "decided" && <SectionBoundary id="approvals.decided"><Decided /></SectionBoundary>}
-      <p className="muted small">
-        An rApp appears here when its instance was created with an approval policy (ASSIST mode) or an admin set one; every other rApp writes at
-        once, as before. A CM job appears under Change windows when it was asked with a change window or for approval.
-      </p>
+      <p className="muted small">{t("approvals.note")}</p>
     </>
   );
 }

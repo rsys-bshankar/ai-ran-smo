@@ -9,6 +9,7 @@
  */
 
 import type { Alarm, AuthzScope, ConfigJob, KpiCounterSpec, KpiGuardResult, ModuleStatus, RollbackPreview } from "../api/types";
+import type { TKey } from "../i18n";
 
 // ---------------------------------------------------------------- AI/ML model FSMs
 // aimgf/app/statemachine.py — Wave 2 split ModelLifecycle (a model's own
@@ -534,21 +535,21 @@ export const APPROVAL_MEANING: Record<string, string> = {
   REFUSED: "Approved, but a safeguard or a check refused it when it was run: nothing was written",
 };
 
-/** What a decision record's disposition means. */
-export const DISPOSITION_MEANING: Record<string, string> = {
-  DIRECT: "Written at once: this rApp's changes are not held for approval",
-  APPROVED: "Written after a person approved it",
-  ROLLBACK: "An undo of an earlier job",
-  REJECTED: "A person (or the timeout policy) rejected it: nothing was written",
-  EXPIRED: "Nobody decided in time: nothing was written",
-  REFUSED: "Approved, then refused by a safeguard or a check: nothing was written",
+/** What a decision record's disposition means: the catalog key of the sentence (`domain.disposition.*`, shown with `t`). */
+export const DISPOSITION_MEANING: Record<string, TKey> = {
+  DIRECT: "domain.disposition.DIRECT",
+  APPROVED: "domain.disposition.APPROVED",
+  ROLLBACK: "domain.disposition.ROLLBACK",
+  REJECTED: "domain.disposition.REJECTED",
+  EXPIRED: "domain.disposition.EXPIRED",
+  REFUSED: "domain.disposition.REFUSED",
 };
 
-/** What the integrity check of a decision record says. */
-export const INTEGRITY_MEANING: Record<string, string> = {
-  VERIFIED: "The record still matches the hash written to the audit chain",
-  UNCHAINED: "Not yet written to the audit chain (a moment after the job; the worker retries)",
-  MISMATCH: "The record, or its audit row, was changed after it was written",
+/** What the integrity check of a decision record says: the catalog key of the sentence (`domain.integrity.*`, shown with `t`). */
+export const INTEGRITY_MEANING: Record<string, TKey> = {
+  VERIFIED: "domain.integrity.VERIFIED",
+  UNCHAINED: "domain.integrity.UNCHAINED",
+  MISMATCH: "domain.integrity.MISMATCH",
 };
 
 /** How long until a request lapses, for a table: "in 12 min", "in 2 h 5 min", or "overdue" (the platform lapses it on the next look). */

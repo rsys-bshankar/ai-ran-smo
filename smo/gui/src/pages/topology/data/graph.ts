@@ -1,11 +1,19 @@
 /** Pure helpers of the RAN topology page: counting and filtering the declared neighbour relations, the one-line fix for a problem
  * relation, and the layout of the focus-one-element neighbour graph (its cells on an inner ring, first-ring neighbours around them,
- * capped at `MAX_NODES`). No React and no fetching here, so the rules are unit-tested on their own (`__tests__/graph.test.ts`). */
+ * capped at `MAX_NODES`). No React and no fetching here, so the rules are unit-tested on their own (`__tests__/graph.test.ts`). The words they
+ * return come from the catalog (`i18n/en/topology.ts`) through the caller's translator, English when none is given. */
+import { translate, type Params, type TKey } from "../../../i18n";
 import type { CellLink, LinkType } from "../../element/data/types";
 import type { ProblemKind } from "./queries";
 
 /** The most nodes the graph draws (SCALE.md, new pages: ≤ 200 nodes); the rest is counted, not drawn. */
 export const MAX_NODES = 200;
+
+/** A translator: the component's `useT()`, or English (the default, for the unit tests). */
+export type Tr = (key: TKey, params?: Params) => string;
+
+/** English, for a caller that passes no translator. */
+const english: Tr = (key, params) => translate("en", key, params);
 
 /** Counts of a list of relations. `notReciprocal` counts only relations between managed cells (an external or ambiguous one has no other side). */
 export interface LinkCounts { total: number; inter: number; intra: number; notReciprocal: number; external: number; ambiguous: number }
@@ -36,10 +44,10 @@ export function problemLinks(links: CellLink[], kind: ProblemKind): CellLink[] {
 }
 
 /** What an operator does about a problem relation, in a few words, and which element's guards to open for it. */
-export function fixHint(l: CellLink): { text: string; element: string | null } {
-  if (l.linkType === "EXTERNAL") return { text: "onboard the neighbour, or remove it from the guard", element: l.aElement };
-  if (l.linkType === "AMBIGUOUS") return { text: `cell id ${l.bCell} is declared on several elements`, element: l.aElement };
-  if (!l.reciprocal && l.bElement) return { text: `add ${l.aCell} to the neighbours of ${l.bElement} / ${l.bCell}`, element: l.bElement };
+export function fixHint(l: CellLink, t: Tr = english): { text: string; element: string | null } {
+  if (l.linkType === "EXTERNAL") return { text: t("topology.problems.fix.external"), element: l.aElement };
+  if (l.linkType === "AMBIGUOUS") return { text: t("topology.problems.fix.ambiguous", { cell: l.bCell }), element: l.aElement };
+  if (!l.reciprocal && l.bElement) return { text: t("topology.problems.fix.oneway", { cell: l.aCell, element: l.bElement, other: l.bCell }), element: l.bElement };
   return { text: "—", element: null };
 }
 
@@ -68,7 +76,7 @@ function shown(l: CellLink, filter: GraphFilter): boolean {
 /** Lays out `me`, its cells (`cells`, plus any cell its links name) and its first-ring neighbours. The element sits in the centre, its
  * cells on an inner ring, neighbour cells on an outer ring (two rings past 36). A relation from a neighbour into one of `me`'s cells is drawn
  * from that neighbour too, so a one-way relation in either direction shows. */
-export function buildGraph(me: string, cells: string[], links: CellLink[], filter: GraphFilter = "all"): Graph {
+export function buildGraph(me: string, cells: string[], links: CellLink[], filter: GraphFilter = "all", t: Tr = english): Graph {
   const width = 640, height = 440, cx = width / 2, cy = height / 2;
   const own = new Set(cells);
   for (const l of links) {
@@ -77,10 +85,10 @@ export function buildGraph(me: string, cells: string[], links: CellLink[], filte
   }
   const ownList = [...own].sort();
   const ownKey = (cell: string) => `own:${cell}`;
-  const nodes: GraphNode[] = [{ key: "element", x: cx, y: cy, label: me, sub: `${ownList.length} cell(s)`, kind: "element", linkType: null, element: me }];
+  const nodes: GraphNode[] = [{ key: "element", x: cx, y: cy, label: me, sub: t("topology.graph.node.cells", { count: ownList.length }), kind: "element", linkType: null, element: me }];
   ownList.forEach((cell, i) => {
     const angle = (2 * Math.PI * i) / Math.max(1, ownList.length) + Math.PI / 2;
-    nodes.push({ key: ownKey(cell), x: cx + 80 * 1.3 * Math.cos(angle), y: cy + 80 * Math.sin(angle), label: cell, sub: "own cell", kind: "own", linkType: "INTRA_ELEMENT", element: me });
+    nodes.push({ key: ownKey(cell), x: cx + 80 * 1.3 * Math.cos(angle), y: cy + 80 * Math.sin(angle), label: cell, sub: t("topology.graph.node.own"), kind: "own", linkType: "INTRA_ELEMENT", element: me });
   });
   const neighbours = new Map<string, { label: string; element: string | null; linkType: LinkType }>();
   const edges: GraphEdge[] = [];
@@ -105,7 +113,8 @@ export function buildGraph(me: string, cells: string[], links: CellLink[], filte
   list.forEach(([key, n], i) => {
     const angle = (2 * Math.PI * i) / Math.max(1, list.length) - Math.PI / 2;
     const r = rings === 2 && i % 2 ? 150 : 190;
-    const sub = n.linkType === "EXTERNAL" ? "external" : n.linkType === "AMBIGUOUS" ? "ambiguous" : n.linkType === "INTRA_ELEMENT" ? "intra" : "inter";
+    const sub = t(n.linkType === "EXTERNAL" ? "topology.graph.node.external" : n.linkType === "AMBIGUOUS" ? "topology.graph.node.ambiguous"
+      : n.linkType === "INTRA_ELEMENT" ? "topology.graph.node.intra" : "topology.graph.node.inter");
     nodes.push({ key, x: cx + r * 1.4 * Math.cos(angle), y: cy + r * 0.95 * Math.sin(angle), label: n.label, sub, kind: "neighbour", linkType: n.linkType, element: n.element });
   });
   const drawn = new Set(nodes.map((n) => n.key));

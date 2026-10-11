@@ -10,11 +10,13 @@ import { Link } from "react-router-dom";
 
 import { useSmo, useSmoAction } from "../api/hooks";
 import type { ConfigJob, DecisionRecord, RollbackPreview } from "../api/types";
+import { useT } from "../i18n";
 import { ActionButton, Can, DataTable, Drawer, ErrorBox, Id, KeyValue, Modal, StateBadge } from "./ui";
 import { HALT_MEANING, canRollback, describeDifferences, describeGuardResult, formatTime, waveActions, waveProgress } from "../lib/domain";
 
 /** One CM write job: its waves, what an operator may do to it, whether and how to undo it, and what its KPI guard found. */
 export function ConfigJobDrawer({ id, onClose }: { id: string; onClose: () => void }) {
+  const t = useT();
   const job = useSmo<ConfigJob>(`/ran-nf-oam/config-jobs/${id}`, undefined, { refetchInterval: 5_000 });
   const [rolling, setRolling] = useState(false);
   const why = useSmo<DecisionRecord[]>("/ran-nf-oam/decision-records", { job_id: id, limit: 1 });      // AI-13.4: a job an rApp made has a record of why
@@ -22,63 +24,63 @@ export function ConfigJobDrawer({ id, onClose }: { id: string; onClose: () => vo
   const decision = why.data?.[0];
   const base = `/ran-nf-oam/config-jobs/${id}`;
   return (
-    <Drawer title={<>Config job <Id value={id} /></>} onClose={onClose}>
+    <Drawer title={<>{t("components.configJob.title")} <Id value={id} /></>} onClose={onClose}>
       <ErrorBox error={job.error} />
       {data && <>
         <div className="row gap wrap">
           <StateBadge state={data.status} />
           <span className="muted small">{waveProgress(data)}</span>
-          {data.rollbackOf && <span className="small">undoes job <Id value={data.rollbackOf} />{data.rollbackForced ? " (forced over later changes)" : ""}</span>}
+          {data.rollbackOf && <span className="small">{t("components.configJob.undoes")} <Id value={data.rollbackOf} />{data.rollbackForced ? ` ${t("components.configJob.forced")}` : ""}</span>}
         </div>
 
         {decision && (
           <div className="card" role="note">
-            <strong>Made for an rApp</strong>{decision.approvedBy ? <span className="small"> · approved by {decision.approvedBy}</span> : null}
-            <p className="small">{decision.rationale ?? <span className="muted">The rApp gave no rationale.</span>}{decision.modelVersion ? <span className="muted"> ({decision.modelVersion})</span> : null}</p>
-            <Link to={`/decisions/${decision.decisionId}`}>Why this change →</Link>
+            <strong>{t("components.configJob.madeForRapp")}</strong>{decision.approvedBy ? <span className="small"> · {t("components.configJob.approvedBy", { user: decision.approvedBy })}</span> : null}
+            <p className="small">{decision.rationale ?? <span className="muted">{t("components.configJob.noRationale")}</span>}{decision.modelVersion ? <span className="muted"> ({decision.modelVersion})</span> : null}</p>
+            <Link to={`/decisions/${decision.decisionId}`}>{t("components.configJob.why")}</Link>
           </div>
         )}
 
         {data.status === "HALTED" && (
           <div className="card" role="status">
-            <strong>{HALT_MEANING[data.haltedReason ?? ""] ?? "Halted"}</strong>
+            <strong>{HALT_MEANING[data.haltedReason ?? ""] ?? t("components.configJob.halted")}</strong>
             {data.haltedDetail && <p className="small">{data.haltedDetail}</p>}
-            {data.haltedReason === "WAVE_PAUSE" && data.nextWaveAt && <p className="muted small">Goes on by itself at {formatTime(data.nextWaveAt)}.</p>}
+            {data.haltedReason === "WAVE_PAUSE" && data.nextWaveAt && <p className="muted small">{t("components.configJob.goesOnAt", { time: formatTime(data.nextWaveAt) })}</p>}
             <div className="row gap">
               {waveActions(data).map(({ action, force }) => (
-                <ActionButton key={action} label={action === "continue" ? (force ? "Continue now" : "Continue") : action === "halt" ? "Halt" : "Abort"}
+                <ActionButton key={action} label={action === "continue" ? (force ? t("components.configJob.continueNow") : t("components.configJob.continue")) : action === "halt" ? t("components.configJob.halt") : t("components.configJob.abort")}
                   tone={action === "abort" ? "danger" : action === "continue" ? "primary" : "default"}
-                  confirm={action === "abort" ? "Abort this job? The waves that have not run are rejected; what was applied stays." : force ? "The pause between waves has not elapsed. Go on now?" : undefined}
-                  action={{ method: "POST", path: `${base}/${action}`, json: { force }, success: action === "continue" ? "Next wave started" : action === "halt" ? "Job halted" : "Job aborted" }} />
+                  confirm={action === "abort" ? t("components.configJob.abortConfirm") : force ? t("components.configJob.forceConfirm") : undefined}
+                  action={{ method: "POST", path: `${base}/${action}`, json: { force }, success: action === "continue" ? t("components.configJob.continued") : action === "halt" ? t("components.configJob.haltedToast") : t("components.configJob.aborted") }} />
               ))}
             </div>
           </div>
         )}
 
         <Can method="POST" path={`${base}/rollback`}>
-          {canRollback(data) && <div className="row gap"><button className="btn" onClick={() => setRolling(true)}>Roll back…</button></div>}
+          {canRollback(data) && <div className="row gap"><button className="btn" onClick={() => setRolling(true)}>{t("components.configJob.rollBackOpen")}</button></div>}
         </Can>
 
         {data.kpiGuard && (
           <div className="card">
-            <strong>KPI guard</strong>
+            <strong>{t("components.configJob.guard")}</strong>
             <KeyValue items={[
               ["KPI", data.kpiGuard.kpi],
-              ["Checks", `${data.kpiGuard.observationMinutes} min after the job, against the ${data.kpiGuard.baselineMinutes} min before; a ${data.kpiGuard.direction === "higher" ? "drop" : "rise"} of more than ${data.kpiGuard.maxRegressionPercent}% is a regression`],
-              ["On regression", data.kpiGuard.revert ? "roll back the regressed elements (never over a later change)" : "report only"],
-              ["Result", describeGuardResult(data.kpiGuardResult, data.kpiGuardCheckedAt)],
-              ["Checked", data.kpiGuardResult?.checkedAt ? formatTime(data.kpiGuardResult.checkedAt) : null],
-              ["Rollback job", data.kpiGuardResult?.revertJobId ? <Id value={data.kpiGuardResult.revertJobId} /> : null],
+              [t("components.configJob.guard.checks"), t("components.configJob.guard.checksText", { after: data.kpiGuard.observationMinutes, before: data.kpiGuard.baselineMinutes, change: data.kpiGuard.direction === "higher" ? t("components.configJob.guard.drop") : t("components.configJob.guard.rise"), max: data.kpiGuard.maxRegressionPercent })],
+              [t("components.configJob.guard.onRegression"), data.kpiGuard.revert ? t("components.configJob.guard.revert") : t("components.configJob.guard.reportOnly")],
+              [t("components.configJob.guard.result"), describeGuardResult(data.kpiGuardResult, data.kpiGuardCheckedAt)],
+              [t("components.configJob.guard.checked"), data.kpiGuardResult?.checkedAt ? formatTime(data.kpiGuardResult.checkedAt) : null],
+              [t("components.configJob.guard.rollbackJob"), data.kpiGuardResult?.revertJobId ? <Id value={data.kpiGuardResult.revertJobId} /> : null],
             ]} />
           </div>
         )}
 
-        <DataTable rows={data.subChanges} rowKey={(s) => `${s.managedElementRef}/${s.managedFunctionRef ?? ""}/${s.operation}`} empty="No sub-changes." columns={[
-          { header: "Managed element", render: (s) => <>{s.managedElementRef}{s.managedFunctionRef ? <span className="muted"> / {s.managedFunctionRef}</span> : null}</> },
-          ...(data.waveCount && data.waveCount > 1 ? [{ header: "Wave", render: (s: ConfigJob["subChanges"][number]) => s.wave ?? "—" }] : []),
-          { header: "Operation", render: (s) => s.operation },
-          { header: "Status", render: (s) => <StateBadge state={s.status} /> },
-          { header: "Rejection", render: (s) => (s.rejectionReason ? <span title={s.rejectionDetail ?? undefined}>{s.rejectionReason}</span> : "—") },
+        <DataTable rows={data.subChanges} rowKey={(s) => `${s.managedElementRef}/${s.managedFunctionRef ?? ""}/${s.operation}`} empty={t("components.configJob.noSubChanges")} columns={[
+          { header: t("components.configJob.col.element"), render: (s) => <>{s.managedElementRef}{s.managedFunctionRef ? <span className="muted"> / {s.managedFunctionRef}</span> : null}</> },
+          ...(data.waveCount && data.waveCount > 1 ? [{ header: t("components.configJob.col.wave"), render: (s: ConfigJob["subChanges"][number]) => s.wave ?? "—" }] : []),
+          { header: t("components.configJob.col.operation"), render: (s) => s.operation },
+          { header: t("components.configJob.col.status"), render: (s) => <StateBadge state={s.status} /> },
+          { header: t("components.configJob.col.rejection"), render: (s) => (s.rejectionReason ? <span title={s.rejectionDetail ?? undefined}>{s.rejectionReason}</span> : "—") },
         ]} />
       </>}
       {rolling && <RollbackDialog id={id} onClose={() => setRolling(false)} />}
@@ -93,33 +95,34 @@ export function ConfigJobDrawer({ id, onClose }: { id: string; onClose: () => vo
  * starts the rollback job. The rollback sends `force: true` only when the preview listed later changes, and the button then says "Roll back anyway", so overwriting someone's later change is never silent.
  */
 function RollbackDialog({ id, onClose }: { id: string; onClose: () => void }) {
+  const t = useT();
   const path = `/ran-nf-oam/config-jobs/${id}/rollback`;
   const preview = useSmoAction();
   const run = useSmoAction();
   const [plan, setPlan] = useState<RollbackPreview | null>(null);
   const differences = plan ? describeDifferences(plan) : [];
   return (
-    <Modal title="Roll back this job" onClose={onClose}>
-      <p className="muted small">Writes the values the job replaced, in reverse order, as a new job that goes through the same access checks as any write.</p>
+    <Modal title={t("components.rollback.title")} onClose={onClose}>
+      <p className="muted small">{t("components.rollback.intro")}</p>
       {!plan && <button className="btn primary" disabled={preview.isPending}
         onClick={() => preview.mutate({ method: "POST", path, json: { dryRun: true } }, { onSuccess: (d) => setPlan(d as RollbackPreview) })}>
-        {preview.isPending ? "…" : "Preview"}
+        {preview.isPending ? "…" : t("components.rollback.preview")}
       </button>}
       {plan && <>
-        <p>{plan.changes.length} change(s) would be written.</p>
+        <p>{t("components.rollback.changes", { n: plan.changes.length })}</p>
         {differences.length > 0 && (
           <div className="error-box" role="alert">
-            <strong>{differences.length} value(s) were changed after this job wrote them:</strong>
+            <strong>{t("components.rollback.differences", { n: differences.length })}</strong>
             <ul>{differences.map((d) => <li key={d}>{d}</li>)}</ul>
-            Rolling back anyway overwrites those later changes.
+            {t("components.rollback.overwrites")}
           </div>
         )}
         <div className="row gap">
           <button className={`btn ${differences.length ? "danger" : "primary"}`} disabled={run.isPending}
-            onClick={() => run.mutate({ method: "POST", path, json: { force: differences.length > 0 }, success: "Rollback job started" }, { onSuccess: onClose })}>
-            {run.isPending ? "…" : differences.length ? "Roll back anyway" : "Roll back"}
+            onClick={() => run.mutate({ method: "POST", path, json: { force: differences.length > 0 }, success: t("components.rollback.started") }, { onSuccess: onClose })}>
+            {run.isPending ? "…" : differences.length ? t("components.rollback.anyway") : t("components.rollback.run")}
           </button>
-          <button className="btn ghost" onClick={onClose}>Cancel</button>
+          <button className="btn ghost" onClick={onClose}>{t("components.cancel")}</button>
         </div>
       </>}
     </Modal>

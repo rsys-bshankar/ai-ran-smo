@@ -12,6 +12,7 @@ import { useCallback, useEffect, useId, useState, type ReactNode } from "react";
 import type { Query } from "../api/client";
 import { useSmoAction, type SmoAction } from "../api/hooks";
 import { useAuth } from "../auth/AuthContext";
+import { useT } from "../i18n";
 import { sevClass } from "../kit/Badge";
 import { useOptionalToast } from "./Toast";
 import { shortId } from "../lib/domain";
@@ -150,14 +151,15 @@ export async function copyText(text: string): Promise<boolean> {
 /** A shortened id in mono; a click copies the full id and says whether it worked (GUI-10.8: a refused copy is caught and told, not an unhandled
  * rejection). */
 export function Id({ value }: { value: string | null | undefined }) {
+  const t = useT();
   const toast = useOptionalToast();
   if (!value) return <span className="muted">—</span>;
   const onCopy = async () => {
     const ok = await copyText(value);
-    toast?.push(ok ? { tone: "success", text: "Copied" } : { tone: "error", text: `Could not copy (the browser refused); the id is ${value}` });
+    toast?.push(ok ? { tone: "success", text: t("components.id.copied") } : { tone: "error", text: t("components.id.copyFailed", { id: value }) });
   };
   return (
-    <code className="id" title={`${value} (click to copy)`} onClick={(e) => { e.stopPropagation(); void onCopy(); }}>
+    <code className="id" title={t("components.id.title", { id: value })} onClick={(e) => { e.stopPropagation(); void onCopy(); }}>
       {shortId(value)}
     </code>
   );
@@ -196,18 +198,19 @@ export interface Column<T> { header: ReactNode; render: (row: T) => ReactNode; c
  * A table of `rows` with the given columns. An `error` replaces the table with an error box; `loading` with no rows yet shows "Loading…", an empty list shows `empty`.
  * A row is clickable when `onRowClick` is given, and `selectedKey` marks the open row. The wrapper is focusable so a wide table can be scrolled with the keyboard.
  */
-export function DataTable<T>({ rows, columns, rowKey, loading, error, empty = "Nothing here yet.", onRowClick, selectedKey }: {
+export function DataTable<T>({ rows, columns, rowKey, loading, error, empty, onRowClick, selectedKey }: {
   rows: T[] | undefined; columns: Column<T>[]; rowKey: (r: T) => string; loading?: boolean; error?: unknown;
   empty?: ReactNode; onRowClick?: (r: T) => void; selectedKey?: string | null;
 }) {
+  const t = useT();
   if (error) return <ErrorBox error={error} />;
   return (
     <div className="table-wrap" tabIndex={0}>
       <table className="table">
         <thead><tr>{columns.map((c, i) => <th key={i} className={c.className}>{c.header}</th>)}</tr></thead>
         <tbody>
-          {loading && !rows && <tr><td colSpan={columns.length} className="muted center">Loading…</td></tr>}
-          {rows && rows.length === 0 && <tr><td colSpan={columns.length} className="muted center">{empty}</td></tr>}
+          {loading && !rows && <tr><td colSpan={columns.length} className="muted center">{t("components.loading")}</td></tr>}
+          {rows && rows.length === 0 && <tr><td colSpan={columns.length} className="muted center">{empty === undefined ? t("components.empty") : empty}</td></tr>}
           {rows?.map((r) => {
             const key = rowKey(r);
             return (
@@ -228,12 +231,13 @@ export function DataTable<T>({ rows, columns, rowKey, loading, error, empty = "N
  * A side panel over the page (a modal dialog named by its heading). Escape, the close button and a click on the dark backdrop call `onClose`; a click inside does not.
  */
 export function Drawer({ title, onClose, children }: { title: ReactNode; onClose: () => void; children: ReactNode }) {
+  const t = useT();
   useEscape(onClose);
   const titleId = useId();                                    // the dialog is named by its heading (axe: aria-dialog-name)
   return (
     <div className="overlay" onClick={onClose}>
       <aside className="drawer" role="dialog" aria-modal="true" aria-labelledby={titleId} onClick={(e) => e.stopPropagation()}>
-        <div className="drawer-head"><h2 id={titleId}>{title}</h2><button className="btn ghost" onClick={onClose} aria-label="Close">✕</button></div>
+        <div className="drawer-head"><h2 id={titleId}>{title}</h2><button className="btn ghost" onClick={onClose} aria-label={t("components.close")}>✕</button></div>
         <div className="drawer-body" tabIndex={0}>{children}</div>
       </aside>
     </div>
@@ -244,12 +248,13 @@ export function Drawer({ title, onClose, children }: { title: ReactNode; onClose
  * The same as `Drawer`, but a dialog centred on the page: a modal dialog named by its heading that closes on Escape, the close button or a click outside it.
  */
 export function Modal({ title, onClose, children }: { title: ReactNode; onClose: () => void; children: ReactNode }) {
+  const t = useT();
   useEscape(onClose);
   const titleId = useId();
   return (
     <div className="overlay center-overlay" onClick={onClose}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId} onClick={(e) => e.stopPropagation()}>
-        <div className="drawer-head"><h2 id={titleId}>{title}</h2><button className="btn ghost" onClick={onClose} aria-label="Close">✕</button></div>
+        <div className="drawer-head"><h2 id={titleId}>{title}</h2><button className="btn ghost" onClick={onClose} aria-label={t("components.close")}>✕</button></div>
         <div className="modal-body">{children}</div>
       </div>
     </div>

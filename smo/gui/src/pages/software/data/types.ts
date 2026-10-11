@@ -1,5 +1,6 @@
 /** View types of the Software page, mapped from RAN NF OAM's software campaign routes (smo/ran-nf-oam/app/lifecycle.py `_summary`, `_view`,
  * `software_campaign_report`, the dry-run answer of `POST /software-campaigns`) and `GET /software-management-jobs` (main.py). */
+import type { TKey } from "../../../i18n";
 
 /** A campaign's state (lifecycle.py `CampaignState`). */
 export type CampaignStatus = "PENDING" | "RUNNING" | "HALTED" | "COMPLETED" | "ABORTED" | "ROLLING_BACK" | "ROLLED_BACK" | "ROLLBACK_FAILED";
@@ -48,11 +49,11 @@ export interface SwmJob {
   campaignId?: string; campaignWave?: number; rollbackOf?: string;
 }
 
-/** What each halted reason means, in words. */
-export const HALTED_MEANING: Record<string, string> = {
-  GATE_FAILED: "The health gate failed after a wave (a software job failed or timed out, or more new critical or major alarms than allowed)",
-  WAVE_PAUSE: "Waiting between waves",
-  OPERATOR_HALT: "Halted by an operator",
+/** The catalog key of what each halted reason means, in words. */
+export const HALTED_MEANING: Record<string, TKey> = {
+  GATE_FAILED: "software.halted.GATE_FAILED",
+  WAVE_PAUSE: "software.halted.WAVE_PAUSE",
+  OPERATOR_HALT: "software.halted.OPERATOR_HALT",
 };
 
 /** The flow-19 board of one element software job. */
@@ -77,8 +78,17 @@ export function campaignActions(c: Pick<Campaign, "status" | "haltedReason" | "n
   return out;
 }
 
+/** A wave's state on the wave strip (also its CSS class, spaces as dashes). */
+export type WaveState = "not started" | "running" | "failed" | "gate failed" | "rolled back" | "done";
+
+/** The catalog key of each wave state's words. */
+export const WAVE_STATE_LABEL: Record<WaveState, TKey> = {
+  "not started": "software.detail.wave.state.notStarted", running: "software.detail.wave.state.running", failed: "software.detail.wave.state.failed",
+  "gate failed": "software.detail.wave.state.gateFailed", "rolled back": "software.detail.wave.state.rolledBack", done: "software.detail.wave.state.done",
+};
+
 /** A wave's state for the wave strip: from its jobs, and the gate that halted the campaign after it. */
-export function waveState(w: CampaignReport["waves"][number], c: Pick<Campaign, "status" | "haltedReason" | "wave">): "not started" | "running" | "failed" | "gate failed" | "rolled back" | "done" {
+export function waveState(w: CampaignReport["waves"][number], c: Pick<Campaign, "status" | "haltedReason" | "wave">): WaveState {
   if (!w.started) return "not started";
   if (c.status === "HALTED" && c.haltedReason === "GATE_FAILED" && c.wave === w.wave) return "gate failed";
   if (w.jobs.some((j) => j.status === "FAILED")) return "failed";

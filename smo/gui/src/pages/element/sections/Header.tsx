@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { ActionButton, Can, PageHeader } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { Badge } from "../../../kit/Badge";
 import { ErrorRetry } from "../../../kit/states";
 import { siteClusterPath, useAlarmCount, useEntity } from "../data/queries";
@@ -13,6 +14,7 @@ import { rootDn } from "../data/types";
 
 /** The header of element `me`. */
 export function Header({ me }: { me: string }) {
+  const t = useT();
   const entity = useEntity(me);
   const critical = useAlarmCount(me, "critical");
   const e = entity.data;
@@ -20,17 +22,17 @@ export function Header({ me }: { me: string }) {
   const n = critical.data?.total ?? 0;
   return (
     <div data-section="element.header">
-      <PageHeader eyebrow="RAN NF OAM · managed element" title={me}
+      <PageHeader eyebrow={t("element.header.eyebrow")} title={me}
         subtitle={<span className="row wrap"><span className="mono">{rootDn(me)}</span>{facts.map((f) => <span key={String(f)}>· {f}</span>)}
           {e && <SiteCluster me={me} value={e.siteCluster ?? null} />}
-          {n > 0 && <Badge tone="bad">{n} critical</Badge>}</span>}
+          {n > 0 && <Badge tone="bad">{t("element.header.critical", { n })}</Badge>}</span>}
         actions={<>
-          <Link className="btn" to={`/topology?me=${encodeURIComponent(me)}`}>Neighbours</Link>
-          <Link className="btn" to="/software#new">Upgrade software</Link>
-          <Link className="btn primary" to="/configuration#new">New config job</Link>
+          <Link className="btn" to={`/topology?me=${encodeURIComponent(me)}`}>{t("element.header.neighbours")}</Link>
+          <Link className="btn" to="/software#new">{t("element.header.upgrade")}</Link>
+          <Link className="btn primary" to="/configuration#new">{t("element.header.newJob")}</Link>
         </>} />
       {entity.error && (entity.error.status === 404
-        ? <div className="error-box" role="alert">No managed element {me} is registered. Check the ref, or find it on the RAN topology page.</div>
+        ? <div className="error-box" role="alert">{t("element.header.notFound", { me })}</div>
         : <ErrorRetry error={entity.error} onRetry={() => void entity.refetch()} />)}
     </div>
   );
@@ -38,23 +40,24 @@ export function Header({ me }: { me: string }) {
 
 /** The site cluster, and for an admin an inline editor (letters, digits and `. _ : / @ + -`, at most 100; empty clears it). */
 function SiteCluster({ me, value }: { me: string; value: string | null }) {
+  const t = useT();
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(value ?? "");
   const valid = text.trim() === "" || /^[A-Za-z0-9._:/@+-]{1,100}$/.test(text.trim());
   if (editing) {
     return (
       <span className="row gap" data-part="site-cluster">
-        · <input aria-label="Site cluster" value={text} onChange={(e) => setText(e.target.value)} placeholder="metro-a" maxLength={100} />
-        <ActionButton label="Save" tone="primary" disabled={!valid}
-          action={{ method: "PUT", path: siteClusterPath(me), json: { siteCluster: text.trim() || null }, success: text.trim() ? `Site cluster set to ${text.trim()}` : "Site cluster cleared" }}
+        · <input aria-label={t("element.header.siteCluster.aria")} value={text} onChange={(e) => setText(e.target.value)} placeholder={t("element.header.siteCluster.placeholder")} maxLength={100} />
+        <ActionButton label={t("element.header.siteCluster.save")} tone="primary" disabled={!valid}
+          action={{ method: "PUT", path: siteClusterPath(me), json: { siteCluster: text.trim() || null }, success: text.trim() ? t("element.header.siteCluster.set", { cluster: text.trim() }) : t("element.header.siteCluster.cleared") }}
           onDone={() => setEditing(false)} />
-        <button type="button" className="btn ghost small" onClick={() => { setText(value ?? ""); setEditing(false); }}>Cancel</button>
+        <button type="button" className="btn ghost small" onClick={() => { setText(value ?? ""); setEditing(false); }}>{t("element.header.siteCluster.cancel")}</button>
       </span>
     );
   }
   return (
-    <span className="row gap" data-part="site-cluster">· site cluster {value ?? <span className="muted">none</span>}
-      <Can method="PUT" path={siteClusterPath(me)}><button type="button" className="btn ghost small" onClick={() => { setText(value ?? ""); setEditing(true); }}>Edit cluster</button></Can>
+    <span className="row gap" data-part="site-cluster">{t("element.header.siteCluster")} {value ?? <span className="muted">{t("element.header.siteCluster.none")}</span>}
+      <Can method="PUT" path={siteClusterPath(me)}><button type="button" className="btn ghost small" onClick={() => { setText(value ?? ""); setEditing(true); }}>{t("element.header.siteCluster.edit")}</button></Can>
     </span>
   );
 }

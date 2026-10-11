@@ -6,6 +6,10 @@
  */
 
 import type { Me } from "../api/types";
+import { translate, type Params, type TKey } from "../i18n";
+
+/** A message in English: what the helpers below answer in when no translator is passed. */
+const english = (key: TKey, params?: Params) => translate("en", key, params);
 
 /** What `POST /api/login` answers for an account with a one-time code: no session yet, a challenge to send back with the code. */
 export interface LoginChallenge { mfaRequired: true; challenge: string; expiresIn: number }
@@ -52,10 +56,11 @@ export function recoveryCodesText(codes: string[]): string {
   return codes.join("\n") + "\n";
 }
 
-/** The sentence about how many recovery codes remain; at zero it tells the user to generate new ones. */
-export function recoveryLeftText(left: number): string {
-  if (left <= 0) return "You have no recovery codes left: generate new ones on the Account security page.";
-  return `${left} recovery code${left === 1 ? "" : "s"} left.`;
+/** The sentence about how many recovery codes remain, in the language of `t` (`useT()`; English by default); at zero it tells the user to
+ * generate new ones. */
+export function recoveryLeftText(left: number, t: (key: TKey, params?: Params) => string = english): string {
+  if (left <= 0) return t("mfa.recoveryLeft.none");
+  return t("mfa.recoveryLeft", { count: left });
 }
 
 const LOGIN_MESSAGES: Record<string, string> = {

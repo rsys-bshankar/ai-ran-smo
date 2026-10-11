@@ -8,6 +8,7 @@ import { POLL, useSmo, useSmoPage } from "../../../api/hooks";
 import type { Alarm, O1Endpoint } from "../../../api/types";
 import { LIVE_SUMMARY_POLL, useLive } from "../../../data/events";
 import { useSummary } from "../../../data/summary";
+import type { TKey } from "../../../i18n";
 import { formatDuration } from "../../../lib/domain";
 
 /** RAN NF alarms (O1 FaultMnS). */
@@ -32,14 +33,15 @@ export interface RanFilter {
   region?: string;
 }
 
-/** The fields the group-by view can group on (`GET /alarms/counts?group_by=`), each also a list filter, with its label. */
+/** The fields the group-by view can group on (`GET /alarms/counts?group_by=`), each also a list filter, with the catalog keys of its label and
+ * of its name inside a sentence ("Group by probable cause"). */
 export const GROUP_BY = [
-  { key: "probable_cause", label: "Probable cause" },
-  { key: "managed_element_ref", label: "Managed element" },
-  { key: "severity", label: "Severity" },
-  { key: "ack_state", label: "Ack state" },
-  { key: "region", label: "Region" },
-] as const;
+  { key: "probable_cause", labelKey: "alarms.groupBy.probable_cause", inlineKey: "alarms.groupBy.probable_cause.inline" },
+  { key: "managed_element_ref", labelKey: "alarms.groupBy.managed_element_ref", inlineKey: "alarms.groupBy.managed_element_ref.inline" },
+  { key: "severity", labelKey: "alarms.groupBy.severity", inlineKey: "alarms.groupBy.severity.inline" },
+  { key: "ack_state", labelKey: "alarms.groupBy.ack_state", inlineKey: "alarms.groupBy.ack_state.inline" },
+  { key: "region", labelKey: "alarms.groupBy.region", inlineKey: "alarms.groupBy.region.inline" },
+] as const satisfies readonly { key: string; labelKey: TKey; inlineKey: TKey }[];
 export type GroupByKey = (typeof GROUP_BY)[number]["key"];
 
 /** The list filters of `f` as route parameters (no paging). */

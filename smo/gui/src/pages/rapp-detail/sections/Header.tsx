@@ -8,15 +8,17 @@ import { Link } from "react-router-dom";
 import { useSmoAction } from "../../../api/hooks";
 import { MAX_PINS, usePinToggle, usePins, type RappPage } from "../../../api/rapps";
 import { ActionButton, Can, Field, Id, Modal, PageHeader, StateBadge } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { Segmented } from "../../../kit/Segmented";
 import { instanceBase } from "../../rapps/data/queries";
 import { useSafeguards } from "../data/queries";
 
-/** The three autonomy modes, in order of how much the rApp may do alone. */
-const MODES = [{ id: "SHADOW", label: "Shadow" }, { id: "ASSIST", label: "Assist" }, { id: "AUTONOMOUS", label: "Autonomous" }];
+/** The three autonomy modes, in order of how much the rApp may do alone (each one's name: `rappDetail.header.mode.<mode>`). */
+const MODES = ["SHADOW", "ASSIST", "AUTONOMOUS"] as const;
 
 /** The page header of rApp `data`. */
 export function Header({ data }: { data: RappPage }) {
+  const t = useT();
   const pins = usePins();
   const toggle = usePinToggle();
   const safeguards = useSafeguards(data.instanceId);
@@ -26,41 +28,42 @@ export function Header({ data }: { data: RappPage }) {
   const killPath = `${instanceBase(data.instanceId)}/kill`;
   return (
     <>
-      <PageHeader eyebrow={<Link to="/rapps">rApps</Link>} title={`${data.name ?? "rApp"} ${data.version ?? ""}`.trim()}
-        subtitle={<>{data.vendor ?? "unknown owner"} · <Id value={data.instanceId} /> · <StateBadge state={data.state} /> · <StateBadge state={data.autonomyMode} />
-          {sg?.killed && <> · <StateBadge state="DISABLED" /> writes stopped</>}</>}
+      <PageHeader eyebrow={<Link to="/rapps">{t("rappDetail.header.rapps")}</Link>} title={`${data.name ?? t("rappDetail.title")} ${data.version ?? ""}`.trim()}
+        subtitle={<>{data.vendor ?? t("rappDetail.header.unknownOwner")} · <Id value={data.instanceId} /> · <StateBadge state={data.state} /> · <StateBadge state={data.autonomyMode} />
+          {sg?.killed && <> · <StateBadge state="DISABLED" /> {t("rappDetail.header.writesStopped")}</>}</>}
         actions={<>
-          <Segmented label="Autonomy mode (fixed when the instance was created)" options={MODES.map((m) => ({ ...m, title: "Fixed at CreateInstance: no backend route changes it" }))}
+          <Segmented label={t("rappDetail.header.mode")} options={MODES.map((m) => ({ id: m, label: t(`rappDetail.header.mode.${m}`), title: t("rappDetail.header.mode.fixed") }))}
             value={data.autonomyMode ?? ""} onChange={() => {}} disabled />
           <button type="button" className="btn" aria-pressed={data.pinned} disabled={toggle.isPending || (!data.pinned && pinnedCount >= MAX_PINS)}
-            title={data.pinned ? "Remove from the sidebar" : pinnedCount >= MAX_PINS ? `At most ${MAX_PINS} pinned: unpin one first` : "Show in the sidebar"}
-            onClick={() => toggle.mutate({ instanceId: data.instanceId, pin: !data.pinned })}>{data.pinned ? "★ Pinned" : "☆ Pin"}</button>
+            title={data.pinned ? t("rappDetail.header.unpinTitle") : pinnedCount >= MAX_PINS ? t("rappDetail.header.pinLimit", { max: MAX_PINS }) : t("rappDetail.header.pinTitle")}
+            onClick={() => toggle.mutate({ instanceId: data.instanceId, pin: !data.pinned })}>{data.pinned ? t("rappDetail.header.pinned") : t("rappDetail.header.pin")}</button>
           {sg?.invokerId && (sg.killed
-            ? <ActionButton label="Resume" confirm="Let this rApp start config jobs again?" action={{ method: "DELETE", path: killPath, success: "rApp may write again" }} />
-            : <Can method="PUT" path={killPath}><button type="button" className="btn danger" onClick={() => setStopping(true)}>Stop rApp</button></Can>)}
-          <Link className="btn" to="/rapps">← Directory</Link>
+            ? <ActionButton label={t("rappDetail.header.resume")} confirm={t("rappDetail.header.resumeConfirm")} action={{ method: "DELETE", path: killPath, success: t("rappDetail.header.resumed") }} />
+            : <Can method="PUT" path={killPath}><button type="button" className="btn danger" onClick={() => setStopping(true)}>{t("rappDetail.header.stop")}</button></Can>)}
+          <Link className="btn" to="/rapps">{t("rappDetail.back")}</Link>
         </>} />
-      <p className="gap-note">The autonomy mode is fixed when the instance is created; rApp Management has no route to change it on a running instance.</p>
-      {stopping && <StopDialog name={data.name ?? "this rApp"} path={killPath} onClose={() => setStopping(false)} />}
+      <p className="gap-note">{t("rappDetail.header.modeNote")}</p>
+      {stopping && <StopDialog name={data.name ?? t("rappDetail.stop.thisRapp")} path={killPath} onClose={() => setStopping(false)} />}
     </>
   );
 }
 
 /** "Stop <rApp>?" with a reason: its writes are refused until resumed; the instance keeps running. */
 function StopDialog({ name, path, onClose }: { name: string; path: string; onClose: () => void }) {
+  const t = useT();
   const [reason, setReason] = useState("");
   const action = useSmoAction();
   return (
-    <Modal title={`Stop ${name}?`} onClose={onClose}>
-      <p className="muted small">Every write from this rApp is refused until you resume it: its config jobs (dry runs too) at once, every other change through the gateway within a few seconds. It can still read, withdraw what it made and undo its own config jobs. The rApp keeps running and reporting.</p>
-      <Field label="Reason" hint="Recorded with the stop and shown in the refusal events">
+    <Modal title={t("rappDetail.stop.title", { name })} onClose={onClose}>
+      <p className="muted small">{t("rappDetail.stop.body")}</p>
+      <Field label={t("rappDetail.stop.reason")} hint={t("rappDetail.stop.reasonHint")}>
         <input value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} autoFocus />
       </Field>
       <div className="row gap end">
-        <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
+        <button type="button" className="btn ghost" onClick={onClose}>{t("rappDetail.stop.cancel")}</button>
         <button type="button" className="btn danger" disabled={action.isPending}
-          onClick={() => action.mutate({ method: "PUT", path, json: { reason: reason.trim() || null }, success: "rApp stopped" }, { onSuccess: onClose })}>
-          {action.isPending ? "…" : "Stop writes"}
+          onClick={() => action.mutate({ method: "PUT", path, json: { reason: reason.trim() || null }, success: t("rappDetail.stop.stopped") }, { onSuccess: onClose })}>
+          {action.isPending ? "…" : t("rappDetail.stop.confirm")}
         </button>
       </div>
     </Modal>

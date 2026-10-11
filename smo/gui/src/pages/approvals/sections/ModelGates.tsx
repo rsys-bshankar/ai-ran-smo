@@ -7,6 +7,7 @@ import { Link } from "react-router-dom";
 
 import type { ModelLifecycle } from "../../../api/types";
 import { Card, StateBadge } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { ServerTable } from "../../../kit/ServerTable";
 import { GATE_DECISION } from "../../../lib/domain";
 import { ModelActions, useModelNames } from "../../aiml";
@@ -14,14 +15,15 @@ import { MODEL_GATES, MODEL_GATES_QUERY } from "../data/queries";
 
 /** The tab's card. */
 export function ModelGates() {
+  const t = useT();
   const name = useModelNames();
   return (
-    <Card section="approvals.models" title="Model gates waiting" sub="AIMgF · a model moves on only when a person decides · recorded against your GUI user">
+    <Card section="approvals.models" title={t("approvals.models.title")} sub={t("approvals.models.sub")}>
       <ServerTable<ModelLifecycle> path={MODEL_GATES} query={MODEL_GATES_QUERY} rowKey={(l) => l.modelId}
-        empty="No model waits for a decision." columns={[
-          { header: "Model", render: (l) => <Link to={`/aiml?model=${encodeURIComponent(l.modelId)}#models`}>{name(l.modelId) ?? l.modelId.slice(0, 8)}</Link> },
-          { header: "Stage", render: (l) => <StateBadge state={l.modelLifecycleState} /> },
-          { header: "Decision", render: (l) => <span className="small">{GATE_DECISION[l.modelLifecycleState] ?? "—"}</span> },
+        empty={t("approvals.models.empty")} columns={[
+          { header: t("approvals.models.model"), render: (l) => <Link to={`/aiml?model=${encodeURIComponent(l.modelId)}#models`}>{name(l.modelId) ?? l.modelId.slice(0, 8)}</Link> },
+          { header: t("approvals.models.stage"), render: (l) => <StateBadge state={l.modelLifecycleState} /> },
+          { header: t("approvals.models.decision"), render: (l) => <span className="small">{GATE_DECISION[l.modelLifecycleState] ?? "—"}</span> },
           { header: "", render: (l) => <ModelActions model={l} lifecycle={l} /> },
         ]} />
     </Card>

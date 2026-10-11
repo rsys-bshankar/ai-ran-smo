@@ -9,6 +9,7 @@ import { useAuth } from "../auth/AuthContext";
 import { Field, Modal } from "../components/ui";
 import { useToast } from "../components/Toast";
 import { summaryPageOf } from "../data/events";
+import { useT } from "../i18n";
 import { Skeleton } from "../kit/states";
 import { LiveEvents } from "./LiveEvents";
 import { ScopeProvider } from "./ScopeProvider";
@@ -39,6 +40,7 @@ export function Layout() {
 
 /** The change-password dialog (`POST /api/me/password`). */
 function ChangePassword({ onClose }: { onClose: () => void }) {
+  const t = useT();
   const toast = useToast();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -47,19 +49,19 @@ function ChangePassword({ onClose }: { onClose: () => void }) {
     e.preventDefault();
     try {
       await api("/me/password", { method: "POST", json: { currentPassword: current, newPassword: next } });
-      toast.push({ tone: "success", text: "Password changed" });
+      toast.push({ tone: "success", text: t("shell.password.changed") });
       onClose();
     } catch (err) {
       setError((err as Error).message);
     }
   };
   return (
-    <Modal title="Change password" onClose={onClose}>
+    <Modal title={t("shell.password.title")} onClose={onClose}>
       <form onSubmit={submit} className="form">
-        <Field label="Current password"><input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} required /></Field>
-        <Field label="New password" hint="At least 8 characters"><input type="password" autoComplete="new-password" minLength={8} value={next} onChange={(e) => setNext(e.target.value)} required /></Field>
+        <Field label={t("shell.password.current")}><input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} required /></Field>
+        <Field label={t("shell.password.new")} hint={t("shell.password.hint")}><input type="password" autoComplete="new-password" minLength={8} value={next} onChange={(e) => setNext(e.target.value)} required /></Field>
         {error && <div className="error-box">{error}</div>}
-        <div className="row gap end"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary">Change</button></div>
+        <div className="row gap end"><button type="button" className="btn" onClick={onClose}>{t("shell.password.cancel")}</button><button className="btn primary">{t("shell.password.submit")}</button></div>
       </form>
     </Modal>
   );

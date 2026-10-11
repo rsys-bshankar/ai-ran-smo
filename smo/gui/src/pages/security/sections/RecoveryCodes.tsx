@@ -4,6 +4,7 @@
  * gives only the count (`recoveryCodesLeft`), the grid shows that many unused slots. */
 import { Card } from "../../../components/ui";
 import { Empty, QueryState } from "../../../kit/states";
+import { useT } from "../../../i18n";
 import { formatTime } from "../../../lib/domain";
 import { recoveryLeftText } from "../../../lib/mfa";
 import type { TotpStatus } from "../../../api/types";
@@ -17,26 +18,27 @@ export function recoverySlots(s: TotpStatus): { slot: number; used: boolean; use
 
 /** The box; hidden for an identity-provider user (no codes here). */
 export function RecoveryCodes() {
+  const t = useT();
   const status = useTotpStatus();
   if (status.data?.reason === "identity provider") return null;
   const slots = status.data ? recoverySlots(status.data) : [];
   return (
-    <Card section="security.recovery" title="Recovery codes" sub="each signs you in once if you lose your device">
+    <Card section="security.recovery" title={t("security.recovery.title")} sub={t("security.recovery.sub")}>
       <QueryState q={status} isEmpty={() => false}>
         {status.data && !status.data.enrolled ? (
-          <Empty title="No recovery codes yet.">They are made when you set up the one-time code.</Empty>
+          <Empty title={t("security.recovery.none.title")}>{t("security.recovery.none.body")}</Empty>
         ) : status.data && (
           <>
-            <p className="small">{recoveryLeftText(status.data.recoveryCodesLeft)}</p>
-            <ul className="recovery-codes" aria-label={`${status.data.recoveryCodesLeft} unused recovery codes`}>
+            <p className="small">{recoveryLeftText(status.data.recoveryCodesLeft, t)}</p>
+            <ul className="recovery-codes" aria-label={t("security.recovery.unused", { left: status.data.recoveryCodesLeft })}>
               {slots.map((c) => (
-                <li key={c.slot} className={c.used ? "used" : undefined} title={c.used ? `used ${formatTime(c.usedAt)}` : "not used yet"}>
+                <li key={c.slot} className={c.used ? "used" : undefined} title={c.used ? t("security.recovery.usedAt", { time: formatTime(c.usedAt) }) : t("security.recovery.notUsed")}>
                   <span className="xs muted">#{c.slot} </span><code aria-hidden>••••-••••-••••-••••</code>
-                  {c.used && <span className="xs muted"> used {formatTime(c.usedAt)}</span>}
+                  {c.used && <span className="xs muted"> {t("security.recovery.usedAt", { time: formatTime(c.usedAt) })}</span>}
                 </li>
               ))}
             </ul>
-            <p className="small muted">The codes are shown once; the server keeps only which slots were used. Make new ones above if you lost them.</p>
+            <p className="small muted">{t("security.recovery.note")}</p>
           </>
         )}
       </QueryState>

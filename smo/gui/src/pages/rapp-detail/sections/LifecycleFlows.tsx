@@ -8,6 +8,7 @@ import { Link } from "react-router-dom";
 import type { RappPage } from "../../../api/rapps";
 import type { Package } from "../../../api/types";
 import { Card } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { MiniSteps } from "../../../kit/Timeline";
 import { Skeleton } from "../../../kit/states";
 import { flow01, flow06, flow07, progress, toStepState, type FlowStep } from "../../../lib/flows";
@@ -15,6 +16,7 @@ import { useDeployment, useInstance, usePackageStatus, usePackageUsage, usePerfo
 
 /** One stepper row: number, title, subject, the steps as segments, and where the flow stands. */
 function FlowRow({ id, title, subject, subjectLabel, steps }: { id: string; title: string; subject: string; subjectLabel: string; steps: FlowStep[] | null }) {
+  const t = useT();
   const p = steps ? progress(steps) : null;
   const at = steps?.find((s) => s.status === "current" || s.status === "failed") ?? steps?.find((s) => s.status === "warn");
   return (
@@ -22,8 +24,8 @@ function FlowRow({ id, title, subject, subjectLabel, steps }: { id: string; titl
       <Link className="row gap wrap rd-flow" to={`/flows/${id}?subject=${subject}`}>
         <span className="flow-num">{id}</span>
         <span className="col rd-flow-t"><strong>{title} →</strong><span className="small muted">{subjectLabel}</span></span>
-        {steps ? <MiniSteps states={steps.map((s) => toStepState(s.status))} label={`Flow ${id}: ${p!.done} of ${p!.total} steps`} /> : <Skeleton lines={1} />}
-        {p && <span className="small">{p.done}/{p.total}{p.complete ? " · complete" : at ? ` · ${at.title}` : ""}</span>}
+        {steps ? <MiniSteps states={steps.map((s) => toStepState(s.status))} label={t("rappDetail.flows.steps", { id, done: p!.done, total: p!.total })} /> : <Skeleton lines={1} />}
+        {p && <span className="small">{p.done}/{p.total}{p.complete ? ` · ${t("rappDetail.flows.complete")}` : at ? ` · ${at.title}` : ""}</span>}
       </Link>
     </li>
   );
@@ -31,6 +33,7 @@ function FlowRow({ id, title, subject, subjectLabel, steps }: { id: string; titl
 
 /** The box of rApp `rapp`. */
 export function LifecycleFlows({ rapp }: { rapp: RappPage }) {
+  const t = useT();
   const id = rapp.instanceId;
   const inst = useInstance(id);
   const perf = usePerformance(id);
@@ -42,22 +45,22 @@ export function LifecycleFlows({ rapp }: { rapp: RappPage }) {
     ? ({ ...status.data, name: rapp.name ?? "package", version: rapp.version ?? "" } as Package)
     : undefined;
   const ready = !!inst.data && !!status.data;
-  const pkgLabel = `package ${rapp.name ?? rapp.packageId.slice(0, 8)} ${rapp.version ?? ""}`.trim();
+  const pkgLabel = t("rappDetail.flows.package", { name: `${rapp.name ?? rapp.packageId.slice(0, 8)} ${rapp.version ?? ""}`.trim() });
   return (
-    <Card section="rapp.flows" title="Lifecycle flows for this rApp" sub="every journey this rApp, its package and its model take · each step proved by live state"
-      actions={<Link className="btn small" to={`/flows/07?subject=${id}`}>Open in Lifecycle flows</Link>}>
-      {(inst.error || status.error) && <p className="small text-bad">Some lifecycle state could not be read; those rows stay unevaluated.</p>}
+    <Card section="rapp.flows" title={t("rappDetail.flows.title")} sub={t("rappDetail.flows.sub")}
+      actions={<Link className="btn small" to={`/flows/07?subject=${id}`}>{t("rappDetail.flows.open")}</Link>}>
+      {(inst.error || status.error) && <p className="small text-bad">{t("rappDetail.flows.unreadable")}</p>}
       <ul className="list">
-        <FlowRow id="01" title="Onboarding → running" subject={rapp.packageId} subjectLabel={pkgLabel}
+        <FlowRow id="01" title={t("rappDetail.flows.f01")} subject={rapp.packageId} subjectLabel={pkgLabel}
           steps={ready ? flow01(pkg, inst.data, deployment.data) : null} />
-        <FlowRow id="06" title="Package lifecycle" subject={rapp.packageId} subjectLabel={pkgLabel}
+        <FlowRow id="06" title={t("rappDetail.flows.f06")} subject={rapp.packageId} subjectLabel={pkgLabel}
           steps={status.data && usage.data ? flow06(pkg, usage.data, usage.data.filter((u) => u.active).length) : null} />
-        <FlowRow id="07" title="Instance lifecycle" subject={id} subjectLabel={`instance ${id.slice(0, 8)}`}
+        <FlowRow id="07" title={t("rappDetail.flows.f07")} subject={id} subjectLabel={t("rappDetail.flows.instance", { id: id.slice(0, 8) })}
           steps={inst.data && perf.data && faults.data ? flow07(inst.data, perf.data, faults.data) : null} />
         <li>
           <Link className="row gap wrap rd-flow" to="/flows/02">
             <span className="flow-num">02</span>
-            <span className="col rd-flow-t"><strong>Its model: train → serve → retire →</strong><span className="gap-note">the backend links no AI/ML model to an rApp; pick the model on the board</span></span>
+            <span className="col rd-flow-t"><strong>{t("rappDetail.flows.model")}</strong><span className="gap-note">{t("rappDetail.flows.modelNote")}</span></span>
           </Link>
         </li>
       </ul>

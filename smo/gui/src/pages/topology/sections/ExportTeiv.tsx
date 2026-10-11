@@ -3,10 +3,12 @@
 import { useState } from "react";
 
 import { smo } from "../../../api/client";
+import { useT } from "../../../i18n";
 import { TOPOLOGY_EXPORT_PATH, useTopologyParams } from "../data/queries";
 
 /** The button; the file is named after the element in focus, or `ran-topology.json`. */
 export function ExportTeiv() {
+  const t = useT();
   const { me } = useTopologyParams();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +31,7 @@ export function ExportTeiv() {
   };
   return (
     <span className="row" data-section="topology.export">
-      <button type="button" className="btn" onClick={() => void run()} disabled={busy}>{busy ? "Exporting…" : "Export (TEIV JSON)"}</button>
+      <button type="button" className="btn" onClick={() => void run()} disabled={busy}>{busy ? t("topology.export.busy") : t("topology.export.button")}</button>
       {error && <span className="small t-bad" role="alert">{error}</span>}
     </span>
   );

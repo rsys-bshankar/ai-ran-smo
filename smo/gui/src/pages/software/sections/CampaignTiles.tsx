@@ -1,6 +1,7 @@
 /** Software · campaign tiles (`software.tiles`): campaigns by state from the BFF summary (`useSummary("software")`, true counts, SCALE.md P2).
  * The running/halted tile filters the campaign list to the halted ones. The mockup's version share, gate failures over 7 days and failed
  * element jobs over 24 h have no route that serves them: they are left out (README, Known limits). */
+import { useT } from "../../../i18n";
 import { formatCount, Kpi } from "../../../kit/Kpi";
 import { Meter } from "../../../kit/Meter";
 import { ErrorRetry } from "../../../kit/states";
@@ -9,6 +10,7 @@ import { count, sum, useSummary } from "../../../data/summary";
 
 /** The tile row. */
 export function CampaignTiles() {
+  const t = useT();
   const s = useSummary("software");
   const [status, setStatus] = useUrlParam("status");
   if (s.error && !s.data) return <section data-section="software.tiles"><ErrorRetry error={s.error} onRetry={() => void s.refetch()} /></section>;
@@ -21,14 +23,14 @@ export function CampaignTiles() {
   ];
   return (
     <div className="grid g4" data-section="software.tiles">
-      <Kpi label="Running · halted" value={running === null || halted === null ? null : `${formatCount(running)} · ${formatCount(halted)}`}
-        foot={halted ? `${formatCount(halted)} waiting for you` : "none waiting"} tone={halted ? "hot" : undefined}
-        onClick={() => setStatus(status === "HALTED" ? null : "HALTED")} active={status === "HALTED"} title="Show the halted campaigns" />
-      <Kpi label="Completed" value={c("COMPLETED") === null ? null : formatCount(c("COMPLETED"))} foot={c("ABORTED") !== null ? `${formatCount(c("ABORTED"))} aborted` : undefined} />
-      <Kpi label="Rolled back" value={back === null ? null : formatCount(back)} foot={c("ROLLBACK_FAILED") ? <span className="t-bad">{formatCount(c("ROLLBACK_FAILED"))} rollback failed</span> : "no failed rollback"}
+      <Kpi label={t("software.tiles.running")} value={running === null || halted === null ? null : `${formatCount(running)} · ${formatCount(halted)}`}
+        foot={halted ? t("software.tiles.running.waiting", { n: formatCount(halted) }) : t("software.tiles.running.none")} tone={halted ? "hot" : undefined}
+        onClick={() => setStatus(status === "HALTED" ? null : "HALTED")} active={status === "HALTED"} title={t("software.tiles.running.title")} />
+      <Kpi label={t("software.tiles.completed")} value={c("COMPLETED") === null ? null : formatCount(c("COMPLETED"))} foot={c("ABORTED") !== null ? t("software.tiles.completed.aborted", { n: formatCount(c("ABORTED")) }) : undefined} />
+      <Kpi label={t("software.tiles.rolledBack")} value={back === null ? null : formatCount(back)} foot={c("ROLLBACK_FAILED") ? <span className="t-bad">{t("software.tiles.rolledBack.failed", { n: formatCount(c("ROLLBACK_FAILED")) })}</span> : t("software.tiles.rolledBack.none")}
         tone={c("ROLLBACK_FAILED") ? "warm" : undefined} />
-      <Kpi label="All campaigns" value={total === null ? null : formatCount(total)} foot={s.data?.partial.length ? "partial: RAN NF OAM did not answer" : undefined}>
-        {total ? <Meter parts={parts} total={total} label="Campaigns by state" /> : null}
+      <Kpi label={t("software.tiles.all")} value={total === null ? null : formatCount(total)} foot={s.data?.partial.length ? t("software.tiles.all.partial") : undefined}>
+        {total ? <Meter parts={parts} total={total} label={t("software.tiles.all.meter")} /> : null}
       </Kpi>
     </div>
   );

@@ -5,12 +5,14 @@
 import { Link } from "react-router-dom";
 
 import { Card, Id, KeyValue, StateBadge } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { formatCount, Kpi } from "../../../kit/Kpi";
 import { countLinks } from "../../topology/data/graph";
 import { useAlarmCount, useElementLinks, useEntity, useHistory, useHostKeys, useOnboarding } from "../data/queries";
 
 /** The overview of element `me`. */
 export function Overview({ me }: { me: string }) {
+  const t = useT();
   const entity = useEntity(me);
   const critical = useAlarmCount(me, "critical");
   const all = useAlarmCount(me);
@@ -23,12 +25,12 @@ export function Overview({ me }: { me: string }) {
   return (
     <div className="stack" data-section="element.overview">
       <div className="grid g4">
-        <Kpi label="Critical alarms" value={critical.data?.total === undefined ? null : formatCount(critical.data.total)} tone={critical.data?.total ? "hot" : undefined}
-          foot={all.data?.total !== undefined ? `${formatCount(all.data.total)} alarms in all, cleared included` : undefined} to={`/alarms?me=${encodeURIComponent(me)}`} />
-        <Kpi label="Cells" value={e ? formatCount(guards.length) : null} foot={e ? (special ? `${special} guarded above NORMAL` : "all NORMAL") : undefined} />
-        <Kpi label="Config changes" value={history.data?.total === undefined ? null : formatCount(history.data.total)} foot="snapshots in its history" />
-        <Kpi label="Neighbour relations" value={c ? formatCount(c.total) : null}
-          foot={c ? (c.notReciprocal ? <span className="t-bad">{c.notReciprocal} not reciprocal</span> : "all reciprocal") : undefined}
+        <Kpi label={t("element.overview.critical")} value={critical.data?.total === undefined ? null : formatCount(critical.data.total)} tone={critical.data?.total ? "hot" : undefined}
+          foot={all.data?.total !== undefined ? t("element.overview.critical.foot", { count: all.data.total, total: formatCount(all.data.total) }) : undefined} to={`/alarms?me=${encodeURIComponent(me)}`} />
+        <Kpi label={t("element.overview.cells")} value={e ? formatCount(guards.length) : null} foot={e ? (special ? t("element.overview.cells.guarded", { n: special }) : t("element.overview.cells.allNormal")) : undefined} />
+        <Kpi label={t("element.overview.changes")} value={history.data?.total === undefined ? null : formatCount(history.data.total)} foot={t("element.overview.changes.foot")} />
+        <Kpi label={t("element.overview.relations")} value={c ? formatCount(c.total) : null}
+          foot={c ? (c.notReciprocal ? <span className="t-bad">{t("element.overview.relations.notReciprocal", { n: c.notReciprocal })}</span> : t("element.overview.relations.allReciprocal")) : undefined}
           to={`/topology?me=${encodeURIComponent(me)}`} />
       </div>
       <Endpoint me={me} endpointId={e?.o1AdaptorEndpointId ?? null} services={e?.supportedServices ?? null} conformance={e?.conformanceMode ?? null} />
@@ -38,17 +40,18 @@ export function Overview({ me }: { me: string }) {
 
 /** The O1 endpoint card. */
 function Endpoint({ me, endpointId, services, conformance }: { me: string; endpointId: string | null; services: string[] | null; conformance: string | null }) {
+  const t = useT();
   const keys = useHostKeys(endpointId);
   const onboarding = useOnboarding(me);
   const key = keys.data?.[0];
   return (
-    <Card section="element.endpoint" title="Endpoint" actions={<Link className="small" to="/configuration#trust">Trust &amp; keys →</Link>}>
+    <Card section="element.endpoint" title={t("element.endpoint.title")} actions={<Link className="small" to="/configuration#trust">{t("element.endpoint.trust")}</Link>}>
       <KeyValue items={[
-        ["O1 adaptor", endpointId ? <Id value={endpointId} /> : "none registered"],
-        ["MnS services", services?.length ? services.join(", ") : null],
-        ["Conformance", conformance],
-        ["Host key", key ? `${key.keyType} · pinned by ${key.pinnedBy}` : keys.error ? <span className="muted">not an ssh endpoint, or not readable</span> : keys.data ? <span className="t-bad">none pinned</span> : null],
-        ["Onboarding", onboarding.data ? <StateBadge state={onboarding.data.status} /> : onboarding.error?.status === 404 ? <span className="muted">not onboarded through a template</span> : null],
+        [t("element.endpoint.adaptor"), endpointId ? <Id value={endpointId} /> : t("element.endpoint.adaptor.none")],
+        [t("element.endpoint.services"), services?.length ? services.join(", ") : null],
+        [t("element.endpoint.conformance"), conformance],
+        [t("element.endpoint.hostKey"), key ? t("element.endpoint.hostKey.pinned", { type: key.keyType, user: key.pinnedBy }) : keys.error ? <span className="muted">{t("element.endpoint.hostKey.unreadable")}</span> : keys.data ? <span className="t-bad">{t("element.endpoint.hostKey.none")}</span> : null],
+        [t("element.endpoint.onboarding"), onboarding.data ? <StateBadge state={onboarding.data.status} /> : onboarding.error?.status === 404 ? <span className="muted">{t("element.endpoint.onboarding.none")}</span> : null],
       ]} />
     </Card>
   );
