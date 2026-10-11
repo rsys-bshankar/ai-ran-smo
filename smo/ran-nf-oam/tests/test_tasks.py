@@ -191,7 +191,7 @@ def test_the_worker_advances_a_staged_job_whose_pause_has_elapsed(client, fleet,
 
 def test_the_task_list_is_what_the_docs_say():
     """The registered worker tasks and their intervals are exactly those the module description lists."""
-    assert {t.name: t.interval_seconds for t in tasks.TASKS} == {"advance-waves": 15, "publish-kpis": 30, "run-kpi-guards": 60,
+    assert {t.name: t.interval_seconds for t in tasks.TASKS} == {"advance-waves": 15, "start-due-windows": 15, "expire-windows": 30, "publish-kpis": 30, "run-kpi-guards": 60,
                                                                        "expire-approvals": 60, "chain-decisions": 60,
                                                                        "purge-safeguard-refusals": 3600,
                                                                        "purge-cleared-alarms": 3600, "purge-pm-files": 3600,
@@ -206,7 +206,7 @@ def test_the_worker_tick_runs_the_tasks_through_the_claim(db_session_factory, mo
     Base.metadata.create_all(engine, tables=[PeriodicRun.__table__])
     monkeypatch.setattr(tasks, "SessionLocal", db_session_factory)
     out = tick(tasks.TASKS, module="ran-nf-oam", session_factory=db_session_factory, engine=engine)
-    assert out == {name: "ran" for name in ("advance-waves", "publish-kpis", "run-kpi-guards", "expire-approvals", "chain-decisions", "purge-safeguard-refusals", "purge-cleared-alarms", "purge-pm-files", "purge-approvals", "purge-decision-records")}
+    assert out == {name: "ran" for name in ("advance-waves", "start-due-windows", "expire-windows", "publish-kpis", "run-kpi-guards", "expire-approvals", "chain-decisions", "purge-safeguard-refusals", "purge-cleared-alarms", "purge-pm-files", "purge-approvals", "purge-decision-records")}
     assert tick(tasks.TASKS, module="ran-nf-oam", session_factory=db_session_factory, engine=engine) == {
         name: "skipped" for name in out}
 

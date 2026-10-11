@@ -455,7 +455,7 @@ class VendorCapability(Base):
 
 
 class WriteConfigJob(Versioned, Base):
-    """A CM write job (`POST /config-jobs`): who asked, its state (`JobState`), the staged-rollout settings and progress (waves, pause, gate), the rollback link, the KPI guard declared with it, the change window and its approval (MGT-4), and the rApp invoker id that rate limits and job ownership use. Its changes are the `write_config_sub_change` rows.
+    """A CM write job (`POST /config-jobs`): who asked, its state (`JobState`), the staged-rollout settings and progress (waves, pause, gate), the rollback link, the KPI guard declared with it, the change window and its approval (MGT-4), the requester's scope claim and the failed start attempts (MGT-4.4), and the rApp invoker id that rate limits and job ownership use. Its changes are the `write_config_sub_change` rows.
     """
     __tablename__ = "write_config_job"
 
@@ -499,6 +499,11 @@ class WriteConfigJob(Versioned, Base):
     decided_by: Mapped[str | None] = mapped_column(String)
     decided_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     decision_reason: Mapped[str | None] = mapped_column(String)
+    # MGT-4.4: the scope claim of the caller that asked for the job (`smo_shared.scope.to_claim`; NULL: no claim), kept so that the start, which no request comes with, asks the
+    # same question of the elements as the request did. `start_attempts` counts the consecutive starts of the job that failed unexpectedly (NULL: none); the worker ends the job
+    # FAILED at the limit. Both are NULL on a job that never waited for a window.
+    requester_scope: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))
+    start_attempts: Mapped[int | None] = mapped_column(Integer)
 
 
 class WriteConfigSubChange(Base):

@@ -34,6 +34,7 @@ from smo_shared.statemachine import IllegalTransition
 from sqlalchemy import ColumnElement, and_, delete, func, or_, select
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import InstrumentedAttribute, Session
+from sqlalchemy.orm.exc import StaleDataError
 
 from smo_shared.logconfig import install_logging
 from smo_shared.metrics import install_metrics
@@ -918,15 +919,19 @@ def _refuse_if_killed(db: Session, caller: str | None, requested_by: str | None 
             + (f": {kill.reason}" if kill.reason else "")))
 
 
-def _enforce_rapp_limit(db: Session, caller: str | None, requested_by: str | None = None) -> None:
+def _enforce_rapp_limit(db: Session, caller: str | None, requested_by: str | None = None, exclude_job: uuid.UUID | None = None) -> None:
     """AI-10.2: 429 when `caller` (the invoker id R1 vouches for) has already started as many write jobs in the last hour as its limit
     (`PUT /rapp-limits/{invoker_id}`, from the manifest of the rApp) allows. A caller with no limit, or none that R1 identified, is not counted.
-    Rollbacks and automatic reverts do not pass here: undoing a change must never be refused because the rApp used its budget."""
+    Rollbacks and automatic reverts do not pass here: undoing a change must never be refused because the rApp used its budget.
+    `exclude_job`: the job being started (MGT-4.4), which already exists and is not counted against itself."""
     limit = db.get(RAppLimit, caller) if caller else None
     if limit is None or limit.max_config_jobs_per_hour is None:
         return
     since = datetime.datetime.now(datetime.UTC) - RATE_WINDOW
-    used = db.scalar(select(func.count()).select_from(WriteConfigJob).where(WriteConfigJob.invoker_id == caller, WriteConfigJob.created_at >= since)) or 0
+    counted = select(func.count()).select_from(WriteConfigJob).where(WriteConfigJob.invoker_id == caller, WriteConfigJob.created_at >= since)
+    if exclude_job is not None:
+        counted = counted.where(WriteConfigJob.job_id != exclude_job)
+    used = db.scalar(counted) or 0
     if used >= limit.max_config_jobs_per_hour:
         error = framework_error(FrameworkError.RAPP_RATE_LIMITED,
                                 detail=f"{caller} has started {used} config jobs in the last hour; its limit is {limit.max_config_jobs_per_hour}")
@@ -946,6 +951,11 @@ def _number(value) -> float | None:
 
 
 def _enforce_change_limits(db: Session, body: WriteConfigRequest, caller: str | None) -> None:
+    """AI-10.3 for a request: `_enforce_limits_of` its changes."""
+    _enforce_limits_of(db, body.changes, body.requestedBy, caller)
+
+
+def _enforce_limits_of(db: Session, changes: list[dict], requested_by: str, caller: str | None) -> None:
     """AI-10.3: the limits a manifest declares on what one job may do, for a caller R1 identified (a rollback or revert has none: undoing is not limited).
 
     Blast radius, `maxElementsPerJob`: more distinct managed elements than that is 403 `RAPP_BLAST_RADIUS_EXCEEDED`.
@@ -956,14 +966,14 @@ def _enforce_change_limits(db: Session, body: WriteConfigRequest, caller: str | 
     limit = db.get(RAppLimit, caller) if caller else None
     if limit is None:
         return
-    elements = list(dict.fromkeys(c["managedElementRef"] for c in body.changes))
+    elements = list(dict.fromkeys(c["managedElementRef"] for c in changes))
     if limit.max_elements_per_job is not None and len(elements) > limit.max_elements_per_job:
-        _refuse(db, caller, body.requestedBy, framework_error(
+        _refuse(db, caller, requested_by, framework_error(
             FrameworkError.RAPP_BLAST_RADIUS_EXCEEDED,
             detail=f"{caller} may change {limit.max_elements_per_job} managed elements in one job; this one names {len(elements)}"))
     if limit.max_change_percent is None:
         return
-    for change in body.changes:
+    for change in changes:
         wanted = {name: new for name, new in (change.get("attributeChanges") or {}).items() if _number(new) is not None}
         if not wanted:
             continue
@@ -973,14 +983,14 @@ def _enforce_change_limits(db: Session, body: WriteConfigRequest, caller: str | 
         for name, new in wanted.items():
             current = _number((before or {}).get(name))
             if current is None:
-                _refuse(db, caller, body.requestedBy, framework_error(FrameworkError.RAPP_MAGNITUDE_EXCEEDED, detail=(
+                _refuse(db, caller, requested_by, framework_error(FrameworkError.RAPP_MAGNITUDE_EXCEEDED, detail=(
                     f"{change['managedElementRef']} {name}: its current value cannot be checked against maxChangePercent="
                     f"{limit.max_change_percent:g} ({error or 'it is not a number'})")))
             target = cast(float, _number(new))              # `wanted` holds only the numeric ones
             moved = abs(target - current)
             percent = 0.0 if moved == 0 else float("inf") if current == 0 else moved / abs(current) * 100
             if percent > limit.max_change_percent:
-                _refuse(db, caller, body.requestedBy, framework_error(FrameworkError.RAPP_MAGNITUDE_EXCEEDED, detail=(
+                _refuse(db, caller, requested_by, framework_error(FrameworkError.RAPP_MAGNITUDE_EXCEEDED, detail=(
                     f"{change['managedElementRef']} {name}: {current:g} to {target:g} is a change of "
                     f"{'more than any' if percent == float('inf') else f'{percent:.1f}%'}; {caller} may change a value by {limit.max_change_percent:g}% at most")))
 
@@ -1054,7 +1064,8 @@ def _execute_write(body: WriteConfigRequest, db: Session, rollback_of: uuid.UUID
                          wave_count=max(wave_of.values(), default=1), gate_max_new_alarms=body.gateMaxNewAlarms,
                          on_gate_failure=body.onGateFailure, invoker_id=invoker,
                          kpi_guard=body.kpiGuard.model_dump() if body.kpiGuard else None,
-                         scheduled_at=window.start if window else None, window_end=window.end if window else None)
+                         scheduled_at=window.start if window else None, window_end=window.end if window else None,
+                         requester_scope=(authz_scope.to_claim(requester_scope) or (approval.requester_scope if approval is not None else None)) if hold else None)
     db.add(job)
     db.flush()
 
@@ -1614,7 +1625,7 @@ def continue_configuration_job(job_id: uuid.UUID, body: WaveActionRequest, reque
     # SEC-15.4: 404 for an unknown job or another scoped rApp's, 403 `SCOPE_DENIED` for a job that wrote outside the caller's scope, then 409 when it is not HALTED (`_halted_job`).
     scheduled = _job_in_reach(db, request, job_id, body.requestedBy)
     if scheduled.status == JobState.SCHEDULED:
-        return _start_scheduled(db, scheduled, body)                        # MGT-4.3: an approved job whose window is open is started here (MGT-4.4 will start it by itself)
+        return _start_scheduled(db, scheduled, body)                        # MGT-4.3: an approved job whose window is open is started here (the worker starts it by itself, MGT-4.4, by the same code)
     job = _halted_job(db, request, job_id, JobEvent.RESUME, body.requestedBy)
     _refuse_if_killed(db, job.invoker_id, body.requestedBy)               # AI-10.4: a stopped rApp's job does not go on to its next wave
     if job.halted_reason == "WAVE_PAUSE" and job.next_wave_at and as_utc(job.next_wave_at) > datetime.datetime.now(datetime.UTC) and not body.force:
@@ -2276,12 +2287,12 @@ def _window_view(job: WriteConfigJob) -> dict:
 
 def _approve_window(db: Session, job: WriteConfigJob, decider: str, reason: str | None) -> None:
     """Record the approval of a PENDING_APPROVAL job and move it on: SCHEDULED when its window has not opened yet, else PROCESSING with its waves run now
-    (409 `CHANGE_WINDOW_CLOSED` when the window has already closed: an approval after the close would run it outside it). The caller commits."""
+    (409 `CHANGE_WINDOW_CLOSED` when the window has already closed: an approval after the close would run it outside it, so a job approved after `window_end` can never start; it stays PENDING_APPROVAL until `expire_due_windows` ends it EXPIRED). The caller commits."""
     now = datetime.datetime.now(datetime.UTC)
-    if job.window_end is not None and as_utc(job.window_end) <= now:
-        raise framework_error(CHANGE_WINDOW_CLOSED, detail=f"the change window closed at {as_utc(job.window_end).isoformat()}")
+    if _window_closed(job, now):
+        raise framework_error(CHANGE_WINDOW_CLOSED, detail=f"the change window closed at {as_utc(cast(datetime.datetime, job.window_end)).isoformat()}")
     job.decided_by, job.decided_at, job.decision_reason = decider, now, reason
-    if job.scheduled_at is not None and as_utc(job.scheduled_at) > now:
+    if not _window_open(job, now):
         job.status = WRITE_CONFIG_JOB_FSM.fire(JobState(job.status), JobEvent.APPROVE_FOR_WINDOW, job=job)
         db.flush()
         return
@@ -2292,22 +2303,237 @@ def _approve_window(db: Session, job: WriteConfigJob, decider: str, reason: str 
     _advance(db, job)
 
 
-def _start_scheduled(db: Session, job: WriteConfigJob, body: "WaveActionRequest") -> dict:
-    """Start an approved job whose window is open (MGT-4.3): 409 `CHANGE_WINDOW_NOT_OPEN` before it opens unless `force`, 409 `CHANGE_WINDOW_CLOSED` after it
-    closes. Runs its waves and commits."""
-    now = datetime.datetime.now(datetime.UTC)
-    if job.window_end is not None and as_utc(job.window_end) <= now:
-        raise framework_error(CHANGE_WINDOW_CLOSED, detail=f"the change window closed at {as_utc(job.window_end).isoformat()}")
-    if job.scheduled_at is not None and as_utc(job.scheduled_at) > now and not body.force:
-        raise framework_error(CHANGE_WINDOW_NOT_OPEN, detail=f"the change window opens at {as_utc(job.scheduled_at).isoformat()}; send force=true to start now")
-    _refuse_if_killed(db, job.invoker_id, body.requestedBy)
+def _window_closed(job: WriteConfigJob, now: datetime.datetime) -> bool:
+    """Whether the job's change window has closed at `now`. `window_end` is the first instant the window is over: at `now == window_end` the job may no longer start
+    and is due to expire; this one comparison is used by approval, both starts and the expiry, so they cannot disagree about the boundary (MGT-4.5)."""
+    return job.window_end is not None and as_utc(job.window_end) <= now
+
+
+def _window_open(job: WriteConfigJob, now: datetime.datetime) -> bool:
+    """Whether the job's change window has opened at `now` (`scheduled_at` is the first instant it is open; no start means open). Closing is `_window_closed`'s."""
+    return job.scheduled_at is None or as_utc(job.scheduled_at) <= now
+
+
+def _claim_job(db: Session, job_id: uuid.UUID, *, skip_locked: bool) -> WriteConfigJob | None:
+    """Select the job FOR UPDATE and reload it from the database (not from the session's identity map), so what the caller then checks is what is committed now.
+    This is the claim of the change-window runner (MGT-4.4/4.5) and of the manual start: whoever holds the row's lock decides, and a second claimant that gets the
+    lock afterwards sees the state the first one committed. With `skip_locked` (the worker) a row another replica holds is passed over and None is returned, as
+    `lapse_due_approvals` does; without it (a person's request) the call waits for that replica. None also when the job does not exist. The row's `row_version`
+    is the second line of defence (a flush of a stale copy raises StaleDataError), and the only one on SQLite, which ignores FOR UPDATE."""
+    stmt = select(WriteConfigJob).where(WriteConfigJob.job_id == job_id).with_for_update(skip_locked=skip_locked).execution_options(populate_existing=True)
+    return db.scalars(stmt).one_or_none()
+
+
+def _enforce_start_safeguards(db: Session, job: WriteConfigJob, started_by: str) -> None:
+    """MGT-4.4: the safeguards `POST /config-jobs` applies, asked again when an approved job starts (a window can open days after the request): the scope claim of the caller
+    that asked, kept on the job, against the elements as they are now (403 `SCOPE_DENIED`: `_enforce_scope`), the rate limit (429 `RAPP_RATE_LIMITED`: `_enforce_rapp_limit`, which does not
+    count this job against itself), and the blast-radius and magnitude limits against the changes as stored (403 `RAPP_BLAST_RADIUS_EXCEEDED`, `RAPP_MAGNITUDE_EXCEEDED`: `_enforce_limits_of`,
+    which reads the current values from the elements now). The same functions, in the order of the request; each refusal is recorded and announced by `_refuse`, which commits.
+    The kill switch is checked by the caller first. Not repeated: MSAC (decided at the request and again at the approval, and the approver is not the requester), and the ownership
+    of the job, which a person's `continue` has already been asked (`_job_in_reach`) and which the worker, acting for nobody, is not."""
+    caller = job.invoker_id
+    changes: list[dict[str, Any]] = [{"managedElementRef": r.managed_element_ref, "managedFunctionRef": r.managed_function_ref, "attributeChanges": r.attribute_changes,
+                                      "operation": r.operation}
+                                     for r in db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job.job_id).order_by(WriteConfigSubChange.position)).all()]
+    _enforce_scope(db, authz_scope.from_introspection(job.requester_scope), caller, started_by, [c["managedElementRef"] for c in changes])
+    _enforce_rapp_limit(db, caller, started_by, exclude_job=job.job_id)
+    _enforce_limits_of(db, changes, started_by, caller)
+
+
+def _start_scheduled_job(db: Session, job: WriteConfigJob, *, started_by: str, force: bool = False, now: datetime.datetime | None = None) -> None:
+    """The one way an approved (SCHEDULED) job starts, for a person's `continue` (MGT-4.3) and for the worker's `start-due-windows` (MGT-4.4), so both run the same checks in
+    the same order and cannot behave differently. The caller holds the claim (`_claim_job`) and commits.
+
+    Raises 409 `APPROVAL_NOT_PENDING` for a job with no recorded approval (SCHEDULED is only reached by an approval, so this is a guard, not a path), 409
+    `CHANGE_WINDOW_CLOSED` once the window has closed, 409 `CHANGE_WINDOW_NOT_OPEN` before it opens unless `force` (a person's), 403 `RAPP_KILLED` when the rApp that
+    owns the job was stopped while it waited (AI-10.4), and then what `_enforce_start_safeguards` raises: 403 `SCOPE_DENIED`, 429 `RAPP_RATE_LIMITED`, 403
+    `RAPP_BLAST_RADIUS_EXCEEDED` or `RAPP_MAGNITUDE_EXCEEDED` (each recorded as a safeguard refusal like any other, and committed by `_refuse`). Then fires START, stamps
+    `schema_validated_at` (the KPI guard measures from when the job ran, not when it was asked) and runs its waves. MSAC is not asked again."""
+    now = now or datetime.datetime.now(datetime.UTC)
+    if job.decided_by is None:
+        raise framework_error(FrameworkError.APPROVAL_NOT_PENDING, detail="the job has no recorded approval")
+    if _window_closed(job, now):
+        raise framework_error(CHANGE_WINDOW_CLOSED, detail=f"the change window closed at {as_utc(cast(datetime.datetime, job.window_end)).isoformat()}")
+    if not _window_open(job, now) and not force:
+        raise framework_error(CHANGE_WINDOW_NOT_OPEN,
+                              detail=f"the change window opens at {as_utc(cast(datetime.datetime, job.scheduled_at)).isoformat()}; send force=true to start now")
+    _refuse_if_killed(db, job.invoker_id, started_by)
+    _enforce_start_safeguards(db, job, started_by)
     job.status = WRITE_CONFIG_JOB_FSM.fire(JobState.SCHEDULED, JobEvent.START, job=job)
-    job.schema_validated_at = now                                           # the KPI guard measures from when the job ran, not when it was asked
+    job.schema_validated_at = now
     db.flush()
-    log.info("config job %s started in its change window by %s", job.job_id, body.requestedBy)
+    log.info("config job %s started in its change window by %s", job.job_id, started_by)
     _advance(db, job)
+
+
+def _start_scheduled(db: Session, job: WriteConfigJob, body: "WaveActionRequest") -> dict:
+    """Start an approved job whose window is open (MGT-4.3): the claim and checks of `_start_scheduled_job`, so 409 `CHANGE_WINDOW_NOT_OPEN` before the window opens
+    unless `force`, 409 `CHANGE_WINDOW_CLOSED` after it closes, and 409 (illegal transition) when the worker, or another request, started or ended the job first.
+    Runs its waves and commits."""
+    claimed = _claim_job(db, job.job_id, skip_locked=False)                    # waits for a worker that is starting this very job, then sees what it committed
+    if claimed is None or claimed.status != JobState.SCHEDULED:
+        raise illegal_transition_error(IllegalTransition(JobState(job.status), JobEvent.START), f"configuration job {job.job_id}")
+    _start_scheduled_job(db, claimed, started_by=body.requestedBy, force=body.force)
     db.commit()
-    return _job_summary(job)
+    return _job_summary(claimed)
+
+
+# The name the worker's start is made in when a requester is asked for (the kill-switch refusal record names who tried to start the job).
+SYSTEM_WINDOW_RUNNER = "system:change-window"
+
+
+# MGT-4.4: how many consecutive starts of one job may fail unexpectedly before the worker ends it FAILED (`START_ERROR_LIMIT`). Read at import; a restart is needed to change it.
+def _start_attempt_limit() -> int:
+    """`RAN_NF_OAM_WINDOW_START_ATTEMPTS` (default 5, at least 1); the default for nothing, for text and for less than one."""
+    try:
+        return max(1, int(os.environ.get("RAN_NF_OAM_WINDOW_START_ATTEMPTS", "5")))
+    except ValueError:
+        return 5
+
+
+START_ATTEMPT_LIMIT = _start_attempt_limit()
+
+
+def _end_unstarted(db: Session, job: WriteConfigJob, *, reason: str, code: str, detail: str) -> None:
+    """End the claimed SCHEDULED `job` FAILED without having sent anything (event START_REFUSED): `halted_reason` `reason`, `halted_detail` `detail`, every change REJECTED with `code`.
+    The caller commits."""
+    job.status = WRITE_CONFIG_JOB_FSM.fire(JobState.SCHEDULED, JobEvent.START_REFUSED, job=job)
+    job.halted_reason, job.halted_detail = reason, detail
+    for change in db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job.job_id)):
+        change.status, change.rejection_reason = "REJECTED", code
+
+
+def _fail_unstartable(db: Session, job_id: uuid.UUID, refusal: HTTPException) -> bool:
+    """MGT-4.4: the worker was refused when it tried to start a SCHEDULED job (`refusal`, the error `_start_scheduled_job` raised: 403 `RAPP_KILLED`, 403 `SCOPE_DENIED`, 429
+    `RAPP_RATE_LIMITED`, 403 `RAPP_BLAST_RADIUS_EXCEEDED` or `RAPP_MAGNITUDE_EXCEEDED`). The job is not left SCHEDULED to be refused again every few seconds: it ends FAILED, every
+    change REJECTED with the refusal's code as the reason, `halted_reason` `START_REFUSED` and `halted_detail` "CODE: the refusal's text". Nothing was sent. The refusal itself is
+    already recorded and announced by the safeguard that raised it (`GET /safeguard-refusals`, `RAPP_SAFEGUARD_REFUSAL`); no decision record or audit row is written for it (the
+    job row and its state event carry the outcome). The claim is taken again because `_refuse` committed and so gave up the lock; a job that is no longer SCHEDULED is left.
+    Commits. True when the job was failed."""
+    db.rollback()
+    job = _claim_job(db, job_id, skip_locked=True)
+    if job is None or job.status != JobState.SCHEDULED:
+        db.rollback()
+        return False
+    problem = cast(dict, refusal.detail)                              # `framework_error` puts the ProblemDetails dict in `detail`
+    code, detail = problem["title"], problem.get("detail")
+    _end_unstarted(db, job, reason="START_REFUSED", code=code, detail=f"{code}: {detail}" if detail else code)
+    db.commit()
+    log.warning("config job %s was not started in its change window: %s", job_id, job.halted_detail)
+    return True
+
+
+def _count_failed_start(db: Session, job_id: uuid.UUID, error: Exception) -> bool:
+    """MGT-4.4: the worker's start of a SCHEDULED job failed unexpectedly (`error` is not a refusal). The attempt is counted on the job row (`start_attempts`), under the same claim a
+    start is made under, so a restart forgets nothing and two replicas count each failed attempt once (a replica that does not get the row passes the job over, and so does not
+    count). Below `START_ATTEMPT_LIMIT` the job stays SCHEDULED for the next run; at the limit it ends FAILED (`halted_reason` `START_ERROR_LIMIT`, `halted_detail` the count and
+    the last error's text, every change REJECTED `START_ERROR_LIMIT`, event START_REFUSED), and nothing is tried again. A job that is no longer SCHEDULED is left. Commits.
+    True when the job was failed."""
+    db.rollback()
+    job = _claim_job(db, job_id, skip_locked=True)
+    if job is None or job.status != JobState.SCHEDULED:
+        db.rollback()
+        return False
+    job.start_attempts = (job.start_attempts or 0) + 1
+    if job.start_attempts < START_ATTEMPT_LIMIT:
+        db.commit()
+        return False
+    _end_unstarted(db, job, reason="START_ERROR_LIMIT", code="START_ERROR_LIMIT",
+                   detail=f"START_ERROR_LIMIT: {job.start_attempts} consecutive starts failed; the last: {type(error).__name__}: {error}"[:1000])
+    db.commit()
+    log.error("config job %s ended FAILED: %s", job_id, job.halted_detail)
+    return True
+
+
+def start_due_windows(db: Session, now: datetime.datetime | None = None) -> dict[str, list[str]]:
+    """MGT-4.4: what the worker's `start-due-windows` task runs. Every SCHEDULED job whose window has opened and not closed is started, once however many workers run.
+
+    A candidate is claimed FOR UPDATE SKIP LOCKED, so a job another replica is starting is passed over, and its state and window are checked again under the lock
+    (the list was read earlier). It then starts through `_start_scheduled_job`, the same checks as a person's `continue`, and is committed on its own, one job
+    per transaction. A job whose window has closed is not started: `expire_due_windows` takes it. A start that is refused (the rApp was stopped while the job waited, or its scope,
+    rate or change limits no longer allow the job) fails the job (`_fail_unstartable`). Any other error rolls that job back, is logged and counted on the job (`_count_failed_start`):
+    it stays SCHEDULED for the next run until the fifth consecutive failure (`START_ATTEMPT_LIMIT`), which ends it FAILED `START_ERROR_LIMIT`; a successful start clears the count.
+    `now` is for tests; the clock is read again for each job otherwise, since starting one can take a while. Returns the ids `{"started": [...], "refused": [...]}` (`refused`: the jobs ended FAILED without starting, for a refusal or for the error limit)."""
+    reference = now or datetime.datetime.now(datetime.UTC)
+    ids = list(db.scalars(select(WriteConfigJob.job_id).where(
+        WriteConfigJob.status == JobState.SCHEDULED, or_(WriteConfigJob.scheduled_at.is_(None), WriteConfigJob.scheduled_at <= reference),
+        or_(WriteConfigJob.window_end.is_(None), WriteConfigJob.window_end > reference)).order_by(WriteConfigJob.scheduled_at).limit(APPROVAL_SWEEP_BATCH)).all())
+    db.rollback()                                                         # ends the read; each job below is its own transaction
+    started: list[str] = []
+    refused: list[str] = []
+    for job_id in ids:
+        at = now or datetime.datetime.now(datetime.UTC)
+        try:
+            job = _claim_job(db, job_id, skip_locked=True)
+            if job is None or job.status != JobState.SCHEDULED or _window_closed(job, at) or not _window_open(job, at):
+                db.rollback()                                             # another replica has it, or it moved on, or the window shut since the list was read
+                continue
+            try:
+                _start_scheduled_job(db, job, started_by=SYSTEM_WINDOW_RUNNER, now=at)
+            except HTTPException as refusal:
+                if cast(dict, refusal.detail)["title"] == CHANGE_WINDOW_CLOSED[0]:     # cannot happen after the check above; if it did, expiry owns the job
+                    db.rollback()
+                    continue
+                if _fail_unstartable(db, job_id, refusal):
+                    refused.append(str(job_id))
+                continue
+            if job.start_attempts is not None:
+                job.start_attempts = None                                 # a start that succeeds forgets the failures before it
+            db.commit()
+            started.append(str(job_id))
+        except StaleDataError:
+            db.rollback()                                                 # a person or another replica changed the job under us: theirs stands
+        except Exception as error:                                        # noqa: BLE001 — one job's failure must not stop the others
+            db.rollback()
+            log.exception("config job %s could not be started in its change window; it stays SCHEDULED and is tried again", job_id)
+            try:
+                if _count_failed_start(db, job_id, error):
+                    refused.append(str(job_id))
+            except Exception:                                             # noqa: BLE001 — the count is best effort: a database that is down is retried next run
+                db.rollback()
+                log.exception("the failed start of config job %s could not be counted", job_id)
+    if started or refused:
+        log.info("change windows: %d job(s) started, %d refused", len(started), len(refused))
+    return {"started": started, "refused": refused}
+
+
+def expire_due_windows(db: Session, now: datetime.datetime | None = None) -> list[str]:
+    """MGT-4.5: what the worker's `expire-windows` task runs. Every job still PENDING_APPROVAL or SCHEDULED when its `window_end` has passed (`window_end <= now`: the
+    close is exclusive, see `_window_closed`) moves to EXPIRED, its changes REJECTED `WINDOW_EXPIRED`, `halted_reason` `WINDOW_EXPIRED` and the time and state it
+    was in written to `halted_detail`. Nothing was sent. The approver of a SCHEDULED job stays on the job (`decided_by`); nobody is named for one nobody decided.
+    A job with no `window_end` (held with `requireApproval` only, or a window with a start only) never expires.
+
+    The FSM transition publishes `write-config-job.state-changed` (MSG-3.5). No decision record is written: a record exists once per job and was made when the job was asked
+    (`_execute_write`), and the job row and the event say how it ended. Each job is claimed FOR UPDATE SKIP LOCKED, checked again under the lock, and committed on its own,
+    so two replicas expire it once. Returns the ids expired. `now` is for tests; the clock is read again for each job otherwise."""
+    reference = now or datetime.datetime.now(datetime.UTC)
+    ids = list(db.scalars(select(WriteConfigJob.job_id).where(
+        WriteConfigJob.status.in_((JobState.PENDING_APPROVAL, JobState.SCHEDULED)), WriteConfigJob.window_end <= reference)
+        .order_by(WriteConfigJob.window_end).limit(APPROVAL_SWEEP_BATCH)).all())
+    db.rollback()
+    expired: list[str] = []
+    for job_id in ids:
+        at = now or datetime.datetime.now(datetime.UTC)
+        try:
+            job = _claim_job(db, job_id, skip_locked=True)
+            if job is None or job.status not in (JobState.PENDING_APPROVAL, JobState.SCHEDULED) or not _window_closed(job, at):
+                db.rollback()
+                continue
+            was = job.status
+            job.status = WRITE_CONFIG_JOB_FSM.fire(JobState(was), JobEvent.EXPIRE, job=job)
+            job.halted_reason = "WINDOW_EXPIRED"
+            job.halted_detail = f"the change window closed at {as_utc(cast(datetime.datetime, job.window_end)).isoformat()} while the job was {was}"
+            for change in db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job.job_id)):
+                change.status, change.rejection_reason = "REJECTED", "WINDOW_EXPIRED"
+            db.commit()
+            expired.append(str(job_id))
+            log.info("config job %s expired: %s", job_id, job.halted_detail)
+        except StaleDataError:
+            db.rollback()
+        except Exception:                                                 # noqa: BLE001 — one job's failure must not stop the others
+            db.rollback()
+            log.exception("config job %s could not be expired; it is tried again", job_id)
+    return expired
 
 
 def _waiting_job(db: Session, request: Request, job_id: uuid.UUID, body: ApprovalDecisionRequest, states: tuple[JobState, ...]) -> WriteConfigJob:
