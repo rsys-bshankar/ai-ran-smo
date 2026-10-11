@@ -8,7 +8,7 @@ lifecycle (`HISTORY.md` W10-03, D-4).
 
 import uuid
 
-from ._common import BaseClient, ensure_ok
+from ._common import BaseClient, SdkError, ensure_ok
 
 
 class LifecycleClient(BaseClient):
@@ -58,14 +58,18 @@ class LifecycleClient(BaseClient):
 
     def advance_model_lifecycle(self, model_id: uuid.UUID | str, event: str,
                                  decided_by: str | None = None, rationale: str | None = None) -> dict:
-        """Fire a governance or end-of-life ModelLifecycle event (`aimgf/app/statemachine.py`, `ADVANCEABLE_EVENTS`).
+        """Deprecated, and no longer sends anything: always raises `SdkError` (403, `ROLE_NOT_PERMITTED`) before a call is made.
 
-        The eight governance decisions (`GOVERNANCE_EVENTS`: SUBMIT_FOR_APPROVAL, APPROVE, REJECT, CERTIFY, PROMOTE, ROLLBACK, APPROVE_TRAINING, APPROVE_VALIDATION) need `decided_by`; AIMgF answers 422
-        without it, exactly as for a direct call. DEPRECATE and RETIRE are also accepted, and RETIRE terminates the model's runtime. Job-driven events (CREATE_*, ..._COMPLETE, ..._FAILED) are refused with
-        422: use the job routes (`request_training`, `complete_training`, `cancel_training`, ...). Call flow 26.
+        `POST /aimgf/models/{id}/advance` carries the governance decisions (approve, certify, promote, ...) and the end-of-life events (`aimgf/app/statemachine.py`,
+        `ADVANCEABLE_EVENTS`). Those are decisions of the operator, not of a rApp: since SEC-15.1 AIMgF refuses a caller with the rApp role and since SEC-15.1b the gateway
+        refuses the call too (it is off `roles.RAPP_MAY_CHANGE`), so this method could only ever fail, after a round trip. It is kept, not deleted, so that a rApp that
+        calls it gets a clear error instead of an `AttributeError` (`docs/RELEASES.md`, deprecation policy; removal waits for a release that may break the SDK's API).
+        What a rApp may still do for a model's lifecycle: `request_training`, `complete_training`, `start_validation`, `deploy_runtime`, `activate_runtime`, inference.
+        The arguments are ignored.
         """
-        return ensure_ok(self._r1.post(f"/aimgf/models/{model_id}/advance",
-                                        params={"event": event, "decided_by": decided_by, "rationale": rationale}))
+        raise SdkError(403, {"title": "ROLE_NOT_PERMITTED", "status": 403,
+                             "detail": "advance_model_lifecycle is deprecated and always refused: the governance and end-of-life events of a model are decisions "
+                                       "of the operator (the console), not of a rApp. See sdk/README.md."})
 
     def request_inference(self, model_id: uuid.UUID | str, notification_destination: str | None = None) -> dict:
         return ensure_ok(self._r1.post(f"/aimgf/models/{model_id}/inference-jobs",

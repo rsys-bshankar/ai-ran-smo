@@ -227,4 +227,78 @@ class TokenProviderTest {
             assertFalse(tokens.offboard(), "nothing left to remove");
         }
     }
+
+    /**
+     * Pins SEC-15.13: the enrolment POST carries an Idempotency-Key of 32 hex digits, and the repeat after a 503 (which proves
+     * SME did not run it) sends the same key, so a platform that stores the first answer would serve the repeat from it.
+     */
+    @Test
+    void theEnrolmentCarriesOneIdempotencyKeyThatItsRepeatsReuse() throws Exception {
+        try (FakePlatform fake = new FakePlatform()) {
+            fake.on("GET /bootstrap", 200, "{\"apiEndpoints\":[{\"tokenEndPoint\":{\"uri\":\"" + fake.url() + "/sme/oauth2/token\"}}]}")
+                    .on("POST /sme/invoker-registrations", 503, "{}")
+                    .on("POST /sme/invoker-registrations", 201, "{\"apiInvokerId\":\"i\",\"onboardingSecret\":\"s\"}")
+                    .on("POST /sme/oauth2/token", 200, "{\"access_token\":\"ok\",\"expires_in\":300}");
+            SmoConfig retrying = SmoConfig.of(fake.url()).withRetry(new RetryPolicy(3, Duration.ofMillis(1), Duration.ofMillis(1), false, RetryPolicy.defaults().retryableStatuses()));
+            provider(retrying, new FakePlatform.TestClock()).token();
+
+            var posts = fake.requests("POST", "/sme/invoker-registrations");
+            assertEquals(2, posts.size());
+            String key = posts.get(0).header("Idempotency-Key");
+            assertTrue(key != null && key.matches("[0-9a-f]{32}"), "key: " + key);
+            assertEquals(key, posts.get(1).header("Idempotency-Key"));
+        }
+    }
+
+    /**
+     * Pins SEC-15.13: when the enrolment's answer is lost (the connection breaks after SME received it) the call is not repeated,
+     * because SME stores no answer for this route and a repeat would register a second invoker; the error reaches the caller.
+     */
+    @Test
+    void aLostEnrolmentAnswerIsNotRepeated() throws Exception {
+        try (FakePlatform fake = new FakePlatform()) {
+            fake.on("GET /bootstrap", 200, "{\"apiEndpoints\":[{\"tokenEndPoint\":{\"uri\":\"" + fake.url() + "/sme/oauth2/token\"}}]}")
+                    .on("POST /sme/invoker-registrations", FakePlatform.Reply.drop())
+                    .on("POST /sme/invoker-registrations", 201, "{\"apiInvokerId\":\"i\",\"onboardingSecret\":\"s\"}");
+            SmoConfig retrying = SmoConfig.of(fake.url()).withRetry(new RetryPolicy(3, Duration.ofMillis(1), Duration.ofMillis(1), false, RetryPolicy.defaults().retryableStatuses()));
+            TokenProvider tokens = provider(retrying, new FakePlatform.TestClock());
+
+            assertThrows(SdkException.class, tokens::token);
+            assertEquals(1, fake.requests("POST", "/sme/invoker-registrations").size(), "one registration attempt, not a second one");
+        }
+    }
+
+    /**
+     * Pins that a 504 on the enrolment (the gateway lost SME's answer, which may have run) is final and reaches the caller with its status.
+     */
+    @Test
+    void aGatewayTimeoutOnTheEnrolmentIsFinal() throws Exception {
+        try (FakePlatform fake = new FakePlatform()) {
+            fake.on("GET /bootstrap", 200, "{\"apiEndpoints\":[{\"tokenEndPoint\":{\"uri\":\"" + fake.url() + "/sme/oauth2/token\"}}]}")
+                    .on("POST /sme/invoker-registrations", 504, "{\"title\":\"GATEWAY_TIMEOUT\"}")
+                    .on("POST /sme/invoker-registrations", 201, "{\"apiInvokerId\":\"i\",\"onboardingSecret\":\"s\"}");
+            SmoConfig retrying = SmoConfig.of(fake.url()).withRetry(new RetryPolicy(3, Duration.ofMillis(1), Duration.ofMillis(1), false, RetryPolicy.defaults().retryableStatuses()));
+
+            SdkException e = assertThrows(SdkException.class, () -> provider(retrying, new FakePlatform.TestClock()).token());
+            assertEquals(504, e.status());
+            assertEquals(1, fake.requests("POST", "/sme/invoker-registrations").size());
+        }
+    }
+
+    /**
+     * Pins that a fresh enrolment (after SME forgot the invoker) is a new logical registration with a new key.
+     */
+    @Test
+    void aReEnrolmentUsesANewIdempotencyKey() throws Exception {
+        try (FakePlatform fake = new FakePlatform()) {
+            fake.on("GET /bootstrap", 200, "{\"apiEndpoints\":[{\"tokenEndPoint\":{\"uri\":\"" + fake.url() + "/sme/oauth2/token\"}}]}")
+                    .on("POST /sme/invoker-registrations", 201, "{\"apiInvokerId\":\"old\",\"onboardingSecret\":\"o\"}")
+                    .on("POST /sme/oauth2/token", 400, "{\"error\":\"invalid_client\"}")
+                    .on("POST /sme/oauth2/token", 200, "{\"access_token\":\"t\",\"expires_in\":300}");
+            provider(config(fake), new FakePlatform.TestClock()).token();
+            var posts = fake.requests("POST", "/sme/invoker-registrations");
+            assertEquals(2, posts.size());
+            assertTrue(!posts.get(0).header("Idempotency-Key").equals(posts.get(1).header("Idempotency-Key")));
+        }
+    }
 }

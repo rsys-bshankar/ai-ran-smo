@@ -5,6 +5,10 @@ the rApp conformance pack runs on a file (`conformance/rapp`, PR-RAPP-3.1), so a
 `PackageValidationFailed` (with the reason) or one of the parse errors in `PARSE_FAILURES`; the caller treats all of them as "this package fails".
 
 PR-RAPP-1: when a trust store is given the package signature is checked (smo_shared/csar_signing.py), and `require_signed` refuses a package that has none.
+
+SEC-15.17: a package comes from outside, so every place that opens its zip applies the size limits `csar_signing.verify_zip` applies (`ZIP_LIMITS`: entry count, size of one
+file and of all, compression ratio) before it decompresses anything, whether or not the package is signed, and every read of a file is bounded; a package over them fails
+with `PackageValidationFailed` like any other bad package. Edit with that in mind: a new `ZipFile(...)` or `z.read(...)` in this file goes through `_open_zip` and `_read`.
 """
 
 import hashlib
@@ -29,6 +33,37 @@ class PackageValidationFailed(Exception):
     manifest, capabilities, limits, runtime-profile, operator-UI and signature checks. It is a member of PARSE_FAILURES.
     """
 
+
+
+# The limits applied to every package zip before and while it is read: the ones `csar_signing.verify_zip` uses, so a signed and an unsigned package are held to the same rule.
+# A name here, not a literal at each use, so a test can lower them.
+ZIP_LIMITS = csar_signing.DEFAULT_LIMITS
+
+
+def _open_zip(data: bytes) -> zipfile.ZipFile:
+    """Opens the package bytes as a zip after checking the directory against `ZIP_LIMITS`; the caller closes it.
+
+    Raises zipfile.BadZipFile for bytes that are not a zip and PackageValidationFailed for a package over the limits (too many entries, a file or the whole too big, or a
+    ratio that looks like a zip bomb). Nothing is decompressed here: only the central directory is read.
+    """
+    archive = zipfile.ZipFile(BytesIO(data))
+    try:
+        csar_signing.check_limits(archive, ZIP_LIMITS)
+    except csar_signing.SignatureError as exc:
+        archive.close()
+        raise PackageValidationFailed(f"package too large to read: {exc}") from exc
+    return archive
+
+
+def _read(z: zipfile.ZipFile, name: str) -> bytes:
+    """Returns the bytes of one file of the package, refusing (`PackageValidationFailed`) a file that really holds more than `ZIP_LIMITS.max_member_bytes`.
+
+    The directory's declared size can understate a file, so the read is bounded as well as the directory checked (`_open_zip`); raises KeyError for a missing file, as `ZipFile.read` does.
+    """
+    try:
+        return csar_signing.read_member(z, name, ZIP_LIMITS.max_member_bytes)
+    except csar_signing.SignatureError as exc:
+        raise PackageValidationFailed(f"package too large to read: {exc}") from exc
 
 
 # What counts as "this package fails to validate" besides PackageValidationFailed itself: a zip that is not one, a missing entry, malformed YAML or JSON in a
@@ -79,7 +114,7 @@ def _parse_ai_capabilities(z: zipfile.ZipFile) -> dict | None:
     result: dict = {}
     names = z.namelist()
     if "manifest.yaml" in names:
-        manifest = yaml.safe_load(z.read("manifest.yaml")) or {}
+        manifest = yaml.safe_load(_read(z, "manifest.yaml")) or {}
         if not isinstance(manifest, dict):
             raise PackageValidationFailed("manifest.yaml must be a mapping")
         rapp_manifest = manifest.get("rappManifest") or {}
@@ -110,7 +145,7 @@ def _parse_ai_capabilities(z: zipfile.ZipFile) -> dict | None:
             except OperatorUiInvalid as exc:
                 raise PackageValidationFailed(str(exc)) from exc
     if "capabilities.yaml" in names:
-        parsed = yaml.safe_load(z.read("capabilities.yaml")) or {}
+        parsed = yaml.safe_load(_read(z, "capabilities.yaml")) or {}
         if not isinstance(parsed, dict):
             raise PackageValidationFailed("capabilities.yaml must be a mapping")
         caps = parsed.get("capabilities") or {}
@@ -194,8 +229,8 @@ def _parse_sme_declarations(z: zipfile.ZipFile) -> dict | None:
     valid UTF-8 JSON (both are in PARSE_FAILURES).
     """
     names = z.namelist()
-    providers = [json.loads(z.read(n)) for n in sorted(names) if n.startswith("Files/Sme/providers/") and n.endswith(".json")]
-    service_apis = [json.loads(z.read(n)) for n in sorted(names) if n.startswith("Files/Sme/serviceapis/") and n.endswith(".json")]
+    providers = [json.loads(_read(z, n)) for n in sorted(names) if n.startswith("Files/Sme/providers/") and n.endswith(".json")]
+    service_apis = [json.loads(_read(z, n)) for n in sorted(names) if n.startswith("Files/Sme/serviceapis/") and n.endswith(".json")]
     if not providers and not service_apis:
         return None
     return {"providers": providers, "serviceApis": service_apis}
@@ -226,7 +261,7 @@ def _carries_signing_entries(data: bytes) -> bool:
     """True when the zip has a digest list or a signature entry; false for an unsigned package and for bytes that are not a zip (those fail later, in the parse).
     """
     try:
-        with zipfile.ZipFile(BytesIO(data)) as z:
+        with _open_zip(data) as z:
             return csar_signing.is_signed(z.namelist())
     except zipfile.BadZipFile:
         return False
@@ -241,14 +276,14 @@ def validate_package_bytes(data: bytes, location: str, *, trust: "csar_signing.T
     if not location.endswith(".csar"):
         raise PackageValidationFailed(f"package location {location!r} does not end with .csar")
     signature = verify_signature(data, trust, require_signed)
-    with zipfile.ZipFile(BytesIO(data)) as z:
-        meta = z.read("TOSCA-Metadata/TOSCA.meta").decode()
+    with _open_zip(data) as z:
+        meta = _read(z, "TOSCA-Metadata/TOSCA.meta").decode()
         # TOSCA.meta is read as plain 'Key: value' lines; only Entry-Definitions is needed, and the path after the colon is looked up in the zip.
         entry_line = next((l for l in meta.splitlines() if l.startswith("Entry-Definitions:")), None)
         if entry_line is None:       # a bare next() raised StopIteration here, which no caller catches
             raise PackageValidationFailed("TOSCA-Metadata/TOSCA.meta has no Entry-Definitions: line")
         entry_definitions = entry_line.split(":", 1)[1].strip()
-        identity: dict[str, Any] = _asd_identity(z.read(entry_definitions).decode(errors="replace"))  # raises KeyError if missing/malformed
+        identity: dict[str, Any] = _asd_identity(_read(z, entry_definitions).decode(errors="replace"))  # raises KeyError if missing/malformed
         # Every file under Artifacts/ is registered (directories are skipped) with an access URL that points into the package at its location.
         artifacts = [(n, f"{location}#{n}") for n in z.namelist() if n.startswith("Artifacts/") and not n.endswith("/")]
         ai_capabilities = _parse_ai_capabilities(z)

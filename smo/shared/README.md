@@ -9,7 +9,7 @@
 | Depends on (over R1) | `R1Client` calls R1 Termination (`/bootstrap`) and SME (`/invoker-registrations`, `/oauth2/token`) for its own token; no other module |
 | Called by | Every backend module (imports); the SDK (`sdk/`) and the four sample rApps via `R1Client`. Not imported by `gui-bff` |
 | Database tables | None. Provides `Base`, the engine and sessions that modules' `models.py` use |
-| Unit tests | 935 passed (`tests/`; 62 more are skipped without `SMO_TEST_POSTGRES_URL`) |
+| Unit tests | 948 passed (`tests/`; 64 more are skipped without `SMO_TEST_POSTGRES_URL`) |
 | Status | Done. No OPEN_ITEMS ids |
 
 ## 1. High-level design (HLD)
@@ -79,7 +79,7 @@ Also provided, outside that table: `db` (engine and session), `statemachine` (FS
 | `smo_shared/events.py` | The SMO event bus (`PR-MSG-3`, `docs/EVENTS.md`): `SmoEvent` (shared table `smo_event`), `publish(db_or_connection, what, change, source, subject, data, region, tenant)` in the caller's transaction, `TablePublisher` (row plus `pg_notify` at commit) / `InMemoryPublisher` / `NullPublisher` (`SMO_EVENT_BUS`), `read_after`, `latest`, `wait_after` (LISTEN, or polling), `purge`, `on_transition` |
 | `smo_shared/metrics.py` | `install_metrics(app)`, `MetricsMiddleware`: request count and latency series by route template, and `GET /metrics` |
 | `smo_shared/logconfig.py` | `configure_logging()`, `install_logging(app)`, `JsonFormatter`, `RedactionFilter`, `AccessLogMiddleware`: one JSON object per log line, one access line per request, secrets scrubbed |
-| `smo_shared/csar_signing.py` | `PR-RAPP-1`: the digest list of a CSAR, a detached ed25519 signature over it, the trust store (a PEM file or a directory of `<publisher>.pub`), `verify_csar` / `sign_csar` with a `SignatureError.code` for each way a package can fail, `too_large` among them (`ZipLimits`: 2000 entries, 50 MiB a file, 200 MiB in all, 200:1 compression above 1 MiB, 2 MiB for the digest list and signature). Used by Onboarding, `scripts/csar_sign.py`, `samples/build_csar.py` and `conformance/rapp`; needs `cryptography` (in the lock through `pyjwt[crypto]`) |
+| `smo_shared/csar_signing.py` | `PR-RAPP-1`: the digest list of a CSAR, a detached ed25519 signature over it, the trust store (a PEM file or a directory of `<publisher>.pub`), `verify_csar` / `sign_csar` with a `SignatureError.code` for each way a package can fail, `too_large` among them (`ZipLimits`: 2000 entries, 50 MiB a file, 200 MiB in all, 200:1 compression above 1 MiB, 2 MiB for the digest list and signature; `check_limits` and `read_member` are public so that a reader of an unsigned package applies the same limits, `SEC-15.17`). Used by Onboarding, `scripts/csar_sign.py`, `samples/build_csar.py` and `conformance/rapp`; needs `cryptography` (in the lock through `pyjwt[crypto]`) |
 | `smo_shared/runtime_resources.py` | `PR-RAPP-2.1`: a manifest runtime profile `{cpu, memory, gpu}` as the Kubernetes requests and limits of a container (`container_resources`), and the quantity check (`is_quantity`) |
 | `smo_shared/secretfile.py` | `read_secret(name)`: the value of `NAME`, or the contents of the file named by `NAME_FILE` (`SecretConflict` if both, `SecretFileError` if unreadable); used for the database URL and password |
 | `smo_shared/bodylimit.py` | `BodySizeLimit` (ASGI middleware: 413 over a path's cap, from `Content-Length` or counted while streaming), `settings_from_env`, `parse_overrides` |

@@ -347,7 +347,7 @@ def test_a_directory_that_understates_a_file_is_caught_while_reading(key, trust,
     """The read is bounded as well as the directory: a file whose header says it is small but whose data is large is refused when read."""
     data = signed(key, {**FILES, "liar.bin": b"a" * 5000})
     with zipfile.ZipFile(io.BytesIO(data)) as z:
-        monkeypatch.setattr(cs, "_check_limits", lambda *a, **k: None)         # skip the directory check to reach the bounded read
+        monkeypatch.setattr(cs, "check_limits", lambda *a, **k: None)         # skip the directory check to reach the bounded read
         with pytest.raises(cs.SignatureError) as excinfo:
             cs.verify_zip(z, trust, cs.ZipLimits(max_member_bytes=1000))
     assert excinfo.value.code == "too_large"

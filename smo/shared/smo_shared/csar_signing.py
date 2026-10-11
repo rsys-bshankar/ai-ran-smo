@@ -315,9 +315,13 @@ class ZipLimits:
 DEFAULT_LIMITS = ZipLimits()
 
 
-def _check_limits(archive: zipfile.ZipFile, limits: ZipLimits) -> None:
+def check_limits(archive: zipfile.ZipFile, limits: ZipLimits) -> None:
     """Refuses (`SignatureError("too_large")`) an archive whose central directory already shows it is too big: too many entries, a file or the total above
-    the limit, or a file with a compression ratio above `max_ratio`. Reads only the directory (the declared sizes), never the data."""
+    the limit, or a file with a compression ratio above `max_ratio`. Reads only the directory (the declared sizes), never the data.
+
+    Public because every reader of a package's bytes must apply it before it decompresses anything, not only the signature check: Onboarding's parse of an unsigned package
+    does (SEC-15.17, `onboarding/app/package_validation.py`).
+    """
     infos = archive.infolist()
     if len(infos) > limits.max_entries:
         raise SignatureError("too_large", f"the package has {len(infos)} entries, more than the {limits.max_entries} allowed")
@@ -336,9 +340,9 @@ def _check_limits(archive: zipfile.ZipFile, limits: ZipLimits) -> None:
             raise SignatureError("too_large", f"the package is more than {limits.max_total_bytes} bytes uncompressed")
 
 
-def _read_member(archive: zipfile.ZipFile, name: str, limit: int) -> bytes:
+def read_member(archive: zipfile.ZipFile, name: str, limit: int) -> bytes:
     """Reads one file of the archive and refuses (`too_large`) one that really holds more than `limit` bytes. The directory's declared size can lie, so the
-    read itself is bounded: at most `limit + 1` bytes are ever decompressed."""
+    read itself is bounded: at most `limit + 1` bytes are ever decompressed. Public for the same reason as `check_limits`."""
     with archive.open(name) as member:
         data = member.read(limit + 1)
     if len(data) > limit:
@@ -353,7 +357,7 @@ def verify_zip(archive: zipfile.ZipFile, trust: TrustStore, limits: ZipLimits = 
     The size limits of `limits` are checked first, from the zip directory, and again while reading (a directory can understate a file), so a zip bomb is
     refused with `too_large` before it is decompressed in full.
     """
-    _check_limits(archive, limits)
+    check_limits(archive, limits)
     entries = [i.filename for i in archive.infolist() if not i.is_dir()]
     if len(set(entries)) != len(entries):
         raise SignatureError("malformed", "the package lists a file twice")        # which of two entries a reader sees must not depend on the reader
@@ -367,8 +371,8 @@ def verify_zip(archive: zipfile.ZipFile, trust: TrustStore, limits: ZipLimits = 
         raise SignatureError("unsigned", f"the package has a digest list but no signature ({SIGNATURE_FILE} is missing)")
     if not has_digests:
         raise SignatureError("malformed", f"the package has a signature but no digest list ({DIGEST_FILE} is missing)")
-    digest_bytes = _read_member(archive, DIGEST_FILE, limits.max_signing_bytes)
-    key_name, signature = _signature_document(_read_member(archive, SIGNATURE_FILE, limits.max_signing_bytes))
+    digest_bytes = read_member(archive, DIGEST_FILE, limits.max_signing_bytes)
+    key_name, signature = _signature_document(read_member(archive, SIGNATURE_FILE, limits.max_signing_bytes))
     trusted = trust.get(key_name)
     if trusted is None:
         raise SignatureError("unknown_publisher", f"unknown publisher: the package is signed with key {key_name[:16]}..., which is not in the trust store")
@@ -385,7 +389,7 @@ def verify_zip(archive: zipfile.ZipFile, trust: TrustStore, limits: ZipLimits = 
     added = [n for n in present if n not in listed]
     if added:
         raise SignatureError("added", f"file added to the package: {_names(added)} is not covered by the signed digest list")
-    changed = [n for n in present if hashlib.sha256(_read_member(archive, n, limits.max_member_bytes)).hexdigest() != listed[n]]
+    changed = [n for n in present if hashlib.sha256(read_member(archive, n, limits.max_member_bytes)).hexdigest() != listed[n]]
     if changed:
         raise SignatureError("modified", f"file modified after signing: {_names(changed)} does not match its signed digest")
     return Verification(trusted.publisher, trusted.key_id, len(present))
