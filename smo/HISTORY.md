@@ -2615,3 +2615,29 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
   outbox's. Exact delivery under out-of-order commits: two transactions that commit in the reverse order of their sequence numbers can make a reader that read
   between them skip the earlier; the console uses an event only as a cue to recompute, and `docs/EVENTS.md` says what a consumer that needs every event must
   do. Showing raw events in the console: the counts are what it patches. Moving the console off its poll: not every count has an event behind it.
+
+### GUI-6.3 — the console's words in a catalog, in English and German
+
+- **What.** The console's words come from message catalogs in the language the user picks (Preferences → Language: English or Deutsch). The Preferences
+  page is the first page translated: every word on it comes from the catalog, and it is shown in German for a user who chose German. Every other page
+  is English until `GUI-6.4` converts it; a German user sees those pages in English, as the Language card says. `gui/src/i18n/README.md` is the guide.
+- **How.** `gui/src/i18n/`: an English catalog (`en/`, the source; its keys are the type `MessageKey`, so a misspelt key does not compile) and a German
+  one (`de/`, `Partial<Record<MessageKey, string>>`: what it lacks falls back to English, so a page can be translated message by message and never
+  shows a key). `t(key, params)` fills `{name}` placeholders and picks `<key>_one` / `<key>_other` by `count` with `Intl.PluralRules`. `I18nProvider`
+  sits inside `ThemeProvider`, fed by the *shown* preferences, so the Preferences page previews a language before it is saved, like a theme; it sets
+  `<html lang>` (and `public/theme-boot.js` sets it before React from the browser copy) so a screen reader reads with the right voice. Outside a
+  provider `useT` answers in English, so component tests need nothing new.
+- **The preference.** `language: "en" | "de"` (default `en`) in `data/preferences.ts` and in the BFF's `Preferences` model (`app/preferences.py`), a
+  closed set like the other fields; an older stored value without it reads as `en`. No schema change: the preferences are one JSON value per user.
+- **The literal check (GUI-6.4's tool).** `gui/scripts/i18n-literals.mjs` reads every page's syntax tree (rolldown's parser, which Vite already
+  brings) and counts the words still written in the code: JSX text, the attributes and properties a person reads (`title`, `label`, `placeholder`,
+  `aria-label`, `header`, `success`, ...) and strings given as JSX children; an all-capitals value (a state name, an id) is not counted.
+  `literals-baseline.json` holds each area's count (3482 in all at the start; Preferences 0) and `src/i18n/literals.test.ts` fails when an area grows
+  or a fall is not written down, so the count only goes down.
+- **Tests.** `i18n.test.tsx` (lookup, fallback, placeholders, plural forms, provider and `<html lang>`, German held to the English keys and
+  placeholders), `literals.test.ts`, the Preferences page in German and a language previewed and saved (`pages/preferences/__tests__`), and the BFF's
+  language preference (`test_preferences_summary.py`).
+- **Not taken.** A library (i18next, FormatJS): a typed lookup with plurals and placeholders is about sixty lines, and a dependency would add to the
+  bundle and the dependency review for nothing the console uses. Lazy-loading the catalogs per language: they are small next to the bundle.
+  Translating values from the network (state names, alarm causes, KPI names): they are the standard's words and shown as they are. Dates and numbers
+  already follow the browser's locale.

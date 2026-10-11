@@ -31,6 +31,7 @@ accent colours and four text sizes, chosen per user on **Account → Preferences
 |---|---|
 | `src/shell/` | The frame: `Layout`, `Sidebar` (grouped navigation, count badges, pinned rApps, user card), `TopBar` (breadcrumb, ⌘K search: page jumps plus the BFF's `/api/search`, live chip, notifications, preferences, help), `LiveEvents` (the summary stream), `ThemeProvider`, `nav.ts` (the one navigation table) |
 | `src/kit/` | Shared primitives, one per file: `Kpi`, `Meter`, `Segmented`, `Badge`, `Callout`, `Diff`, `Timeline`/`Steps`, `states` (skeleton, empty, error with retry, stale), `SectionBoundary`, `ServerTable` + `Pager`, `icons` |
+| `src/i18n/` | The message catalogs and `useT()` (`GUI-6.3`): English and German, the language from the user's preferences; how to convert a page, and the check that holds every page's hard-coded words to a falling count (`GUI-6.4`): [`src/i18n/README.md`](src/i18n/README.md) |
 | `src/data/` | `summary.ts` (true counts from `GET /api/summary/{page}`, and the Dashboard's attention groups from `GET /api/summary/attention`), `scope.ts` (the global scope: `useScope()`, the scopable routes), `exports.ts` (the export jobs), `keys.ts` (which reads an action refreshes), `events.ts` (the pushed summaries), `preferences.ts` |
 | `src/pages/<page>/` | One folder per page: `index.tsx` (layout only), `sections/` (one box each, wrapped in a `SectionBoundary` so a crash stays in its box), `data/queries.ts` (the page's API paths and polling), `README.md` (the page's maintenance sheet: sections, calls, known limits, troubleshooting), `__tests__/` |
 
@@ -257,7 +258,7 @@ state after it.
 | [Exports](docs/screenshots/pages/exports.png) | Background CSV exports (Decisions, audit log): state, rows, size, kept until, Download and Delete |
 | [Search (⌘K)](docs/screenshots/generic/search.png) | The top bar's search: page jumps plus the elements, rApps, alarms, models and decisions matching "gnb" |
 | [Change password](docs/screenshots/generic/change-password-dialog.png) | Any signed-in user, from the sidebar's user card |
-| [Preferences](docs/screenshots/pages/preferences.png) | Theme, accent, text size and display defaults (start page, rows per page, time zone…), kept by the BFF per user |
+| [Preferences](docs/screenshots/pages/preferences.png) | Language, theme, accent, text size and display defaults (start page, rows per page, time zone…), kept by the BFF per user |
 | [Preferences, light theme](docs/screenshots/pages/preferences-light.png) | The same page in the light theme |
 | [Account security](docs/screenshots/pages/security.png) | Two-step sign-in, recovery codes and the user's own recent sign-ins |
 | [Users and roles](docs/screenshots/pages/admin-users.png) | Admin: users with role and last activity, deactivate / reset password / revoke sessions, and the role matrix the BFF enforces |

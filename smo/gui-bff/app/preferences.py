@@ -20,7 +20,7 @@ class Preferences(BaseModel):
     """One user's console preferences. `theme` "system" follows the browser's `prefers-color-scheme`; `size` is the root text size (s 90 %,
     m 100 %, l 112 %, xl 125 %); `accent` the accent colour; `startPage` where the console opens after sign-in; `rowsPerPage` the default page size
     of every server table; `timeZone` "local" or "UTC"; `clock` 12- or 24-hour; `reduceMotion` turns off animation; `alarmSound` a sound on a new
-    critical alarm."""
+    critical alarm; `language` the language of the console's words (GUI-6.3: `en`, or `de`)."""
     model_config = ConfigDict(extra="forbid")
 
     theme: Literal["dark", "light", "system"] = "dark"
@@ -32,6 +32,7 @@ class Preferences(BaseModel):
     clock: Literal["12h", "24h"] = "24h"
     reduceMotion: bool = False
     alarmSound: bool = Field(default=False, description="a short sound when a new critical alarm arrives")
+    language: Literal["en", "de"] = "en"
 
 
 DEFAULTS = Preferences()
