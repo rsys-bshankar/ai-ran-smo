@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import type { TrainingJob } from "../../../api/types";
 import { Card } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { ServerTable } from "../../../kit/ServerTable";
 import { TRAINING_JOBS, TRAINING_STATUSES } from "../data/queries";
 import { useTrainingColumns } from "./TrainingTable";
@@ -13,12 +14,13 @@ import { useTrainingColumns } from "./TrainingTable";
 export function TrainingJobs() {
   const [status, setStatus] = useState("");
   const { columns, dialogs } = useTrainingColumns();
+  const t = useT();
   return (
-    <Card section="aiml.training" title="Training jobs" actions={
-      <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Filter by status"><option value="">All</option>{TRAINING_STATUSES.map((s) => <option key={s}>{s}</option>)}</select>}>
-      <p className="muted small">Completing a job is a model transition: advance the model with <em>Training complete</em>. Metrics are written back by the trainer (MLTF).</p>
-      <ServerTable<TrainingJob> path={TRAINING_JOBS} query={{ status: status || undefined }} rowKey={(j) => j.trainingJobId} empty="No training jobs." columns={columns} />
-      <p className="small muted">Progress shows the epoch a run's runtime reported and AIMgF's estimate of the time left; "—" when the runtime reports no epochs.</p>
+    <Card section="aiml.training" title={t("aiml.tabs.training")} actions={
+      <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label={t("aiml.filterStatus")}><option value="">{t("aiml.all")}</option>{TRAINING_STATUSES.map((s) => <option key={s}>{s}</option>)}</select>}>
+      <p className="muted small">{t("aiml.training.note")} <em>{t("aiml.training.note.event")}</em>{t("aiml.training.note.end")}</p>
+      <ServerTable<TrainingJob> path={TRAINING_JOBS} query={{ status: status || undefined }} rowKey={(j) => j.trainingJobId} empty={t("aiml.training.empty")} columns={columns} />
+      <p className="small muted">{t("aiml.training.progressNote")}</p>
       {dialogs}
     </Card>
   );

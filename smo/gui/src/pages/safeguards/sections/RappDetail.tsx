@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 
 import { Card, Id, KeyValue, StateBadge } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { formatCount } from "../../../kit/Kpi";
 import { UsageMeter } from "../../../kit/Meter";
 import { Empty, QueryState } from "../../../kit/states";
@@ -11,28 +12,29 @@ import { refusalSince, useInstanceSafeguards, useInvokerRefusalCount } from "../
 
 /** The detail card; `instanceId` null asks the operator to pick a row. */
 export function RappDetail({ instanceId }: { instanceId: string | null }) {
+  const t = useT();
   const sg = useInstanceSafeguards(instanceId);
   const since = useMemo(() => refusalSince("24h") ?? "", [instanceId]); // eslint-disable-line react-hooks/exhaustive-deps
   const invoker = sg.data?.invokerId ?? null;
   const refusals = useInvokerRefusalCount(since, invoker);
-  if (!instanceId) return <Card section="safeguards.detail" title="rApp"><Empty title="No rApp selected.">Click a row to see its safeguards.</Empty></Card>;
+  if (!instanceId) return <Card section="safeguards.detail" title={t("safeguards.detail.title")}><Empty title={t("safeguards.detail.none.title")}>{t("safeguards.detail.none.body")}</Empty></Card>;
   const v = sg.data;
   const l = v?.limits;
   return (
-    <Card section="safeguards.detail" title={<>rApp <Id value={instanceId} /></>}>
+    <Card section="safeguards.detail" title={<>{t("safeguards.detail.title")} <Id value={instanceId} /></>}>
       <QueryState q={sg} isEmpty={() => false}>
         {v && <>
           <div className="row gap wrap">
-            {!v.invokerId ? <span className="muted">no credential (terminated)</span> : v.killed ? <><StateBadge state="DISABLED" /> stopped</> : <StateBadge state="ACTIVE" />}
+            {!v.invokerId ? <span className="muted">{t("safeguards.detail.terminated")}</span> : v.killed ? <><StateBadge state="DISABLED" /> {t("safeguards.stopped")}</> : <StateBadge state="ACTIVE" />}
             {v.invokerId && <Id value={v.invokerId} />}
           </div>
-          {v.killed && v.kill && <p className="small">Stopped by {v.kill.killedBy} · {formatTime(v.kill.killedAt)} · {v.kill.reason ?? "no reason given"}</p>}
-          {l?.maxConfigJobsPerHour != null && <div className="col"><span className="small">Config jobs this hour: {l.configJobsLastHour} of {l.maxConfigJobsPerHour}</span>
+          {v.killed && v.kill && <p className="small">{t("safeguards.detail.stoppedBy", { who: v.kill.killedBy, when: formatTime(v.kill.killedAt), reason: v.kill.reason ?? t("safeguards.noReason") })}</p>}
+          {l?.maxConfigJobsPerHour != null && <div className="col"><span className="small">{t("safeguards.detail.jobsThisHour", { used: l.configJobsLastHour, max: l.maxConfigJobsPerHour })}</span>
             <UsageMeter used={l.configJobsLastHour} limit={l.maxConfigJobsPerHour} /></div>}
           <KeyValue items={[
-            ["Limits", v.invokerId ? describeLimits(l) : "—"],
-            ["Approval", v.invokerId ? describeApprovalPolicy(v.approvalPolicy) : "—"],
-            ["Refusals · 24 h", v.invokerId ? (refusals.data ? formatCount(refusals.data.total ?? null) : refusals.error ? "unknown" : "…") : "—"],
+            [t("safeguards.detail.limits"), v.invokerId ? describeLimits(l, t) : "—"],
+            [t("safeguards.detail.approval"), v.invokerId ? describeApprovalPolicy(v.approvalPolicy, t) : "—"],
+            [t("safeguards.detail.refusals"), v.invokerId ? (refusals.data ? formatCount(refusals.data.total ?? null) : refusals.error ? t("safeguards.unknown") : "…") : "—"],
           ]} />
         </>}
       </QueryState>

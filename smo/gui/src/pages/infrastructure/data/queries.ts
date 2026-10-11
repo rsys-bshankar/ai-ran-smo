@@ -5,6 +5,7 @@ import type { Query } from "../../../api/client";
 import { POLL, useSmo, useSmoPage } from "../../../api/hooks";
 import type { KpiDef, LcmOperation, Model, NfDeployment, NfDescriptor, NfResource, O1Endpoint, ServiceOrder, Topology } from "../../../api/types";
 import { useSummary } from "../../../data/summary";
+import type { TKey } from "../../../i18n";
 import type { OAlarm } from "./types";
 
 /** How many workloads and alarms the topology reads at most (one bounded page each, the module's MAX_LIMIT). */
@@ -103,19 +104,19 @@ export function useOrderPrefill(enabled: boolean) {
   };
 }
 
-/** One level of the O-Cloud inventory picker: its label, list route, row id and what the level holds. */
-export interface InventoryLevel { id: string; label: string; path: string; group: "place" | "work" | "ims" }
+/** One level of the O-Cloud inventory picker: its label and empty-table text (catalog keys), list route, row id and what the level holds. */
+export interface InventoryLevel { id: string; labelKey: TKey; emptyKey: TKey; path: string; group: "place" | "work" | "ims" }
 
 /** The O-Cloud inventory levels, from where it is to what runs there (BRIEF §4e feature 6), then the O2-IMS pools, managers and types. */
 export const INVENTORY_LEVELS: InventoryLevel[] = [
-  { id: "locations", label: "Locations", path: "/focom/locations", group: "place" },
-  { id: "sites", label: "Sites", path: "/focom/o-cloud-sites", group: "place" },
-  { id: "clusters", label: "Node clusters", path: "/focom/node-clusters", group: "place" },
-  { id: "cluster-resources", label: "Cluster resources", path: "/focom/cluster-resources", group: "place" },
-  { id: "infra-resources", label: "Infrastructure resources", path: "/focom/infrastructure-resources", group: "place" },
-  { id: "provisioning", label: "Provisioning requests", path: "/focom/provisioning-requests", group: "work" },
-  { id: "perf-jobs", label: "Performance jobs", path: "/focom/performance-jobs", group: "work" },
-  { id: "pools", label: "Resource pools", path: "/focom/resource-pools", group: "ims" },
-  { id: "dms", label: "Deployment managers", path: "/focom/deployment-managers", group: "ims" },
-  { id: "types", label: "Resource types", path: "/focom/resource-types", group: "ims" },
+  { id: "locations", labelKey: "infrastructure.inventory.level.locations", emptyKey: "infrastructure.inventory.level.locations.empty", path: "/focom/locations", group: "place" },
+  { id: "sites", labelKey: "infrastructure.inventory.level.sites", emptyKey: "infrastructure.inventory.level.sites.empty", path: "/focom/o-cloud-sites", group: "place" },
+  { id: "clusters", labelKey: "infrastructure.inventory.level.clusters", emptyKey: "infrastructure.inventory.level.clusters.empty", path: "/focom/node-clusters", group: "place" },
+  { id: "cluster-resources", labelKey: "infrastructure.inventory.level.clusterResources", emptyKey: "infrastructure.inventory.level.clusterResources.empty", path: "/focom/cluster-resources", group: "place" },
+  { id: "infra-resources", labelKey: "infrastructure.inventory.level.infraResources", emptyKey: "infrastructure.inventory.level.infraResources.empty", path: "/focom/infrastructure-resources", group: "place" },
+  { id: "provisioning", labelKey: "infrastructure.inventory.level.provisioning", emptyKey: "infrastructure.inventory.level.provisioning.empty", path: "/focom/provisioning-requests", group: "work" },
+  { id: "perf-jobs", labelKey: "infrastructure.inventory.level.perfJobs", emptyKey: "infrastructure.inventory.level.perfJobs.empty", path: "/focom/performance-jobs", group: "work" },
+  { id: "pools", labelKey: "infrastructure.inventory.level.pools", emptyKey: "infrastructure.inventory.level.pools.empty", path: "/focom/resource-pools", group: "ims" },
+  { id: "dms", labelKey: "infrastructure.inventory.level.dms", emptyKey: "infrastructure.inventory.level.dms.empty", path: "/focom/deployment-managers", group: "ims" },
+  { id: "types", labelKey: "infrastructure.inventory.level.types", emptyKey: "infrastructure.inventory.level.types.empty", path: "/focom/resource-types", group: "ims" },
 ];

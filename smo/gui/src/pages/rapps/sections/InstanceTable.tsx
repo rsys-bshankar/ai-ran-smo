@@ -6,6 +6,7 @@ import { Link } from "react-router-dom";
 
 import type { InstanceSummary } from "../../../api/types";
 import { Card, Id, StateBadge } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { ServerTable } from "../../../kit/ServerTable";
 import { INSTANCE_STATES, INSTANCES_PATH, useLatestKpis, usePackageNames } from "../data/queries";
 import { HeadlineKpi } from "./HeadlineKpi";
@@ -15,6 +16,7 @@ import { LifecycleCell } from "./LifecycleCell";
 
 /** The instance table with its state filter. */
 export function InstanceTable() {
+  const t = useT();
   const [state, setState] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const names = usePackageNames();
@@ -22,25 +24,25 @@ export function InstanceTable() {
   const kpis = useLatestKpis(ids);
   const onRows = useCallback((rows: InstanceSummary[]) => setIds(rows.map((r) => r.instanceId)), []);
   return (
-    <Card section="rapps.instances" title="rApp instances" sub="paged by rApp Management · click a row for details"
+    <Card section="rapps.instances" title={t("rapps.instances.title")} sub={t("rapps.instances.sub")}
       actions={
-        <select value={state} onChange={(e) => setState(e.target.value)} aria-label="Filter by state">
-          <option value="">All states</option>
+        <select value={state} onChange={(e) => setState(e.target.value)} aria-label={t("rapps.instances.state.aria")}>
+          <option value="">{t("rapps.instances.state.all")}</option>
           {INSTANCE_STATES.map((s) => <option key={s}>{s}</option>)}
         </select>}>
       <ServerTable<InstanceSummary> path={INSTANCES_PATH} query={{ state: state || undefined }} rowKey={(i) => i.instanceId}
-        empty={state ? `No instance is ${state}.` : "No instances. Deploy one from an AVAILABLE package."}
+        empty={state ? t("rapps.instances.emptyState", { state }) : t("rapps.instances.empty")}
         onRowClick={(i) => setSelected(i.instanceId)} selectedKey={selected} onRows={onRows}
         columns={[
-          { header: "Instance", render: (i) => <Link to={`/rapps/${i.instanceId}`} onClick={(e) => e.stopPropagation()}><Id value={i.instanceId} /></Link> },
-          { header: "Package", render: (i) => names.name(i.packageId) ?? <Id value={i.packageId} /> },
-          { header: "State", render: (i) => <StateBadge state={i.state} /> },
-          { header: "Lifecycle", render: (i) => <LifecycleCell state={i.state} instanceId={i.instanceId} /> },
-          { header: "Autonomy", render: (i) => <StateBadge state={i.autonomyMode} /> },
-          { header: "Headline KPI", render: (i) => <HeadlineKpi kpi={kpis.get(i.instanceId)} /> },
+          { header: t("rapps.instances.col.instance"), render: (i) => <Link to={`/rapps/${i.instanceId}`} onClick={(e) => e.stopPropagation()}><Id value={i.instanceId} /></Link> },
+          { header: t("rapps.instances.col.package"), render: (i) => names.name(i.packageId) ?? <Id value={i.packageId} /> },
+          { header: t("rapps.instances.col.state"), render: (i) => <StateBadge state={i.state} /> },
+          { header: t("rapps.instances.col.lifecycle"), render: (i) => <LifecycleCell state={i.state} instanceId={i.instanceId} /> },
+          { header: t("rapps.instances.col.autonomy"), render: (i) => <StateBadge state={i.autonomyMode} /> },
+          { header: t("rapps.instances.col.kpi"), render: (i) => <HeadlineKpi kpi={kpis.get(i.instanceId)} /> },
           { header: "", className: "actions", render: (i) => <InstanceActions inst={i} /> },
         ]} />
-      <p className="gap-note">Actions in 24 h and refusals per rApp are not served by the backend yet, so they are not shown.</p>
+      <p className="gap-note">{t("rapps.instances.gap")}</p>
       {selected && <InstanceDrawer id={selected} onClose={() => setSelected(null)} />}
     </Card>
   );

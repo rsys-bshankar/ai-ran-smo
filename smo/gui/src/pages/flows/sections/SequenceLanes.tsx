@@ -3,6 +3,7 @@
  * to its last actor (a loop when it has one actor), coloured by the step's state. Section id `flows.lanes`. */
 import type { FlowStep } from "../../../lib/flows";
 import { toStepState } from "../../../lib/flows";
+import { useT } from "../../../i18n";
 
 /** The actors of one step, split on → and ←. */
 export function stepActors(actor: string): string[] {
@@ -26,9 +27,10 @@ export function SequenceLanes({ steps }: { steps: FlowStep[] }) {
   const width = Math.max(lanes.length, 1) * COL;
   const height = HEAD + steps.length * ROW + 16;
   const x = (a: string) => lanes.indexOf(a) * COL + COL / 2;
+  const t = useT();
   return (
-    <div className="lanes" data-section="flows.lanes" tabIndex={0} aria-label="Sequence diagram (scrolls sideways)">
-      <svg viewBox={`0 0 ${width} ${height}`} style={{ minWidth: width }} role="img" aria-label={`Sequence: ${steps.map((s, i) => `${i + 1}. ${s.actor}: ${s.title} (${s.status})`).join("; ")}`}>
+    <div className="lanes" data-section="flows.lanes" tabIndex={0} aria-label={t("flows.lanes.aria")}>
+      <svg viewBox={`0 0 ${width} ${height}`} style={{ minWidth: width }} role="img" aria-label={t("flows.lanes.svg", { steps: steps.map((s, i) => `${i + 1}. ${s.actor}: ${s.title} (${s.status})`).join("; ") })}>
         {lanes.map((a) => (
           <g key={a}>
             <rect className="lane-head" x={x(a) - COL / 2 + 6} y={4} width={COL - 12} height={28} rx={6} />

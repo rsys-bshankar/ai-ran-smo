@@ -6,6 +6,7 @@ import { Link } from "react-router-dom";
 
 import type { InstanceSummary } from "../../../api/types";
 import { Card, Id } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { formatCount } from "../../../kit/Kpi";
 import { ServerTable } from "../../../kit/ServerTable";
 import { count } from "../../../data/summary";
@@ -16,22 +17,23 @@ import { LifecycleCell } from "./LifecycleCell";
 
 /** The rollouts table. */
 export function Rollouts() {
+  const t = useT();
   const [selected, setSelected] = useState<string | null>(null);
   const names = usePackageNames();
   const summary = useRappsSummary();
   const n = count(summary.data, "instances.UPGRADING");
   return (
-    <Card section="rapps.rollouts" title="Rollouts in progress" sub={n === null ? "instances being upgraded" : `${formatCount(n)} instance${n === 1 ? "" : "s"} being upgraded`}>
+    <Card section="rapps.rollouts" title={t("rapps.rollouts.title")} sub={n === null ? t("rapps.rollouts.sub") : t("rapps.rollouts.sub.count", { count: n, n: formatCount(n) })}>
       <ServerTable<InstanceSummary> path={INSTANCES_PATH} query={{ state: "UPGRADING" }} rowKey={(i) => i.instanceId}
-        empty="No upgrade in progress. Start one from a RUNNING instance (Upgrade…)."
+        empty={t("rapps.rollouts.empty")}
         onRowClick={(i) => setSelected(i.instanceId)} selectedKey={selected}
         columns={[
-          { header: "Instance", render: (i) => <Link to={`/rapps/${i.instanceId}`} onClick={(e) => e.stopPropagation()}><Id value={i.instanceId} /></Link> },
-          { header: "From package", render: (i) => names.name(i.packageId) ?? <Id value={i.packageId} /> },
-          { header: "Lifecycle", render: (i) => <LifecycleCell state={i.state} instanceId={i.instanceId} /> },
+          { header: t("rapps.rollouts.col.instance"), render: (i) => <Link to={`/rapps/${i.instanceId}`} onClick={(e) => e.stopPropagation()}><Id value={i.instanceId} /></Link> },
+          { header: t("rapps.rollouts.col.from"), render: (i) => names.name(i.packageId) ?? <Id value={i.packageId} /> },
+          { header: t("rapps.rollouts.col.lifecycle"), render: (i) => <LifecycleCell state={i.state} instanceId={i.instanceId} /> },
           { header: "", className: "actions", render: (i) => <InstanceActions inst={i} /> },
         ]} />
-      <p className="gap-note">Canary and wave progress per rollout is not served by the backend: an upgrade is one replacement instance, resolved as a whole.</p>
+      <p className="gap-note">{t("rapps.rollouts.gap")}</p>
       {selected && <InstanceDrawer id={selected} onClose={() => setSelected(null)} />}
     </Card>
   );

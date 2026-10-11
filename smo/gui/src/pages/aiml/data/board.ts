@@ -2,15 +2,16 @@
  * artifact versions a model has. No React and no fetching, so `__tests__/board.test.ts` pins it down directly. The columns are the five of the
  * BRIEF (§4 AI/ML); the lifecycle states are AIMgF's (aimgf/app/statemachine.py), mirrored in `lib/domain.ts` MODEL_PIPELINE. */
 import type { MlmfReport, MlmfSubscription, Model, ModelLifecycle } from "../../../api/types";
+import type { TKey } from "../../../i18n";
 import type { BoardCard, BoardColumn, StageId } from "./types";
 
-/** The column titles, in board order. */
-export const STAGES: { id: StageId; title: string }[] = [
-  { id: "registered", title: "Registered" },
-  { id: "training", title: "Training" },
-  { id: "validating", title: "Validating / emulating" },
-  { id: "promoted", title: "Promoted" },
-  { id: "active", title: "Active runtime" },
+/** The column titles (catalog keys), in board order. */
+export const STAGES: { id: StageId; titleKey: TKey }[] = [
+  { id: "registered", titleKey: "aiml.stage.registered" },
+  { id: "training", titleKey: "aiml.stage.training" },
+  { id: "validating", titleKey: "aiml.stage.validating" },
+  { id: "promoted", titleKey: "aiml.stage.promoted" },
+  { id: "active", titleKey: "aiml.stage.active" },
 ];
 
 /** States that are off the board: the end of life and a failed stage (the board shows their count, not cards). */

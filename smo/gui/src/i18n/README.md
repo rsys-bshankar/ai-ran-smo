@@ -6,7 +6,7 @@ BFF with the other preferences). English is the source language; German is the s
 | File | What it is |
 |---|---|
 | `index.tsx` | `useT()` (the translator of the nearest provider; English outside one), `I18nProvider` (set by `shell/ThemeProvider.tsx` from the shown preferences; it also sets `<html lang>`), `translate`, `format`, `LANGUAGES`, `LANGUAGE_NAMES`, `navKey` |
-| `en/` | The English catalog: `common.ts` (shared: the page names, and the sentences of `lib/domain.ts` and `lib/mfa.ts`), one file per page (`preferences.ts`) and one per shared directory (`shell.ts`, `kit.ts`, `components.ts`), merged in `en/index.ts`. Its keys are the type `MessageKey` |
+| `en/` | The English catalog: `common.ts` (shared: the page names, and the sentences of `lib/domain.ts` and `lib/mfa.ts`), `lib.ts` (the rest of what the shared helpers answer: `lib/flows.ts`, `lib/domain.ts`, `lib/lifecycle.ts`, `lib/mfa.ts`, `lib/oidc.ts`, `data/exports.ts`), one file per page (`preferences.ts`) and one per shared directory (`shell.ts`, `kit.ts`, `components.ts`), merged in `en/index.ts`. Its keys are the type `MessageKey` |
 | `de/` | The German catalog, the same layout, typed `Partial<Record<MessageKey, string>>`: a key it lacks falls back to English |
 | `literals-baseline.json` | How many words each area still has written in the code (`GUI-6.4`), held by `literals.test.ts` |
 

@@ -5,18 +5,20 @@ import { useState, type FormEvent } from "react";
 import { useSmoAction } from "../../../api/hooks";
 import type { Package } from "../../../api/types";
 import { Field, Modal } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { parseJsonObject } from "../../../lib/domain";
 import { INSTANCES_PATH } from "../data/queries";
 
 /** The dialog; closes itself once rApp Management accepted the instance. */
 export function CreateInstance({ pkg, onClose }: { pkg: Package; onClose: () => void }) {
+  const t = useT();
   const [config, setConfig] = useState("{}");
   const [autonomyMode, setAutonomyMode] = useState("SHADOW");
   const [regionScope, setRegionScope] = useState("{}");
   const [operatorApiBase, setOperatorApiBase] = useState("");
   const action = useSmoAction();
-  const parsed = parseJsonObject(config);
-  const parsedScope = parseJsonObject(regionScope);
+  const parsed = parseJsonObject(config, t);
+  const parsedScope = parseJsonObject(regionScope, t);
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (!parsed.ok || !parsedScope.ok) return;
@@ -24,31 +26,31 @@ export function CreateInstance({ pkg, onClose }: { pkg: Package; onClose: () => 
       packageId: pkg.packageId, config: parsed.value, autonomyMode,
       regionScope: autonomyMode === "AUTONOMOUS" ? parsedScope.value : null,
       ...(operatorApiBase.trim() ? { operatorApiBase: operatorApiBase.trim() } : {}),
-    }, success: "Instance created (DEPLOYING)" }, { onSuccess: onClose });
+    }, success: t("rapps.deploy.created") }, { onSuccess: onClose });
   };
   return (
-    <Modal title={`Deploy ${pkg.name} ${pkg.version}`} onClose={onClose}>
+    <Modal title={t("rapps.deploy.title", { name: pkg.name, version: pkg.version })} onClose={onClose}>
       <form className="form" onSubmit={submit}>
-        <p className="muted small">rApp Management checks the package is AVAILABLE, instantiates it on NFO from its NF deployment descriptor, and registers package usage.</p>
-        <Field label="Instance configuration (JSON)" hint={parsed.ok ? "Optional. requiredResourceTypeId is passed to NFO for placement." : <span className="text-bad">{parsed.error}</span>}>
+        <p className="muted small">{t("rapps.deploy.intro")}</p>
+        <Field label={t("rapps.deploy.config")} hint={parsed.ok ? t("rapps.deploy.config.hint") : <span className="text-bad">{parsed.error}</span>}>
           <textarea rows={6} value={config} onChange={(e) => setConfig(e.target.value)} spellCheck={false} />
         </Field>
-        <Field label="Autonomy mode" hint="Fixed for this instance's lifetime — how it may act on its own AI/ML inference outcomes (HISTORY.md OI-6.3).">
+        <Field label={t("rapps.deploy.autonomy")} hint={t("rapps.deploy.autonomy.hint")}>
           <select value={autonomyMode} onChange={(e) => setAutonomyMode(e.target.value)}>
-            <option value="SHADOW">SHADOW — observe-only, never dispatched</option>
-            <option value="ASSIST">ASSIST — operator scopes before dispatch</option>
-            <option value="AUTONOMOUS">AUTONOMOUS — dispatched at a pre-configured scope</option>
+            <option value="SHADOW">{t("rapps.deploy.autonomy.SHADOW")}</option>
+            <option value="ASSIST">{t("rapps.deploy.autonomy.ASSIST")}</option>
+            <option value="AUTONOMOUS">{t("rapps.deploy.autonomy.AUTONOMOUS")}</option>
           </select>
         </Field>
         {autonomyMode === "AUTONOMOUS" && (
-          <Field label="Region scope (JSON)" hint={parsedScope.ok ? "Which RAN nodes/cells/slices AUTONOMOUS dispatches are addressed to." : <span className="text-bad">{parsedScope.error}</span>}>
+          <Field label={t("rapps.deploy.regionScope")} hint={parsedScope.ok ? t("rapps.deploy.regionScope.hint") : <span className="text-bad">{parsedScope.error}</span>}>
             <textarea rows={3} value={regionScope} onChange={(e) => setRegionScope(e.target.value)} spellCheck={false} />
           </Field>
         )}
-        <Field label="Operator API base URL (optional)" hint="Where the rApp serves the routes its operator page declares, for example http://my-rapp:8000. A rApp that runs with this instance's own credentials can register it itself; the page of a rApp without one shows only the overview.">
-          <input value={operatorApiBase} onChange={(e) => setOperatorApiBase(e.target.value)} placeholder="http://my-rapp:8000" pattern="https?://.+" />
+        <Field label={t("rapps.deploy.operatorApi")} hint={t("rapps.deploy.operatorApi.hint")}>
+          <input value={operatorApiBase} onChange={(e) => setOperatorApiBase(e.target.value)} placeholder={t("rapps.deploy.operatorApi.placeholder")} pattern="https?://.+" />
         </Field>
-        <div className="row gap end"><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="submit" className="btn primary" disabled={!parsed.ok || !parsedScope.ok || action.isPending}>Deploy</button></div>
+        <div className="row gap end"><button type="button" className="btn" onClick={onClose}>{t("rapps.deploy.cancel")}</button><button type="submit" className="btn primary" disabled={!parsed.ok || !parsedScope.ok || action.isPending}>{t("rapps.deploy.submit")}</button></div>
       </form>
     </Modal>
   );

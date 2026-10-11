@@ -21,6 +21,8 @@ First load of the Intents tab: summary, the two filtered totals, one intents pag
 an intent adds 1.
 The cards view reads one page of 6 intents and each card's reports (7 calls).
 
+Every word on the page comes from the catalog (`src/i18n/en/intents.ts`, `de/intents.ts`; GUI-6.4); its literal count is 0.
+
 ## Known limits
 
 - **Fulfilment percent** is Intent Service's `fulfilmentPercent` (share of targets/expectations its newest fulfilment report marks fulfilled);

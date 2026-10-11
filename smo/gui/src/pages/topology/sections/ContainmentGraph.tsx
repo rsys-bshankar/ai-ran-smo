@@ -57,7 +57,7 @@ function TreeSvg({ rows, onToggle }: { rows: Row[]; onToggle: (dn: string) => vo
           parentRow.set(r.node.dn, i);
           const x = 16 + r.depth * INDENT, y = 14 + i * ROW;
           const from = r.node.parentDn !== null ? parentRow.get(r.node.parentDn) : undefined;
-          const alarms = describeAlarms(r.node.alarms);
+          const alarms = describeAlarms(r.node.alarms, t);
           const label = `${r.node.class}=${r.node.id}`;
           const open = () => navigate(elementHref(r.node.managedElementRef, "mo"));
           return (

@@ -3,6 +3,7 @@
  * Section id `flows.list`. */
 import { Link } from "react-router-dom";
 
+import { useT } from "../../../i18n";
 import { FLOWS } from "../../../lib/flows";
 
 /** The selected flow's progress. */
@@ -10,18 +11,19 @@ export interface ListProgress { done: number; total: number; failed: boolean; co
 
 /** The list. */
 export function FlowList({ selected, progress }: { selected: string; progress: ListProgress | null }) {
+  const t = useT();
   return (
-    <nav className="flow-list" aria-label="Call flows" data-section="flows.list">
+    <nav className="flow-list" aria-label={t("flows.list.aria")} data-section="flows.list">
       {FLOWS.map((f) => {
         const on = f.id === selected;
         return (
           <Link key={f.id} to={`/flows/${f.id}`} className={`flow-item ${on ? "active" : ""}`} aria-current={on ? "page" : undefined}>
             <span className="flow-num">{f.number}</span>
             <span className="flows-item-b">
-              <strong>{f.title}</strong>
+              <strong>{t(f.title)}</strong>
               <span className="muted small">{f.modules.join(" · ")}</span>
               {on && progress && (
-                <span className="flow-progress" title={`${progress.done} of ${progress.total} steps`}>
+                <span className="flow-progress" title={t("flows.list.progress", { done: progress.done, count: progress.total })}>
                   <span className="bar"><span style={{ width: `${(progress.done / progress.total) * 100}%` }} className={progress.failed ? "bad" : progress.complete ? "ok" : ""} /></span>
                   <span className="small muted">{progress.done}/{progress.total}</span>
                 </span>
@@ -30,7 +32,7 @@ export function FlowList({ selected, progress }: { selected: string; progress: L
           </Link>
         );
       })}
-      <p className="gap-note">Generic lifecycle flows only. 17 and 26 are phases of 02; there is no flow 05. Sample-rApp closed loops (22–25) and explanatory flows are left out on purpose.</p>
+      <p className="gap-note">{t("flows.list.note")}</p>
     </nav>
   );
 }

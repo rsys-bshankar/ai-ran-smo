@@ -31,7 +31,7 @@ export function ScopePicker() {
   const t = useT();
   const { scope, setScope } = useScopeState();
   const me = useOptionalAuth()?.me;
-  const limited = me?.scope ? describeUserScope(me.scope) : null;
+  const limited = me?.scope ? describeUserScope(me.scope, t) : null;
   const [open, setOpen] = useState(false);
   const scopes = useSmo<ScopesAnswer>(SCOPES_PATH, undefined, { refetchInterval: 300_000, staleTime: 60_000, enabled: open || isScoped(scope) });
   const regions = scopes.data?.regions ?? [];
@@ -40,7 +40,7 @@ export function ScopePicker() {
     <div className="rel scope-picker">
       <button type="button" className={`chip${isScoped(scope) ? " on" : ""}`} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)}
         title={t("shell.scope.title")}>
-        <span className="muted xs">{t("shell.scope.label")}</span> <strong>{scopeLabel(scope)}</strong>
+        <span className="muted xs">{t("shell.scope.label")}</span> <strong>{scopeLabel(scope, t)}</strong>
       </button>
       {isScoped(scope) && (
         <button type="button" className="btn ghost small" onClick={() => setScope({ region: null, cluster: null })} aria-label={t("shell.scope.clear")}>{t("shell.scope.all")}</button>

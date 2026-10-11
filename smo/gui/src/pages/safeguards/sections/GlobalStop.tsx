@@ -9,6 +9,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../../auth/AuthContext";
 import { Field, Modal } from "../../../components/ui";
 import { invalidateAfter } from "../../../data/keys";
+import { useT } from "../../../i18n";
 import { Callout } from "../../../kit/Callout";
 import { formatCount } from "../../../kit/Kpi";
 import { KILL_ALL, resumeAll, stopAll, useKillAllCount, type KillAllResult, type ResumeAllResult } from "../data/queries";
@@ -20,6 +21,7 @@ type Phase =
 
 /** The buttons, their confirm dialogs and the result. */
 export function GlobalStop() {
+  const t = useT();
   const { can } = useAuth();
   const qc = useQueryClient();
   const [phase, setPhase] = useState<Phase>({ stage: "idle" });
@@ -45,43 +47,45 @@ export function GlobalStop() {
     <div data-section="safeguards.stopall" className="stack">
       <div className="row gap">
         {mayStop && <button type="button" className="btn danger" disabled={phase.stage === "running"} onClick={() => setPhase({ stage: "confirm-stop" })}>
-          {phase.stage === "running" && phase.what === "stop" ? "Stopping every rApp…" : "Stop all rApp writes"}
+          {phase.stage === "running" && phase.what === "stop" ? t("safeguards.stopAll.running") : t("safeguards.stopAll.button")}
         </button>}
         {mayResume && <button type="button" className="btn" disabled={phase.stage === "running"} onClick={() => setPhase({ stage: "confirm-resume" })}>
-          {phase.stage === "running" && phase.what === "resume" ? "Resuming…" : "Resume all"}
+          {phase.stage === "running" && phase.what === "resume" ? t("safeguards.resumeAll.running") : t("safeguards.resumeAll.button")}
         </button>}
       </div>
-      {phase.stage === "error" && <div className="error-box" role="alert">The call failed: {phase.error}</div>}
+      {phase.stage === "error" && <div className="error-box" role="alert">{t("safeguards.global.callFailed", { error: phase.error })}</div>}
       {phase.stage === "stopped" && (
-        <Callout tone={failed.length ? "bad" : "warn"} title={`Stopped ${formatCount(phase.result.stopped)} rApp${phase.result.stopped === 1 ? "" : "s"} · ${formatCount(phase.result.alreadyStopped)} already stopped${failed.length ? ` · ${failed.length} failed` : ""}`}
-          actions={<button type="button" className="btn small" onClick={close}>Dismiss</button>}>
-          {failed.length > 0 ? <FailedList failed={failed} /> : "An admin resumes them all with Resume all, or each one from its row."}
+        <Callout tone={failed.length ? "bad" : "warn"} title={[t("safeguards.stopAll.done", { count: phase.result.stopped, n: formatCount(phase.result.stopped) }), t("safeguards.stopAll.already", { n: formatCount(phase.result.alreadyStopped) }),
+            ...(failed.length ? [t("safeguards.global.failed", { n: failed.length })] : [])].join(" · ")}
+          actions={<button type="button" className="btn small" onClick={close}>{t("safeguards.global.dismiss")}</button>}>
+          {failed.length > 0 ? <FailedList failed={failed} /> : t("safeguards.stopAll.done.body")}
         </Callout>
       )}
       {phase.stage === "resumed" && (
-        <Callout tone={failed.length ? "bad" : "info"} title={`Resumed ${formatCount(phase.result.resumed)} rApp${phase.result.resumed === 1 ? "" : "s"}${failed.length ? ` · ${failed.length} failed` : ""}`}
-          actions={<button type="button" className="btn small" onClick={close}>Dismiss</button>}>
+        <Callout tone={failed.length ? "bad" : "info"} title={[t("safeguards.resumeAll.done", { count: phase.result.resumed, n: formatCount(phase.result.resumed) }),
+            ...(failed.length ? [t("safeguards.global.failed", { n: failed.length })] : [])].join(" · ")}
+          actions={<button type="button" className="btn small" onClick={close}>{t("safeguards.global.dismiss")}</button>}>
           {failed.length > 0 && <FailedList failed={failed} />}
         </Callout>
       )}
       {phase.stage === "confirm-stop" && (
-        <Modal title="Stop every rApp's writes?" onClose={close}>
-          <p>{live === null ? "Counting the rApps…" : <>This stops the writes of <strong>{formatCount(live - (stopped ?? 0))}</strong> running rApp instance{live - (stopped ?? 0) === 1 ? "" : "s"} in one call ({formatCount(stopped)} of {formatCount(live)} are already stopped and keep their first reason).</>}
-            {" "}Their config jobs are refused until an admin resumes them; undoing changes still works.</p>
-          {counts.error && <p className="small t-warn">Could not count the rApps ({counts.error.message}); the stop still applies to every one.</p>}
-          <Field label="Reason" hint="Shown with every stopped rApp and in the refusal events"><input value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} autoFocus /></Field>
+        <Modal title={t("safeguards.stopAll.confirm.title")} onClose={close}>
+          <p>{live === null ? t("safeguards.stopAll.confirm.counting") : <>{t("safeguards.stopAll.confirm.before")}<strong>{formatCount(live - (stopped ?? 0))}</strong>{t("safeguards.stopAll.confirm.after", { count: live - (stopped ?? 0), stopped: formatCount(stopped), live: formatCount(live) })}</>}
+            {" "}{t("safeguards.stopAll.confirm.effect")}</p>
+          {counts.error && <p className="small t-warn">{t("safeguards.stopAll.confirm.countError", { error: counts.error.message })}</p>}
+          <Field label={t("safeguards.reason")} hint={t("safeguards.stopAll.confirm.reason.hint")}><input value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} autoFocus /></Field>
           <div className="row gap">
-            <button type="button" className="btn danger" onClick={() => void run("stop")}>Stop all rApps</button>
-            <button type="button" className="btn ghost" onClick={close}>Cancel</button>
+            <button type="button" className="btn danger" onClick={() => void run("stop")}>{t("safeguards.stopAll.confirm.submit")}</button>
+            <button type="button" className="btn ghost" onClick={close}>{t("safeguards.cancel")}</button>
           </div>
         </Modal>
       )}
       {phase.stage === "confirm-resume" && (
-        <Modal title="Resume every stopped rApp?" onClose={close}>
-          <p>{stopped === null ? "Counting the stopped rApps…" : <>This resumes <strong>{formatCount(stopped)}</strong> stopped rApp instance{stopped === 1 ? "" : "s"}, whoever stopped them and why.</>}</p>
+        <Modal title={t("safeguards.resumeAll.confirm.title")} onClose={close}>
+          <p>{stopped === null ? t("safeguards.resumeAll.confirm.counting") : <>{t("safeguards.resumeAll.confirm.before")}<strong>{formatCount(stopped)}</strong>{t("safeguards.resumeAll.confirm.after", { count: stopped })}</>}</p>
           <div className="row gap">
-            <button type="button" className="btn primary" disabled={stopped === 0} onClick={() => void run("resume")}>Resume all</button>
-            <button type="button" className="btn ghost" onClick={close}>Cancel</button>
+            <button type="button" className="btn primary" disabled={stopped === 0} onClick={() => void run("resume")}>{t("safeguards.resumeAll.button")}</button>
+            <button type="button" className="btn ghost" onClick={close}>{t("safeguards.cancel")}</button>
           </div>
         </Modal>
       )}

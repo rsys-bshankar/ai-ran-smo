@@ -1,10 +1,11 @@
 /** The KPIs & Assurance page (route /kpis, BRIEF §4 KPIs & Assurance, handoff `Kpis.dc.html`, SCALE.md "KPIs & Assurance"): network
  * performance, the monitors that watch it, and what was done when a threshold broke. Layout only: the tabs (in the URL hash; Overview is the new
  * default and the pre-redesign ids `rapp`, `pm`, `definitions`, `mlmf`, `analytics`, `assurance`, `ocloud` still work), the Overview's time range
- * (the tiles', the worst list's and the chart's; a saved chart layout sets it), and the sections each tab places. Each section owns its data through `data/queries.ts`; only the visible tab's sections mount. README.md. */
+ * (the tiles', the worst list's and the chart's; a saved chart layout sets it), and the sections each tab places. Each section owns its data through `data/queries.ts`; only the visible tab's sections mount. README.md. Every word comes from the catalog (`i18n/en/kpis.ts`, GUI-6.4). */
 import { useState } from "react";
 
 import { Can, PageHeader, Tabs, useHashTab } from "../../components/ui";
+import { useT } from "../../i18n";
 import { SectionBoundary } from "../../kit/SectionBoundary";
 import { Segmented } from "../../kit/Segmented";
 import { Mlmf } from "../aiml";
@@ -29,17 +30,18 @@ const TABS = ["overview", "pm", "definitions", "rapp", "analytics", "assurance",
 
 /** The page. */
 export function Kpis() {
+  const t = useT();
   const [tab, setTab] = useHashTab(TABS, "overview");
   const [range, setRange] = useState<Range>("24h");
   return (
     <>
-      <PageHeader eyebrow="PM · MDAF · SA SMOS · MLMF" title="KPIs & Assurance"
-        subtitle="rApp, RAN, model and O-Cloud performance, plus SA SMOS closed-loop assurance"
-        actions={tab === "overview" ? <Segmented<Range> label="Range" value={range} onChange={setRange} options={[{ id: "1h", label: "1 h" }, { id: "24h", label: "24 h" }, { id: "7d", label: "7 d" }]} /> : undefined} />
+      <PageHeader eyebrow="PM · MDAF · SA SMOS · MLMF" title={t("kpis.title")}
+        subtitle={t("kpis.subtitle")}
+        actions={tab === "overview" ? <Segmented<Range> label={t("kpis.range")} value={range} onChange={setRange} options={[{ id: "1h", label: "1 h" }, { id: "24h", label: "24 h" }, { id: "7d", label: "7 d" }]} /> : undefined} />
       <Tabs value={tab} onChange={setTab} tabs={[
-        { id: "overview", label: "Overview" }, { id: "pm", label: "PM subscriptions" }, { id: "definitions", label: "KPI definitions" },
-        { id: "rapp", label: "rApp performance" }, { id: "analytics", label: "RAN Analytics" }, { id: "assurance", label: "Assurance (SA SMOS)" },
-        { id: "ocloud", label: "O-Cloud performance" }, { id: "mlmf", label: "Model KPIs (MLMF)" },
+        { id: "overview", label: t("kpis.tab.overview") }, { id: "pm", label: t("kpis.tab.pm") }, { id: "definitions", label: t("kpis.tab.definitions") },
+        { id: "rapp", label: t("kpis.tab.rapp") }, { id: "analytics", label: t("kpis.tab.analytics") }, { id: "assurance", label: t("kpis.tab.assurance") },
+        { id: "ocloud", label: t("kpis.tab.ocloud") }, { id: "mlmf", label: t("kpis.tab.mlmf") },
       ]} />
       {tab === "overview" && (
         <div className="stack">

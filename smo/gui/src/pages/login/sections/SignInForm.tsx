@@ -37,11 +37,11 @@ export function SignInForm() {
   // With GUI_LOGIN_MODE=oidc only the provider's button is shown; a break-glass account reaches the form through a small link.
   const breakGlassLink = !formIsNormal && authConfig.data?.breakGlass === true;
   const showPassword = formIsNormal || (breakGlassLink && breakGlassOpen);
-  const ssoError = oidcErrorMessage(params.get("oidc_error"));
+  const ssoError = oidcErrorMessage(params.get("oidc_error"), t);
 
   const fail = (err: unknown) => {
     const e = err as { status?: number; title?: string; message?: string };
-    setError(loginErrorMessage(e));
+    setError(loginErrorMessage(e, t));
     // a challenge that no longer works (expired, spent) or an account that is locked: back to the password
     if (e.title === "CHALLENGE_INVALID" || e.status === 429) setChallenge(null);
   };

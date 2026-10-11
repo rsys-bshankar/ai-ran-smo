@@ -6,6 +6,7 @@ import { useState } from "react";
 import type { MlmfSubscription } from "../../../api/types";
 import { LineChart } from "../../../components/charts";
 import { Card } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { formatTime, metricSeries, numericMetricKeys } from "../../../lib/domain";
 import { Badge } from "../../../kit/Badge";
 import { Empty, ErrorRetry, Skeleton } from "../../../kit/states";
@@ -26,23 +27,25 @@ export function GuardKpiChart({ modelId }: { modelId: string }) {
   const floor = metric ? sub?.guardKpiFloor?.[metric] : undefined;
   const latest = reports.data?.[0];
   const tiles = latest ? numericMetricKeys([latest]).slice(0, 4) : [];
+  const t = useT();
+  const shown = Math.min(reports.data?.length ?? 0, CHART_REPORTS);
   return (
-    <Card section="aiml.guard" title={metric ? `Guard KPI · ${metric}` : "Guard KPI"}
-      sub={sub ? `MLMF reports, last ${Math.min(reports.data?.length ?? 0, CHART_REPORTS)}${floor !== undefined ? ` · floor ${floor}` : " · no floor set"}` : "MLMF"}
+    <Card section="aiml.guard" title={metric ? t("aiml.guard.titleMetric", { metric }) : t("aiml.guard.title")}
+      sub={sub ? (floor !== undefined ? t("aiml.guard.sub", { n: shown, floor }) : t("aiml.guard.sub.noFloor", { n: shown })) : "MLMF"}
       actions={<>
         {subs.data && subs.data.length > 1 && (
-          <select value={sub?.subscriptionId ?? ""} onChange={(e) => setChosen(e.target.value)} aria-label="MLMF subscription">
+          <select value={sub?.subscriptionId ?? ""} onChange={(e) => setChosen(e.target.value)} aria-label={t("aiml.guard.subscription")}>
             {subs.data.map((s) => <option key={s.subscriptionId} value={s.subscriptionId}>{s.metricTypes.join(", ")} ({s.subscriptionId.slice(0, 8)})</option>)}
           </select>
         )}
-        {latest && (latest.breachedFloor ? <Badge tone="bad">Under floor · retrain triggered</Badge> : <Badge tone="ok">Above floor</Badge>)}
+        {latest && (latest.breachedFloor ? <Badge tone="bad">{t("aiml.guard.breached")}</Badge> : <Badge tone="ok">{t("aiml.guard.above")}</Badge>)}
       </>}>
       {subs.error && !subs.data ? <ErrorRetry error={subs.error} onRetry={() => void subs.refetch()} />
         : !subs.data ? <Skeleton lines={3} />
-          : !sub ? <Empty title="No MLMF subscription for this model.">Subscribe it in the MLMF tab to watch its guard KPI.</Empty>
+          : !sub ? <Empty title={t("aiml.guard.noSub.title")}>{t("aiml.guard.noSub.body")}</Empty>
             : reports.error && !reports.data ? <ErrorRetry error={reports.error} onRetry={() => void reports.refetch()} />
               : !reports.data ? <Skeleton lines={3} />
-                : reports.data.length === 0 || !metric ? <Empty title="No reports yet." />
+                : reports.data.length === 0 || !metric ? <Empty title={t("aiml.noReports")} />
                   : <>
                     <LineChart points={metricSeries(reports.data, metric)} floor={floor} label={metric} />
                     <div className="grid g4 tight">
@@ -53,12 +56,12 @@ export function GuardKpiChart({ modelId }: { modelId: string }) {
                           <div key={k} className="inset">
                             <div className="xs muted">{k}</div>
                             <div className={`num${f !== undefined && v < f ? " t-bad" : ""}`}>{Number(v.toPrecision(4))}</div>
-                            {f !== undefined && <div className="xs muted">floor {f}</div>}
+                            {f !== undefined && <div className="xs muted">{t("aiml.guard.floor", { value: f })}</div>}
                           </div>
                         );
                       })}
                     </div>
-                    <span className="xs muted">Newest report {formatTime(latest!.reportedAt)}</span>
+                    <span className="xs muted">{t("aiml.guard.newest", { time: formatTime(latest!.reportedAt) })}</span>
                   </>}
     </Card>
   );

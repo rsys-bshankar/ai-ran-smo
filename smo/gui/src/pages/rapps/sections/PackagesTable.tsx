@@ -5,6 +5,7 @@ import { useCallback, useState } from "react";
 
 import type { Package } from "../../../api/types";
 import { ActionButton, Can, Card, Id, StateBadge } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { formatCount } from "../../../kit/Kpi";
 import { ServerTable } from "../../../kit/ServerTable";
 import { count } from "../../../data/summary";
@@ -18,6 +19,7 @@ const PIPELINE = ["ONBOARDING", "AVAILABLE", "PRIMED", "DEPRECATED", "FAILED"] a
 
 /** The table with its pipeline chips and state filter. */
 export function PackagesTable() {
+  const t = useT();
   const [state, setState] = useState("");
   const [deployFrom, setDeployFrom] = useState<Package | null>(null);
   const [detail, setDetail] = useState<Package | null>(null);
@@ -25,13 +27,13 @@ export function PackagesTable() {
   // keep the open drawer on the row as the table refreshes it (its state changes after an action)
   const onRows = useCallback((rows: Package[]) => setDetail((d) => (d ? rows.find((r) => r.packageId === d.packageId) ?? d : d)), []);
   return (
-    <Card section="rapps.packages" title="Application packages" sub="package pipeline · counts from the summary, click one to filter"
+    <Card section="rapps.packages" title={t("rapps.packages.title")} sub={t("rapps.packages.sub")}
       actions={
-        <select value={state} onChange={(e) => setState(e.target.value)} aria-label="Filter by state">
-          <option value="">All states</option>
+        <select value={state} onChange={(e) => setState(e.target.value)} aria-label={t("rapps.packages.state.aria")}>
+          <option value="">{t("rapps.packages.state.all")}</option>
           {PACKAGE_STATES.map((s) => <option key={s}>{s}</option>)}
         </select>}>
-      <div className="row gap wrap" role="group" aria-label="Package pipeline">
+      <div className="row gap wrap" role="group" aria-label={t("rapps.packages.pipeline.aria")}>
         {PIPELINE.map((s) => {
           const n = count(summary.data, `packages.${s}`);
           return (
@@ -40,26 +42,26 @@ export function PackagesTable() {
             </button>
           );
         })}
-        <span className="muted small">{formatCount(count(summary.data, "packages.total"))} in all</span>
+        <span className="muted small">{t("rapps.packages.inAll", { n: formatCount(count(summary.data, "packages.total")) })}</span>
       </div>
       <ServerTable<Package> path={PACKAGES_PATH} query={{ state: state || undefined }} rowKey={(p) => p.packageId}
-        empty={state ? `No package is ${state}.` : "No packages onboarded yet."} onRowClick={setDetail} selectedKey={detail?.packageId ?? null} onRows={onRows}
+        empty={state ? t("rapps.packages.emptyState", { state }) : t("rapps.packages.empty")} onRowClick={setDetail} selectedKey={detail?.packageId ?? null} onRows={onRows}
         columns={[
-          { header: "Package", render: (p) => <><strong>{p.name}</strong> <span className="muted">{p.version}</span><div className="muted small">{p.vendor ?? ""} {p.applicationType}</div></> },
-          { header: "ID", render: (p) => <Id value={p.packageId} /> },
-          { header: "State", render: (p) => <StateBadge state={p.state} /> },
-          { header: "Signature", render: (p) => (p.signatureVerified ? "verified" : <span className="muted">unverified</span>) },
-          { header: "NF descriptor", render: (p) => <Id value={p.nfDeploymentDescriptorId} /> },
+          { header: t("rapps.packages.col.package"), render: (p) => <><strong>{p.name}</strong> <span className="muted">{p.version}</span><div className="muted small">{p.vendor ?? ""} {p.applicationType}</div></> },
+          { header: t("rapps.packages.col.id"), render: (p) => <Id value={p.packageId} /> },
+          { header: t("rapps.packages.col.state"), render: (p) => <StateBadge state={p.state} /> },
+          { header: t("rapps.packages.col.signature"), render: (p) => (p.signatureVerified ? t("rapps.packages.signature.verified") : <span className="muted">{t("rapps.packages.signature.unverified")}</span>) },
+          { header: t("rapps.packages.col.nfDescriptor"), render: (p) => <Id value={p.nfDeploymentDescriptorId} /> },
           {
             header: "", className: "actions", render: (p) => (
               <div className="row gap end">
-                {p.state === "AVAILABLE" && <Can method="POST" path={INSTANCES_PATH}><button type="button" className="btn primary" onClick={(e) => { e.stopPropagation(); setDeployFrom(p); }}>Deploy</button></Can>}
-                {packageActions(p.state).map((a) => (
+                {p.state === "AVAILABLE" && <Can method="POST" path={INSTANCES_PATH}><button type="button" className="btn primary" onClick={(e) => { e.stopPropagation(); setDeployFrom(p); }}>{t("rapps.packages.deploy")}</button></Can>}
+                {packageActions(p.state, t).map((a) => (
                   <ActionButton key={a.action} label={a.label} tone={a.action === "delete" ? "danger" : "default"}
-                    confirm={a.action === "delete" ? `Delete package ${p.name} ${p.version}?` : undefined}
+                    confirm={a.action === "delete" ? t("rapps.packages.delete.confirm", { name: p.name, version: p.version }) : undefined}
                     action={a.action === "delete"
-                      ? { method: "DELETE", path: packageBase(p.packageId), success: "Package delete requested" }
-                      : { method: "POST", path: `${packageBase(p.packageId)}/${a.action}`, success: `${a.label}: done` }} />
+                      ? { method: "DELETE", path: packageBase(p.packageId), success: t("rapps.packages.delete.done") }
+                      : { method: "POST", path: `${packageBase(p.packageId)}/${a.action}`, success: t("rapps.packages.action.done", { action: a.label }) }} />
                 ))}
               </div>
             ),

@@ -29,7 +29,7 @@ export function ConfigJobDrawer({ id, onClose }: { id: string; onClose: () => vo
       {data && <>
         <div className="row gap wrap">
           <StateBadge state={data.status} />
-          <span className="muted small">{waveProgress(data)}</span>
+          <span className="muted small">{waveProgress(data, t)}</span>
           {data.rollbackOf && <span className="small">{t("components.configJob.undoes")} <Id value={data.rollbackOf} />{data.rollbackForced ? ` ${t("components.configJob.forced")}` : ""}</span>}
         </div>
 
@@ -43,7 +43,7 @@ export function ConfigJobDrawer({ id, onClose }: { id: string; onClose: () => vo
 
         {data.status === "HALTED" && (
           <div className="card" role="status">
-            <strong>{HALT_MEANING[data.haltedReason ?? ""] ?? t("components.configJob.halted")}</strong>
+            <strong>{HALT_MEANING[data.haltedReason ?? ""] ? t(HALT_MEANING[data.haltedReason ?? ""]) : t("components.configJob.halted")}</strong>
             {data.haltedDetail && <p className="small">{data.haltedDetail}</p>}
             {data.haltedReason === "WAVE_PAUSE" && data.nextWaveAt && <p className="muted small">{t("components.configJob.goesOnAt", { time: formatTime(data.nextWaveAt) })}</p>}
             <div className="row gap">
@@ -68,7 +68,7 @@ export function ConfigJobDrawer({ id, onClose }: { id: string; onClose: () => vo
               ["KPI", data.kpiGuard.kpi],
               [t("components.configJob.guard.checks"), t("components.configJob.guard.checksText", { after: data.kpiGuard.observationMinutes, before: data.kpiGuard.baselineMinutes, change: data.kpiGuard.direction === "higher" ? t("components.configJob.guard.drop") : t("components.configJob.guard.rise"), max: data.kpiGuard.maxRegressionPercent })],
               [t("components.configJob.guard.onRegression"), data.kpiGuard.revert ? t("components.configJob.guard.revert") : t("components.configJob.guard.reportOnly")],
-              [t("components.configJob.guard.result"), describeGuardResult(data.kpiGuardResult, data.kpiGuardCheckedAt)],
+              [t("components.configJob.guard.result"), describeGuardResult(data.kpiGuardResult, data.kpiGuardCheckedAt, t)],
               [t("components.configJob.guard.checked"), data.kpiGuardResult?.checkedAt ? formatTime(data.kpiGuardResult.checkedAt) : null],
               [t("components.configJob.guard.rollbackJob"), data.kpiGuardResult?.revertJobId ? <Id value={data.kpiGuardResult.revertJobId} /> : null],
             ]} />
@@ -100,7 +100,7 @@ function RollbackDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const preview = useSmoAction();
   const run = useSmoAction();
   const [plan, setPlan] = useState<RollbackPreview | null>(null);
-  const differences = plan ? describeDifferences(plan) : [];
+  const differences = plan ? describeDifferences(plan, t) : [];
   return (
     <Modal title={t("components.rollback.title")} onClose={onClose}>
       <p className="muted small">{t("components.rollback.intro")}</p>

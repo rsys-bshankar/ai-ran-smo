@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider } from "../../../auth/AuthContext";
+import { ENGLISH } from "../../../lib/domain";
 import { FLOWS, type FlowStep } from "../../../lib/flows";
 import { fakeBff, mountWith, type Call } from "../../../testing/bff";
 import { byText, cleanup, click, settle, type } from "../../../testing/dom";
@@ -43,7 +44,7 @@ describe("Lifecycle flows page", () => {
     bff();
     const { container } = await open("/flows", "/flows");
     await settle(6);
-    expect(container.querySelector("[data-section='flows.board']")!.textContent).toContain(`Flow 01 · ${FLOWS[0].title}`);
+    expect(container.querySelector("[data-section='flows.board']")!.textContent).toContain(`Flow 01 · ${ENGLISH(FLOWS[0].title)}`);
     expect(Array.from(container.querySelectorAll(".flow-list a")).map((a) => a.getAttribute("href"))).toEqual(FLOWS.map((f) => `/flows/${f.id}`));
     expect(container.textContent).toContain("No package to follow yet.");
   });

@@ -6,6 +6,10 @@
  * The ring shows the share of targets reported FULFILLED in the newest fulfilment report, and nothing ("—") when that report has no per-target
  * results; it never invents a number. */
 import type { IntentReport, Rmih } from "../../../api/types";
+import { translate, type Params, type TKey, type Translator } from "../../../i18n";
+
+/** English, for a caller (a unit test) that checks support without a translator. */
+const ENGLISH: Translator = Object.assign((key: TKey, params?: Params) => translate("en", key, params), { language: "en" as const });
 
 /** TS 28.312 FulfilmentInfo. */
 export interface FulfilmentInfo { fulfilmentStatus: string; notFullfilledState?: string | null; notFulfilledReasons?: string[] | null }
@@ -64,14 +68,15 @@ export function expectations(attributes: Record<string, unknown>): ExpectationLi
 
 const CONDITION: Record<string, string> = { IS_LESS_THAN: "<", IS_GREATER_THAN: ">", IS_EQUAL_TO: "=", IS_NOT_EQUAL_TO: "≠", IS_WITHIN_RANGE: "in", IS_OUTSIDE_RANGE: "outside" };
 
-/** Whether a handler declares support for an expectation: its object type, and every target name under that type. */
-export function handlerSupport(handler: Rmih | undefined, objectType: string, targetNames: string[]): { ok: boolean; problem: string | null } {
-  if (!handler) return { ok: false, problem: "Choose a handler" };
+/** Whether a handler declares support for an expectation: its object type, and every target name under that type. The problem is in the
+ * language of `t` (English by default). */
+export function handlerSupport(handler: Rmih | undefined, objectType: string, targetNames: string[], t: Translator = ENGLISH): { ok: boolean; problem: string | null } {
+  if (!handler) return { ok: false, problem: t("intents.support.choose") };
   const caps = (handler.attributes?.intentHandlingCapabilityList ?? []).filter((c) => c.supportedExpectationObjectType === objectType);
-  if (caps.length === 0) return { ok: false, problem: `${handler.rmihId} does not handle ${objectType}` };
+  if (caps.length === 0) return { ok: false, problem: t("intents.support.type", { handler: handler.rmihId, objectType }) };
   const supported = new Set(caps.flatMap((c) => c.supportedExpectationTargetInfoList.map((t) => t.supportedTargetName)));
   const missing = targetNames.filter((n) => !supported.has(n));
-  return missing.length ? { ok: false, problem: `${handler.rmihId} does not support target ${missing.join(", ")}` } : { ok: true, problem: null };
+  return missing.length ? { ok: false, problem: t("intents.support.targets", { handler: handler.rmihId, targets: missing.join(", ") }) } : { ok: true, problem: null };
 }
 
 /** The target names of a parsed targets array (entries without a name are skipped). */

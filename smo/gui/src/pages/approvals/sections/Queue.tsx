@@ -53,10 +53,10 @@ function QueueCard({ approval: a, now, selected, onOpen }: { approval: Approval;
       <div className="small" title={a.managedElements.join(", ")}>{t("approvals.queue.changes", { n: a.changeCount, elements: describeElements(a.managedElements) })}</div>
       <div className="small">{a.decision?.rationale ?? <span className="muted">{t("approvals.queue.noRationale")}</span>}</div>
       {/* two-person approval (#401): "1 of 2 approvals"; a request that needs one (or a RAN NF OAM that sends neither field) reads "one needed" */}
-      <div className="small" data-approvals>{approvalProgress(a) ?? <span className="muted">{t("approvals.queue.oneNeeded")}</span>}</div>
+      <div className="small" data-approvals>{approvalProgress(a, t) ?? <span className="muted">{t("approvals.queue.oneNeeded")}</span>}</div>
       {share !== null && <Meter parts={[{ key: t("approvals.queue.meter"), value: Math.round(share * 100), tone }]} total={100} label={t("approvals.queue.timeLeft", { percent: Math.round(share * 100) })} />}
       <div className="row between wrap small">
-        <span title={formatTime(a.expiresAt)}>{timeLeft(a.expiresAt, now)} <span className="muted">({a.onTimeout === "REJECT" ? t("approvals.queue.rejected") : t("approvals.queue.expires")})</span></span>
+        <span title={formatTime(a.expiresAt)}>{timeLeft(a.expiresAt, now, t)} <span className="muted">({a.onTimeout === "REJECT" ? t("approvals.queue.rejected") : t("approvals.queue.expires")})</span></span>
         <span className="muted">{t("approvals.queue.asked", { time: formatTime(a.createdAt) })}</span>
         <button type="button" className="btn small" onClick={onOpen}>{t("approvals.queue.review")}</button>
       </div>

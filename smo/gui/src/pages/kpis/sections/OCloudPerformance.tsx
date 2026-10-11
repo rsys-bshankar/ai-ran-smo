@@ -4,16 +4,18 @@ import { useState } from "react";
 
 import type { OCloudMetric } from "../../../api/types";
 import { Card } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { ServerTable } from "../../../kit/ServerTable";
 import { OCLOUD_PERFORMANCE } from "../data/queries";
 
 /** The tab. */
 export function OCloudPerformance() {
+  const t = useT();
   const [resource, setResource] = useState("");
   return (
-    <Card section="kpis.ocloud" title="O-Cloud performance (FOCOM)" actions={<input value={resource} onChange={(e) => setResource(e.target.value)} placeholder="Filter by resource" aria-label="Filter by resource" />}>
-      <ServerTable<OCloudMetric> path={OCLOUD_PERFORMANCE} query={{ resource_ref: resource.trim() || undefined }} rowKey={(m) => `${m.resourceRef}/${m.metricName}/${m.value}`} empty="No O-Cloud metrics recorded." columns={[
-        { header: "Resource", render: (m) => <code>{m.resourceRef}</code> }, { header: "Metric", render: (m) => m.metricName }, { header: "Value", render: (m) => m.value },
+    <Card section="kpis.ocloud" title={t("kpis.ocloud.title")} actions={<input value={resource} onChange={(e) => setResource(e.target.value)} placeholder={t("kpis.ocloud.filter")} aria-label={t("kpis.ocloud.filter")} />}>
+      <ServerTable<OCloudMetric> path={OCLOUD_PERFORMANCE} query={{ resource_ref: resource.trim() || undefined }} rowKey={(m) => `${m.resourceRef}/${m.metricName}/${m.value}`} empty={t("kpis.ocloud.empty")} columns={[
+        { header: t("kpis.ocloud.resource"), render: (m) => <code>{m.resourceRef}</code> }, { header: t("kpis.ocloud.metric"), render: (m) => m.metricName }, { header: t("kpis.ocloud.value"), render: (m) => m.value },
       ]} />
     </Card>
   );

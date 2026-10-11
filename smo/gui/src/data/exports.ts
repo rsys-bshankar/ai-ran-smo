@@ -8,6 +8,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, ApiError, type Query } from "../api/client";
 import { useToast } from "../components/Toast";
+import { useT, type Translator } from "../i18n";
+import { ENGLISH } from "../lib/domain";
 import type { Scope } from "./scope";
 
 /** What a job exports. */
@@ -75,14 +77,14 @@ export function auditExport(f: { username?: string | null; action?: string | nul
   return compact({ kind: "audit" as const, since: f.since || ALL_SINCE, until: f.until || undefined, username: f.username || undefined, action: f.action || undefined });
 }
 
-/** The words for an export error: the BFF's fixed codes, or its message. */
-export function exportErrorText(err: unknown): string {
+/** The words for an export error, in the language of `t` (English by default): the BFF's fixed codes, or its message. */
+export function exportErrorText(err: unknown, t: Translator = ENGLISH): string {
   if (err instanceof ApiError) {
-    if (err.status === 429) return "You already have three exports running; wait for one to finish or delete one.";
-    if (err.status === 403) return "Your role cannot make this export (decisions and alarms: operator, audit log: admin).";
-    if (err.status === 409) return "The file is not written yet.";
-    if (err.status === 410) return "The file expired (kept 24 h after it finished); export again.";
-    if (err.status === 422) return `The export was refused: ${err.detail ?? err.title}`;
+    if (err.status === 429) return t("exports.error.tooMany");
+    if (err.status === 403) return t("exports.error.role");
+    if (err.status === 409) return t("exports.error.notWritten");
+    if (err.status === 410) return t("exports.error.expired");
+    if (err.status === 422) return t("exports.error.refused", { detail: err.detail ?? err.title });
     return err.message;
   }
   return String(err);
@@ -122,9 +124,10 @@ export function useCreateExport() {
 export function useDeleteExport() {
   const qc = useQueryClient();
   const toast = useToast();
+  const t = useT();
   return useMutation<unknown, ApiError, string>({
     mutationFn: (id) => api(`/exports/${id}`, { method: "DELETE" }),
-    onSuccess: () => { toast.push({ tone: "success", text: "Export deleted" }); void qc.invalidateQueries({ queryKey: EXPORTS_KEY }); },
-    onError: (e) => toast.push({ tone: "error", text: exportErrorText(e) }),
+    onSuccess: () => { toast.push({ tone: "success", text: t("exports.deleted") }); void qc.invalidateQueries({ queryKey: EXPORTS_KEY }); },
+    onError: (e) => toast.push({ tone: "error", text: exportErrorText(e, t) }),
   });
 }

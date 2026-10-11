@@ -6,6 +6,7 @@ import { useState } from "react";
 import type { FeatureGroup } from "../../../api/types";
 import { useAuth } from "../../../auth/AuthContext";
 import { ActionButton, Can, Card, Field, Id } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { ServerTable } from "../../../kit/ServerTable";
 import { FEATURE_GROUPS, useDmeTypes } from "../data/queries";
 
@@ -13,16 +14,17 @@ import { FEATURE_GROUPS, useDmeTypes } from "../data/queries";
 export function FeatureGroups() {
   const { can } = useAuth();
   const allowed = can("GET", FEATURE_GROUPS);
+  const t = useT();
   return (
     <>
       <Can method="POST" path={FEATURE_GROUPS}><NewFeatureGroup /></Can>
-      {!allowed && <Card section="aiml.features" title="Feature groups"><p className="muted">Feature groups carry datalake credentials, so they're visible to operators and admins only.</p></Card>}
-      {allowed && <Card section="aiml.features" title="Feature groups" actions={<span className="muted small">Operator-only view: groups hold datalake credentials, which are never displayed here</span>}>
-        <ServerTable<FeatureGroup> path={FEATURE_GROUPS} rowKey={(g) => g.featureGroupId} empty="No feature groups." columns={[
-          { header: "Name", render: (g) => <strong>{g.featureGroupName}</strong> }, { header: "Features", render: (g) => <code className="small">{g.featureList}</code> },
-          { header: "Source", render: (g) => `${g.datalakeSource} ${g.host}:${g.port}` }, { header: "Bucket / measurement", render: (g) => `${g.bucket} / ${g.measurement}` },
-          { header: "DME data job", render: (g) => (g.dmeDataJobId ? <Id value={g.dmeDataJobId} /> : <span className="muted">none</span>) },
-          { header: "", className: "actions", render: (g) => <ActionButton label="Delete" tone="danger" confirm={`Delete feature group ${g.featureGroupName}${g.dmeDataJobId ? " and its DME data job" : ""}?`} action={{ method: "DELETE", path: `${FEATURE_GROUPS}/${g.featureGroupName}`, success: "Feature group deleted" }} /> },
+      {!allowed && <Card section="aiml.features" title={t("aiml.tabs.features")}><p className="muted">{t("aiml.features.forbidden")}</p></Card>}
+      {allowed && <Card section="aiml.features" title={t("aiml.tabs.features")} actions={<span className="muted small">{t("aiml.features.note")}</span>}>
+        <ServerTable<FeatureGroup> path={FEATURE_GROUPS} rowKey={(g) => g.featureGroupId} empty={t("aiml.features.empty")} columns={[
+          { header: t("aiml.col.name"), render: (g) => <strong>{g.featureGroupName}</strong> }, { header: t("aiml.col.features"), render: (g) => <code className="small">{g.featureList}</code> },
+          { header: t("aiml.col.source"), render: (g) => `${g.datalakeSource} ${g.host}:${g.port}` }, { header: t("aiml.col.bucketMeasurement"), render: (g) => `${g.bucket} / ${g.measurement}` },
+          { header: t("aiml.col.dmeJob"), render: (g) => (g.dmeDataJobId ? <Id value={g.dmeDataJobId} /> : <span className="muted">{t("aiml.none")}</span>) },
+          { header: "", className: "actions", render: (g) => <ActionButton label={t("aiml.features.delete")} tone="danger" confirm={t(g.dmeDataJobId ? "aiml.features.deleteConfirm.dme" : "aiml.features.deleteConfirm", { name: g.featureGroupName })} action={{ method: "DELETE", path: `${FEATURE_GROUPS}/${g.featureGroupName}`, success: t("aiml.features.deleted") }} /> },
         ]} />
       </Card>}
     </>
@@ -37,25 +39,26 @@ function NewFeatureGroup() {
   const dmeTypes = useDmeTypes(enableDme);
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   const valid = /^\w{3,63}$/.test(f.featureGroupName);
+  const t = useT();
   return (
-    <Card section="aiml.newFeatureGroup" title="New feature group">
+    <Card section="aiml.newFeatureGroup" title={t("aiml.features.new")}>
       <div className="form grid cols-3 tight">
-        <Field label="Name" hint={f.featureGroupName && !valid ? <span className="text-bad">3-63 word characters</span> : "3-63 word characters, unique"}><input value={f.featureGroupName} onChange={set("featureGroupName")} /></Field>
-        <Field label="Features" hint="Comma-separated"><input value={f.featureList} onChange={set("featureList")} placeholder="pdcpBytesDl,pdcpBytesUl" /></Field>
-        <Field label="Datalake source"><input value={f.datalakeSource} onChange={set("datalakeSource")} /></Field>
-        <Field label="Host"><input value={f.host} onChange={set("host")} /></Field>
-        <Field label="Port"><input value={f.port} onChange={set("port")} /></Field>
-        <Field label="Bucket"><input value={f.bucket} onChange={set("bucket")} /></Field>
-        <Field label="Datalake token"><input type="password" autoComplete="off" value={f.token} onChange={set("token")} /></Field>
-        <Field label="DB org"><input value={f.dbOrg} onChange={set("dbOrg")} /></Field>
-        <Field label="Measurement"><input value={f.measurement} onChange={set("measurement")} /></Field>
-        <label className="check"><input type="checkbox" checked={enableDme} onChange={(e) => setEnableDme(e.target.checked)} /> source via DME</label>
-        {enableDme && <Field label="DME type" hint="AIMgF creates a DME data job of this type for the group">
-          <select value={dmeTypeId} onChange={(e) => setDmeTypeId(e.target.value)}><option value="">Choose…</option>{dmeTypes.data?.map((t) => <option key={t.dmeTypeId} value={t.dmeTypeId}>{t.typeName}</option>)}</select>
+        <Field label={t("aiml.col.name")} hint={f.featureGroupName && !valid ? <span className="text-bad">{t("aiml.features.name.invalid")}</span> : t("aiml.features.name.hint")}><input value={f.featureGroupName} onChange={set("featureGroupName")} /></Field>
+        <Field label={t("aiml.col.features")} hint={t("aiml.features.list.hint")}><input value={f.featureList} onChange={set("featureList")} placeholder={t("aiml.features.list.placeholder")} /></Field>
+        <Field label={t("aiml.features.datalakeSource")}><input value={f.datalakeSource} onChange={set("datalakeSource")} /></Field>
+        <Field label={t("aiml.features.host")}><input value={f.host} onChange={set("host")} /></Field>
+        <Field label={t("aiml.features.port")}><input value={f.port} onChange={set("port")} /></Field>
+        <Field label={t("aiml.features.bucket")}><input value={f.bucket} onChange={set("bucket")} /></Field>
+        <Field label={t("aiml.features.token")}><input type="password" autoComplete="off" value={f.token} onChange={set("token")} /></Field>
+        <Field label={t("aiml.features.dbOrg")}><input value={f.dbOrg} onChange={set("dbOrg")} /></Field>
+        <Field label={t("aiml.features.measurement")}><input value={f.measurement} onChange={set("measurement")} /></Field>
+        <label className="check"><input type="checkbox" checked={enableDme} onChange={(e) => setEnableDme(e.target.checked)} /> {t("aiml.features.viaDme")}</label>
+        {enableDme && <Field label={t("aiml.dmeType")} hint={t("aiml.features.dmeType.hint")}>
+          <select value={dmeTypeId} onChange={(e) => setDmeTypeId(e.target.value)}><option value="">{t("aiml.choose")}</option>{dmeTypes.data?.map((d) => <option key={d.dmeTypeId} value={d.dmeTypeId}>{d.typeName}</option>)}</select>
         </Field>}
       </div>
-      <ActionButton label="Create feature group" tone="primary" disabled={!valid || !f.featureList || !f.host || !f.bucket || !f.token || !f.dbOrg || !f.measurement || (enableDme && !dmeTypeId)}
-        action={{ method: "POST", path: FEATURE_GROUPS, json: { ...f, sourceName: f.sourceName || null, enableDme, dmeTypeId: enableDme ? dmeTypeId : null }, success: "Feature group created" }} />
+      <ActionButton label={t("aiml.features.create")} tone="primary" disabled={!valid || !f.featureList || !f.host || !f.bucket || !f.token || !f.dbOrg || !f.measurement || (enableDme && !dmeTypeId)}
+        action={{ method: "POST", path: FEATURE_GROUPS, json: { ...f, sourceName: f.sourceName || null, enableDme, dmeTypeId: enableDme ? dmeTypeId : null }, success: t("aiml.features.created") }} />
     </Card>
   );
 }

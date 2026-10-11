@@ -2641,3 +2641,19 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
   bundle and the dependency review for nothing the console uses. Lazy-loading the catalogs per language: they are small next to the bundle.
   Translating values from the network (state names, alarm causes, KPI names): they are the standard's words and shown as they are. Dates and numbers
   already follow the browser's locale.
+
+### GUI-6.4 — every page's words in the catalog
+
+- **What.** All 22 pages, the shell (sidebar, top bar, breadcrumb, ⌘K), `kit`, `components` and the shared helpers that build sentences (`lib/flows.ts`,
+  `lib/domain.ts`, `lib/lifecycle.ts`, `lib/mfa.ts`, `lib/oidc.ts`, `data/scope.ts`, `data/exports.ts`) take their words from `gui/src/i18n`, in English and
+  German. The literal check went from 3482 to 0 (two PRs: thirteen pages and the shared parts, then the last nine pages and the helpers).
+- **How.** One catalog file per page (`en/<page>.ts`, `de/<page>.ts`) and `en/lib.ts` for the helpers. A helper that builds text takes a `Translator` as its last
+  parameter, defaulting to English (`ENGLISH` in `lib/domain.ts`) so a plain call and the existing tests answer as before; label maps hold keys (`TKey`) and every
+  caller wraps them in `t(...)` (a raw key would render silently, so each was checked by search). Class components draw their text through a small function
+  component. Sentences around an inline element are split into `.before` / `.after` keys. Example values, payload field names and protocol values moved into named
+  constants rather than the catalog.
+- **English.** Unchanged, except that a count of one now reads in the singular where the old code always used the plural ("1 alarm", "1 model").
+- **Tests.** Every existing test passes unchanged in English (they render without a provider); `i18n.test.tsx` holds every English message to a German
+  translation and checks the converted helpers answer in German; `literals.test.ts` keeps every area at 0.
+- **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
+  Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.

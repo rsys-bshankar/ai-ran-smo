@@ -4,12 +4,14 @@ import { useSmo } from "../../../api/hooks";
 import type { ServiceOrder } from "../../../api/types";
 import { ActionButton, Id } from "../../../components/ui";
 import { flow10 } from "../../../lib/flows";
+import { useT } from "../../../i18n";
 import { go } from "./go";
 import { choose, SUBJECT_LIMIT } from "./subjects";
 import type { FlowBoardData } from "./types";
 
 /** The board of flow 10 for order `subjectId`. */
 export function useFlow10(subjectId: string | null): FlowBoardData {
+  const t = useT();
   const orders = useSmo<ServiceOrder[]>("/so-smos/orders", { limit: SUBJECT_LIMIT });
   const order = choose(orders.data, subjectId, (o) => o.orderId);
   const pending = order?.steps.some((s) => s.status === "PENDING");
@@ -18,12 +20,12 @@ export function useFlow10(subjectId: string | null): FlowBoardData {
     subjects: orders.data?.map((o) => ({ id: o.orderId, label: label(o) })),
     subjectsError: orders.error, retry: () => void orders.refetch(),
     selected: order && { id: order.orderId, label: label(order) },
-    steps: flow10(order),
-    empty: <>No orders. {go("/infrastructure#orders", "Submit one")}</>,
-    actions: { submit: go("/infrastructure#orders", "Submit an order") },
+    steps: flow10(order, t),
+    empty: <>{t("flows.f10.empty")} {go("/infrastructure#orders", t("flows.f10.submitOne"))}</>,
+    actions: { submit: go("/infrastructure#orders", t("flows.submitOrder")) },
     extra: order && <div className="row gap wrap between">
-      <p className="muted small">Order <Id value={order.orderId} /> · RMIH {order.rmihRegistration}. Completed steps are never rolled back; cancelling only touches PENDING steps.</p>
-      {pending && <ActionButton label="Cancel pending steps" action={{ method: "POST", path: `/so-smos/orders/${order.orderId}/cancel`, success: "Pending steps cancelled" }} />}
+      <p className="muted small">{t("flows.f10.order")} <Id value={order.orderId} />{t("flows.f10.rmih", { rmih: order.rmihRegistration })}</p>
+      {pending && <ActionButton label={t("flows.f10.cancel")} action={{ method: "POST", path: `/so-smos/orders/${order.orderId}/cancel`, success: t("flows.f10.cancelled") }} />}
     </div>,
   };
 }

@@ -6,6 +6,7 @@
  * resource's child resources. TEIV has no deployment-manager → pool relationship and NFO places a workload on the O-Cloud, not on a resource, so the
  * tree does not invent one: managers, pools and workloads are siblings under their O-Cloud. Pure: no React, so it is unit-tested directly. */
 import type { NfDeployment, Topology } from "../../../api/types";
+import { translate, type Params, type TKey, type Translator } from "../../../i18n";
 import type { Health, NodeKind, OAlarm, TopoNode, TopoTree } from "./types";
 
 const RANK: Record<Health, number> = { unknown: 0, ok: 1, warn: 2, bad: 3 };
@@ -30,14 +31,17 @@ function alarmHealth(severity: string): Health {
   return "ok";
 }
 
-/** The words the page shows for a health (colour is never the only signal). */
-export const HEALTH_LABEL: Record<Health, string> = { ok: "Healthy", warn: "Degraded", bad: "Faulty", unknown: "No health data" };
+/** The catalog keys of the words the page shows for a health (colour is never the only signal). */
+export const HEALTH_LABEL: Record<Health, TKey> = { ok: "infrastructure.health.ok", warn: "infrastructure.health.warn", bad: "infrastructure.health.bad", unknown: "infrastructure.health.unknown" };
 
 /** The badge tone of a health. */
 export const HEALTH_TONE: Record<Health, "ok" | "warn" | "bad" | "mute"> = { ok: "ok", warn: "warn", bad: "bad", unknown: "mute" };
 
-/** The kind names the page shows. */
-export const KIND_LABEL: Record<NodeKind, string> = { ocloud: "O-Cloud", dm: "Deployment manager", pool: "Resource pool", resource: "Resource", workload: "Workload" };
+/** The catalog keys of the kind names the page shows. */
+export const KIND_LABEL: Record<NodeKind, TKey> = { ocloud: "infrastructure.kind.ocloud", dm: "infrastructure.kind.dm", pool: "infrastructure.kind.pool", resource: "infrastructure.kind.resource", workload: "infrastructure.kind.workload" };
+
+/** English, for a caller (a unit test) that builds the tree without a translator. */
+const ENGLISH: Translator = Object.assign((key: TKey, params?: Params) => translate("en", key, params), { language: "en" as const });
 
 /** The last segment of a TEIV URN (`urn:oran:smo:teiv:Resource:<id>` → `<id>`). */
 function tail(urn: string): string {
@@ -64,8 +68,9 @@ export interface TopologyInputs {
   alarmsCut?: { shown: number; total: number | null } | null;
 }
 
-/** The tree. Children are sorted worst health first, then by name, so the cap on visible nodes keeps the ones that need attention. */
-export function buildTopology({ topology, workloads, workloadsCut, alarms, alarmsCut }: TopologyInputs): TopoTree {
+/** The tree. Children are sorted worst health first, then by name, so the cap on visible nodes keeps the ones that need attention. Its
+ * sentences (each node's `healthWhy`, the notes) are in the language of `t` (English by default). */
+export function buildTopology({ topology, workloads, workloadsCut, alarms, alarmsCut }: TopologyInputs, t: Translator = ENGLISH): TopoTree {
   const nodes = new Map<string, TopoNode>();
   const add = (kind: NodeKind, ref: string, name: string, parent: string | null, attributes: Record<string, unknown>, health: Health, healthWhy: string, state?: string) => {
     const id = `${kind}:${ref}`;
@@ -73,7 +78,7 @@ export function buildTopology({ topology, workloads, workloadsCut, alarms, alarm
     if (parent) nodes.get(parent)?.children.push(id);
     return id;
   };
-  const ocloud = (oCloudId: string) => add("ocloud", oCloudId, oCloudId, null, { oCloudId }, "unknown", "Worst of its pools and workloads.");
+  const ocloud = (oCloudId: string) => add("ocloud", oCloudId, oCloudId, null, { oCloudId }, "unknown", t("infrastructure.why.ocloud"));
 
   // Open alarms by resource: the worst severity each resource carries.
   const alarmBy = new Map<string, Health>();
@@ -85,13 +90,13 @@ export function buildTopology({ topology, workloads, workloadsCut, alarms, alarm
   for (const dm of entitiesOf(topology, "DeploymentManager")) {
     const attrs = dm.attributes;
     const oc = ocloud(String(attrs.oCloudId ?? "unknown O-Cloud"));
-    add("dm", tail(dm.id), String(attrs.name ?? tail(dm.id)), oc, attrs, "unknown", "No module serves a deployment manager's health.");
+    add("dm", tail(dm.id), String(attrs.name ?? tail(dm.id)), oc, attrs, "unknown", t("infrastructure.why.dm"));
   }
   const poolNode = new Map<string, string>();
   for (const p of entitiesOf(topology, "ResourcePool")) {
     const attrs = p.attributes;
     const oc = ocloud(String(attrs.oCloudId ?? "unknown O-Cloud"));
-    poolNode.set(tail(p.id), add("pool", tail(p.id), String(attrs.name ?? tail(p.id)), oc, attrs, "unknown", "Worst of its resources."));
+    poolNode.set(tail(p.id), add("pool", tail(p.id), String(attrs.name ?? tail(p.id)), oc, attrs, "unknown", t("infrastructure.why.pool")));
   }
 
   // Resources: under their parent resource when TEIV names one, else under their pool.
@@ -112,7 +117,7 @@ export function buildTopology({ topology, workloads, workloadsCut, alarms, alarm
       const under = parentId && nodes.has(parentId) ? parentId : poolNode.get(poolRef) ?? ocloud("unknown O-Cloud");
       const h = alarmBy.get(ref);
       const health: Health = h ?? (alarms ? "ok" : "unknown");
-      const why = h ? "An open O-Cloud alarm names this resource." : alarms ? "No open O-Cloud alarm names this resource." : "O-Cloud alarms could not be read.";
+      const why = t(h ? "infrastructure.why.alarm" : alarms ? "infrastructure.why.noAlarm" : "infrastructure.why.noAlarms");
       add("resource", ref, String(r.attributes.description ?? ref), under, r.attributes, health, why);
       pending.splice(i, 1);
     }
@@ -120,7 +125,7 @@ export function buildTopology({ topology, workloads, workloadsCut, alarms, alarm
 
   for (const w of workloads ?? []) {
     const oc = ocloud(w.clusterId);
-    add("workload", w.nfDeploymentId, w.name, oc, { ...w }, workloadHealth(w.state), `NF deployment state ${w.state}.`, w.state);
+    add("workload", w.nfDeploymentId, w.name, oc, { ...w }, workloadHealth(w.state), t("infrastructure.why.workload", { state: w.state }), w.state);
   }
 
   // Roll up: a node with children takes the worst of them unless it has its own data.
@@ -136,8 +141,8 @@ export function buildTopology({ topology, workloads, workloadsCut, alarms, alarm
   roots.sort((a, b) => RANK[nodes.get(b)!.health] - RANK[nodes.get(a)!.health] || a.localeCompare(b));
 
   const notes: string[] = [];
-  if (workloadsCut) notes.push(`Workloads: the first ${workloadsCut.shown}${workloadsCut.total !== null ? ` of ${workloadsCut.total.toLocaleString("en-US")}` : ""} NF deployments are placed; the NF deployments tab lists them all.`);
-  if (alarmsCut) notes.push(`Health: read from the first ${alarmsCut.shown}${alarmsCut.total !== null ? ` of ${alarmsCut.total.toLocaleString("en-US")}` : ""} O-Cloud alarms; a resource whose alarm is past that shows as healthy.`);
+  if (workloadsCut) notes.push(workloadsCut.total !== null ? t("infrastructure.note.workloads", { shown: workloadsCut.shown, total: workloadsCut.total.toLocaleString("en-US") }) : t("infrastructure.note.workloadsNoTotal", { shown: workloadsCut.shown }));
+  if (alarmsCut) notes.push(alarmsCut.total !== null ? t("infrastructure.note.alarms", { shown: alarmsCut.shown, total: alarmsCut.total.toLocaleString("en-US") }) : t("infrastructure.note.alarmsNoTotal", { shown: alarmsCut.shown }));
   return { nodes, roots, notes };
 }
 

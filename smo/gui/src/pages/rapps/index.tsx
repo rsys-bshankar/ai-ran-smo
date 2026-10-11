@@ -3,6 +3,7 @@
  * Layout only: every box is a section under `sections/`, wrapped in a `SectionBoundary`. Sections and data: README.md. */
 import { Can, PageHeader, Tabs, useHashTab } from "../../components/ui";
 import { count } from "../../data/summary";
+import { useT } from "../../i18n";
 import { SectionBoundary } from "../../kit/SectionBoundary";
 import { PACKAGES_PATH, useRappsSummary } from "./data/queries";
 import { RappDirectory } from "./sections/Directory";
@@ -19,23 +20,27 @@ export { VersionHistory } from "./sections/VersionHistory";
 /** The tab ids (kept in the URL hash). `directory`, `packages` and `instances` are the pre-redesign ids, so old links keep working. */
 const TABS = ["directory", "instances", "packages", "rollouts"] as const;
 
+/** The call flow the subtitle cites (a file path, not a word to translate). */
+const FLOW_DOC = "docs/call-flows/01-rapp-onboarding-to-deployment.md";
+
 /** The page. */
 export function Rapps() {
+  const t = useT();
   const [tab, setTab] = useHashTab(TABS, "directory");
   const summary = useRappsSummary();
   const n = (k: string) => count(summary.data, k);
   return (
     <>
-      <PageHeader eyebrow="Onboarding · rApp Management" title="rApps"
-        subtitle={<>Every rApp and the page its package declares; Packages and Instances administer them (Onboarding → rApp Management → NFO, per <code>docs/call-flows/01-rapp-onboarding-to-deployment.md</code>)</>} />
+      <PageHeader eyebrow={t("rapps.eyebrow")} title={t("rapps.title")}
+        subtitle={<>{t("rapps.subtitle")} <code>{FLOW_DOC}</code>)</>} />
       <div className="stack">
         <SectionBoundary id="rapps.tiles"><SummaryTiles /></SectionBoundary>
         <SectionBoundary id="rapps.pinned"><PinnedAttention /></SectionBoundary>
         <Tabs tabs={[
-          { id: "directory", label: "Directory" },
-          { id: "instances", label: "Instances", count: n("instances.total") },
-          { id: "packages", label: "Packages", count: n("packages.total") },
-          { id: "rollouts", label: "Rollouts", count: n("instances.UPGRADING") },
+          { id: "directory", label: t("rapps.tabs.directory") },
+          { id: "instances", label: t("rapps.tabs.instances"), count: n("instances.total") },
+          { id: "packages", label: t("rapps.tabs.packages"), count: n("packages.total") },
+          { id: "rollouts", label: t("rapps.tabs.rollouts"), count: n("instances.UPGRADING") },
         ]} value={tab} onChange={setTab} />
         {tab === "directory" && <SectionBoundary id="rapps.directory"><RappDirectory /></SectionBoundary>}
         {tab === "instances" && <SectionBoundary id="rapps.instances"><InstanceTable /></SectionBoundary>}

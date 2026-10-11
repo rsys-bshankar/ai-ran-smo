@@ -4,6 +4,7 @@
  * land on their tab. Layout only: each tab mounts its own sections, so only the visible tab's queries run. Sections and limits: README.md. */
 import { Can, PageHeader, Tabs, useHashTab } from "../../components/ui";
 import { count } from "../../data/summary";
+import { useT } from "../../i18n";
 import { SectionBoundary } from "../../kit/SectionBoundary";
 import "./infrastructure.css";
 import { useInfraSummary } from "./data/queries";
@@ -20,18 +21,19 @@ const TABS = ["topology", "nfo", "ocloud", "o1", "orders"] as const;
 
 /** The page. */
 export function Infrastructure() {
+  const t = useT();
   const [tab, setTab] = useHashTab(TABS, "topology");
   const summary = useInfraSummary();
   return (
     <>
-      <PageHeader eyebrow="NFO / O2dms · FOCOM / O2ims · O1 · SO SMOS" title="Infrastructure"
-        subtitle="Workloads (NFO / O2dms), O-Cloud inventory (FOCOM / O2ims), O1 management and service orders" />
+      <PageHeader eyebrow={t("infrastructure.eyebrow")} title={t("infrastructure.title")}
+        subtitle={t("infrastructure.subtitle")} />
       <Tabs value={tab} onChange={setTab} tabs={[
-        { id: "topology", label: "Topology" },
-        { id: "nfo", label: "NF deployments", count: count(summary.data, "deployments.total"), tone: count(summary.data, "deployments.ABNORMAL") ? "bad" : undefined },
-        { id: "ocloud", label: "O-Cloud inventory" },
-        { id: "o1", label: "O1 endpoints & jobs" },
-        { id: "orders", label: "Service orders" },
+        { id: "topology", label: t("infrastructure.tab.topology") },
+        { id: "nfo", label: t("infrastructure.tab.nfo"), count: count(summary.data, "deployments.total"), tone: count(summary.data, "deployments.ABNORMAL") ? "bad" : undefined },
+        { id: "ocloud", label: t("infrastructure.tab.ocloud") },
+        { id: "o1", label: t("infrastructure.tab.o1") },
+        { id: "orders", label: t("infrastructure.tab.orders") },
       ]} />
       {tab === "topology" && <SectionBoundary id="infrastructure.topology"><TopologyTab /></SectionBoundary>}
       {tab === "nfo" && <div className="stack">

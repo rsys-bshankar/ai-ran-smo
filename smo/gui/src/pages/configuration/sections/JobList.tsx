@@ -3,36 +3,40 @@
  * the job's staged detail (`?job=`). */
 import { Card, Id, StateBadge, type Column } from "../../../components/ui";
 import { count, useSummary } from "../../../data/summary";
+import { useT, type Translator } from "../../../i18n";
 import { ServerTable } from "../../../kit/ServerTable";
 import { JOBS_PATH, useJobStatus, useSelectedJob } from "../data/queries";
 import { JOB_STATES, type JobRow } from "../data/types";
 
-/** The list's columns. */
-const COLUMNS: Column<JobRow>[] = [
-  { header: "Job", render: (j) => <Id value={j.jobId} /> },
-  { header: "Requested by", render: (j) => j.requestedBy },
-  { header: "Scope", render: (j) => <span className="mono small">{j.accessScope ?? j.scope}</span> },
-  { header: "MSAC role", render: (j) => j.msacRole ?? <span className="muted">—</span> },
-  { header: "Status", render: (j) => <StateBadge state={j.status} /> },
-];
+/** The list's columns, in the language of `t`. */
+function columnsOf(t: Translator): Column<JobRow>[] {
+  return [
+    { header: t("configuration.jobs.col.job"), render: (j) => <Id value={j.jobId} /> },
+    { header: t("configuration.jobs.col.requestedBy"), render: (j) => j.requestedBy },
+    { header: t("configuration.jobs.col.scope"), render: (j) => <span className="mono small">{j.accessScope ?? j.scope}</span> },
+    { header: t("configuration.jobs.col.msacRole"), render: (j) => j.msacRole ?? <span className="muted">—</span> },
+    { header: t("configuration.jobs.col.status"), render: (j) => <StateBadge state={j.status} /> },
+  ];
+}
 
 /** The list card. */
 export function JobList() {
+  const t = useT();
   const [chosen, setStatus] = useJobStatus();
   const [selected, select] = useSelectedJob();
   const summary = useSummary("configuration");
   const halted = count(summary.data, "configJobs.HALTED");
   const status = chosen ?? (halted ? "HALTED" : "all");
   return (
-    <Card section="configuration.jobs" title="Config jobs" sub={status === "HALTED" && !chosen ? "halted first · pick “All” for every job" : "server-paged"}
-      actions={<label className="row small">State
-        <select aria-label="Job state" value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="all">All</option>{JOB_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+    <Card section="configuration.jobs" title={t("configuration.jobs.title")} sub={status === "HALTED" && !chosen ? t("configuration.jobs.sub.halted") : t("configuration.jobs.sub")}
+      actions={<label className="row small">{t("configuration.jobs.state")}
+        <select aria-label={t("configuration.jobs.state.aria")} value={status} onChange={(e) => setStatus(e.target.value)}>
+          <option value="all">{t("configuration.all")}</option>{JOB_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
       </label>}>
-      {chosen === null && summary.isLoading ? <p className="muted small">Loading…</p> : (
-        <ServerTable<JobRow> path={JOBS_PATH} query={status === "all" ? undefined : { status }} columns={COLUMNS} rowKey={(j) => j.jobId}
-          onRowClick={(j) => select(j.jobId)} selectedKey={selected} empty={status === "all" ? "No config job yet." : `No ${status} job.`} />
+      {chosen === null && summary.isLoading ? <p className="muted small">{t("components.loading")}</p> : (
+        <ServerTable<JobRow> path={JOBS_PATH} query={status === "all" ? undefined : { status }} columns={columnsOf(t)} rowKey={(j) => j.jobId}
+          onRowClick={(j) => select(j.jobId)} selectedKey={selected} empty={status === "all" ? t("configuration.jobs.empty") : t("configuration.jobs.empty.state", { status })} />
       )}
     </Card>
   );
