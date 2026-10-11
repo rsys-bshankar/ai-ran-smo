@@ -62,7 +62,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 
 from .config import Settings, settings as default_settings
-from . import events, exports, kpi_layouts, preferences, rapps, scoping, search, summary, totp
+from . import events, exports, kpi_layouts, preferences, rapps, scoping, search, source, summary, totp
 from .db import AuditEntry, Database, GuiUser, LoginFailure
 from .oidc import LOGIN_TTL_SECONDS, MAX_PENDING_LOGINS, OidcClient, OidcConfig, OidcError
 from .rbac import MODULES, RULES, Role, Rule, User, decide
@@ -77,7 +77,11 @@ CSRF_COOKIE = "smo_csrf"
 CSRF_HEADER = "x-csrf-token"
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
+# SEC-15.11: failures are counted twice. MAX_LOGIN_FAILURES in LOCKOUT_SECONDS locks one user name for the source that failed (a lock that follows the pair, so an attacker cannot
+# lock the real user out from elsewhere); MAX_SOURCE_FAILURES in the same window throttles a source whatever names it tries (the pair counters alone would not slow one source
+# that tries many names). The source throttle is deliberately wider than the pair lock: an office behind one address must not be shut out by a few typing mistakes.
 MAX_LOGIN_FAILURES = 5
+MAX_SOURCE_FAILURES = 30
 LOCKOUT_SECONDS = 300
 MIN_PASSWORD_LENGTH = 8
 USERNAME_RE = re.compile(r"^[a-z][a-z0-9_.-]{1,31}$")
@@ -334,6 +338,28 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
                              action=action, method=method, path=path, status_code=status_code, detail=detail))
             s.commit()
 
+    def source_of(request: Request) -> str:
+        """The normalised address a request comes from (`source.client_source`): the TCP peer, or the entry `GUI_TRUSTED_PROXY_HOPS` places from the right of X-Forwarded-For."""
+        return source.client_source(request.client.host if request.client else None, request.headers.get("x-forwarded-for"), cfg.trusted_proxy_hops)
+
+    def login_blocked(username: str, origin: str) -> bool:
+        """True when `username` is locked for `origin` (MAX_LOGIN_FAILURES in LOCKOUT_SECONDS from that source) or `origin` is throttled (MAX_SOURCE_FAILURES, any names).
+        Unknown names count like real ones, so the answer never says whether the account exists."""
+        now = time.time()
+        return (app.state.db.login_locked(source.pair_key(origin, username), MAX_LOGIN_FAILURES, LOCKOUT_SECONDS, now)
+                or app.state.db.login_locked(source.source_key(origin), MAX_SOURCE_FAILURES, LOCKOUT_SECONDS, now))
+
+    def count_login_failure(username: str, origin: str) -> None:
+        """Counts one failed attempt under both keys: the (source, user name) pair and the source."""
+        now = time.time()
+        app.state.db.record_login_failure(source.pair_key(origin, username), LOCKOUT_SECONDS, now)
+        app.state.db.record_login_failure(source.source_key(origin), LOCKOUT_SECONDS, now)
+
+    def clear_login_failures(username: str, origin: str) -> None:
+        """Forgets the pair counter of a user from the source that has just signed in. The source counter stays: a sign-in to an account of one's own must not reset the budget
+        of guesses against others."""
+        app.state.db.clear_login_failures(source.pair_key(origin, username))
+
     def issue_session(user: GuiUser) -> tuple[str, str]:
         csrf = secrets.token_urlsafe(24)
         token = signer.issue({"sub": user.username, "ver": user.token_version, "csrf": csrf, "jti": secrets.token_urlsafe(16)}, cfg.session_ttl_seconds)
@@ -345,8 +371,8 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         # as X-CSRF-Token and checked against the claim inside the session JWT.
         response.set_cookie(CSRF_COOKIE, csrf, httponly=False, path="/", secure=cfg.cookie_secure, samesite="strict", max_age=cfg.session_ttl_seconds)
 
-    def check_credentials(username: str, password: str) -> GuiUser | JSONResponse:
-        if app.state.db.login_locked(username, MAX_LOGIN_FAILURES, LOCKOUT_SECONDS, time.time()):
+    def check_credentials(username: str, password: str, origin: str) -> GuiUser | JSONResponse:
+        if login_blocked(username, origin):
             audit("LOGIN_LOCKED", username=username)
             return _problem(429, "TOO_MANY_ATTEMPTS", "account temporarily locked after repeated failures")
         with app.state.db.session() as s:
@@ -355,7 +381,7 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         # doesn't reveal which usernames exist.
         ok = verify_password(password, user.password_hash if user else _DUMMY_HASH) and user is not None and user.active
         if not ok:
-            app.state.db.record_login_failure(username, LOCKOUT_SECONDS, time.time())
+            count_login_failure(username, origin)
             audit("LOGIN_FAILED", username=username)
             return _problem(401, "INVALID_CREDENTIALS")
         # The failure counter is not cleared here: with a one-time code the sign-in is not over yet, and a guesser who knows the password must not get a
@@ -439,7 +465,7 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
             return _problem(403, "BREAK_GLASS_NEEDS_TOTP", "a break-glass account signs in with a one-time code and has none enrolled: ask another admin to reset it, then enrol")
         return None
 
-    def check_second_factor(user: GuiUser, code: str) -> tuple[str, int | None]:
+    def check_second_factor(user: GuiUser, code: str, origin: str) -> tuple[str, int | None]:
         """Test a one-time code or a recovery code for `user`: ("ok", recovery codes left or None), ("bad", None), or ("key", None) when the stored secret cannot
         be read (no key, or a different one). A failure counts towards the lockout. The code is never logged or audited."""
         key = cfg.totp_key
@@ -460,7 +486,7 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
             step = totp.verify(secret, code, time.time(), stored[2])
             if step is not None and app.state.db.use_totp_step(user.username, step):
                 return "ok", None
-        app.state.db.record_login_failure(user.username, LOCKOUT_SECONDS, time.time())
+        count_login_failure(user.username, origin)
         audit("LOGIN_FAILED", username=user.username, detail="one-time code")
         return "bad", None
 
@@ -474,9 +500,9 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         enrolled = local and app.state.db.totp_state(username)[0]
         return {"local": local, "totpEnrolled": enrolled, "mfaEnrolmentRequired": bool(cfg.admin_mfa_required and local and role == Role.ADMIN and not enrolled)}
 
-    def complete_login(user: GuiUser, response: Response, *, how: str, recovery_left: int | None = None) -> dict:
+    def complete_login(user: GuiUser, response: Response, origin: str, *, how: str, recovery_left: int | None = None) -> dict:
         """The session after every check has passed: cookies, the audit row (a break-glass sign-in has its own action and a warning in the log)."""
-        app.state.db.clear_login_failures(user.username)
+        clear_login_failures(user.username, origin)
         token, csrf = issue_session(user)
         set_session_cookies(response, token, csrf)
         who = User(user.username, Role(user.role))
@@ -493,14 +519,15 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         return body
 
     @app.post("/api/login")
-    def login(body: LoginRequest, response: Response):
+    def login(body: LoginRequest, response: Response, request: Request):
         # Status codes: 200 with the session cookies and `{username, role, csrfToken, ...}`; 200 with `{mfaRequired, challenge, expiresIn}` when the account has an enrolled
         # one-time code (no session yet; the challenge goes to POST /api/login/totp); 401 INVALID_CREDENTIALS (an unknown, inactive or wrong-password account looks the same);
         # 429 TOO_MANY_ATTEMPTS while the account is locked; 403 LOCAL_LOGIN_DISABLED, LOGIN_MODE_OIDC_ONLY or BREAK_GLASS_NEEDS_TOTP; 503 TOTP_KEY_UNAVAILABLE when the account
-        # has a one-time code and the server has no key to check it. Failures are counted per username; the counter is cleared only when the sign-in completes.
+        # has a one-time code and the server has no key to check it. Failures are counted per (source address, username) and per source (SEC-15.11); the pair counter is cleared only when the sign-in completes.
         if not cfg.local_login_enabled:
             return _problem(403, "LOCAL_LOGIN_DISABLED", "sign in through the identity provider")
-        user = check_credentials(body.username, body.password)
+        origin = source_of(request)
+        user = check_credentials(body.username, body.password, origin)
         if isinstance(user, JSONResponse):
             return user
         enrolled = app.state.db.totp_state(user.username)[0]
@@ -514,10 +541,10 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
             challenge = issue_challenge(user)
             audit("MFA_CHALLENGE", User(user.username, Role(user.role)))
             return {"mfaRequired": True, "challenge": challenge, "expiresIn": CHALLENGE_TTL_SECONDS}
-        return complete_login(user, response, how="password")
+        return complete_login(user, response, origin, how="password")
 
     @app.post("/api/login/totp")
-    def login_totp(body: TotpLoginRequest, response: Response):
+    def login_totp(body: TotpLoginRequest, response: Response, request: Request):
         # The second step of POST /api/login. The challenge is checked before anything else (signature, purpose, expiry), then the lockout, then that the user is still
         # active with the same token version and that the challenge row is still unspent; the code is checked next and the challenge is spent last, so a wrong code does not
         # burn it. Status codes: 200 as for /api/login (plus `recoveryCodesLeft` after a recovery code); 401 CHALLENGE_INVALID or INVALID_CODE; 429 TOO_MANY_ATTEMPTS;
@@ -526,8 +553,9 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         if claims is None or claims.get("use") != CHALLENGE_USE or not isinstance(claims.get("jti"), str) or not isinstance(claims.get("sub"), str):
             return _problem(401, "CHALLENGE_INVALID", "the sign-in took too long or did not start here: enter the password again")
         username, jti = claims["sub"], claims["jti"]
-        # the same lockout as a wrong password: failures of either step are counted under the user name
-        if app.state.db.login_locked(username, MAX_LOGIN_FAILURES, LOCKOUT_SECONDS, time.time()):
+        # the same lockout as a wrong password: failures of either step are counted under the (source, user name) pair and the source
+        origin = source_of(request)
+        if login_blocked(username, origin):
             audit("LOGIN_LOCKED", username=username)
             return _problem(429, "TOO_MANY_ATTEMPTS", "account temporarily locked after repeated failures")
         with app.state.db.session() as s:
@@ -538,17 +566,17 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         refusal = mode_refusal(user, enrolled=True)
         if refusal is not None:
             return refusal
-        outcome, left = check_second_factor(user, body.code)
+        outcome, left = check_second_factor(user, body.code, origin)
         if outcome == "key":
             return key_problem(username)
         if outcome != "ok":
             return _problem(401, "INVALID_CODE", "the code is wrong, or was already used")
         if not app.state.db.consume_challenge(jti, username, time.time()):     # spent by a request that got here first
             return _problem(401, "CHALLENGE_INVALID", "the sign-in took too long or did not start here: enter the password again")
-        return complete_login(user, response, how="recovery code" if left is not None else "password+code", recovery_left=left)
+        return complete_login(user, response, origin, how="recovery code" if left is not None else "password+code", recovery_left=left)
 
     @app.post("/api/token")
-    def oauth2_password_grant(grant_type: str = Form(...), username: str = Form(...), password: str = Form(...), otp: str = Form("", max_length=64)):
+    def oauth2_password_grant(request: Request, grant_type: str = Form(...), username: str = Form(...), password: str = Form(...), otp: str = Form("", max_length=64)):
         """RFC 6749 section 4.3 resource-owner password grant, for scripts
         and CLI use: the same users and roles as the GUI, sent as
         `Authorization: Bearer`. No CSRF check applies to Bearer calls
@@ -560,7 +588,8 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
             return JSONResponse(status_code=400, content={"error": "unsupported_grant_type"})
         if not cfg.local_login_enabled:
             return JSONResponse(status_code=403, content={"error": "unauthorized_client", "error_description": "local login is disabled"})
-        user = check_credentials(username, password)
+        origin = source_of(request)
+        user = check_credentials(username, password, origin)
         if isinstance(user, JSONResponse):
             return JSONResponse(status_code=400 if user.status_code == 401 else user.status_code,
                                 content={"error": "invalid_grant"})
@@ -572,12 +601,12 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         if enrolled:
             if not otp:
                 return JSONResponse(status_code=400, content={"error": "invalid_grant", "error_description": "this account needs a one-time code: send it as the form field otp"})
-            outcome, left = check_second_factor(user, otp)
+            outcome, left = check_second_factor(user, otp, origin)
             if outcome == "key":
                 return JSONResponse(status_code=503, content={"error": "temporarily_unavailable"})
             if outcome != "ok":
                 return JSONResponse(status_code=400, content={"error": "invalid_grant"})
-        app.state.db.clear_login_failures(user.username)
+        clear_login_failures(user.username, origin)
         token, _ = issue_session(user)
         who = User(user.username, Role(user.role))
         if user.break_glass:
@@ -746,17 +775,17 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
             return _problem(503, "TOTP_UNAVAILABLE", "one-time codes are not set up on this server: an administrator must set GUI_TOTP_KEY (or GUI_TOTP_KEY_FILE)")
         return None
 
-    def code_attempt_refusal(username: str) -> JSONResponse | None:
+    def code_attempt_refusal(username: str, origin: str) -> JSONResponse | None:
         """A code typed in a signed-in session is guessable too: the wrong ones count towards the same lockout as at sign-in."""
-        if app.state.db.login_locked(username, MAX_LOGIN_FAILURES, LOCKOUT_SECONDS, time.time()):
+        if login_blocked(username, origin):
             audit("LOGIN_LOCKED", username=username)
             return _problem(429, "TOO_MANY_ATTEMPTS", "too many wrong codes: try again in a few minutes")
         return None
 
-    def check_own_code(username: str, secret_b32: str, code: str, last_step: int | None) -> int | None:
+    def check_own_code(username: str, secret_b32: str, code: str, last_step: int | None, origin: str) -> int | None:
         step = totp.verify(secret_b32, code, time.time(), last_step)
         if step is None:
-            app.state.db.record_login_failure(username, LOCKOUT_SECONDS, time.time())
+            count_login_failure(username, origin)
             audit("LOGIN_FAILED", username=username, detail="one-time code (enrolment)")
         return step
 
@@ -787,9 +816,10 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         return {"secret": secret, "otpauthUri": totp.provisioning_uri(cfg.totp_issuer, username, secret), "issuer": cfg.totp_issuer, "account": username}
 
     @app.post("/api/me/totp/confirm")
-    def totp_confirm(body: CodeRequest, session: Session = Depends(current_session)):
+    def totp_confirm(body: CodeRequest, request: Request, session: Session = Depends(current_session)):
         """The first valid code from the new secret makes it active, and returns the recovery codes: the only time they are shown."""
-        refusal = enrolment_refusal(session) or code_attempt_refusal(session.user.username)
+        origin = source_of(request)
+        refusal = enrolment_refusal(session) or code_attempt_refusal(session.user.username, origin)
         if refusal is not None:
             return refusal
         username = session.user.username
@@ -800,20 +830,21 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
             secret = totp.decrypt_secret(cfg.totp_key, username, stored[0])
         except totp.TotpKeyError:
             return key_problem(username)
-        step = check_own_code(username, secret, body.code, None)
+        step = check_own_code(username, secret, body.code, None, origin)
         if step is None:
             return _problem(400, "INVALID_CODE", "the code does not match: check the device clock and try the next code")
         codes = totp.new_recovery_codes()
         if not app.state.db.confirm_totp(username, step, [totp.hash_recovery_code(cfg.totp_key, username, c) for c in codes]):
             return _problem(409, "NO_ENROLMENT_IN_PROGRESS", "the enrolment was already confirmed")
-        app.state.db.clear_login_failures(username)
+        clear_login_failures(username, origin)
         audit("TOTP_ENROLLED", session.user, detail=f"{len(codes)} recovery codes issued")
         return {"status": "enrolled", "recoveryCodes": codes, "recoveryCodesLeft": len(codes)}
 
     @app.post("/api/me/totp/recovery-codes")
-    def totp_new_recovery_codes(body: CodeRequest, session: Session = Depends(current_session)):
+    def totp_new_recovery_codes(body: CodeRequest, request: Request, session: Session = Depends(current_session)):
         """Ten new recovery codes, replacing all the old ones; asks for a current one-time code (not a recovery code)."""
-        refusal = enrolment_refusal(session) or code_attempt_refusal(session.user.username)
+        origin = source_of(request)
+        refusal = enrolment_refusal(session) or code_attempt_refusal(session.user.username, origin)
         if refusal is not None:
             return refusal
         username = session.user.username
@@ -824,7 +855,7 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
             secret = totp.decrypt_secret(cfg.totp_key, username, stored[0])
         except totp.TotpKeyError:
             return key_problem(username)
-        step = check_own_code(username, secret, body.code, stored[2])
+        step = check_own_code(username, secret, body.code, stored[2], origin)
         if step is None or not app.state.db.use_totp_step(username, step):
             return _problem(400, "INVALID_CODE", "the code is wrong, or was already used: wait for the next one")
         codes = totp.new_recovery_codes()
@@ -1128,7 +1159,9 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
             # One transaction: the account and the failed-login counter kept under its name go together (STD-4.3). There is no
             # session row to remove: a session is a signed token, and with its user gone every token naming it is refused.
             # The audit rows that name the user stay (docs/PRIVACY.md), and so do the module tables that record `smo-gui:<name>`.
-            s.execute(delete(LoginFailure).where(LoginFailure.username == username))
+            s.execute(delete(LoginFailure).where(LoginFailure.username == username))                                  # the counter of before SEC-15.11, keyed by the name alone
+            s.execute(delete(LoginFailure).where(LoginFailure.username.startswith(source.PAIR_PREFIX, autoescape=True),      # and the pair counters of the name, whatever the source
+                                                 LoginFailure.username.endswith(source.pair_key_suffix(username), autoescape=True)))
             s.delete(user)
             s.commit()
         app.state.db.reset_totp(username)       # the one-time-code secret, recovery codes and open challenges go with the account (docs/PRIVACY.md)

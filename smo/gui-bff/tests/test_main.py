@@ -610,7 +610,8 @@ def test_erasing_a_gui_user_end_to_end_and_what_it_leaves_behind(app, db):
     for _ in range(2):                                                    # failed sign-ins after the last success: the counter row is there
         assert TestClient(app).post("/api/login", json={"username": "noc9", "password": "wrong"}).status_code == 401
     with db.session() as s:
-        assert s.get(GuiUser, "noc9") is not None and s.get(LoginFailure, "noc9").count == 2
+        # SEC-15.11: the counter is keyed by (source, name); the test client has no usable address, so its source is "unknown"
+        assert s.get(GuiUser, "noc9") is not None and s.query(LoginFailure).filter(LoginFailure.username.endswith("\x1fnoc9")).one().count == 2
         assert s.query(RevokedSession).count() == 1
     assert browser.get("/api/me").status_code == 200 and TestClient(app).get("/api/me", headers=bearer).status_code == 200
     audited_before = [r.id for r in audit_rows(db) if r.username == "noc9"]
@@ -623,6 +624,7 @@ def test_erasing_a_gui_user_end_to_end_and_what_it_leaves_behind(app, db):
     with db.session() as s:
         assert s.get(GuiUser, "noc9") is None
         assert s.get(LoginFailure, "noc9") is None
+        assert s.query(LoginFailure).filter(LoginFailure.username.endswith("\x1fnoc9")).count() == 0
     assert "noc9" not in [u["username"] for u in admin.get("/api/admin/users").json()]
     assert browser.get("/api/me").status_code == 401
     assert TestClient(app).get("/api/me", headers=bearer).json()["detail"]["title"] == "SESSION_REVOKED"

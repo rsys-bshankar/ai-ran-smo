@@ -572,8 +572,29 @@
             "title": "Sourcename"
           },
           "token": {
-            "title": "Token",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "deprecated": true,
+            "description": "Deprecated: the data-lake token in clear text. Stored, never returned; send `tokenRef` instead. Exactly one of `token` and `tokenRef`.",
+            "title": "Token"
+          },
+          "tokenRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The name of the secret that holds the data-lake token, lower-case letters, digits, '-' and '_', starting with a letter. The service reads the secret itself; the name is shown on read, the token never is.",
+            "title": "Tokenref"
           }
         },
         "required": [
@@ -583,7 +604,6 @@
           "host",
           "port",
           "bucket",
-          "token",
           "dbOrg",
           "measurement"
         ],
@@ -5250,7 +5270,7 @@
         "summary": "List Feature Groups"
       },
       "post": {
-        "description": "HISTORY.md \u00a75: no feature-group/feature-store concept\nexisted at all. Matches the reference's own\nCreateFeatureGroup (featuregroup_controller.py): name must be\n`\\w+` (word characters only) and 3-63 characters long, and a\nduplicate `featureGroupName` 409s, matching `DBException`\n(\"already exist\") there.\n\nOI-5-aiml-featuregroup-dme: with `enableDme`, the group's DME data job\nis created first, like the reference's create_dme_filtered_data_job \u2014\na CONTINUOUS TRAINING-stage job of `dmeTypeId`, consumer\n`aimgf:feature-group:<name>`, whose production job definition carries\nthe group's features and filters. If DME refuses it (an unknown type, a\ndefinition its schema rejects, a delivery method no offer commits to)\nthe group is not created: 422 FEATURE_GROUP_DME_JOB_REFUSED with DME's\nreason. `dmeTypeId` is required with `enableDme`.",
+        "description": "HISTORY.md \u00a75: no feature-group/feature-store concept\nexisted at all. Matches the reference's own\nCreateFeatureGroup (featuregroup_controller.py): name must be\n`\\w+` (word characters only) and 3-63 characters long, and a\nduplicate `featureGroupName` 409s, matching `DBException`\n(\"already exist\") there.\n\nOI-5-aiml-featuregroup-dme: with `enableDme`, the group's DME data job\nis created first, like the reference's create_dme_filtered_data_job \u2014\na CONTINUOUS TRAINING-stage job of `dmeTypeId`, consumer\n`aimgf:feature-group:<name>`, whose production job definition carries\nthe group's features and filters. If DME refuses it (an unknown type, a\ndefinition its schema rejects, a delivery method no offer commits to)\nthe group is not created: 422 FEATURE_GROUP_DME_JOB_REFUSED with DME's\nreason. `dmeTypeId` is required with `enableDme`.\n\nThe data-lake credential is `tokenRef`, the name of a secret the service resolves itself, or the deprecated clear-text `token` (one of the two, else 422). The\nanswer never contains the token: it shows `tokenSet` and, for a reference, `tokenRef`. A call that sends `token` is answered with a `Deprecation: true` header\nand a `warnings` entry, and the field is dropped in a later minor release.",
         "operationId": "create_feature_group_feature_groups_post",
         "requestBody": {
           "content": {

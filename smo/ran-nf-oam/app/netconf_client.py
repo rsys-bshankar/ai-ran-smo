@@ -10,13 +10,22 @@ transport, matching this build's all-HTTP-JSON pragmatism everywhere else
 cm_schema_cache fetch path is untouched.
 """
 
-from xml.sax.saxutils import quoteattr
+import re
+from xml.sax.saxutils import escape, quoteattr
 
 import defusedxml.ElementTree as ET
 import httpx
 from defusedxml.common import DefusedXmlException
 
 NETCONF_BASE_NS = "urn:ietf:params:xml:ns:netconf:base:1.0"
+# RFC 6241 section 7.2: the values of the `operation` attribute of an edit.
+OPERATIONS = ("merge", "replace", "create", "delete", "remove")
+DATASTORES = ("running", "candidate")
+# An element name that is safe to write into the XML as given: an XML name without a colon (so no prefix can be smuggled in), at most 128 characters, not starting with
+# "xml" in any case (reserved by the XML specification). `\Z`, not `$`, so a trailing newline does not pass.
+_XML_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]{0,127}\Z")
+# Characters that XML 1.0 cannot carry at all, not even as a character reference: C0 controls other than tab, LF and CR, and the two non-characters U+FFFE and U+FFFF.
+_XML_FORBIDDEN = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")
 # Wave 10.1 (W10-19): one NETCONF/RESTCONF exchange is bounded at 30 s.
 NETCONF_TIMEOUT_SECONDS = 30.0
 
@@ -41,6 +50,25 @@ class EditResult:
         return self.reason in self.RETRYABLE
 
 
+def xml_name(name: str) -> str:
+    """Returns `name` when it can be an element name in the RPC as written, else raises ValueError (the message never repeats a long or odd value in full).
+
+    Attribute names come from a request body (`attributeChanges`), so a name such as `a><b>` or `x y="1"` would otherwise add elements or attributes to the RPC. Letters, digits, `_`, `-`
+    and `.`, starting with a letter or `_`, and not starting with `xml` (any case).
+    """
+    if not isinstance(name, str) or not _XML_NAME.match(name) or name[:3].lower() == "xml":
+        raise ValueError(f"{str(name)[:40]!r} is not a valid attribute name for an edit-config")
+    return name
+
+
+def xml_text(value) -> str:
+    """The text of `value` as element content: `&`, `<` and `>` escaped (so `]]>` and CDATA-like input stay text), and ValueError for a character XML 1.0 cannot carry."""
+    text = str(value)
+    if _XML_FORBIDDEN.search(text):
+        raise ValueError("a value contains a character that XML cannot carry (a control character)")
+    return escape(text)
+
+
 def _managed_object(target_ref: str, managed_function_ref: str | None, extra: str = "") -> str:
     function = f" function-ref={quoteattr(managed_function_ref)}" if managed_function_ref else ""
     return f"<managed-object ref={quoteattr(target_ref)}{function}{extra}"
@@ -52,14 +80,24 @@ def build_edit_config_rpc(message_id: str, target_ref: str, attribute_changes: d
     (merge/replace/create/delete/remove), emitted on the target
     <managed-object> node itself — the node the operation applies to —
     rather than on <edit-config>, matching the RFC's real placement.
+
+    Every value is XML-escaped and every attribute name, the operation and the datastore are validated before anything is written (SEC-15.5): raises ValueError for a name that is
+    not an XML name, an unknown operation or datastore, or a value with a character XML cannot carry. `target_ref` and `managed_function_ref` are written as attributes with
+    `quoteattr`, `message_id` likewise.
     """
-    config_body = "".join(f"<{name}>{value}</{name}>" for name, value in attribute_changes.items())
+    # Everything the caller controls is escaped or checked before it is written into the XML (SEC-15.5): the values as text, the names against `xml_name`, the operation and
+    # the datastore against their lists, the message id as an attribute. ValueError for any that is not acceptable; nothing is built then.
+    if operation not in OPERATIONS:
+        raise ValueError(f"unknown edit operation {str(operation)[:40]!r}")
+    if target not in DATASTORES:
+        raise ValueError(f"unknown datastore {str(target)[:40]!r}")
+    config_body = "".join(f"<{xml_name(name)}>{xml_text(value)}</{name}>" for name, value in attribute_changes.items())
     # Wave 10.1 (W10-17): `function-ref` addresses the managed function
     # (e.g. NRCellDU=101) inside the managed element, so per-cell changes
     # on one element no longer collapse onto the element itself.
     obj = _managed_object(target_ref, managed_function_ref, f' operation="{operation}">')
     return (
-        f'<rpc message-id="{message_id}" xmlns="{NETCONF_BASE_NS}">'
+        f"<rpc message-id={quoteattr(message_id)} xmlns=\"{NETCONF_BASE_NS}\">"
         f"<edit-config><target><{target}/></target>"
         f"<config>{obj}{config_body}</managed-object></config>"
         f"</edit-config></rpc>"
@@ -70,7 +108,7 @@ def build_get_config_rpc(message_id: str, target_ref: str, managed_function_ref:
     """The `<get-config>` RPC (running datastore) whose filter names one `<managed-object>`, or one managed function inside it. As in `build_edit_config_rpc`, `message_id` is placed in the XML as given; it is generated by the caller, never taken from a request.
     """
     obj = _managed_object(target_ref, managed_function_ref, "/>")
-    return (f'<rpc message-id="{message_id}" xmlns="{NETCONF_BASE_NS}">'
+    return (f"<rpc message-id={quoteattr(message_id)} xmlns=\"{NETCONF_BASE_NS}\">"
             f"<get-config><source><running/></source><filter>{obj}</filter></get-config></rpc>")
 
 
@@ -119,7 +157,10 @@ def send_edit_config(adaptor_uri: str, target_ref: str, attribute_changes: dict,
     than raising, matching how every other per-change failure in
     write_configuration_changes is handled.
     """
-    rpc = build_edit_config_rpc(message_id, target_ref, attribute_changes, operation, managed_function_ref)
+    try:
+        rpc = build_edit_config_rpc(message_id, target_ref, attribute_changes, operation, managed_function_ref)
+    except ValueError as exc:  # a name, value or operation that cannot be put in the XML safely: nothing is sent, and the change is recorded as refused
+        return EditResult(False, "NETCONF_RPC_FAILED", str(exc))
     resp, reason = _post(adaptor_uri, rpc)
     if resp is None:
         return EditResult(False, reason)

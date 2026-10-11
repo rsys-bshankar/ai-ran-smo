@@ -172,6 +172,10 @@ spec:
             - name: {{ $k }}
               value: {{ $v | quote }}
             {{- end }}
+            {{- /* SEC-15.11: behind the chart's GUI Ingress two proxies stand in front of the backend (the ingress controller, then the console's nginx), so the client address is the second entry from the right of X-Forwarded-For; without it every client would be one source for the sign-in throttle. An operator's own gui.env value wins. */}}
+            {{- if and $.Values.ingress.enabled $.Values.ingress.gui.host (not (hasKey $.Values.gui.env "GUI_TRUSTED_PROXY_HOPS")) }}
+            - { name: GUI_TRUSTED_PROXY_HOPS, value: "2" }
+            {{- end }}
             {{- with $.Values.gui.oidcClientSecretRef }}
             {{- if .name }}
             # PR-SEC-6: the OIDC client's credential from a Secret of your own, not from values

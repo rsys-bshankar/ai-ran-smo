@@ -142,6 +142,15 @@ def test_the_switch_turns_it_off(gateway, monkeypatch):
     assert rows(gateway) == []
 
 
+def test_the_recorded_path_has_no_query_values(gateway):
+    """SEC-15.12: a secret in the query string of a change is not in its audit row, and neither is one smuggled in as a percent-encoded `?` or `#` of the path (decoded before the route sees it)."""
+    client.post("/dme/data-jobs?token=SECRET-1&user=alice", headers=AUTH)
+    client.post("/dme/data-jobs%3Ftoken=SECRET-2", headers=AUTH)
+    client.post("/dme/data-jobs/j1%23SECRET-3", headers=AUTH)
+    assert [row[4] for row in rows(gateway)] == ["/dme/data-jobs", "/dme/data-jobs", "/dme/data-jobs/j1"]
+    assert "SECRET" not in repr(rows(gateway))
+
+
 def test_an_unreachable_database_does_not_fail_the_call_the_audit_describes(gateway, monkeypatch):
     """When the audit write cannot reach the database, the change still answers its normal status; the failure is logged and counted, never raised to the caller."""
     # an SMO module's change needs no kill-switch lookup, so only the audit write fails, and it is logged and counted, not raised

@@ -33,7 +33,7 @@ from typing import Any, Literal
 
 # Kept for the tests that patch `app.main.httpx.post` to capture webhook sends (ruff.toml explains why this import is not an unused-import finding).
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, func, not_, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -46,7 +46,9 @@ from smo_shared.runtime_resources import QUANTITY_PATTERN, container_resources
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
+from smo_shared.invoker import invoker_id
 from smo_shared.roles import ROLE_RAPP, role_of
+from smo_shared.secretfile import read_secret
 from smo_shared.statemachine import IllegalTransition
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
@@ -94,12 +96,43 @@ def _get_model_or_none(model_id: uuid.UUID) -> dict | None:
 def _get_model(model_id: uuid.UUID) -> dict:
     """Returns MLMR's JSON for the model or raises 404 `MODEL_NOT_FOUND`.
 
-    AIMgF never reads MLMR's tables, so this call is the only existence check for a model id. Routes that do not call it (the runtime activate, scale, terminate and
-    node-groups routes) accept any id.
+    AIMgF never reads MLMR's tables, so this call is the only existence check for a model id. Routes that do not call it (the runtime scale, terminate and
+    node-groups routes) accept any id; the deploy, activate and inference routes go through `_serving_model`, which calls this and adds the ownership and phase checks.
     """
     model = _get_model_or_none(model_id)
     if model is None:
         raise framework_error(FrameworkError.MODEL_NOT_FOUND, detail="no such model")
+    return model
+
+
+# MLMR phases (TS 29.482 `phaseInfo.phase`) in which a model has no trained artifact to serve yet: the runtime routes refuse them (SEC-15.3).
+_PHASES_NOT_SERVABLE = frozenset({"NOT_TRAINED", "IN_TRAINING"})
+
+
+def _serving_model(request: Request, model_id: uuid.UUID, action: str, *, inference: bool = False) -> dict:
+    """Returns MLMR's JSON for a model that the caller may deploy, activate or run inference on, or raises (SEC-15.3).
+
+    Checks in order: the model exists in MLMR (404 `MODEL_NOT_FOUND`); the caller may use it (403 `MODEL_ACCESS_DENIED`); its MLMR phase allows serving (409: `INFERENCE_MODEL_NOT_ACTIVE`
+    for `inference`, else `LIFECYCLE_ILLEGAL_TRANSITION`). Ownership is judged for a caller with the rApp role only, on the id the gateway stamped (`X-R1-Invoker-Id`); the operator's console, an SMO
+    module and a call with no role are trusted as elsewhere in this module. A model whose `owner` is unset is nobody's, so it is not refused on that ground (the lifecycle gates still
+    apply). An rApp that is not the owner may still run inference, as MLMR lets it download the model, when the model's `storeDiscReqs.accessReqs` is PUBLICLY_AVAILABLE or RESTRICTED with the
+    caller named in `valServerIds` / `valClientIds`; deploy and activate change the serving runtime, which only the owner may. A model with no `phaseInfo` (MLMR was unreachable when the
+    training run wrote it back, which is best effort) is not refused on the phase: the CERTIFIED gate of the lifecycle already requires a trained model.
+    """
+    model = _get_model(model_id)
+    if role_of(request) == ROLE_RAPP:
+        caller, owner = invoker_id(request), model.get("owner")
+        access = (model.get("storeDiscReqs") or {}).get("accessReqs") or {}
+        shared = inference and (access.get("accessReq") == "PUBLICLY_AVAILABLE" or (
+            access.get("accessReq") == "RESTRICTED" and caller is not None
+            and caller in (set(access.get("valServerIds") or []) | set(access.get("valClientIds") or []))))
+        if owner and caller != owner and not shared:
+            raise framework_error(FrameworkError.MODEL_ACCESS_DENIED, detail=f"model {model_id} belongs to another producer: only its owner may {action}")
+    phase = (model.get("phaseInfo") or {}).get("phase")
+    if phase in _PHASES_NOT_SERVABLE:
+        if inference:
+            raise framework_error(FrameworkError.INFERENCE_MODEL_NOT_ACTIVE, detail=f"model is {phase} in MLMR")
+        raise framework_error(FrameworkError.LIFECYCLE_ILLEGAL_TRANSITION, detail=f"cannot {action} the runtime of a model that is {phase} in MLMR")
     return model
 
 
@@ -300,8 +333,9 @@ class UpdateNodeGroupsRequest(BaseModel):
     clearedNodeGroups: list[str]
 
 
-# Body of POST /feature-groups. The name rule (3 to 63 word characters) is checked in the route, 400 `FEATURE_GROUP_NAME_INVALID`. `token` is a credential for
-# the data lake: it is stored and returned in clear text. `enableDme` needs `dmeTypeId` (422 `FEATURE_GROUP_DME_JOB_REFUSED` otherwise) and then creates a DME
+# Body of POST /feature-groups. The name rule (3 to 63 word characters) is checked in the route, 400 `FEATURE_GROUP_NAME_INVALID`. The data-lake credential is given as
+# `tokenRef` (the name of a secret the service resolves itself, SEC-15.2) or as the deprecated clear-text `token`; exactly one of them, checked in the route so that a
+# validation error never echoes a pasted secret (422 `SCHEMA_VALIDATION_FAILED`). Neither is ever returned. `enableDme` needs `dmeTypeId` (422 `FEATURE_GROUP_DME_JOB_REFUSED` otherwise) and then creates a DME
 # data job delivered by `dataDeliveryMethod`; `dmePort` is stored and not used by the job.
 class CreateFeatureGroupRequest(BaseModel):
     featureGroupName: str
@@ -310,7 +344,13 @@ class CreateFeatureGroupRequest(BaseModel):
     host: str
     port: str
     bucket: str
-    token: str
+    # Deprecated (SEC-15.2): a clear-text credential, accepted for one more minor release and never returned. Use `tokenRef`.
+    token: str | None = Field(default=None, json_schema_extra={"deprecated": True},
+                              description="Deprecated: the data-lake token in clear text. Stored, never returned; send `tokenRef` instead. Exactly one of `token` and `tokenRef`.")
+    # The name of the secret that holds the data-lake token (lower-case letters, digits, '-' and '_', starting with a letter), resolved by the service from
+    # AIMGF_FEATURE_GROUP_TOKEN_<NAME> or its _FILE when it connects to the data lake.
+    tokenRef: str | None = Field(default=None, description="The name of the secret that holds the data-lake token, lower-case letters, digits, '-' and '_', starting with a letter. "
+                                 "The service reads the secret itself; the name is shown on read, the token never is.")
     dbOrg: str
     measurement: str
     enableDme: bool = False
@@ -1369,7 +1409,7 @@ def _nfo_instantiate(descriptor_id: uuid.UUID, model_id: uuid.UUID) -> uuid.UUID
 
 
 @app.post("/models/{model_id}/runtime/deploy", status_code=201)
-def deploy_model_runtime(model_id: uuid.UUID, package_id: uuid.UUID | None = None, body: RuntimeProfile | None = None,
+def deploy_model_runtime(request: Request, model_id: uuid.UUID, package_id: uuid.UUID | None = None, body: RuntimeProfile | None = None,
                          db: Session = Depends(get_session)):
     """RuntimeLifecycle's own DEPLOY — jointly owned with NFO
     (docs/ARCHITECTURE.md's AIMgF "NFO invocation: request runtime creation").
@@ -1378,10 +1418,11 @@ def deploy_model_runtime(model_id: uuid.UUID, package_id: uuid.UUID | None = Non
     duplicate deploy attempt (already DEPLOYMENT_REQUESTED-or-later)
     never touches NFO at all.
     """
-    # Route notes. 201 with the lifecycle view. Order: model exists (404 `MODEL_NOT_FOUND`), the package or profile resolves (404 `PACKAGE_NOT_FOUND`, so this
+    # Route notes. 201 with the lifecycle view. Order: `_serving_model` (404 `MODEL_NOT_FOUND`; 403 `MODEL_ACCESS_DENIED` for an rApp that is not the model's owner; 409
+    # `LIFECYCLE_ILLEGAL_TRANSITION` for a model that MLMR shows as NOT_TRAINED or IN_TRAINING; SEC-15.3), the package or profile resolves (404 `PACKAGE_NOT_FOUND`, so this
     # precedes the certification check), then `_deploy_runtime` (409 `MODEL_NOT_CERTIFIED`, 409 `LIFECYCLE_ILLEGAL_TRANSITION` for a runtime that is not
     # NOT_DEPLOYED), one commit after the NFO calls. `package_id` is a query parameter and the optional body is the `RuntimeProfile`.
-    _get_model(model_id)
+    _serving_model(request, model_id, "deploy")
     lifecycle = _deploy_runtime(db, model_id, _resolve_runtime_profile("INFERENCE", package_id, body))
     db.commit()
     return _lifecycle_view(lifecycle)
@@ -1431,7 +1472,7 @@ def _activate_runtime(db: Session, model_id: uuid.UUID) -> ModelLifecycle:
 
 
 @app.post("/models/{model_id}/runtime/activate")
-def activate_model_runtime(model_id: uuid.UUID, db: Session = Depends(get_session)):
+def activate_model_runtime(request: Request, model_id: uuid.UUID, db: Session = Depends(get_session)):
     """Marks the runtime as ready to accept inference (request_inference's
     own gate). Local-only: NFO's own deployment is already RUNNING once
     `deploy` returns (Phase 1: instantiate completes synchronously, same
@@ -1439,8 +1480,9 @@ def activate_model_runtime(model_id: uuid.UUID, db: Session = Depends(get_sessio
     decision about whether traffic should be sent yet, not a further NFO
     call. Refused (409) for a DEPRECATED/RETIRED model.
     """
-    # Route notes: the model is not looked up in MLMR (an unknown id gets a lifecycle row that the 409 then rolls back). 409 `LIFECYCLE_ILLEGAL_TRANSITION` for
-    # an end-of-life model or a runtime that is not DEPLOYED. One commit; no NFO call.
+    # Route notes: `_serving_model` first (404 `MODEL_NOT_FOUND`, 403 `MODEL_ACCESS_DENIED` for an rApp that is not the owner, 409 for a phase that cannot serve; SEC-15.3), then
+    # 409 `LIFECYCLE_ILLEGAL_TRANSITION` for an end-of-life model or a runtime that is not DEPLOYED. One commit; no NFO call.
+    _serving_model(request, model_id, "activate")
     lifecycle = _activate_runtime(db, model_id)
     db.commit()
     return _lifecycle_view(lifecycle)
@@ -1523,12 +1565,13 @@ def request_inference(request: Request, model_id: uuid.UUID, notification_destin
     stops new deploys/activation/scaling, not existing consumers (call
     flow 26).
     """
-    # Route notes. 201 `{"inferenceJobId"}`. Order: model exists (404 `MODEL_NOT_FOUND`); RETIRED (409 `INFERENCE_MODEL_NOT_ACTIVE`, detail "model is RETIRED");
+    # Route notes. 201 `{"inferenceJobId"}`. Order: `_serving_model` (404 `MODEL_NOT_FOUND`; 403 `MODEL_ACCESS_DENIED` for an rApp that neither owns the model nor is let use it by its
+    # `accessReqs`; 409 `INFERENCE_MODEL_NOT_ACTIVE` for a model MLMR shows as NOT_TRAINED or IN_TRAINING; SEC-15.3); RETIRED (409 `INFERENCE_MODEL_NOT_ACTIVE`, detail "model is RETIRED");
     # runtime not ACTIVE (409, same code); when `aiml_inference_function_id` is given, the function exists (404 `NRM_OBJECT_NOT_FOUND`), is ACTIVATED (409
     # `INFERENCE_FUNCTION_NOT_ACTIVATED`) and has the model loaded (409 `MODEL_NOT_LOADED`). No NFO call: the job copies the model's live serving deployment id.
     # `timeout_seconds` is a plain query parameter with no lower bound, unlike the request bodies; a value of 0 or less makes the job overdue at the next sweep.
     # `@idempotent("aimgf")` replays by `Idempotency-Key`; `request` is placed first for that decorator.
-    _get_model(model_id)
+    _serving_model(request, model_id, "run inference on", inference=True)
     lifecycle = _get_or_create_lifecycle(db, model_id)
     if lifecycle.model_lifecycle_state == ModelLifecycleState.RETIRED:
         raise framework_error(FrameworkError.INFERENCE_MODEL_NOT_ACTIVE, detail="model is RETIRED")
@@ -1894,7 +1937,7 @@ def _lifecycle_view(l: ModelLifecycle) -> dict:
 # ---------------------------------------------------------------- Feature groups
 
 @app.post("/feature-groups", status_code=201)
-def create_feature_group(body: CreateFeatureGroupRequest, db: Session = Depends(get_session)):
+def create_feature_group(body: CreateFeatureGroupRequest, response: Response, db: Session = Depends(get_session)):
     """HISTORY.md §5: no feature-group/feature-store concept
     existed at all. Matches the reference's own
     CreateFeatureGroup (featuregroup_controller.py): name must be
@@ -1910,11 +1953,22 @@ def create_feature_group(body: CreateFeatureGroupRequest, db: Session = Depends(
     definition its schema rejects, a delivery method no offer commits to)
     the group is not created: 422 FEATURE_GROUP_DME_JOB_REFUSED with DME's
     reason. `dmeTypeId` is required with `enableDme`.
+
+    The data-lake credential is `tokenRef`, the name of a secret the service resolves itself, or the deprecated clear-text `token` (one of the two, else 422). The
+    answer never contains the token: it shows `tokenSet` and, for a reference, `tokenRef`. A call that sends `token` is answered with a `Deprecation: true` header
+    and a `warnings` entry, and the field is dropped in a later minor release.
     """
-    # Route notes. 201 with the group, including its `token` in clear text. Checks in order: the name pattern and length (400 `FEATURE_GROUP_NAME_INVALID`), a
+    # Route notes. 201 with the group, without its token (`tokenSet`, `tokenRef`). Checks in order: the credential (422 `SCHEMA_VALIDATION_FAILED`: both or neither of
+    # `token` and `tokenRef`, or a `tokenRef` that is not a secret name; the message never repeats the value), the name pattern and length (400 `FEATURE_GROUP_NAME_INVALID`), a
     # group of that name already exists (409 `FEATURE_GROUP_ALREADY_REGISTERED`), `enableDme` without `dmeTypeId` (422 `FEATURE_GROUP_DME_JOB_REFUSED`), then
     # the DME data job (422 with DME's reason when DME refuses it), then the insert. If the insert loses a race on the unique name, the session is rolled back,
     # the DME job just created is terminated and the answer is the same 409.
+    # Checked here and not in the model so that the 422 never echoes a pasted secret (a pydantic error carries the input).
+    if (body.token is None) == (body.tokenRef is None):
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="give exactly one of tokenRef (the name of a secret) and the deprecated token")
+    if body.tokenRef is not None and not TOKEN_REF.fullmatch(body.tokenRef):
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="tokenRef must be a secret name (lower-case letters, digits, '-' and '_', starting with a letter), "
+                                                                          "never the token itself")
     if not re.fullmatch(r"\w+", body.featureGroupName) or not (3 <= len(body.featureGroupName) <= 63):
         raise framework_error(FrameworkError.FEATURE_GROUP_NAME_INVALID, detail=f"featureGroupName {body.featureGroupName!r} must be 3-63 word characters")
     if db.scalar(select(FeatureGroup).where(FeatureGroup.feature_group_name == body.featureGroupName)) is not None:
@@ -1925,7 +1979,7 @@ def create_feature_group(body: CreateFeatureGroupRequest, db: Session = Depends(
     data_job_id = _create_feature_group_data_job(body) if body.enableDme else None
     group = FeatureGroup(
         feature_group_name=body.featureGroupName, feature_list=body.featureList, datalake_source=body.datalakeSource,
-        host=body.host, port=body.port, bucket=body.bucket, token=body.token, db_org=body.dbOrg,
+        host=body.host, port=body.port, bucket=body.bucket, token=body.token, token_ref=body.tokenRef, db_org=body.dbOrg,
         measurement=body.measurement, enable_dme=body.enableDme, measured_obj_class=body.measuredObjClass,
         dme_port=body.dmePort, source_name=body.sourceName,
         dme_type_id=body.dmeTypeId if body.enableDme else None, dme_data_job_id=data_job_id,
@@ -1937,7 +1991,12 @@ def create_feature_group(body: CreateFeatureGroupRequest, db: Session = Depends(
         db.rollback()
         _terminate_feature_group_data_job(data_job_id)  # lost a race on the name: don't leave the job behind
         raise framework_error(FrameworkError.FEATURE_GROUP_ALREADY_REGISTERED, detail=f"feature group {body.featureGroupName!r} already exists") from exc
-    return _feature_group_view(group)
+    view = _feature_group_view(group)
+    if body.token is not None:
+        # RELEASES.md deprecation policy: the field still works for one more minor release, and the answer says so, in the header and in the body.
+        response.headers["Deprecation"] = "true"
+        view["warnings"] = ["token is deprecated and is dropped in a later release: register a tokenRef, the name of a secret the service resolves itself"]
+    return view
 
 
 def _create_feature_group_data_job(body: CreateFeatureGroupRequest) -> uuid.UUID:
@@ -1985,7 +2044,7 @@ def _terminate_feature_group_data_job(data_job_id: uuid.UUID | None) -> str:
 
 @app.get("/feature-groups/{feature_group_name}")
 def get_feature_group(feature_group_name: str, db: Session = Depends(get_session)):
-    # Route notes: 404 `FEATURE_GROUP_NOT_FOUND`; the answer includes the stored `token` in clear text.
+    # Route notes: 404 `FEATURE_GROUP_NOT_FOUND`; the answer never includes the token (`tokenSet`, `tokenRef`).
     return _feature_group_view(_feature_group_or_404(db, feature_group_name))
 
 
@@ -2002,6 +2061,22 @@ def delete_feature_group(feature_group_name: str, db: Session = Depends(get_sess
     return {"featureGroupName": feature_group_name, "dmeDataJobTeardown": teardown}
 
 
+TOKEN_REF = re.compile(r"[a-z][a-z0-9_-]{0,62}")  # a secret's name, not its value: the same shape as ran-nf-oam's credentialRef
+
+
+def feature_group_token(group: FeatureGroup) -> str | None:
+    """Returns the data-lake token of a feature group, for the code that connects to the data lake (none does yet: AIMgF stores the group and does not read the lake).
+
+    A group with a `token_ref` has it resolved from this service's own environment, `AIMGF_FEATURE_GROUP_TOKEN_<REF>` or the file named by its `_FILE` (`smo_shared.secretfile`;
+    the reference upper-cased, `-` as `_`); a reference that resolves to nothing is None, never a fall-back to another secret. A group from before the reference
+    existed returns its stored clear-text token. Raises `SecretConflict` or `SecretFileError` as `read_secret` does, naming the variable and never the value.
+    """
+    if group.token_ref:
+        # config-ref: AIMGF_FEATURE_GROUP_TOKEN_<REF>, AIMGF_FEATURE_GROUP_TOKEN_<REF>_FILE
+        return read_secret("AIMGF_FEATURE_GROUP_TOKEN_" + group.token_ref.upper().replace("-", "_"))
+    return group.token or None
+
+
 def _feature_group_or_404(db: Session, name: str) -> FeatureGroup:
     """Returns the feature group with that name or raises 404 `FEATURE_GROUP_NOT_FOUND`."""
     group = db.scalar(select(FeatureGroup).where(FeatureGroup.feature_group_name == name))
@@ -2012,17 +2087,18 @@ def _feature_group_or_404(db: Session, name: str) -> FeatureGroup:
 
 @app.get("/feature-groups")
 def list_feature_groups(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
-    # Route notes: paginated; every group is listed with its `token` in clear text.
+    # Route notes: paginated; a group is listed without its token (`tokenSet`, `tokenRef`).
     page = paginate(db, select(FeatureGroup), limit, offset)
     return {**page, "items": [_feature_group_view(g) for g in page["items"]]}
 
 
 def _feature_group_view(g: FeatureGroup) -> dict:
-    """Returns the feature group as the dict the feature-group routes answer. `token` is included as stored (clear text), as is the DME job id."""
+    """Returns the feature group as the dict the feature-group routes answer. The token is never included: `tokenSet` says whether the group has a credential and `tokenRef`
+    names the secret (a name, not a secret), or is null for a group that carries a clear-text token or none."""
     return {
         "featureGroupId": str(g.feature_group_id), "featureGroupName": g.feature_group_name,
         "featureList": g.feature_list, "datalakeSource": g.datalake_source, "host": g.host, "port": g.port,
-        "bucket": g.bucket, "token": g.token, "dbOrg": g.db_org, "measurement": g.measurement,
+        "bucket": g.bucket, "tokenSet": bool(g.token or g.token_ref), "tokenRef": g.token_ref, "dbOrg": g.db_org, "measurement": g.measurement,
         "enableDme": g.enable_dme, "measuredObjClass": g.measured_obj_class, "dmePort": g.dme_port,
         "sourceName": g.source_name,
         "dmeTypeId": str(g.dme_type_id) if g.dme_type_id else None,

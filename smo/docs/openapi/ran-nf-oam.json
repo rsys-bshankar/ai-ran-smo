@@ -5900,6 +5900,26 @@
       "post": {
         "description": "WriteConfigurationChanges \u2014 RAN NF OAM LLD section 5.1's full\nsequence: MSAC gate, schema check (cache-or-fetch), decompose into\nsub_changes, PATCH each independently, aggregate.",
         "operationId": "write_configuration_changes_config_jobs_post",
+        "parameters": [
+          {
+            "description": "The credential of the MSAC Identity named in `requestedBy`, when that Identity has one. Required from an rApp for such an Identity (403 `MSAC_ACCESS_DENIED` otherwise); not asked of the console, an SMO module, or an Identity with no credential.",
+            "in": "header",
+            "name": "X-MSAC-Credential",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The credential of the MSAC Identity named in `requestedBy`, when that Identity has one. Required from an rApp for such an Identity (403 `MSAC_ACCESS_DENIED` otherwise); not asked of the console, an SMO module, or an Identity with no credential.",
+              "title": "X-Msac-Credential"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {

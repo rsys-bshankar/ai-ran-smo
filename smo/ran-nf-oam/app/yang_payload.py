@@ -13,11 +13,10 @@ the server will not understand.
 import re
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlsplit
-from xml.sax.saxutils import escape
+from xml.sax.saxutils import escape, quoteattr
 
 from .ldn import leaf_id
-
-NETCONF_BASE_NS = "urn:ietf:params:xml:ns:netconf:base:1.0"
+from .netconf_client import NETCONF_BASE_NS, xml_name, xml_text
 
 
 @dataclass(frozen=True)
@@ -81,7 +80,7 @@ def build_get_config_rpc(profile: Profile, message_id: str, target_ref: str, man
     """The `<get-config>` RPC (subtree filter on the running datastore) that reads the one list entry the reference names; `message_id` and the key are XML-escaped.
     """
     key = escape(_key(target_ref, managed_function_ref))
-    return (f'<rpc message-id="{escape(message_id)}" xmlns="{NETCONF_BASE_NS}"><get-config><source><running/></source>'
+    return (f'<rpc message-id={quoteattr(message_id)} xmlns="{NETCONF_BASE_NS}"><get-config><source><running/></source>'
             f'<filter type="subtree"><{profile.container} xmlns="{profile.namespace}"><{profile.list_name}>'
             f"<{profile.key_leaf}>{key}</{profile.key_leaf}></{profile.list_name}></{profile.container}></filter></get-config></rpc>")
 
@@ -109,22 +108,25 @@ OPERATIONS = ("merge", "replace", "create", "delete", "remove")
 def build_edit_config_rpc(profile: Profile, message_id: str, target_ref: str, attribute_changes: dict, operation: str = "merge",
                           managed_function_ref: str | None = None, target: str = "running") -> str:
     """An `<edit-config>` on the model's list entry (RFC 6241 section 7.2): the `operation` attribute is on the entry, the key leaf
-    names it, and each attribute is a leaf. A delete or remove carries the key only. `target` is `running` or `candidate`."""
+    names it, and each attribute is a leaf. A delete or remove carries the key only. `target` is `running` or `candidate`. Names and values are checked and escaped
+    as in `netconf_client.build_edit_config_rpc`; ValueError when one is not acceptable."""
     if operation not in OPERATIONS:
         raise ValueError(f"unknown edit operation {operation!r}")
     if target not in ("running", "candidate"):
         raise ValueError(f"unknown datastore {target!r}")
+    # SEC-15.5: a leaf name must be an XML name and a value must be text XML can carry (`netconf_client.xml_name`, `xml_text`); the message id is written with `quoteattr`, so a quote in it
+    # cannot end the attribute. ValueError, with nothing built, for any that is not acceptable.
     leaves = "" if operation in ("delete", "remove") else "".join(
-        f"<{to_yang_name(name)}>{escape(str(value))}</{to_yang_name(name)}>" for name, value in attribute_changes.items())
+        f"<{xml_name(to_yang_name(name))}>{xml_text(value)}</{to_yang_name(name)}>" for name, value in attribute_changes.items())
     key = escape(_key(target_ref, managed_function_ref))
-    return (f'<rpc message-id="{escape(message_id)}" xmlns="{NETCONF_BASE_NS}"><edit-config><target><{target}/></target><config>'
+    return (f'<rpc message-id={quoteattr(message_id)} xmlns="{NETCONF_BASE_NS}"><edit-config><target><{target}/></target><config>'
             f'<{profile.container} xmlns="{profile.namespace}"><{profile.list_name} xmlns:nc="{NETCONF_BASE_NS}" nc:operation="{operation}">'
             f"<{profile.key_leaf}>{key}</{profile.key_leaf}>{leaves}</{profile.list_name}></{profile.container}></config></edit-config></rpc>")
 
 
 def build_walk_rpc(profile: Profile, message_id: str) -> str:
     """A subtree `<get-config>` of the model's whole container: every list entry (PR-SB-6.2)."""
-    return (f'<rpc message-id="{escape(message_id)}" xmlns="{NETCONF_BASE_NS}"><get-config><source><running/></source>'
+    return (f'<rpc message-id={quoteattr(message_id)} xmlns="{NETCONF_BASE_NS}"><get-config><source><running/></source>'
             f'<filter type="subtree"><{profile.container} xmlns="{profile.namespace}"/></filter></get-config></rpc>')
 
 

@@ -283,7 +283,7 @@ SME records a scope claim for an invoker (`{"regions": [...], "tenants": [...]}`
 
 ## Audit (PR-SEC-11)
 
-After it answers, the gateway adds one row to the audit hash chain (`smo_shared/audit.py`) for every authenticated POST, PUT, PATCH and DELETE, including the ones it refuses for the caller's role. Reads, calls with no good token and calls held by the rate limiter are not recorded (an attacker without a token must not be able to write to the database), and the body and query are never recorded. `python -m smo_shared.audit verify` and `export` run in any image of the stack: `docker compose exec r1-termination python -m smo_shared.audit verify`.
+After it answers, the gateway adds one row to the audit hash chain (`smo_shared/audit.py`) for every authenticated POST, PUT, PATCH and DELETE, including the ones it refuses for the caller's role. Reads, calls with no good token and calls held by the rate limiter are not recorded (an attacker without a token must not be able to write to the database), and the body and query are never recorded: the row's target is the module prefix and path cut at the first `?` or `#` (`audit.clean_target`, `SEC-15.12`), which also removes a query that a caller smuggled into the path as a percent-encoded `?` (the gateway sees the path decoded). Rows written before that change keep their target and still verify. `python -m smo_shared.audit verify` and `export` run in any image of the stack: `docker compose exec r1-termination python -m smo_shared.audit verify`.
 
 ## The operator API prefix (GUI-8.3)
 

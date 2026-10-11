@@ -384,6 +384,15 @@ def _subscription_view(s: DMETypeSubscription) -> dict:
     return {"subscriptionId": str(s.subscription_id), "notificationDestination": s.notification_destination, "owner": s.owner}
 
 
+def _registered_type_or_404(db: Session, dme_type_id: uuid.UUID) -> DMEType:
+    """Returns the registered `DMEType` of that id or raises 404 `DME_TYPE_NOT_FOUND` (SEC-15.10): a data job or offer for a type nobody registered would be accepted, skip every
+    check that reads the type (the production schema, the Digital Twin rule) and tell no producer. Read only."""
+    dme_type = db.get(DMEType, dme_type_id)
+    if dme_type is None:
+        raise framework_error(FrameworkError.DME_TYPE_NOT_FOUND, detail=f"no registered type {dme_type_id}: register it with POST /production-capabilities first")
+    return dme_type
+
+
 def _validate_delivery_method(db: Session, dme_type_id: uuid.UUID, method: str) -> None:
     """Raises 409 DELIVERY_METHOD_NOT_OFFERED when `method` is not one of `DELIVERY_METHODS` or, for a type that has at least one offer, when no offer committed to it.
     A type with no offer at all accepts any known method. Read only.
@@ -442,10 +451,10 @@ def _validate_lifecycle_eligibility(db: Session, dme_type_id: uuid.UUID, lifecyc
 
 @app.post("/data-jobs", status_code=202)
 def create_data_job(body: DataJobRequest, db: Session = Depends(get_session)):
-    # Creates an ACTIVE job. Order of checks: the delivery method (409 DELIVERY_METHOD_NOT_OFFERED), the production definition against the registered type's schema (422 SCHEMA_VALIDATION_FAILED), then
-    # the lifecycle stage and the rule that a Digital Twin source may not feed Inference (422 SCHEMA_VALIDATION_FAILED, DIGITAL_TWIN_INFERENCE_NOT_ELIGIBLE). The schema and eligibility checks are
-    # skipped for a `dmeTypeId` that is not registered (the code does not check that it exists). For a registered type, one outbox row per producer of the type is written in the same transaction,
+    # Creates an ACTIVE job. Order of checks: the type is registered (404 DME_TYPE_NOT_FOUND, SEC-15.10), the delivery method (409 DELIVERY_METHOD_NOT_OFFERED), the production definition against the registered type's schema (422 SCHEMA_VALIDATION_FAILED), then
+    # the lifecycle stage and the rule that a Digital Twin source may not feed Inference (422 SCHEMA_VALIDATION_FAILED, DIGITAL_TWIN_INFERENCE_NOT_ELIGIBLE). One outbox row per producer of the type is written in the same transaction,
     # so each producer is told after the commit. Answers 202 with the job id.
+    dme_type = _registered_type_or_404(db, body.dmeTypeId)
     _validate_delivery_method(db, body.dmeTypeId, body.dataDeliveryMethod)
     _validate_job_definition_schema(db, body.dmeTypeId, body.productionJobDefinition)
     _validate_lifecycle_eligibility(db, body.dmeTypeId, body.lifecycleStage)
@@ -463,9 +472,7 @@ def create_data_job(body: DataJobRequest, db: Session = Depends(get_session)):
     _set_late_after(job)
     db.add(job)
     db.flush()  # the job's id, for the producers' payloads
-    dme_type = db.get(DMEType, body.dmeTypeId)
-    if dme_type is not None:
-        _push_job_to_producers(db, dme_type, job)
+    _push_job_to_producers(db, dme_type, job)
     db.commit()
     return {"dataJobId": str(job.data_job_id)}
 
@@ -563,7 +570,8 @@ def terminate_data_jobs_for_consumer(consumer_id: str, db: Session = Depends(get
 
 @app.post("/offers", status_code=201)
 def create_data_offer(body: DataOfferRequest, db: Session = Depends(get_session)):
-    # Stores an offer, committing to the first of the offered methods. 409 DELIVERY_METHOD_NOT_OFFERED when the list is empty or holds an unknown method. The type is not checked to exist. Answers 201.
+    # Stores an offer, committing to the first of the offered methods. 404 DME_TYPE_NOT_FOUND when the type is not registered (SEC-15.10), then 409 DELIVERY_METHOD_NOT_OFFERED when the list is empty or holds an unknown method. Answers 201.
+    _registered_type_or_404(db, body.dmeTypeId)
     if not body.dataDeliveryMethods or not set(body.dataDeliveryMethods) <= DELIVERY_METHODS:
         raise framework_error(FrameworkError.DELIVERY_METHOD_NOT_OFFERED)
     offer = DataOffer(
@@ -838,8 +846,8 @@ def mediate_action(body: ActionRequest, db: Session = Depends(get_session)):
     # Records an rApp's O1 change request and forwards it to RAN NF OAM as a configuration job (10 s limit). Order: empty `changes` is 422; an `actionId` already recorded is answered 200 `IGNORED` with the
     # original status and nothing is forwarded again; otherwise the record is committed first (status FORWARDED, its default), then the job is requested. RAN NF OAM's answer decides the status: a body that is
     # not JSON or a 5xx is 502 UPSTREAM_FAILED and the record becomes REJECTED; a 4xx is relayed as it came and the record becomes REJECTED; an answer with no job id (the change waits for human approval) is 202 with the
-    # status and `approvalId` and no forwarded job; otherwise 202 with the job id and RAN NF OAM's status. A transport failure raised by the call is not caught here, so the record then keeps the
-    # status FORWARDED.
+    # status and `approvalId` and no forwarded job; otherwise 202 with the job id and RAN NF OAM's status. A failure of the call itself (a timeout, a refused connection, any
+    # exception) makes the record REJECTED too, and a transport error is 502 UPSTREAM_FAILED; any other exception is raised after the record is updated (SEC-15.10).
     if not body.changes:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="changes must not be empty")
     if body.actionId is not None:
@@ -870,15 +878,22 @@ def mediate_action(body: ActionRequest, db: Session = Depends(get_session)):
     decision = {**body.decision} if body.decision else None
     if body.actionId is not None and decision is not None:
         decision.setdefault("actionId", str(body.actionId))
-    resp = _r1.post("/ran-nf-oam/config-jobs", json={
-        "requestedBy": body.requestedBy, "scope": body.scope, "msacRole": body.msacRole, "changes": body.changes,
-        **({"decision": decision} if decision is not None else {}),
-    }, timeout=DME_TO_RAN_NF_OAM_TIMEOUT_SECONDS)
+    try:
+        resp = _r1.post("/ran-nf-oam/config-jobs", json={
+            "requestedBy": body.requestedBy, "scope": body.scope, "msacRole": body.msacRole, "changes": body.changes,
+            **({"decision": decision} if decision is not None else {}),
+        }, timeout=DME_TO_RAN_NF_OAM_TIMEOUT_SECONDS)
+    except Exception as exc:  # noqa: BLE001 - deliberate catch-all (SEC-15.10): whatever stopped the call, the record must not stay FORWARDED when nothing was forwarded
+        record.status = "REJECTED"  # the same state as an unusable answer below; the outcome at RAN NF OAM is unknown, and a replay of this `actionId` is IGNORED like any REJECTED one
+        db.commit()
+        if isinstance(exc, httpx.HTTPError):
+            raise framework_error(FrameworkError.UPSTREAM_FAILED, detail=f"RAN NF OAM could not be reached ({type(exc).__name__}): the action is recorded REJECTED") from exc
+        raise
     try:
         forwarded = resp.json()
     except ValueError:
         forwarded = None
-    if forwarded is None or resp.status_code >= 500:
+    if forwarded is None or not isinstance(forwarded, dict) or resp.status_code >= 500:
         record.status = "REJECTED"
         db.commit()
         raise framework_error(FrameworkError.UPSTREAM_FAILED, detail=f"RAN NF OAM answered {resp.status_code} without a usable body")
