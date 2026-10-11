@@ -330,6 +330,17 @@ def test_wrong_confirm_codes_count_towards_the_lockout(app, db):
     assert TestClient(app).post("/api/login", json={"username": "viewer", "password": PASSWORDS["viewer"]}).status_code == 429
 
 
+def test_wrong_confirm_codes_lock_the_user_for_that_source_only(app, db):
+    """SEC-15.11: wrong codes typed during enrolment count under the (source, user) pair: after five the source is refused (429), and the same user's password sign-in from another source is not locked."""
+    client = session(app, "viewer")
+    client.post("/api/me/totp/begin")
+    client.headers["X-Forwarded-For"] = "203.0.113.7"
+    assert [client.post("/api/me/totp/confirm", json={"code": "000000"}).status_code for _ in range(6)] == [400] * 5 + [429]
+    attacker = TestClient(app).post("/api/login", json={"username": "viewer", "password": PASSWORDS["viewer"]}, headers={"X-Forwarded-For": "203.0.113.7"})
+    elsewhere = TestClient(app).post("/api/login", json={"username": "viewer", "password": PASSWORDS["viewer"]}, headers={"X-Forwarded-For": "198.51.100.20"})
+    assert (attacker.status_code, elsewhere.status_code) == (429, 200)
+
+
 def test_enrolment_routes_need_a_session(app):
     """Status, begin and confirm are 401 without a session."""
     client = TestClient(app)

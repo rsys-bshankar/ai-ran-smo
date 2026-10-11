@@ -25,7 +25,7 @@ import uuid
 import sys
 from typing import Any, Literal, NoReturn, cast
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from smo_shared import mtls
@@ -816,11 +816,19 @@ def _dispatch_blocker(db: Session, change: dict):
 
 @app.post("/config-jobs", status_code=202, responses={200: {"description": "dryRun: the plan (waves and changes) was validated and nothing was written"}})
 @idempotent("ran-nf-oam", status_code=202)
-def write_configuration_changes(body: WriteConfigRequest, request: Request, db: Session = Depends(get_session)):
+def write_configuration_changes(body: WriteConfigRequest, request: Request, db: Session = Depends(get_session),
+                                msac_credential: str | None = Header(default=None, alias=msac.CREDENTIAL_HEADER, description=(
+                                    "The credential of the MSAC Identity named in `requestedBy`, when that Identity has one. Required from an rApp for such an Identity (403 "
+                                    "`MSAC_ACCESS_DENIED` otherwise); not asked of the console, an SMO module, or an Identity with no credential."))):
     """WriteConfigurationChanges — RAN NF OAM LLD section 5.1's full
     sequence: MSAC gate, schema check (cache-or-fetch), decompose into
     sub_changes, PATCH each independently, aggregate.
     """
+    # SEC-15.6: first of all, an rApp that names an MSAC Identity with a credential must present it (403 `MSAC_ACCESS_DENIED`). Only a caller with the rApp role is asked: `requestedBy` is
+    # its own word. The console and an SMO module (role internal) authenticate a person themselves and are trusted as elsewhere in this module, and a call with no role did not come
+    # through the gateway.
+    if role_of(request) == ROLE_RAPP:
+        msac.verify_identity_credential(db, body.requestedBy, msac_credential)
     caller = invoker_id(request)
     scope = scoping.request_scope(request)
     _refuse_if_killed(db, caller, body.requestedBy)

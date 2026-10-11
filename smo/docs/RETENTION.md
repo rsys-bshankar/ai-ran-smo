@@ -16,7 +16,7 @@ How long each high-volume table keeps its rows, which variable changes it, and w
 | `notification_outbox` | shared | A queued notification | Every notification | `SMO_OUTBOX_SENT_RETENTION_SECONDS` (existing, 86400) | 1 day | Every drain, for `SENT` rows | `DEAD` rows are **not** removed: they are what an operator looks at. A purge of `DEAD` rows is open |
 | `idempotency_key` | shared | A stored answer for an idempotency key | Every command with a key | `IDEMPOTENCY_KEY_TTL_SECONDS` (existing, 86400) | 1 day | Purged when a key is written | |
 | `audit_log` (platform chain) | R1 Termination | A hash-chained audit row | Every change through the gateway | none | keep | Nothing | Rows are never purged: removing the oldest breaks `verify`. Retention is by exporting (`python -m smo_shared.audit export`) and archiving. Pruning behind a signed checkpoint is open |
-| `gui_login_failure` | GUI BFF | A failed-login counter | Names typed | none | – | Cleared by the name's next successful sign-in | Rows for names that never sign in accumulate; open |
+| `gui_login_failure` | GUI BFF | A failed-login counter: per (source address, name) and per source (`SEC-15.11`) | Names typed and client addresses | none | – | The pair row is cleared by that name's next successful sign-in from that source; a source row is never cleared | Rows for names and sources that never sign in accumulate; open |
 | `gui_rapp_pin` | GUI BFF | A rApp a user pinned to the sidebar | At most 5 per user | none | – | Removed when the user unpins it or is deleted | Bounded by the limit, no growth to watch |
 
 ## The production sample and `.env.example` (`DB-3.10`)

@@ -642,7 +642,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     feature_group_body = {
         "featureGroupName": "demo_coverage_features", "featureList": "rsrp,rsrq,sinr",
         "datalakeSource": "INFLUX", "host": "influx.demo", "port": "8086", "bucket": "demo-bucket",
-        "token": "demo-token", "dbOrg": "demo-org", "measurement": "coverage_metrics",
+        "tokenRef": "demo-lake-token", "dbOrg": "demo-org", "measurement": "coverage_metrics",
     }
     created_group = mesh["aimgf"].post("/feature-groups", json=feature_group_body)
     assert created_group.status_code == 201

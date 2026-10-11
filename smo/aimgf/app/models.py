@@ -403,7 +403,9 @@ class FeatureGroup(Base):
 
     `feature_group_name` is unique (the API rule is 3 to 63 word characters). `dme_type_id` and `dme_data_job_id` are bare UUIDs into DME, set only for an
     `enable_dme` group; the job is created before the group is stored and terminated, best effort, when the group is deleted (HISTORY.md OI-5-aiml-featuregroup-dme).
-    `token` is a credential supplied by the caller and is stored and returned in clear text, as listed in `aimgf/README.md` 2.8.
+    The data-lake credential is either `token_ref`, the name of a secret the service resolves from its own environment when it connects (the database holds the name, never
+    the value), or the deprecated clear-text `token` that older callers still send (stored as given, never returned by a route; SEC-15.2, `aimgf/README.md` 2.8). A group has
+    one of the two; `token` is nullable because a group registered with a reference has none.
     The group is AIMgF's rather than MLMR's, MLLF's or DME's because no ownership record placed it elsewhere; the real feature storage behind the reference's
     feature store is not built (HISTORY.md section 5).
     """
@@ -417,7 +419,8 @@ class FeatureGroup(Base):
     host: Mapped[str] = mapped_column(String, nullable=False)
     port: Mapped[str] = mapped_column(String, nullable=False)
     bucket: Mapped[str] = mapped_column(String, nullable=False)
-    token: Mapped[str] = mapped_column(String, nullable=False)
+    token: Mapped[str | None] = mapped_column(String)
+    token_ref: Mapped[str | None] = mapped_column(String)
     db_org: Mapped[str] = mapped_column(String, nullable=False)
     measurement: Mapped[str] = mapped_column(String, nullable=False)
     enable_dme: Mapped[bool] = mapped_column(nullable=False, default=False)

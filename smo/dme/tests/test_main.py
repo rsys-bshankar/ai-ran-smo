@@ -229,17 +229,15 @@ def test_data_job_accepts_a_definition_matching_the_registered_schema(client):
     assert resp.status_code == 202
 
 
-def test_data_job_unaffected_by_schema_check_for_an_unknown_dme_type(client):
-    """Not every dmeTypeId in a POST is guaranteed to resolve to a real
-    DmeType (nothing else in create_data_job checks that either) — the
-    schema check must not regress that existing permissive behavior.
-    """
+def test_a_data_job_for_an_unregistered_dme_type_is_404(client):
+    """SEC-15.10: a dmeTypeId nobody registered is 404 DME_TYPE_NOT_FOUND (it used to be accepted, skipping the schema check and telling no producer), and no job is stored."""
     resp = client.post("/data-jobs", json={
         "dataDeliveryMode": "ONE_TIME", "dmeTypeId": "11111111-1111-1111-1111-111111111111",
         "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1",
         "productionJobDefinition": {"anything": "goes"},
     })
-    assert resp.status_code == 202
+    assert resp.status_code == 404 and resp.json()["detail"]["title"] == "DME_TYPE_NOT_FOUND"
+    assert client.get("/data-jobs").json()["total"] == 0
 
 
 def test_update_data_job_rejects_a_definition_violating_the_registered_schema(client):
@@ -1405,6 +1403,7 @@ def test_stopping_a_job_at_the_producers_is_a_delete_row_in_the_same_transaction
 
 def test_an_offer_with_no_delivery_method_is_refused(client):
     """An offer with an empty delivery method list is 409 DELIVERY_METHOD_NOT_OFFERED."""
-    resp = client.post("/offers", json={"dmeTypeId": "e3e70682-c209-1cac-a29f-6fbed82c07cd", "dataDeliveryMode": "CONTINUOUS",
+    type_id = client.post("/production-capabilities", json=register_type_body()).json()["registrationId"]
+    resp = client.post("/offers", json={"dmeTypeId": type_id, "dataDeliveryMode": "CONTINUOUS",
                                         "dataDeliveryMethods": [], "dataOfferTerminationNotificationUri": "http://producer/terminate"})
     assert resp.status_code == 409
