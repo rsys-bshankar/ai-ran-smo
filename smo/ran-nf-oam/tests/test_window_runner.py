@@ -12,9 +12,10 @@ from smo_shared import events
 
 from test_main import client, db_session_factory  # noqa: F401  (pytest fixtures)
 from test_waves import fleet, _job  # noqa: F401  (the fixture of four elements and a fake NF; reading a job)
+from test_scope import EU, claim  # noqa: F401  (a scoped rApp's headers and the claim text)
 
 from app import main, tasks
-from app.models import SafeguardRefusal, WriteConfigJob
+from app.models import ManagedEntity, SafeguardRefusal, WriteConfigJob
 from app.statemachine import JobState
 
 GUI = {"X-R1-Invoker-Id": "gui-invoker", "X-R1-Role": "internal"}
@@ -259,6 +260,205 @@ def test_a_start_the_safeguards_refuse_fails_the_job_once(client, fleet, db_sess
     assert _start(db_session_factory, now) == {"started": [], "refused": []}                   # FAILED is not retried
     with db_session_factory() as db:
         assert db.query(SafeguardRefusal).filter_by(code="RAPP_KILLED").count() == before >= 2     # the manual refusal and the worker's, recorded as any other
+
+
+def _refusals(db_session_factory, code):
+    """How many safeguard refusals with `code` are recorded."""
+    with db_session_factory() as db:
+        return db.query(SafeguardRefusal).filter_by(code=code).count()
+
+
+def _held_by_a_scoped_rapp(client, db_session_factory, **extra):
+    """A job the scoped rApp `es-client` (region eu) asked for ME-1 with a window, approved by Bob, whose window is open now: SCHEDULED, owned by `es-client`. Answers the job id."""
+    job_id = _ask(client, headers=EU, **extra)
+    assert _approve(client, job_id).json()["status"] == "SCHEDULED"
+    _set(db_session_factory, job_id, scheduled_at=NOW - HOUR)
+    return job_id
+
+
+def _assert_refused_at_start(client, db_session_factory, fleet, job_id, code, manual_status):
+    """The contract of every safeguard that refuses at the start: a person's `continue` answers `manual_status` with `code` and leaves the job SCHEDULED; the worker then ends it FAILED (every
+    change REJECTED `code`, `haltedReason` START_REFUSED, `halted_detail` naming the code), once, and sends nothing. A refusal is recorded for each."""
+    manual = client.post(f"/config-jobs/{job_id}/continue", json={"requestedBy": BOB})
+    assert manual.status_code == manual_status and manual.json()["detail"]["title"] == code, manual.text
+    assert _job(client, job_id)["status"] == "SCHEDULED" and fleet["edits"] == []
+    assert _refusals(db_session_factory, code) == 1
+    assert _start(db_session_factory, datetime.datetime.now(datetime.UTC)) == {"started": [], "refused": [job_id]}
+    view = _job(client, job_id)
+    assert view["status"] == "FAILED" and view["haltedReason"] == "START_REFUSED" and fleet["edits"] == []
+    assert {(c["status"], c["rejectionReason"]) for c in view["subChanges"]} == {("REJECTED", code)}
+    assert _row(db_session_factory, job_id).halted_detail.startswith(code + ":")
+    assert _refusals(db_session_factory, code) == 2                                              # the worker's refusal, recorded like the person's
+    assert _start(db_session_factory, datetime.datetime.now(datetime.UTC)) == {"started": [], "refused": []}      # FAILED is not retried
+
+
+def test_an_element_that_left_the_scope_while_the_job_waited_refuses_the_start(client, fleet, db_session_factory):
+    """The scope claim of the caller that asked is kept on the job and asked again at the start: ME-1 moves to another region while the job waits, so a person's `continue` is 403 SCOPE_DENIED
+    (job still SCHEDULED) and the worker ends it FAILED. Before the move the same job would have started."""
+    with db_session_factory() as db:
+        db.get(ManagedEntity, "ME-1").region = "eu"
+        db.commit()
+    job_id = _held_by_a_scoped_rapp(client, db_session_factory)
+    assert _row(db_session_factory, job_id).requester_scope == {"regions": ["eu"]}
+    with db_session_factory() as db:
+        db.get(ManagedEntity, "ME-1").region = "us"
+        db.commit()
+    _assert_refused_at_start(client, db_session_factory, fleet, job_id, "SCOPE_DENIED", 403)
+
+
+def test_an_element_still_inside_the_scope_starts_for_both_the_person_and_the_worker(client, fleet, db_session_factory):
+    """With nothing changed the re-check passes: the scoped rApp's job starts by a person's `continue`, and a second one by the worker."""
+    with db_session_factory() as db:
+        db.get(ManagedEntity, "ME-1").region = "eu"
+        db.commit()
+    manual, automatic = (_held_by_a_scoped_rapp(client, db_session_factory) for _ in range(2))
+    assert client.post(f"/config-jobs/{manual}/continue", json={"requestedBy": BOB}).json()["status"] == "COMPLETED"
+    assert _start(db_session_factory, datetime.datetime.now(datetime.UTC)) == {"started": [automatic], "refused": []}
+    assert fleet["edits"] == ["ME-1", "ME-1"]
+
+
+def test_a_job_approved_as_an_rapp_request_keeps_the_claim_it_was_parked_with(client, fleet, db_session_factory):
+    """A job made from an approved rApp request (AI-11) takes the claim the request was parked with, so its start asks the same question."""
+    assert client.put("/rapp-approval-policy/es-client", json={"requestedBy": "admin"}).status_code == 200
+    body = {"requestedBy": "es-rapp", "scope": "cell", "changes": [{"managedElementRef": "ME-1", "attributeChanges": {"txPower": 20}}],
+            "changeWindow": {"start": _iso(HOUR), "end": _iso(2 * HOUR)}}
+    with db_session_factory() as db:
+        db.get(ManagedEntity, "ME-1").region = "eu"
+        db.commit()
+    parked = client.post("/config-jobs", headers=EU, json=body)
+    assert parked.status_code == 202 and parked.json()["status"] == "PENDING_APPROVAL", parked.text
+    approval_id = client.get("/rapp-approvals", headers=GUI).json()["items"][0]["approvalId"]
+    done = client.post(f"/rapp-approvals/{approval_id}/approve", headers={**GUI, "X-R1-Acting-User": BOB}, json={})
+    assert done.status_code == 200 and done.json()["jobStatus"] == "SCHEDULED", done.text
+    with db_session_factory() as db:
+        assert [j.requester_scope for j in db.query(WriteConfigJob).all()] == [{"regions": ["eu"]}]
+
+
+def test_the_rate_limit_is_asked_again_at_the_start_and_a_job_is_not_counted_against_itself(client, fleet, db_session_factory):
+    """MGT-4.4: with a limit of one job an hour, a job that is the only one of its rApp starts (it is not counted against itself); with another job of the rApp in the hour, a person's
+    `continue` is 429 RAPP_RATE_LIMITED and the worker ends the job FAILED."""
+    alone = _scheduled(client)
+    _set(db_session_factory, alone, invoker_id="es-client", scheduled_at=NOW - HOUR)
+    assert client.put("/rapp-limits/es-client", json={"maxConfigJobsPerHour": 1}).status_code == 200
+    assert client.post(f"/config-jobs/{alone}/continue", json={"requestedBy": BOB}).json()["status"] == "COMPLETED"
+    # the started job is in the hour now: the next one of the rApp is over the limit
+    over = _scheduled(client)
+    _set(db_session_factory, over, invoker_id="es-client", scheduled_at=NOW - HOUR)
+    edits = list(fleet["edits"])
+    manual = client.post(f"/config-jobs/{over}/continue", json={"requestedBy": BOB})
+    assert manual.status_code == 429 and manual.json()["detail"]["title"] == "RAPP_RATE_LIMITED" and _job(client, over)["status"] == "SCHEDULED"
+    assert _start(db_session_factory, datetime.datetime.now(datetime.UTC)) == {"started": [], "refused": [over]}
+    view = _job(client, over)
+    assert view["status"] == "FAILED" and view["haltedReason"] == "START_REFUSED" and fleet["edits"] == edits
+    assert {c["rejectionReason"] for c in view["subChanges"]} == {"RAPP_RATE_LIMITED"} and _refusals(db_session_factory, "RAPP_RATE_LIMITED") == 2
+
+
+def test_the_blast_radius_limit_is_asked_again_at_the_start(client, fleet, db_session_factory):
+    """A manifest limit of one element per job, set while a two-element job waited, refuses its start: 403 RAPP_BLAST_RADIUS_EXCEEDED to a person (job left SCHEDULED), FAILED by the worker."""
+    changes = [{"managedElementRef": ref, "attributeChanges": {"txPower": 20}} for ref in ("ME-1", "ME-2")]
+    job_id = _scheduled(client, changes=changes)
+    _set(db_session_factory, job_id, invoker_id="es-client", scheduled_at=NOW - HOUR)
+    assert client.put("/rapp-limits/es-client", json={"maxElementsPerJob": 1}).status_code == 200
+    _assert_refused_at_start(client, db_session_factory, fleet, job_id, "RAPP_BLAST_RADIUS_EXCEEDED", 403)
+
+
+def test_the_magnitude_limit_is_asked_again_at_the_start(client, fleet, db_session_factory):
+    """A limit of 10 percent, set while a job that moves txPower from 10 to 20 waited, refuses its start: 403 RAPP_MAGNITUDE_EXCEEDED to a person, FAILED by the worker; nothing is written."""
+    job_id = _scheduled(client)
+    _set(db_session_factory, job_id, invoker_id="es-client", scheduled_at=NOW - HOUR)
+    assert client.put("/rapp-limits/es-client", json={"maxChangePercent": 10}).status_code == 200
+    _assert_refused_at_start(client, db_session_factory, fleet, job_id, "RAPP_MAGNITUDE_EXCEEDED", 403)
+
+
+def test_a_limit_the_job_stays_within_does_not_refuse_the_start(client, fleet, db_session_factory):
+    """The re-check refuses only what breaks a limit: a job within a 200 percent magnitude limit and a two-element blast radius starts."""
+    job_id = _scheduled(client)
+    _set(db_session_factory, job_id, invoker_id="es-client", scheduled_at=NOW - HOUR)
+    assert client.put("/rapp-limits/es-client", json={"maxChangePercent": 200, "maxElementsPerJob": 2}).status_code == 200
+    assert _start(db_session_factory, datetime.datetime.now(datetime.UTC)) == {"started": [job_id], "refused": []} and fleet["edits"] == ["ME-1"]
+
+
+def _attempts(db_session_factory, job_id):
+    """The count of failed starts kept on the job."""
+    return _row(db_session_factory, job_id).start_attempts
+
+
+def _breaking(monkeypatch, message="the NF client broke"):
+    """Makes the running of a started job's waves fail unexpectedly; answers the real function to put back."""
+    real = main._advance
+    monkeypatch.setattr(main, "_advance", lambda db, job: (_ for _ in ()).throw(RuntimeError(message)))
+    return real
+
+
+def test_a_start_that_fails_four_times_and_then_succeeds_starts_and_clears_the_count(client, fleet, db_session_factory, monkeypatch):
+    """Four unexpected failures are counted on the job and leave it SCHEDULED; the fifth run succeeds, the job runs and the count is cleared."""
+    job_id = _scheduled(client)
+    opened = NOW + HOUR + datetime.timedelta(minutes=1)
+    real = _breaking(monkeypatch)
+    for attempt in range(1, 5):
+        assert _start(db_session_factory, opened) == {"started": [], "refused": []}
+        assert _attempts(db_session_factory, job_id) == attempt and _job(client, job_id)["status"] == "SCHEDULED"
+    monkeypatch.setattr(main, "_advance", real)
+    assert _start(db_session_factory, opened) == {"started": [job_id], "refused": []}
+    assert _job(client, job_id)["status"] == "COMPLETED" and _attempts(db_session_factory, job_id) is None and fleet["edits"] == ["ME-1"]
+
+
+def test_a_start_that_fails_five_times_ends_the_job_failed(client, fleet, db_session_factory, monkeypatch):
+    """The fifth consecutive failure ends the job FAILED: `haltedReason` START_ERROR_LIMIT, `halted_detail` with the count and the last error text, every change REJECTED START_ERROR_LIMIT, nothing
+    sent, the transition published, and it is not tried again (not even by a start that would now succeed)."""
+    monkeypatch.setenv("SMO_EVENT_BUS", "memory")
+    monkeypatch.setattr(events.MEMORY, "events", [])
+    job_id = _scheduled(client)
+    opened = NOW + HOUR + datetime.timedelta(minutes=1)
+    real = _breaking(monkeypatch, "disk on fire")
+    for _ in range(4):
+        assert _start(db_session_factory, opened)["refused"] == []
+    assert _start(db_session_factory, opened) == {"started": [], "refused": [job_id]}
+    view = _job(client, job_id)
+    assert view["status"] == "FAILED" and view["haltedReason"] == "START_ERROR_LIMIT" and fleet["edits"] == []
+    assert {(c["status"], c["rejectionReason"]) for c in view["subChanges"]} == {("REJECTED", "START_ERROR_LIMIT")}
+    detail = _row(db_session_factory, job_id).halted_detail
+    assert "5 consecutive" in detail and "RuntimeError: disk on fire" in detail
+    assert [(e["data"]["from"], e["data"]["to"]) for e in events.MEMORY.events if e["subject"] == job_id][-1] == ("SCHEDULED", "FAILED")
+    monkeypatch.setattr(main, "_advance", real)
+    assert _start(db_session_factory, opened) == {"started": [], "refused": []} and fleet["edits"] == []
+
+
+def test_the_count_is_kept_in_the_database_and_two_replicas_count_one_failure_once(client, fleet, db_session_factory, monkeypatch):
+    """The count is a column, so a restarted worker (a new session) continues it. Two replicas: a replica that does not get the row (another holds its lock) passes the job over and counts
+    nothing; the one that fails counts exactly one, and a second replica that then fails counts the next, so the total is the number of attempts that failed."""
+    job_id = _scheduled(client)
+    opened = NOW + HOUR + datetime.timedelta(minutes=1)
+    _breaking(monkeypatch)
+    assert _start(db_session_factory, opened)["refused"] == [] and _attempts(db_session_factory, job_id) == 1          # replica A
+    real_claim = main._claim_job
+    monkeypatch.setattr(main, "_claim_job", lambda db, claim_id, *, skip_locked: None)                              # replica B finds the row locked by A
+    assert _start(db_session_factory, opened) == {"started": [], "refused": []} and _attempts(db_session_factory, job_id) == 1
+    monkeypatch.setattr(main, "_claim_job", real_claim)
+    assert _start(db_session_factory, opened)["refused"] == [] and _attempts(db_session_factory, job_id) == 2          # B, once it has the row and fails itself
+    for _ in range(2):
+        _start(db_session_factory, opened)
+    assert _attempts(db_session_factory, job_id) == 4 and _job(client, job_id)["status"] == "SCHEDULED"
+
+
+def test_a_failure_to_count_does_not_stop_the_sweep(client, fleet, db_session_factory, monkeypatch):
+    """The count is best effort: when it cannot be written the sweep logs it and goes on to the next job."""
+    first, second = _scheduled(client), _scheduled(client)
+    opened = NOW + HOUR + datetime.timedelta(minutes=1)
+    _breaking(monkeypatch)
+    monkeypatch.setattr(main, "_count_failed_start", lambda db, job_id, error: (_ for _ in ()).throw(RuntimeError("database gone")))
+    assert _start(db_session_factory, opened) == {"started": [], "refused": []}
+    assert {_job(client, j)["status"] for j in (first, second)} == {"SCHEDULED"}
+
+
+@pytest.mark.parametrize("text, expected", [(None, 5), ("3", 3), ("1", 1), ("0", 1), ("-2", 1), ("many", 5)])
+def test_the_start_attempt_limit_is_five_unless_the_environment_says_otherwise(monkeypatch, text, expected):
+    """`RAN_NF_OAM_WINDOW_START_ATTEMPTS`: 5 by default and for text, at least 1 otherwise."""
+    if text is None:
+        monkeypatch.delenv("RAN_NF_OAM_WINDOW_START_ATTEMPTS", raising=False)
+    else:
+        monkeypatch.setenv("RAN_NF_OAM_WINDOW_START_ATTEMPTS", text)
+    assert main._start_attempt_limit() == expected
 
 
 def test_the_expiry_is_announced_on_the_event_bus(client, fleet, db_session_factory, monkeypatch):
