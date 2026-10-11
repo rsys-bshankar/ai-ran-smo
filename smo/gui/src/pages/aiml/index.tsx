@@ -28,6 +28,7 @@ import { TrainingNow, WaitingForGovernance } from "./sections/SideCards";
 import { StageBoard } from "./sections/StageBoard";
 import { TrainingJobs } from "./sections/TrainingJobs";
 import { ScopeNote } from "../../kit/ScopeNote";
+import { useT } from "../../i18n";
 
 export { Mlmf } from "./sections/Mlmf";
 export { useModelNames } from "./data/queries";
@@ -41,18 +42,19 @@ export function Aiml() {
   const summary = useAimlSummary();
   const breaches = count(summary.data, "mlmfBreaches.total");
   const [registering, setRegistering] = useState(false);
+  const t = useT();
   return (
     <>
-      <PageHeader eyebrow="MLMR · AIMgF · MLLF · MLMF" title="AI/ML"
-        subtitle={<>Model registration → training → validation → certification → deployment → inference, per <code>docs/call-flows/02-aiml-model-train-to-inference.md</code> <ScopeNote summary={summary.data} keys={["models", "trainingJobs", "mlmfBreaches"]} /></>}
-        actions={<Can method="POST" path={MODELS}><button type="button" className="btn primary" onClick={() => setRegistering(true)}>Register model</button></Can>} />
+      <PageHeader eyebrow={t("aiml.eyebrow")} title={t("nav./aiml")}
+        subtitle={<>{t("aiml.subtitle")} <code>{t("aiml.subtitle.doc")}</code> <ScopeNote summary={summary.data} keys={["models", "trainingJobs", "mlmfBreaches"]} /></>}
+        actions={<Can method="POST" path={MODELS}><button type="button" className="btn primary" onClick={() => setRegistering(true)}>{t("aiml.register")}</button></Can>} />
       <Tabs value={tab} onChange={setTab} tabs={[
-        { id: "models", label: "Models", count: count(summary.data, "models.total") },
-        { id: "training", label: "Training jobs", count: count(summary.data, "trainingJobs.total") },
-        { id: "inference", label: "Inference jobs" }, { id: "features", label: "Feature groups" },
-        { id: "groups", label: "Coordination groups" },
-        { id: "mlmf", label: "Performance monitoring (MLMF)", count: breaches || null, tone: breaches ? "bad" : undefined },
-        { id: "registry", label: "Registry" },
+        { id: "models", label: t("aiml.tabs.models"), count: count(summary.data, "models.total") },
+        { id: "training", label: t("aiml.tabs.training"), count: count(summary.data, "trainingJobs.total") },
+        { id: "inference", label: t("aiml.tabs.inference") }, { id: "features", label: t("aiml.tabs.features") },
+        { id: "groups", label: t("aiml.tabs.groups") },
+        { id: "mlmf", label: t("aiml.tabs.mlmf"), count: breaches || null, tone: breaches ? "bad" : undefined },
+        { id: "registry", label: t("aiml.tabs.registry") },
       ]} />
       {tab === "models" && <ModelsTab onTraining={() => setTab("training")} />}
       {tab === "training" && <SectionBoundary id="aiml.training"><TrainingJobs /></SectionBoundary>}
@@ -80,7 +82,8 @@ function ModelsTab({ onTraining }: { onTraining: () => void }) {
   const [view, setView] = useState<"board" | "table">("board");
   const [params] = useSearchParams();
   const [selected, setSelected] = useState<string | null>(() => params.get("model"));
-  const viewSwitch = <Segmented label="View" value={view} onChange={setView} options={[{ id: "board", label: "Board" }, { id: "table", label: "Table" }]} />;
+  const t = useT();
+  const viewSwitch = <Segmented label={t("aiml.view")} value={view} onChange={setView} options={[{ id: "board", label: t("aiml.view.board") }, { id: "table", label: t("aiml.view.table") }]} />;
   return (
     <div className="stack">
       {view === "board"
@@ -94,7 +97,7 @@ function ModelsTab({ onTraining }: { onTraining: () => void }) {
             <SectionBoundary id="aiml.governance"><Governance id={selected} /></SectionBoundary>
             <SectionBoundary id="aiml.artifacts"><ModelArtifacts id={selected} /></SectionBoundary>
             <SectionBoundary id="aiml.runtime"><ModelRuntime id={selected} /></SectionBoundary>
-          </> : <section className="card"><Empty title="Select a model">Pick a card on the board, or a row in the table, to see its pipeline, guard KPI and history.</Empty></section>}
+          </> : <section className="card"><Empty title={t("aiml.select.title")}>{t("aiml.select.body")}</Empty></section>}
         </div>
         <div className="stack">
           <SectionBoundary id="aiml.trainingTop"><TrainingNow onSelect={setSelected} onSeeAll={onTraining} /></SectionBoundary>

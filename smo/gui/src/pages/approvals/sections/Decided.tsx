@@ -31,7 +31,7 @@ export function Decided() {
       <DataTable rows={rows} rowKey={(a) => a.approvalId} error={decided.error} loading={decided.isLoading} empty={t("approvals.decided.empty")} onRowClick={(a) => setOpen(a.approvalId)} columns={[
         { header: t("approvals.decided.rapp"), render: (a: Approval) => <><Id value={a.invokerId} /> <span className="muted small">{a.requestedBy}</span></> },
         { header: t("approvals.decided.changes"), render: (a) => t("approvals.decided.changes.value", { n: a.changeCount, elements: describeElements(a.managedElements) }) },
-        { header: t("approvals.decided.outcome"), render: (a) => <span title={APPROVAL_MEANING[a.status]}><StateBadge state={a.status} /></span> },
+        { header: t("approvals.decided.outcome"), render: (a) => <span title={a.status in APPROVAL_MEANING ? t(APPROVAL_MEANING[a.status]) : undefined}><StateBadge state={a.status} /></span> },
         { header: t("approvals.decided.by"), render: (a) => decidedByText(a) },
         { header: t("approvals.decided.when"), render: (a) => formatTime(a.decidedAt) },
         { header: t("approvals.decided.reason"), render: (a) => a.decisionReason ?? a.refusalCode ?? <span className="muted">—</span> },

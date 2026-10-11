@@ -23,7 +23,7 @@ export function ModelGates() {
         empty={t("approvals.models.empty")} columns={[
           { header: t("approvals.models.model"), render: (l) => <Link to={`/aiml?model=${encodeURIComponent(l.modelId)}#models`}>{name(l.modelId) ?? l.modelId.slice(0, 8)}</Link> },
           { header: t("approvals.models.stage"), render: (l) => <StateBadge state={l.modelLifecycleState} /> },
-          { header: t("approvals.models.decision"), render: (l) => <span className="small">{GATE_DECISION[l.modelLifecycleState] ?? "—"}</span> },
+          { header: t("approvals.models.decision"), render: (l) => <span className="small">{l.modelLifecycleState in GATE_DECISION ? t(GATE_DECISION[l.modelLifecycleState]) : "—"}</span> },
           { header: "", render: (l) => <ModelActions model={l} lifecycle={l} /> },
         ]} />
     </Card>

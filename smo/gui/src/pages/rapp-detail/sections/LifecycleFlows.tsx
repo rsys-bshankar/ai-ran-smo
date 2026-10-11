@@ -52,11 +52,11 @@ export function LifecycleFlows({ rapp }: { rapp: RappPage }) {
       {(inst.error || status.error) && <p className="small text-bad">{t("rappDetail.flows.unreadable")}</p>}
       <ul className="list">
         <FlowRow id="01" title={t("rappDetail.flows.f01")} subject={rapp.packageId} subjectLabel={pkgLabel}
-          steps={ready ? flow01(pkg, inst.data, deployment.data) : null} />
+          steps={ready ? flow01(pkg, inst.data, deployment.data, t) : null} />
         <FlowRow id="06" title={t("rappDetail.flows.f06")} subject={rapp.packageId} subjectLabel={pkgLabel}
-          steps={status.data && usage.data ? flow06(pkg, usage.data, usage.data.filter((u) => u.active).length) : null} />
+          steps={status.data && usage.data ? flow06(pkg, usage.data, usage.data.filter((u) => u.active).length, t) : null} />
         <FlowRow id="07" title={t("rappDetail.flows.f07")} subject={id} subjectLabel={t("rappDetail.flows.instance", { id: id.slice(0, 8) })}
-          steps={inst.data && perf.data && faults.data ? flow07(inst.data, perf.data, faults.data) : null} />
+          steps={inst.data && perf.data && faults.data ? flow07(inst.data, perf.data, faults.data, t) : null} />
         <li>
           <Link className="row gap wrap rd-flow" to="/flows/02">
             <span className="flow-num">02</span>

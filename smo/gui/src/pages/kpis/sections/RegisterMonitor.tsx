@@ -4,35 +4,37 @@
 import { useState } from "react";
 
 import { ActionButton, Card, Field } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { parseJsonObject } from "../../../lib/domain";
 import { MONITORS, useCoordinationGroups, useInstances, useOrders } from "../data/queries";
 
 /** The form. */
 export function RegisterMonitor() {
+  const t = useT();
   const orders = useOrders();
   const groups = useCoordinationGroups();
   const instances = useInstances();
   const [target, setTarget] = useState("");
   const [thresholds, setThresholds] = useState('{"throughputMbps": 100}');
-  const parsed = parseJsonObject(thresholds);
+  const parsed = parseJsonObject(thresholds, t);
   const [kind, id] = target.split(":");
   return (
-    <Card section="kpis.newMonitor" title="Register assurance monitor">
+    <Card section="kpis.newMonitor" title={t("kpis.register.title")}>
       <div className="form inline">
-        <Field label="Scope" hint="Order-scoped monitors remediate NF deployments; group-scoped ones retrain models; rApp-scoped ones can roll the rApp back">
+        <Field label={t("kpis.common.scope")} hint={t("kpis.register.scope.hint")}>
           <select value={target} onChange={(e) => setTarget(e.target.value)}>
-            <option value="">Unscoped</option>
-            <optgroup label="SO SMOS orders">{orders.data?.map((o) => <option key={o.orderId} value={`order:${o.orderId}`}>{o.scope} ({o.orderId.slice(0, 8)})</option>)}</optgroup>
-            <optgroup label="Model coordination groups">{groups.data?.map((g) => <option key={g.groupId} value={`group:${g.groupId}`}>group {g.groupId.slice(0, 8)}</option>)}</optgroup>
-            <optgroup label="rApp instances">{instances.data?.filter((i) => i.state !== "UNDEPLOYED").map((i) => <option key={i.instanceId} value={`rapp:${i.instanceId}`}>instance {i.instanceId.slice(0, 8)} ({i.state})</option>)}</optgroup>
+            <option value="">{t("kpis.register.unscoped")}</option>
+            <optgroup label={t("kpis.register.orders")}>{orders.data?.map((o) => <option key={o.orderId} value={`order:${o.orderId}`}>{o.scope} ({o.orderId.slice(0, 8)})</option>)}</optgroup>
+            <optgroup label={t("kpis.register.groups")}>{groups.data?.map((g) => <option key={g.groupId} value={`group:${g.groupId}`}>{t("kpis.register.group", { id: g.groupId.slice(0, 8) })}</option>)}</optgroup>
+            <optgroup label={t("kpis.register.instances")}>{instances.data?.filter((i) => i.state !== "UNDEPLOYED").map((i) => <option key={i.instanceId} value={`rapp:${i.instanceId}`}>{t("kpis.register.instance", { id: i.instanceId.slice(0, 8), state: i.state })}</option>)}</optgroup>
           </select>
         </Field>
-        <Field label="Thresholds — metric floors (JSON)" hint={parsed.ok ? undefined : <span className="text-bad">{parsed.error}</span>}><input value={thresholds} onChange={(e) => setThresholds(e.target.value)} /></Field>
-        <ActionButton label="Register" tone="primary" disabled={!parsed.ok} action={{
+        <Field label={t("kpis.register.thresholds")} hint={parsed.ok ? undefined : <span className="text-bad">{parsed.error}</span>}><input value={thresholds} onChange={(e) => setThresholds(e.target.value)} /></Field>
+        <ActionButton label={t("kpis.register.submit")} tone="primary" disabled={!parsed.ok} action={{
           method: "POST", path: MONITORS, json: parsed.ok ? parsed.value : {},
           query: { target_order_id: kind === "order" ? id : undefined, target_coordination_group_id: kind === "group" ? id : undefined,
                    target_rapp_instance_id: kind === "rapp" ? id : undefined },
-          success: "Monitor registered",
+          success: t("kpis.register.success"),
         }} />
       </div>
     </Card>

@@ -25,7 +25,7 @@ export function InstanceState({ id }: { id: string }) {
           [t("rappDetail.instance.pendingUpgrade"), d.pendingUpgradeInstanceId && <code key="u">{d.pendingUpgradeInstanceId}</code>],
           [t("rappDetail.instance.autonomy"), <StateBadge key="a" state={d.autonomyMode} />],
           [t("rappDetail.instance.regionScope"), d.regionScope ? <Json value={d.regionScope} /> : <span className="muted">—</span>],
-          [t("rappDetail.instance.accessScope"), <span key="z" title={t("rappDetail.instance.accessScopeTitle")}>{describeScope(d.authzScope)}</span>],
+          [t("rappDetail.instance.accessScope"), <span key="z" title={t("rappDetail.instance.accessScopeTitle")}>{describeScope(d.authzScope, t)}</span>],
         ]} />}
       </QueryState>
       {upgrading && d && <UpgradeModal inst={d} onClose={() => setUpgrading(false)} />}

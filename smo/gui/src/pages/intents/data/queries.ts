@@ -17,6 +17,8 @@ export const HANDLERS = "/intent-service/intent-handling-functions";
 export const DISPATCHES = "/intent-service/autonomy-dispatches";
 /** TS 28.312 intent utility formulas (feature 10). */
 export const FORMULAS = "/intent-service/intent-utility-formulas";
+/** The RMIO identity of the intents created from the GUI (only an intent's creator may change its admin state). */
+export const GUI_RMIO = "smo-gui";
 /** rApp instances, for the autonomy-dispatch form. */
 export const INSTANCES = "/rapp-mgmt/instances";
 /** How many reports of one intent a card reads: enough to find the newest of each report kind (a row holds only the kinds published together). */

@@ -5,29 +5,31 @@ import { useState } from "react";
 
 import type { Monitor } from "../../../api/types";
 import { Card, Id } from "../../../components/ui";
+import { useT, type Translator } from "../../../i18n";
 import { ServerTable } from "../../../kit/ServerTable";
 import { MONITORS } from "../data/queries";
 import { MonitorPanel } from "./MonitorPanel";
 
-/** How a monitor's scope reads. */
-export function monitorScope(m: Monitor) {
-  return m.targetOrderId ? <>order <Id value={m.targetOrderId} /></> : m.targetCoordinationGroupId ? <>model group <Id value={m.targetCoordinationGroupId} /></>
-    : m.targetRappInstanceId ? <>rApp instance <Id value={m.targetRappInstanceId} /></> : <span className="muted">unscoped</span>;
+/** How a monitor's scope reads, in the words of `t`. */
+export function monitorScope(m: Monitor, t: Translator) {
+  return m.targetOrderId ? <>{t("kpis.monitors.scope.order")} <Id value={m.targetOrderId} /></> : m.targetCoordinationGroupId ? <>{t("kpis.monitors.scope.group")} <Id value={m.targetCoordinationGroupId} /></>
+    : m.targetRappInstanceId ? <>{t("kpis.monitors.scope.rapp")} <Id value={m.targetRappInstanceId} /></> : <span className="muted">{t("kpis.monitors.scope.none")}</span>;
 }
 
 /** The table and the selected monitor's panel. */
 export function Monitors({ compact }: { compact?: boolean }) {
+  const t = useT();
   const [selected, setSelected] = useState<Monitor | null>(null);
   return (
     <>
-      <Card section="kpis.monitors" title="Assurance monitors" sub="SA SMOS evaluates; SO SMOS remediates; escalates to you when it can't"
-        actions={<span className="muted small">Click a monitor to evaluate, remediate or escalate</span>}>
-        <ServerTable<Monitor> path={MONITORS} rowKey={(m) => m.monitorId} empty="No assurance monitors." onRowClick={setSelected} selectedKey={selected?.monitorId} columns={[
-          { header: "Monitor", render: (m) => <Id value={m.monitorId} /> },
-          { header: "Scope", render: monitorScope },
-          { header: "Thresholds (floor)", render: (m) => <span className="mono">{Object.entries(m.thresholds).map(([k, v]) => `${k} ≥ ${v}`).join(", ") || "—"}</span> },
+      <Card section="kpis.monitors" title={t("kpis.monitors.title")} sub={t("kpis.monitors.sub")}
+        actions={<span className="muted small">{t("kpis.monitors.hint")}</span>}>
+        <ServerTable<Monitor> path={MONITORS} rowKey={(m) => m.monitorId} empty={t("kpis.monitors.empty")} onRowClick={setSelected} selectedKey={selected?.monitorId} columns={[
+          { header: t("kpis.common.monitor"), render: (m) => <Id value={m.monitorId} /> },
+          { header: t("kpis.common.scope"), render: (m) => monitorScope(m, t) },
+          { header: t("kpis.monitors.thresholds"), render: (m) => <span className="mono">{Object.entries(m.thresholds).map(([k, v]) => `${k} ≥ ${v}`).join(", ") || "—"}</span> },
         ]} />
-        {compact && <p className="gap-note">Not sorted breaching-first: SA SMOS keeps no breach state on a monitor.</p>}
+        {compact && <p className="gap-note">{t("kpis.monitors.gap")}</p>}
       </Card>
       {selected && <MonitorPanel key={selected.monitorId} monitor={selected} onClose={() => setSelected(null)} />}
     </>

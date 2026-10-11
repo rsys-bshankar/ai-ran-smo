@@ -31,6 +31,8 @@ First load of the Overview: 12 calls (5 tiles + the chart's series, scope list, 
 escalations), over the 6-call target: RAN NF OAM has no batch KPI route, so each tile and each charted KPI is its own computation. The KPI
 reads poll every 60 s. A saved layout of eight KPIs adds seven series calls.
 
+Every word on the page comes from the catalog (`src/i18n/en/kpis.ts`, `de/kpis.ts`; GUI-6.4); its literal count is 0.
+
 ## Known limits
 
 - **KPI sparklines and the throughput band chart** (p10–p90 over time): the tiles carry no sparkline (that would be five more series calls;

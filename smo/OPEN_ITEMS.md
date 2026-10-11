@@ -177,7 +177,7 @@ and HA much later).
 | Northbound | `PR-NB` | NB-1 alarm forwarding · NB-2 inventory export · NB-3 TS 28.532 facade · NB-4 slicing · NB-5 TM Forum · NB-6 ONAP · NB-7 federation |
 | AI/ML | `PR-AI` | AI-1 executor protocol · AI-2 K8s training executor · AI-3 MLflow bridge · AI-4 serving adaptor · AI-5 feature store · AI-6 data sink · AI-7 drift · AI-8 weighted triggers · AI-9 runtime gate · AI-10 action safeguards · AI-11 approvals · AI-12 shadow mode · AI-13 decision audit |
 | rApp ecosystem | `PR-RAPP` | RAPP-1 signing (done) · RAPP-2 sandbox (RAPP-2.2 open) · RAPP-3 conformance pack (done) · RAPP-4 Java and Go SDK · RAPP-5 portal · RAPP-6 metering · RAPP-7 new-rApp recipe |
-| GUI | `PR-GUI` | GUI-1 live updates (done) · GUI-2 alarm console (done) · GUI-3 topology (done) · GUI-4 KPI dashboards (done) · GUI-5 scoped views (done) · GUI-6 a11y/i18n (6.4 left) · GUI-7 approval inbox (done) · GUI-9/10 console redesign (done) |
+| GUI | `PR-GUI` | GUI-1 live updates (done) · GUI-2 alarm console (done) · GUI-3 topology (done) · GUI-4 KPI dashboards (done) · GUI-5 scoped views (done) · GUI-6 a11y/i18n (done) · GUI-7 approval inbox (done) · GUI-9/10 console redesign (done) |
 | Standards / compliance | `PR-STD` | STD-1 close §3 items · STD-2 spec currency · STD-3 O-RAN test plan · STD-4 privacy · STD-5 assurance mapping · STD-6 residency |
 | Quality | `PR-QA` | QA-1 load · QA-2 contract tests · QA-3 failure injection · QA-4 upgrade test · QA-5 soak · QA-6 authz matrix · QA-7 coverage · QA-8 simulator lane |
 
@@ -1211,12 +1211,9 @@ narrowed by it at the module (`HISTORY.md` GUI-5.1, 5.2; `docs/adr/0005-tenant-r
 
 #### PR-GUI-6 — Accessibility and localization
 
-GUI-6.1 and 6.2 are done by the console redesign (same `HISTORY.md` entry), GUI-6.3 by the message catalogs (`HISTORY.md` GUI-6.3: English and
-German, the Preferences page translated). What remains:
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| GUI-6.4 | Extract strings page by page | Per page: no literals (`gui/src/i18n/literals-baseline.json` at 0 for every area; `node scripts/i18n-literals.mjs` lists them). Done so far, in English and German: Preferences, Exports, Sign in, Account security, Decisions, RAN topology, rApp detail, Element detail, Dashboard, Alarms, Approvals, Software, Admin, and the shared shell, kit and components (2125 literals left, on nine pages) | GUI-6.3 |
+Nothing open: GUI-6.1 and 6.2 by the console redesign (same `HISTORY.md` entry), GUI-6.3 by the message catalogs and GUI-6.4 by moving every page's
+words into them (`HISTORY.md` GUI-6.3, GUI-6.4): the whole console is in English and German, and `gui/src/i18n/literals.test.ts` keeps every area at 0
+words written in the code.
 
 #### PR-GUI-7 — Approval inbox
 

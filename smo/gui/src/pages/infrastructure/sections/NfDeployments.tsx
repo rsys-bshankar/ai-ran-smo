@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import type { NfDeployment, NfDescriptor } from "../../../api/types";
 import { Card, Id, StateBadge } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { ScopeNote } from "../../../kit/ScopeNote";
 import { count } from "../../../data/summary";
 import { formatCount, Kpi } from "../../../kit/Kpi";
@@ -16,6 +17,7 @@ const TILES = ["RUNNING", "INSTANTIATING", "UPDATING", "TERMINATING", "ABNORMAL"
 
 /** The deployments box. */
 export function NfDeployments() {
+  const t = useT();
   const [state, setState] = useState("");
   const [selected, setSelected] = useState<NfDeployment | null>(null);
   const summary = useInfraSummary();
@@ -25,19 +27,19 @@ export function NfDeployments() {
         {TILES.map((s) => {
           const n = count(summary.data, `deployments.${s}`);
           return <Kpi key={s} label={s} value={formatCount(n)} active={state === s} tone={s === "ABNORMAL" && n ? "hot" : undefined}
-            onClick={() => setState(state === s ? "" : s)} title={`Show only ${s} deployments`} foot={`of ${formatCount(count(summary.data, "deployments.total"))}`} />;
+            onClick={() => setState(state === s ? "" : s)} title={t("infrastructure.deployments.tile.title", { state: s })} foot={t("infrastructure.deployments.tile.foot", { total: formatCount(count(summary.data, "deployments.total")) })} />;
         })}
       </div>
       <ScopeNote summary={summary.data} keys={["deployments"]} />
-      <Card section="infrastructure.deployments" title="NF deployments" sub="Created by rApp Management / SO SMOS; the GUI heals, scales or terminates them."
-        actions={<select value={state} onChange={(e) => setState(e.target.value)} aria-label="State"><option value="">All states</option>{DEPLOYMENT_STATES.map((s) => <option key={s}>{s}</option>)}</select>}>
-        <ServerTable<NfDeployment> path={PATHS.deployments} query={{ state: state || undefined }} rowKey={(d) => d.nfDeploymentId} empty="No NF deployments."
+      <Card section="infrastructure.deployments" title={t("infrastructure.deployments.title")} sub={t("infrastructure.deployments.sub")}
+        actions={<select value={state} onChange={(e) => setState(e.target.value)} aria-label={t("infrastructure.col.state")}><option value="">{t("infrastructure.deployments.allStates")}</option>{DEPLOYMENT_STATES.map((s) => <option key={s}>{s}</option>)}</select>}>
+        <ServerTable<NfDeployment> path={PATHS.deployments} query={{ state: state || undefined }} rowKey={(d) => d.nfDeploymentId} empty={t("infrastructure.deployments.empty")}
           onRowClick={setSelected} selectedKey={selected?.nfDeploymentId} columns={[
-            { header: "Name", render: (d) => <strong>{d.name}</strong> },
-            { header: "Deployment", render: (d) => <Id value={d.nfDeploymentId} /> },
-            { header: "State", render: (d) => <StateBadge state={d.state} /> },
-            { header: "Cluster", render: (d) => d.clusterId },
-            { header: "Resource type", render: (d) => d.requiredResourceTypeId ?? <span className="muted">—</span> },
+            { header: t("infrastructure.col.name"), render: (d) => <strong>{d.name}</strong> },
+            { header: t("infrastructure.col.deployment"), render: (d) => <Id value={d.nfDeploymentId} /> },
+            { header: t("infrastructure.col.state"), render: (d) => <StateBadge state={d.state} /> },
+            { header: t("infrastructure.col.cluster"), render: (d) => d.clusterId },
+            { header: t("infrastructure.col.resourceType"), render: (d) => d.requiredResourceTypeId ?? <span className="muted">—</span> },
             { header: "", className: "actions", render: (d) => <DeploymentActions d={d} /> },
           ]} />
       </Card>
@@ -48,11 +50,12 @@ export function NfDeployments() {
 
 /** The descriptors box. */
 export function NfDescriptors() {
+  const t = useT();
   return (
-    <Card section="infrastructure.descriptors" title="NF deployment descriptors" sub="Created by Onboarding's validation pipeline from each package's TOSCA definitions">
-      <ServerTable<NfDescriptor> path={PATHS.descriptors} rowKey={(d) => d.nfDeploymentDescriptorId} empty="No descriptors." columns={[
-        { header: "Descriptor", render: (d) => <Id value={d.nfDeploymentDescriptorId} /> }, { header: "Name", render: (d) => <code>{d.name}</code> },
-        { header: "Package", render: (d) => <Id value={d.packageId} /> }, { header: "Resource type", render: (d) => d.requiredResourceTypeId ?? "—" },
+    <Card section="infrastructure.descriptors" title={t("infrastructure.descriptors.title")} sub={t("infrastructure.descriptors.sub")}>
+      <ServerTable<NfDescriptor> path={PATHS.descriptors} rowKey={(d) => d.nfDeploymentDescriptorId} empty={t("infrastructure.descriptors.empty")} columns={[
+        { header: t("infrastructure.col.descriptor"), render: (d) => <Id value={d.nfDeploymentDescriptorId} /> }, { header: t("infrastructure.col.name"), render: (d) => <code>{d.name}</code> },
+        { header: t("infrastructure.col.package"), render: (d) => <Id value={d.packageId} /> }, { header: t("infrastructure.col.resourceType"), render: (d) => d.requiredResourceTypeId ?? "—" },
       ]} />
     </Card>
   );

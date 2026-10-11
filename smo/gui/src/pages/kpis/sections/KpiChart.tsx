@@ -9,6 +9,7 @@ import { useSmo } from "../../../api/hooks";
 import { LineChart } from "../../../components/charts";
 import { Card } from "../../../components/ui";
 import { useScope, type Scope } from "../../../data/scope";
+import { useT } from "../../../i18n";
 import { Empty, ErrorRetry, Skeleton } from "../../../kit/states";
 import { pickable, SCOPES_PATH, type ScopesAnswer } from "../../../shell/ScopePicker";
 import { MAX_CHARTED, useKpiDefinitions, useKpiLayouts, useKpiLayoutWrite, useKpiSeries, type Range } from "../data/queries";
@@ -20,6 +21,7 @@ const LAYOUT_NAME = /^[A-Za-z0-9][A-Za-z0-9 _.-]{0,59}$/;
 
 /** The box: its controls (layout, KPIs, place) and one chart per KPI. `range` is the Overview's, so a loaded layout sets it through `onRange`. */
 export function KpiChart({ range, onRange }: { range: Range; onRange: (r: Range) => void }) {
+  const t = useT();
   const scope = useScope();
   const [kpis, setKpis] = useState<string[]>(DEFAULT_CHARTED);
   const [place, setPlace] = useState<Scope>(scope);
@@ -46,41 +48,41 @@ export function KpiChart({ range, onRange }: { range: Range; onRange: (r: Range)
       { onSuccess: () => { setLayout(name); setSaveAs(""); } });
   };
   return (
-    <Card section="kpis.chart" title="KPIs over time" sub={`${range}, ${place.region ? (place.cluster ? `${place.region} / ${place.cluster}` : place.region) : "all network"}`}
+    <Card section="kpis.chart" title={t("kpis.chart.title")} sub={`${range}, ${place.region ? (place.cluster ? `${place.region} / ${place.cluster}` : place.region) : t("kpis.chart.sub.allNetwork")}`}
       actions={
         <div className="row gap wrap">
-          <select aria-label="Layout" value={layout} onChange={(e) => load(e.target.value)}>
-            <option value="">{layouts.data?.items.length ? "Saved layouts…" : "No saved layout"}</option>
+          <select aria-label={t("kpis.chart.layout")} value={layout} onChange={(e) => load(e.target.value)}>
+            <option value="">{layouts.data?.items.length ? t("kpis.chart.layout.saved") : t("kpis.chart.layout.none")}</option>
             {(layouts.data?.items ?? []).map((l) => <option key={l.name} value={l.name}>{l.name}</option>)}
           </select>
           {layout && <button type="button" className="btn ghost small" disabled={write.isPending}
-            onClick={() => write.mutate({ name: layout, layout: null }, { onSuccess: () => setLayout("") })}>Delete layout</button>}
-          <input aria-label="Layout name" placeholder="Save as…" value={saveAs} maxLength={60} onChange={(e) => setSaveAs(e.target.value)} />
+            onClick={() => write.mutate({ name: layout, layout: null }, { onSuccess: () => setLayout("") })}>{t("kpis.chart.layout.delete")}</button>}
+          <input aria-label={t("kpis.chart.layout.name")} placeholder={t("kpis.chart.layout.saveAs")} value={saveAs} maxLength={60} onChange={(e) => setSaveAs(e.target.value)} />
           <button type="button" className="btn small" disabled={!LAYOUT_NAME.test(saveAs.trim()) || kpis.length === 0 || write.isPending} onClick={save}
-            title="Saves the KPIs, the range and the region under this name, for you">Save layout</button>
+            title={t("kpis.chart.layout.save.title")}>{t("kpis.chart.layout.save")}</button>
         </div>
       }>
       <div className="row gap wrap">
-        <select aria-label="Add KPI" value="" disabled={kpis.length >= MAX_CHARTED || addable.length === 0}
+        <select aria-label={t("kpis.chart.add.aria")} value="" disabled={kpis.length >= MAX_CHARTED || addable.length === 0}
           onChange={(e) => { if (e.target.value) setKpis([...kpis, e.target.value]); }}>
-          <option value="">{kpis.length >= MAX_CHARTED ? `At most ${MAX_CHARTED} KPIs` : "Add KPI…"}</option>
+          <option value="">{kpis.length >= MAX_CHARTED ? t("kpis.chart.add.atMost", { max: MAX_CHARTED }) : t("kpis.chart.add")}</option>
           {addable.map((n) => <option key={n} value={n}>{n}</option>)}
         </select>
-        <select aria-label="Chart region" value={place.region ?? ""} onChange={(e) => setPlace({ region: e.target.value || null, cluster: null })}>
-          <option value="">All network</option>
+        <select aria-label={t("kpis.chart.region")} value={place.region ?? ""} onChange={(e) => setPlace({ region: e.target.value || null, cluster: null })}>
+          <option value="">{t("kpis.chart.region.all")}</option>
           {regions.filter((r) => pickable(r.region)).map((r) => <option key={r.region} value={r.region!}>{r.region}</option>)}
           {place.region && !regions.some((r) => r.region === place.region) && <option value={place.region}>{place.region}</option>}
         </select>
         {place.region && (
-          <select aria-label="Chart site cluster" value={place.cluster ?? ""} onChange={(e) => setPlace({ region: place.region, cluster: e.target.value || null })}>
-            <option value="">All of {place.region}</option>
+          <select aria-label={t("kpis.chart.cluster")} value={place.cluster ?? ""} onChange={(e) => setPlace({ region: place.region, cluster: e.target.value || null })}>
+            <option value="">{t("kpis.chart.cluster.all", { region: place.region })}</option>
             {(regions.find((r) => r.region === place.region)?.siteClusters ?? []).filter((c) => pickable(c.siteCluster))
               .map((c) => <option key={c.siteCluster} value={c.siteCluster!}>{c.siteCluster}</option>)}
             {place.cluster && <option value={place.cluster} hidden>{place.cluster}</option>}
           </select>
         )}
       </div>
-      {kpis.length === 0 ? <Empty title="No KPI charted.">Add one with "Add KPI…".</Empty>
+      {kpis.length === 0 ? <Empty title={t("kpis.chart.empty.title")}>{t("kpis.chart.empty.body")}</Empty>
         : <div className="grid g2">{kpis.map((name) => <KpiSeriesChart key={name} name={name} range={range} place={place}
           onRemove={() => setKpis(kpis.filter((k) => k !== name))} />)}</div>}
     </Card>
@@ -89,6 +91,7 @@ export function KpiChart({ range, onRange }: { range: Range; onRange: (r: Range)
 
 /** One KPI's chart, with a button that takes it off. A KPI that is not defined (404) says so instead of failing the box. */
 function KpiSeriesChart({ name, range, place, onRemove }: { name: string; range: Range; place: Scope; onRemove: () => void }) {
+  const t = useT();
   const q = useKpiSeries(name, range, place);
   const points = (q.data?.points ?? []).filter((p) => p.value !== null).map((p) => ({ t: p.at, v: p.value as number }));
   const gaps = (q.data?.points.length ?? 0) - points.length;
@@ -96,15 +99,15 @@ function KpiSeriesChart({ name, range, place, onRemove }: { name: string; range:
     <div className="inset" data-kpi={name}>
       <div className="row between">
         <strong className="small">{name}</strong>
-        <button type="button" className="btn ghost small" aria-label={`Remove ${name}`} onClick={onRemove}>×</button>
+        <button type="button" className="btn ghost small" aria-label={t("kpis.chart.remove", { name })} onClick={onRemove}>×</button>
       </div>
-      {q.error ? (q.error.status === 404 ? <span className="muted small">not defined (Definitions tab)</span> : <ErrorRetry error={q.error} onRetry={() => void q.refetch()} />)
+      {q.error ? (q.error.status === 404 ? <span className="muted small">{t("kpis.common.notDefined")}</span> : <ErrorRetry error={q.error} onRetry={() => void q.refetch()} />)
         : !q.data ? <Skeleton lines={3} />
-          : points.length === 0 ? <span className="muted small">no data in window</span>
+          : points.length === 0 ? <span className="muted small">{t("kpis.common.noData")}</span>
             : <>
               <LineChart points={points} label={name} unit={q.data.unit ?? undefined} height={140} />
-              <span className="xs muted">{q.data.points.length} steps of {Math.round(q.data.stepSeconds / 60)} min{gaps ? `, ${gaps} without data` : ""}
-                {q.data.truncated ? " · the server capped the computation" : ""}</span>
+              <span className="xs muted">{t("kpis.chart.steps", { count: q.data.points.length, minutes: Math.round(q.data.stepSeconds / 60) })}{gaps ? `, ${t("kpis.chart.gaps", { n: gaps })}` : ""}
+                {q.data.truncated ? ` · ${t("kpis.chart.truncated")}` : ""}</span>
             </>}
     </div>
   );

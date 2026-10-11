@@ -4,6 +4,7 @@
 import { useEffect } from "react";
 
 import { Card } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { SectionBoundary } from "../../../kit/SectionBoundary";
 import { Empty, ErrorRetry, Skeleton } from "../../../kit/states";
 import { progress, type FlowDef } from "../../../lib/flows";
@@ -25,31 +26,32 @@ export function FlowBoard({ flow, subjectId, onSubject, onProgress }: {
   const selectedId = b.selected?.id;
   const p = b.subjects?.length ? progress(b.steps) : null;
   const pKey = p ? `${p.done}/${p.total}/${p.failed}` : "";
+  const t = useT();
   useEffect(() => { onProgress(p); }, [pKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (selectedId && subjectId === selectedId) rememberRecent(flow.id, selectedId); }, [flow.id, selectedId, subjectId]);
   return (
     <div className="stack">
-      <Card section="flows.board" title={<>Flow {flow.number} · {flow.title}</>} sub={<code className="small">docs/call-flows/{flow.doc}</code>}>
+      <Card section="flows.board" title={t("flows.board.title", { number: flow.number, title: t(flow.title) })} sub={<code className="small">{t("flows.board.doc", { doc: flow.doc })}</code>}>
         <div className="stack">
           <ModuleChips modules={flow.modules} />
           {b.subjectsError && !b.subjects ? <ErrorRetry error={b.subjectsError} onRetry={b.retry} />
             : !b.subjects ? <Skeleton lines={2} />
-            : b.subjects.length === 0 ? <Empty title={`No ${flow.subject} to follow yet.`}>{b.empty}</Empty>
-            : <SubjectPicker flowId={flow.id} noun={flow.subject} subjects={b.subjects} selected={b.selected} onChoose={onSubject} />}
+            : b.subjects.length === 0 ? <Empty title={t("flows.board.noSubject", { noun: t(flow.subject) })}>{b.empty}</Empty>
+            : <SubjectPicker flowId={flow.id} noun={t(flow.subject)} subjects={b.subjects} selected={b.selected} onChoose={onSubject} />}
         </div>
       </Card>
       {b.subjects && b.subjects.length > 0 && <>
         <SectionBoundary id="flows.lanes">
-          <Card title="Sequence" sub="who calls whom, in order · dashed = current · red = failed"><SequenceLanes steps={b.steps} /></Card>
+          <Card title={t("flows.board.sequence")} sub={t("flows.board.sequence.sub")}><SequenceLanes steps={b.steps} /></Card>
         </SectionBoundary>
         <SectionBoundary id="flows.steps">
-          <Card title="Steps" sub="proved by live state · lib/flows.ts">
+          <Card title={t("flows.board.steps")} sub={t("flows.board.steps.sub")}>
             <StepTimeline steps={b.steps} actions={b.actions} alwaysActions={b.alwaysActions} />
             {b.extra}
           </Card>
         </SectionBoundary>
       </>}
-      <SectionBoundary id="flows.funnel"><FleetFunnel flowId={flow.id} subject={flow.subject} /></SectionBoundary>
+      <SectionBoundary id="flows.funnel"><FleetFunnel flowId={flow.id} subject={t(flow.subject)} /></SectionBoundary>
     </div>
   );
 }

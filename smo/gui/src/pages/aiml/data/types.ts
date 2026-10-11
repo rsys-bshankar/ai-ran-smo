@@ -1,6 +1,7 @@
 /** View-model types of the AI/ML page that `api/types.ts` does not carry: an AIMgF lifecycle transition (`GET /aimgf/models/{id}/lifecycle-history`),
  * a stage-board column and card, and the MLMR registry resources (feature 8). Shapes follow the backend's own view functions (aimgf/app/main.py
  * `list_lifecycle_history`, mlmr/app/main.py `_repository_view`, mlmr/app/mlr.py `_storage_view`). */
+import type { TKey } from "../../../i18n";
 
 /** One ModelLifecycle or RuntimeLifecycle transition. */
 export interface LifecycleTransition { fsm: "MODEL" | "RUNTIME" | string; fromState: string; toState: string; event: string; occurredAt: string }
@@ -16,8 +17,8 @@ export interface BoardCard {
   breach: boolean;
 }
 
-/** One board column: its cards (all of them; the column shows the first five unless expanded). */
-export interface BoardColumn { id: StageId; title: string; cards: BoardCard[] }
+/** One board column: its title (a catalog key) and its cards (all of them; the column shows the first five unless expanded). */
+export interface BoardColumn { id: StageId; titleKey: TKey; cards: BoardCard[] }
 
 /** An MLMR model repository (TS 28.105 MLModelRepository). */
 export interface ModelRepository { id: string; attributes: { userLabel: string | null }; MLModel: string[]; MLModelCoordinationGroup: string[] }

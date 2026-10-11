@@ -52,13 +52,13 @@ function Header({ approval: a, onJob }: { approval: ApprovalDetail; onJob: (id: 
         </div>
         {pending && <div className="col right"><span className="approvals-clock" aria-label={t("approvals.detail.timeLeft")}>{countdown(a.expiresAt, now, t("approvals.detail.lapsed"))}</span><span className="small muted">{t("approvals.detail.untilLapse")}</span></div>}
       </div>
-      <div className="row gap wrap"><StateBadge state={a.status} /><span className="muted small">{APPROVAL_MEANING[a.status]}</span></div>
+      <div className="row gap wrap"><StateBadge state={a.status} /><span className="muted small">{a.status in APPROVAL_MEANING ? t(APPROVAL_MEANING[a.status]) : undefined}</span></div>
       <KeyValue items={[
         [t("approvals.detail.rapp"), <Id key="i" value={a.invokerId} />],
         [t("approvals.detail.requestedBy"), a.requestedBy],
         [t("approvals.detail.asked"), formatTime(a.createdAt)],
         [pending ? t("approvals.detail.lapses") : t("approvals.detail.decided"), pending
-          ? t(a.onTimeout === "REJECT" ? "approvals.detail.lapses.reject" : "approvals.detail.lapses.expire", { time: formatTime(a.expiresAt), left: timeLeft(a.expiresAt, now) })
+          ? t(a.onTimeout === "REJECT" ? "approvals.detail.lapses.reject" : "approvals.detail.lapses.expire", { time: formatTime(a.expiresAt), left: timeLeft(a.expiresAt, now, t) })
           : t("approvals.detail.decided.value", { time: formatTime(a.decidedAt), who: a.decidedBy ?? "—" })],
         [t("approvals.detail.approvals"), (a.requiredApprovals ?? 1) > 1 ? t("approvals.detail.approvals.value", { given: a.approvals?.length ?? 0, needed: a.requiredApprovals ?? 1 }) : null],
         [t("approvals.detail.reason"), a.decisionReason],

@@ -63,23 +63,24 @@ export function recoveryLeftText(left: number, t: (key: TKey, params?: Params) =
   return t("mfa.recoveryLeft", { count: left });
 }
 
-const LOGIN_MESSAGES: Record<string, string> = {
-  INVALID_CODE: "That code is wrong, or has been used already. Wait for the next one on your device and try again.",
-  CHALLENGE_INVALID: "The sign-in took too long. Enter your password again.",
-  TOO_MANY_ATTEMPTS: "Too many failed attempts — try again in a few minutes.",
-  INVALID_CREDENTIALS: "Invalid username or password.",
-  LOGIN_MODE_OIDC_ONLY: "Local sign-in is closed on this console. Use the single sign-on button.",
-  BREAK_GLASS_NEEDS_TOTP: "This break-glass account has no one-time code set up, so it cannot sign in. Ask another admin.",
-  TOTP_KEY_UNAVAILABLE: "The one-time code cannot be checked on this server. Ask an administrator.",
-  LOCAL_LOGIN_DISABLED: "Local sign-in is turned off. Use the single sign-on button.",
+const LOGIN_MESSAGES: Record<string, TKey> = {
+  INVALID_CODE: "mfa.login.INVALID_CODE",
+  CHALLENGE_INVALID: "mfa.login.CHALLENGE_INVALID",
+  TOO_MANY_ATTEMPTS: "mfa.login.TOO_MANY_ATTEMPTS",
+  INVALID_CREDENTIALS: "mfa.login.INVALID_CREDENTIALS",
+  LOGIN_MODE_OIDC_ONLY: "mfa.login.LOGIN_MODE_OIDC_ONLY",
+  BREAK_GLASS_NEEDS_TOTP: "mfa.login.BREAK_GLASS_NEEDS_TOTP",
+  TOTP_KEY_UNAVAILABLE: "mfa.login.TOTP_KEY_UNAVAILABLE",
+  LOCAL_LOGIN_DISABLED: "mfa.login.LOCAL_LOGIN_DISABLED",
 };
 
-/** The sentence for a failed sign-in step, from the backend's reason code (its `title`); the status stands in for an old backend that sends none. */
-export function loginErrorMessage(err: { status?: number; title?: string; message?: string }): string {
-  if (err.title && Object.prototype.hasOwnProperty.call(LOGIN_MESSAGES, err.title)) return LOGIN_MESSAGES[err.title];
-  if (err.status === 429) return LOGIN_MESSAGES.TOO_MANY_ATTEMPTS;
-  if (err.status === 401) return LOGIN_MESSAGES.INVALID_CREDENTIALS;
-  return err.message || "Sign-in failed.";
+/** The sentence for a failed sign-in step, from the backend's reason code (its `title`), in the language of `t` (English by default); the status
+ * stands in for an old backend that sends none. */
+export function loginErrorMessage(err: { status?: number; title?: string; message?: string }, t: (key: TKey, params?: Params) => string = english): string {
+  if (err.title && Object.prototype.hasOwnProperty.call(LOGIN_MESSAGES, err.title)) return t(LOGIN_MESSAGES[err.title]);
+  if (err.status === 429) return t(LOGIN_MESSAGES.TOO_MANY_ATTEMPTS);
+  if (err.status === 401) return t(LOGIN_MESSAGES.INVALID_CREDENTIALS);
+  return err.message || t("mfa.login.failed");
 }
 
 /** True when the user must enrol a one-time code first (the backend's GUI_ADMIN_MFA_REQUIRED) and is not already on the Account security page, the one route open to them; the router then redirects there. */
@@ -87,8 +88,8 @@ export function mustEnrol(me: Pick<Me, "mfaEnrolmentRequired"> | null | undefine
   return Boolean(me?.mfaEnrolmentRequired) && pathname !== "/security";
 }
 
-/** What the Users table says about a user's one-time code. */
-export function mfaLabel(u: { username: string; totpEnrolled?: boolean }): string {
-  if (u.username.startsWith("oidc:")) return "identity provider";
-  return u.totpEnrolled ? "enrolled" : "not set up";
+/** What the Users table says about a user's one-time code, in the language of `t` (English by default). */
+export function mfaLabel(u: { username: string; totpEnrolled?: boolean }, t: (key: TKey, params?: Params) => string = english): string {
+  if (u.username.startsWith("oidc:")) return t("mfa.label.idp");
+  return t(u.totpEnrolled ? "mfa.label.enrolled" : "mfa.label.notSetUp");
 }

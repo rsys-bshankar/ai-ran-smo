@@ -7,6 +7,7 @@ import { useState } from "react";
 import { useSmo } from "../../../api/hooks";
 import { useAuth } from "../../../auth/AuthContext";
 import { ActionButton, Card, Field } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { splitList } from "../../../lib/domain";
 import { Callout } from "../../../kit/Callout";
 import { MDA_FUNCTIONS, MDA_REQUESTS, REPORTING_METHODS } from "../data/queries";
@@ -23,12 +24,13 @@ export function mdaRequestBody(f: { functionId: string; mdaType: string; scope: 
 
 /** The box. */
 export function MdaRequestForm() {
+  const t = useT();
   const { can } = useAuth();
   const allowed = can("POST", MDA_REQUESTS);
   return (
-    <Card section="kpis.mdaRequest" title="Request an analysis" sub="MDAF · POST /mda-requests · TS 28.104">
+    <Card section="kpis.mdaRequest" title={t("kpis.mdaRequest.title")} sub={t("kpis.mdaRequest.sub")}>
       {allowed ? <Form /> : (
-        <Callout tone="info" title="Read-only here">Requesting an analysis needs the operator role. The functions, requests and reports below are live.</Callout>
+        <Callout tone="info" title={t("kpis.mdaRequest.readOnly.title")}>{t("kpis.mdaRequest.readOnly.body")}</Callout>
       )}
     </Card>
   );
@@ -36,6 +38,7 @@ export function MdaRequestForm() {
 
 /** The form itself (only mounted where the call is allowed, so the function list is read only then). */
 function Form() {
+  const t = useT();
   const functions = useSmo<MdaFunction[]>(MDA_FUNCTIONS, { limit: 100 });
   const [f, setF] = useState({ functionId: "", mdaType: "", scope: "", method: "FILE", target: "" });
   const fn = functions.data?.find((x) => x.id === f.functionId);
@@ -44,23 +47,23 @@ function Form() {
   return (
     <>
       <div className="form grid cols-3 tight">
-        <Field label="MDA function">
+        <Field label={t("kpis.mdaRequest.function")}>
           <select value={f.functionId} onChange={(e) => setF({ ...f, functionId: e.target.value, mdaType: "" })}>
-            <option value="">any function</option>
+            <option value="">{t("kpis.mdaRequest.function.any")}</option>
             {functions.data?.map((x) => <option key={x.id} value={x.id}>{x.attributes.userLabel ?? x.id.slice(0, 8)}{x.attributes.supportedMDADomain ? ` · ${x.attributes.supportedMDADomain}` : ""}</option>)}
           </select>
         </Field>
-        <Field label="Output (MDA type)">
-          {caps.length ? <select value={f.mdaType} onChange={set("mdaType")}><option value="">Choose…</option>{caps.map((c) => <option key={c}>{c}</option>)}</select>
+        <Field label={t("kpis.mdaRequest.output")}>
+          {caps.length ? <select value={f.mdaType} onChange={set("mdaType")}><option value="">{t("kpis.common.choose")}</option>{caps.map((c) => <option key={c}>{c}</option>)}</select>
             : <input value={f.mdaType} onChange={set("mdaType")} placeholder="COVERAGE_ANALYTICS_COVERAGE_PROBLEM_ANALYSIS" />}
         </Field>
-        <Field label="Scope" hint="Managed entities, comma-separated (blank: everything)"><input className="mono" value={f.scope} onChange={set("scope")} placeholder="du-03, du-04" /></Field>
-        <Field label="Delivery"><select value={f.method} onChange={set("method")}>{REPORTING_METHODS.map((m) => <option key={m}>{m}</option>)}</select></Field>
-        <Field label="Reporting target" hint="Where NOTIFICATION or FILE deliveries go (optional)"><input value={f.target} onChange={set("target")} placeholder="http://consumer/mda-reports" /></Field>
+        <Field label={t("kpis.common.scope")} hint={t("kpis.mdaRequest.scope.hint")}><input className="mono" value={f.scope} onChange={set("scope")} placeholder={t("kpis.mdaRequest.scope.placeholder")} /></Field>
+        <Field label={t("kpis.common.delivery")}><select value={f.method} onChange={set("method")}>{REPORTING_METHODS.map((m) => <option key={m}>{m}</option>)}</select></Field>
+        <Field label={t("kpis.mdaRequest.target")} hint={t("kpis.mdaRequest.target.hint")}><input value={f.target} onChange={set("target")} placeholder={t("kpis.mdaRequest.target.placeholder")} /></Field>
       </div>
       <div className="row end">
-        <ActionButton label="Request analysis" tone="primary" disabled={!f.mdaType.trim()}
-          action={{ method: "POST", path: MDA_REQUESTS, json: mdaRequestBody(f), success: "Analysis requested" }} />
+        <ActionButton label={t("kpis.mdaRequest.submit")} tone="primary" disabled={!f.mdaType.trim()}
+          action={{ method: "POST", path: MDA_REQUESTS, json: mdaRequestBody(f), success: t("kpis.mdaRequest.success") }} />
       </div>
     </>
   );

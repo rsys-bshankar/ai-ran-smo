@@ -6,17 +6,21 @@
  * Software campaigns (MGT-15.5 to 15.7) have one set of rules, on the Software page (pages/software/data/form.ts, data/types.ts).
  * Pure functions only, no network and no React, so lifecycle.test.ts covers it without a screen.
  * A limit changed in RAN NF OAM's validation must be changed here as well, or the form accepts what the backend then refuses.
+ * Words come from the catalog (`i18n/en/lib.ts`, `lifecycle.*`, GUI-6.4): the checks take a last `t` (English when omitted).
  */
 
 import type { OnboardingStatus, OnboardingTemplate, TemplateChange } from "../api/types";
+import type { TKey, Translator } from "../i18n";
+import { ENGLISH } from "./domain";
 
-export const ONBOARDING_MEANING: Record<OnboardingStatus, string> = {
-  DISCOVERED: "Registered; not yet matched against the templates",
-  NO_TEMPLATE: "Templates exist but none is enabled for this element's type and vendor",
-  TEMPLATE_SELECTED: "A template is chosen and waits to be applied",
-  APPLYING: "The template is being written to the element",
-  ONBOARDED: "The template was written",
-  FAILED: "The template could not be written; the detail says why",
+/** What each onboarding state means: the catalog key of the sentence (`lifecycle.onboarding.*`, shown with `t`). */
+export const ONBOARDING_MEANING: Record<OnboardingStatus, TKey> = {
+  DISCOVERED: "lifecycle.onboarding.DISCOVERED",
+  NO_TEMPLATE: "lifecycle.onboarding.NO_TEMPLATE",
+  TEMPLATE_SELECTED: "lifecycle.onboarding.TEMPLATE_SELECTED",
+  APPLYING: "lifecycle.onboarding.APPLYING",
+  ONBOARDED: "lifecycle.onboarding.ONBOARDED",
+  FAILED: "lifecycle.onboarding.FAILED",
 };
 
 // ---------------------------------------------------------------- onboarding of an element
@@ -54,38 +58,38 @@ export function templateForm(t: OnboardingTemplate): TemplateForm {
 
 /** The changes of a template from the editor's JSON: a non-empty list of up to 200 changes, each an object with `attributeChanges` (an object), optionally a
  * `managedFunctionRef` and an `operation`; a change names no `managedElementRef` (the element is the new element's own). */
-export function parseChanges(text: string): { ok: true; value: TemplateChange[] } | { ok: false; error: string } {
+export function parseChanges(text: string, t: Translator = ENGLISH): { ok: true; value: TemplateChange[] } | { ok: false; error: string } {
   let parsed: unknown;
-  try { parsed = JSON.parse(text); } catch (e) { return { ok: false, error: `the changes are not JSON: ${(e as Error).message}` }; }
-  if (!Array.isArray(parsed) || parsed.length === 0) return { ok: false, error: "the changes are a JSON list with at least one change" };
-  if (parsed.length > 200) return { ok: false, error: "at most 200 changes" };
+  try { parsed = JSON.parse(text); } catch (e) { return { ok: false, error: t("lifecycle.changes.notJson", { error: (e as Error).message }) }; }
+  if (!Array.isArray(parsed) || parsed.length === 0) return { ok: false, error: t("lifecycle.changes.notList") };
+  if (parsed.length > 200) return { ok: false, error: t("lifecycle.changes.tooMany") };
   const out: TemplateChange[] = [];
   for (const [i, c] of parsed.entries()) {
-    const at = `change ${i + 1}`;
-    if (c === null || typeof c !== "object" || Array.isArray(c)) return { ok: false, error: `${at} must be an object` };
+    const n = i + 1;
+    if (c === null || typeof c !== "object" || Array.isArray(c)) return { ok: false, error: t("lifecycle.change.notObject", { n }) };
     const o = c as Record<string, unknown>;
-    if ("managedElementRef" in o) return { ok: false, error: `${at} names a managedElementRef: a template applies to the new element, so leave it out` };
+    if ("managedElementRef" in o) return { ok: false, error: t("lifecycle.change.elementRef", { n }) };
     const unknown = Object.keys(o).filter((k) => !["managedFunctionRef", "attributeChanges", "operation"].includes(k));
-    if (unknown.length) return { ok: false, error: `${at} has an unknown field: ${unknown[0]}` };
+    if (unknown.length) return { ok: false, error: t("lifecycle.change.unknownField", { n, field: unknown[0] }) };
     const attrs = o.attributeChanges ?? {};
-    if (attrs === null || typeof attrs !== "object" || Array.isArray(attrs)) return { ok: false, error: `${at}: attributeChanges must be an object` };
+    if (attrs === null || typeof attrs !== "object" || Array.isArray(attrs)) return { ok: false, error: t("lifecycle.change.attributes", { n }) };
     const operation = o.operation ?? "merge";
-    if (typeof operation !== "string" || !OPERATIONS.includes(operation)) return { ok: false, error: `${at}: operation is one of ${OPERATIONS.join(", ")}` };
+    if (typeof operation !== "string" || !OPERATIONS.includes(operation)) return { ok: false, error: t("lifecycle.change.operation", { n, list: OPERATIONS.join(", ") }) };
     const fn = o.managedFunctionRef;
-    if (fn !== undefined && fn !== null && (typeof fn !== "string" || fn.length > 500)) return { ok: false, error: `${at}: managedFunctionRef is a text of at most 500 characters` };
+    if (fn !== undefined && fn !== null && (typeof fn !== "string" || fn.length > 500)) return { ok: false, error: t("lifecycle.change.functionRef", { n }) };
     out.push({ ...(typeof fn === "string" && fn ? { managedFunctionRef: fn } : {}), attributeChanges: attrs as Record<string, unknown>, operation });
   }
   return { ok: true, value: out };
 }
 
 /** The body of PUT /ran-nf-oam/onboarding-templates/{name}, or the problem to show. `editing` leaves the name alone (it is the key). */
-export function templatePayload(form: TemplateForm, editing: boolean): { ok: true; name: string; body: Record<string, unknown> } | { ok: false; error: string } {
+export function templatePayload(form: TemplateForm, editing: boolean, t: Translator = ENGLISH): { ok: true; name: string; body: Record<string, unknown> } | { ok: false; error: string } {
   const name = form.name.trim();
-  if (!editing && !TEMPLATE_NAME.test(name)) return { ok: false, error: "A template name is 1 to 100 letters, digits, '.', '_' or '-', starting with a letter or digit" };
-  if (!form.entityType.trim()) return { ok: false, error: "The entity type is needed (for example O-DU)" };
+  if (!editing && !TEMPLATE_NAME.test(name)) return { ok: false, error: t("lifecycle.template.name") };
+  if (!form.entityType.trim()) return { ok: false, error: t("lifecycle.template.entityType") };
   const baseline = form.softwareBaseline.trim();
-  if (form.requireBaseline && !baseline) return { ok: false, error: "Requiring the baseline needs a software baseline" };
-  const changes = parseChanges(form.changes);
+  if (form.requireBaseline && !baseline) return { ok: false, error: t("lifecycle.template.baseline") };
+  const changes = parseChanges(form.changes, t);
   if (!changes.ok) return changes;
   return {
     ok: true, name,

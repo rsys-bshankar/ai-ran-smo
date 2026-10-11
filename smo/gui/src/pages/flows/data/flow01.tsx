@@ -5,12 +5,14 @@ import type { Instance, InstanceSummary, NfDeployment, Package } from "../../../
 import { useSmo } from "../../../api/hooks";
 import { ActionButton } from "../../../components/ui";
 import { flow01 } from "../../../lib/flows";
+import { useT } from "../../../i18n";
 import { go } from "./go";
 import { choose, SUBJECT_LIMIT } from "./subjects";
 import type { FlowBoardData } from "./types";
 
 /** The board of flow 01 for package `subjectId`. */
 export function useFlow01(subjectId: string | null): FlowBoardData {
+  const t = useT();
   const packages = useSmo<Package[]>("/onboarding/packages", { limit: SUBJECT_LIMIT });
   const pkg = choose(packages.data, subjectId, (p) => p.packageId);
   const instances = useSmo<InstanceSummary[]>(pkg ? "/rapp-mgmt/instances" : null, { limit: SUBJECT_LIMIT });
@@ -21,13 +23,13 @@ export function useFlow01(subjectId: string | null): FlowBoardData {
     subjects: packages.data?.map((p) => ({ id: p.packageId, label: `${p.name} ${p.version} (${p.state})` })),
     subjectsError: packages.error, retry: () => void packages.refetch(),
     selected: pkg && { id: pkg.packageId, label: `${pkg.name} ${pkg.version}` },
-    steps: flow01(pkg, instance.data, deployment.data),
-    empty: <>No packages yet. {go("/rapps#packages", "Onboard one")}</>,
+    steps: flow01(pkg, instance.data, deployment.data, t),
+    empty: <>{t("flows.f01.empty")} {go("/rapps#packages", t("flows.f01.onboardOne"))}</>,
     actions: {
-      onboard: go("/rapps#packages", "Onboard a package"),
-      validate: go("/rapps#packages", "Packages"),
-      create: go("/rapps#packages", "Deploy from the package"),
-      bootstrap: summary && <ActionButton label="Mark bootstrapped" tone="primary" action={{ method: "POST", path: `/rapp-mgmt/instances/${summary.instanceId}/bootstrap-complete`, success: "Instance RUNNING" }} />,
+      onboard: go("/rapps#packages", t("flows.f01.onboard")),
+      validate: go("/rapps#packages", t("flows.f01.packages")),
+      create: go("/rapps#packages", t("flows.f01.deploy")),
+      bootstrap: summary && <ActionButton label={t("flows.f01.bootstrapped")} tone="primary" action={{ method: "POST", path: `/rapp-mgmt/instances/${summary.instanceId}/bootstrap-complete`, success: t("flows.instanceRunning") }} />,
     },
   };
 }

@@ -2,6 +2,8 @@
 
 Routes: `/flows` (first flow), `/flows/:flowId`, subject in `?subject=<id>`; an old `/flows#07` link opens flow 07.    Design: handoff `Flows.dc.html`, `Flow02…Flow19.dc.html`
 
+Every word on the page comes from the catalog (`src/i18n/en/flows.ts`, `de/flows.ts`; GUI-6.4), except what `lib/flows.ts` supplies (flow titles, subject nouns, step texts), which stays English; its literal count is 0.
+
 ## Sections
 
 | id | file | what it shows | API | refresh | budget |

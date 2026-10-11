@@ -8,6 +8,7 @@ import { useSmoAction } from "../../../api/hooks";
 import type { ElementOnboarding } from "../../../api/types";
 import { ConfigJobDrawer } from "../../../components/ConfigJobDrawer";
 import { Drawer, Field, Id, KeyValue, Modal, StateBadge } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { formatTime } from "../../../lib/domain";
 import { ONBOARDING_MEANING } from "../../../lib/lifecycle";
 import { onboardingPath, useEndpointChoices, useOnboardingRow, useTemplates } from "../data/queries";
@@ -17,20 +18,21 @@ import { onboardingPath, useEndpointChoices, useOnboardingRow, useTemplates } fr
  * element's /apply route and closes on success. The apply is a config job on the element (MSAC, the schema check and the rollback of a failed write all apply).
  */
 export function ApplyModal({ row, onClose }: { row: ElementOnboarding; onClose: () => void }) {
+  const t = useT();
   const [version, setVersion] = useState(row.softwareVersion ?? "");
   const action = useSmoAction();
   return (
-    <Modal title={`Apply ${row.templateName ?? "the template"} to ${row.managedElementRef}`} onClose={onClose}>
+    <Modal title={t("configuration.apply.title", { template: row.templateName ?? t("configuration.apply.theTemplate"), element: row.managedElementRef })} onClose={onClose}>
       <p className="muted small">
-        This writes the template's changes to the element as a config job (MSAC, the schema check and the rollback of a failed write all apply). It is recorded under your name.
+        {t("configuration.apply.intro")}
       </p>
-      <Field label="Software version the element runs" hint="Optional; checked against the template's baseline"><input className="mono" value={version} maxLength={100} onChange={(e) => setVersion(e.target.value)} autoFocus /></Field>
+      <Field label={t("configuration.dialog.version")} hint={t("configuration.apply.version.hint")}><input className="mono" value={version} maxLength={100} onChange={(e) => setVersion(e.target.value)} autoFocus /></Field>
       <div className="row gap">
         <button type="button" className="btn primary" disabled={action.isPending} onClick={() => action.mutate(
-          { method: "POST", path: onboardingPath(row.managedElementRef, "apply"), json: version.trim() ? { softwareVersion: version.trim() } : {}, success: `Applying to ${row.managedElementRef}` }, { onSuccess: onClose })}>
-          {action.isPending ? "…" : "Apply"}
+          { method: "POST", path: onboardingPath(row.managedElementRef, "apply"), json: version.trim() ? { softwareVersion: version.trim() } : {}, success: t("configuration.apply.success", { element: row.managedElementRef }) }, { onSuccess: onClose })}>
+          {action.isPending ? "…" : t("configuration.onboarding.apply")}
         </button>
-        <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
+        <button type="button" className="btn ghost" onClick={onClose}>{t("components.cancel")}</button>
       </div>
     </Modal>
   );
@@ -41,6 +43,7 @@ export function ApplyModal({ row, onClose }: { row: ElementOnboarding; onClose: 
  * before any template existed) pass `element` null and choose it from the registered O1 endpoints; Select stays disabled until one is chosen. Nothing is written.
  */
 export function SelectModal({ element, onClose }: { element: string | null; onClose: () => void }) {
+  const t = useT();
   const templates = useTemplates();
   const endpoints = useEndpointChoices(element === null);
   const [chosen, setChosen] = useState(element ?? "");
@@ -51,29 +54,29 @@ export function SelectModal({ element, onClose }: { element: string | null; onCl
   if (template) body.template = template;
   if (version.trim()) body.softwareVersion = version.trim();
   return (
-    <Modal title={element ? `Select a template for ${element}` : "Select a template for an element"} onClose={onClose}>
-      <p className="muted small">Matches the element against the templates again. Nothing is written; applying is a separate step.</p>
+    <Modal title={element ? t("configuration.selectDialog.titleFor", { element }) : t("configuration.selectDialog.title")} onClose={onClose}>
+      <p className="muted small">{t("configuration.selectDialog.intro")}</p>
       {element === null && (
-        <Field label="Managed element">
+        <Field label={t("configuration.selectDialog.element")}>
           <select value={chosen} onChange={(e) => setChosen(e.target.value)} autoFocus>
-            <option value="">Choose…</option>
+            <option value="">{t("configuration.choose")}</option>
             {endpoints.data?.map((e) => <option key={e.endpointId} value={e.managedElementRef}>{e.managedElementRef}</option>)}
           </select>
         </Field>
       )}
-      <Field label="Template" hint="Blank: the best match for the element's type and vendor (it must be for the same entity type)">
+      <Field label={t("configuration.onboarding.col.template")} hint={t("configuration.selectDialog.template.hint")}>
         <select value={template} onChange={(e) => setTemplate(e.target.value)}>
-          <option value="">Best match</option>
-          {templates.data?.filter((t) => t.enabled || t.name === template).map((t) => <option key={t.name} value={t.name}>{t.name} ({t.entityType})</option>)}
+          <option value="">{t("configuration.selectDialog.bestMatch")}</option>
+          {templates.data?.filter((x) => x.enabled || x.name === template).map((x) => <option key={x.name} value={x.name}>{x.name} ({x.entityType})</option>)}
         </select>
       </Field>
-      <Field label="Software version the element runs" hint="Optional"><input className="mono" value={version} maxLength={100} onChange={(e) => setVersion(e.target.value)} /></Field>
+      <Field label={t("configuration.dialog.version")} hint={t("configuration.selectDialog.version.hint")}><input className="mono" value={version} maxLength={100} onChange={(e) => setVersion(e.target.value)} /></Field>
       <div className="row gap">
         <button type="button" className="btn primary" disabled={action.isPending || !chosen} onClick={() => action.mutate(
-          { method: "POST", path: onboardingPath(chosen, "select"), json: body, success: `Template selected for ${chosen}` }, { onSuccess: onClose })}>
-          {action.isPending ? "…" : "Select"}
+          { method: "POST", path: onboardingPath(chosen, "select"), json: body, success: t("configuration.selectDialog.success", { element: chosen }) }, { onSuccess: onClose })}>
+          {action.isPending ? "…" : t("configuration.selectDialog.select")}
         </button>
-        <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
+        <button type="button" className="btn ghost" onClick={onClose}>{t("components.cancel")}</button>
       </div>
     </Modal>
   );
@@ -82,16 +85,17 @@ export function SelectModal({ element, onClose }: { element: string | null; onCl
 /** The detail of one element's onboarding: its state with the meaning, template, software check, the full detail, and the config job of the last apply (a click opens
  * it in a second drawer). Re-reads the row every five seconds and shows `row` until that answers. */
 export function OnboardingDrawer({ row, onClose }: { row: ElementOnboarding; onClose: () => void }) {
+  const t = useT();
   const live = useOnboardingRow(row.managedElementRef);
   const data = live.data ?? row;
   const [job, setJob] = useState<string | null>(null);
   return (
-    <Drawer title={<>Onboarding of {data.managedElementRef}</>} onClose={onClose}>
-      <div className="row gap wrap"><StateBadge state={data.status} /><span className="muted small">{ONBOARDING_MEANING[data.status]}</span></div>
+    <Drawer title={<>{t("configuration.drawer.title")} {data.managedElementRef}</>} onClose={onClose}>
+      <div className="row gap wrap"><StateBadge state={data.status} /><span className="muted small">{t(ONBOARDING_MEANING[data.status])}</span></div>
       <KeyValue items={[
-        ["Template", data.templateName], ["Software version", data.softwareVersion], ["Baseline", data.softwareBaseline], ["Baseline check", <StateBadge key="c" state={data.softwareCheck} />],
-        ["Config job", data.configJobId ? <button key="j" type="button" className="btn ghost" onClick={() => setJob(data.configJobId)}><Id value={data.configJobId} /></button> : null],
-        ["Detail", data.detail], ["Registered", formatTime(data.createdAt)], ["Changed", formatTime(data.updatedAt)],
+        [t("configuration.onboarding.col.template"), data.templateName], [t("configuration.drawer.softwareVersion"), data.softwareVersion], [t("configuration.drawer.baseline"), data.softwareBaseline], [t("configuration.drawer.baselineCheck"), <StateBadge key="c" state={data.softwareCheck} />],
+        [t("configuration.onboarding.col.configJob"), data.configJobId ? <button key="j" type="button" className="btn ghost" onClick={() => setJob(data.configJobId)}><Id value={data.configJobId} /></button> : null],
+        [t("configuration.drawer.detail"), data.detail], [t("configuration.drawer.registered"), formatTime(data.createdAt)], [t("configuration.drawer.changed"), formatTime(data.updatedAt)],
       ]} />
       {job && <ConfigJobDrawer id={job} onClose={() => setJob(null)} />}
     </Drawer>

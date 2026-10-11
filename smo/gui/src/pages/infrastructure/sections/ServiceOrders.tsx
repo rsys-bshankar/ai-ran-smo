@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import type { OrderStep, ServiceOrder } from "../../../api/types";
 import { ActionButton, Card, Drawer, Id, Json, KeyValue, StateBadge } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { Pager } from "../../../kit/Pager";
 import { QueryState } from "../../../kit/states";
 import { Steps, type StepState } from "../../../kit/Timeline";
@@ -29,14 +30,15 @@ export function orderState(steps: OrderStep[]): string {
 
 /** The orders box. */
 export function ServiceOrders() {
+  const t = useT();
   const { prefs } = usePreferences();
   const [limit, setLimit] = useState<number>(prefs.rowsPerPage);
   const [offset, setOffset] = useState(0);
   const page = useOrdersPage({ limit, offset });
   const [selected, setSelected] = useState<ServiceOrder | null>(null);
   return (
-    <Card section="infrastructure.orders" title="Service orders" sub="SO SMOS multi-step: sequential, fail-fast — steps after a FAILED one stay PENDING">
-      <QueryState q={{ ...page, data: page.data?.items }} empty="No service orders.">
+    <Card section="infrastructure.orders" title={t("infrastructure.orders.title")} sub={t("infrastructure.orders.sub")}>
+      <QueryState q={{ ...page, data: page.data?.items }} empty={t("infrastructure.orders.empty")}>
         <div className="stack" style={{ gap: 10 }}>
           {page.data?.items.map((o) => {
             const state = orderState(o.steps);
@@ -45,11 +47,11 @@ export function ServiceOrders() {
                 <div className="row between wrap">
                   <div className="row wrap"><Id value={o.orderId} /><strong className="small">{o.scope}</strong></div>
                   <div className="row"><StateBadge state={state} />
-                    {o.steps.some((s) => s.status === "PENDING") && <ActionButton label="Cancel pending" action={{ method: "POST", path: `${PATHS.orders}/${o.orderId}/cancel`, success: "Pending steps cancelled" }} />}
-                    <button type="button" className="btn small" onClick={() => setSelected(o)}>Details</button>
+                    {o.steps.some((s) => s.status === "PENDING") && <ActionButton label={t("infrastructure.orders.cancelPending")} action={{ method: "POST", path: `${PATHS.orders}/${o.orderId}/cancel`, success: t("infrastructure.orders.cancelled") }} />}
+                    <button type="button" className="btn small" onClick={() => setSelected(o)}>{t("infrastructure.orders.details")}</button>
                   </div>
                 </div>
-                <Steps label={`Steps of order ${o.orderId}`} steps={o.steps.map((s, i) => ({ key: String(i), state: stepState(s.status), label: <span title={`${s.targetModule} · ${s.status}${s.error ? ` · ${s.error}` : ""}`}>{s.stepType} <span className="muted">{s.status}</span></span> }))} />
+                <Steps label={t("infrastructure.orders.steps.label", { id: o.orderId })} steps={o.steps.map((s, i) => ({ key: String(i), state: stepState(s.status), label: <span title={`${s.targetModule} · ${s.status}${s.error ? ` · ${s.error}` : ""}`}>{s.stepType} <span className="muted">{s.status}</span></span> }))} />
                 {o.steps.filter((s) => s.error).map((s, i) => <p key={i} className="small text-bad">{s.stepType}: {s.error}</p>)}
               </article>
             );
@@ -57,7 +59,7 @@ export function ServiceOrders() {
         </div>
       </QueryState>
       {page.data && <Pager offset={offset} limit={limit} shown={page.data.items.length} total={page.data.total} hasMore={page.data.hasMore} onOffset={setOffset} onLimit={(l) => { setLimit(l); setOffset(0); }} />}
-      {selected && <Drawer title={<>Order <Id value={selected.orderId} /></>} onClose={() => setSelected(null)}><KeyValue items={[["Scope", selected.scope], ["RMIH", selected.rmihRegistration]]} /><h3>Steps</h3><Json value={selected.steps} /></Drawer>}
+      {selected && <Drawer title={<>{t("infrastructure.orders.order")} <Id value={selected.orderId} /></>} onClose={() => setSelected(null)}><KeyValue items={[[t("infrastructure.col.scope"), selected.scope], ["RMIH", selected.rmihRegistration]]} /><h3>{t("infrastructure.orders.steps")}</h3><Json value={selected.steps} /></Drawer>}
     </Card>
   );
 }

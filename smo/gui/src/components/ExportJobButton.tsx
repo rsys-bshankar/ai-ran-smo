@@ -45,7 +45,7 @@ export function ExportJobButton({ request, what, note }: ExportJobButtonProps) {
               <p className="small muted">{t("components.export.what")}</p>
               <KeyValue items={rows} />
               {note && <p className="small muted" role="note">{note}</p>}
-              {create.error && <div className="error-box" role="alert">{exportErrorText(create.error)}</div>}
+              {create.error && <div className="error-box" role="alert">{exportErrorText(create.error, t)}</div>}
               <div className="row gap end">
                 <button type="button" className="btn" onClick={close}>{t("components.cancel")}</button>
                 <button type="button" className="btn primary" disabled={create.isPending} onClick={start}>{t("components.export.start")}</button>

@@ -53,11 +53,11 @@ export function UsersTable() {
         { header: t("admin.users.col.signIn"), render: (u) => isSsoUser(u) ? <Badge tone="info">SSO</Badge> : <Badge tone="mute">{t("admin.users.local")}</Badge> },
         { header: t("admin.users.col.status"), render: (u) => <StateBadge state={u.active ? "ACTIVE" : "DISABLED"} /> },
         { header: t("admin.users.col.scope"), render: (u) => (
-          <button type="button" className="btn ghost small" aria-label={t("admin.users.scope.aria", { scope: describeUserScope(u.scope), user: u.username })} title={t("admin.users.scope.title")} onClick={() => setScoping(u)}>
-            {u.scope === "INVALID" ? <span className="t-bad">{describeUserScope(u.scope)}</span> : describeUserScope(u.scope)}
+          <button type="button" className="btn ghost small" aria-label={t("admin.users.scope.aria", { scope: describeUserScope(u.scope, t), user: u.username })} title={t("admin.users.scope.title")} onClick={() => setScoping(u)}>
+            {u.scope === "INVALID" ? <span className="t-bad">{describeUserScope(u.scope, t)}</span> : describeUserScope(u.scope, t)}
           </button>
         ) },
-        { header: t("admin.users.col.mfa"), render: (u) => <Badge tone={isSsoUser(u) ? "mute" : u.totpEnrolled ? "ok" : "warn"}>{mfaLabel(u)}</Badge> },
+        { header: t("admin.users.col.mfa"), render: (u) => <Badge tone={isSsoUser(u) ? "mute" : u.totpEnrolled ? "ok" : "warn"}>{mfaLabel(u, t)}</Badge> },
         { header: t("admin.users.col.breakGlass"), render: (u) => (
           <input type="checkbox" checked={Boolean(u.breakGlass)} disabled={isSsoUser(u)} aria-label={t("admin.users.breakGlass.aria", { user: u.username })}
                  onChange={(e) => patch(u.username, { breakGlass: e.target.checked }, t(e.target.checked ? "admin.users.breakGlass.on" : "admin.users.breakGlass.off", { user: u.username }))} />

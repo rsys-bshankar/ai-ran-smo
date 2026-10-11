@@ -23,7 +23,7 @@ export function Safeguards({ id }: { id: string }) {
           <div className="stack">
             <KeyValue items={[
               [t("rappDetail.safeguards.status"), d.killed ? <span key="k"><StateBadge state="DISABLED" /> {t("rappDetail.safeguards.stoppedBy", { who: d.kill?.killedBy ?? "", reason: d.kill?.reason ?? t("rappDetail.safeguards.noReason"), time: formatTime(d.kill?.killedAt) })}</span> : <StateBadge key="k" state="ACTIVE" />],
-              [t("rappDetail.safeguards.limits"), describeLimits(l)],
+              [t("rappDetail.safeguards.limits"), describeLimits(l, t)],
             ]} />
             {l?.maxConfigJobsPerHour != null && (
               <div><div className="row between small"><span>{t("rappDetail.safeguards.configJobs")}</span><span className="num">{l.configJobsLastHour} / {l.maxConfigJobsPerHour}</span></div>

@@ -3,22 +3,24 @@
  * actions everywhere. Each button is role-gated (`ActionButton`, `Can`). */
 import type { InstanceSummary } from "../../../api/types";
 import { ActionButton, Can } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { instanceBase } from "../data/queries";
 
 /** The buttons legal from the instance's state; `withUpgrade` opens the upgrade dialog (left out where no dialog is mounted). */
 export function InstanceActions({ inst, withUpgrade }: { inst: Pick<InstanceSummary, "instanceId" | "state">; withUpgrade?: () => void }) {
+  const t = useT();
   const base = instanceBase(inst.instanceId);
   return (
     <div className="row gap end">
-      {inst.state === "DEPLOYING" && <ActionButton label="Mark bootstrapped" title="Simulates the rApp container finishing R1 bootstrap + SME/DME registration (DEMO_RUNBOOK step)" action={{ method: "POST", path: `${base}/bootstrap-complete`, success: "Instance RUNNING" }} />}
-      {inst.state === "RUNNING" && withUpgrade && <Can method="POST" path={`${base}/upgrade`}><button type="button" className="btn" onClick={(e) => { e.stopPropagation(); withUpgrade(); }}>Upgrade…</button></Can>}
+      {inst.state === "DEPLOYING" && <ActionButton label={t("rapps.actions.bootstrap")} title={t("rapps.actions.bootstrap.title")} action={{ method: "POST", path: `${base}/bootstrap-complete`, success: t("rapps.actions.bootstrap.done") }} />}
+      {inst.state === "RUNNING" && withUpgrade && <Can method="POST" path={`${base}/upgrade`}><button type="button" className="btn" onClick={(e) => { e.stopPropagation(); withUpgrade(); }}>{t("rapps.actions.upgrade")}</button></Can>}
       {inst.state === "UPGRADING" && <>
-        <ActionButton label="Upgrade succeeded" action={{ method: "POST", path: `${base}/upgrade/resolve`, query: { succeeded: true }, success: "Upgrade committed" }} />
-        <ActionButton label="Upgrade failed" action={{ method: "POST", path: `${base}/upgrade/resolve`, query: { succeeded: false }, success: "Upgrade rolled back" }} />
+        <ActionButton label={t("rapps.actions.upgradeSucceeded")} action={{ method: "POST", path: `${base}/upgrade/resolve`, query: { succeeded: true }, success: t("rapps.actions.upgradeSucceeded.done") }} />
+        <ActionButton label={t("rapps.actions.upgradeFailed")} action={{ method: "POST", path: `${base}/upgrade/resolve`, query: { succeeded: false }, success: t("rapps.actions.upgradeFailed.done") }} />
       </>}
-      {inst.state === "FAULTED" && <ActionButton label="Recover" action={{ method: "POST", path: `${base}/recover`, success: "Recovering — instance re-enters DEPLOYING" }} />}
-      {["RUNNING", "FAULTED", "DEPLOYING"].includes(inst.state) && <ActionButton label="Terminate" tone="danger" confirm="Terminate this rApp instance? Its NFO workload is torn down, its usage registration stopped and its credentials revoked." action={{ method: "POST", path: `${base}/terminate`, success: "Instance UNDEPLOYED" }} />}
-      {inst.state === "UNDEPLOYED" && <ActionButton label="Delete" tone="danger" confirm="Delete this instance record permanently?" action={{ method: "DELETE", path: base, success: "Instance deleted" }} />}
+      {inst.state === "FAULTED" && <ActionButton label={t("rapps.actions.recover")} action={{ method: "POST", path: `${base}/recover`, success: t("rapps.actions.recover.done") }} />}
+      {["RUNNING", "FAULTED", "DEPLOYING"].includes(inst.state) && <ActionButton label={t("rapps.actions.terminate")} tone="danger" confirm={t("rapps.actions.terminate.confirm")} action={{ method: "POST", path: `${base}/terminate`, success: t("rapps.actions.terminate.done") }} />}
+      {inst.state === "UNDEPLOYED" && <ActionButton label={t("rapps.actions.delete")} tone="danger" confirm={t("rapps.actions.delete.confirm")} action={{ method: "DELETE", path: base, success: t("rapps.actions.delete.done") }} />}
     </div>
   );
 }

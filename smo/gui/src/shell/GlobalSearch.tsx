@@ -109,7 +109,7 @@ export function GlobalSearch() {
   const [cursor, setCursor] = useState(0);
   const pages = useMemo<Jump[]>(() => [
     ...NAV.filter((n) => !n.minRole || (me && roleAtLeast(me.role, n.minRole))).map((n) => ({ label: t(navKey(n.to)), hint: t("shell.search.page"), to: n.to })),
-    ...FLOWS.map((f) => ({ label: t("shell.search.flow", { id: f.id, title: f.title }), hint: t("shell.search.lifecycleFlow"), to: `/flows/${f.id}` })),
+    ...FLOWS.map((f) => ({ label: t("shell.search.flow", { id: f.id, title: t(f.title) }), hint: t("shell.search.lifecycleFlow"), to: `/flows/${f.id}` })),
   ], [me, t]);
   const debounced = useDebounced(text, SEARCH_DEBOUNCE_MS);
   const server = useServerSearch(debounced);

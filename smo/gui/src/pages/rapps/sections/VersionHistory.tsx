@@ -4,6 +4,7 @@
 import { useState } from "react";
 
 import { ActionButton, DataTable, StateBadge } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { formatTime } from "../../../lib/domain";
 import { instanceBase, useVersions } from "../data/queries";
 
@@ -11,7 +12,8 @@ import { instanceBase, useVersions } from "../data/queries";
 const STEP = 10;
 
 /** The history table and the Roll back button (RUNNING instances with a rollback target only). */
-export function VersionHistory({ id, state, title = "Version history" }: { id: string; state: string; title?: string }) {
+export function VersionHistory({ id, state, title }: { id: string; state: string; title?: string }) {
+  const t = useT();
   const base = instanceBase(id);
   const history = useVersions(id);
   const [shown, setShown] = useState(STEP);
@@ -20,23 +22,23 @@ export function VersionHistory({ id, state, title = "Version history" }: { id: s
   return (
     <>
       <div className="row between">
-        <h3>{title}</h3>
-        {state === "RUNNING" && target && <ActionButton label="Roll back" tone="danger"
-          confirm={`Roll back to package ${target.previousPackageId.slice(0, 8)} and the configuration it ran?`}
-          action={{ method: "POST", path: `${base}/rollback`, success: "Rollback started — resolve it once the replacement bootstraps" }} />}
+        <h3>{title ?? t("rapps.versions.title")}</h3>
+        {state === "RUNNING" && target && <ActionButton label={t("rapps.versions.rollback")} tone="danger"
+          confirm={t("rapps.versions.rollback.confirm", { package: target.previousPackageId.slice(0, 8) })}
+          action={{ method: "POST", path: `${base}/rollback`, success: t("rapps.versions.rollback.done") }} />}
       </div>
       <DataTable rows={versions?.slice(0, shown)} loading={history.isLoading} error={history.error} rowKey={(v) => v.versionId}
-        empty="No upgrades committed — nothing to roll back to." columns={[
-          { header: "Kind", render: (v) => <StateBadge state={v.kind} /> },
-          { header: "From package", render: (v) => <code>{v.previousPackageId.slice(0, 8)}</code> },
-          { header: "To package", render: (v) => <code>{v.packageId.slice(0, 8)}</code> },
-          { header: "Rolled back", render: (v) => (v.kind === "UPGRADE" ? (v.rolledBackByVersionId ? "yes" : "no") : "—") },
-          { header: "Committed", render: (v) => formatTime(v.committedAt) },
+        empty={t("rapps.versions.empty")} columns={[
+          { header: t("rapps.versions.col.kind"), render: (v) => <StateBadge state={v.kind} /> },
+          { header: t("rapps.versions.col.from"), render: (v) => <code>{v.previousPackageId.slice(0, 8)}</code> },
+          { header: t("rapps.versions.col.to"), render: (v) => <code>{v.packageId.slice(0, 8)}</code> },
+          { header: t("rapps.versions.col.rolledBack"), render: (v) => (v.kind === "UPGRADE" ? (v.rolledBackByVersionId ? t("rapps.versions.yes") : t("rapps.versions.no")) : "—") },
+          { header: t("rapps.versions.col.committed"), render: (v) => formatTime(v.committedAt) },
         ]} />
       {versions && versions.length > shown && (
         <div className="row between pager">
-          <span className="muted small">{shown} of {versions.length} shown</span>
-          <button type="button" className="btn small" onClick={() => setShown(shown + STEP)}>Show more</button>
+          <span className="muted small">{t("rapps.versions.shown", { shown, total: versions.length })}</span>
+          <button type="button" className="btn small" onClick={() => setShown(shown + STEP)}>{t("rapps.versions.more")}</button>
         </div>
       )}
     </>

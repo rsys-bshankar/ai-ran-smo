@@ -46,7 +46,7 @@ export function DecisionBox({ approval: a }: { approval: ApprovalDetail }) {
     }
     return (
       <div data-section="approvals.decide">
-        <Callout tone={status === "APPROVED" ? "volt" : "warn"} title={`${status}: ${APPROVAL_MEANING[status] ?? ""}`}>
+        <Callout tone={status === "APPROVED" ? "volt" : "warn"} title={`${status}: ${status in APPROVAL_MEANING ? t(APPROVAL_MEANING[status]) : ""}`}>
           {outcome.body.jobId ? <>{t("approvals.decide.configJob")} <Id value={outcome.body.jobId} />{outcome.body.jobStatus && <> · {outcome.body.jobStatus}</>}</> : t("approvals.decide.noJob")}
         </Callout>
       </div>

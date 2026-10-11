@@ -1,5 +1,6 @@
 /** English (the source language) — the messages every page shares: the sidebar's page names, which the Preferences page's start-page list also
- * shows, and the sentences of the shared helpers in `lib/` (`domain.`: lib/domain.ts, `mfa.`: lib/mfa.ts, GUI-6.4). A key is `<area>.<name>`; a
+ * shows, and the sentences of the shared helpers in `lib/` (`domain.`: lib/domain.ts, with `scopeLabel` of data/scope.ts and
+ * `describeAlarms` of pages/topology/data/containment.ts; `mfa.`: lib/mfa.ts, GUI-6.4). A key is `<area>.<name>`; a
  * page's own messages are in `<page>.ts` beside this file (GUI-6.3, README.md). */
 
 /** The shared messages, by key. */
@@ -33,6 +34,35 @@ export const common = {
   "domain.integrity.VERIFIED": "The record still matches the hash written to the audit chain",
   "domain.integrity.UNCHAINED": "Not yet written to the audit chain (a moment after the job; the worker retries)",
   "domain.integrity.MISMATCH": "The record, or its audit row, was changed after it was written",
+  "domain.scope.all": "All network",
+  "domain.scope.regions": "regions {list}",
+  "domain.scope.tenants": "tenants {list}",
+  "domain.scope.none": "Unscoped (every managed element)",
+  "domain.userScope.invalid": "Invalid claim: sees nothing",
+  "domain.userScope.whole": "Whole network",
+  "domain.limits.none": "No limits",
+  "domain.limits.perHour": "{n}/h",
+  "domain.limits.perHourUsed": "{n}/h ({used} used)",
+  "domain.limits.elements": "≤{n} elements",
+  "domain.limits.percent": "≤{n}%",
+  "domain.wave.one": "One wave",
+  "domain.wave.progress": "Wave {current} of {total}",
+  "domain.halt.WAVE_PAUSE": "Waiting between waves",
+  "domain.halt.GATE_FAILED": "The health gate failed after a wave",
+  "domain.halt.OPERATOR_HALT": "Halted by an operator",
+  "domain.halt.REVERT_REFUSED": "The automatic revert could not be done safely",
+  "domain.guard.none": "Not checked yet",
+  "domain.guard.ok": "The KPI held",
+  "domain.guard.reverted": "The KPI regressed; the regressed elements were rolled back",
+  "domain.guard.notReverted": "The KPI regressed; not reverted",
+  "domain.guard.notReverted.error": "The KPI regressed; not reverted: {error}",
+  "domain.guard.insufficient": "Too little data to say",
+  "domain.guard.insufficient.retry": "Too little data to say (will be tried again)",
+  "domain.guard.failed": "The check failed",
+  "domain.guard.failed.retry": "The check failed (will be tried again)",
+  "domain.guard.failed.error": "The check failed: {error}",
+  "domain.guard.failed.error.retry": "The check failed: {error} (will be tried again)",
+  "domain.alarms.count": "{n} {severity}",
 
   "mfa.recoveryLeft_one": "{count} recovery code left.",
   "mfa.recoveryLeft_other": "{count} recovery codes left.",

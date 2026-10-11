@@ -1,13 +1,17 @@
 // @vitest-environment jsdom
 /** Tests of the message catalogs and the translator (GUI-6.3): lookup, fallback to English, placeholders, plural forms, the provider and
- * `<html lang>`, and that every translation matches the English catalog (no unknown key, the same placeholders, a plural with its `_other`).
+ * `<html lang>`, that every translation matches the English catalog (no unknown key, the same placeholders, a plural with its `_other`), and that
+ * the shared helpers of `lib/` answer in the translator they are given (GUI-6.4).
  * Run: `npx vitest run src/i18n`. */
 import { afterEach, describe, expect, it } from "vitest";
 
 import { cleanup, mount } from "../testing/dom";
 import { de } from "./de";
 import { en } from "./en";
-import { format, I18nProvider, LANGUAGE_NAMES, LANGUAGES, navKey, translate, useT, type TKey } from ".";
+import { describeApprovalPolicy, kpiNameProblem, limitsPayload, modelActions, REFUSAL_MEANING } from "../lib/domain";
+import { FLOWS, flow09 } from "../lib/flows";
+import { ONBOARDING_MEANING } from "../lib/lifecycle";
+import { format, I18nProvider, LANGUAGE_NAMES, LANGUAGES, navKey, translate, useT, type Params, type TKey, type Translator } from ".";
 
 afterEach(cleanup);
 
@@ -90,5 +94,24 @@ describe("I18nProvider", () => {
     expect(document.documentElement.lang).toBe("de");
     const plain = await mount(<Title />);
     expect(plain.container.textContent).toBe("Preferences (en)");
+  });
+});
+
+describe("the shared helpers (lib/, GUI-6.4)", () => {
+  const german: Translator = Object.assign((key: TKey, params?: Params) => translate("de", key, params), { language: "de" as const });
+
+  // A helper given the German translator answers in German, and its key maps resolve to German; without a translator it keeps its English.
+  it("answer in the translator's language and in English by default", () => {
+    const policy = { timeoutSeconds: 3600, onTimeout: "REJECT" as const, requiredApprovals: 2 };
+    expect(describeApprovalPolicy(policy, german)).toBe("Zur Freigabe zurückgehalten · zwei verschiedene Personen müssen freigeben · verfällt nach 1 h (abgelehnt)");
+    expect(describeApprovalPolicy(policy)).toBe("Held for approval · two different people must approve · lapses after 1 h (rejected)");
+    expect(kpiNameProblem("standard", german)).toBe("'standard' benennt den vorbelegten Satz, keinen KPI");
+    expect(limitsPayload({ jobsPerHour: "0", elementsPerJob: "", changePercent: "" }, german))
+      .toEqual({ ok: false, error: "Konfigurationsjobs pro Stunde muss zwischen 1 und 100000 liegen" });
+    expect(modelActions("REGISTERED", undefined, german)[0].label).toBe("Training anfordern");
+    expect(german(REFUSAL_MEANING.RAPP_KILLED)).toBe("Die rApp wurde von einem Operator gestoppt");
+    expect(german(ONBOARDING_MEANING.ONBOARDED)).toBe("Die Vorlage wurde geschrieben");
+    expect(german(FLOWS[0].subject)).toBe("Paket");
+    expect(flow09([], undefined, [], german)[0].title).toBe("RegisterIntentHandlingFunction (nur frameworkintern)");
   });
 });
