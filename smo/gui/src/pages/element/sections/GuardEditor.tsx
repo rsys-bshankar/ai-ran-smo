@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import { useSmoAction } from "../../../api/hooks";
 import { ActionButton, Can, Card, Field } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { Callout } from "../../../kit/Callout";
 import { Segmented } from "../../../kit/Segmented";
 import { guardPath, useEditedCell, useEntity } from "../data/queries";
@@ -19,6 +20,7 @@ export function guardBody(f: { cellClass: CellClass; sectorGroup: string; incide
 /** The editor of element `me`, or nothing when no cell is open. */
 export function GuardEditor({ me }: { me: string }) {
   const [cell, close] = useEditedCell();
+  const t = useT();
   const entity = useEntity(me);
   const isNew = cell === "+";
   const current = cell && !isNew ? entity.data?.cellGuards[cell] : undefined;
@@ -41,26 +43,26 @@ export function GuardEditor({ me }: { me: string }) {
   const target = cellId.trim();
   return (
     <Can method="PUT" path={guardPath(me, target || "cell")}>
-      <Card section="element.guard-editor" title={isNew ? "New cell guard" : `Edit guard · ${cell}`} actions={<button type="button" className="btn small ghost" onClick={() => close(null)}>Close</button>}>
+      <Card section="element.guard-editor" title={isNew ? t("element.editor.titleNew") : t("element.editor.titleEdit", { cell })} actions={<button type="button" className="btn small ghost" onClick={() => close(null)}>{t("element.editor.close")}</button>}>
         <form className="form" onSubmit={(e) => {
           e.preventDefault();
           if (!target) return;
-          save.mutate({ method: "PUT", path: guardPath(me, target), json: guardBody({ cellClass, sectorGroup, incidentZone, neighbours }), success: `Guard of ${target} saved` },
+          save.mutate({ method: "PUT", path: guardPath(me, target), json: guardBody({ cellClass, sectorGroup, incidentZone, neighbours }), success: t("element.editor.saved.toast", { cell: target }) },
             { onSuccess: () => setSaved(true) });
         }}>
-          {isNew && <Field label="Cell id"><input className="mono" value={cellId} onChange={(e) => setCellId(e.target.value)} required /></Field>}
-          <Field label="Cell class"><Segmented label="Cell class" value={cellClass} onChange={setCellClass} options={CELL_CLASSES.map((c) => ({ id: c, label: c }))} /></Field>
-          <Field label="Sector group" hint="Cells of one group are never slept at once"><input className="mono" value={sectorGroup} onChange={(e) => setSectorGroup(e.target.value)} /></Field>
-          <Field label="Incident zone"><input className="mono" value={incidentZone} onChange={(e) => setIncidentZone(e.target.value)} /></Field>
-          <Field label="Neighbour cells" hint="One cell id per line; they make the relations on the RAN topology page">
+          {isNew && <Field label={t("element.editor.cellId")}><input className="mono" value={cellId} onChange={(e) => setCellId(e.target.value)} required /></Field>}
+          <Field label={t("element.editor.cellClass")}><Segmented label={t("element.editor.cellClass")} value={cellClass} onChange={setCellClass} options={CELL_CLASSES.map((c) => ({ id: c, label: c }))} /></Field>
+          <Field label={t("element.editor.sectorGroup")} hint={t("element.editor.sectorGroup.hint")}><input className="mono" value={sectorGroup} onChange={(e) => setSectorGroup(e.target.value)} /></Field>
+          <Field label={t("element.editor.incidentZone")}><input className="mono" value={incidentZone} onChange={(e) => setIncidentZone(e.target.value)} /></Field>
+          <Field label={t("element.editor.neighbours")} hint={t("element.editor.neighbours.hint")}>
             <textarea rows={4} className="mono" value={neighbours} onChange={(e) => setNeighbours(e.target.value)} spellCheck={false} />
           </Field>
           <div className="row wrap">
-            <button type="submit" className="btn primary" disabled={!target || save.isPending}>{save.isPending ? "…" : "Save guard"}</button>
-            {!isNew && current && <ActionButton label="Remove guard" tone="danger" confirm={`Remove the guard of ${cell}? rApps then treat it as NORMAL.`}
-              action={{ method: "DELETE", path: guardPath(me, cell), success: `Guard of ${cell} removed` }} onDone={() => close(null)} />}
+            <button type="submit" className="btn primary" disabled={!target || save.isPending}>{save.isPending ? "…" : t("element.editor.save")}</button>
+            {!isNew && current && <ActionButton label={t("element.editor.remove")} tone="danger" confirm={t("element.editor.remove.confirm", { cell })}
+              action={{ method: "DELETE", path: guardPath(me, cell), success: t("element.editor.removed", { cell }) }} onDone={() => close(null)} />}
           </div>
-          {saved && <Callout tone="volt">Saved · rApps read the new guard on their next query.</Callout>}
+          {saved && <Callout tone="volt">{t("element.editor.saved")}</Callout>}
         </form>
       </Card>
     </Can>

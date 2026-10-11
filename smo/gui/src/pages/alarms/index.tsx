@@ -8,6 +8,7 @@ import { useSearchParams } from "react-router-dom";
 import type { Alarm } from "../../api/types";
 import { Can, PageHeader, Tabs, useHashTab } from "../../components/ui";
 import { count, openAlarms } from "../../data/summary";
+import { useT } from "../../i18n";
 import { SectionBoundary } from "../../kit/SectionBoundary";
 import { RAN_ALARMS, useAlarmSummary } from "./data/queries";
 import { AlarmDetail } from "./sections/AlarmDetail";
@@ -23,6 +24,7 @@ const TABS = ["ran", "ocloud", "fm"] as const;
 
 /** The page. */
 export function Alarms() {
+  const t = useT();
   const [params] = useSearchParams();
   const [tab, setTab] = useHashTab(TABS, "ran");
   const [severity, setSeverity] = useState("");
@@ -31,12 +33,12 @@ export function Alarms() {
   const onSeverity = (s: string) => { setSeverity(s); if (tab !== "ran") setTab("ran"); };
   return (
     <>
-      <PageHeader eyebrow="O1 FaultMnS · FOCOM" title="Alarms" subtitle="Acknowledge / clear are recorded against your GUI user. The list refreshes as alarm counts change (every 5 s while the top bar says polling)." />
+      <PageHeader eyebrow={t("alarms.eyebrow")} title={t("alarms.title")} subtitle={t("alarms.subtitle")} />
       <SectionBoundary id="alarms.tiles"><SeverityTiles severity={severity} onSeverity={onSeverity} /></SectionBoundary>
       <Tabs value={tab} onChange={setTab} tabs={[
-        { id: "ran", label: "RAN NF alarms (O1)", count: openAlarms(summary.data), tone: (count(summary.data, "alarms.critical") ?? 0) > 0 ? "bad" : undefined },
-        { id: "ocloud", label: "O-Cloud alarms (FOCOM)", count: count(summary.data, "ocloudAlarms.total") },
-        { id: "fm", label: "FM subscriptions" },
+        { id: "ran", label: t("alarms.tabs.ran"), count: openAlarms(summary.data), tone: (count(summary.data, "alarms.critical") ?? 0) > 0 ? "bad" : undefined },
+        { id: "ocloud", label: t("alarms.tabs.ocloud"), count: count(summary.data, "ocloudAlarms.total") },
+        { id: "fm", label: t("alarms.tabs.fm") },
       ]} />
       {tab === "ran" && <>
         <div className="grid g-main-side">

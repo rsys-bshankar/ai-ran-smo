@@ -3,20 +3,22 @@
 import type { RappPage } from "../../../api/rapps";
 import { DeclaredPage } from "../../../components/OperatorUi";
 import { Card } from "../../../components/ui";
+import { useT } from "../../../i18n";
 
 /** The declared page of `data`. */
 export function DeclaredPages({ data }: { data: RappPage }) {
+  const t = useT();
   return (
     <div className="stack" data-section="rapp.declared">
-      <h2 className="section-title">Operator page</h2>
+      <h2 className="section-title">{t("rappDetail.declared.title")}</h2>
       {data.declarationState === "declared" && data.declaration && (
         <DeclaredPage instanceId={data.instanceId} declaration={data.declaration} canChange={data.canChange} operatorApiRegistered={data.operatorApiRegistered} />
       )}
       {data.declarationState === "unreadable" && (
-        <Card><p className="muted">The page declared in this rApp's package could not be read by this console, so only the overview is shown.</p></Card>
+        <Card><p className="muted">{t("rappDetail.declared.unreadable")}</p></Card>
       )}
       {data.declarationState === "none" && (
-        <Card><p className="muted">This rApp's package declares no operator page. The platform overview above is all there is for it.</p></Card>
+        <Card><p className="muted">{t("rappDetail.declared.none")}</p></Card>
       )}
     </div>
   );

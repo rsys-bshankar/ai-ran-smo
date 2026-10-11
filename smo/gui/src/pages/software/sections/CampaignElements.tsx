@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { Card, DataTable, Id, StateBadge } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { Badge } from "../../../kit/Badge";
 import { Pager } from "../../../kit/Pager";
 import { Empty } from "../../../kit/states";
@@ -19,6 +20,7 @@ interface Row { me: string; job: WaveJob | null }
 
 /** The card for the selected wave of the selected campaign. */
 export function CampaignElements() {
+  const t = useT();
   const [id] = useSelectedCampaign();
   const [wave] = useSelectedWave();
   const report = useCampaignReport(id);
@@ -29,17 +31,17 @@ export function CampaignElements() {
   const jobs = new Map((w?.jobs ?? []).map((j) => [j.managedElementRef, j]));
   const rows: Row[] = (w?.elements ?? []).map((me) => ({ me, job: jobs.get(me) ?? null }));
   return (
-    <Card section="software.elements" title={w ? `Elements of wave ${w.wave}` : "Elements"} sub="one software job each (flow 19)">
-      {!report.data && !report.error && <p className="muted small">Loading…</p>}
-      {report.data && !w && <Empty title="This campaign has no waves." />}
+    <Card section="software.elements" title={w ? t("software.elements.title.wave", { wave: w.wave }) : t("software.elements.title")} sub={t("software.elements.sub")}>
+      {!report.data && !report.error && <p className="muted small">{t("software.elements.loading")}</p>}
+      {report.data && !w && <Empty title={t("software.elements.noWaves")} />}
       {w && (
         <>
-          <DataTable<Row> rows={rows.slice(offset, offset + PAGE)} rowKey={(r) => r.me} empty="No element in this wave." columns={[
-            { header: "Element", render: (r) => <Link to={elementHref(r.me)}>{r.me}</Link> },
-            { header: "Job", render: (r) => (r.job ? <Link to={flow19Href(r.job.jobId)} title="Open its flow-19 board"><Id value={r.job.jobId} /></Link> : <span className="muted">not started</span>) },
-            { header: "Phase", render: (r) => r.job?.phase ?? "—" },
-            { header: "Status", render: (r) => (r.job ? <span className="row wrap"><StateBadge state={r.job.status} />{r.job.timedOut && <Badge tone="bad" title="The element did not report in time (the campaign's job timeout)">timed out</Badge>}</span> : <span className="muted">—</span>) },
-            { header: "Revert", render: (r) => (r.job?.revert ? <StateBadge state={r.job.revert} /> : <span className="muted">—</span>) },
+          <DataTable<Row> rows={rows.slice(offset, offset + PAGE)} rowKey={(r) => r.me} empty={t("software.elements.empty")} columns={[
+            { header: t("software.elements.col.element"), render: (r) => <Link to={elementHref(r.me)}>{r.me}</Link> },
+            { header: t("software.elements.col.job"), render: (r) => (r.job ? <Link to={flow19Href(r.job.jobId)} title={t("software.elements.job.open")}><Id value={r.job.jobId} /></Link> : <span className="muted">{t("software.elements.job.notStarted")}</span>) },
+            { header: t("software.elements.col.phase"), render: (r) => r.job?.phase ?? "—" },
+            { header: t("software.elements.col.status"), render: (r) => (r.job ? <span className="row wrap"><StateBadge state={r.job.status} />{r.job.timedOut && <Badge tone="bad" title={t("software.elements.timedOut.title")}>{t("software.elements.timedOut")}</Badge>}</span> : <span className="muted">—</span>) },
+            { header: t("software.elements.col.revert"), render: (r) => (r.job?.revert ? <StateBadge state={r.job.revert} /> : <span className="muted">—</span>) },
           ]} />
           <Pager offset={offset} limit={PAGE} shown={rows.slice(offset, offset + PAGE).length} total={rows.length} onOffset={setOffset} />
         </>

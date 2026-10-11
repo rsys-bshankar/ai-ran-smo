@@ -19,6 +19,7 @@ import { Component, useState, type ErrorInfo, type FormEvent, type ReactNode } f
 import { useOperatorAction, useOperatorRead, type Declaration } from "../api/rapps";
 import { useSmo } from "../api/hooks";
 import { ApiError } from "../api/client";
+import { useT } from "../i18n";
 import type { PerfReport } from "../api/types";
 import {
   asText, fillQuery, fillRoute, fillTitle, formatNumber, formatValue, getPath, isObj, isTime, listAt, numberOf, readInputs, sparkPoints, toSeries, whenMatches,
@@ -32,6 +33,9 @@ const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const obj = (v: unknown): Obj => (isObj(v) ? v : {});
 const str = (v: unknown): string => (typeof v === "string" ? v : asText(v));
 
+/** The route an rApp registers its operator API with (a route, not translated). */
+const OPERATOR_API_ROUTE = "PUT /rapp-mgmt/instances/<id>/operator-api";
+
 // ---------------------------------------------------------------- the page
 
 /**
@@ -41,11 +45,11 @@ const str = (v: unknown): string => (typeof v === "string" ? v : asText(v));
 export function DeclaredPage({ instanceId, declaration, canChange, operatorApiRegistered }: {
   instanceId: string; declaration: Declaration; canChange: boolean; operatorApiRegistered: boolean;
 }) {
+  const t = useT();
   return (
     <>
       {!operatorApiRegistered && (
-        <Card><p className="muted">This rApp's operator API is not registered, so the panels that read from it cannot be shown. The rApp registers it when it starts
-          (<code>PUT /rapp-mgmt/instances/&lt;id&gt;/operator-api</code>), or an operator sets it on the instance.</p></Card>
+        <Card><p className="muted">{t("components.operatorUi.notRegistered")} (<code>{OPERATOR_API_ROUTE}</code>){t("components.operatorUi.notRegistered.or")}</p></Card>
       )}
       {declaration.panels.map((panel, i) => (
         <PanelBoundary key={`${str(panel.id)}-${i}`} title={str(panel.title)}>
@@ -64,8 +68,14 @@ class PanelBoundary extends Component<{ title: string; children: ReactNode }, { 
   static getDerivedStateFromError() { return { failed: true }; }
   componentDidCatch(error: Error, info: ErrorInfo) { console.warn("operator page panel failed to draw", error.message, info.componentStack); }
   render() {
-    return this.state.failed ? <Card title={this.props.title}><p className="muted">This panel could not be drawn.</p></Card> : this.props.children;
+    return this.state.failed ? <PanelFailed title={this.props.title} /> : this.props.children;
   }
+}
+
+/** The card of a panel that failed to draw (a function, so it can read the translator). */
+function PanelFailed({ title }: { title: string }) {
+  const t = useT();
+  return <Card title={title}><p className="muted">{t("components.operatorUi.panelFailed")}</p></Card>;
 }
 
 /**
@@ -87,11 +97,18 @@ function PanelView({ instanceId, panel, canChange, registered }: { instanceId: s
  * The card for a panel or block kind, or a shape, that this build cannot draw; the declaration may be newer than the GUI.
  */
 function Unsupported({ title, what }: { title: string; what: "panel" | "block" }) {
+  const t = useT();
   return (
     <Card title={title}>
-      <p className="muted">unsupported {what}</p>
+      <p className="muted">{t(what === "panel" ? "components.operatorUi.unsupportedPanel" : "components.operatorUi.unsupportedBlock")}</p>
     </Card>
   );
+}
+
+/** The line drawn in place of a block this build cannot draw. */
+function UnsupportedBlock() {
+  const t = useT();
+  return <p className="muted">{t("components.operatorUi.unsupportedBlock")}</p>;
 }
 
 // ---------------------------------------------------------------- reading a source
@@ -114,19 +131,21 @@ function useSource(instanceId: string, source: unknown, enabled: boolean, row?: 
 function SourceState({ read, valid, registered = true, children }: {
   read: ReturnType<typeof useOperatorRead>; valid: boolean; registered?: boolean; children: (data: unknown) => ReactNode;
 }) {
-  if (!registered) return <p className="muted small">Available once the rApp registers its operator API.</p>;
-  if (!valid) return <p className="muted small">The route of this panel cannot be built from the values it names.</p>;
+  const t = useT();
+  if (!registered) return <p className="muted small">{t("components.operatorUi.waiting")}</p>;
+  if (!valid) return <p className="muted small">{t("components.operatorUi.badRoute")}</p>;
   if (read.error) {
     const err = read.error;
-    if (err instanceof ApiError && err.title === "OPERATOR_API_NOT_REGISTERED") return <p className="muted small">This rApp's operator API is not registered (or the instance is terminated).</p>;
+    if (err instanceof ApiError && err.title === "OPERATOR_API_NOT_REGISTERED") return <p className="muted small">{t("components.operatorUi.notRegisteredShort")}</p>;
     return <ErrorBox error={err} />;
   }
-  if (read.data === undefined) return <p className="muted small">Loading…</p>;
+  if (read.data === undefined) return <p className="muted small">{t("components.loading")}</p>;
   return <>{children(read.data)}</>;
 }
 
 function RefreshButton({ read }: { read: ReturnType<typeof useOperatorRead> }) {
-  return <button className="btn ghost small" onClick={() => read.refetch()} disabled={read.isFetching} aria-label="Refresh this panel">{read.isFetching ? "…" : "↻"}</button>;
+  const t = useT();
+  return <button className="btn ghost small" onClick={() => read.refetch()} disabled={read.isFetching} aria-label={t("components.operatorUi.refresh")}>{read.isFetching ? "…" : "↻"}</button>;
 }
 
 // ---------------------------------------------------------------- values
@@ -195,6 +214,7 @@ function keyRows(rows: unknown[], rowKey: string | undefined): Keyed[] {
  * matches the row), and a row click opens the declared detail drawer. A table whose columns are not all of the known shape is drawn as unsupported.
  */
 function TablePanel({ instanceId, panel, canChange, registered }: { instanceId: string; panel: Obj; canChange: boolean; registered: boolean }) {
+  const t = useT();
   const { read, valid } = useSource(instanceId, panel.source, registered);
   const [open, setOpen] = useState<Keyed | null>(null);
   const columns = readColumns(panel.columns);
@@ -207,7 +227,7 @@ function TablePanel({ instanceId, panel, canChange, registered }: { instanceId: 
         {(data) => {
           const rows = keyRows(listAt(data, typeof panel.rows === "string" ? panel.rows : undefined) ?? [], typeof panel.rowKey === "string" ? panel.rowKey : undefined);
           return (
-            <DataTable rows={rows} rowKey={(r) => r.key} empty={typeof panel.empty === "string" ? panel.empty : "Nothing here."}
+            <DataTable rows={rows} rowKey={(r) => r.key} empty={typeof panel.empty === "string" ? panel.empty : t("components.operatorUi.nothing")}
               onRowClick={detail ? setOpen : undefined} selectedKey={open?.key}
               columns={[
                 ...columns.map((c) => ({ header: c.label, render: (r: Keyed) => columnCell(r.row, c) })),
@@ -232,7 +252,8 @@ function TablePanel({ instanceId, panel, canChange, registered }: { instanceId: 
  * The drawer opened by a click on a table row: the declared title (with the row's fields filled in) and the declared blocks.
  */
 function RowDrawer({ instanceId, detail, row, onClose }: { instanceId: string; detail: Obj; row: Obj; onClose: () => void }) {
-  const title = typeof detail.title === "string" ? fillTitle(detail.title, row) : "Details";
+  const t = useT();
+  const title = typeof detail.title === "string" ? fillTitle(detail.title, row) : t("components.operatorUi.details");
   return (
     <Drawer title={title} onClose={onClose}>
       {arr(detail.blocks).map((b, i) => <BlockView key={i} instanceId={instanceId} block={obj(b)} row={row} />)}
@@ -257,7 +278,7 @@ function BlockView({ instanceId, block, row }: { instanceId: string; block: Obj;
   return (
     <section>
       <h3>{title}</h3>
-      <PanelBoundary title={title}>{body ?? <p className="muted">unsupported block</p>}</PanelBoundary>
+      <PanelBoundary title={title}>{body ?? <UnsupportedBlock />}</PanelBoundary>
     </section>
   );
 }
@@ -283,12 +304,13 @@ function useBlockData(instanceId: string, block: Obj, row: Obj) {
  * A table block of the row drawer: the rows come from the row itself or, when the block has a `source`, from a list fetched for this row when the drawer opens.
  */
 function TableBlock({ instanceId, block, row }: { instanceId: string; block: Obj; row: Obj }) {
+  const t = useT();
   const { fetched, read, valid } = useBlockData(instanceId, block, row);
   const columns = readColumns(block.columns);
-  if (!columns) return <p className="muted">unsupported block</p>;
+  if (!columns) return <UnsupportedBlock />;
   const rowsPath = typeof block.rows === "string" ? block.rows : undefined;
   const draw = (answer: unknown) => (
-    <DataTable rows={keyRows(listAt(answer, rowsPath) ?? [], undefined)} rowKey={(r) => r.key} empty={typeof block.empty === "string" ? block.empty : "Nothing here."}
+    <DataTable rows={keyRows(listAt(answer, rowsPath) ?? [], undefined)} rowKey={(r) => r.key} empty={typeof block.empty === "string" ? block.empty : t("components.operatorUi.nothing")}
       columns={columns.map((c) => ({ header: c.label, render: (r: Keyed) => columnCell(r.row, c) }))} />
   );
   return fetched ? <SourceState read={read} valid={valid}>{draw}</SourceState> : draw(row);
@@ -296,7 +318,7 @@ function TableBlock({ instanceId, block, row }: { instanceId: string; block: Obj
 
 function ChartBlock({ instanceId, block, row }: { instanceId: string; block: Obj; row: Obj }) {
   const { fetched, read, valid } = useBlockData(instanceId, block, row);
-  if (!chartSpecOk(block)) return <p className="muted">unsupported block</p>;
+  if (!chartSpecOk(block)) return <UnsupportedBlock />;
   return fetched ? <SourceState read={read} valid={valid}>{(data) => <ChartFrom spec={block} data={data} />}</SourceState> : <ChartFrom spec={block} data={row} />;
 }
 
@@ -400,8 +422,9 @@ const MAX_DRAWN = 500;
  * The figure's name lists the series for screen readers.
  */
 export function SeriesChart({ type, series, extra = 0, unit, label }: { type: "line" | "bar"; series: Series[]; extra?: number; unit?: string; label?: string }) {
+  const t = useT();
   const drawn = series.map((s) => ({ ...s, points: s.points.slice(-MAX_DRAWN) })).filter((s) => s.points.length > 0);
-  if (drawn.length === 0) return <p className="muted">no data</p>;
+  if (drawn.length === 0) return <p className="muted">{t("components.chart.noData")}</p>;
   const xs: string[] = [];
   for (const s of drawn) for (const p of s.points) if (!xs.includes(p.x)) xs.push(p.x);
   const ys = drawn.flatMap((s) => s.points.map((p) => p.y));
@@ -415,11 +438,11 @@ export function SeriesChart({ type, series, extra = 0, unit, label }: { type: "l
   const ticks = [lo, lo + span / 2, hi];
   return (
     <figure className="chart">
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${label ?? "chart"}: ${drawn.map((s) => s.name || "series").join(", ")}`}>
-        {ticks.map((t, i) => (
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${label ?? t("components.chart.chart")}: ${drawn.map((s) => s.name || t("components.chart.series")).join(", ")}`}>
+        {ticks.map((tick, i) => (
           <g key={i}>
-            <line x1={PAD.l} x2={W - PAD.r} y1={y(t)} y2={y(t)} className="chart-grid" />
-            <text x={PAD.l - 6} y={y(t) + 4} textAnchor="end" className="chart-axis">{formatNumber(t)}</text>
+            <line x1={PAD.l} x2={W - PAD.r} y1={y(tick)} y2={y(tick)} className="chart-grid" />
+            <text x={PAD.l - 6} y={y(tick) + 4} textAnchor="end" className="chart-axis">{formatNumber(tick)}</text>
           </g>
         ))}
         <text x={PAD.l} y={H - 8} className="chart-axis">{xLabel(xs[0])}</text>
@@ -442,7 +465,7 @@ export function SeriesChart({ type, series, extra = 0, unit, label }: { type: "l
       <figcaption className="small muted">
         {unit && <span>{unit} </span>}
         {drawn.length > 1 && drawn.map((s, i) => <span key={i} className={`chart-key chart-s${i}`}><span className="chart-swatch" />{s.name || "—"} </span>)}
-        {extra > 0 && <span>+{extra} more series not drawn</span>}
+        {extra > 0 && <span>{t("components.chart.moreSeries", { n: extra })}</span>}
       </figcaption>
     </figure>
   );
@@ -454,13 +477,14 @@ export function SeriesChart({ type, series, extra = 0, unit, label }: { type: "l
  * The declared action buttons of an actions panel. Without the permission to change it shows a line naming the actions that need the operator role instead of the buttons.
  */
 function ActionsPanel({ instanceId, panel, canChange }: { instanceId: string; panel: Obj; canChange: boolean; registered: boolean }) {
+  const t = useT();
   const actions = arr(panel.actions).filter(isObj);
   if (actions.length === 0) return <Unsupported title={str(panel.title)} what="panel" />;
   return (
     <Card title={str(panel.title)}>
       {canChange
         ? <div className="row gap">{actions.map((a) => <DeclaredButton key={str(a.id)} instanceId={instanceId} action={a} />)}</div>
-        : <p className="muted small">Changing needs the operator role{actions.length ? ` (${actions.map((a) => str(a.label)).join(", ")})` : ""}.</p>}
+        : <p className="muted small">{t("components.operatorUi.needsRoleFor", { actions: actions.map((a) => str(a.label)).join(", ") })}</p>}
     </Card>
   );
 }
@@ -493,6 +517,7 @@ function DeclaredButton({ instanceId, action, row }: { instanceId: string; actio
  * `readInputs` (lib/operatorUi.ts) and the action is sent only when no field has an error.
  */
 function InputsDialog({ title, inputs, pending, onClose, onSend }: { title: string; inputs: InputSpec[]; pending: boolean; onClose: () => void; onSend: (body: Obj) => void }) {
+  const t = useT();
   const [values, setValues] = useState<Record<string, string | boolean | undefined>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const set = (name: string, value: string | boolean) => setValues((v) => ({ ...v, [name]: value }));
@@ -510,12 +535,12 @@ function InputsDialog({ title, inputs, pending, onClose, onSend }: { title: stri
             {spec.type === "boolean"
               ? <input type="checkbox" checked={values[spec.name] === true} onChange={(e) => set(spec.name, e.target.checked)} />
               : spec.type === "enum"
-                ? <select value={String(values[spec.name] ?? "")} onChange={(e) => set(spec.name, e.target.value)}><option value="">Choose…</option>{(spec.options ?? []).map((o) => <option key={o}>{o}</option>)}</select>
+                ? <select value={String(values[spec.name] ?? "")} onChange={(e) => set(spec.name, e.target.value)}><option value="">{t("components.operatorUi.choose")}</option>{(spec.options ?? []).map((o) => <option key={o}>{o}</option>)}</select>
                 : <input type={spec.type === "string" ? "text" : "number"} step={spec.type === "integer" ? 1 : "any"} min={spec.min} max={spec.max} maxLength={spec.maxLength}
                     value={String(values[spec.name] ?? "")} onChange={(e) => set(spec.name, e.target.value)} />}
           </Field>
         ))}
-        <div className="row gap end"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={pending}>Send</button></div>
+        <div className="row gap end"><button type="button" className="btn" onClick={onClose}>{t("components.cancel")}</button><button className="btn primary" disabled={pending}>{t("components.operatorUi.send")}</button></div>
       </form>
     </Modal>
   );

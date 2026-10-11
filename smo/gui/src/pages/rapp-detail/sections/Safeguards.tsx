@@ -4,6 +4,7 @@
 import { Link } from "react-router-dom";
 
 import { Card, KeyValue, StateBadge } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { UsageMeter } from "../../../kit/Meter";
 import { Empty, QueryState } from "../../../kit/states";
 import { describeLimits, formatTime } from "../../../lib/domain";
@@ -11,30 +12,31 @@ import { useSafeguards } from "../data/queries";
 
 /** The box of instance `id`. */
 export function Safeguards({ id }: { id: string }) {
+  const t = useT();
   const q = useSafeguards(id);
   const d = q.data;
   const l = d?.limits;
   return (
-    <Card section="rapp.safeguards" title="Safeguards" actions={<Link className="btn small" to="/safeguards">Edit →</Link>}>
+    <Card section="rapp.safeguards" title={t("rappDetail.safeguards.title")} actions={<Link className="btn small" to="/safeguards">{t("rappDetail.safeguards.edit")}</Link>}>
       <QueryState q={q} isEmpty={() => false}>
-        {d && !d.invokerId ? <Empty title="A terminated instance has no credential, so nothing to stop or limit." /> : d && (
+        {d && !d.invokerId ? <Empty title={t("rappDetail.safeguards.terminated")} /> : d && (
           <div className="stack">
             <KeyValue items={[
-              ["Status", d.killed ? <span key="k"><StateBadge state="DISABLED" /> stopped by {d.kill?.killedBy} ({d.kill?.reason ?? "no reason given"}, {formatTime(d.kill?.killedAt)})</span> : <StateBadge key="k" state="ACTIVE" />],
-              ["Limits", describeLimits(l)],
+              [t("rappDetail.safeguards.status"), d.killed ? <span key="k"><StateBadge state="DISABLED" /> {t("rappDetail.safeguards.stoppedBy", { who: d.kill?.killedBy ?? "", reason: d.kill?.reason ?? t("rappDetail.safeguards.noReason"), time: formatTime(d.kill?.killedAt) })}</span> : <StateBadge key="k" state="ACTIVE" />],
+              [t("rappDetail.safeguards.limits"), describeLimits(l)],
             ]} />
             {l?.maxConfigJobsPerHour != null && (
-              <div><div className="row between small"><span>Config jobs this hour</span><span className="num">{l.configJobsLastHour} / {l.maxConfigJobsPerHour}</span></div>
-                <UsageMeter used={l.configJobsLastHour} limit={l.maxConfigJobsPerHour} label="Config jobs this hour" /></div>
+              <div><div className="row between small"><span>{t("rappDetail.safeguards.configJobs")}</span><span className="num">{l.configJobsLastHour} / {l.maxConfigJobsPerHour}</span></div>
+                <UsageMeter used={l.configJobsLastHour} limit={l.maxConfigJobsPerHour} label={t("rappDetail.safeguards.configJobs")} /></div>
             )}
             {l && <div className="row gap wrap small">
-              <span className="chip">Elements per job: {l.maxElementsPerJob ?? "no limit"}</span>
-              <span className="chip">Change per write: {l.maxChangePercent != null ? `max ${l.maxChangePercent}%` : "no limit"}</span>
+              <span className="chip">{t("rappDetail.safeguards.elementsPerJob", { value: l.maxElementsPerJob ?? t("rappDetail.safeguards.noLimit") })}</span>
+              <span className="chip">{t("rappDetail.safeguards.changePerWrite", { value: l.maxChangePercent != null ? t("rappDetail.safeguards.maxPercent", { value: l.maxChangePercent }) : t("rappDetail.safeguards.noLimit") })}</span>
             </div>}
           </div>
         )}
       </QueryState>
-      <p className="small"><Link to="/safeguards">Stop or limit this rApp under Safeguards →</Link></p>
+      <p className="small"><Link to="/safeguards">{t("rappDetail.safeguards.link")}</Link></p>
     </Card>
   );
 }

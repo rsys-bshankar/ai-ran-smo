@@ -1,23 +1,26 @@
 /** The left half of the sign-in page (`login.brand`, handoff `Login.dc.html`): product name, headline, the sector-ring graphic and the
- * "A product of Radisys" wordmark on a white chip. Static: no data, no inputs (the form tests count the inputs of the page). */
+ * "A product of Radisys" wordmark on a white chip. Static: no data, no inputs (the form tests count the inputs of the page). Its words come from
+ * the catalog (`i18n/en/login.ts`, GUI-6.4); the product name "AI-RAN SMO" is not translated. */
+import { useT } from "../../../i18n";
 
 /** The brand panel. Hidden graphic is decorative (`aria-hidden`); the wordmark keeps its alt text. */
 export function BrandPanel() {
+  const t = useT();
   return (
     <section className="login-brand" data-section="login.brand" aria-label="AI-RAN SMO">
       <div className="brand big">
         <img src="/brand/radisys-mark.png" alt="" width={48} height={48} />
-        <div><strong>AI-RAN SMO</strong><span>Operator Console · Service Management &amp; Orchestration</span></div>
+        <div><strong>AI-RAN SMO</strong><span>{t("login.brand.tagline")}</span></div>
       </div>
       <SectorRings />
       <div className="col" style={{ gap: 18, position: "relative" }}>
-        <div className="eyebrow">O-RAN Non-RT RIC · R1 · O1 · O2</div>
-        <h1>Run the RAN with rApps you can trust.</h1>
-        <p>Every change an rApp proposes is limited, explained and, when you choose, held for a person to approve before it touches the network.</p>
+        <div className="eyebrow">{t("login.brand.eyebrow")}</div>
+        <h1>{t("login.brand.headline")}</h1>
+        <p>{t("login.brand.lead")}</p>
         <div className="row wrap" style={{ gap: 8 }}>
-          <span className="chip">Closed-loop automation</span><span className="chip">AI/ML lifecycle</span><span className="chip">Intent-driven</span>
+          <span className="chip">{t("login.brand.chip.closedLoop")}</span><span className="chip">{t("login.brand.chip.aiml")}</span><span className="chip">{t("login.brand.chip.intent")}</span>
         </div>
-        <span className="wordmark-chip">A product of <img src="/brand/radisys-wordmark.png" alt="Radisys" height={22} /></span>
+        <span className="wordmark-chip">{t("login.brand.productOf")}<img src="/brand/radisys-wordmark.png" alt={t("login.brand.wordmarkAlt")} height={22} /></span>
       </div>
     </section>
   );

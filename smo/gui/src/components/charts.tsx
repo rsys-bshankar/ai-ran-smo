@@ -1,6 +1,7 @@
 /** The console's SVG charts, drawn with the theme's chart classes (`.ln-*`, `.ar-*`, `.floor`, `.fill-*` in styles.css): sparkline, model
  * lifecycle stepper, count bar, stacked bars over time, ring gauge and line chart with a floor. Pure components: the caller passes points that are
  * already bounded (SCALE.md P12); `LineChart` thins anything past 300 points. */
+import { useT } from "../i18n";
 import { pipelineSteps } from "../lib/domain";
 
 /** A single metric over time. `floor` draws the guard-KPI floor line
@@ -8,7 +9,8 @@ import { pipelineSteps } from "../lib/domain";
 export function Sparkline({ points, width = 220, height = 48, floor, label }: {
   points: { t: string; v: number }[]; width?: number; height?: number; floor?: number; label?: string;
 }) {
-  if (points.length === 0) return <div className="spark-empty muted">no data</div>;
+  const t = useT();
+  if (points.length === 0) return <div className="spark-empty muted">{t("components.chart.noData")}</div>;
   const values = points.map((p) => p.v).concat(floor !== undefined ? [floor] : []);
   const min = Math.min(...values);
   const max = Math.max(...values);
@@ -22,7 +24,7 @@ export function Sparkline({ points, width = 220, height = 48, floor, label }: {
   const breached = floor !== undefined && last.v < floor;
   return (
     <figure className="spark">
-      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={label ?? "sparkline"}>
+      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={label ?? t("components.chart.sparkline")}>
         {floor !== undefined && <line x1={0} x2={width} y1={y(floor)} y2={y(floor)} className="spark-floor" />}
         {area && <path d={area} className="spark-area" />}
         <path d={path} className="spark-line" fill="none" />
@@ -36,7 +38,7 @@ export function Sparkline({ points, width = 220, height = 48, floor, label }: {
       <figcaption>
         {label && <span className="muted">{label} </span>}
         <strong className={breached ? "text-bad" : ""}>{formatNum(last.v)}</strong>
-        {floor !== undefined && <span className="muted"> / floor {formatNum(floor)}</span>}
+        {floor !== undefined && <span className="muted"> / {t("components.chart.floor", { value: formatNum(floor) })}</span>}
       </figcaption>
     </figure>
   );
@@ -48,8 +50,9 @@ function formatNum(v: number): string {
 
 /** AI/ML model lifecycle (REGISTERED -> ... -> ACTIVE), current step highlighted. */
 export function FsmStepper({ state }: { state: string }) {
+  const t = useT();
   return (
-    <ol className="stepper" aria-label="model lifecycle">
+    <ol className="stepper" aria-label={t("components.chart.lifecycle")}>
       {pipelineSteps(state).map((s) => (
         <li key={s.state} className={`step ${s.status}`}><span className="step-dot" />{s.state}</li>
       ))}
@@ -115,13 +118,14 @@ export function StackedBars({ buckets, series, height = 140, label }: {
 export function RingGauge({ value, max = 100, size = 64, label, warnBelow = 90, badBelow = 70, text }: {
   value: number | null; max?: number; size?: number; label: string; warnBelow?: number; badBelow?: number; text?: string;
 }) {
+  const t = useT();
   const r = (size - 8) / 2;
   const c = 2 * Math.PI * r;
   const share = value === null ? 0 : Math.max(0, Math.min(1, value / max));
   const pct = share * 100;
   const tone = value === null ? "volt" : pct < badBelow ? "bad" : pct < warnBelow ? "warn" : "ok";
   return (
-    <span className="ring" role="img" aria-label={`${label}: ${value === null ? "unknown" : text ?? `${Math.round(pct)} %`}`}>
+    <span className="ring" role="img" aria-label={`${label}: ${value === null ? t("components.chart.unknown") : text ?? `${Math.round(pct)} %`}`}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
         <circle className="ring-track" cx={size / 2} cy={size / 2} r={r} strokeWidth={6} />
         {value !== null && <circle className={`ring-val ${tone}`} cx={size / 2} cy={size / 2} r={r} strokeWidth={6} strokeDasharray={`${c * share} ${c}`} />}
@@ -134,7 +138,8 @@ export function RingGauge({ value, max = 100, size = 64, label, warnBelow = 90, 
 /** A line chart of one metric with an optional dashed floor (a guard KPI and its MLMF floor; a band chart's median). Larger than `Sparkline`,
  * with axes; points beyond 300 are thinned evenly so the chart never draws raw rows (SCALE.md P12). */
 export function LineChart({ points, floor, height = 160, label, unit }: { points: { t: string; v: number }[]; floor?: number; height?: number; label: string; unit?: string }) {
-  if (points.length === 0) return <div className="spark-empty muted">no data</div>;
+  const t = useT();
+  if (points.length === 0) return <div className="spark-empty muted">{t("components.chart.noData")}</div>;
   const step = Math.ceil(points.length / 300);
   const pts = step > 1 ? points.filter((_, i) => i % step === 0 || i === points.length - 1) : points;
   const width = 640;
@@ -147,7 +152,7 @@ export function LineChart({ points, floor, height = 160, label, unit }: { points
   const y = (v: number) => pad.t + (height - pad.t - pad.b) * (1 - (v - min) / span);
   const line = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
   const area = `${line} L${x(pts.length - 1).toFixed(1)},${y(min)} L${x(0).toFixed(1)},${y(min)} Z`;
-  const fmt = (t: string) => (Number.isNaN(Date.parse(t)) ? t : new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+  const fmt = (at: string) => (Number.isNaN(Date.parse(at)) ? at : new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
   return (
     <figure className="chart">
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={label}>
@@ -156,11 +161,11 @@ export function LineChart({ points, floor, height = 160, label, unit }: { points
         <text className="ax" x={2} y={y(min) + 4}>{formatNum(min)}</text>
         <path d={area} className="ar-volt" />
         <path d={line} className="ln-volt" />
-        {floor !== undefined && <line className="floor" x1={pad.l} x2={width - pad.r} y1={y(floor)} y2={y(floor)}><title>{`floor ${floor}`}</title></line>}
+        {floor !== undefined && <line className="floor" x1={pad.l} x2={width - pad.r} y1={y(floor)} y2={y(floor)}><title>{t("components.chart.floor", { value: floor })}</title></line>}
         <text className="ax" x={pad.l} y={height - 5}>{fmt(pts[0].t)}</text>
         <text className="ax" x={width - pad.r} y={height - 5} textAnchor="end">{fmt(pts[pts.length - 1].t)}</text>
       </svg>
-      <figcaption className="legend"><span><i className="f-volt" />{label}{unit ? ` (${unit})` : ""}</span>{floor !== undefined && <span><i className="f-bad" />floor {formatNum(floor)}</span>}</figcaption>
+      <figcaption className="legend"><span><i className="f-volt" />{label}{unit ? ` (${unit})` : ""}</span>{floor !== undefined && <span><i className="f-bad" />{t("components.chart.floor", { value: formatNum(floor) })}</span>}</figcaption>
     </figure>
   );
 }

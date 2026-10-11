@@ -13,6 +13,8 @@ Tabs (URL hash): `#users`, `#audit`, `#msac`. Only the visible tab's queries run
 | admin.audit | sections/AuditLog.tsx | audit log, newest first, filters by user, event (the actions the BFF writes, `GET /api/admin/audit/actions`), range (24 h / 7 d default / 30 d / all) and until, HTTP outcome badge, keyset paging (Newer / Older), "Export…" | `GET /api/admin/audit?username&action&since&until&limit&after_id`; "Export…" creates a job `POST /api/exports {kind: audit, since, until, username, action}` (GUI-9.5b), followed on `/exports` | 10 s (newest page) | 1 call/page |
 | admin.msac | sections/MsacTab.tsx (+ MsacForms.tsx) | RAN NF OAM MSAC roles, identities, access rules (server tables); admin: New role / identity / rule forms, Delete | `/ran-nf-oam/msac/roles`, `/identities`, `/access-rules`; POST / DELETE on each | 15 s | 3 calls (+2 picker reads when the forms render) |
 
+Every word on the page comes from the catalog (`src/i18n/en/admin.ts`, `de/admin.ts`; GUI-6.4); its literal count is 0.
+
 ## Known limits
 
 - **Last active** is the user's newest audit row (sign-ins, changes, refusals); plain reads are not audited, so a user who only looked reads older.

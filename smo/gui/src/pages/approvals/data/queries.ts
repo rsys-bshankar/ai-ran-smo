@@ -62,12 +62,12 @@ export function lapseShare(createdAt: string | null | undefined, expiresAt: stri
   return Math.min(1, Math.max(0, (end - now) / (end - start)));
 }
 
-/** The time left as a clock, "11:04" or "1:02:09"; "lapsed" once it is past. */
-export function countdown(expiresAt: string | null | undefined, now: number): string {
+/** The time left as a clock, "11:04" or "1:02:09"; `lapsed` (the word, in the user's language) once it is past. */
+export function countdown(expiresAt: string | null | undefined, now: number, lapsed = "lapsed"): string {
   const end = expiresAt ? new Date(expiresAt).getTime() : NaN;
   if (Number.isNaN(end)) return "—";
   const s = Math.floor((end - now) / 1000);
-  if (s <= 0) return "lapsed";
+  if (s <= 0) return lapsed;
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const pad = (n: number) => String(n).padStart(2, "0");

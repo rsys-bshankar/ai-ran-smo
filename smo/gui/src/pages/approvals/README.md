@@ -23,6 +23,8 @@ Tabs (URL hash): `#waiting` (queue and detail side by side) · `#decided`. `Appr
 
 The tab badge is `approvals.PENDING` from `/api/summary/approvals` (never the length of a page).
 
+Every word on the page comes from the catalog (`src/i18n/en/approvals.ts`, `de/approvals.ts`; GUI-6.4); its literal count is 0.
+
 ## Known limits
 
 - **Expected KPI impact** (handover success, ping-pong, model confidence) is not shown: the rApp sends no prediction with the request.

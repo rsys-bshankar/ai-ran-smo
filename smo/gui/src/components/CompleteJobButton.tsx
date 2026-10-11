@@ -4,6 +4,7 @@
  */
 
 import { useSmo } from "../api/hooks";
+import { useT } from "../i18n";
 import { completionRoute, type CompletionStage } from "../lib/domain";
 import { ActionButton } from "./ui";
 
@@ -14,11 +15,12 @@ import { ActionButton } from "./ui";
 export function CompleteJobButton({ modelId, stage, label, trainingJobId }: {
   modelId: string; stage: CompletionStage; label: string; trainingJobId?: string | null;
 }) {
+  const t = useT();
   const { jobsPath, runningStatus, idKey } = completionRoute(stage);
   const known = stage === "training" ? trainingJobId ?? null : null;
   const jobs = useSmo<Record<string, unknown>[]>(known ? null : jobsPath, { model_id: modelId, status: runningStatus });
   const jobId = known ?? (jobs.data?.[0]?.[idKey] as string | undefined);
   if (!jobId) return null;
   return <ActionButton label={label} tone="primary"
-    action={{ method: "POST", path: `${jobsPath}/${jobId}/complete`, json: { succeeded: true }, success: `${label}: done` }} />;
+    action={{ method: "POST", path: `${jobsPath}/${jobId}/complete`, json: { succeeded: true }, success: t("components.completeJob.done", { label }) }} />;
 }

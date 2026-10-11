@@ -3,6 +3,7 @@
  * each box is a section with its own data (sections/, data/queries.ts). Sections, call budget and known limits: README.md. */
 import { PageHeader } from "../../components/ui";
 import { count } from "../../data/summary";
+import { useT } from "../../i18n";
 import { formatCount } from "../../kit/Kpi";
 import { SectionBoundary } from "../../kit/SectionBoundary";
 import { Stale } from "../../kit/states";
@@ -19,11 +20,13 @@ import { WorstDus } from "./sections/WorstDus";
 
 /** The page. */
 export function Dashboard() {
+  const t = useT();
   const summary = useDashboardSummary();
+  const elements = count(summary.data, "elements.total");
   return (
     <>
-      <PageHeader eyebrow="Network overview" title="Dashboard"
-        subtitle={<>{formatCount(count(summary.data, "elements.total"))} managed elements · counts refresh every 15 s {summary.data && <Stale updatedAt={summary.dataUpdatedAt} />}</>} />
+      <PageHeader eyebrow={t("dashboard.eyebrow")} title={t("dashboard.title")}
+        subtitle={<>{t("dashboard.subtitle", { count: elements ?? 0, total: formatCount(elements) })} {summary.data && <Stale updatedAt={summary.dataUpdatedAt} />}</>} />
       <div className="stack">
         <SectionBoundary id="dashboard.tiles"><KpiTiles /></SectionBoundary>
         <div className="grid g3">

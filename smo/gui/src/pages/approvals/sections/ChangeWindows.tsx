@@ -7,16 +7,17 @@ import { Link } from "react-router-dom";
 
 import type { ConfigJobSummary } from "../../../api/types";
 import { ActionButton, Card, Id, StateBadge } from "../../../components/ui";
+import { useT, type Translator } from "../../../i18n";
 import { ServerTable } from "../../../kit/ServerTable";
 import { formatTime } from "../../../lib/domain";
 import { CONFIG_JOBS } from "../data/queries";
 
-/** "from 22:00 to 02:00", "from 22:00", "until 02:00" or "no window (approval only)". */
-export function describeWindow(job: Pick<ConfigJobSummary, "scheduledAt" | "windowEnd">): string {
-  if (job.scheduledAt && job.windowEnd) return `${formatTime(job.scheduledAt)} → ${formatTime(job.windowEnd)}`;
-  if (job.scheduledAt) return `from ${formatTime(job.scheduledAt)}`;
-  if (job.windowEnd) return `until ${formatTime(job.windowEnd)}`;
-  return "no window (approval only)";
+/** "22:00 → 02:00", "from 22:00", "until 02:00" or "no window (approval only)", in the words of `t`. */
+export function describeWindow(job: Pick<ConfigJobSummary, "scheduledAt" | "windowEnd">, t: Translator): string {
+  if (job.scheduledAt && job.windowEnd) return t("approvals.windows.window", { from: formatTime(job.scheduledAt), to: formatTime(job.windowEnd) });
+  if (job.scheduledAt) return t("approvals.windows.from", { time: formatTime(job.scheduledAt) });
+  if (job.windowEnd) return t("approvals.windows.until", { time: formatTime(job.windowEnd) });
+  return t("approvals.windows.none");
 }
 
 /** The job id, linked to its detail on the Configuration page. */
@@ -24,38 +25,39 @@ const jobLink = (j: ConfigJobSummary) => <Link to={`/configuration?job=${j.jobId
 
 /** The tab: the jobs waiting for a decision, then the approved ones waiting for their window. */
 export function ChangeWindows() {
+  const t = useT();
   return (
     <div className="stack">
-      <Card section="approvals.windows" title="CM jobs waiting for approval" sub="RAN NF OAM · nothing is sent until someone other than the requester approves · recorded against your GUI user">
+      <Card section="approvals.windows" title={t("approvals.windows.title")} sub={t("approvals.windows.sub")}>
         <ServerTable<ConfigJobSummary> path={CONFIG_JOBS} query={{ status: "PENDING_APPROVAL" }} rowKey={(j) => j.jobId}
-          empty="No CM job waits for approval." columns={[
-            { header: "Job", render: jobLink },
-            { header: "Requested by", render: (j) => j.requestedBy },
-            { header: "Window", render: (j) => <span className="small">{describeWindow(j)}</span> },
-            { header: "Asked", render: (j) => formatTime(j.createdAt) },
+          empty={t("approvals.windows.empty")} columns={[
+            { header: t("approvals.windows.job"), render: jobLink },
+            { header: t("approvals.windows.requestedBy"), render: (j) => j.requestedBy },
+            { header: t("approvals.windows.windowHeader"), render: (j) => <span className="small">{describeWindow(j, t)}</span> },
+            { header: t("approvals.windows.asked"), render: (j) => formatTime(j.createdAt) },
             { header: "", className: "actions", render: (j) => (
               <div className="row gap end">
-                <ActionButton label="Approve" tone="primary" title="Runs now inside its window, or schedules it for the window"
-                  action={{ method: "POST", path: `${CONFIG_JOBS}/${j.jobId}/approve`, json: {}, success: "Change approved" }} />
-                <ActionButton label="Reject" tone="danger" confirm="Reject this change? Nothing has been sent; the job ends REJECTED."
-                  action={{ method: "POST", path: `${CONFIG_JOBS}/${j.jobId}/reject`, json: {}, success: "Change rejected" }} />
+                <ActionButton label={t("approvals.windows.approve")} tone="primary" title={t("approvals.windows.approve.title")}
+                  action={{ method: "POST", path: `${CONFIG_JOBS}/${j.jobId}/approve`, json: {}, success: t("approvals.windows.approved") }} />
+                <ActionButton label={t("approvals.windows.reject")} tone="danger" confirm={t("approvals.windows.reject.confirm")}
+                  action={{ method: "POST", path: `${CONFIG_JOBS}/${j.jobId}/reject`, json: {}, success: t("approvals.windows.rejected") }} />
               </div>
             ) },
           ]} />
       </Card>
-      <Card section="approvals.scheduled" title="Approved, waiting for their window" sub="started in the window with Start (automatic start at the window is MGT-4.4)">
+      <Card section="approvals.scheduled" title={t("approvals.scheduled.title")} sub={t("approvals.scheduled.sub")}>
         <ServerTable<ConfigJobSummary> path={CONFIG_JOBS} query={{ status: "SCHEDULED" }} rowKey={(j) => j.jobId}
-          empty="No approved job waits for its window." columns={[
-            { header: "Job", render: jobLink },
-            { header: "Window", render: (j) => <span className="small">{describeWindow(j)}</span> },
-            { header: "Approved by", render: (j) => <>{j.decidedBy ?? "—"} <span className="muted small">{formatTime(j.decidedAt)}</span></> },
-            { header: "State", render: (j) => <StateBadge state={j.status} /> },
+          empty={t("approvals.scheduled.empty")} columns={[
+            { header: t("approvals.windows.job"), render: jobLink },
+            { header: t("approvals.windows.windowHeader"), render: (j) => <span className="small">{describeWindow(j, t)}</span> },
+            { header: t("approvals.scheduled.approvedBy"), render: (j) => <>{j.decidedBy ?? "—"} <span className="muted small">{formatTime(j.decidedAt)}</span></> },
+            { header: t("approvals.scheduled.state"), render: (j) => <StateBadge state={j.status} /> },
             { header: "", className: "actions", render: (j) => (
               <div className="row gap end">
-                <ActionButton label="Start" title="Starts it now; refused before its window opens or after it closes"
-                  action={{ method: "POST", path: `${CONFIG_JOBS}/${j.jobId}/continue`, json: {}, success: "Change started" }} />
-                <ActionButton label="Withdraw" tone="danger" confirm="Withdraw this approved change? It ends REJECTED with nothing sent."
-                  action={{ method: "POST", path: `${CONFIG_JOBS}/${j.jobId}/reject`, json: {}, success: "Change withdrawn" }} />
+                <ActionButton label={t("approvals.scheduled.start")} title={t("approvals.scheduled.start.title")}
+                  action={{ method: "POST", path: `${CONFIG_JOBS}/${j.jobId}/continue`, json: {}, success: t("approvals.scheduled.started") }} />
+                <ActionButton label={t("approvals.scheduled.withdraw")} tone="danger" confirm={t("approvals.scheduled.withdraw.confirm")}
+                  action={{ method: "POST", path: `${CONFIG_JOBS}/${j.jobId}/reject`, json: {}, success: t("approvals.scheduled.withdrawn") }} />
               </div>
             ) },
           ]} />

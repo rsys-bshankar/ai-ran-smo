@@ -9,6 +9,7 @@ import { useState } from "react";
 import { useSmo } from "../api/hooks";
 import { useOptionalAuth } from "../auth/AuthContext";
 import { isScoped, SCOPE_NAME_RE, scopeLabel, useScopeState } from "../data/scope";
+import { useT } from "../i18n";
 import { formatCount } from "../kit/Kpi";
 import { describeUserScope } from "../lib/domain";
 
@@ -27,6 +28,7 @@ export const pickable = (name: string | null): name is string => name !== null &
 
 /** The chip and its popover. */
 export function ScopePicker() {
+  const t = useT();
   const { scope, setScope } = useScopeState();
   const me = useOptionalAuth()?.me;
   const limited = me?.scope ? describeUserScope(me.scope) : null;
@@ -37,41 +39,41 @@ export function ScopePicker() {
   return (
     <div className="rel scope-picker">
       <button type="button" className={`chip${isScoped(scope) ? " on" : ""}`} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)}
-        title="Scope: the region and site cluster every list and count is narrowed to">
-        <span className="muted xs">Scope</span> <strong>{scopeLabel(scope)}</strong>
+        title={t("shell.scope.title")}>
+        <span className="muted xs">{t("shell.scope.label")}</span> <strong>{scopeLabel(scope)}</strong>
       </button>
       {isScoped(scope) && (
-        <button type="button" className="btn ghost small" onClick={() => setScope({ region: null, cluster: null })} aria-label="Clear the scope: all network">All network</button>
+        <button type="button" className="btn ghost small" onClick={() => setScope({ region: null, cluster: null })} aria-label={t("shell.scope.clear")}>{t("shell.scope.all")}</button>
       )}
-      {limited && <span className="badge info small" data-testid="account-scope" title="Your account is limited to these; an administrator sets it">Your access: {limited}</span>}
+      {limited && <span className="badge info small" data-testid="account-scope" title={t("shell.scope.access.title")}>{t("shell.scope.access", { scope: limited })}</span>}
       {open && (
-        <div className="popover" role="dialog" aria-label="Scope">
-          <strong>Scope</strong>
-          <span className="xs muted">Lists and counts that know where an element is are narrowed; the others say "network-wide".</span>
-          {scopes.error && <span className="small text-bad">Could not read the regions: {scopes.error.message}</span>}
-          <label className="col small">Region
-            <select aria-label="Region" value={scope.region ?? ""} onChange={(e) => { setScope({ region: e.target.value || null, cluster: null }); }}>
-              <option value="">All network</option>
+        <div className="popover" role="dialog" aria-label={t("shell.scope.label")}>
+          <strong>{t("shell.scope.label")}</strong>
+          <span className="xs muted">{t("shell.scope.note")}</span>
+          {scopes.error && <span className="small text-bad">{t("shell.scope.error", { error: scopes.error.message })}</span>}
+          <label className="col small">{t("shell.scope.region")}
+            <select aria-label={t("shell.scope.region")} value={scope.region ?? ""} onChange={(e) => { setScope({ region: e.target.value || null, cluster: null }); }}>
+              <option value="">{t("shell.scope.all")}</option>
               {regions.map((r) => (
                 <option key={r.region ?? "∅"} value={r.region ?? ""} disabled={!pickable(r.region)}>
-                  {r.region ?? "no region"} · {formatCount(r.elements)}
+                  {r.region ?? t("shell.scope.noRegion")} · {formatCount(r.elements)}
                 </option>
               ))}
             </select>
           </label>
           {scope.region && (
-            <label className="col small">Site cluster
-              <select aria-label="Site cluster" value={scope.cluster ?? ""} onChange={(e) => setScope({ region: scope.region, cluster: e.target.value || null })}>
-                <option value="">All of {scope.region}</option>
+            <label className="col small">{t("shell.scope.cluster")}
+              <select aria-label={t("shell.scope.cluster")} value={scope.cluster ?? ""} onChange={(e) => setScope({ region: scope.region, cluster: e.target.value || null })}>
+                <option value="">{t("shell.scope.allOf", { region: scope.region })}</option>
                 {(region?.siteClusters ?? []).map((c) => (
                   <option key={c.siteCluster ?? "∅"} value={c.siteCluster ?? ""} disabled={!pickable(c.siteCluster)}>
-                    {c.siteCluster ?? "no site cluster"} · {formatCount(c.elements)}
+                    {c.siteCluster ?? t("shell.scope.noCluster")} · {formatCount(c.elements)}
                   </option>
                 ))}
               </select>
             </label>
           )}
-          <div className="row end"><button type="button" className="btn small" onClick={() => setOpen(false)}>Done</button></div>
+          <div className="row end"><button type="button" className="btn small" onClick={() => setOpen(false)}>{t("shell.scope.done")}</button></div>
         </div>
       )}
     </div>

@@ -22,6 +22,8 @@ Tabs (URL hash): `#ran` RAN NF alarms · `#ocloud` O-Cloud alarms · `#fm` FM su
 
 First load (RAN tab): summary + one page + the hourly counts = 3 calls (SCALE.md §4 budget is 2; the hourly buckets are shared with the Dashboard's cache entry).
 
+Every word on the page comes from the catalog (`src/i18n/en/alarms.ts`, `de/alarms.ts`; GUI-6.4); its literal count is 0.
+
 ## Known limits
 
 - **Root-cause hint** is the server's stated rule (same managed element, raised within ±60 s), not a topology-aware root-cause analysis.

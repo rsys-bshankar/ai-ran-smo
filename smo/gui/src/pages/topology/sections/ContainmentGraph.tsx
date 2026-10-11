@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Card } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { Empty, ErrorRetry, Skeleton } from "../../../kit/states";
 import { elementHref } from "../../element/data/types";
 import { buildTree, describeAlarms, severityFill, visibleRows, type Row } from "../data/containment";
@@ -16,6 +17,7 @@ const ROW = 24, INDENT = 22;
 
 /** The box. */
 export function ContainmentGraph() {
+  const t = useT();
   const { me } = useTopologyParams();
   const graph = useContainment(me);
   const [toggled, setToggled] = useState<Map<string, boolean>>(new Map());
@@ -26,17 +28,17 @@ export function ContainmentGraph() {
   const toggle = (dn: string) => setToggled(new Map(toggled).set(dn, !isOpen(dn)));
   const alarmed = graph.data?.nodes.filter((n) => n.worst).length ?? 0;
   return (
-    <Card section="topology.containment" title={me ? `Containment of ${me}` : "Containment tree"}
-      sub={graph.data ? `${graph.data.total.toLocaleString("en-US")} managed objects · ${alarmed} with open alarms` : "managed objects and their open alarms"}>
+    <Card section="topology.containment" title={me ? t("topology.containment.titleOf", { me }) : t("topology.containment.title")}
+      sub={graph.data ? t("topology.containment.sub", { total: graph.data.total.toLocaleString("en-US"), alarmed }) : t("topology.containment.subLoading")}>
       {graph.error && !graph.data ? <ErrorRetry error={graph.error} onRetry={() => void graph.refetch()} />
         : !view ? <Skeleton lines={6} />
-          : view.rows.length === 0 ? <Empty title="No managed object in the tree.">An element is added when it is registered; its server's objects when it is walked (Element → Managed objects → Refresh).</Empty>
+          : view.rows.length === 0 ? <Empty title={t("topology.containment.empty")}>{t("topology.containment.emptyHint")}</Empty>
             : <TreeSvg rows={view.rows} onToggle={toggle} />}
-      {graph.data?.truncated && <p className="gap-note">Showing the first {GRAPH_NODES} of {graph.data.total.toLocaleString("en-US")} objects (in DN order): focus one element, or narrow the scope, to see the rest.</p>}
-      {view && view.hidden > 0 && <p className="gap-note">{view.hidden} more unfolded row(s) not drawn: fold a node to make room.</p>}
+      {graph.data?.truncated && <p className="gap-note">{t("topology.containment.truncated", { shown: GRAPH_NODES, total: graph.data.total.toLocaleString("en-US") })}</p>}
+      {view && view.hidden > 0 && <p className="gap-note">{t("topology.containment.hidden", { count: view.hidden })}</p>}
       <div className="legend">
-        <span><i className="f-cr" />critical</span><span><i className="f-mj" />major</span><span><i className="f-mn" />minor</span>
-        <span><i className="f-wn" />warning</span><span><i className="f-ok" />no open alarm</span><span>a folded node shows the worst below it</span>
+        <span><i className="f-cr" />{t("topology.containment.legend.critical")}</span><span><i className="f-mj" />{t("topology.containment.legend.major")}</span><span><i className="f-mn" />{t("topology.containment.legend.minor")}</span>
+        <span><i className="f-wn" />{t("topology.containment.legend.warning")}</span><span><i className="f-ok" />{t("topology.containment.legend.none")}</span><span>{t("topology.containment.legend.folded")}</span>
       </div>
     </Card>
   );
@@ -45,11 +47,12 @@ export function ContainmentGraph() {
 /** The drawing: one row per visible node, an elbow from its parent, the fold arrow, the coloured dot and the name (a link to the element page). */
 function TreeSvg({ rows, onToggle }: { rows: Row[]; onToggle: (dn: string) => void }) {
   const navigate = useNavigate();
+  const t = useT();
   const width = 40 + Math.max(...rows.map((r) => r.depth)) * INDENT + 360;
   const parentRow = new Map<string, number>();
   return (
     <div className="graph">
-      <svg viewBox={`0 0 ${width} ${rows.length * ROW + 8}`} role="tree" aria-label="Containment tree">
+      <svg viewBox={`0 0 ${width} ${rows.length * ROW + 8}`} role="tree" aria-label={t("topology.containment.title")}>
         {rows.map((r, i) => {
           parentRow.set(r.node.dn, i);
           const x = 16 + r.depth * INDENT, y = 14 + i * ROW;
@@ -62,13 +65,13 @@ function TreeSvg({ rows, onToggle }: { rows: Row[]; onToggle: (dn: string) => vo
               data-colour={r.colour ?? "none"}>
               {from !== undefined && <path className="g-edge" fill="none" d={`M${x - INDENT + 4},${14 + from * ROW + 6} V${y} H${x - 7}`} />}
               {r.hasChildren && (
-                <text className="g-fold" x={x - 15} y={y + 4} role="button" tabIndex={0} aria-label={`${r.open ? "Fold" : "Unfold"} ${label}`}
+                <text className="g-fold" x={x - 15} y={y + 4} role="button" tabIndex={0} aria-label={t(r.open ? "topology.containment.fold" : "topology.containment.unfold", { label })}
                   onClick={() => onToggle(r.node.dn)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(r.node.dn); } }}>
                   {r.open ? "▾" : "▸"}
                 </text>
               )}
-              <circle cx={x} cy={y} r={5} className={severityFill(r.colour)}><title>{alarms || "no open alarm"}</title></circle>
-              <text x={x + 10} y={y + 4} className="g-label" role="link" tabIndex={0} aria-label={`${label}, ${alarms || "no open alarm"}; open ${r.node.managedElementRef}`}
+              <circle cx={x} cy={y} r={5} className={severityFill(r.colour)}><title>{alarms || t("topology.containment.noAlarm")}</title></circle>
+              <text x={x + 10} y={y + 4} className="g-label" role="link" tabIndex={0} aria-label={t("topology.containment.nodeAria", { label, alarms: alarms || t("topology.containment.noAlarm"), element: r.node.managedElementRef })}
                 onClick={open} onKeyDown={(e) => { if (e.key === "Enter") open(); }}>
                 {label}{alarms ? <tspan className="muted"> · {alarms}</tspan> : null}
               </text>

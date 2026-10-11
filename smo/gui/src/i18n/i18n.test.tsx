@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, mount } from "../testing/dom";
 import { de } from "./de";
 import { en } from "./en";
-import { format, I18nProvider, LANGUAGE_NAMES, LANGUAGES, navKey, translate, useT } from ".";
+import { format, I18nProvider, LANGUAGE_NAMES, LANGUAGES, navKey, translate, useT, type TKey } from ".";
 
 afterEach(cleanup);
 
@@ -19,7 +19,7 @@ describe("translate", () => {
     expect(translate("en", "preferences.title")).toBe("Preferences");
     expect(translate("de", "preferences.title")).toBe("Einstellungen");
     const untranslated = (Object.keys(en) as (keyof typeof en)[]).find((k) => !(k in de));
-    if (untranslated) expect(translate("de", untranslated)).toBe(en[untranslated]);
+    if (untranslated) expect(translate("de", untranslated as TKey)).toBe(en[untranslated]);
   });
 
   // `{name}` is filled from the parameters; one without a value stays visible rather than vanishing.
@@ -55,6 +55,11 @@ describe("the catalogs", () => {
       expect(key in en, `unknown key ${key}`).toBe(true);
       expect(placeholders(text ?? ""), key).toEqual(placeholders((en as Record<string, string>)[key]));
     }
+  });
+
+  // Every English message has its German text: a converted page is translated whole, never left half English (GUI-6.4).
+  it("translate every English message into German", () => {
+    expect(Object.keys(en).filter((k) => !(k in de))).toEqual([]);
   });
 
   // A plural message always has its `_other` form in English, the form every language falls back to.

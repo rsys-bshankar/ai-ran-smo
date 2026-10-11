@@ -13,6 +13,8 @@ Routes: `/decisions` (`?job=<id>` / `?approval=<id>` narrow it) and `/decisions/
 | decisions.integrity | sections/Integrity.tsx | record hash, audit row, VERIFIED / UNCHAINED / MISMATCH | `/ran-nf-oam/decision-records/{id}` | 15 s | 1 call per selected row |
 | decisions.outcome, decisions.why | sections/RecordDetail.tsx | the one-record route: outcome (job and approval drawers; "Approvers (two were needed)" when the record carries `approvers`), why | same record | — | 0 |
 
+Every word on the page comes from the catalog (`src/i18n/en/decisions.ts`, `de/decisions.ts`; GUI-6.4); its literal count is 0.
+
 ## Known limits
 
 - **Verify** (the sixth step) shows a gap note: the record carries no verification result.

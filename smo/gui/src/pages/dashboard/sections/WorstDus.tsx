@@ -4,17 +4,19 @@
 import { Link } from "react-router-dom";
 
 import { Card } from "../../../components/ui";
+import { useT } from "../../../i18n";
 import { formatCount } from "../../../kit/Kpi";
 import { QueryState } from "../../../kit/states";
 import { useWorstElements, WORST_TOP } from "../data/queries";
 
 /** The ranking card. */
 export function WorstDus() {
+  const t = useT();
   const worst = useWorstElements();
   return (
-    <Card section="dashboard.worst" title="Worst DUs" sub={`top ${WORST_TOP} by open critical, major, then all alarms`}
-      actions={<Link to="/alarms" className="small">Alarms →</Link>}>
-      <QueryState q={worst} empty={<p className="muted">No element has an open alarm.</p>}>
+    <Card section="dashboard.worst" title={t("dashboard.worst.title")} sub={t("dashboard.worst.sub", { n: WORST_TOP })}
+      actions={<Link to="/alarms" className="small">{t("dashboard.worst.alarms")}</Link>}>
+      <QueryState q={worst} empty={<p className="muted">{t("dashboard.worst.empty")}</p>}>
         <ol className="list worst-list">
           {(worst.data ?? []).map((w) => (
             <li key={w.managedElementRef}>
@@ -22,10 +24,10 @@ export function WorstDus() {
                 <Link to={`/elements/${encodeURIComponent(w.managedElementRef)}`}>{w.managedElementRef}</Link>
                 <span className="xs muted"> {[w.region, w.siteCluster].filter(Boolean).join(" · ")}</span>
               </span>
-              {w.critical > 0 && <span className="sev sev-cr" title="open critical alarms">{formatCount(w.critical)}</span>}
-              {w.major > 0 && <span className="sev sev-mj" title="open major alarms">{formatCount(w.major)}</span>}
+              {w.critical > 0 && <span className="sev sev-cr" title={t("dashboard.worst.critical")}>{formatCount(w.critical)}</span>}
+              {w.major > 0 && <span className="sev sev-mj" title={t("dashboard.worst.major")}>{formatCount(w.major)}</span>}
               <Link className="small" to={`/alarms?me=${encodeURIComponent(w.managedElementRef)}`}>
-                {formatCount(w.openAlarms)} open<span className="sr-only"> alarms on {w.managedElementRef}</span>
+                {t("dashboard.worst.open", { n: formatCount(w.openAlarms) })}<span className="sr-only"> {t("dashboard.worst.openOn", { element: w.managedElementRef })}</span>
               </Link>
             </li>
           ))}

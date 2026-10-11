@@ -10,6 +10,7 @@ import { roleAtLeast } from "../../../auth/rbac";
 import { ExportJobButton } from "../../../components/ExportJobButton";
 import { Card, Field, Id } from "../../../components/ui";
 import { decisionsExport } from "../../../data/exports";
+import { useT } from "../../../i18n";
 import { useScope } from "../../../data/scope";
 import { Segmented } from "../../../kit/Segmented";
 import type { Query } from "../../../api/client";
@@ -20,32 +21,33 @@ export interface FilterBarProps { filter: DecisionFilter; range: Range; onChange
 
 /** The filter bar. */
 export function FilterBar({ filter, range, onChange, onRange, query }: FilterBarProps) {
+  const t = useT();
   const { me } = useAuth();
   const scope = useScope();
   const canExport = !!me && roleAtLeast(me.role, "operator");
   return (
     <Card section="decisions.filters">
       <div className="row gap wrap">
-        <Field label="rApp (invoker id)"><input aria-label="Filter by rApp" value={filter.invoker} onChange={(e) => onChange({ invoker: e.target.value })} /></Field>
-        <Field label="Outcome">
-          <select aria-label="Filter by outcome" value={filter.disposition} onChange={(e) => onChange({ disposition: e.target.value })}>
-            <option value="">All</option>
+        <Field label={t("decisions.filters.invoker")}><input aria-label={t("decisions.filters.invoker.aria")} value={filter.invoker} onChange={(e) => onChange({ invoker: e.target.value })} /></Field>
+        <Field label={t("decisions.filters.outcome")}>
+          <select aria-label={t("decisions.filters.outcome.aria")} value={filter.disposition} onChange={(e) => onChange({ disposition: e.target.value })}>
+            <option value="">{t("decisions.filters.all")}</option>
             {DISPOSITIONS.map((d) => <option key={d} value={d}>{d}</option>)}
           </select>
         </Field>
-        <Field label="Model version"><input aria-label="Filter by model version" value={filter.model} onChange={(e) => onChange({ model: e.target.value })} /></Field>
-        <Field label="Since">
-          <Segmented<Range> label="Time range" value={range} onChange={onRange}
-            options={[{ id: "1h", label: "1 h" }, { id: "24h", label: "24 h" }, { id: "7d", label: "7 d" }, { id: "all", label: "All" }]} />
+        <Field label={t("decisions.filters.model")}><input aria-label={t("decisions.filters.model.aria")} value={filter.model} onChange={(e) => onChange({ model: e.target.value })} /></Field>
+        <Field label={t("decisions.filters.since")}>
+          <Segmented<Range> label={t("decisions.filters.range")} value={range} onChange={onRange}
+            options={[{ id: "1h", label: "1 h" }, { id: "24h", label: "24 h" }, { id: "7d", label: "7 d" }, { id: "all", label: t("decisions.filters.all") }]} />
         </Field>
-        <Field label="Until" hint="optional"><input type="datetime-local" aria-label="Until" value={filter.until} onChange={(e) => onChange({ until: e.target.value })} /></Field>
+        <Field label={t("decisions.filters.until")} hint={t("decisions.filters.optional")}><input type="datetime-local" aria-label={t("decisions.filters.until")} value={filter.until} onChange={(e) => onChange({ until: e.target.value })} /></Field>
         {query && canExport && (
-          <ExportJobButton what="decision records" request={decisionsExport(query, scope)}
-            note={filter.model || filter.job || filter.approval ? "The model version, job and approval filters narrow the table only; the file holds every record of the other filters." : null} />
+          <ExportJobButton what={t("decisions.filters.exportWhat")} request={decisionsExport(query, scope)}
+            note={filter.model || filter.job || filter.approval ? t("decisions.filters.exportNote") : null} />
         )}
       </div>
       {(filter.job || filter.approval) && (
-        <p className="small">Narrowed to {filter.job ? <>job <Id value={filter.job} /></> : <>request <Id value={filter.approval} /></>}. <Link to="/decisions">Show all</Link></p>
+        <p className="small">{t("decisions.filters.narrowedTo")} {filter.job ? <>{t("decisions.filters.job")} <Id value={filter.job} /></> : <>{t("decisions.filters.request")} <Id value={filter.approval} /></>}. <Link to="/decisions">{t("decisions.filters.showAll")}</Link></p>
       )}
     </Card>
   );

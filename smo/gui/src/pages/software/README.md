@@ -17,6 +17,9 @@ Route: `/software` (tabs in the hash: `#campaigns`, `#jobs`, `#new`; `?campaign=
 Actions are role-gated (`ActionButton`, `Can`; operator in `gui-bff/app/rbac.py`, which also sets `requestedBy`). Roll back (naming the campaign's rollback order) and Abort ask
 first; Continue during an unexpired pause asks and sends `force: true`. `campaignActions` (data/types.ts) mirrors the states the backend accepts.
 
+Every word on the page comes from the catalog (`src/i18n/en/software.ts`, `de/software.ts`; GUI-6.4); its literal count is 0. The lifecycle watcher card
+(`sections/LifecycleWatchers.tsx`) takes its words from there on the Configuration page too.
+
 ## Known limits
 
 - The mockup's tiles "Elements on 24.3.x %", "Gate failures · 7 d" and "Element jobs failed · 24 h" are not shown: no route serves a

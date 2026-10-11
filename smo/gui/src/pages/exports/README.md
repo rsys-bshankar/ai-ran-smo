@@ -6,6 +6,7 @@ The asynchronous CSV exports of the console. "Export…" on **Decisions** and on
 lists what the file will hold, then creates a job with the page's filters and the global scope (`POST /api/exports`, 202 at once); the BFF writes
 the file in the background, page by page by keyset, and keeps it 24 hours after it finishes. This page follows the jobs and downloads the files.
 Rules, types and the request builders: `src/data/exports.ts`; the button and dialog: `src/components/ExportJobButton.tsx`.
+Every word on the page comes from the catalog, `src/i18n/en/exports.ts` and `de/exports.ts` (GUI-6.4).
 
 ## Sections
 
