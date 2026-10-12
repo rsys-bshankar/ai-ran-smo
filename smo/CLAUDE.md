@@ -12,7 +12,7 @@ This is the Phase 1 SMO reference implementation. The documentation:
 - `OPEN_ITEMS.md` — what is still open, and why;
 - `CHANGELOG.md` and `docs/RELEASES.md` — what changed for an operator, and how releases are versioned and cut (add a line under `[Unreleased]` for a change an operator would notice);
 - `HISTORY.md` — what was decided and built (code comments cite it as `HISTORY.md §5` or `HISTORY.md OI-6.3`);
-- `DEMO_RUNBOOK.md` — a live walkthrough; `docs/call-flows/` — one sequence diagram per flow.
+- `DEMO_RUNBOOK.md` — a live walkthrough; `docs/GUI_DEMO_GUIDE.md` — the sample rApps' demo in the operator console; `docs/call-flows/` — one sequence diagram per flow.
 
 The rest of this file is working practice for anyone (human or agent)
 changing code here.
