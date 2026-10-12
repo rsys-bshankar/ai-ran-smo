@@ -1491,7 +1491,8 @@ Then run one step at a time and look at what each prints:
 | Demo 10 — O1 update | `… demo.py 10` | `NRCellDU=101` read back over NETCONF get-config: `administrativeState: LOCKED`, verification `VERIFIED` |
 | Demo 11 — dashboard | `… demo.py 11` | per cell: state, PRB, predicted PRB, decision, outcome. In the GUI: **rApps** → the instance (the demo passes `operatorApiBase` when it creates the instance, so its declared page has data) |
 
-`python3 /srv/scratch/energy-saving-rapp/demo.py all` runs every step. Things to
+`python3 /srv/scratch/energy-saving-rapp/demo.py all` runs every step. To show the same demo to a customer in the operator
+console, click by click (§24–§27 alike): `docs/GUI_DEMO_GUIDE.md`. Things to
 try afterwards:
 
 * **Wake the cell.** Report a load spike and run the loop:

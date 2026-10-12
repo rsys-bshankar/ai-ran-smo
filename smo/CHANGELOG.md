@@ -5,6 +5,10 @@ Entries are written for an operator: what changed in behaviour, configuration or
 
 ## [Unreleased]
 
+### Added
+
+- **A guide to demonstrating the four sample rApps in the operator console (`docs/GUI_DEMO_GUIDE.md`).** Steps 00 to 11 of each rApp's `demo.py`, click by click, with what to show and say, and the values to type for each rApp. The steps the console has no button for yet (history and live PM, training and validation runs, the Digital Twin emulation, the runtime deploy, the DME action record) run from `scripts/gui_demo.py`, which runs exactly that part of the rApp's own `demo.py` against the instance deployed in the console.
+
 ### Changed
 
 - CI pulls the third-party images from the repository's GHCR mirror (`docs/MIRROR.md`) instead of Docker Hub, to stop `toomanyrequests` failures when many jobs run at once. **CI only: nothing changes for an operator.** `docker-compose.yml`, the chart, the Dockerfiles and the GitOps overlays still name the upstream images, and every pull keeps its pinned digest. Each job starts with a step (`scripts/ci_mirror.py setup`) that checks the mirror and uses it per image; an image that does not answer is pulled from its upstream registry with a warning, and the repository variable `SMO_IMAGE_MIRROR=off` switches the mirror off in every job. The release workflow does not use the mirror. The Postgres of the `migration-postgres` job is started by a step instead of a `services:` container so that it can use it.

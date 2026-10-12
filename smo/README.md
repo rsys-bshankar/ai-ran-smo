@@ -278,7 +278,7 @@ smo/
                             incl. test_demo_runbook.py, which replays DEMO_RUNBOOK.md
   backup/                   the image of the compose `db-backup` service (Postgres 18 client, AWS CLI): off-site backups, docs/DISASTER_RECOVERY.md
   scripts/                  OpenAPI generation, migration-vs-models check, CM schema ingest, off-site backup and the restore drill (dr_*.sh),
-                            TS 28.312 family generation, config_reference.py (the environment-variable reference)
+                            TS 28.312 family generation, config_reference.py (the environment-variable reference), gui_demo.py (docs/GUI_DEMO_GUIDE.md)
   deploy/helm/smo/          the Helm chart (also the traces and logs lab stack, values-gated)
   deploy/gitops/            Kustomize overlays (lab, staging, prod) and Argo CD Applications for the chart
   docs/
@@ -332,6 +332,7 @@ smo/
 | [`docs/CONTROL_MATRIX.md`](docs/CONTROL_MATRIX.md) | ISO/IEC 27001:2022 Annex A themes and NESAS/SCAS test categories mapped to what exists, with evidence and an honest status (Implemented / Partial / Planned with an item ID / Not applicable) |
 | [`../specs/README.md`](../specs/README.md#specification-release-table-std-21) | The specification release table: the release or version of every spec in `specs/` and every spec the code cites, which module realises it, and where |
 | [`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md) | Command-by-command live demo against `docker compose up` |
+| [`docs/GUI_DEMO_GUIDE.md`](docs/GUI_DEMO_GUIDE.md) | The four sample rApps' demo (steps 00–11) shown in the operator console, click by click, with what to say; `scripts/gui_demo.py` runs the steps the console has no button for |
 | [`CLAUDE.md`](CLAUDE.md) | Working practice, conventions, full test battery |
 | [`docs/STANDARDS.md`](docs/STANDARDS.md) | Reference: TS 28.105/28.104/28.312 compliance matrices, runtime realisation and the frozen design decisions |
 | [`HISTORY.md`](HISTORY.md) | Audit trail only: decisions, closed items and the spec audit. Not needed to use or extend the platform; code comments cite its IDs |
