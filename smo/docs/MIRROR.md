@@ -1,6 +1,6 @@
 # The GHCR mirror of third-party images
 
-CI and the product pull third-party images (Postgres, Grafana, Loki, Tempo, Fluent Bit, Keycloak, the Python, Node, Go and Java base images and
+CI and the product pull third-party images (Postgres, Grafana, Loki, Tempo, Fluent Bit, Keycloak, the kind node image, the Python, Node, Go and Java base images and
 others). GitHub-hosted runners share outbound IP addresses, and Docker Hub limits anonymous pulls per address, so many concurrent jobs sometimes
 fail with `toomanyrequests` for no fault of the change under test. The repository has no paid Docker Hub plan and does not log in to Docker Hub.
 The durable fix is a copy of every pinned image in this repository's own GHCR namespace, which a job can pull without that limit.
@@ -46,7 +46,7 @@ packages may carry a wrong-digest `latest` / `3.2` from that run: the next run s
 
 ## The list
 
-16 packages (`<repo>` is the repository name, in lower case):
+17 packages (`<repo>` is the repository name, in lower case):
 
 | Package | Source images (tags) | Pinned by digest in the repository |
 |---|---|---|
@@ -61,19 +61,24 @@ packages may carry a wrong-digest `latest` / `3.2` from that run: the next run s
 | `<repo>/mirror/golang` | `golang:1.27.0-alpine` | yes |
 | `<repo>/mirror/maven` | `maven:3.9.11-eclipse-temurin-21-noble` | yes |
 | `<repo>/mirror/eclipse-temurin` | `eclipse-temurin:25-jre-noble` | yes |
-| `<repo>/mirror/tempo` | `grafana/tempo:2.10.8` | **no** |
-| `<repo>/mirror/loki` | `grafana/loki:3.7.8` | **no** |
-| `<repo>/mirror/fluent-bit` | `fluent/fluent-bit:5.1.3` | **no** |
-| `<repo>/mirror/grafana` | `grafana/grafana:13.2.3` | **no** |
-| `<repo>/mirror/keycloak` | `quay.io/keycloak/keycloak:26.4` (quay.io, not Docker Hub) | **no** |
+| `<repo>/mirror/tempo` | `grafana/tempo:2.10.8` | yes |
+| `<repo>/mirror/loki` | `grafana/loki:3.7.8` | yes |
+| `<repo>/mirror/fluent-bit` | `fluent/fluent-bit:5.1.3` | yes |
+| `<repo>/mirror/grafana` | `grafana/grafana:13.2.3` | yes |
+| `<repo>/mirror/keycloak` | `quay.io/keycloak/keycloak:26.4` (quay.io, not Docker Hub) | yes |
+| `<repo>/mirror/kind-node` | `kindest/node:v1.37.0` (the node image of every `kind create cluster`) | yes |
 
 Listed but not copied, because they are on `ghcr.io` already: `ghcr.io/cloudnative-pg/postgresql:17.4` and `ghcr.io/zaproxy/zaproxy:stable` (both
 pinned by digest).
 
-**Five references pin no digest** (Tempo, Loki, Fluent Bit and Grafana in `docker-compose.yml` and in the chart's `observability.*.image`, Keycloak in
-`smo-gui-e2e.yml`). For these the mirror resolves the tag on the day the workflow runs and copies that digest, so the mirrored tag can be newer than what
-a developer last pulled. Pinning them is a separate change (`OPEN_ITEMS.md`, `PR-OPS-12`). `tests_integration/test_image_mirror_list.py` asserts this
-set exactly, so a new unpinned reference fails the test.
+**Every third-party reference pins a digest** (`PR-OPS-12.4`). Tempo, Loki, Fluent Bit and Grafana (`docker-compose.yml` and the chart's
+`observability.*.image`, which move together) and Keycloak (`smo-gui-e2e.yml`, `KEYCLOAK_IMAGE`) are `name:tag@sha256:...` now, with the same versions as
+before and the digest of each tag's manifest list (index) on the day of the change, so the mirror copies exactly what the repository pulls. The kind node
+image is pinned too: the workflows install no `kind`, they use the binary on the runner image (kind 0.33.0), whose default node is
+`kindest/node:v1.37.0@sha256:a1ed56cf...`; each of the six `kind create cluster` calls now passes that as `--image`, so a newer runner image cannot move the
+cluster's Kubernetes version without a reviewed edit. `tests_integration/test_image_mirror_list.py` fails on an unpinned reference (its known-unpinned set is
+empty), on a `kind create cluster` with no `--image name:tag@sha256:...`, on two different node images, and on one that is not in the list. A kind bump is
+one edit of the six calls and of the list's `kindest/node` line (Dependabot does not read workflow commands).
 
 ## One-time steps for the owner
 
@@ -81,9 +86,10 @@ GHCR packages are private by default, and a workflow's `GITHUB_TOKEN` cannot cha
 without logging in, so the references stay as they are until the packages are public.
 
 1. Merge this change, then run the workflow once: GitHub, **Actions**, **Mirror images**, **Run workflow** on `main` (a merge that touches the list
-   also runs it). Read the job summary: every one of the 16 rows should say `mirrored` or `up-to-date` (a first run says `mirrored`; the images an
-   earlier run already copied and verified say `up-to-date`). A `failed` row names the reason.
-2. Make each of the 16 packages above public. For each: your profile or organisation, **Packages**, the package named `<repo>/mirror/<name>`,
+   also runs it). Read the job summary: every one of the 17 rows should say `mirrored` or `up-to-date` (a first run says `mirrored`; the images an
+   earlier run already copied and verified say `up-to-date`). A `failed` row names the reason. `kind-node` is new and is copied for the first time
+   (about 1 GB per architecture for `kindest/node`, two architectures; a Docker Hub `toomanyrequests` or a timeout there is a re-run, not a fault of the list).
+2. Make each of the 17 packages above public. For each: your profile or organisation, **Packages**, the package named `<repo>/mirror/<name>`,
    **Package settings**, **Change visibility**, **Public**, and type the name to confirm. Do not skip one: a missed package fails the job that pulls it.
 3. Tell whoever does the follow-up (below) that the packages are public. The check is `docker pull ghcr.io/<owner>/<repo>/mirror/postgres:18-alpine` from
    a machine that is not logged in to GHCR.
@@ -119,8 +125,8 @@ change reaches `main`). The same test fails when a reference is removed from the
 ## What the mirror does not solve
 
 - **Images pulled by actions themselves** (an action that runs in a container, `docker://` steps, the tools an action downloads) and by the runner image.
-- **The kind node image.** `kind create cluster` pulls `kindest/node` from Docker Hub at the version the runner's `kind` binary carries; the repository pins
-  none. Mirroring it needs a pin first (`--image kindest/node:<tag>@sha256:...`); it is recorded under `PR-OPS-12`.
+- **The kind node image is mirrored, but kind still pulls it from Docker Hub.** `kind create cluster --image kindest/node:v1.37.0@sha256:...` names
+  Docker Hub; the pin makes the version reproducible and the mirror holds the same digest (`kind-node`), and the follow-up change (`OPS-12.3`) repoints it.
 - **The CloudNativePG operator image.** `smo-dr.yml` and `smo-tests.yml` apply the operator's release manifest, which names an image on `ghcr.io`
   (not Docker Hub); it is not in this repository, so the test cannot see it.
 - **Base images no file here names**, such as an image a `docker build` pulls through a `FROM` the list does not hold. The drift test reads every

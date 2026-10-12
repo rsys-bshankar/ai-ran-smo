@@ -1238,7 +1238,7 @@ jobs:
 
       - name: Create the cluster and load the images
         run: |
-          kind create cluster --name smo --wait 120s
+          kind create cluster --name smo --image kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5 --wait 120s
           images=$(docker image ls 'local/smo-*' --format '{{.Repository}}:{{.Tag}}')
           kind load docker-image --name smo $images
 
@@ -1458,7 +1458,7 @@ jobs:
 
       - name: Create the cluster and load the images
         run: |
-          kind create cluster --name smo --wait 120s
+          kind create cluster --name smo --image kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5 --wait 120s
           images=$(docker image ls 'local/smo-*' --format '{{.Repository}}:{{.Tag}}')
           kind load docker-image --name smo $images
 

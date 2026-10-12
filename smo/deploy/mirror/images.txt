@@ -14,8 +14,9 @@
 # tests_integration/test_image_mirror_list.py: a pin in docker-compose.yml, deploy/helm/smo/values.yaml, deploy/helm/smo/ci, a Dockerfile, a
 # workflow or a script that is missing here, or has another digest, fails that test. A Dependabot bump of a pin therefore needs the same edit here.
 # Nothing here changes a pin; the pins stay where they are until the follow-up change that points them at the mirror (docs/MIRROR.md).
+# A `-` digest stays legal for a reference the repository cannot pin (the note says why), but there is none today and the drift test holds the set empty.
 
-# --- pinned by digest in the repository, copied to the mirror ---
+# --- pinned by digest in the repository, copied to the mirror (every third-party image the repository pulls has a digest, OPEN_ITEMS.md PR-OPS-12.4) ---
 python:3.11-slim | sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 | python |
 python:3.14-slim | sha256:0741d101873c12ab927e6f8653feb8862b9bd58771177acb1b885b95141f91b4 | python |
 postgres:18-alpine | sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873 | postgres |
@@ -29,14 +30,12 @@ golang:1.27.0-alpine | sha256:4c9fe60190a2a3350ddc51de80d0224b8a6698d12bdfc999fe
 maven:3.9.11-eclipse-temurin-21-noble | sha256:6fdc855a6ed81d288ca7ca37ac6ff5e9308b612485c0801d70b25a858c83d237 | maven |
 eclipse-temurin:25-jre-noble | sha256:d9a39a23634650173f1e2bbc176227af9728587ecf0f4b62d53e9355cd7a19ab | eclipse-temurin |
 
-# --- NOT pinned by digest in the repository today (docker-compose.yml and deploy/helm/smo/values.yaml pin a tag; the Keycloak lane a tag) ---
-# The mirror copies what the tag resolves to on the day it runs, so the mirrored tag can be newer than the source's was; pinning these is a
-# separate change (OPEN_ITEMS.md, PR-OPS-12). tests_integration/test_image_mirror_list.py holds this set, so a NEW unpinned reference fails.
-grafana/tempo:2.10.8 | - | tempo | unpinned in docker-compose.yml and values.yaml (observability.tempo.image); a tag is resolved when the mirror runs
-grafana/loki:3.7.8 | - | loki | unpinned in docker-compose.yml and values.yaml (observability.loki.image); a tag is resolved when the mirror runs
-fluent/fluent-bit:5.1.3 | - | fluent-bit | unpinned in docker-compose.yml and values.yaml (observability.fluentBit.image); a tag is resolved when the mirror runs
-grafana/grafana:13.2.3 | - | grafana | unpinned in docker-compose.yml and values.yaml (observability.grafana.image); a tag is resolved when the mirror runs
-quay.io/keycloak/keycloak:26.4 | - | keycloak | unpinned in smo-gui-e2e.yml (KEYCLOAK_IMAGE, on quay.io, not Docker Hub); a tag is resolved when the mirror runs
+grafana/tempo:2.10.8 | sha256:f0561deb1c68ec44d6e6e7e4487f30106c4e5e768642077695b37958b105812a | tempo |
+grafana/loki:3.7.8 | sha256:1107dd5274e0ada47e42472b7a7e71f3b2a2fe878878108f3e2f9e51528f0193 | loki |
+fluent/fluent-bit:5.1.3 | sha256:c5542543523c9678398dd78d927c05e8425ec15b038f226b67b3b019b1a70845 | fluent-bit |
+grafana/grafana:13.2.3 | sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572 | grafana |
+quay.io/keycloak/keycloak:26.4 | sha256:9409c59bdfb65dbffa20b11e6f18b8abb9281d480c7ca402f51ed3d5977e6007 | keycloak | on quay.io, not Docker Hub; pinned in smo-gui-e2e.yml (KEYCLOAK_IMAGE)
+kindest/node:v1.37.0 | sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5 | kind-node | the node image of every `kind create cluster --image` in the workflows; v1.37.0 is the default of kind 0.33.0, the version on the runner image
 
 # --- pinned by digest, not copied ---
 ghcr.io/cloudnative-pg/postgresql:17.4 | sha256:3c0ba08ea353c9705a755c113e4ae395be76553e0ed68076e5410cb09b9d17d9 | - | already on ghcr.io, where a public package pulls without the Docker Hub limit

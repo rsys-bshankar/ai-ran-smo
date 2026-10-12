@@ -5,6 +5,10 @@ Entries are written for an operator: what changed in behaviour, configuration or
 
 ## [Unreleased]
 
+### Changed
+
+- The Tempo, Loki, Fluent Bit and Grafana images of the `tracing` and `logging` profiles (`docker-compose.yml`) and of the chart's `observability.*` (`values.yaml`) are now pinned by digest (`name:tag@sha256:...`). The versions are the same (Tempo 2.10.8, Loki 3.7.8, Fluent Bit 5.1.3, Grafana 13.2.3); nothing changes for an operator who does not override them. If you override one of these images, pin yours the same way. CI now also pins Keycloak (the GUI sign-in test) and the kind node image (`kindest/node:v1.37.0`) by digest (`docs/MIRROR.md`, `OPS-12.4`).
+
 ### Fixed
 
 - The GHCR mirror workflow (CI only; nothing changes for an operator; `docs/MIRROR.md`) copies with `skopeo copy --all --preserve-digests` instead of `docker buildx imagetools create`, which re-wrapped single-platform images under a new digest (two of the 16 images failed verification on its first run). The verification is unchanged.

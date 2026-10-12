@@ -686,7 +686,7 @@ services:
   #   docker compose --profile logging up -d
   tempo:
     profiles: ["tracing"]
-    image: grafana/tempo:2.10.8
+    image: grafana/tempo:2.10.8@sha256:f0561deb1c68ec44d6e6e7e4487f30106c4e5e768642077695b37958b105812a
     command: ["-config.file=/etc/tempo/tempo.yaml"]
     restart: unless-stopped
     cap_drop: [ALL]
@@ -697,7 +697,7 @@ services:
 
   loki:
     profiles: ["logging"]
-    image: grafana/loki:3.7.8
+    image: grafana/loki:3.7.8@sha256:1107dd5274e0ada47e42472b7a7e71f3b2a2fe878878108f3e2f9e51528f0193
     command: ["-config.file=/etc/loki/loki.yaml"]
     restart: unless-stopped
     cap_drop: [ALL]
@@ -709,7 +709,7 @@ services:
   # Reads every container's json-file log (the Docker default), so it needs the host's container log directory, read-only, and root to read it.
   fluent-bit:
     profiles: ["logging"]
-    image: fluent/fluent-bit:5.1.3
+    image: fluent/fluent-bit:5.1.3@sha256:c5542543523c9678398dd78d927c05e8425ec15b038f226b67b3b019b1a70845
     command: ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
     user: "0"
     restart: unless-stopped
@@ -723,7 +723,7 @@ services:
 
   grafana:
     profiles: ["tracing", "logging"]
-    image: grafana/grafana:13.2.3
+    image: grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
     restart: unless-stopped
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]

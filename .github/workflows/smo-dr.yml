@@ -193,7 +193,7 @@ jobs:
         working-directory: smo
         run: |
           pip install --quiet --require-hashes -r requirements/dr.txt
-          kind create cluster --name dr --wait 180s
+          kind create cluster --name dr --image kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5 --wait 180s
           gateway=$(docker network inspect kind -f '{{range .IPAM.Config}}{{println .Gateway}}{{end}}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
           [ -n "$gateway" ] || { docker network inspect kind; echo "::error::no IPv4 gateway on the kind network"; exit 1; }
           echo "S3_ENDPOINT=http://$gateway:9000" >> "$GITHUB_ENV"
