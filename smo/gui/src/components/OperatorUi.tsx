@@ -17,6 +17,7 @@
 import { Component, useState, type ErrorInfo, type FormEvent, type ReactNode } from "react";
 
 import { useOperatorAction, useOperatorRead, type Declaration } from "../api/rapps";
+import { useOptionalAuth } from "../auth/AuthContext";
 import { useSmo } from "../api/hooks";
 import { ApiError } from "../api/client";
 import { useT } from "../i18n";
@@ -473,18 +474,30 @@ export function SeriesChart({ type, series, extra = 0, unit, label }: { type: "l
 
 // ---------------------------------------------------------------- actions
 
+/** Whether the signed-in user may press `action`: one declared `role: admin` (a demo or simulation button) is an admin's, the BFF decides again on the call. */
+function useMayPress(): (action: Obj) => boolean {
+  const role = useOptionalAuth()?.role;
+  return (action) => action.role !== "admin" || role === "admin";
+}
+
 /**
- * The declared action buttons of an actions panel. Without the permission to change it shows a line naming the actions that need the operator role instead of the buttons.
+ * The declared action buttons of an actions panel. Without the permission to change it shows a line naming the actions that need the operator role instead of the buttons;
+ * an admin-only action is left out for anyone else, and a line names it (for a viewer too, so a panel of only admin actions never says "operator").
  */
 function ActionsPanel({ instanceId, panel, canChange }: { instanceId: string; panel: Obj; canChange: boolean; registered: boolean }) {
   const t = useT();
+  const mayPress = useMayPress();
   const actions = arr(panel.actions).filter(isObj);
   if (actions.length === 0) return <Unsupported title={str(panel.title)} what="panel" />;
+  const mine = actions.filter(mayPress);
+  const adminOnly = actions.filter((a) => !mayPress(a));
+  const operatorOnes = actions.filter((a) => a.role !== "admin");
   return (
     <Card title={str(panel.title)}>
-      {canChange
-        ? <div className="row gap">{actions.map((a) => <DeclaredButton key={str(a.id)} instanceId={instanceId} action={a} />)}</div>
-        : <p className="muted small">{t("components.operatorUi.needsRoleFor", { actions: actions.map((a) => str(a.label)).join(", ") })}</p>}
+      {canChange && mine.length > 0 && <div className="row gap">{mine.map((a) => <DeclaredButton key={str(a.id)} instanceId={instanceId} action={a} />)}</div>}
+      {!canChange && operatorOnes.length > 0
+        && <p className="muted small">{t("components.operatorUi.needsRoleFor", { actions: operatorOnes.map((a) => str(a.label)).join(", ") })}</p>}
+      {adminOnly.length > 0 && <p className="muted small">{t("components.operatorUi.needsAdminFor", { actions: adminOnly.map((a) => str(a.label)).join(", ") })}</p>}
     </Card>
   );
 }
@@ -492,10 +505,11 @@ function ActionsPanel({ instanceId, panel, canChange }: { instanceId: string; pa
 /** A declared button. With `inputs` it first asks for them; with `confirm` it then asks to confirm; `{user}` in the fixed body is filled by the BFF, not here. */
 function DeclaredButton({ instanceId, action, row }: { instanceId: string; action: Obj; row?: Obj }) {
   const mutation = useOperatorAction(instanceId);
+  const mayPress = useMayPress();
   const [asking, setAsking] = useState(false);
   const path = typeof action.path === "string" ? fillRoute(action.path, instanceId, row) : null;
   const method = action.method;
-  if (path === null || typeof action.id !== "string" || (method !== "POST" && method !== "PUT" && method !== "PATCH" && method !== "DELETE")) return null;
+  if (!mayPress(action) || path === null || typeof action.id !== "string" || (method !== "POST" && method !== "PUT" && method !== "PATCH" && method !== "DELETE")) return null;
   const inputs = arr(action.inputs).filter(isObj) as unknown as InputSpec[];
   const send = (body: Obj) => {
     if (typeof action.confirm === "string" && !window.confirm(action.confirm)) return;

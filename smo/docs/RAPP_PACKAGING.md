@@ -156,7 +156,7 @@ operatorUi:
 | Source | a GET route relative to the rApp's operator API base; `{instanceId}` is the open instance; in a row action also `{row.<field>}` |
 | Row drawer | `rowDetail` of a table: a `title` and 1 to 6 blocks of kind `json`, `keyValues`, `table` or `chart`; a `table` or `chart` block reads a list field of the row or a per-row GET `source` whose route and query may use `{row.<field>}` (the table's `rowKey` or a column); no nesting. The per-row sources are declared routes (reads) |
 | Field paths | dotted names, at most one `[]`; no `..`, `$`, index, wildcard or filter |
-| Permission | the routes the GUI backend may call for the rApp are exactly the panels' `source` routes, the `rowDetail` per-row sources and the action routes; reads need viewer, changes operator; `readOnly: true` allows no change |
+| Permission | the routes the GUI backend may call for the rApp are exactly the panels' `source` routes, the `rowDetail` per-row sources and the action routes; reads need viewer, changes operator, an action declared `role: admin` (a demo or simulation button) admin; `readOnly: true` allows no change |
 | Text | always drawn as text, never HTML or markdown |
 | Limits | 64 KiB as JSON, 4 000 values, 20 panels, 20 columns, 30 key-value items, 12 tiles, 5 row actions, 6 row-detail blocks, 10 actions per panel, 8 inputs per action, route 200 and field path 100 characters, `refreshSeconds` 5 to 3600 |
 | Extensions | keys starting `x-` are ignored (and not stored); any other unknown key is refused |

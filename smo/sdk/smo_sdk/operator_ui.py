@@ -61,10 +61,11 @@ def input_field(name: str, label: str, type: str = "string", *, required: bool |
 
 
 def action(id: str, label: str, method: str, path: str, *, success: str, confirm: str | None = None, tone: str | None = None,  # noqa: A002
-           inputs: list[dict] | None = None, body: dict | None = None, when: dict | None = None) -> dict:
+           inputs: list[dict] | None = None, body: dict | None = None, when: dict | None = None, role: str | None = None) -> dict:
     """A button. `method` is POST, PUT, PATCH or DELETE. `body` holds fixed values (`"{user}"` is replaced by the signed-in user); `when` (row actions
-    only) shows it for some rows: `{"path": "overrideBy", "exists": False}`."""
-    return _drop_none(id=id, label=label, method=method, path=path, success=success, confirm=confirm, tone=tone, inputs=inputs, body=body, when=when)
+    only) shows it for some rows: `{"path": "overrideBy", "exists": False}`; `role="admin"` lets only an admin press it (operator by default)."""
+    return _drop_none(id=id, label=label, method=method, path=path, success=success, confirm=confirm, tone=tone, inputs=inputs, body=body, when=when,
+                      role=role)
 
 
 def _panel(kind: str, id: str, title: str, src: str | dict | None, **fields: Any) -> dict:  # noqa: A002

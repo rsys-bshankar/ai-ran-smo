@@ -63,7 +63,8 @@ Decision logic is in `app/engine.py` (pure functions) and `app/model/MobilityMod
 | `app/models.py` | Instance, relation and decision tables |
 | `demo.py` | Demo 00-11 script |
 | `tests/` | Engine, model and route unit tests (routes through the TestClient on SQLite, the SDK replaced by a platform double) |
-| `tests/test_operator_page.py` | The `operatorUi` of `manifest.yaml` is valid, names only routes this rApp serves with query parameters they take, and reads only fields its own answers carry (4 tests) |
+| `tests/test_operator_page.py` | The `operatorUi` of `manifest.yaml` is valid, names only routes this rApp serves with query parameters they take, reads only fields its own answers carry, and ends with the admin-only demo panel (4 tests) |
+| `tests/test_demo_routes.py` | The demo / simulation routes: prepare registers the twin producer and starts; history, live and the KPI hour send the PM `demo.py` sends, and a refused report is answered as refused; emulate publishes the twin's data then emulates (8 tests) |
 | `manifest.yaml`, `capabilities.yaml`, `Definitions/asd.yaml`, `TOSCA-Metadata/` | CSAR package content |
 
 ## Package
@@ -93,6 +94,11 @@ Paths are relative to the service root; through R1 Termination they sit under `/
 | `GET /instances/{id}/relations` | Per-relation state and CIO (read by the Coverage rApp) |
 | `GET /instances/{id}/dashboard` | Trends, latest decision per relation |
 | `POST /sim-producer/register`, `POST /sim-producer/publish` | Register and feed the Digital Twin dataset |
+| `POST /instances/{id}/demo/prepare` | Demo 00-01 (`docs/GUI_DEMO_GUIDE.md`): register the Digital Twin producer, then `start` |
+| `POST /instances/{id}/demo/history` | Demo 02: 72 hourly HO_PERFORMANCE windows per configured relation from 2026-09-01 (each relation's scenario as in `demo.py`), reported to RAN NF OAM as the NF would; a refusal is answered as RAN NF OAM gave it |
+| `POST /instances/{id}/demo/emulate` | Demo 05: the Digital Twin publishes 48 h of injected faults, then `lifecycle/emulate` |
+| `POST /instances/{id}/demo/live` | Demo 08's PM: two hourly windows from midnight on 2026-09-04 (then Evaluate now) |
+| `POST /instances/{id}/demo/kpi-hour` | Demo 10's PM: the next hour, every relation healthy (then Evaluate now: CONFIRMED) |
 | `GET /sim-producer/health`, `POST /sim-producer/jobs`, `DELETE /sim-producer/jobs/{id}` | DME producer callbacks |
 
 `/start` needs `managedElementRef` and `relations` (`[{relation, source, target}]`) in the instance configuration; optional keys are `baselineCio`, `dmroBounds`, `rmihId`, `energySavingInstanceId`, `trafficSteeringInstanceId` and `operatorNotificationUri`.

@@ -732,4 +732,90 @@ def publish_sim_data(body: SimPublishRequest):
     return publish_sim(sdk, body)
 
 
+# ---------------------------------------------------------------- demo / simulation (docs/GUI_DEMO_GUIDE.md)
+# What demo.py does around the rApp, as routes the operator page declares as admin-only buttons (`role: admin` in manifest.yaml), so the demo runs from
+# the console: the rApp plays the network (COVERAGE_PERFORMANCE PM reports into RAN NF OAM, as the NF would send them, made by the package's own
+# propagation model from each cell's live tilt and power) and the Digital Twin. Simulation time, as demo.py's: history from 2026-09-01, live PM from
+# midnight on the 4th; cell 301 overshoots into its neighbours.
+
+DEMO_HISTORY_START = datetime.datetime(2026, 9, 1, tzinfo=datetime.UTC)
+DEMO_LIVE_START = DEMO_HISTORY_START + datetime.timedelta(days=3)
+DEMO_FAULTS = {"301": "OVERSHOOT"}
+DEMO_TWIN = SimPublishRequest(managedElementRef="digital-twin-cco", start=DEMO_HISTORY_START, hours=12, clusters={
+    "dt1": {"scenario": "OVERSHOOT", "faultCell": "a"}, "dt2": {"scenario": "WEAK_COVERAGE", "faultCell": "b"},
+    "dt3": {"scenario": "PILOT_POLLUTION", "faultCell": "c"}, "dt4": {"scenario": "HEALTHY"}})
+
+
+def _demo_cluster(inst: CoverageInstance) -> dict[str, list[str]]:
+    """The sample cluster's neighbour lists (producer.NEIGHBOURS) over the instance's cells, in their configured order; a cell the sample does not
+    know has no neighbours."""
+    return {c: [j for j in producer.NEIGHBOURS.get(c, []) if j in inst.cells] for c in inst.cells}
+
+
+def _report_pm(inst: CoverageInstance, measurements: list[dict]) -> int:
+    """Sends `measurements` to RAN NF OAM as one COVERAGE_PERFORMANCE report of the instance's element; returns how many went. A refusal (no PM
+    subscription, an element outside the rApp's scope) is answered as RAN NF OAM gave it. The caller's read transaction is ended first
+    (`db.commit()` by the caller), as RAN NF OAM does before it fans out: nothing of ours is held while others write."""
+    resp = _r1.post("/ran-nf-oam/pm-reports", json={"managedElementRef": inst.managed_element_ref, "counterType": DATASET,
+                                                     "measurements": measurements})
+    if resp.status_code != 201:
+        raise SdkError(resp.status_code, resp.json() if resp.content else None)
+    return len(measurements)
+
+
+def _demo_hour(db: Session, instance_id: uuid.UUID, hour: int) -> dict:
+    """One live hour of demo.py (`_live_hour`): the window `hour` hours after the live start, produced from every cell's tilt and power read back
+    over O1 (the baseline where nothing comes back), with 301's overshoot, and reported to RAN NF OAM."""
+    inst = _instance(db, instance_id)
+    db.commit()                                            # end the read transaction before RAN NF OAM writes to DME
+    cluster, start = _demo_cluster(inst), DEMO_LIVE_START + datetime.timedelta(hours=hour)
+    live = {c: _read_setting(inst, c) for c in cluster}
+    settings = {c: (s["digitalTilt"] if s["digitalTilt"] is not None else inst.baseline_tilt,
+                    s["configuredMaxTxPower"] if s["configuredMaxTxPower"] is not None else inst.baseline_power) for c, s in live.items()}
+    faults = {c: f for c, f in DEMO_FAULTS.items() if c in cluster}
+    sent = _report_pm(inst, producer.measurements(cluster, settings, faults, start))
+    return {"measurements": sent, "from": start.isoformat(), "faults": faults,
+            "settings": {c: {"digitalTilt": t, "configuredMaxTxPower": p} for c, (t, p) in settings.items()}}
+
+
+@app.post("/instances/{instance_id}/demo/prepare")
+def demo_prepare(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Demo 00-01, the rApp's part: registers the Digital Twin producer at DME (DME takes the same registration again as it is) and starts the
+    instance (`/start`), which binds its datasets."""
+    registered = register_sim_type(sdk)
+    return {"simProducer": registered.get("dmeTypeId"), "instance": start_instance(instance_id, db)}
+
+
+@app.post("/instances/{instance_id}/demo/history")
+def demo_history(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Demo 02: three days of hourly coverage history in which each cell's tilt or power was stepped in turn (`producer.history`), reported to RAN
+    NF OAM, which delivers it to DME for the training dataset."""
+    inst = _instance(db, instance_id)
+    db.commit()                                            # end the read transaction before RAN NF OAM writes to DME
+    sent = _report_pm(inst, producer.history(_demo_cluster(inst), DEMO_HISTORY_START, 72))
+    return {"measurements": sent, "from": DEMO_HISTORY_START.isoformat(), "datasets": {k: v["dataset"] for k, v in (inst.data_jobs or {}).items()}}
+
+
+@app.post("/instances/{instance_id}/demo/emulate")
+def demo_emulate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Demo 05: the Digital Twin publishes twelve hours of four clusters, three with an injected fault (overshoot, weak coverage, pilot pollution)
+    and one healthy, then the model is emulated against them (`lifecycle/emulate`)."""
+    published = publish_sim(sdk, DEMO_TWIN)
+    return {"digitalTwin": published, **emulate(instance_id, db)}
+
+
+@app.post("/instances/{instance_id}/demo/live")
+def demo_live(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Demo 08's PM: the first live hour (midnight on the 4th) from the cells' live settings, with 301 overshooting into 302 and 303. Then press
+    Evaluate now: the joint plan downtilts 301."""
+    return _demo_hour(db, instance_id, 0)
+
+
+@app.post("/instances/{instance_id}/demo/kpi-hour")
+def demo_kpi_hour(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Demo 10's PM: the next live hour, produced from the settings the rApp just wrote. Then press Evaluate now: the KPI check confirms the change
+    set (or reverts it, had the cluster got worse)."""
+    return _demo_hour(db, instance_id, 1)
+
+
 app.include_router(producer_router)

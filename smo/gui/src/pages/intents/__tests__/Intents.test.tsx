@@ -144,6 +144,22 @@ describe("other tabs", () => {
     expect(box.textContent).toContain("dlThroughputP10 × 0.8");
   });
 
+  // An admin registers SA SMOS as the O1-CM intent handler with one click (the demo's first platform step); an operator does not see the button.
+  it("registers the O1-CM handler as an admin only", async () => {
+    window.location.hash = "#handlers";
+    const calls = bff("admin");
+    const { container } = await open();
+    await click(byText(container, "button", "Register SA SMOS as the O1-CM handler")!);
+    await settle();
+    const post = calls.find((c) => c.method === "POST")!;
+    expect(post.path).toBe("/smo/sa-smos/o1-cm-handler/registration");
+    expect(post.body).toEqual({});
+    cleanup();
+    bff("operator");
+    const second = await open();
+    expect(byText(second.container, "button", "Register SA SMOS as the O1-CM handler")).toBeFalsy();
+  });
+
   // The pre-redesign id #autonomy still opens the dispatches tab.
   it("keeps the old tab ids", async () => {
     window.location.hash = "#autonomy";

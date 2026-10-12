@@ -208,7 +208,7 @@ A row opens `/rapps/<instance>`. It shows, first, **the page the rApp's package 
 | `keyValues` | Labelled values of one object |
 | `kpis` | Number tiles: `path` reads the panel's source, `kpi` the latest performance report of the instance (a page of only `kpi` tiles needs no operator API) |
 | `chart` | A line or bar chart (SVG) of `points`, `x` and `y`, one series per `seriesBy` value (at most eight; the rest are counted, not drawn), with a legend |
-| `actions` | Buttons. `inputs` open a dialog (checked before sending), `confirm` asks first, the declared `success` text is the toast, `tone` styles the button |
+| `actions` | Buttons. `inputs` open a dialog (checked before sending), `confirm` asks first, the declared `success` text is the toast, `tone` styles the button; an action with `role: admin` (a demo button) is left out for a user who is not an admin, and a line names it |
 | `rowDetail` | A drawer with a title (`{row.<field>}` filled from the clicked row) and up to six blocks: `json` (the row or a field of it, with an `empty` text), `keyValues`, `table` and `chart` (from a list field of the row, or fetched for the open row when the drawer opens) |
 
 - **Reads** go to `/api/rapps/<instance>/operator/<route>` and are repeated every `refreshSeconds` of the source (5 to 3600; none: when the page opens and by the panel's refresh button). **Changes** are sent with the declared action's id, and the BFF fills `"{user}"` and refuses anything the declaration does not list (`../gui-bff/README.md` 2.4); a **viewer sees no change button**, only a sentence saying why. A page whose rApp registered no operator API says so and does not request its panels.

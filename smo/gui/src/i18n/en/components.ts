@@ -143,6 +143,7 @@ export const components = {
   "components.operatorUi.nothing": "Nothing here.",
   "components.operatorUi.details": "Details",
   "components.operatorUi.needsRoleFor": "Changing needs the operator role ({actions}).",
+  "components.operatorUi.needsAdminFor": "Only an admin can use: {actions}.",
   "components.operatorUi.choose": "Choose…",
   "components.operatorUi.send": "Send",
 } as const;

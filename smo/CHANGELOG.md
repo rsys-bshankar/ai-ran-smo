@@ -7,7 +7,7 @@ Entries are written for an operator: what changed in behaviour, configuration or
 
 ### Added
 
-- **A guide to demonstrating the four sample rApps in the operator console (`docs/GUI_DEMO_GUIDE.md`).** Steps 00 to 11 of each rApp's `demo.py`, click by click, with what to show and say, and the values to type for each rApp. The steps the console has no button for yet (history and live PM, training and validation runs, the Digital Twin emulation, the runtime deploy, the DME action record) run from `scripts/gui_demo.py`, which runs exactly that part of the rApp's own `demo.py` against the instance deployed in the console.
+- **The four sample rApps' demo runs entirely from the operator console (`docs/GUI_DEMO_GUIDE.md`).** Each sample rApp's page has a last panel, **Demo / simulation (admin)**, whose buttons do what its `demo.py` does around the rApp: start it, play the network (three days of history PM, the live PM, and for Mobility, Coverage and Traffic Steering the next hour's PM), emulate on the Digital Twin, train, validate and deploy. They are new routes of the rApps (`POST /instances/{id}/demo/prepare|history|emulate|live|kpi-hour`) and the existing lifecycle routes, declared admin-only: an `operatorUi` action may now say `role: admin` (default `operator`); the console draws it only for an admin and the GUI backend refuses it to anyone else (403 `FORBIDDEN`). Policy & Intents → Handlers has **Register SA SMOS as the O1-CM handler** (admin; `POST /sa-smos/o1-cm-handler/registration` through the GUI backend). The guide walks steps 00 to 11 click by click, with what to show and say and the values to type per rApp. The four `.csar` packages are rebuilt: onboard the new ones to get the panel.
 
 ### Changed
 

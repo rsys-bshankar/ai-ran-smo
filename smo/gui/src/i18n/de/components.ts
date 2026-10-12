@@ -142,6 +142,7 @@ export const components: Partial<Record<MessageKey, string>> = {
   "components.operatorUi.nothing": "Nichts vorhanden.",
   "components.operatorUi.details": "Details",
   "components.operatorUi.needsRoleFor": "Änderungen erfordern die Operator-Rolle ({actions}).",
+  "components.operatorUi.needsAdminFor": "Nur ein Admin kann verwenden: {actions}.",
   "components.operatorUi.choose": "Auswählen…",
   "components.operatorUi.send": "Senden",
 };

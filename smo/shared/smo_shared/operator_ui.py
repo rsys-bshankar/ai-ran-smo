@@ -43,6 +43,7 @@ FORMATS = ("text", "number", "percent", "datetime", "badge", "id", "boolean", "l
 BLOCK_KINDS = ("json", "keyValues", "table", "chart")
 ACTION_METHODS = ("POST", "PUT", "PATCH", "DELETE")
 TONES = ("default", "primary", "danger")
+ACTION_ROLES = ("operator", "admin")   # who may press an action: operator (the default) or admin only (a demo or simulation button, GUI_DEMO_GUIDE.md)
 INPUT_TYPES = ("string", "integer", "number", "boolean", "enum")
 CHART_TYPES = ("line", "bar")
 USER_PLACEHOLDER = "{user}"   # in an action `body`: replaced by the GUI backend with the authenticated user, never with anything the browser sent
@@ -293,10 +294,10 @@ def _action(value: Any, where: str, *, row: bool, seen: set[str], row_fields: se
 
     `seen` collects action ids so they are unique across the whole declaration. The method must be a change (not GET); the path may use
     `{row.<field>}` only for a row action (`row=True`, with `row_fields` naming what the row offers); `body` names fixed values that are not also
-    inputs; a DELETE carries neither inputs nor body; `when` is allowed on row actions only.
+    inputs; a DELETE carries neither inputs nor body; `when` is allowed on row actions only; `role` (operator by default, or admin) is who may press it.
     """
     out = _mapping(value, where, ("id", "label", "method", "path", "success"),
-                   ("confirm", "tone", "inputs", "body") + (("when",) if row else ()))
+                   ("confirm", "tone", "inputs", "body", "role") + (("when",) if row else ()))
     if not _ID.fullmatch(str(out["id"])):
         _fail(f"{where}.id", "must be lower case letters, digits and '-', starting with a letter (at most 40)")
     if out["id"] in seen:
@@ -312,6 +313,8 @@ def _action(value: Any, where: str, *, row: bool, seen: set[str], row_fields: se
         _text(out["confirm"], f"{where}.confirm", MAX_CONFIRM)
     if "tone" in out:
         _one_of(out["tone"], f"{where}.tone", TONES)
+    if "role" in out:
+        _one_of(out["role"], f"{where}.role", ACTION_ROLES)
     inputs = _list(out.get("inputs", []), f"{where}.inputs", 0, MAX_INPUTS)
     out["inputs"] = [_input(item, f"{where}.inputs[{i}]") for i, item in enumerate(inputs)]
     names = [i["name"] for i in out["inputs"]]
@@ -631,7 +634,7 @@ def _s_action(row: bool) -> dict:
     properties = {
         "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,39}$"}, "label": _s_text(MAX_LABEL), "method": {"enum": list(ACTION_METHODS)},
         "path": _S_ROUTE, "success": _s_text(MAX_SUCCESS), "confirm": _s_text(MAX_CONFIRM), "tone": {"enum": list(TONES)},
-        "inputs": {"type": "array", "maxItems": MAX_INPUTS, "items": _S_INPUT},
+        "role": {"enum": list(ACTION_ROLES)}, "inputs": {"type": "array", "maxItems": MAX_INPUTS, "items": _S_INPUT},
         "body": {"type": "object", "maxProperties": MAX_INPUTS, "additionalProperties": _S_SCALAR},
     }
     if row:

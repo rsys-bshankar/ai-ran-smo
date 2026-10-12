@@ -66,7 +66,8 @@ Decision logic (`app/engine.py`, pure functions). Cell states are internal: SERV
 | `app/model/` | `EnergyModel`, `TrainingLogic`, `ValidationLogic`, `EmulationLogic`, `InferenceLogic`, `series` helpers |
 | `demo.py` | Demo steps 00-11 against a running stack |
 | `tests/` | `test_engine.py`, `test_model.py`, `test_routes.py` (the routes, with the SDK replaced by a platform double), `conftest.py` |
-| `tests/test_operator_page.py` | The `operatorUi` of `manifest.yaml` is valid, names only routes this rApp serves with query parameters they take, reads only fields its own answers carry (chart points included), and starts with the ADR's worked example (5 tests) |
+| `tests/test_operator_page.py` | The `operatorUi` of `manifest.yaml` is valid, names only routes this rApp serves with query parameters they take, reads only fields its own answers carry (chart points included), starts with the ADR's worked example and ends with the admin-only demo panel (5 tests) |
+| `tests/test_demo_routes.py` | The demo / simulation routes: prepare registers the twin producer and starts; history and live send the PM `demo.py` sends, and a refused report is answered as refused; emulate publishes the twin trend then emulates (5 tests) |
 
 ## Package
 
@@ -80,7 +81,7 @@ Layout and field semantics: [RAPP_PACKAGING.md](../../docs/RAPP_PACKAGING.md).
 
 ## Service API
 
-Served on port 8000. R1 Termination reaches it at `/rapps/<instance>/operator/...` once the instance has registered its base URL (`operatorApiBase` in `POST /rapp-mgmt/instances`; `demo.py` and the integration environments pass it). The GUI draws its page from the `operatorUi` at the end of `manifest.yaml` (the worked example of `docs/adr/0004-operator-ui-declaration.md`): the instance block, Evaluate now and Reconcile approvals, and the cells table with a per-cell Override and a drawer (PRB chart, the latest execution, the last 20 decisions), then the cell-state history of the last 24 hours as a chart (one line per cell: 2 serving, 1 pre-sleep, 0 sleep) and a table of the changes (GUI-9.8b). The first three panels are the ADR's worked example verbatim. Only those routes are reachable from the GUI; `start`, `lifecycle/*` and `sim-producer/*` are API calls.
+Served on port 8000. R1 Termination reaches it at `/rapps/<instance>/operator/...` once the instance has registered its base URL (`operatorApiBase` in `POST /rapp-mgmt/instances`; `demo.py` and the integration environments pass it). The GUI draws its page from the `operatorUi` at the end of `manifest.yaml` (the worked example of `docs/adr/0004-operator-ui-declaration.md`): the instance block, Evaluate now and Reconcile approvals, and the cells table with a per-cell Override and a drawer (PRB chart, the latest execution, the last 20 decisions), then the cell-state history of the last 24 hours as a chart (one line per cell: 2 serving, 1 pre-sleep, 0 sleep) and a table of the changes (GUI-9.8b). The first three panels are the ADR's worked example verbatim. Last comes **Demo / simulation (admin)**: the demo's steps as admin-only buttons (`role: admin`): `demo/prepare`, `demo/history`, `lifecycle/train`, `lifecycle/validate`, `demo/emulate`, `lifecycle/deploy`, `demo/live` (`docs/GUI_DEMO_GUIDE.md`). Only those routes are reachable from the GUI; `start` (by itself) and `sim-producer/*` are API calls.
 
 | Route | Purpose |
 |---|---|
@@ -99,6 +100,10 @@ Served on port 8000. R1 Termination reaches it at `/rapps/<instance>/operator/..
 | `GET /instances/{id}/dashboard` | Per cell PRB trend, latest decision, state; `points` (default 48) |
 | `GET /instances/{id}/cell-states` | Cell-state history: each cell's changes of state (SERVING / PRE_SLEEP / SLEEP) over the last `hours` (1-168, default 24; 422 outside), optionally one `cell_id` (404 `CELL_NOT_MANAGED` otherwise). `transitions` newest first (`transitionId`, `cellId`, `at`, `fromState`, `toState`, `o1Value`, `decision`, `reason`, `outcome`, `executionId`, `observedAt`), `points` for a chart (`cellId`, `t`, `state`, `level` 2/1/0: the state at `since`, a before and an after point at each change, the state at `until`), `cells` (current state, changes in the window), `since`, `until`, `truncated` |
 | `POST /sim-producer/register`, `POST /sim-producer/publish` | Register and feed the Digital Twin type |
+| `POST /instances/{id}/demo/prepare` | Demo 00-01 (`docs/GUI_DEMO_GUIDE.md`): register the Digital Twin producer, then `start` |
+| `POST /instances/{id}/demo/history` | Demo 02: three days of hourly PRB per cell from 2026-09-01, reported to RAN NF OAM as the NF would (`POST /ran-nf-oam/pm-reports`); a refusal is answered as RAN NF OAM gave it |
+| `POST /instances/{id}/demo/emulate` | Demo 05: the Digital Twin publishes two days of its trend, then `lifecycle/emulate` |
+| `POST /instances/{id}/demo/live` | Demo 08's PM: an hour from midnight on 2026-09-04 in 5-minute steps, every other configured cell at 2 % PRB and the rest at 40 % (then Evaluate now) |
 
 `app/producer.py` also mounts the DME callback routes for that type.
 

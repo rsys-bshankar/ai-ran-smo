@@ -206,3 +206,26 @@ operatorUi:
       query:
         points: 48
       refreshSeconds: 15
+  # The demo's steps (demo.py, docs/GUI_DEMO_GUIDE.md) as buttons only an admin sees: the rApp plays the network and the Digital Twin. The
+  # governance decisions between them (approve training and validation, certify, promote) stay on the AI/ML page, where a person makes them, and
+  # the evaluations (steps 8 and 10) are the Closed loop panel's Evaluate now.
+  - id: demo
+    title: Demo / simulation (admin)
+    kind: actions
+    actions:
+    - {id: demo-prepare, label: "1 · Prepare and start", role: admin, method: POST, path: "/instances/{instanceId}/demo/prepare",
+       success: "Digital Twin producer registered; instance started"}
+    - {id: demo-history, label: "2 · Load history PM", role: admin, method: POST, path: "/instances/{instanceId}/demo/history",
+       success: "Three days of coverage history delivered to DME"}
+    - {id: demo-train, label: "3 · Train", role: admin, method: POST, path: "/instances/{instanceId}/lifecycle/train",
+       success: "Model trained; approve the training on the AI/ML page"}
+    - {id: demo-validate, label: "4 · Validate", role: admin, method: POST, path: "/instances/{instanceId}/lifecycle/validate",
+       success: "Model validated; approve the validation on the AI/ML page"}
+    - {id: demo-emulate, label: "5 · Emulate on the Digital Twin", role: admin, method: POST, path: "/instances/{instanceId}/demo/emulate",
+       success: "Emulated; now submit, approve, certify and promote the model on the AI/ML page"}
+    - {id: demo-deploy, label: "7 · Deploy the runtime", role: admin, method: POST, path: "/instances/{instanceId}/lifecycle/deploy",
+       success: "Inference runtime deployed"}
+    - {id: demo-live, label: "8 · Send live PM", role: admin, method: POST, path: "/instances/{instanceId}/demo/live",
+       success: "Live PM delivered (301 overshoots); press Evaluate now"}
+    - {id: demo-kpi-hour, label: "10 · Send the next hour's PM", role: admin, method: POST, path: "/instances/{instanceId}/demo/kpi-hour",
+       success: "Next hour's PM delivered; press Evaluate now to check the KPI"}

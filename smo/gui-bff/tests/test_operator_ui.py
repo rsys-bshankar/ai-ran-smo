@@ -142,6 +142,17 @@ def test_a_read_needs_viewer_and_a_change_operator():
     assert call("GET", f"/instances/{IID}/dashboard", "nobody").title == "FORBIDDEN"
 
 
+def test_an_action_declared_for_admin_is_refused_to_an_operator():
+    """An action declared `role: admin` (a demo or simulation button) is FORBIDDEN to an operator and passes for an admin; when an operator action
+    shares the route, the operator gets that one."""
+    d = decl(actions_panel(action(id="sim", role="admin")))
+    assert call("POST", f"/instances/{IID}/go", "operator", d) == Refusal(403, "FORBIDDEN", "requires role admin")
+    assert call("POST", f"/instances/{IID}/go", "operator", d, action_id="sim") == Refusal(403, "FORBIDDEN", "requires role admin")
+    assert call("POST", f"/instances/{IID}/go", "admin", d, action_id="sim").action_id == "sim"
+    shared = decl(actions_panel(action(id="sim", role="admin"), action(id="go")))
+    assert call("POST", f"/instances/{IID}/go", "operator", shared).action_id == "go"
+
+
 def test_a_change_on_a_read_only_rapp_is_refused_even_for_an_admin():
     """On a read-only declaration every change is RAPP_READ_ONLY for every role, while reads still work."""
     d = decl(table(), readOnly=True)
