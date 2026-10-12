@@ -1,4 +1,4 @@
-"""smo_shared.errors' validation-error handler: a 422 for a refused request never echoes the caller's input (OPEN_ITEMS QA-9.1, the DAST false positive
+"""smo_shared.errors' validation-error handler: a 422 for a refused request never echoes the caller's input (HISTORY.md QA-9.1, the DAST false positive
 `SQL Injection [40018]` on `total=true AND 1=1 --`).
 
 Run with: cd smo/shared && PYTHONPATH=. python -m pytest tests/test_validation_error_handler.py -q

@@ -1,4 +1,4 @@
-"""A 422 for a refused query parameter does not echo the caller's input (OPEN_ITEMS QA-9.1, the DAST false positive `SQL Injection [40018]`).
+"""A 422 for a refused query parameter does not echo the caller's input (HISTORY.md QA-9.1, the DAST false positive `SQL Injection [40018]`).
 
 Run with: cd smo && PYTHONPATH=shared python -m pytest tests_integration/test_validation_echo.py -q
 """

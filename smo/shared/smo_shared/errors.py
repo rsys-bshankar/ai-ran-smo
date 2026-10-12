@@ -260,7 +260,7 @@ def install_validation_error_handler(app) -> None:
     """A request the framework refuses (RequestValidationError) answers the same 422 `{"detail": [{type, loc, msg}, ...]}` as before, but without
     echoing the caller's input. FastAPI's default puts the raw value in each error's `input`, so a payload such as `total=true AND 1=1 --` came
     back inside the 422 body, and a scanner comparing the `1=1` and `1=2` answers read the differing echo as a boolean-based SQL injection
-    (ZAP 40018, `OPEN_ITEMS.md` QA-9.1); with the echo gone the two bodies are identical. Installed by `apply_r1_gateway_security`."""
+    (ZAP 40018, `HISTORY.md` QA-9.1); with the echo gone the two bodies are identical. Installed by `apply_r1_gateway_security`."""
     from fastapi.encoders import jsonable_encoder
     from fastapi.exceptions import RequestValidationError
     from fastapi.responses import JSONResponse
