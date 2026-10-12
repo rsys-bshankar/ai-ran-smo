@@ -681,4 +681,88 @@ def publish_sim_data(body: SimPublishRequest):
     return publish_sim(sdk, body)
 
 
+# ---------------------------------------------------------------- demo / simulation (docs/GUI_DEMO_GUIDE.md)
+# What demo.py does around the rApp, as routes the operator page declares as admin-only buttons (`role: admin` in manifest.yaml), so the demo runs from
+# the console: the rApp plays the network (HO_PERFORMANCE PM reports into RAN NF OAM, as the NF would send them) and the Digital Twin. Simulation time,
+# as demo.py's: handover history from 2026-09-01, live PM from midnight on the 4th, the KPI hour two hours after that.
+
+DEMO_HISTORY_START = datetime.datetime(2026, 9, 1, tzinfo=datetime.UTC)
+DEMO_LIVE_START = DEMO_HISTORY_START + datetime.timedelta(days=3)
+# demo.py's problem per relation: 201->203 hands over too late, 202->203 too early. A relation the instance has under another id takes the scenario
+# of the demo relation in the same position, so a renamed set of four shows the same story.
+DEMO_SCENARIOS = {"201-202": "HEALTHY", "201-203": "TOO_LATE", "202-203": "TOO_EARLY", "203-204": "HEALTHY"}
+
+
+def _demo_scenarios(inst: MobilityInstance) -> dict[str, str]:
+    """The injected scenario of each of the instance's relations: demo.py's for its relation ids, by position for any other id."""
+    fallback = list(DEMO_SCENARIOS.values())
+    return {r["relation"]: DEMO_SCENARIOS.get(r["relation"], fallback[i % len(fallback)]) for i, r in enumerate(inst.relations)}
+
+
+def _report_pm(inst: MobilityInstance, scenarios: dict[str, str], start: datetime.datetime, hours: int) -> int:
+    """Sends `hours` hourly handover windows from `start` for each relation in `scenarios` (relation -> scenario, counters from producer.py as demo.py
+    makes them) to RAN NF OAM as one HO_PERFORMANCE report of the instance's element; returns how many measurements went. A refusal (no PM
+    subscription, an element outside the rApp's scope) is answered as RAN NF OAM gave it. The caller ends its read transaction first (`db.commit()`),
+    as RAN NF OAM does before it fans out: nothing of ours is held while others write."""
+    sources = {r["relation"]: r["source"] for r in inst.relations}
+    measurements = [{"cellId": sources.get(rel, rel.split("-")[0]), "relation": rel, "timestamp": t.isoformat(),
+                     "values": producer.relation_counters(rel, t, scenario)}
+                    for rel, scenario in scenarios.items()
+                    for t in (start + datetime.timedelta(hours=h) for h in range(hours))]
+    resp = _r1.post("/ran-nf-oam/pm-reports", json=producer.pm_report(inst.managed_element_ref, measurements))
+    if resp.status_code != 201:
+        raise SdkError(resp.status_code, resp.json() if resp.content else None)
+    return len(measurements)
+
+
+@app.post("/instances/{instance_id}/demo/prepare")
+def demo_prepare(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Demo 00-01, the rApp's part: registers the Digital Twin producer at DME (DME takes the same registration again as it is) and starts the
+    instance (`/start`), which subscribes it to its datasets."""
+    registered = register_sim_type(sdk)
+    return {"simProducer": registered.get("dmeTypeId"), "instance": start_instance(instance_id, db)}
+
+
+@app.post("/instances/{instance_id}/demo/history")
+def demo_history(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Demo 02: three days of hourly handover counters per relation (201->203 too late, 202->203 too early), reported to RAN NF OAM, which delivers
+    them to DME for the training dataset."""
+    inst = _instance(db, instance_id)
+    db.commit()                                            # end the read transaction before RAN NF OAM writes to DME
+    scenarios = _demo_scenarios(inst)
+    return {"measurements": _report_pm(inst, scenarios, DEMO_HISTORY_START, 72), "from": DEMO_HISTORY_START.isoformat(),
+            "scenarios": scenarios, "datasets": {k: v["dataset"] for k, v in (inst.data_jobs or {}).items()}}
+
+
+@app.post("/instances/{instance_id}/demo/emulate")
+def demo_emulate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Demo 05: the Digital Twin publishes two days of relations with one injected fault each, then the model is emulated against them
+    (`lifecycle/emulate`)."""
+    published = publish_sim(sdk, SimPublishRequest(
+        managedElementRef="digital-twin-mro", start=DEMO_HISTORY_START, hours=48,
+        relations={"a-b": "TOO_LATE", "b-c": "TOO_EARLY", "c-d": "HEALTHY", "d-e": "WRONG_CELL", "e-f": "PING_PONG"}))
+    return {"digitalTwin": published, **emulate(instance_id, db)}
+
+
+@app.post("/instances/{instance_id}/demo/live")
+def demo_live(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Demo 08's PM: two hours from midnight on the 4th with the history's problems still there. Then press Evaluate now: the CIO of the too-late
+    relation is raised, the too-early one's lowered, and a relation towards a guarded cell is left alone."""
+    inst = _instance(db, instance_id)
+    db.commit()                                            # end the read transaction before RAN NF OAM writes to DME
+    scenarios = _demo_scenarios(inst)
+    return {"measurements": _report_pm(inst, scenarios, DEMO_LIVE_START, 2), "from": DEMO_LIVE_START.isoformat(), "scenarios": scenarios}
+
+
+@app.post("/instances/{instance_id}/demo/kpi-hour")
+def demo_kpi_hour(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Demo 10's PM: the hour after the change, every relation healthy. Then press Evaluate now: the KPI check confirms the CIO changes (had the
+    failures risen, they would have been reverted)."""
+    inst = _instance(db, instance_id)
+    db.commit()                                            # end the read transaction before RAN NF OAM writes to DME
+    start = DEMO_LIVE_START + datetime.timedelta(hours=2)
+    scenarios = {r["relation"]: "HEALTHY" for r in inst.relations}
+    return {"measurements": _report_pm(inst, scenarios, start, 1), "from": start.isoformat(), "scenarios": scenarios}
+
+
 app.include_router(producer_router)

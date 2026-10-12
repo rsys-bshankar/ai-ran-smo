@@ -63,7 +63,7 @@ from .model import EmulationLogic, InferenceLogic, TrainingLogic, ValidationLogi
 from .model.EnergyModel import MODEL_TYPE, EnergyModel
 from .model.series import by_cell, cell_key, parse_time
 from .models import EnergySavingCell, EnergySavingDecision, EnergySavingInstance
-from .producer import SimPublishRequest, publish_sim, register_sim_type, router as producer_router
+from .producer import SimPublishRequest, diurnal_prb, pm_report, publish_sim, register_sim_type, router as producer_router
 
 app = FastAPI(title="EnergySaving rApp")
 install_logging(app)  # structured JSON logs and one access-log line per request (PR-OBS-1)
@@ -849,6 +849,63 @@ def publish_sim_data(body: SimPublishRequest):
     # Generates the requested cells' synthetic PRB samples and delivers them to every data job of the sim type.
     return publish_sim(sdk, body)
 
+
+
+# ---------------------------------------------------------------- demo / simulation (docs/GUI_DEMO_GUIDE.md)
+# What demo.py does around the rApp, as routes the operator page declares as admin-only buttons (`role: admin` in manifest.yaml), so the demo runs from
+# the console: the rApp plays the network (PM reports into RAN NF OAM, as the NF would send them) and the Digital Twin. Simulation time, as demo.py's:
+# history from 2026-09-01, live PM from midnight on the 4th.
+
+DEMO_HISTORY_START = datetime.datetime(2026, 9, 1, tzinfo=datetime.UTC)
+DEMO_LIVE_START = DEMO_HISTORY_START + datetime.timedelta(days=3)
+
+
+def _report_pm(inst: EnergySavingInstance, values: dict[str, list[float]], start: datetime.datetime, step_minutes: int) -> int:
+    """Sends `values` (cell -> one PRB value per step from `start`) to RAN NF OAM as one PM report of the instance's element; returns how many
+    measurements went. A refusal (no PM subscription, an element outside the rApp's scope) is answered as RAN NF OAM gave it. The caller's read
+    transaction is ended first (`db.commit()` by the caller), as RAN NF OAM does before it fans out: nothing of ours is held while others write."""
+    measurements = [{"cellId": c, "value": v, "timestamp": (start + datetime.timedelta(minutes=i * step_minutes)).isoformat()}
+                    for c, series in values.items() for i, v in enumerate(series)]
+    resp = _r1.post("/ran-nf-oam/pm-reports", json=pm_report(inst.managed_element_ref, measurements))
+    if resp.status_code != 201:
+        raise SdkError(resp.status_code, resp.json() if resp.content else None)
+    return len(measurements)
+
+
+@app.post("/instances/{instance_id}/demo/prepare")
+def demo_prepare(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Demo 00-01, the rApp's part: registers the Digital Twin producer at DME (DME takes the same registration again as it is) and starts the
+    instance (`/start`), which subscribes it to its datasets."""
+    producer = register_sim_type(sdk)
+    return {"simProducer": producer.get("dmeTypeId"), "instance": start_instance(instance_id, db)}
+
+
+@app.post("/instances/{instance_id}/demo/history")
+def demo_history(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Demo 02: three days of hourly PRB history for every cell, reported to RAN NF OAM, which delivers it to DME for the training dataset."""
+    inst = _instance(db, instance_id)
+    db.commit()                                            # end the read transaction before RAN NF OAM writes to DME
+    values = {c: [diurnal_prb(c, DEMO_HISTORY_START + datetime.timedelta(hours=h)) for h in range(72)] for c in inst.cells}
+    sent = _report_pm(inst, values, DEMO_HISTORY_START, 60)
+    return {"measurements": sent, "from": DEMO_HISTORY_START.isoformat(), "datasets": {k: v["dataset"] for k, v in (inst.data_jobs or {}).items()}}
+
+
+@app.post("/instances/{instance_id}/demo/emulate")
+def demo_emulate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Demo 05: the Digital Twin publishes two days of its trend, then the model is emulated against it (`lifecycle/emulate`)."""
+    published = publish_sim(sdk, SimPublishRequest(managedElementRef="digital-twin-01", cells=["dt-1", "dt-2"], start=DEMO_HISTORY_START, hours=48))
+    return {"digitalTwin": published, **emulate(instance_id, db)}
+
+
+@app.post("/instances/{instance_id}/demo/live")
+def demo_live(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Demo 08's PM: an hour after midnight in five-minute steps, every other cell (the first, the third, ...) idle at 2 % PRB and the rest at 40 %.
+    Then press Evaluate now: the idle cells are put to sleep, unless guarded."""
+    inst = _instance(db, instance_id)
+    db.commit()                                            # end the read transaction before RAN NF OAM writes to DME
+    values = {c: [2.0 if i % 2 == 0 else 40.0] * 14 for i, c in enumerate(inst.cells)}
+    return {"measurements": _report_pm(inst, values, DEMO_LIVE_START, 5), "from": DEMO_LIVE_START.isoformat(),
+            "idleCells": [c for i, c in enumerate(inst.cells) if i % 2 == 0]}
 
 app.include_router(producer_router)
 

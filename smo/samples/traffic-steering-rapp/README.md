@@ -89,7 +89,8 @@ CIO envelope. This rApp publishes its observed relations at
 | `app/producer.py` | Sample load model and `LOAD_PERFORMANCE_SIM` producer |
 | `app/model/` | `SteeringModel.py` (forecast, planner), `series.py` (score), one logic file per execution mode |
 | `demo.py`, `tests/` | Demo 00-11 script; engine, model and route unit tests |
-| `tests/test_operator_page.py` | The `operatorUi` of `manifest.yaml` is valid, names only routes this rApp serves with query parameters they take, and reads only fields its own answers carry (4 tests) |
+| `tests/test_operator_page.py` | The `operatorUi` of `manifest.yaml` is valid, names only routes this rApp serves with query parameters they take, reads only fields its own answers carry, and ends with the admin-only demo panel (4 tests) |
+| `tests/test_demo_routes.py` | The demo / simulation routes: prepare registers the twin producer and starts; history, live and the KPI hour send the PM `demo.py` sends, and a refused report is answered as refused; emulate publishes the twin's data then emulates (7 tests) |
 | `manifest.yaml`, `capabilities.yaml`, `Definitions/`, `TOSCA-Metadata/` | Package content |
 
 ## Package
@@ -121,6 +122,11 @@ This package declares:
 | `GET /instances/{id}/relations` | CIO relations under observation (for the Mobility rApp) |
 | `GET /instances/{id}/dashboard` | Score trend, forecast, plan, decision and KPI check per cell |
 | `POST /sim-producer/register`, `POST /sim-producer/publish` | Digital Twin dataset |
+| `POST /instances/{id}/demo/prepare` | Demo 00-01 (`docs/GUI_DEMO_GUIDE.md`): register the Digital Twin producer, then `start` |
+| `POST /instances/{id}/demo/history` | Demo 02: 72 hours of LOAD_PERFORMANCE history from 2026-09-01; the first four configured cells play the sample cluster's 401/402/411/412 (fewer is 422 `DEMO_TOPOLOGY`); reported to RAN NF OAM as the NF would |
+| `POST /instances/{id}/demo/emulate` | Demo 05: the Digital Twin publishes 24 h of hotspots, then `lifecycle/emulate` |
+| `POST /instances/{id}/demo/live` | Demo 08's PM: the hour at 12:00 on 2026-09-04 with a hotspot on the cell in 401's place, from the steering now in force (then Evaluate now) |
+| `POST /instances/{id}/demo/kpi-hour` | Demo 10's PM: the next hour (then Evaluate now: CONFIRMED) |
 
 ## Run and test
 ```bash

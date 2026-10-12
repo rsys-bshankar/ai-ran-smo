@@ -845,6 +845,12 @@
   },
   {
     "method": "POST",
+    "pattern": "^/sa-smos/o1-cm-handler/registration$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
     "pattern": "^/intent-service/intent-reports$",
     "role": "admin",
     "queryMatch": {}

@@ -76,6 +76,20 @@ const page = (declaration: Declaration, props: { canChange?: boolean; registered
 
 const buttons = (c: HTMLElement) => Array.from(c.querySelectorAll("button")).map((b) => b.textContent);
 
+describe("DeclaredPage: admin-only actions", () => {
+  // An action declared `role: admin` (a demo or simulation button) is not drawn for a user who is not an admin; a line names it instead, and the other buttons stay.
+  it("leaves an admin-only action out for a user who is not an admin and names it", async () => {
+    bff();
+    const demo: Declaration = { version: 1, panels: [{ id: "demo", title: "Demo", kind: "actions", actions: [
+      { id: "evaluate", label: "Evaluate now", method: "POST", path: "/instances/{instanceId}/evaluate", success: "ok" },
+      { id: "live", label: "Send live PM", role: "admin", method: "POST", path: "/instances/{instanceId}/demo/live", success: "ok" }] }] };
+    const { container } = await page(demo);
+    await settle();
+    expect(buttons(container)).toEqual(["Evaluate now"]);
+    expect(container.textContent).toContain("Only an admin can use: Send live PM.");
+  });
+});
+
 describe("DeclaredPage: panels and values", () => {
   // Each declared panel reads its own source with the route filled in and the declared query, and the cards keep the declared order.
   it("draws each panel from its source with the route and the declared query", async () => {

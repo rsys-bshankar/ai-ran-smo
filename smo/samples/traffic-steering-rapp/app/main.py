@@ -829,4 +829,102 @@ def publish_sim_data(body: SimPublishRequest):
     return publish_sim(sdk, body)
 
 
+# ---------------------------------------------------------------- demo / simulation (docs/GUI_DEMO_GUIDE.md)
+# What demo.py does around the rApp, as routes the operator page declares as admin-only buttons (`role: admin` in manifest.yaml), so the demo runs from
+# the console: the rApp plays the network (load PM into RAN NF OAM, as the NF would send it, made by the package's own load model from the steering
+# live on O1) and the Digital Twin. Simulation time, as demo.py's: history from 2026-09-01, live PM from noon on the 4th, a stadium hotspot next to
+# the cell in 401's place.
+
+DEMO_HISTORY_START = datetime.datetime(2026, 9, 1, tzinfo=datetime.UTC)
+DEMO_LIVE_START = DEMO_HISTORY_START + datetime.timedelta(days=3, hours=12)
+DEMO_HOTSPOT = "401"
+DEMO_TWIN = SimPublishRequest(managedElementRef="digital-twin-mlb", start=DEMO_HISTORY_START, hours=24, clusters={
+    "dt1": {"scenario": "HOTSPOT", "hotCell": "a"}, "dt2": {"scenario": "HOTSPOT", "hotCell": "c"}, "dt3": {"scenario": "HEALTHY"}})
+
+
+def _demo_topology(inst: TrafficInstance) -> tuple[dict[str, list[str]], dict[str, str], str]:
+    """The sample cluster (producer.NEIGHBOURS) with the instance's first four configured cells in the places of 401, 402, 411 and 412, in that
+    order, each with its configured layer; and the cell in 401's place, where the hotspot is. 422 DEMO_TOPOLOGY for fewer than four cells."""
+    layers = _layers(inst)
+    if len(layers) < len(producer.CELLS):
+        raise RappError(422, "DEMO_TOPOLOGY", f"the demo plays the sample's {len(producer.CELLS)}-cell cluster; the instance has {len(layers)} cells")
+    rename = dict(zip(producer.CELLS, layers))
+    return ({rename[c]: [rename[t] for t in nbrs] for c, nbrs in producer.NEIGHBOURS.items()},
+            {rename[c]: layers[rename[c]] for c in producer.CELLS}, rename[DEMO_HOTSPOT])
+
+
+def _live_settings(inst: TrafficInstance, nbrs: dict[str, list[str]], layers: dict[str, str]) -> dict[str, dict]:
+    """Each cell's steering live on O1 (read back through RAN NF OAM, as demo.py's `_settings`): CIO towards each neighbour, priority towards the
+    other layer. A knob that cannot be read is left out, so the load model takes its baseline."""
+    out = {}
+    for c, targets in nbrs.items():
+        cio = {t: v for t in targets if (v := _value(inst, f"NRCellRelation={c}-{t}")) is not None}
+        prio = {layers[t]: v for t in targets if layers[t] != layers[c]
+                and (v := _value(inst, f"NRFreqRelation={c}-{layers[t]}")) is not None}
+        out[c] = {"cio": cio, "prio": prio}
+    return out
+
+
+def _report_pm(inst: TrafficInstance, measurements: list[dict]) -> int:
+    """Sends `measurements` to RAN NF OAM as one LOAD_PERFORMANCE report of the instance's element; returns how many went. A refusal (no PM
+    subscription, an element outside the rApp's scope) is answered as RAN NF OAM gave it. The caller's read transaction is ended first
+    (`db.commit()` by the caller), as RAN NF OAM does before it fans out: nothing of ours is held while others write."""
+    resp = _r1.post("/ran-nf-oam/pm-reports", json={"managedElementRef": inst.managed_element_ref, "counterType": DATASET,
+                                                     "measurements": measurements})
+    if resp.status_code != 201:
+        raise SdkError(resp.status_code, resp.json() if resp.content else None)
+    return len(measurements)
+
+
+def _demo_hour(instance_id: uuid.UUID, db: Session, hour: int) -> dict:
+    """One live hour of PM (demo.py's `_live_hour`): the window `hour` hours after the live start, from the steering live on O1 and the hotspot."""
+    inst = _instance(db, instance_id)
+    db.commit()                                            # end the read transaction before RAN NF OAM writes to DME
+    nbrs, layers, hot = _demo_topology(inst)
+    t = DEMO_LIVE_START + datetime.timedelta(hours=hour)
+    sent = _report_pm(inst, producer.measurements(nbrs, layers, _live_settings(inst, nbrs, layers), {hot: "HOTSPOT"}, t))
+    return {"measurements": sent, "at": t.isoformat(), "hotspot": hot}
+
+
+@app.post("/instances/{instance_id}/demo/prepare")
+def demo_prepare(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Demo 00-01, the rApp's part: registers the Digital Twin producer at DME (DME takes the same registration again as it is) and starts the
+    instance (`/start`), which discovers its datasets."""
+    registered = register_sim_type(sdk)
+    return {"simProducer": registered.get("dmeTypeId"), "instance": start_instance(instance_id, db)}
+
+
+@app.post("/instances/{instance_id}/demo/history")
+def demo_history(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Demo 02: three days of hourly load PM in which each cell's CIO or priority was stepped in turn, reported to RAN NF OAM, which delivers it to
+    DME for the training dataset."""
+    inst = _instance(db, instance_id)
+    db.commit()                                            # end the read transaction before RAN NF OAM writes to DME
+    nbrs, layers, _ = _demo_topology(inst)
+    sent = _report_pm(inst, producer.history(nbrs, layers, DEMO_HISTORY_START, 72))
+    return {"measurements": sent, "from": DEMO_HISTORY_START.isoformat(), "datasets": {k: v["dataset"] for k, v in (inst.data_jobs or {}).items()}}
+
+
+@app.post("/instances/{instance_id}/demo/emulate")
+def demo_emulate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Demo 05: the Digital Twin publishes a day of three clusters (two with a hotspot, one healthy), then the model is emulated against them
+    (`lifecycle/emulate`)."""
+    published = publish_sim(sdk, DEMO_TWIN)
+    return {"digitalTwin": published, **emulate(instance_id, db)}
+
+
+@app.post("/instances/{instance_id}/demo/live")
+def demo_live(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Demo 08's PM: the busy afternoon's first hour with the hotspot next to the cell in 401's place. Then press Evaluate now: the hotspot cell is
+    forecast congested and one step moves load to its least-loaded neighbour."""
+    return _demo_hour(instance_id, db, 0)
+
+
+@app.post("/instances/{instance_id}/demo/kpi-hour")
+def demo_kpi_hour(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Demo 10's PM: the next hour, made from the steering now live on O1. Then press Evaluate now: the KPI check of the step (CONFIRMED, or
+    reverted)."""
+    return _demo_hour(instance_id, db, 1)
+
+
 app.include_router(producer_router)

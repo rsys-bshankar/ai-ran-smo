@@ -594,6 +594,12 @@
                         "danger"
                       ]
                     },
+                    "role": {
+                      "enum": [
+                        "operator",
+                        "admin"
+                      ]
+                    },
                     "inputs": {
                       "type": "array",
                       "maxItems": 8,
@@ -1217,6 +1223,12 @@
                         "default",
                         "primary",
                         "danger"
+                      ]
+                    },
+                    "role": {
+                      "enum": [
+                        "operator",
+                        "admin"
                       ]
                     },
                     "inputs": {

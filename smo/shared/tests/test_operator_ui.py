@@ -262,7 +262,7 @@ def test_chart_fields():
 
 
 def test_action_rules():
-    """Action rules: non-empty success, length limits, known tone and input types, no body on DELETE, no value both fixed and asked, enum options,
+    """Action rules: non-empty success, length limits, known tone, role and input types, no body on DELETE, no value both fixed and asked, enum options,
     min/max rules, plain names, scalar body values, and `when` for row actions only with exactly one condition.
     """
     a = {"id": "go", "label": "G", "method": "POST", "path": "/g", "success": "ok"}
@@ -273,6 +273,8 @@ def test_action_rules():
     rejects(act(success=""), "success")
     rejects(act(confirm="x" * 301), "longer than 300")
     rejects(act(tone="loud"), "tone")
+    rejects(act(role="viewer"), "role")
+    assert validate_operator_ui(act(role="admin"))["panels"][0]["actions"][0]["role"] == "admin"   # an admin-only (demo) button
     rejects(act(method="DELETE", body={"a": 1}), "a DELETE carries no body")
     rejects(act(inputs=[{"name": "n", "label": "N", "type": "string"}], body={"n": "x"}), "fixed or asked for, not both")
     rejects(act(inputs=[{"name": "n", "label": "N", "type": "list"}]), "type")

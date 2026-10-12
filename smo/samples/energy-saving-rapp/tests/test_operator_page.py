@@ -38,9 +38,11 @@ def resolves(value, path: str) -> bool:
 
 
 def test_the_manifest_declares_a_valid_page_with_the_kinds_of_panel_it_needs():
-    """The page validates and has, in order: the instance block, the closed-loop buttons, the cells table, and the cell-state history as a chart and a table."""
+    """The page validates and has, in order: the instance block, the closed-loop buttons, the cells table, the cell-state history as a chart and a table,
+    and the demo's buttons, every one of them admin-only (docs/GUI_DEMO_GUIDE.md)."""
     d = declaration()
-    assert [p["kind"] for p in d["panels"]] == ["keyValues", "actions", "table", "chart", "table"]
+    assert [p["kind"] for p in d["panels"]] == ["keyValues", "actions", "table", "chart", "table", "actions"]
+    assert {a.get("role") for a in d["panels"][-1]["actions"]} == {"admin"}
     assert not d.get("readOnly")
 
 
@@ -129,7 +131,7 @@ def test_every_declared_field_is_in_the_answer_the_rapp_gives(client, platform, 
 
 def test_the_page_is_the_worked_example_of_the_adr():
     """docs/adr/0004-operator-ui-declaration.md embeds this page's first three panels (docs/schemas/operator-ui.energy-saving.example.yaml) verbatim; the
-    sample is its first user, and adds after them only the cell-state history panels of GUI-9.8b."""
+    sample is its first user, and adds after them only the cell-state history panels of GUI-9.8b and the demo's buttons."""
     for parent in Path(__file__).resolve().parents:
         example = parent / "docs" / "schemas" / "operator-ui.energy-saving.example.yaml"
         if example.exists():
@@ -140,4 +142,4 @@ def test_the_page_is_the_worked_example_of_the_adr():
     mine = declaration()
     assert {k: v for k, v in mine.items() if k != "panels"} == {k: v for k, v in adr.items() if k != "panels"}
     assert mine["panels"][:len(adr["panels"])] == adr["panels"]
-    assert [p["id"] for p in mine["panels"][len(adr["panels"]):]] == ["cell-state-history", "cell-state-transitions"]
+    assert [p["id"] for p in mine["panels"][len(adr["panels"]):]] == ["cell-state-history", "cell-state-transitions", "demo"]

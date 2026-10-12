@@ -1,5 +1,6 @@
 /** Section `intents.handlers` (Handlers tab): the registered intent handlers (RMIH) as a server-paged table with their supported object types,
- * target names, scope and callback, a role-gated Deregister, and the admin-only "register a handler on the framework's behalf" tool. Handlers are
+ * target names, scope and callback, a role-gated Deregister, the admin-only one-click registration of SA SMOS's O1-CM handler and the admin-only
+ * "register a handler on the framework's behalf" tool. Handlers are
  * framework-internal (SO SMOS / SA SMOS, D-SEC-POLICY-1): Intent Service refuses an rApp id (a UUID). */
 import { useState } from "react";
 
@@ -24,10 +25,19 @@ export function Handlers() {
         { header: "", className: "actions", render: (h) => <ActionButton label={t("intents.handlers.deregister")} tone="danger" confirm={t("intents.handlers.deregister.confirm", { id: h.rmihId })}
           action={{ method: "DELETE", path: `${HANDLERS}/${h.rmihId}`, success: t("intents.handlers.deregistered") }} /> },
       ]} />
+      <Can method="POST" path={O1_CM_REGISTRATION}>
+        <div className="row gap">
+          <ActionButton label={t("intents.handlers.o1cm.register")} action={{ method: "POST", path: O1_CM_REGISTRATION, json: {}, success: t("intents.handlers.o1cm.registered") }} />
+          <span className="muted small">{t("intents.handlers.o1cm.hint")}</span>
+        </div>
+      </Can>
       <Can method="POST" path={HANDLERS}><RegisterHandler /></Can>
     </Card>
   );
 }
+
+/** SA SMOS registers itself as the O1-CM intent handler (the generic handler an rApp's Intent is enacted by): one call, its own capability list. */
+const O1_CM_REGISTRATION = "/sa-smos/o1-cm-handler/registration";
 
 /** The SMO modules that may hold an rmihId (named in the register tool). */
 const FRAMEWORK_HANDLERS = ["so-smos", "sa-smos"] as const;

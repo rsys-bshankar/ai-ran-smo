@@ -385,6 +385,201 @@
         "summary": "List Decisions"
       }
     },
+    "/instances/{instance_id}/demo/emulate": {
+      "post": {
+        "description": "Demo 05: the Digital Twin publishes twelve hours of four clusters, three with an injected fault (overshoot, weak coverage, pilot pollution)\nand one healthy, then the model is emulated against them (`lifecycle/emulate`).",
+        "operationId": "demo_emulate_instances__instance_id__demo_emulate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo Emulate"
+      }
+    },
+    "/instances/{instance_id}/demo/history": {
+      "post": {
+        "description": "Demo 02: three days of hourly coverage history in which each cell's tilt or power was stepped in turn (`producer.history`), reported to RAN\nNF OAM, which delivers it to DME for the training dataset.",
+        "operationId": "demo_history_instances__instance_id__demo_history_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo History"
+      }
+    },
+    "/instances/{instance_id}/demo/kpi-hour": {
+      "post": {
+        "description": "Demo 10's PM: the next live hour, produced from the settings the rApp just wrote. Then press Evaluate now: the KPI check confirms the change\nset (or reverts it, had the cluster got worse).",
+        "operationId": "demo_kpi_hour_instances__instance_id__demo_kpi_hour_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo Kpi Hour"
+      }
+    },
+    "/instances/{instance_id}/demo/live": {
+      "post": {
+        "description": "Demo 08's PM: the first live hour (midnight on the 4th) from the cells' live settings, with 301 overshooting into 302 and 303. Then press\nEvaluate now: the joint plan downtilts 301.",
+        "operationId": "demo_live_instances__instance_id__demo_live_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo Live"
+      }
+    },
+    "/instances/{instance_id}/demo/prepare": {
+      "post": {
+        "description": "Demo 00-01, the rApp's part: registers the Digital Twin producer at DME (DME takes the same registration again as it is) and starts the\ninstance (`/start`), which binds its datasets.",
+        "operationId": "demo_prepare_instances__instance_id__demo_prepare_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo Prepare"
+      }
+    },
     "/instances/{instance_id}/evaluate": {
       "post": {
         "description": "One pass of the closed loop over the cluster. Its X-Correlation-ID is\nthe execution id in the audit trail.",

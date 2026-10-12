@@ -62,7 +62,8 @@ Logic is in `app/engine.py` (guards, bounds, KPI check; no I/O) and `app/model/C
 | `app/models.py` | Instance, cell and decision tables |
 | `demo.py` | Demo 00-11 script |
 | `tests/` | Engine, model and route unit tests (routes through the TestClient on SQLite, the SDK replaced by a platform double) |
-| `tests/test_operator_page.py` | The `operatorUi` of `manifest.yaml` is valid, names only routes this rApp serves with query parameters they take, and reads only fields its own answers carry (4 tests) |
+| `tests/test_operator_page.py` | The `operatorUi` of `manifest.yaml` is valid, names only routes this rApp serves with query parameters they take, reads only fields its own answers carry, and ends with the admin-only demo panel (4 tests) |
+| `tests/test_demo_routes.py` | The demo / simulation routes: prepare registers the twin producer and starts; history, live and the KPI hour send the PM `demo.py` sends, and a refused report is answered as refused; emulate publishes the twin's data then emulates (6 tests) |
 | `manifest.yaml`, `capabilities.yaml`, `Definitions/asd.yaml`, `TOSCA-Metadata/` | CSAR package content |
 
 ## Package
@@ -92,6 +93,11 @@ Paths are relative to the service root; through R1 Termination they sit under `/
 | `GET /instances/{id}/cells` | Per-cell state, tilt and power |
 | `GET /instances/{id}/dashboard` | Share and excess trends, latest decision per cell |
 | `POST /sim-producer/register`, `POST /sim-producer/publish` | Register and feed the Digital Twin dataset |
+| `POST /instances/{id}/demo/prepare` | Demo 00-01 (`docs/GUI_DEMO_GUIDE.md`): register the Digital Twin producer, then `start` |
+| `POST /instances/{id}/demo/history` | Demo 02: 72 hours of COVERAGE_PERFORMANCE history of the configured cells from 2026-09-01, reported to RAN NF OAM as the NF would; a refusal is answered as RAN NF OAM gave it |
+| `POST /instances/{id}/demo/emulate` | Demo 05: the Digital Twin publishes 12 h of injected faults per cluster, then `lifecycle/emulate` |
+| `POST /instances/{id}/demo/live` | Demo 08's PM: the hour from midnight on 2026-09-04, from each cell's live tilt and power, cell 301 overshooting (then Evaluate now) |
+| `POST /instances/{id}/demo/kpi-hour` | Demo 10's PM: the next hour, from the settings now in force (then Evaluate now: CONFIRMED) |
 | `GET /sim-producer/health`, `POST /sim-producer/jobs`, `DELETE /sim-producer/jobs/{id}` | DME producer callbacks |
 
 `/start` needs `managedElementRef` and `cells` in the instance configuration; optional keys are `baselineTilt`, `baselinePower`, `rmihId`, `energySavingInstanceId`, `mobilityInstanceId` and `operatorNotificationUri`.

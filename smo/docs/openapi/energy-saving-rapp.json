@@ -578,6 +578,162 @@
         "summary": "List Decisions"
       }
     },
+    "/instances/{instance_id}/demo/emulate": {
+      "post": {
+        "description": "Demo 05: the Digital Twin publishes two days of its trend, then the model is emulated against it (`lifecycle/emulate`).",
+        "operationId": "demo_emulate_instances__instance_id__demo_emulate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo Emulate"
+      }
+    },
+    "/instances/{instance_id}/demo/history": {
+      "post": {
+        "description": "Demo 02: three days of hourly PRB history for every cell, reported to RAN NF OAM, which delivers it to DME for the training dataset.",
+        "operationId": "demo_history_instances__instance_id__demo_history_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo History"
+      }
+    },
+    "/instances/{instance_id}/demo/live": {
+      "post": {
+        "description": "Demo 08's PM: an hour after midnight in five-minute steps, every other cell (the first, the third, ...) idle at 2 % PRB and the rest at 40 %.\nThen press Evaluate now: the idle cells are put to sleep, unless guarded.",
+        "operationId": "demo_live_instances__instance_id__demo_live_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo Live"
+      }
+    },
+    "/instances/{instance_id}/demo/prepare": {
+      "post": {
+        "description": "Demo 00-01, the rApp's part: registers the Digital Twin producer at DME (DME takes the same registration again as it is) and starts the\ninstance (`/start`), which subscribes it to its datasets.",
+        "operationId": "demo_prepare_instances__instance_id__demo_prepare_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo Prepare"
+      }
+    },
     "/instances/{instance_id}/evaluate": {
       "post": {
         "description": "One pass of the closed loop over the instance's cells. The pass's\nX-Correlation-ID is its execution id in the audit trail.",

@@ -346,6 +346,201 @@
         "summary": "List Decisions"
       }
     },
+    "/instances/{instance_id}/demo/emulate": {
+      "post": {
+        "description": "Demo 05: the Digital Twin publishes two days of relations with one injected fault each, then the model is emulated against them\n(`lifecycle/emulate`).",
+        "operationId": "demo_emulate_instances__instance_id__demo_emulate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo Emulate"
+      }
+    },
+    "/instances/{instance_id}/demo/history": {
+      "post": {
+        "description": "Demo 02: three days of hourly handover counters per relation (201->203 too late, 202->203 too early), reported to RAN NF OAM, which delivers\nthem to DME for the training dataset.",
+        "operationId": "demo_history_instances__instance_id__demo_history_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo History"
+      }
+    },
+    "/instances/{instance_id}/demo/kpi-hour": {
+      "post": {
+        "description": "Demo 10's PM: the hour after the change, every relation healthy. Then press Evaluate now: the KPI check confirms the CIO changes (had the\nfailures risen, they would have been reverted).",
+        "operationId": "demo_kpi_hour_instances__instance_id__demo_kpi_hour_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo Kpi Hour"
+      }
+    },
+    "/instances/{instance_id}/demo/live": {
+      "post": {
+        "description": "Demo 08's PM: two hours from midnight on the 4th with the history's problems still there. Then press Evaluate now: the CIO of the too-late\nrelation is raised, the too-early one's lowered, and a relation towards a guarded cell is left alone.",
+        "operationId": "demo_live_instances__instance_id__demo_live_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo Live"
+      }
+    },
+    "/instances/{instance_id}/demo/prepare": {
+      "post": {
+        "description": "Demo 00-01, the rApp's part: registers the Digital Twin producer at DME (DME takes the same registration again as it is) and starts the\ninstance (`/start`), which subscribes it to its datasets.",
+        "operationId": "demo_prepare_instances__instance_id__demo_prepare_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo Prepare"
+      }
+    },
     "/instances/{instance_id}/evaluate": {
       "post": {
         "description": "One pass of the closed loop over the instance's relations. Its\nX-Correlation-ID is the execution id in the audit trail.",

@@ -68,7 +68,8 @@ columns only). A value that does not fit its format is shown as text.
 
 **Action** (a button): `id` (unique in the whole declaration: the audit names it), `label`, `method` (`POST`, `PUT`, `PATCH`, `DELETE`),
 `path`, `success` (text shown when the call succeeded), optional `confirm` (text of a confirmation dialog; absent: no dialog), `tone`
-(`default`, `primary`, `danger`), `inputs` (at most 8 fields the button asks for before it sends), `body` (fixed values, at most 8). An input is
+(`default`, `primary`, `danger`), `role` (`operator`, the default, or `admin`: who may press it; an admin-only button is not drawn for anyone
+else, and the GUI backend refuses it to them), `inputs` (at most 8 fields the button asks for before it sends), `body` (fixed values, at most 8). An input is
 `name`, `label`, `type` (`string`, `integer`, `number`, `boolean`, `enum`), optional `required`, `options` (an enum's values, at most 50), `min`,
 `max` (numbers), `maxLength` (strings). The request body is a JSON object made of the inputs and the fixed `body`, nothing else; a name is
 either an input or fixed. The fixed string `"{user}"` is replaced by the **GUI backend** with the signed-in user, never with anything the
@@ -184,6 +185,7 @@ matching one safe segment, and nothing else. `smo_shared.operator_ui.declared_ro
 |---|---|---|
 | a declared read (`GET`) | viewer | refused (`403 UNDECLARED_ROUTE`), whatever the role |
 | a declared change (`POST`, `PUT`, `PATCH`, `DELETE`) | operator | refused the same way |
+| a declared change whose action says `role: admin` | admin (`403 FORBIDDEN` for an operator) | refused the same way |
 | any change on a rApp whose declaration has `readOnly: true` | nobody | refused (`403 RAPP_READ_ONLY`) |
 
 `readOnly: true` is the rApp saying "this page only shows"; Onboarding refuses a declaration that is `readOnly` and also declares an action,
@@ -334,9 +336,8 @@ operatorUi:
 ```
 
 The routes it allows are exactly these seven: `GET /instances/{instanceId}`, `POST …/evaluate`, `POST …/reconcile`, `GET …/dashboard`,
-`POST …/cells/{row.cellId}/override`, `DELETE …/cells/{row.cellId}/override`, `GET …/decisions` (the drawer's history, bound to the clicked cell by `{row.cellId}` in the query). The rApp's `…/lifecycle/train`, `…/start`
-and `…/sim-producer/*` are not declared, so the GUI backend refuses them for this rApp (today they sit in `gui-bff/app/rbac.py` as operator and
-admin rules).
+`POST …/cells/{row.cellId}/override`, `DELETE …/cells/{row.cellId}/override`, `GET …/decisions` (the drawer's history, bound to the clicked cell by `{row.cellId}` in the query). The sample rApp declares more after these three panels (its cell-state history and its demo's
+admin-only buttons, below), so the routes of the full sample are more than seven; `…/sim-producer/*` stays undeclared, so the GUI backend refuses it.
 
 ## What the four sample pages need that the declaration cannot express
 
@@ -365,7 +366,10 @@ What **still cannot be expressed** (each loses a little, none loses a function):
 - **Chart presentation** (`floor`, fixed height and width, a label per sparkline): the renderer decides the size and the axis; a chart `unit` is the only label.
 - **A raw execution view with its own routes beyond a list** (for example opening an execution from the history table): there is no second drawer level
   (`rowDetail` does not nest). The `json` block of the row's latest decision covers the audit trail the pages show today.
-- **Start and lifecycle buttons and the simulator producer routes** are operator or admin work that stays on the generic detail page or in the API.
+- **Start, lifecycle and simulation buttons** are expressible since `role: admin`: each sample rApp declares its demo (start, the PM it plays as
+  the network, train, validate, emulate on the Digital Twin, deploy) as a last `Demo / simulation (admin)` panel of admin-only actions
+  (`docs/GUI_DEMO_GUIDE.md`). The governance decisions between them stay on the AI/ML page, where a person makes them; the simulator
+  producer's DME callbacks stay machine routes.
 
 ## Consequences
 

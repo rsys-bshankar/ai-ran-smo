@@ -327,6 +327,9 @@ RULES: list[Rule] = [
     # acting on the framework's behalf (call flow 09)
     _rule("POST", "/intent-service/intent-handling-functions", A),
     _rule("DELETE", "/intent-service/intent-handling-functions/{id}", A),
+    # SA SMOS registers itself as the O1-CM intent handler (its own DEFAULT_CM_TARGETS); the same framework act as the rule above, so admin. The
+    # Handlers tab's one-click button for it is what the sample rApps' demo needs first (docs/GUI_DEMO_GUIDE.md, step 00)
+    _rule("POST", "/sa-smos/o1-cm-handler/registration", A),
     _rule("POST", "/intent-service/intent-reports", A),
     # rApp autonomy modes (HISTORY.md OI-6.3; Wave 8 W8-08): an operator
     # requests a dispatch, and scopes (resolve) or rejects an ASSIST one

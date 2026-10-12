@@ -207,7 +207,7 @@ def decide(declaration: Any, instance_id: str, method: str, path: str, role: str
 
     Order: a declaration we cannot read -> 403 UNDECLARED_ROUTE; a change on a `readOnly` rApp -> 403 RAPP_READ_ONLY; a route that is not declared for this
     instance, or a method that does not fit it -> 403 UNDECLARED_ROUTE (whatever the role); then the role (`required_role`: viewer reads, operator changes) ->
-    403 FORBIDDEN; then the query of a read, or the body of a change, against the declaration."""
+    403 FORBIDDEN, and admin for an action declared `role: admin`; then the query of a read, or the body of a change, against the declaration."""
     method = method.upper()
     try:
         if not isinstance(declaration, dict) or not isinstance(declaration.get("panels"), list):
@@ -234,6 +234,10 @@ def decide(declaration: Any, instance_id: str, method: str, path: str, role: str
         actions = [a for a in actions if a["id"] == action_id]
     if not actions:
         return Refusal(403, "UNDECLARED_ROUTE", "no declared action of this rApp has that id and route")
+    if role != "admin":                                          # an action declared `role: admin` (a demo button) is an admin's; the others need operator
+        actions = [a for a in actions if a.get("role", "operator") != "admin"]
+        if not actions:
+            return Refusal(403, "FORBIDDEN", "requires role admin")
     action = actions[0]
     body = build_body(action, payload if method != "DELETE" else None, username)
     if isinstance(body, Refusal):

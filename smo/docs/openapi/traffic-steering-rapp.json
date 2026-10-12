@@ -385,6 +385,201 @@
         "summary": "List Decisions"
       }
     },
+    "/instances/{instance_id}/demo/emulate": {
+      "post": {
+        "description": "Demo 05: the Digital Twin publishes a day of three clusters (two with a hotspot, one healthy), then the model is emulated against them\n(`lifecycle/emulate`).",
+        "operationId": "demo_emulate_instances__instance_id__demo_emulate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo Emulate"
+      }
+    },
+    "/instances/{instance_id}/demo/history": {
+      "post": {
+        "description": "Demo 02: three days of hourly load PM in which each cell's CIO or priority was stepped in turn, reported to RAN NF OAM, which delivers it to\nDME for the training dataset.",
+        "operationId": "demo_history_instances__instance_id__demo_history_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo History"
+      }
+    },
+    "/instances/{instance_id}/demo/kpi-hour": {
+      "post": {
+        "description": "Demo 10's PM: the next hour, made from the steering now live on O1. Then press Evaluate now: the KPI check of the step (CONFIRMED, or\nreverted).",
+        "operationId": "demo_kpi_hour_instances__instance_id__demo_kpi_hour_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo Kpi Hour"
+      }
+    },
+    "/instances/{instance_id}/demo/live": {
+      "post": {
+        "description": "Demo 08's PM: the busy afternoon's first hour with the hotspot next to the cell in 401's place. Then press Evaluate now: the hotspot cell is\nforecast congested and one step moves load to its least-loaded neighbour.",
+        "operationId": "demo_live_instances__instance_id__demo_live_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo Live"
+      }
+    },
+    "/instances/{instance_id}/demo/prepare": {
+      "post": {
+        "description": "Demo 00-01, the rApp's part: registers the Digital Twin producer at DME (DME takes the same registration again as it is) and starts the\ninstance (`/start`), which discovers its datasets.",
+        "operationId": "demo_prepare_instances__instance_id__demo_prepare_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo Prepare"
+      }
+    },
     "/instances/{instance_id}/evaluate": {
       "post": {
         "description": "One pass of the closed loop over the instance's cells. Its\nX-Correlation-ID is the execution id in the audit trail.",
