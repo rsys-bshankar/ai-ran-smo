@@ -145,8 +145,11 @@ def run_main(monkeypatch, tmp_path, token_refresh, seconds=0.5):
 
 
 def test_a_long_run_takes_a_new_token_before_the_first_expires(monkeypatch, tmp_path):
-    """With `--token-refresh` the run takes new tokens while it goes (the soak runs two hours on tokens that last one) and the workers end holding the latest; with 0 it takes only the first."""
+    """With `--token-refresh` the run takes new tokens while it goes (the soak runs two hours on tokens that last one) and the workers hold a refreshed one, not the first; with 0 it takes
+    only the first. The worker reads the token at the instant it ends while the refresher is still firing, so one more refresh can land after that read: the held token is therefore
+    one of the last two taken, never an exact match to the count."""
     held, taken = run_main(monkeypatch, tmp_path, token_refresh=0.1)
-    assert taken >= 3 and held == f"token-{taken}"
+    held_number = int(held.removeprefix("token-"))
+    assert taken >= 3 and held_number >= 2 and taken - 1 <= held_number <= taken
     held, taken = run_main(monkeypatch, tmp_path, token_refresh=0)
     assert (held, taken) == ("token-1", 1)
