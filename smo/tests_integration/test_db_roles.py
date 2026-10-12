@@ -51,6 +51,17 @@ def test_every_module_in_the_roles_manifest_is_a_module_with_tables_and_names_re
             assert table in OWNERS[owner], f"{module} reads {qualified}, which {owner} does not own"
 
 
+def test_the_role_of_every_module_that_runs_a_worker_may_use_what_every_worker_uses():
+    """A worker (`python -m smo_shared.worker`) claims each of its tasks in `periodic_run`, sweeps `notification_outbox` and purges `smo_event`; the role of a module with a
+    worker service in docker-compose.yml must list all three, or every task of that worker fails with "permission denied" (mdaf-worker did, on every tick, since it was added)."""
+    import yaml
+    services = yaml.safe_load((SMO_ROOT / "docker-compose.yml").read_text())["services"]
+    modules = {name.removesuffix("-worker") for name, svc in services.items() if "smo_shared.worker" in " ".join(svc.get("command", []))}
+    assert {"mdaf", "ran-nf-oam"} <= modules
+    for module in modules:
+        assert {"periodic_run", "notification_outbox", "smo_event"} <= set(ROLES[module]["shared"]), module
+
+
 def test_a_role_name_is_derived_from_the_module_and_statements_quote_what_they_are_given():
     """Role names derive from the module name, the password is a quoted literal that cannot break out of the statement, the search path and revokes
     are the module's own, and a module that reads another's table gets SELECT only.

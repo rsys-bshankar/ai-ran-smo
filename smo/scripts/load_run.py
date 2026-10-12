@@ -18,6 +18,8 @@ and of `smo_introspection_cache_total` at the gateway, read before and after the
 `R1_INTROSPECTION_CACHE_SECONDS` unset or 0 every call through the gateway costs one introspection; with it above 0 the cache answers most of them (scripts/introspection_compare.py
 sets a run with the cache against a run without). A metrics page that cannot be read leaves that part out; it never fails the load.
 
+The token is renewed every `--token-refresh` seconds (default 30 minutes), because SME's last an hour and a soak runs for longer.
+
 Exit status: 1 if any route answered a 5xx or the unexpected status more than `--max-error-rate` of the time (default 0), else 0. The numbers are the stack's on that runner:
 GitHub's runners vary, so they are compared run against run on the same kind of runner, not against an absolute.
 """
@@ -85,6 +87,13 @@ async def get_token(client: httpx.AsyncClient, sme: str, reg: dict) -> httpx.Res
                                                           "client_secret": reg["onboardingSecret"], "scope": "smo-internal"})
 
 
+class Bearer:
+    """The access token the workers send, in a holder so a refresh reaches them: SME's tokens last an hour (`sme/app/main.py` ACCESS_TOKEN_TTL_SECONDS) and a soak runs longer."""
+
+    def __init__(self, value: str):
+        self.value = value
+
+
 class Outcome(int):
     """A status code that also carries the start of the body of a refusal, for the list of failed calls."""
     detail = ""
@@ -107,7 +116,7 @@ async def one_call(client: httpx.AsyncClient, gateway: str, sme: str, reg: dict,
     name, method, path, _, _ = route
     if method == "TOKEN":
         return outcome(await get_token(client, sme, reg))
-    headers = {"Authorization": f"Bearer {access}"}
+    headers = {"Authorization": f"Bearer {getattr(access, 'value', access)}"}      # a Bearer (refreshed during a long run) or a plain token string
     path = path.replace("{invoker}", reg["apiInvokerId"])
     if method == "POST":
         headers["Idempotency-Key"] = str(uuid.uuid4())
@@ -260,7 +269,7 @@ async def main_async(args) -> int:
         reg = await register(client, args.sme)
         token = await get_token(client, args.sme, reg)
         token.raise_for_status()
-        access = token.json()["access_token"]
+        access = Bearer(token.json()["access_token"])
         series = {route[0]: Series() for route in ROUTES}
         weights = [route[3] for route in ROUTES]
         timeline: dict[int, list[int]] = {}
@@ -275,10 +284,25 @@ async def main_async(args) -> int:
             await asyncio.sleep(args.warmup)
             counters["before"] = await scrape(client, args.sme_metrics, args.gateway_metrics)
 
+        async def refresh_token():
+            """Takes a new token every `--token-refresh` seconds for the whole run: the first one expires after an hour, and a longer run would otherwise end in 401s on every route
+            (the first scheduled soak, 120 minutes). A refresh that fails keeps the old token and tries again at the next interval."""
+            while True:
+                await asyncio.sleep(args.token_refresh)
+                try:
+                    fresh = await get_token(client, args.sme, reg)
+                    fresh.raise_for_status()
+                    access.value = fresh.json()["access_token"]
+                except (httpx.HTTPError, KeyError, ValueError):
+                    pass
+
         sampler = asyncio.create_task(counters_at_start_of_measurement())
+        refresher = asyncio.create_task(refresh_token()) if args.token_refresh > 0 else None
         await asyncio.gather(*[worker(client, args.gateway, args.sme, reg, access, deadline, start + args.warmup, series, weights, random.Random(rng.random()),  # noqa: S311
                                       timeline, interval, args.stop_file, failures) for _ in range(args.concurrency)])
         ended = time.monotonic()
+        if refresher:
+            refresher.cancel()
         await sampler
         counters["after"] = await scrape(client, args.sme_metrics, args.gateway_metrics)
     seconds = max(1.0, min(args.duration, ended - start - args.warmup))     # a run ended by the stop file measured less than --duration
@@ -311,6 +335,7 @@ def main() -> int:
     ap.add_argument("--concurrency", type=int, default=20)
     ap.add_argument("--timeout", type=float, default=30)
     ap.add_argument("--max-error-rate", type=float, default=0.0)
+    ap.add_argument("--token-refresh", type=float, default=1800, help="take a new token this often, in seconds (0: never); SME's tokens last an hour, so a run over an hour needs it")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--rate", type=float, default=0.0, help="about this many calls a second in all (0: as fast as the answers come back)")
     ap.add_argument("--stop-file", default=None, help="end the run when this file exists")

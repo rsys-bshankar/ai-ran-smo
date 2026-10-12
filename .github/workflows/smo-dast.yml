@@ -33,18 +33,29 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # pinned by digest, like every image in the stack; bump them on purpose (the date of the pin is in smo/security/README.md)
+  # pinned by digest, like every image in the stack; bump them on purpose (the date of the pin is in smo/security/README.md).
+  # ZAP is already on ghcr.io (no Docker Hub limit), so it is not mirrored. testssl.sh and Nuclei are Docker Hub images: their pins live in
+  # smo/deploy/mirror/images.txt and the step "Use the GHCR image mirror" exports them as $SMO_IMAGE_TESTSSL_3_2 and $SMO_IMAGE_NUCLEI_V3_9_0
+  # (the GHCR mirror's reference when it answers, the Docker Hub one otherwise).
   ZAP_IMAGE: ghcr.io/zaproxy/zaproxy:stable@sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5081ef
-  TESTSSL_IMAGE: drwetter/testssl.sh:3.2@sha256:51e487545f506e4e58b3e557d99538dbc2e63eec40680a2f6f6c9eb5ae1296af
-  NUCLEI_IMAGE: projectdiscovery/nuclei:v3.9.0@sha256:66b5f88c9b98ad29c03343dd34e5e85bde0ad10428d72e0171b067efe1ed7811
 
 jobs:
   dast:
     name: Scan the stack behind the TLS edge
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      COMPOSE_FILE: docker-compose.yml:.ci-mirror/docker-compose.mirror.yml
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
 
       - name: Start the stack with the TLS edge
         working-directory: smo
@@ -81,7 +92,7 @@ jobs:
           cp certs/ca.crt ../scan-out/ca.crt
           set +e
           for port in 8443 3443; do
-            docker run --rm --network host -v "$PWD/../scan-out:/out" "$TESTSSL_IMAGE" \
+            docker run --rm --network host -v "$PWD/../scan-out:/out" "$SMO_IMAGE_TESTSSL_3_2" \
               --add-ca /out/ca.crt --severity LOW --jsonfile "/out/testssl-$port.json" --warnings off --quiet "localhost:$port" > "../scan-out/testssl-$port.txt" 2>&1
           done
           set -e
@@ -100,7 +111,7 @@ jobs:
           set +e
           # what is reachable from outside: the TLS edge in front of the gateway (:8443) and of the GUI (:3443). Not the containers' own ports: R1's /metrics is for the
           # scraper on the container network and is answered 404 at the edge (edge/nginx.conf), which this scan then checks.
-          docker run --rm --network host -v "$PWD/../scan-out:/out" "$NUCLEI_IMAGE" \
+          docker run --rm --network host -v "$PWD/../scan-out:/out" "$SMO_IMAGE_NUCLEI_V3_9_0" \
             -u https://localhost:8443 -u https://localhost:3443 -severity low,medium,high,critical -jsonl -o /out/nuclei.jsonl -silent
           set -e
           [ -e ../scan-out/nuclei.jsonl ] || : > ../scan-out/nuclei.jsonl   # nothing found: no file
@@ -140,9 +151,18 @@ jobs:
           - {role: internal, group: b, modules: "nfo focom aimgf mlmr mllf"}
           - {role: internal, group: c, modules: "ran-analytics mdaf intent-service so-smos sa-smos"}
     env:
+      COMPOSE_FILE: docker-compose.yml:.ci-mirror/docker-compose.mirror.yml
       MODULES: ${{ matrix.modules }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
 
       - name: Start the stack
         working-directory: smo
@@ -177,6 +197,14 @@ jobs:
             python3 scripts/dast_baseline.py zap security/zap-baseline.json "../scan-out/zap-$m.json" || status=1
           done
           exit $status
+
+      # Evidence for reading a "SQL Injection [40018]" that moves from route to route between runs: ZAP's boolean test compares responses, and a gateway that answers 429
+      # (the per-caller limiter, 100 a second) or a 5xx to some of the requests makes them differ for reasons that are not the parameter.
+      - name: What the gateway answered during the scan, by status
+        if: ${{ always() }}
+        working-directory: smo
+        run: |
+          docker compose exec -T sme python -c "import collections, httpx, re; c = collections.Counter(); [c.update({m.group(1): float(m.group(2))}) for m in re.finditer(r'^smo_http_requests_total\{.*status=\"(\d+)\".*\} ([0-9.e+]+)$', httpx.get('http://r1-termination:8000/metrics', timeout=10).text, re.M)]; print('gateway requests by status:', dict(sorted(c.items())))" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: The modules' errors, when a step failed
         if: failure()

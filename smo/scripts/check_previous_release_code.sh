@@ -75,7 +75,7 @@ fresh_stack() {
 replay() {
   docker run --rm --network "${project}_default" --network-alias demo-consumer \
     -e SMO_E2E_LIVE=1 -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/work/smo/shared:/work/smo/sdk \
-    -v "$scratch/prev:/work" -w /work/smo python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 sh -c "
+    -v "$scratch/prev:/work" -w /work/smo "${SMO_IMAGE_PYTHON_3_11_SLIM:-python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9}" sh -c "
       pip install -q --require-hashes -r requirements/dev.txt &&
       pip install -q --no-deps -e shared &&
       python -m pytest $1 -v -p no:cacheprovider"

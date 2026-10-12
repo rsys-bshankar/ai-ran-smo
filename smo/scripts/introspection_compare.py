@@ -10,8 +10,8 @@ the gateway cost, the requests a second, the p50 / p95 / p99 of all calls and th
   - the run without the cache did not cost about one introspection per call through the gateway (then the run was not what it says: the cache was on, or the calls skipped the check);
   - the run with the cache did not cut the introspections by at least `--min-saving` (default 0.5: half).
 
-It never loosens anything: the numbers it reports are the measurement, and the choice of the default (`R1_INTROSPECTION_CACHE_SECONDS`, 0 today) stays the owner's
-(OPEN_ITEMS.md, SEC-5.5). The latency columns are indicative: the second run follows the first on the same database, and a CI runner varies from run to run.
+It never loosens anything: the numbers it reports are the measurement, and the choice of the default (`R1_INTROSPECTION_CACHE_SECONDS`: 30 in compose and the chart since SEC-5.5, 0 in the code) stays the owner's
+(HISTORY.md, PR-SEC-5.5). That default is why the lane must set 0 itself for the run it passes as `--off` (smo-load.yml does). The latency columns are indicative: the second run follows the first on the same database, and a CI runner varies from run to run.
 """
 
 import argparse

@@ -48,6 +48,14 @@ jobs:
         with:
           path: cur
 
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: cur/smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ matrix.from }}
@@ -59,10 +67,12 @@ jobs:
           build() {   # build <checkout> <tag>
             (cd "$1/smo" && python scripts/release_images.py matrix | jq -c '.include[]' | while read -r row; do
               name=$(jq -r .name <<<"$row"); context=$(jq -r .context <<<"$row"); module=$(jq -r .module <<<"$row")
+              # the base images named in this Dockerfile that the GHCR mirror holds (docs/MIRROR.md); none when the mirror is off
+              mapfile -t mirror < <(python3 "$GITHUB_WORKSPACE/cur/smo/scripts/ci_mirror.py" build-contexts "$context")
               if [ -n "$module" ]; then
-                docker build --quiet -t "local/smo-$name:$2" --build-arg "MODULE=$module" "$context" > /dev/null
+                docker build --quiet -t "local/smo-$name:$2" "${mirror[@]}" --build-arg "MODULE=$module" "$context" > /dev/null
               else
-                docker build --quiet -t "local/smo-$name:$2" "$context" > /dev/null
+                docker build --quiet -t "local/smo-$name:$2" "${mirror[@]}" "$context" > /dev/null
               fi
             done)
           }
@@ -72,7 +82,7 @@ jobs:
 
       - name: Create the cluster and load the images
         run: |
-          kind create cluster --name smo --image kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5 --wait 120s
+          kind create cluster --name smo --image "$SMO_IMAGE_KIND_NODE_V1_37_0" --wait 120s
           kind load docker-image --name smo $(docker image ls 'local/smo-*' --format '{{.Repository}}:{{.Tag}}')
 
       - name: Install the previous release from its own chart

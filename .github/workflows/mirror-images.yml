@@ -1,10 +1,11 @@
 name: Mirror images
 
 # Copies the third-party images CI pulls (smo/deploy/mirror/images.txt) into GHCR under ghcr.io/<owner>/<repo>/mirror/<name>, by digest and with
-# the whole manifest list, so a later change can point CI at GHCR instead of the anonymous Docker Hub pull limit (smo/docs/MIRROR.md).
+# the whole manifest list, so CI can pull from GHCR instead of meeting the anonymous Docker Hub pull limit (smo/scripts/ci_mirror.py, smo/docs/MIRROR.md).
 # It runs by hand and on a push to main that changes the list, the script or this file; never on a pull request, so a fork's change cannot reach
 # the token that writes packages. The packages are private until the repository owner makes each one public once, in the GitHub UI: the job
-# summary lists their names. Nothing here changes a pin or a reference; it only fills the mirror.
+# summary lists their names. Nothing here changes a pin or a reference; it only fills the mirror. The other workflows probe it at the start of each job and fall back to the
+# upstream registry for an image that does not answer; the repository variable SMO_IMAGE_MIRROR=off switches them all off.
 # No third-party actions: the checkout is the only action. The copy is `skopeo copy --all --preserve-digests` (skopeo is preinstalled on the runner; nothing
 # is installed here) because `docker buildx imagetools create` re-wraps a single-platform image under a new digest; skopeo reads the docker login below.
 on:

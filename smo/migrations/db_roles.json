@@ -42,7 +42,9 @@
   "schema": "mdaf",
   "shared": [
    "module_identity",
-   "notification_outbox"
+   "notification_outbox",
+   "periodic_run",
+   "smo_event"
   ]
  },
  "samples/energy-saving-rapp": {

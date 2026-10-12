@@ -92,3 +92,64 @@ def test_a_failed_call_is_listed_with_its_status_and_the_start_of_the_answer(mon
     asyncio.run(load_run.worker(None, "g", "s", {}, "t", now + 0.05, now, series, [r[3] for r in load_run.ROUTES], random.Random(1), {}, 0.0, None, failures))
     assert failures and failures[0]["status"] == 503 and "AUTH_SERVICE_UNAVAILABLE" in failures[0]["detail"] and failures[0]["route"] in series
     assert len(failures) == sum(s.errors for s in series.values()) or len(failures) == load_run.MAX_FAILURES
+
+
+def test_a_call_sends_the_token_a_refresh_put_in_the_holder_and_still_takes_a_plain_string():
+    """`one_call` reads the token from a `Bearer` at the moment of the call (so a refresh reaches a running worker) and accepts a plain string too."""
+    seen = []
+
+    class Client:
+        async def get(self, url, headers):
+            seen.append(headers["Authorization"])
+            return SimpleNamespace(status_code=200, text="")
+
+    route = next(r for r in load_run.ROUTES if r[1] == "GET")
+    holder = load_run.Bearer("first")
+    asyncio.run(load_run.one_call(Client(), "g", "s", {"apiInvokerId": "i"}, holder, route))
+    holder.value = "second"
+    asyncio.run(load_run.one_call(Client(), "g", "s", {"apiInvokerId": "i"}, holder, route))
+    asyncio.run(load_run.one_call(Client(), "g", "s", {"apiInvokerId": "i"}, "plain", route))
+    assert seen == ["Bearer first", "Bearer second", "Bearer plain"]
+
+
+def run_main(monkeypatch, tmp_path, token_refresh, seconds=0.5):
+    """Runs `main_async` for `seconds` against a fake SME (each token request answers `token-<n>`) with a worker that only sleeps and reports the token it holds at the end;
+    returns (that last token, the number of tokens taken)."""
+    taken = []
+
+    async def register(client, sme):
+        return {"apiInvokerId": "i", "onboardingSecret": "s"}
+
+    async def get_token(client, sme, reg):
+        taken.append(len(taken) + 1)
+        n = taken[-1]
+        return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"access_token": f"token-{n}"})
+
+    last = []
+
+    async def worker(client, gateway, sme, reg, access, deadline, *rest):
+        await asyncio.sleep(seconds)
+        last.append(access.value)
+
+    async def scrape(client, *urls):
+        return None
+
+    monkeypatch.setattr(load_run, "register", register)
+    monkeypatch.setattr(load_run, "get_token", get_token)
+    monkeypatch.setattr(load_run, "worker", worker)
+    monkeypatch.setattr(load_run, "scrape", scrape)
+    args = SimpleNamespace(concurrency=1, rate=0.0, warmup=0.0, duration=seconds, seed=1, token_refresh=token_refresh, gateway="g", sme="s", sme_metrics="m", gateway_metrics="m",
+                           out=str(tmp_path), stop_file=None, timeout=5.0, max_error_rate=0.0)
+    asyncio.run(load_run.main_async(args))
+    return last[0], len(taken)
+
+
+def test_a_long_run_takes_a_new_token_before_the_first_expires(monkeypatch, tmp_path):
+    """With `--token-refresh` the run takes new tokens while it goes (the soak runs two hours on tokens that last one) and the workers hold a refreshed one, not the first; with 0 it takes
+    only the first. The worker reads the token at the instant it ends while the refresher is still firing, so one more refresh can land after that read: the held token is therefore
+    one of the last two taken, never an exact match to the count."""
+    held, taken = run_main(monkeypatch, tmp_path, token_refresh=0.1)
+    held_number = int(held.removeprefix("token-"))
+    assert taken >= 3 and held_number >= 2 and taken - 1 <= held_number <= taken
+    held, taken = run_main(monkeypatch, tmp_path, token_refresh=0)
+    assert (held, taken) == ("token-1", 1)

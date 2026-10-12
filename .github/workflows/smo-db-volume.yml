@@ -41,6 +41,14 @@ jobs:
         with:
           fetch-depth: 0      # the release tags: the upgrade step starts from the previous release's last revision
 
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
+
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
@@ -56,7 +64,7 @@ jobs:
       - name: Start Postgres 18
         run: |
           docker run -d --name pg -p 5432:5432 -e POSTGRES_USER=smo -e POSTGRES_PASSWORD=smo -e POSTGRES_DB=smo \
-            postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+            "$SMO_IMAGE_POSTGRES_18_ALPINE"
           for i in $(seq 1 30); do docker exec pg pg_isready -U smo && break; sleep 2; done
 
       - name: Migrate to head (timed), then seed (timed)
