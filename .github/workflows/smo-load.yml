@@ -2,7 +2,7 @@ name: SMO load run
 
 # PR-V-8a: a weighted mix of the main gateway routes (service discovery, alarm list, KPI definitions, config job list and dry run, rApp instances, packages, data types, token)
 # at a fixed concurrency, from a one-shot container on the compose network, with the gateway's rate limiter off (smo/docker-compose.load.yml).
-# PR-SEC-5.4: after the main run the gateway is restarted with R1_INTROSPECTION_CACHE_SECONDS=30 and the same load runs again (no new seed); smo/scripts/introspection_compare.py sets the two
+# PR-SEC-5.4: the main run has the introspection cache off (R1_INTROSPECTION_CACHE_SECONDS=0, said by the lane: the shipped default is 30); after it the gateway is restarted with R1_INTROSPECTION_CACHE_SECONDS=30 and the same load runs again (no new seed); smo/scripts/introspection_compare.py sets the two
 # side by side (introspections SME answered, requests a second, p50/p95/p99) and fails if either run has an error or the cache did not cut SME's introspections by half.
 # Seeds N managed elements first (scripts/load_seed.py). Reports requests/s and p50/p95/p99 per route, the CPU and memory of each container and Postgres connections; kept as an artifact and in the job summary. smo/scripts/load_run.py.
 # Nightly, on demand, and on a pull request that changes the runner or this workflow. Not a required check: the numbers are compared run against run (docs/PERFORMANCE.md).
@@ -50,8 +50,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Start the stack, rate limiter off
+      - name: Start the stack, rate limiter off, introspection cache off
         working-directory: smo
+        env:
+          # The first run is the "cache off" side of the PR-SEC-5.4 comparison. The shipped default is 30 s (docker-compose.yml, since #399), so the lane says 0 itself;
+          # the second run below sets 30 itself too. Without this the "off" run counts cache lookups and scripts/introspection_compare.py rightly refuses the comparison.
+          R1_INTROSPECTION_CACHE_SECONDS: "0"
         run: |
           scripts/init_secrets.sh
           cp .env.example .env
@@ -60,6 +64,7 @@ jobs:
             curl -fsS http://localhost:8080/health > /dev/null 2>&1 && break
             sleep 5
           done
+          docker compose -f docker-compose.yml -f docker-compose.load.yml exec -T r1-termination env | grep '^R1_INTROSPECTION_CACHE_SECONDS=0$'
 
       - name: Run the load
         working-directory: smo

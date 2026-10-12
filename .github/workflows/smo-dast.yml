@@ -178,6 +178,14 @@ jobs:
           done
           exit $status
 
+      # Evidence for reading a "SQL Injection [40018]" that moves from route to route between runs: ZAP's boolean test compares responses, and a gateway that answers 429
+      # (the per-caller limiter, 100 a second) or a 5xx to some of the requests makes them differ for reasons that are not the parameter.
+      - name: What the gateway answered during the scan, by status
+        if: ${{ always() }}
+        working-directory: smo
+        run: |
+          docker compose exec -T sme python -c "import collections, httpx, re; c = collections.Counter(); [c.update({m.group(1): float(m.group(2))}) for m in re.finditer(r'^smo_http_requests_total\{.*status=\"(\d+)\".*\} ([0-9.e+]+)$', httpx.get('http://r1-termination:8000/metrics', timeout=10).text, re.M)]; print('gateway requests by status:', dict(sorted(c.items())))" | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: The modules' errors, when a step failed
         if: failure()
         working-directory: smo

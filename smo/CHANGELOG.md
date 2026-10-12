@@ -11,6 +11,8 @@ Entries are written for an operator: what changed in behaviour, configuration or
 
 ### Fixed
 
+- **The MDAF worker can claim its tasks (`migrations/db_roles.json`).** `mdaf-worker` runs as the `smo_mdaf` database role, which was not granted `periodic_run` (where every worker claims a task) or `smo_event` (the feed's purge), so every tick of its three tasks (the report purge, the outbox sweep, the event purge) failed with `permission denied for table periodic_run` and MDAF reports were never purged. The role now has both; re-run `scripts/db_roles.py` (the `migrate` service does it) on an existing database.
+- CI only, nothing changes for an operator (`HISTORY.md` "The heavy lanes red since 11 October"): the load lane starts its "cache off" run with `R1_INTROSPECTION_CACHE_SECONDS=0` itself, now that the shipped default is 30; the stress lane's SME-down scenario does the same (a token checked in the last 30 s is served from the cache while SME is down, by design); `scripts/load_run.py` takes a new token every 30 minutes (`--token-refresh`), because the soak's two-hour run outlived the one-hour token; the soak step says which of its two checks failed; the DAST job summary lists the gateway's requests by status.
 - The GHCR mirror workflow (CI only; nothing changes for an operator; `docs/MIRROR.md`) copies with `skopeo copy --all --preserve-digests` instead of `docker buildx imagetools create`, which re-wrapped single-platform images under a new digest (two of the 16 images failed verification on its first run). The verification is unchanged.
 
 ## [0.8.0] - 2026-10-12
