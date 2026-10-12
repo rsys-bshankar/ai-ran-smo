@@ -31,7 +31,13 @@ prev_smo="$scratch/prev/$rel"
 project="upgrade"
 made_env=""
 compose_prev() { (cd "$prev_smo" && GUI_COOKIE_SECURE=false docker compose -p "$project" "$@"); }
-compose_new() { (cd "$here" && GUI_COOKIE_SECURE=false docker compose -p "$project" "$@"); }
+# This commit's stack takes its base images from the GHCR mirror when CI has set it up (scripts/ci_mirror.py setup wrote the override; docs/MIRROR.md). The previous
+# release's stack does not: it builds and pulls its own older pins, which the mirror does not hold, so its images come from wherever its files say.
+compose_new() {
+  local files=()
+  [ -f "$here/.ci-mirror/docker-compose.mirror.yml" ] && files=(-f docker-compose.yml -f .ci-mirror/docker-compose.mirror.yml)
+  (cd "$here" && GUI_COOKIE_SECURE=false docker compose -p "$project" "${files[@]}" "$@")
+}
 # cleanup (EXIT trap): tear down both stacks and their volumes, remove the previous release's worktree and the scratch directory, and delete the .env this script made;
 # the exit status of the run is kept. Teardown failures are ignored on purpose: cleanup must never decide the result.
 cleanup() {
@@ -75,7 +81,7 @@ echo "== install the previous release and put data into it (its own runbook)"
 compose_prev up -d --build --wait
 docker run --rm --network "${project}_default" --network-alias demo-consumer \
   -e SMO_E2E_LIVE=1 -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/work/smo/shared:/work/smo/sdk \
-  -v "$scratch/prev:/work" -w /work/smo python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 sh -c "
+  -v "$scratch/prev:/work" -w /work/smo "${SMO_IMAGE_PYTHON_3_11_SLIM:-python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9}" sh -c "
     pip install -q --require-hashes -r requirements/dev.txt &&
     pip install -q --no-deps -e shared &&
     python -m pytest tests_integration/test_demo_runbook.py::test_full_runbook_sequence_succeeds -v -p no:cacheprovider"

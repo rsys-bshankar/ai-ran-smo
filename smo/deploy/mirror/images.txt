@@ -1,0 +1,44 @@
+# The third-party images CI and the product pull, and where each is mirrored on GHCR (docs/MIRROR.md).
+#
+# One line per image: `source | digest | mirror | note`, fields separated by `|`, blank lines and `#` lines ignored.
+#   source  the reference as the repository writes it, WITHOUT the digest: `repository[:tag]` (a tag is required unless the digest is given)
+#   digest  `sha256:<64 hex>` as pinned in the repository today, or `-` when the repository pins none (then the note says why, and the mirror
+#           copies whatever the tag resolves to when it runs)
+#   mirror  the image's name under ghcr.io/<owner>/<repo>/mirror/, or `-` for an image that is not copied (the note says why)
+#   note    free text; required when the digest is `-` or the mirror is `-`
+#
+# The mirror's tag is the source's tag (`latest` when the source names none). Two sources that differ only in tag share one mirror name,
+# so they are one GHCR package.
+#
+# This file is the source of truth for scripts/mirror_images.py (validate, copy, verify) and is held in step with the pins by
+# tests_integration/test_image_mirror_list.py: a pin in docker-compose.yml, deploy/helm/smo/values.yaml, deploy/helm/smo/ci, a Dockerfile, a
+# workflow or a script that is missing here, or has another digest, fails that test. A Dependabot bump of a pin therefore needs the same edit here.
+# CI takes these pins from here: scripts/ci_mirror.py setup exports each row as a variable SMO_IMAGE_<NAME> (the mirror reference when it answers, this row's
+# `source@digest` otherwise), writes the compose override and the Helm values, and the workflows hold no digest of a row that is mirrored. The files an operator
+# runs (compose, chart, Dockerfiles) keep naming the upstream images (docs/MIRROR.md).
+# A `-` digest stays legal for a reference the repository cannot pin (the note says why), but there is none today and the drift test holds the set empty.
+
+# --- pinned by digest in the repository, copied to the mirror (every third-party image the repository pulls has a digest, OPEN_ITEMS.md PR-OPS-12.4) ---
+python:3.11-slim | sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 | python |
+python:3.14-slim | sha256:0741d101873c12ab927e6f8653feb8862b9bd58771177acb1b885b95141f91b4 | python |
+postgres:18-alpine | sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873 | postgres |
+nginxinc/nginx-unprivileged:1.31-alpine | sha256:b9241c6e7b8e9a862f129d8d4199ab64b10390949a78bdd5603379b32c844083 | nginx-unprivileged |
+sysrepo/sysrepo-netopeer2 | sha256:36cc1d841c97f118d62f775024d60fb1ce210c3bca6b32135c1a9e5a358a1cc9 | sysrepo-netopeer2 | the compose file pins this one by digest alone, no tag; the mirror tags it `latest`
+drwetter/testssl.sh:3.2 | sha256:51e487545f506e4e58b3e557d99538dbc2e63eec40680a2f6f6c9eb5ae1296af | testssl |
+projectdiscovery/nuclei:v3.9.0 | sha256:66b5f88c9b98ad29c03343dd34e5e85bde0ad10428d72e0171b067efe1ed7811 | nuclei |
+node:26-alpine | sha256:0b36e8c136b94cd4fcf02188228e76c31ad5872eef3fec8cbd2eee500cfd9e80 | node |
+alpine:3.22 | sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8 | alpine |
+golang:1.27.0-alpine | sha256:4c9fe60190a2a3350ddc51de80d0224b8a6698d12bdfc999fee45ea9d6c46dbc | golang |
+maven:3.9.11-eclipse-temurin-21-noble | sha256:6fdc855a6ed81d288ca7ca37ac6ff5e9308b612485c0801d70b25a858c83d237 | maven |
+eclipse-temurin:25-jre-noble | sha256:d9a39a23634650173f1e2bbc176227af9728587ecf0f4b62d53e9355cd7a19ab | eclipse-temurin |
+
+grafana/tempo:2.10.8 | sha256:f0561deb1c68ec44d6e6e7e4487f30106c4e5e768642077695b37958b105812a | tempo |
+grafana/loki:3.7.8 | sha256:1107dd5274e0ada47e42472b7a7e71f3b2a2fe878878108f3e2f9e51528f0193 | loki |
+fluent/fluent-bit:5.1.3 | sha256:c5542543523c9678398dd78d927c05e8425ec15b038f226b67b3b019b1a70845 | fluent-bit |
+grafana/grafana:13.2.3 | sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572 | grafana |
+quay.io/keycloak/keycloak:26.4 | sha256:9409c59bdfb65dbffa20b11e6f18b8abb9281d480c7ca402f51ed3d5977e6007 | keycloak | on quay.io, not Docker Hub; pinned in smo-gui-e2e.yml (KEYCLOAK_IMAGE)
+kindest/node:v1.37.0 | sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5 | kind-node | the node image of every `kind create cluster --image` in the workflows; v1.37.0 is the default of kind 0.33.0, the version on the runner image
+
+# --- pinned by digest, not copied ---
+ghcr.io/cloudnative-pg/postgresql:17.4 | sha256:3c0ba08ea353c9705a755c113e4ae395be76553e0ed68076e5410cb09b9d17d9 | - | already on ghcr.io, where a public package pulls without the Docker Hub limit
+ghcr.io/zaproxy/zaproxy:stable | sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5081ef | - | already on ghcr.io, where a public package pulls without the Docker Hub limit

@@ -41,8 +41,18 @@ jobs:
     name: Every page of the GUI opens, and passes the accessibility checks
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    env:
+      COMPOSE_FILE: docker-compose.yml:.ci-mirror/docker-compose.mirror.yml
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -137,11 +147,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
+      COMPOSE_FILE: docker-compose.yml:.ci-mirror/docker-compose.mirror.yml
       # Keycloak is reached as http://keycloak:8180 from both sides (8180, not 8080: compose publishes R1 on the runner's 8080): the backend's container (a network alias on the compose network) and the
       # browser on this runner (an /etc/hosts entry below). The issuer Keycloak puts in its tokens is the same name (KC_HOSTNAME).
-      KEYCLOAK_IMAGE: quay.io/keycloak/keycloak:26.4
+      # The Keycloak image is $SMO_IMAGE_KEYCLOAK_26_4, exported by the step "Use the GHCR image mirror" (its pin is smo/deploy/mirror/images.txt).
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -178,7 +197,7 @@ jobs:
           docker run -d --name keycloak --network "$network" --network-alias keycloak -p 8180:8180 \
             -e KC_HOSTNAME=http://keycloak:8180 -e KC_HTTP_PORT=8180 -e KC_HTTP_ENABLED=true \
             -v "$PWD/gui-bff/tests/keycloak:/opt/keycloak/data/import:ro" \
-            "$KEYCLOAK_IMAGE" start-dev --import-realm
+            "$SMO_IMAGE_KEYCLOAK_26_4" start-dev --import-realm
           echo "127.0.0.1 keycloak" | sudo tee -a /etc/hosts
           for i in $(seq 1 60); do
             curl -fsS http://keycloak:8180/realms/smo/.well-known/openid-configuration > /dev/null 2>&1 && break

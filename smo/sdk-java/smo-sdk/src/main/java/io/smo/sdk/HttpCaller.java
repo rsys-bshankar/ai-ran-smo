@@ -8,6 +8,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * One HTTP exchange with retry: the only place the SDK touches {@link HttpClient}. A transport failure or a status in
@@ -24,6 +25,9 @@ final class HttpCaller {
          */
         void sleep(Duration duration) throws InterruptedException;
     }
+
+    /** Statuses after which the call certainly did not run (the gateway's rate limit, an unavailable service): safe to repeat for any call. */
+    private static final Set<Integer> NOT_RUN_STATUSES = Set.of(429, 503);
 
     private final HttpClient http;
     private final Duration timeout;
@@ -42,12 +46,24 @@ final class HttpCaller {
      * added, and {@code Content-Type: application/json} when {@code jsonBody} is not null. A transport failure is repeated
      * whatever the policy's statuses, and so is a status the policy lists, for every method: this class does not know which
      * calls are safe to repeat (R1Client makes a POST safe by adding an {@code Idempotency-Key}; the token calls of
-     * {@link TokenProvider} send none).
+     * {@link TokenProvider} send none). The overload with {@code repeatWhenUnsure=false} is for a call that is not safe to repeat
+     * when its answer may have been lost.
      *
      * @return the answer of the last attempt, with whatever status it has (a 4xx or 5xx is returned, not thrown)
      * @throws SdkException with status 0 when the last attempt fails in transport, or the thread is interrupted
      */
     R1Response send(String method, String url, Map<String, String> headers, String jsonBody, RetryPolicy retry) {
+        return send(method, url, headers, jsonBody, retry, true);
+    }
+
+    /**
+     * As {@link #send(String, String, Map, String, RetryPolicy)}; with {@code repeatWhenUnsure} false only the answers that
+     * prove the server did not run the call are repeated (429 and 503, as the Go SDK does for its enrolment), and a transport
+     * failure or any other status in the policy (502, 504: the gateway lost the upstream's answer) is final. This is for a call
+     * that creates something and that the platform cannot answer a second time from a stored first answer: the repeat would create
+     * a second one (SEC-15.13, the invoker registration).
+     */
+    R1Response send(String method, String url, Map<String, String> headers, String jsonBody, RetryPolicy retry, boolean repeatWhenUnsure) {
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url)).timeout(timeout);
         headers.forEach(builder::header);
         if (jsonBody != null) {
@@ -61,12 +77,13 @@ final class HttpCaller {
             Duration retryAfter = null;
             try {
                 HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
-                if (attempt >= retry.maxAttempts() || !retry.retriesStatus(response.statusCode())) {
+                if (attempt >= retry.maxAttempts() || !retry.retriesStatus(response.statusCode())
+                        || (!repeatWhenUnsure && !NOT_RUN_STATUSES.contains(response.statusCode()))) {
                     return new R1Response(response.statusCode(), response.body());
                 }
                 retryAfter = retryAfterOf(response);
             } catch (IOException e) {
-                if (attempt >= retry.maxAttempts()) {
+                if (attempt >= retry.maxAttempts() || !repeatWhenUnsure) {
                     throw new SdkException(method + " " + url + " failed: " + e, e);
                 }
             } catch (InterruptedException e) {

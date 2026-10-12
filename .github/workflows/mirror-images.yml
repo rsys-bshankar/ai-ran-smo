@@ -1,0 +1,66 @@
+name: Mirror images
+
+# Copies the third-party images CI pulls (smo/deploy/mirror/images.txt) into GHCR under ghcr.io/<owner>/<repo>/mirror/<name>, by digest and with
+# the whole manifest list, so CI can pull from GHCR instead of meeting the anonymous Docker Hub pull limit (smo/scripts/ci_mirror.py, smo/docs/MIRROR.md).
+# It runs by hand and on a push to main that changes the list, the script or this file; never on a pull request, so a fork's change cannot reach
+# the token that writes packages. The packages are private until the repository owner makes each one public once, in the GitHub UI: the job
+# summary lists their names. Nothing here changes a pin or a reference; it only fills the mirror. The other workflows probe it at the start of each job and fall back to the
+# upstream registry for an image that does not answer; the repository variable SMO_IMAGE_MIRROR=off switches them all off.
+# No third-party actions: the checkout is the only action. The copy is `skopeo copy --all --preserve-digests` (skopeo is preinstalled on the runner; nothing
+# is installed here) because `docker buildx imagetools create` re-wraps a single-platform image under a new digest; skopeo reads the docker login below.
+on:
+  push:
+    branches: [main]
+    paths:
+      - smo/deploy/mirror/images.txt
+      - smo/scripts/mirror_images.py
+      - .github/workflows/mirror-images.yml
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Resolve and compare only; copy nothing"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# One run at a time: two copies of the same tag racing would each see "absent" and both push.
+concurrency:
+  group: mirror-images
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Copy the images to GHCR
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write      # push the mirror packages with GITHUB_TOKEN
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate the list
+        working-directory: smo
+        run: python3 scripts/mirror_images.py validate
+
+      - name: Log in to GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_ACTOR: ${{ github.actor }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
+
+      - name: Copy, verify and summarise
+        working-directory: smo
+        env:
+          REPOSITORY: ${{ github.repository }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          # GHCR names are lower case; the repository name may not be
+          prefix="ghcr.io/$(echo "$REPOSITORY" | tr '[:upper:]' '[:lower:]')/mirror"
+          args=()
+          [ "$DRY_RUN" = "true" ] && args+=(--dry-run)
+          python3 scripts/mirror_images.py sync --prefix "$prefix" --authfile "$HOME/.docker/config.json" --summary-file "$GITHUB_STEP_SUMMARY" "${args[@]}"

@@ -4,7 +4,7 @@ name: SMO stress and failure injection
 #   limiter   a burst past the per-caller budget -> 429 with Retry-After, never a 5xx; served again after the wait
 #   oversize  a body over the 1 MiB cap -> 413; the gateway keeps answering
 #   saturate  callers in flight ramped 20 -> 200 (rate limiter off) -> only 200, or 429/503 with Retry-After; no hang, no other 5xx
-#   sme       SME stopped -> 503 with Retry-After within the deadline (the token check cannot be answered); started again -> 200 within 90 s
+#   sme       SME stopped, introspection cache off -> 503 with Retry-After within the deadline (the token check cannot be answered); started again -> 200 within 90 s
 #   limiter-shared  three gateway replicas (docker-compose.stress-shared.yml): one burst; with each replica's own buckets (the control) several budgets get through, with R1_RATE_STORE=postgres
 #             about one (SEC-8.5 under load, across replicas); the job also counts the requests each replica answered, so a burst that reached one replica cannot pass for either
 #   database  Postgres stopped -> a database-backed route answers with a 5xx within the deadline (no hang); started again -> 200 within 90 s
@@ -37,12 +37,20 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
+
       - name: Start the stack (a small per-caller rate budget for the limiter scenario)
         working-directory: smo
         run: |
           scripts/init_secrets.sh
           cp .env.example .env
-          docker compose -f docker-compose.yml -f docker-compose.stress-limiter.yml up -d --build
+          docker compose -f docker-compose.yml -f docker-compose.stress-limiter.yml -f .ci-mirror/docker-compose.mirror.yml up -d --build
           for i in $(seq 1 60); do
             curl -fsS http://localhost:8080/health > /dev/null 2>&1 && break
             sleep 5
@@ -53,7 +61,7 @@ jobs:
         run: |
           mkdir -p stress-out
           docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/smo -w /smo -e HOME=/tmp -e PIP_DISABLE_PIP_VERSION_CHECK=1 \
-            python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 \
+            "$SMO_IMAGE_PYTHON_3_11_SLIM" \
             pip install --quiet --no-warn-script-location --require-hashes --target /smo/stress-out/site -r requirements/runtime.txt
 
       - name: Stress scenarios
@@ -64,15 +72,17 @@ jobs:
           stress() {
             docker run --rm --network "$network" --user "$(id -u):$(id -g)" -v "$PWD":/smo -w /smo \
               -v "$PWD/secrets/enrollment_secret":/run/secrets/enrollment_secret:ro -e HOME=/tmp -e PYTHONPATH=/smo/stress-out/site:/smo/scripts \
-              python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 python scripts/stress_run.py --token-file /smo/stress-out/token "$@"
+              "$SMO_IMAGE_PYTHON_3_11_SLIM" python scripts/stress_run.py --token-file /smo/stress-out/token "$@"
           }
           status=0
           {
             echo "### Stress and failure injection"; echo; echo '```'
             stress limiter --burst 100 || status=1
             stress oversize  || status=1
-            # the rate limiter off for the saturation ramp: the gateway is recreated with the load override
-            docker compose -f docker-compose.yml -f docker-compose.load.yml up -d r1-termination
+            # the rate limiter off for the saturation ramp: the gateway is recreated with the load override. The introspection cache is off too (the shipped default is 30 s):
+            # the SME scenario below asks what the gateway does when SME cannot answer a token check, and a token checked in the last 30 s is served from the cache without
+            # asking (r1-termination/README.md, "Introspection cache": SME unreachable), which is a gain and not what this scenario measures.
+            R1_INTROSPECTION_CACHE_SECONDS=0 docker compose -f docker-compose.yml -f docker-compose.load.yml -f .ci-mirror/docker-compose.mirror.yml up -d r1-termination
             for i in $(seq 1 30); do curl -fsS http://localhost:8080/health > /dev/null 2>&1 && break; sleep 2; done
             stress saturate  || status=1
             # the database taken away, then given back
@@ -107,7 +117,7 @@ jobs:
       - name: Stop the stack
         if: ${{ always() }}
         working-directory: smo
-        run: docker compose -f docker-compose.yml -f docker-compose.load.yml down -v
+        run: docker compose -f docker-compose.yml -f docker-compose.load.yml -f .ci-mirror/docker-compose.mirror.yml down -v
 
   # The gateway's shared rate budget under a burst through three replicas (PR-V-9, SEC-8.5): proved before only at the statement level (tests_integration/test_rate_limit_postgres.py).
   stress-replicas:
@@ -115,9 +125,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      COMPOSE_FILE: docker-compose.yml:docker-compose.stress-shared.yml
+      COMPOSE_FILE: docker-compose.yml:docker-compose.stress-shared.yml:.ci-mirror/docker-compose.mirror.yml
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
 
       - name: Start the stack, three gateway replicas, each with its own buckets
         working-directory: smo
@@ -137,7 +155,7 @@ jobs:
         run: |
           mkdir -p stress-out
           docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/smo -w /smo -e HOME=/tmp -e PIP_DISABLE_PIP_VERSION_CHECK=1 \
-            python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 \
+            "$SMO_IMAGE_PYTHON_3_11_SLIM" \
             pip install --quiet --no-warn-script-location --require-hashes --target /smo/stress-out/site -r requirements/runtime.txt
 
       - name: The burst, with each replica's own buckets (the control) and then with the shared store
@@ -148,7 +166,7 @@ jobs:
           stress() {
             docker run --rm --network "$network" --user "$(id -u):$(id -g)" -v "$PWD":/smo -w /smo \
               -v "$PWD/secrets/enrollment_secret":/run/secrets/enrollment_secret:ro -e HOME=/tmp -e PYTHONPATH=/smo/stress-out/site:/smo/scripts \
-              python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 python scripts/stress_run.py --token-file /smo/stress-out/token "$@"
+              "$SMO_IMAGE_PYTHON_3_11_SLIM" python scripts/stress_run.py --token-file /smo/stress-out/token "$@"
           }
           wait_healthy() {
             for i in $(seq 1 60); do

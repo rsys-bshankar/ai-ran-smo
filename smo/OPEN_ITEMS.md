@@ -170,7 +170,7 @@ and HA much later).
 | Messaging and jobs | `PR-MSG` | MSG-1 outbox · MSG-2 delivery worker · MSG-3 event bus (3.4 Kafka left) · MSG-4 job runner · MSG-5 signing/log · MSG-6 SSRF at send |
 | Security | `PR-SEC` | SEC-1 edge TLS · SEC-2 mTLS · SEC-3 mesh · SEC-4 secrets · SEC-5 signing keys · SEC-6 OIDC · SEC-7 MFA/revocation · SEC-8 rate limits · SEC-9 bootstrap exposure · SEC-10 tenant/region authz · SEC-11 audit · SEC-12 supply chain · SEC-13 container hardening · SEC-14 threat model |
 | Observability | `PR-OBS` | OBS-2 metrics · OBS-3 traces · OBS-4 business metrics · OBS-5 alerts/SLOs · OBS-6 log shipping · OBS-7 runbooks · OBS-8 self-monitoring |
-| Packaging / ops | `PR-OPS` | OPS-1 migrations · OPS-2 Helm · OPS-3 migrate hook · OPS-4 releases · OPS-5 rolling upgrade · OPS-6 GitOps · OPS-7 config reference · OPS-8 flags · OPS-9 sizing · OPS-10 dev-sanity pipeline (Actions) · OPS-11 demo environment (Codespaces) |
+| Packaging / ops | `PR-OPS` | OPS-1 migrations · OPS-2 Helm · OPS-3 migrate hook · OPS-4 releases · OPS-5 rolling upgrade · OPS-6 GitOps · OPS-7 config reference · OPS-8 flags · OPS-9 sizing · OPS-10 dev-sanity pipeline (Actions) · OPS-11 demo environment (Codespaces) · OPS-12 GHCR mirror of third-party images |
 | High availability | `PR-HA` | HA-1 replicas · HA-2 rolling restart · HA-3 DB failover · HA-4 worker failover · HA-5 placement · HA-6 DR · HA-7 geo |
 | Southbound | `PR-SB` | SB-1 NETCONF/SSH · SB-2 adaptor credentials · SB-3 3GPP YANG · SB-4 WG4 YANG · SB-5 YANG validation · SB-6 containment · SB-7 VES · SB-8 streaming · SB-9 conformance kit · SB-10 vendor profile · SB-11 to SB-13 (A1 / Near-RT RIC: out of scope, see below) · SB-14 O2-IMS client · SB-15 async provisioning · SB-16 K8s driver · SB-17 NFO scale size · SB-18 FOCOM PM collector |
 | Management functions | `PR-MGT` | MGT-1 CM history/rollback · MGT-2 MSAC reach · MGT-3 dry-run · MGT-4 change windows · MGT-5 canary · MGT-6 drift · MGT-7 plan mgmt · MGT-8 alarm lifecycle · MGT-9 correlation · MGT-10 topology RCA · MGT-11 KPI engine · MGT-12 PM at scale · MGT-13 trace/QoE · MGT-14 zero-touch · MGT-15 SW campaigns · MGT-16 intent conflicts · MGT-17 SO saga · MGT-18 SLA assurance |
@@ -443,22 +443,16 @@ of what the routes accept, PR 4 = clients, tooling and migrations; "none yet" me
 
 | ID | Finding | Where | Planned PR |
 |---|---|---|---|
-| SEC-15.2 | The AIMgF feature-group token is stored and returned in clear text | `aimgf/app` (feature groups) | PR 3 |
-| SEC-15.3 | AIMgF runtime routes (deploy, activate, inference) do not check MLMR for the model (whether it exists, its phase, who owns it) | `aimgf/app` | PR 3 |
-| SEC-15.5 | `build_edit_config_rpc` builds the NETCONF `edit-config` XML without escaping values | `ran-nf-oam/app` (NETCONF client) | PR 3 |
-| SEC-15.6 | MSAC `check_credential` is never called, and compares without a constant-time function | `ran-nf-oam/app` (MSAC) | PR 3 |
-| SEC-15.10 | DME: `mediate_action` leaves the action in `FORWARDED` when the forward fails; an unregistered `dmeTypeId` is accepted (the overwrite of a type is closed, `HISTORY.md` "PR-SEC-15 (part 2)") | `dme/app` | PR 3 |
-| SEC-15.1b | The gateway's allow-list (`roles.RAPP_MAY_CHANGE`, `/aimgf`) still names `POST /models/{id}/advance`, so the SDK's `advance_model_lifecycle` reaches AIMgF and is refused there; remove the entry and retire the method for rApps | see `HISTORY.md` "PR-SEC-15 (part 2)" | The shared-library hardening change merged (it edits `roles.py`) |
 | SEC-15.8b | The deprecated body field `decidedBy` of `POST /rapp-approvals/{id}/approve|reject` is accepted for one minor release; drop it. Other places that take a person from the body or a query (AIMgF's `decided_by`, `requestedBy` forced by the console) can read `X-R1-Acting-User` the same way | see `HISTORY.md` "PR-SEC-15 (part 2)" | A release |
 | SEC-15.10b | DME `producerId` is the caller's own word: a rApp can name another producer's id and replace that producer's callback URLs on `POST /production-capabilities`. A check that an rApp's `producerId` is its own invoker id would break producers that register under a name of their own (RAN NF OAM) | see `HISTORY.md` "PR-SEC-15 (part 2)" | A decision on how SMO modules name themselves |
 | SEC-15.7b | `DELETE` and `PUT /vendor-capabilities/{vendor}` act on a registry entry that is global: a scoped caller whose elements use a vendor can change what the elements of other tenants of that vendor are checked against | see `HISTORY.md` "PR-SEC-15 (part 2)" | A decision |
-| SEC-15.11 | GUI-BFF login lockout is keyed by user name only, so one attacker locks out a user from anywhere and a spread attack is not slowed | `gui-bff/app` | PR 3 |
-| SEC-15.12 | The audit record's path includes query values (which can carry secrets or personal data) | `shared/smo_shared/audit.py`, `r1-termination` | PR 3 |
-| SEC-15.13 | Java SDK registration retries without an idempotency key, so a retry after a lost answer can register twice | `sdk-java/` | PR 4 |
-| SEC-15.14 | Migration 0017 `downgrade()` deletes the `rapp_limit` rows | `migrations/versions/` | PR 4 |
-| SEC-15.15 | `scripts/check_breaking_changes.py` passes silently when `--base` does not resolve, so the gate checks nothing | `scripts/check_breaking_changes.py` | PR 4 |
+| SEC-15.2b | The feature-group token: the SDK's `create_feature_group` and the console's form still send the deprecated clear-text `token` (`tokenRef` is not in either); groups registered before `SEC-15.2` keep their token in `feature_group.token` in the clear; the field is dropped one minor release after this one and the column a release after that (expand, then contract) | `sdk/smo_sdk/lifecycle.py`, `gui/src/pages/aiml/sections/FeatureGroups.tsx`, `aimgf/app/models.py` | The release that drops `token` (the SDK and console change before it) |
+| SEC-15.3b | The model checks of `SEC-15.3` stop at `deploy`, `activate` and `inference-jobs`: `scale`, `terminate` and `node-groups` do not look the model up in MLMR, `MLModelLoadingRequest` (`_deploy_runtime` in `nrm.py`) has no ownership check, and a model whose MLMR `owner` is unset is nobody's (MLMR does not stamp the registering invoker as `owner`, so an owner-less model is open to any rApp) | `aimgf/app/main.py`, `aimgf/app/nrm.py`, `mlmr/app/main.py` | A decision (MLMR stamping the owner is a change to MLMR's registration) |
+| SEC-15.6b | MSAC credentials are checked only where an rApp names an Identity in `requestedBy` of `POST /config-jobs`: the `MGT-2` reach checks on reads and subscriptions use the gateway's invoker id as the Identity name, so there is no credential to present; the SDK has no parameter for the `X-MSAC-Credential` header; a credential is optional on an Identity (an Identity without one is trusted on the caller's word, as before) | `ran-nf-oam/app/msac.py`, `sdk/smo_sdk` | A decision on how an rApp's Identity is named |
+| SEC-15.11b | The sign-in lockout (`SEC-15.11`) does not slow one account guessed from many addresses at once (each address gets its own 5 tries per name), and a source's throttle rows are never cleared or purged (`docs/RETENTION.md`); a deployment with a different number of proxies than `GUI_TRUSTED_PROXY_HOPS` says is wrong in one direction or the other (documented). Related: `SEC-8.6`, a request limiter on the login routes | `gui-bff/app` | A decision |
+| SEC-15.13b | SME's `POST /invoker-registrations` does not honour an `Idempotency-Key` (it would have to store the answer, which holds the onboarding secret in clear), so an SDK is kept from registering twice only by not repeating the call after a lost answer; the Java SDK now does that (`HISTORY.md` "PR-SEC-15 (part 4)"). A registration a lost answer left behind is an orphan invoker that SME's stale-invoker purge removes | `sme/app`, `sdk-java/` | none yet |
 | SEC-15.16 | The webhook guard resolves a host name once to check it and the HTTP client resolves it again to connect, so DNS rebinding between the two is not caught; closing it needs the client to connect to the vetted address (a pinned transport) | `shared/smo_shared/webhook.py` | none yet |
-| SEC-15.17 | Onboarding's own parse of an unsigned package opens the zip without the size limits `csar_signing.verify_zip` now applies (`ZipLimits`) | `onboarding/app/package_validation.py` | none yet |
+| SEC-15.17b | The offline rApp conformance tool opens a package zip (`conformance/rapp/package_checks.py`, `_open`, and the ASD read of PK-V) without the size limits Onboarding applies; it runs on a developer's own file, and the Onboarding parse functions it calls are bounded now | `conformance/rapp/` | none yet |
 
 Closed by this change (details in `CHANGELOG.md` and the `shared` README): the webhook SSRF guard accepted spellings of loopback, unspecified and link-local addresses
 (`localhost.`, `127.1`, `2130706433`, `0x7f.0.0.1`, octal, `0`, IPv4-mapped IPv6) and did not look at what a name resolves to; `roles.py` allow-list patterns ended in `$`, which
@@ -612,6 +606,14 @@ Purpose: show the GUI and the rApp flows to people. Used **on demand only**: cre
 | OPS-11.4 | Demo procedure in `DEMO_RUNBOOK.md`: create, run, delete after the demo, with the idle timeout set short (30 minutes) | Procedure reviewed and followed once | OPS-11.3 |
 | OPS-11.5 | Optional prebuild of the image on master so a fresh codespace starts quickly (watch prebuild storage; skip if it costs more than it saves) | Start time measured before and after | OPS-11.2 |
 | OPS-11.6 | Once Helm exists: the same script installs the chart on kind so the demo shows the packaged install (check it fits the machine) | Demo runs on the chart | OPS-2.9, OPS-11.3 |
+
+#### PR-OPS-12 — GHCR mirror of third-party images (OPS-12.1 to 12.4 done: `HISTORY.md` PR-OPS-12.1 to PR-OPS-12.4)
+
+CI jobs pulled Postgres, Grafana, Loki, Tempo, Fluent Bit, Keycloak, base images and others anonymously from Docker Hub; concurrent runners share an address and sometimes met its pull limit (`toomanyrequests`). The mirror (`docs/MIRROR.md`, `deploy/mirror/images.txt`, `.github/workflows/mirror-images.yml`) holds all 17 packages, public, and CI now pulls from it (`scripts/ci_mirror.py`, OPS-12.3): per image, with the upstream registry as the fallback and the repository variable `SMO_IMAGE_MIRROR=off` as the kill switch. Release builds and everything an operator runs still name the upstream images. What is not switched, and why, is the "Not covered" list of `docs/MIRROR.md`.
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| OPS-12.5 | Read the first runs on the mirror: a run of **SMO tests** on `main` where every job's `Use the GHCR image mirror` step says `18 of 18 images switched`, no `::warning::` names an image, and no job pulled a listed image from Docker Hub (the compose, build, `docker run`, kind and Helm paths of `docs/MIRROR.md` were exercised only against a fake registry and a local BuildKit before merge); then the same for the nightly lanes (DAST, load, soak, stress, HA, upgrade, DR) | One green `main` run of each workflow with the mirror, read; or the first failure turned into a fix, or into a line of "Not covered" | OPS-12.3 merged |
 
 ### 5.7 High availability and DR (`PR-HA`)
 
@@ -817,14 +819,12 @@ No steps open.
 | Step | What | Done when | Needs |
 |---|---|---|---|
 
-#### PR-MGT-4 — Change windows and approvals
+#### PR-MGT-4 — Change windows and approvals (done: `HISTORY.md` "MGT-4.1, 4.2, 4.3 / GUI-7.1" and "MGT-4.4, 4.5")
 
-MGT-4.1 to 4.3 are built (`HISTORY.md` "MGT-4.1, 4.2, 4.3 / GUI-7.1"): the window, the hold, approve and reject, and starting an approved job in its window by hand. What remains starts and ends it by itself:
+No steps open.
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| MGT-4.4 | Start at the window | Job starts once across replicas | MGT-4.1, MSG-4.2 |
-| MGT-4.5 | Expire after `window_end` | Job moves to `EXPIRED` | MGT-4.4 |
 
 #### PR-MGT-6 — Drift detection
 
@@ -1281,6 +1281,7 @@ Nothing open (GUI-9.10 and GUI-9.11 closed: `HISTORY.md` PR-GUI-9d).
 | QA-7.2 | Same for `ran-analytics`, `mock-o1-adaptor`, `so-smos`, `r1-termination` | Counts raised, one PR each | – |
 | QA-7.3 | Coverage floor in CI (done: `coverage_floors.json`, `scripts/coverage_floor.py`) | Floor enforced | QA-7.1 |
 | QA-8.1 | Nightly lane: NETCONF server | Job green | SB-1.9 |
+| QA-9.1 | **The DAST lane "ZAP through the gateway with a token" reports `SQL Injection [40018]` (high) since 11 October, on a different route each run** (`HISTORY.md` "The heavy lanes red since 11 October"). Not caused by an injectable parameter that anyone has found: the routes are unchanged modules too (SME, MLMR), the scan is not repeatable (a group red on `main` was green on the re-run), and the payloads (`limit=102-2`, `total=true AND 1=1`) are refused with a 422 by the framework. The next run's job summary now lists the gateway's requests by status. | Read the `dast-authenticated-*` artifacts' `zap-<module>.json` (the alert's attack, evidence and "other info") and the status line of the new step; if 429 or 5xx are in it, give the scan a gateway without the per-caller limiter (as `docker-compose.load.yml` does) or ZAP a lower rate; if not, find which request pair ZAP compares | – |
 
 ### 5.16 Suggested first slices
 

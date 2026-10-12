@@ -62,7 +62,7 @@ class AuditEntry(Base):
     actor: Mapped[str] = mapped_column(String, index=True)               # the invoker id R1 vouches for
     actor_role: Mapped[str | None] = mapped_column(String, nullable=True)
     action: Mapped[str] = mapped_column(String)                          # the HTTP method
-    target: Mapped[str] = mapped_column(String)                          # module prefix and path, no query, no body
+    target: Mapped[str] = mapped_column(String)                          # module prefix and path, no query, no fragment, no body (`clean_target`)
     result: Mapped[str] = mapped_column(String)                          # the status code, or REFUSED:<code>
     correlation_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -120,13 +120,23 @@ def _locked_head(db: Session) -> AuditHead:
     return head
 
 
+def clean_target(target: str) -> str:
+    """The `target` of a row without a query string or a fragment: everything from the first `?` or `#` on is dropped (SEC-15.12).
+
+    The target is a module prefix and a path. A query value can carry a secret or a person's data, and a percent-encoded `?` or `#` in a path (`/dme/x%3Ftoken=...`) arrives at the
+    gateway already decoded, so the path itself can hold what looks like a query. The cut is made here, where every row is written, not by each caller. Rows written before this
+    change keep what they have: `compute_hash` reads the stored target, so the chain of old rows still verifies.
+    """
+    return target.partition("?")[0].partition("#")[0]
+
+
 def record(db: Session, *, actor: str, action: str, target: str, result: str, role: str | None = None,
            correlation_id: str | None = None, detail: dict | None = None, now: datetime.datetime | None = None) -> AuditEntry:
-    """Adds one row to the chain in `db`'s transaction (the head row is locked until the caller commits)."""
+    """Adds one row to the chain in `db`'s transaction (the head row is locked until the caller commits). The `target` is stored without its query string and fragment (`clean_target`)."""
     head = _locked_head(db)
     entry = AuditEntry(
         seq=head.last_seq + 1, audit_id=uuid.uuid4(), occurred_at=now or datetime.datetime.now(datetime.timezone.utc), actor=actor, actor_role=role,
-        action=action.upper(), target=target, result=result, correlation_id=correlation_id, detail=detail, prev_hash=head.last_hash)
+        action=action.upper(), target=clean_target(target), result=result, correlation_id=correlation_id, detail=detail, prev_hash=head.last_hash)
     entry.hash = compute_hash(entry)
     db.add(entry)
     head.last_seq, head.last_hash = entry.seq, entry.hash

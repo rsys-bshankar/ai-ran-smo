@@ -6,7 +6,8 @@ access control evaluated per sub-change before anything is dispatched.
 The three IOCs are REST resources with the spec's attribute names
 (`TS28319_MsacNrm.yaml`), flat ids as in every NRM module here:
 Identity.roleList holds Role ids, Role.accessRulesList holds AccessRule ids.
-`credential` is write-only: only a salted scrypt hash is stored.
+`credential` is write-only: only a salted scrypt hash is stored. It is checked when a caller presents it: `POST /config-jobs` for a requester that is an Identity with a
+credential must carry it in the `X-MSAC-Credential` header (`verify_identity_credential`, SEC-15.6); an Identity with no credential is not asked for one.
 
 Evaluation (`authorize`): the requester's roles come from the Identity named
 by `requestedBy` plus the Role named by `msacRole`, if either exists. Every
@@ -23,6 +24,7 @@ expression is refused at creation rather than stored and never matching.
 """
 
 import hashlib
+import hmac
 import os
 import re
 import uuid
@@ -44,6 +46,10 @@ from .models import MsacAccessRule, MsacIdentity, MsacRole
 
 router = APIRouter(prefix="/msac")
 
+# The request header that carries the credential of the Identity a write names in `requestedBy` (SEC-15.6). A header, not a body field, so a refused request's validation error and
+# the stored request never hold it.
+CREDENTIAL_HEADER = "X-MSAC-Credential"
+
 OPERATIONS = {"create", "read", "update", "delete", "exec"}
 # edit-config operation (RFC 6241) -> the MSAC operation it needs
 CONFIG_OPERATION = {"merge": "update", "replace": "update", "create": "create", "delete": "delete", "remove": "delete"}
@@ -57,12 +63,35 @@ def hash_credential(secret: str) -> str:
 
 
 def check_credential(secret: str, stored: str | None) -> bool:
-    """Whether `secret` matches a hash made by `hash_credential`; False when nothing is stored. The digest is compared with `==`, not in constant time. Nothing in the service calls it yet: no route checks a presented credential (the tests do), so an Identity's `credential` is stored but never verified.
+    """Whether `secret` matches a hash made by `hash_credential`; False when nothing is stored or what is stored is not such a hash (never an error).
+
+    The digests are compared with `hmac.compare_digest`, so the time taken does not tell how many leading bytes of a guess were right. The scrypt cost is paid for every attempt
+    whatever the outcome.
     """
     if not stored:
         return False
-    _, salt, digest = stored.split("$")
-    return hashlib.scrypt(secret.encode(), salt=bytes.fromhex(salt), n=2**14, r=8, p=1).hex() == digest
+    try:
+        scheme, salt, digest = stored.split("$")
+        expected = bytes.fromhex(digest)
+        derived = hashlib.scrypt(secret.encode(), salt=bytes.fromhex(salt), n=2**14, r=8, p=1)
+    except ValueError:  # not `scrypt$<hex>$<hex>`: a damaged row refuses everyone, it does not make the route answer 500
+        return False
+    return scheme == "scrypt" and hmac.compare_digest(derived, expected)
+
+
+def verify_identity_credential(db: Session, requested_by: str, presented: str | None) -> None:
+    """Refuses (403 `MSAC_ACCESS_DENIED`) a write that names an Identity which has a credential, unless that credential is `presented`.
+
+    `requestedBy` is the caller's own word, so without this the name of an Identity with wide rules is all it takes to use them. An Identity with no stored credential, and a requester
+    that is no Identity at all (a Role named by `msacRole`, or nobody: the legacy gate), are not asked for one, so a deployment that never set a credential sees no change. A missing
+    and a wrong credential get the same answer, which does not repeat either value. Called by `POST /config-jobs` only: a rollback, an approval's job and a KPI-guard revert are
+    made from a record whose first request was checked.
+    """
+    identity = db.scalars(select(MsacIdentity).where(MsacIdentity.identity_name == requested_by)).first()
+    if identity is None or not identity.credential_hash:
+        return
+    if presented is None or not check_credential(presented, identity.credential_hash):
+        raise framework_error(FrameworkError.MSAC_ACCESS_DENIED, detail=f"{requested_by} has a credential: send it in the {CREDENTIAL_HEADER} header")
 
 
 _SEGMENT = re.compile(r"^[A-Za-z_*][A-Za-z0-9_*]*=[^/\[\]@'\"]+$|^\*$")

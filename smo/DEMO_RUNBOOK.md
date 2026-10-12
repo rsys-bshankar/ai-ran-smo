@@ -1169,11 +1169,13 @@ import httpx
 r = httpx.post('http://aimgf:8000/feature-groups', json={
     'featureGroupName': 'demo_coverage_features', 'featureList': 'rsrp,rsrq,sinr',
     'datalakeSource': 'INFLUX', 'host': 'influx.demo', 'port': '8086', 'bucket': 'demo-bucket',
-    'token': 'demo-token', 'dbOrg': 'demo-org', 'measurement': 'coverage_metrics',
+    'tokenRef': 'demo-lake-token', 'dbOrg': 'demo-org', 'measurement': 'coverage_metrics',
 })
 print(r.status_code, r.json())
 "
 ```
+
+The data-lake token is given by reference (`tokenRef`, the name of a secret the AIMgF service resolves itself, `docs/SECRETS.md`); the answer shows `tokenSet: true` and `tokenRef`, never a token (`SEC-15.2`). The clear-text `token` field is deprecated.
 
 Note the `featureGroupId`. Confirm it's listed:
 
@@ -1195,7 +1197,7 @@ import httpx
 r = httpx.post('http://aimgf:8000/feature-groups', json={
     'featureGroupName': 'demo_coverage_features', 'featureList': 'rsrp,rsrq,sinr',
     'datalakeSource': 'INFLUX', 'host': 'influx.demo', 'port': '8086', 'bucket': 'demo-bucket',
-    'token': 'demo-token', 'dbOrg': 'demo-org', 'measurement': 'coverage_metrics',
+    'tokenRef': 'demo-lake-token', 'dbOrg': 'demo-org', 'measurement': 'coverage_metrics',
 })
 print(r.status_code, r.json())
 "
@@ -1210,7 +1212,7 @@ docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.post('http://aimgf:8000/feature-groups', json={
     'featureGroupName': 'no spaces allowed', 'featureList': 'rsrp', 'datalakeSource': 'INFLUX',
-    'host': 'influx.demo', 'port': '8086', 'bucket': 'demo-bucket', 'token': 'demo-token',
+    'host': 'influx.demo', 'port': '8086', 'bucket': 'demo-bucket', 'tokenRef': 'demo-lake-token',
     'dbOrg': 'demo-org', 'measurement': 'coverage_metrics',
 })
 print(r.status_code, r.json())

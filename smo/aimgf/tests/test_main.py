@@ -53,9 +53,10 @@ class FakeMlmr:
         self.groups: list[dict] = []
         self.phase_writes: list[tuple] = []
 
-    def add_model(self, model_id=None) -> uuid.UUID:
+    def add_model(self, model_id=None, **attributes) -> uuid.UUID:
+        """Registers a model; `attributes` are extra fields of MLMR's answer (`owner`, `phaseInfo`, `storeDiscReqs`)."""
         model_id = model_id or uuid.uuid4()
-        self.models[str(model_id)] = {"modelId": str(model_id)}
+        self.models[str(model_id)] = {"modelId": str(model_id), **attributes}
         return model_id
 
     def get(self, path, **kw):

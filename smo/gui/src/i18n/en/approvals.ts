@@ -36,7 +36,7 @@ export const approvals = {
   "approvals.windows.reject.confirm": "Reject this change? Nothing has been sent; the job ends REJECTED.",
   "approvals.windows.rejected": "Change rejected",
   "approvals.scheduled.title": "Approved, waiting for their window",
-  "approvals.scheduled.sub": "started in the window with Start (automatic start at the window is MGT-4.4)",
+  "approvals.scheduled.sub": "started by the worker when the window opens, or by hand with Start; expired if the window closes first",
   "approvals.scheduled.empty": "No approved job waits for its window.",
   "approvals.scheduled.approvedBy": "Approved by",
   "approvals.scheduled.state": "State",

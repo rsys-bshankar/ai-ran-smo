@@ -9,7 +9,7 @@
 | Depends on (over R1) | RAN NF OAM (`POST /ran-nf-oam/config-jobs`, action path only); caller-registered callback URLs (producers, type subscribers, offer termination) |
 | Called by | rApps and the SDK `data` namespace; MDAF (checks `input_sources` against `GET /dme/data-jobs/{id}`); RAN NF OAM (registers PM types, ingests records into jobs); SA SMOS O1-CM handler (`POST /dme/actions`); rApp Management (producer deregistration); GUI BFF |
 | Database tables | `dme_producer`, `dme_type`, `dme_producer_type`, `dme_type_subscription`, `dme_delivery_schema`, `data_job`, `data_offer`, `data_record`, `dme_action_record` |
-| Unit tests | 112 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 136 passed (`tests/`, SQLite, standalone) |
 | Status | Done. `dme_delivery_schema` is defined but unused (see 2.8) |
 
 ## 1. High-level design (HLD)
@@ -82,7 +82,7 @@ Inference runs inside the rApp. O-RAN WG4 (O-RU M-plane YANG) is out of scope ap
 
 **Action idempotency.** A caller-chosen `actionId` that DME already recorded is not forwarded again; the answer is `200 {"status": "IGNORED", "originalStatus": ..., "forwardedJobId": ...}`. Without an `actionId` DME mints one.
 
-**Action refusal.** DME records the action before forwarding. If RAN NF OAM answers with a status >= 400 (capability or schema refusal, MSAC, unreachable endpoint), the record becomes `REJECTED` and DME raises that same status to the rApp with RAN NF OAM's detail. A refused write never reaches the adaptor. DME's forwarding call is bounded at 10 s.
+**Action refusal.** DME records the action before forwarding. If RAN NF OAM answers with a status >= 400 (capability or schema refusal, MSAC, unreachable endpoint), the record becomes `REJECTED` and DME raises that same status to the rApp with RAN NF OAM's detail. A refused write never reaches the adaptor. When the call itself fails (a timeout, a refused connection, an answer that is not a JSON object) the record is also `REJECTED`, and the rApp gets 502 `UPSTREAM_FAILED` (`SEC-15.10`); the outcome at RAN NF OAM is then unknown, and a replay of the same `actionId` is `IGNORED` like that of any `REJECTED` action, so a retry uses a new id. DME's forwarding call is bounded at 10 s.
 
 **Correlation.** The inbound `X-Correlation-ID` is stored on the action record, so an action joins the audit trail of the decision that caused it.
 
@@ -134,7 +134,7 @@ Cross-module references are bare UUIDs or strings; there are none to other modul
 |---|---|
 | `data_job_id` (PK) | |
 | `data_delivery_mode` | `ONE_TIME` or `CONTINUOUS` (not validated against a set) |
-| `dme_type_id` | FK `ON DELETE CASCADE`; not checked to exist at create time |
+| `dme_type_id` | FK `ON DELETE CASCADE`; the type must be registered at create time (404 `DME_TYPE_NOT_FOUND`, `SEC-15.10`) |
 | `production_job_definition` (JSON) | |
 | `data_delivery_method` | one of `DELIVERY_METHODS` |
 | `delivery_details` (JSON) | `targetUri` is forwarded to producers |
@@ -169,7 +169,7 @@ No formal state machine; the status fields only move forward:
 | Field | Values and transitions |
 |---|---|
 | `DataJob.status` | `ACTIVE` at creation; the row is deleted on terminate. No other value is written. |
-| `DmeActionRecord.status` | `FORWARDED` (inserted) → RAN NF OAM's job status (success) or `REJECTED` (RAN NF OAM answered >= 400). A replay of a known `actionId` leaves the record untouched. |
+| `DmeActionRecord.status` | `FORWARDED` (inserted) → RAN NF OAM's job status (success) or `REJECTED` (RAN NF OAM answered >= 400, or the call failed: nothing stays `FORWARDED` that was not forwarded). A replay of a known `actionId` leaves the record untouched. |
 | `typeStatus` / producer `operationalState` | Not stored. `ENABLED` if a producer's health callback answers < 300 within 2 s (for a type: if any supporting producer does), else `DISABLED`. |
 
 ### 2.4 API
@@ -202,7 +202,7 @@ All routes sit under `/dme`. Lists marked "paged" return `{items, total, limit, 
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
-| POST | `/data-jobs` (202) | Create a job (`dataDeliveryMode, dmeTypeId, productionJobDefinition, dataDeliveryMethod, deliveryDetails, consumerId, lifecycleStage?, expectedIntervalSeconds?`); pushes it to every producer of the type. Returns `{dataJobId}`. A job view carries `expectedIntervalSeconds`, `lastDeliveryAt` and `late` (`GUI-9.8`: null without an interval; true once two intervals passed since the last delivery, or since the job was declared before any) | 409 `DELIVERY_METHOD_NOT_OFFERED`; 422 `SCHEMA_VALIDATION_FAILED`; 422 `DIGITAL_TWIN_INFERENCE_NOT_ELIGIBLE` |
+| POST | `/data-jobs` (202) | Create a job (`dataDeliveryMode, dmeTypeId, productionJobDefinition, dataDeliveryMethod, deliveryDetails, consumerId, lifecycleStage?, expectedIntervalSeconds?`); pushes it to every producer of the type. Returns `{dataJobId}`. A job view carries `expectedIntervalSeconds`, `lastDeliveryAt` and `late` (`GUI-9.8`: null without an interval; true once two intervals passed since the last delivery, or since the job was declared before any) | 404 `DME_TYPE_NOT_FOUND` (the type is not registered; `SEC-15.10`); 409 `DELIVERY_METHOD_NOT_OFFERED`; 422 `SCHEMA_VALIDATION_FAILED`; 422 `DIGITAL_TWIN_INFERENCE_NOT_ELIGIBLE` |
 | GET | `/data-jobs?dme_type_id=&consumer_id=&late=` | Paged; `late=true` keeps the LATE jobs, `late=false` the on-time ones that declare an interval (a job without one matches neither) | |
 | GET | `/data-jobs/{id}` | | 404 `DATA_JOB_NOT_FOUND` |
 | GET | `/data-jobs/{id}/status` | `{dataJobId, status}` | 404 |
@@ -214,7 +214,7 @@ All routes sit under `/dme`. Lists marked "paged" return `{items, total, limit, 
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
-| POST | `/offers` (201) | `dmeTypeId, dataDeliveryMode, productionJobDefinition, dataDeliveryMethods, dataAvailabilityNotificationUri?, dataOfferTerminationNotificationUri`; commits to the first listed method. Returns `{offerId, committedMethod}`. | 409 `DELIVERY_METHOD_NOT_OFFERED` (a method outside the wire set) |
+| POST | `/offers` (201) | `dmeTypeId, dataDeliveryMode, productionJobDefinition, dataDeliveryMethods, dataAvailabilityNotificationUri?, dataOfferTerminationNotificationUri`; commits to the first listed method. Returns `{offerId, committedMethod}`. | 404 `DME_TYPE_NOT_FOUND` (the type is not registered; `SEC-15.10`); 409 `DELIVERY_METHOD_NOT_OFFERED` (a method outside the wire set) |
 | GET | `/offers?dme_type_id=` | Paged | |
 | GET | `/offers/{id}` | | 404 `DATA_OFFER_NOT_FOUND` |
 | DELETE | `/offers/{id}` (204) | Delete, then POST `{dataOfferId}` to the termination URI. Idempotent. | |
@@ -241,7 +241,7 @@ All routes sit under `/dme`. Lists marked "paged" return `{items, total, limit, 
 
 | Direction | Call | When | Failure behaviour |
 |---|---|---|---|
-| out, R1 | `POST /ran-nf-oam/config-jobs` `{requestedBy, scope, msacRole, changes}` | `POST /actions` | Status >= 400: action `REJECTED`, same status returned. A transport failure or non-JSON reply is not handled and surfaces as an unhandled error; the record then stays `FORWARDED` with no `forwarded_job_id`. 10 s bound on DME's side. |
+| out, R1 | `POST /ran-nf-oam/config-jobs` `{requestedBy, scope, msacRole, changes}` | `POST /actions` | Status >= 400: action `REJECTED`, same status returned. A transport failure, a non-JSON reply or a reply that is not a JSON object: action `REJECTED`, 502 `UPSTREAM_FAILED` (`SEC-15.10`). 10 s bound on DME's side. |
 | out, webhook | `POST {jobCallbackUrl}` `{infoJobIdentity, infoTypeIdentity, infoJobData, targetUri, owner, lastUpdated}` | job create and every job update, to every producer of the type | Best effort per producer; never fails the consumer call (5 s) |
 | out, webhook | `DELETE {jobCallbackUrl}/{jobId}` | job terminate (single and per-consumer) | Best effort (5 s) |
 | out, webhook | `GET {producerHealthCallbackUrl}` | every type read, producer status read | No reply or status >= 300 reads as `DISABLED` (2 s). A type read probes its producers one by one until one is healthy. |
@@ -279,7 +279,7 @@ ProblemDetails `title` / status (see [R1 API conventions](../docs/ARCHITECTURE.m
 - `GET /production-capabilities` and `GET /dme-types` return bare arrays, not the `{items, total, ...}` page shape the other list routes use.
 - An AIMgF feature group with `enableDme` holds a DME data job (consumer `aimgf:feature-group:<name>`), created with the group and terminated with it.
 - **What DME and MLMR still cannot scope (`SEC-10.7`).** The action list is the one DME read that names a managed element, and it is scoped (above). Everything else DME holds, and everything MLMR holds, has no element, region or tenant to match: data types, producers, offers, data jobs and their records (a record's payload may carry a `managedElementRef`, but only a producer's schema says so, and DME does not read payloads), and MLMR's models and repositories. A scoped rApp therefore still reads every data type, job and record DME holds and every model MLMR holds. Closing that is a data-model decision (a tenant on a data type or model, set by the producer or the registrant, or derived from the producer's scope), not a change to the rule. An action that names no element is not shown to a scoped caller. The cost of the action list for a scoped caller is one pass through RAN NF OAM's element list per request, and a full scan of the action table.
-- An unreachable RAN NF OAM during `POST /actions` leaves a `FORWARDED` record that was never forwarded.
+- A `REJECTED` action cannot be retried under the same `actionId` (a replay is `IGNORED`), including one rejected because RAN NF OAM could not be reached.
 - Digital Twin and live-RAN producers are told apart only by the producer's own declaration.
 
 ## 3. Unit tests
@@ -295,8 +295,10 @@ cd smo/dme && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | Test file | Covers | Count |
 |---|---|---|
 | `tests/test_scope.py` | `PR-SEC-10.7` (6): an unscoped caller asks RAN NF OAM nothing and sees every action; a scoped caller sees the actions all of whose elements are inside its claim (one element outside, or none named, hides the action), `total`, paging, the element list read in pages of 500; one by id is a 404 like an absent one; RAN NF OAM unable to answer is a 502 and shows nothing; a claim that could not be passed on shows nothing | 6 |
+| `tests/test_action_forward_and_types.py` | `SEC-15.10` (5): an offer for an unregistered type is 404; a forward that fails (connection refused, timeout, any other exception, an answer that is not an object) leaves the action `REJECTED`, 502 for a transport error; a replay of a rejected action is `IGNORED` and not forwarded again |
 | `tests/test_event_feed.py` | `PR-MSG-3.2` (9): without `after` the newest position; order, `types`, pages and `next`; the long poll answers when an event is committed; a scoped caller sees only its regions' events and `next` moves past the others; out-of-bounds parameters are 422 (parametrized) | 9 |
-| `tests/test_type_ownership.py` | `SEC-15.10` (6): a second rApp's different schema is 403 and the stored schema and owner are unchanged, a refused overwrite leaves the producer row alone, the same definition by another producer still joins (which then cannot change it), an `internal` caller and a call without a role overwrite, a rApp without an invoker id cannot, a type from before the owner was recorded is open to its linked producers only | 6 |
+| `tests/test_type_ownership.py` | `SEC-15.10` (8, two of them added by the PR-SEC-15 part 4 mutation pass: the owner is the gateway's invoker id and only without a gateway the body's `producerId`): a second rApp's different schema is 403 and the stored schema and owner are unchanged, a refused overwrite leaves the producer row alone, the same definition by another producer still joins (which then cannot change it), an `internal` caller and a call without a role overwrite, a rApp without an invoker id cannot, a type from before the owner was recorded is open to its linked producers only | 6 |
+| `tests/test_producer_health.py` | The boundary of a producer's health callback in `typeStatus`: 200, 204 and 299 are ENABLED, 300, 301, 404 and 500 DISABLED (7) |
 | `tests/test_main.py` | Producer/type registry: registration, re-registration, second producer, discovery and `data_category` filter, deregistration keeping types, type deletion guard and cascade, producer status | 22 |
 | | Type status from producer health (unreachable, non-2xx, healthy, active job does not override) | 4 |
 | | Type subscriptions and notifications (CRUD, owner filter, registered / deregistered, none when no subscribers, unreachable subscriber) | 9 |
@@ -307,7 +309,7 @@ cd smo/dme && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | | Action mediation: forward and record, RAN NF OAM refusal surfaced, empty changes, unknown action, list filter, replayed `actionId` ignored | 6 |
 | | Health probe | 1 |
 | `tests/test_delivery_health.py` | `GUI-9.8` delivery health: no interval means no verdict, LATE two intervals after the last delivery and on time again after the next, a job that never delivered turns LATE, PUT declares or drops the interval, the `late` list filter both ways, a non-positive interval is 422 | 6 |
-| | Total | 121 |
+| | Total | 127 |
 
 ### 3.3 What is not covered here
 

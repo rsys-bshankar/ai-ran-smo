@@ -2,7 +2,7 @@ name: SMO load run
 
 # PR-V-8a: a weighted mix of the main gateway routes (service discovery, alarm list, KPI definitions, config job list and dry run, rApp instances, packages, data types, token)
 # at a fixed concurrency, from a one-shot container on the compose network, with the gateway's rate limiter off (smo/docker-compose.load.yml).
-# PR-SEC-5.4: after the main run the gateway is restarted with R1_INTROSPECTION_CACHE_SECONDS=30 and the same load runs again (no new seed); smo/scripts/introspection_compare.py sets the two
+# PR-SEC-5.4: the main run has the introspection cache off (R1_INTROSPECTION_CACHE_SECONDS=0, said by the lane: the shipped default is 30); after it the gateway is restarted with R1_INTROSPECTION_CACHE_SECONDS=30 and the same load runs again (no new seed); smo/scripts/introspection_compare.py sets the two
 # side by side (introspections SME answered, requests a second, p50/p95/p99) and fails if either run has an error or the cache did not cut SME's introspections by half.
 # Seeds N managed elements first (scripts/load_seed.py). Reports requests/s and p50/p95/p99 per route, the CPU and memory of each container and Postgres connections; kept as an artifact and in the job summary. smo/scripts/load_run.py.
 # Nightly, on demand, and on a pull request that changes the runner or this workflow. Not a required check: the numbers are compared run against run (docs/PERFORMANCE.md).
@@ -50,16 +50,29 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Start the stack, rate limiter off
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
         working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
+
+      - name: Start the stack, rate limiter off, introspection cache off
+        working-directory: smo
+        env:
+          # The first run is the "cache off" side of the PR-SEC-5.4 comparison. The shipped default is 30 s (docker-compose.yml, since #399), so the lane says 0 itself;
+          # the second run below sets 30 itself too. Without this the "off" run counts cache lookups and scripts/introspection_compare.py rightly refuses the comparison.
+          R1_INTROSPECTION_CACHE_SECONDS: "0"
         run: |
           scripts/init_secrets.sh
           cp .env.example .env
-          docker compose -f docker-compose.yml -f docker-compose.load.yml up -d --build
+          docker compose -f docker-compose.yml -f docker-compose.load.yml -f .ci-mirror/docker-compose.mirror.yml up -d --build
           for i in $(seq 1 60); do
             curl -fsS http://localhost:8080/health > /dev/null 2>&1 && break
             sleep 5
           done
+          docker compose -f docker-compose.yml -f docker-compose.load.yml exec -T r1-termination env | grep '^R1_INTROSPECTION_CACHE_SECONDS=0$'
 
       - name: Run the load
         working-directory: smo
@@ -73,7 +86,7 @@ jobs:
             -v "$PWD/secrets/enrollment_secret":/run/secrets/enrollment_secret:ro \
             -v "$PWD/secrets/db_password":/run/secrets/db_password:ro \
             -e LOAD_OUT=/smo/load-out -e PIP_DISABLE_PIP_VERSION_CHECK=1 -e HOME=/tmp \
-            python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 \
+            "$SMO_IMAGE_PYTHON_3_11_SLIM" \
             sh -c 'pip install --quiet --user --require-hashes -r requirements/runtime.txt && python scripts/load_seed.py --elements "$2" && python scripts/load_run.py --duration "$0" --concurrency "$1"' "$DURATION" "$CONCURRENCY" "$ELEMENTS"
 
       - name: Sizing table from the samples taken during the load (PR-OPS-9.2)
@@ -108,20 +121,20 @@ jobs:
           R1_INTROSPECTION_CACHE_SECONDS: "30"
         run: |
           # after the sizing samples were taken, so they stay the first run's; only the gateway is recreated, with the cache on
-          docker compose -f docker-compose.yml -f docker-compose.load.yml up -d --no-deps --force-recreate r1-termination
+          docker compose -f docker-compose.yml -f docker-compose.load.yml -f .ci-mirror/docker-compose.mirror.yml up -d --no-deps --force-recreate r1-termination
           sleep 5
           for i in $(seq 1 60); do
             curl -fsS http://localhost:8080/health > /dev/null 2>&1 && break
             sleep 3
           done
-          docker compose -f docker-compose.yml -f docker-compose.load.yml exec -T r1-termination env | grep '^R1_INTROSPECTION_CACHE_SECONDS=30$'
+          docker compose -f docker-compose.yml -f docker-compose.load.yml -f .ci-mirror/docker-compose.mirror.yml exec -T r1-termination env | grep '^R1_INTROSPECTION_CACHE_SECONDS=30$'
           mkdir -p load-out/cache-30
           network=$(docker inspect "$(docker compose ps -q r1-termination)" --format '{{range $k, $_ := .NetworkSettings.Networks}}{{$k}}{{end}}')
           docker run --rm --network "$network" --user "$(id -u):$(id -g)" \
             -v "$PWD":/smo -w /smo \
             -v "$PWD/secrets/enrollment_secret":/run/secrets/enrollment_secret:ro \
             -e PIP_DISABLE_PIP_VERSION_CHECK=1 -e HOME=/tmp \
-            python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 \
+            "$SMO_IMAGE_PYTHON_3_11_SLIM" \
             sh -c 'pip install --quiet --user --require-hashes -r requirements/runtime.txt && python scripts/load_run.py --duration "$0" --concurrency "$1" --out /smo/load-out/cache-30' "$DURATION" "$CONCURRENCY"
           python3 scripts/introspection_compare.py --off load-out --on load-out/cache-30 --seconds 30 --out load-out/introspection-cache.md
           { echo; echo "### Introspection cache: off against 30 s (PR-SEC-5.4)"; echo; cat load-out/introspection-cache.md; } >> "$GITHUB_STEP_SUMMARY"
@@ -141,4 +154,4 @@ jobs:
       - name: Stop the stack
         if: ${{ always() }}
         working-directory: smo
-        run: docker compose -f docker-compose.yml -f docker-compose.load.yml down -v
+        run: docker compose -f docker-compose.yml -f docker-compose.load.yml -f .ci-mirror/docker-compose.mirror.yml down -v

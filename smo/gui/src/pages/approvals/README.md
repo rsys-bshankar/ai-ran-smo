@@ -32,7 +32,7 @@ Every word on the page comes from the catalog (`src/i18n/en/approvals.ts`, `de/a
 - **The diff has only "+" lines**: the request carries the new values, not the current ones. No server-side diff summary or "download full diff".
 - "Approve similar for 1 hour", grouped queue, bulk approve of a group and Undo are not built (no backend support; BRIEF §5).
 - Decided with "Every outcome": the route has no "not pending" filter, so pending rows of the page are left out in the browser.
-- Change windows (GUI-7.1) list the held CM jobs and the approved ones waiting for their window; a scheduled job is started with Start in its window (starting by itself at the window, and expiring after it, are MGT-4.4 and 4.5).
+- Change windows (GUI-7.1) list the held CM jobs and the approved ones waiting for their window; a scheduled job is started by the worker when its window opens (MGT-4.4), or by hand with Start in the window; a job still waiting when its window closes becomes EXPIRED (MGT-4.5) and leaves both lists.
 - **Scope** (GUI-9.3): a request matches a region or site cluster when its change touches an element there (`managedElements`, recorded when it was parked); a request with no element is absent under any scope.
 - **Two-person approval** (opt-in per rApp, Safeguards → Approval…): "you already approved" is decided in the browser by comparing the BFF's `smo-gui:<username>` voter name with the signed-in user; RAN NF OAM refuses a second approval by the same person anyway.
 

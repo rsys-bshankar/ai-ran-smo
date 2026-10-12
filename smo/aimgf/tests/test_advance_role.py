@@ -34,3 +34,14 @@ def test_an_operator_and_a_call_without_a_role_still_advance_a_model(client, mlm
     params = {"event": "APPROVE_TRAINING", "decided_by": "alice"}
     assert client.post(f"/models/{model_id}/advance", params=params, headers=OPERATOR).status_code == 200
     assert client.post(f"/models/{model_id}/advance", params=params).status_code == 200
+
+
+def test_the_refusals_say_why(client, mlmr, db_session_factory):
+    """The 403 for an rApp names the reason, and the 422s for an unknown and for a job-driven event name the event, the accepted events and the job route to use."""
+    model_id = mlmr.add_model()
+    refused = client.post(f"/models/{model_id}/advance", params={"event": "CERTIFY"}, headers=RAPP).json()["detail"]["detail"]
+    assert refused == "an rApp cannot advance a model's lifecycle: governance and end-of-life decisions are an operator's"
+    unknown = client.post(f"/models/{model_id}/advance", params={"event": "NOPE"}).json()["detail"]["detail"]
+    assert unknown.startswith("unknown model lifecycle event 'NOPE'; advance accepts [") and "CERTIFY" in unknown
+    job_driven = client.post(f"/models/{model_id}/advance", params={"event": "CREATE_TRAINING"}).json()["detail"]["detail"]
+    assert "is job-driven and cannot be advanced directly; use " in job_driven and "CREATE_TRAINING" in job_driven

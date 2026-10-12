@@ -40,6 +40,7 @@ def test_a_second_rapp_cannot_overwrite_the_type_another_registered(client):
     assert _stored(client) == ({"type": "object"}, "rapp-alice")
     evil = client.post("/production-capabilities", json=_body("rapp-bob", dataProductionSchema={"type": "string"}), headers=BOB)
     assert evil.status_code == 403 and "DME_TYPE_NOT_OWNER" in evil.text
+    assert "the type RAN/PMCounters/1.0.0 was registered by another producer" in evil.json()["detail"]["detail"]      # the refusal names the type
     assert _stored(client) == ({"type": "object"}, "rapp-alice")
     mine = client.post("/production-capabilities", json=_body("rapp-alice", dataProductionSchema={"type": "array"}), headers=ALICE)
     assert mine.status_code == 201
@@ -86,3 +87,19 @@ def test_a_type_from_before_the_owner_was_recorded_is_open_to_its_linked_produce
         db.commit()
     assert client.post("/production-capabilities", json=_body("rapp-bob", dataProductionSchema={"type": "string"}), headers=BOB).status_code == 403
     assert client.post("/production-capabilities", json=_body("rapp-alice", dataProductionSchema={"type": "array"}), headers=ALICE).status_code == 201
+
+
+def test_the_owner_is_the_invoker_the_gateway_vouched_for_not_the_producer_id_in_the_body(client):
+    """`registered_by` is the gateway's invoker id when there is one, and the body's `producerId` only for a call that did not come through the gateway (a body naming another producer
+    must not become the owner: Bob's token could then never be told from Alice's)."""
+    assert client.post("/production-capabilities", json=_body("some-producer-name"), headers=ALICE).status_code == 201
+    assert _stored(client)[1] == "rapp-alice"
+    # the owner is Alice's invoker id, so Alice (not the producer name she gave) may change the definition and Bob may not
+    assert client.post("/production-capabilities", json=_body("some-producer-name", dataProductionSchema={"type": "string"}), headers=BOB).status_code == 403
+    assert client.post("/production-capabilities", json=_body("other", dataProductionSchema={"type": "string"}), headers=ALICE).status_code == 201
+
+
+def test_a_type_registered_without_the_gateway_is_owned_by_the_producer_id_of_the_body(client):
+    """With no gateway headers there is no invoker id, so the body's `producerId` is recorded as the owner."""
+    assert client.post("/production-capabilities", json=_body("direct-producer")).status_code == 201
+    assert _stored(client)[1] == "direct-producer"

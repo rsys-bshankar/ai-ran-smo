@@ -549,3 +549,18 @@ def test_a_password_given_twice_fails_the_render_because_the_listener_would_answ
     result = subprocess.run(["helm", "template", "smo", str(CHART), "-n", "smo", "--kube-version", "1.30.0", "--set", "ranNfOam.vesPasswordSecretRef.name=ves-listener",
                              "--set", f"modules.ran-nf-oam.env.{variable}=x"], capture_output=True, text=True)
     assert result.returncode != 0 and "given twice" in result.stderr
+
+
+# Table: the values given, and the `GUI_TRUSTED_PROXY_HOPS` the gui-bff pod then gets (None: not set, the backend's own default of 1 applies).
+@pytest.mark.parametrize("values, expected", [
+    ([], None),
+    (["--set", "ingress.enabled=true"], None),
+    (["--set", "ingress.enabled=true", "--set", "ingress.gui.host=gui.example.com"], "2"),
+    (["--set", "ingress.enabled=true", "--set", "ingress.gui.host=gui.example.com", "--set", "gui.env.GUI_TRUSTED_PROXY_HOPS=3"], "3"),
+])
+@helm
+def test_the_gui_backend_counts_two_proxies_behind_the_gui_ingress(values, expected):
+    """SEC-15.11: with the `gui` Ingress rendered the gui-bff pod is told that two proxies stand in front of it (GUI_TRUSTED_PROXY_HOPS=2), so the sign-in throttle sees clients and not
+    the ingress controller; an operator's own `gui.env` value wins, and without the Ingress nothing is set. Needs helm."""
+    env = _pod_env(_deployment(_render(*values), "gui-bff")["spec"]["template"]["spec"])
+    assert env.get("GUI_TRUSTED_PROXY_HOPS") == expected

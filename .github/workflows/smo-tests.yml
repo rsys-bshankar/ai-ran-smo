@@ -252,6 +252,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
+
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
@@ -271,14 +279,27 @@ jobs:
 
       - name: The example rApp's image builds
         working-directory: smo/sdk-java
-        run: docker build -f examples/hello-rapp/Dockerfile -t hello-java-rapp:ci .
+        run: |
+          # the Maven and JRE base images from the GHCR mirror when it holds them (docs/MIRROR.md); none when the mirror is off
+          mapfile -t mirror < <(python3 ../scripts/ci_mirror.py build-contexts . -f examples/hello-rapp/Dockerfile)
+          docker build -f examples/hello-rapp/Dockerfile -t hello-java-rapp:ci "${mirror[@]}" .
 
   compose-e2e:
     name: Full docker-compose stack runs end to end
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      COMPOSE_FILE: docker-compose.yml:.ci-mirror/docker-compose.mirror.yml
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
 
       - name: docker-compose.yml is structurally valid
         working-directory: smo
@@ -341,7 +362,7 @@ jobs:
         run: |
           docker run --rm --network smo_default --network-alias demo-consumer \
             -e SMO_E2E_LIVE=1 -e PYTHONPATH=/work/smo/shared:/work/smo/sdk \
-            -v "$PWD/..:/work" -w /work/smo python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 sh -c '
+            -v "$PWD/..:/work" -w /work/smo "$SMO_IMAGE_PYTHON_3_11_SLIM" sh -c '
               pip install -q --require-hashes -r requirements/dev.txt &&
               pip install -q --no-deps -e shared &&
               python -m pytest tests_integration/test_demo_runbook.py -v -p no:cacheprovider'
@@ -353,7 +374,7 @@ jobs:
         working-directory: smo
         run: |
           docker run --rm --network smo_default \
-            -e PYTHONPATH=/work/smo/shared -v "$PWD/..:/work" -w /work/smo python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 sh -c '
+            -e PYTHONPATH=/work/smo/shared -v "$PWD/..:/work" -w /work/smo "$SMO_IMAGE_PYTHON_3_11_SLIM" sh -c '
               pip install -q --require-hashes -r requirements/runtime.txt &&
               pip install -q --no-deps -e shared &&
               python -m conformance.o1 --adaptor http://mock-o1-adaptor:8000 --oam-url http://ran-nf-oam:8000 --protocol both --out /tmp/kit &&
@@ -369,7 +390,7 @@ jobs:
         working-directory: smo
         run: |
           docker run --rm --network smo_default --network-alias rapp-packages \
-            -e PYTHONPATH=/work/smo/shared -v "$PWD/..:/work" -w /work/smo python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 sh -c '
+            -e PYTHONPATH=/work/smo/shared -v "$PWD/..:/work" -w /work/smo "$SMO_IMAGE_PYTHON_3_11_SLIM" sh -c '
               pip install -q --require-hashes -r requirements/runtime.txt &&
               pip install -q --no-deps -e shared &&
               python -m conformance.rapp package samples --trust samples/demo-signing --require-signed --out /work/rapp-conformance-package &&
@@ -499,10 +520,10 @@ jobs:
       - name: Runbook CM write over NETCONF/SSH through the stack (netconf-lab)
         working-directory: smo
         run: |
-          docker compose -f docker-compose.yml -f netconf-lab/compose.replay.yml --profile netconf-lab up -d --wait
+          docker compose -f docker-compose.yml -f netconf-lab/compose.replay.yml -f .ci-mirror/docker-compose.mirror.yml --profile netconf-lab up -d --wait
           docker run --rm --network smo_default \
             -e SMO_E2E_LIVE=1 -e SMO_LAB_HOST=netconf-lab -e PYTHONPATH=/work/smo/shared:/work/smo/sdk \
-            -v "$PWD/..:/work" -w /work/smo python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 sh -c '
+            -v "$PWD/..:/work" -w /work/smo "$SMO_IMAGE_PYTHON_3_11_SLIM" sh -c '
               pip install -q --require-hashes -r requirements/dev.txt &&
               pip install -q --no-deps -e shared &&
               python -m pytest tests_integration/test_runbook_over_ssh.py -v -p no:cacheprovider'
@@ -524,8 +545,18 @@ jobs:
     name: Stack behind PgBouncer (transaction pooling) replays the runbook
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      COMPOSE_FILE: docker-compose.yml:.ci-mirror/docker-compose.mirror.yml
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
 
       - name: Create the secret files and .env
         working-directory: smo
@@ -568,7 +599,7 @@ jobs:
         run: |
           docker run --rm --network smo_default --network-alias demo-consumer \
             -e SMO_E2E_LIVE=1 -e PYTHONPATH=/work/smo/shared:/work/smo/sdk \
-            -v "$PWD/..:/work" -w /work/smo python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 sh -c '
+            -v "$PWD/..:/work" -w /work/smo "$SMO_IMAGE_PYTHON_3_11_SLIM" sh -c '
               pip install -q --require-hashes -r requirements/dev.txt &&
               pip install -q --no-deps -e shared &&
               python -m pytest tests_integration/test_demo_runbook.py -v -p no:cacheprovider'
@@ -591,9 +622,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      COMPOSE_FILE: docker-compose.yml:docker-compose.replicas.yml
+      COMPOSE_FILE: docker-compose.yml:docker-compose.replicas.yml:.ci-mirror/docker-compose.mirror.yml
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
 
       - name: Create the secret files and .env
         working-directory: smo
@@ -629,7 +668,7 @@ jobs:
         run: |
           docker run --rm --network smo_default --network-alias demo-consumer \
             -e SMO_E2E_LIVE=1 -e PYTHONPATH=/work/smo/shared:/work/smo/sdk \
-            -v "$PWD/..:/work" -w /work/smo python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 sh -c '
+            -v "$PWD/..:/work" -w /work/smo "$SMO_IMAGE_PYTHON_3_11_SLIM" sh -c '
               pip install -q --require-hashes -r requirements/dev.txt &&
               pip install -q --no-deps -e shared &&
               python -m pytest tests_integration/test_demo_runbook.py -v -p no:cacheprovider'
@@ -653,8 +692,18 @@ jobs:
     name: Tracing and logging profiles
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      COMPOSE_FILE: docker-compose.yml:.ci-mirror/docker-compose.mirror.yml
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
 
       - name: Create the secret files and .env
         working-directory: smo
@@ -700,9 +749,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      COMPOSE_FILE: docker-compose.yml:docker-compose.mtls.yml
+      COMPOSE_FILE: docker-compose.yml:docker-compose.mtls.yml:.ci-mirror/docker-compose.mirror.yml
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
 
       - name: docker-compose.mtls.yml is structurally valid
         working-directory: smo
@@ -758,7 +815,7 @@ jobs:
           docker run --rm --network smo_default --network-alias demo-consumer \
             -e SMO_E2E_LIVE=1 -e SMO_MTLS=on -e SMO_MTLS_CERT_FILE=/mtls/tls.crt -e SMO_MTLS_KEY_FILE=/mtls/tls.key -e SMO_MTLS_CA_FILE=/mtls/ca.crt \
             -e PYTHONPATH=/work/smo/shared:/work/smo/sdk \
-            -v "$PWD/..:/work" -v "$PWD/certs/mtls/runbook:/mtls:ro" -w /work/smo python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 sh -c '
+            -v "$PWD/..:/work" -v "$PWD/certs/mtls/runbook:/mtls:ro" -w /work/smo "$SMO_IMAGE_PYTHON_3_11_SLIM" sh -c '
               pip install -q --require-hashes -r requirements/dev.txt &&
               pip install -q --no-deps -e shared &&
               python -m pytest tests_integration/test_demo_runbook.py -v -p no:cacheprovider'
@@ -801,9 +858,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      COMPOSE_FILE: docker-compose.yml:docker-compose.pgtls.yml
+      COMPOSE_FILE: docker-compose.yml:docker-compose.pgtls.yml:.ci-mirror/docker-compose.mirror.yml
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
 
       - name: docker-compose.pgtls.yml is structurally valid
         working-directory: smo
@@ -852,7 +917,7 @@ jobs:
           docker run --rm --network smo_default --user "$(id -u):$(id -g)" \
             -v "$PWD":/smo -w /smo -v "$PWD/secrets/db_password":/run/secrets/db_password:ro \
             -e PIP_DISABLE_PIP_VERSION_CHECK=1 -e HOME=/tmp -e PYTHONDONTWRITEBYTECODE=1 \
-            python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 \
+            "$SMO_IMAGE_PYTHON_3_11_SLIM" \
             sh -c 'pip install --quiet --user --require-hashes -r requirements/runtime.txt && python scripts/pg_tls_check.py --host postgres --ca certs/mtls/postgres/ca.crt --password-file /run/secrets/db_password --expect-plain-refused'
 
       - name: A service given the wrong CA does not connect
@@ -882,8 +947,18 @@ jobs:
     name: NETCONF lab (netopeer2)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      COMPOSE_FILE: docker-compose.yml:.ci-mirror/docker-compose.mirror.yml
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -990,23 +1065,28 @@ jobs:
     name: Consolidated migration applies to real Postgres
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    services:
-      postgres:
-        image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
-        env:
-          POSTGRES_USER: smo
-          POSTGRES_PASSWORD: smo
-          POSTGRES_DB: smo
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U smo"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2          # the previous commit is needed by the upgrade check (PR-OPS-1.6)
+
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
+
+      # Postgres 18 used to be a `services:` container; the runner pulls those before any step, so the image cannot be chosen (mirror or Docker Hub) from the
+      # step above. It is started here instead, with the same user, database, port and health check.
+      - name: Start Postgres 18
+        run: |
+          docker run -d --name postgres -p 5432:5432 -e POSTGRES_USER=smo -e POSTGRES_PASSWORD=smo -e POSTGRES_DB=smo \
+            --health-cmd "pg_isready -U smo" --health-interval 5s --health-timeout 3s --health-retries 10 \
+            "$SMO_IMAGE_POSTGRES_18_ALPINE"
+          for i in $(seq 1 30); do [ "$(docker inspect -f '{{.State.Health.Status}}' postgres)" = "healthy" ] && break; sleep 2; done
+          [ "$(docker inspect -f '{{.State.Health.Status}}' postgres)" = "healthy" ]
 
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -1108,6 +1188,15 @@ jobs:
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        if: steps.gate.outputs.run == 'true'
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
+
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         if: steps.gate.outputs.run == 'true'
         with:
@@ -1155,6 +1244,15 @@ jobs:
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        if: steps.gate.outputs.run == 'true'
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
+
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         if: steps.gate.outputs.run == 'true'
         with:
@@ -1184,6 +1282,14 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
 
       - name: helm lint, and the chart renders with its options on
         working-directory: smo
@@ -1227,10 +1333,12 @@ jobs:
           python scripts/release_images.py matrix | jq -c '.include[]' | while read -r row; do
             name=$(jq -r .name <<<"$row"); context=$(jq -r .context <<<"$row"); module=$(jq -r .module <<<"$row")
             echo "::group::smo-$name"
+            # the base images named in this Dockerfile that the GHCR mirror holds (docs/MIRROR.md); none when the mirror is off
+            mapfile -t mirror < <(python3 scripts/ci_mirror.py build-contexts "$context")
             if [ -n "$module" ]; then
-              docker build --quiet -t "local/smo-$name:ci" --build-arg "MODULE=$module" "$context"
+              docker build --quiet -t "local/smo-$name:ci" "${mirror[@]}" --build-arg "MODULE=$module" "$context"
             else
-              docker build --quiet -t "local/smo-$name:ci" "$context"
+              docker build --quiet -t "local/smo-$name:ci" "${mirror[@]}" "$context"
             fi
             echo "::endgroup::"
           done
@@ -1238,14 +1346,14 @@ jobs:
 
       - name: Create the cluster and load the images
         run: |
-          kind create cluster --name smo --wait 120s
+          kind create cluster --name smo --image "$SMO_IMAGE_KIND_NODE_V1_37_0" --wait 120s
           images=$(docker image ls 'local/smo-*' --format '{{.Repository}}:{{.Tag}}')
           kind load docker-image --name smo $images
 
       - name: helm install (the migration Job runs, every pod waits for the schema, every pod becomes ready)
         working-directory: smo
         run: |
-          helm install smo deploy/helm/smo -n smo --create-namespace -f deploy/helm/smo/ci/kind-values.yaml --wait --timeout 12m
+          helm install smo deploy/helm/smo -n smo --create-namespace -f deploy/helm/smo/ci/kind-values.yaml -f .ci-mirror/helm-values.yaml --wait --timeout 12m
           kubectl -n smo get pods
           kubectl -n smo wait --for=condition=complete job/migrate --timeout=60s
           head=$(ls migrations/versions | grep -oE '^[0-9]+' | sort | tail -1)
@@ -1289,7 +1397,7 @@ jobs:
         working-directory: smo
         run: |
           kubectl -n smo exec postgres-0 -- psql -U smo -d smo -Atc "SELECT count(*) FROM alembic_version"
-          helm upgrade smo deploy/helm/smo -n smo -f deploy/helm/smo/ci/kind-values.yaml --set moduleDefaults.resources.requests.cpu=60m --wait --timeout 12m
+          helm upgrade smo deploy/helm/smo -n smo -f deploy/helm/smo/ci/kind-values.yaml -f .ci-mirror/helm-values.yaml --set moduleDefaults.resources.requests.cpu=60m --wait --timeout 12m
           helm history smo -n smo
           for d in $(kubectl -n smo get deploy -o name); do kubectl -n smo rollout status "$d" --timeout=120s; done
           kubectl -n smo get pods
@@ -1323,10 +1431,10 @@ jobs:
         run: |
           psql() { kubectl -n smo exec postgres-0 -- psql -U smo -d smo -Atc "$1"; }
           # off: every module connects as the owner again, and the stack answers
-          helm upgrade smo deploy/helm/smo -n smo -f deploy/helm/smo/ci/kind-values.yaml --set databaseRoles.enabled=false --wait --timeout 12m
+          helm upgrade smo deploy/helm/smo -n smo -f deploy/helm/smo/ci/kind-values.yaml -f .ci-mirror/helm-values.yaml --set databaseRoles.enabled=false --wait --timeout 12m
           kubectl -n smo exec -i deploy/r1-termination -- python3 - < scripts/compose_e2e.py
           # on: the role passwords already exist (the Secret is kept) and the pods move to them
-          helm upgrade smo deploy/helm/smo -n smo -f deploy/helm/smo/ci/kind-values.yaml --wait --timeout 12m
+          helm upgrade smo deploy/helm/smo -n smo -f deploy/helm/smo/ci/kind-values.yaml -f .ci-mirror/helm-values.yaml --wait --timeout 12m
           for i in $(seq 1 30); do
             [ "$(psql "SELECT count(*) FROM pg_stat_activity WHERE usename = 'smo_onboarding'")" -gt 0 ] && break
             sleep 2
@@ -1337,7 +1445,7 @@ jobs:
       - name: Two replicas of every module that can have them, and the stack still answers (PR-HA-1)
         working-directory: smo
         run: |
-          helm upgrade smo deploy/helm/smo -n smo -f deploy/helm/smo/ci/kind-values.yaml -f deploy/helm/smo/ci/ha-values.yaml --wait --timeout 12m
+          helm upgrade smo deploy/helm/smo -n smo -f deploy/helm/smo/ci/kind-values.yaml -f .ci-mirror/helm-values.yaml -f deploy/helm/smo/ci/ha-values.yaml --wait --timeout 12m
           kubectl -n smo get pods -o wide
           for d in r1-termination sme dme rapp-mgmt ran-nf-oam ran-nf-oam-worker gui; do
             [ "$(kubectl -n smo get deploy "$d" -o jsonpath='{.status.readyReplicas}')" = "2" ] || { echo "::error::$d does not have two ready replicas"; exit 1; }
@@ -1442,23 +1550,33 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
+
       - name: Build the images from this checkout
         working-directory: smo
         run: |
           pip install --quiet pyyaml
           python scripts/release_images.py matrix | jq -c '.include[]' | while read -r row; do
             name=$(jq -r .name <<<"$row"); context=$(jq -r .context <<<"$row"); module=$(jq -r .module <<<"$row")
+            # the base images named in this Dockerfile that the GHCR mirror holds (docs/MIRROR.md); none when the mirror is off
+            mapfile -t mirror < <(python3 scripts/ci_mirror.py build-contexts "$context")
             if [ -n "$module" ]; then
-              docker build --quiet -t "local/smo-$name:ci" --build-arg "MODULE=$module" "$context"
+              docker build --quiet -t "local/smo-$name:ci" "${mirror[@]}" --build-arg "MODULE=$module" "$context"
             else
-              docker build --quiet -t "local/smo-$name:ci" "$context"
+              docker build --quiet -t "local/smo-$name:ci" "${mirror[@]}" "$context"
             fi
           done
           docker image ls 'local/smo-*'
 
       - name: Create the cluster and load the images
         run: |
-          kind create cluster --name smo --wait 120s
+          kind create cluster --name smo --image "$SMO_IMAGE_KIND_NODE_V1_37_0" --wait 120s
           images=$(docker image ls 'local/smo-*' --format '{{.Repository}}:{{.Tag}}')
           kind load docker-image --name smo $images
 

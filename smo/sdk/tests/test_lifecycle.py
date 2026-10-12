@@ -76,24 +76,24 @@ def test_list_training_jobs(client, r1):
     assert r1.calls[0] == {"verb": "get", "path": "/aimgf/training-jobs", "params": {"model_id": None, "status": "RUNNING"}}
 
 
-def test_advance_model_lifecycle(client, r1):
-    """`advance_model_lifecycle` sends the event and the unset decision fields as query parameters with no body."""
+def test_advance_model_lifecycle_is_deprecated_and_fails_before_any_call(client, r1):
+    """`advance_model_lifecycle` raises `SdkError` 403 `ROLE_NOT_PERMITTED` for every event and sends nothing: the gateway and AIMgF refuse an rApp the route (SEC-15.1, 15.1b)."""
     model_id = uuid.uuid4()
-    client.advance_model_lifecycle(model_id, "DEPRECATE")
-    assert r1.calls[0] == {
-        "verb": "post", "path": f"/aimgf/models/{model_id}/advance",
-        "params": {"event": "DEPRECATE", "decided_by": None, "rationale": None}, "files": None, "json": None,
-    }
+    for event, decided_by in (("DEPRECATE", None), ("CERTIFY", "operator-1")):
+        with pytest.raises(SdkError) as exc_info:
+            client.advance_model_lifecycle(model_id, event, decided_by=decided_by, rationale="x")
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.body["title"] == "ROLE_NOT_PERMITTED"
+        assert "deprecated" in exc_info.value.body["detail"]
+    assert r1.calls == []
 
 
-def test_advance_model_lifecycle_governance_decision_passes_decided_by_and_rationale(client, r1):
-    """A governance event passes `decided_by` and `rationale`, which AIMgF requires for the governance decisions."""
-    model_id = uuid.uuid4()
-    client.advance_model_lifecycle(model_id, "CERTIFY", decided_by="operator-1", rationale="looks good")
-    assert r1.calls[0] == {
-        "verb": "post", "path": f"/aimgf/models/{model_id}/advance",
-        "params": {"event": "CERTIFY", "decided_by": "operator-1", "rationale": "looks good"}, "files": None, "json": None,
-    }
+def test_the_gateway_policy_no_longer_lets_an_rapp_advance_a_model():
+    """The path the deprecated method used is off the rApp allow-list, while the AIMgF model routes a rApp does use stay on it (a loosened or over-tightened pattern shows here)."""
+    from smo_shared import roles
+    assert not roles.rapp_may_change("/aimgf", "POST", "/models/m/advance")
+    for tail in ("inference-jobs", "runtime/deploy", "runtime/activate"):
+        assert roles.rapp_may_change("/aimgf", "POST", f"/models/m/{tail}")
 
 
 def test_request_inference(client, r1):
@@ -235,6 +235,6 @@ def test_raises_sdk_error_on_a_4xx_response(client, r1):
     """A 409 answer is raised as `SdkError` carrying the status code and the body."""
     r1.script(409, {"detail": "invalid transition"})
     with pytest.raises(SdkError) as exc_info:
-        client.advance_model_lifecycle(uuid.uuid4(), "CERTIFY")
+        client.suspend_training(uuid.uuid4())
     assert exc_info.value.status_code == 409
     assert exc_info.value.body == {"detail": "invalid transition"}

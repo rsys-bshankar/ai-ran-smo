@@ -96,6 +96,20 @@ def _login_mode() -> str:
     return mode
 
 
+def _non_negative_int(name: str, default: int) -> int:
+    """The integer in the environment variable `name` (`default` when unset); ValueError, naming the variable, when it is not a whole number of 0 or more."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name}={raw!r} is not a whole number") from exc
+    if value < 0:
+        raise ValueError(f"{name}={raw!r} must be 0 or more")
+    return value
+
+
 def _bool(name: str, default: bool) -> bool:
     raw = os.environ.get(name)
     return default if raw is None else raw.strip().lower() in ("1", "true", "yes", "on")
@@ -130,6 +144,9 @@ class Settings:
     initial_password_file: str = field(default_factory=lambda: os.environ.get("GUI_INITIAL_PASSWORD_FILE", "./initial-admin-password"))
     operator_password: str = field(default_factory=lambda: os.environ.get("GUI_OPERATOR_PASSWORD", ""))
     viewer_password: str = field(default_factory=lambda: os.environ.get("GUI_VIEWER_PASSWORD", ""))
+    # SEC-15.11: how many reverse proxies stand between a browser and this backend (the console's nginx is one). The sign-in lockout and throttle read the client's address from
+    # the entry that many places from the right of X-Forwarded-For; 0 ignores the header (clients reach the backend directly). Negative values stop the start.
+    trusted_proxy_hops: int = field(default_factory=lambda: _non_negative_int("GUI_TRUSTED_PROXY_HOPS", 1))
     health_timeout_seconds: float = field(default_factory=lambda: float(os.environ.get("GUI_HEALTH_TIMEOUT_SECONDS", "3")))
     upstream_timeout_seconds: float = field(default_factory=lambda: float(os.environ.get("GUI_UPSTREAM_TIMEOUT_SECONDS", "30")))
     # ---- PR-SEC-6: OIDC login (off by default). Local username/password login stays unless GUI_LOCAL_LOGIN_ENABLED=false.
