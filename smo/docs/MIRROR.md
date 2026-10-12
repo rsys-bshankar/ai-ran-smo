@@ -5,10 +5,12 @@ others). GitHub-hosted runners share outbound IP addresses, and Docker Hub limit
 fail with `toomanyrequests` for no fault of the change under test. The repository has no paid Docker Hub plan and does not log in to Docker Hub.
 The durable fix is a copy of every pinned image in this repository's own GHCR namespace, which a job can pull without that limit.
 
-This change builds the mirror. **It does not point anything at it yet**: the references in `docker-compose.yml`, the chart, the Dockerfiles and
-the workflows are unchanged, and nothing an operator runs changes.
+Two steps built it. **Step 1** (`PR-OPS-12.1`, `12.4`) built the mirror: the list, the copy script, the workflow, and a digest on every pin. **Step 2**
+(`PR-OPS-12.3`, this document's "CI uses the mirror" section) makes CI pull from it. **Step 2 is CI only: the defaults an operator runs name the upstream images,
+as before** (`docker-compose.yml`, the chart's `values.yaml`, the Dockerfiles' `FROM`, the GitOps overlays, the production overlay). Public GHCR is not a runtime
+dependency of anyone's install; `tests_integration/test_ci_image_mirror.py` fails if any of those files names the mirror.
 
-## How it works
+## How the mirror is filled
 
 - **`deploy/mirror/images.txt`** is the list: one line per image, `source | digest | mirror | note` (the file's header explains the columns).
   `source` is the reference as the repository writes it, `digest` the `sha256:` the repository pins (`-` where it pins none), `mirror` the name under
@@ -34,19 +36,17 @@ the workflows are unchanged, and nothing an operator runs changes.
   that changes the list, the script or the workflow. It has no `pull_request` trigger, so a fork cannot reach the token that writes packages. Its
   permissions are `contents: read` and, in the one job, `packages: write`; it logs in to `ghcr.io` with `GITHUB_TOKEN`, validates the list, runs `sync`,
   and writes a table of the mirrored images and the package names below to the job summary. Its only action is `actions/checkout`, pinned by SHA; the job installs nothing.
-  It does not run on a schedule: a tag without a digest in the list (see below) moves at the source, and the mirror follows it only when the workflow runs.
+  It does not run on a schedule: a tag without a digest in the list moves at the source, and the mirror follows it only when the workflow runs (the list holds none today).
 
-## What the first run found
-
-The first run of the workflow (run 38179519262) mirrored and verified 14 of the 16 images and failed two: `sysrepo/sysrepo-netopeer2` (pinned by digest
+The first run of the workflow (run 38179519262) mirrored and verified 14 of the 16 images then listed and failed two: `sysrepo/sysrepo-netopeer2` (pinned by digest
 only, mirrored as `latest`) and `drwetter/testssl.sh:3.2`. For both, `<mirror>@sha256:<source>` answered the source digest but the **tag** answered a
 different one. Cause: `docker buildx imagetools create` re-wraps a single-platform image manifest into a new manifest; for a manifest list it keeps
-the digest (the other 14). The verification did its job and was not loosened; the copy was changed to `skopeo copy --all --preserve-digests`. Those two
-packages may carry a wrong-digest `latest` / `3.2` from that run: the next run sees the tag answer another digest, copies over it and verifies.
+the digest (the other 14). The verification did its job and was not loosened; the copy was changed to `skopeo copy --all --preserve-digests`.
 
 ## The list
 
-17 packages (`<repo>` is the repository name, in lower case):
+17 packages (`<repo>` is the repository name, in lower case). The owner made all of them public (`OPS-12.2`) and checked that every digest-pinned source answers its pinned
+digest at the mirror.
 
 | Package | Source images (tags) | Pinned by digest in the repository |
 |---|---|---|
@@ -72,68 +72,95 @@ Listed but not copied, because they are on `ghcr.io` already: `ghcr.io/cloudnati
 pinned by digest).
 
 **Every third-party reference pins a digest** (`PR-OPS-12.4`). Tempo, Loki, Fluent Bit and Grafana (`docker-compose.yml` and the chart's
-`observability.*.image`, which move together) and Keycloak (`smo-gui-e2e.yml`, `KEYCLOAK_IMAGE`) are `name:tag@sha256:...` now, with the same versions as
-before and the digest of each tag's manifest list (index) on the day of the change, so the mirror copies exactly what the repository pulls. The kind node
-image is pinned too: the workflows install no `kind`, they use the binary on the runner image (kind 0.33.0), whose default node is
-`kindest/node:v1.37.0@sha256:a1ed56cf...`; each of the six `kind create cluster` calls now passes that as `--image`, so a newer runner image cannot move the
-cluster's Kubernetes version without a reviewed edit. `tests_integration/test_image_mirror_list.py` fails on an unpinned reference (its known-unpinned set is
-empty), on a `kind create cluster` with no `--image name:tag@sha256:...`, on two different node images, and on one that is not in the list. A kind bump is
-one edit of the six calls and of the list's `kindest/node` line (Dependabot does not read workflow commands).
+`observability.*.image`, which move together) and Keycloak are `name:tag@sha256:...` in the repository, with the digest of each tag's manifest list (index), so
+the mirror copies exactly what the repository pulls. The kind node image is pinned too: the workflows install no `kind`, they use the binary on the runner
+image (kind 0.33.0), whose default node is `kindest/node:v1.37.0@sha256:a1ed56cf...`; every `kind create cluster` passes that node (since step 2 through the
+list, below), so a newer runner image cannot move the cluster's Kubernetes version without a reviewed edit. `tests_integration/test_image_mirror_list.py` fails on an
+unpinned reference (its known-unpinned set is empty), on a `kind create cluster` with no `--image "$SMO_IMAGE_KIND_NODE_..."`, and on a list entry nothing uses any more.
 
-## One-time steps for the owner
+## CI uses the mirror (`PR-OPS-12.3`)
 
-GHCR packages are private by default, and a workflow's `GITHUB_TOKEN` cannot change that (no API offers it to it). A job cannot pull a private package
-without logging in, so the references stay as they are until the packages are public.
+### The mechanism
 
-1. Merge this change, then run the workflow once: GitHub, **Actions**, **Mirror images**, **Run workflow** on `main` (a merge that touches the list
-   also runs it). Read the job summary: every one of the 17 rows should say `mirrored` or `up-to-date` (a first run says `mirrored`; the images an
-   earlier run already copied and verified say `up-to-date`). A `failed` row names the reason. `kind-node` is new and is copied for the first time
-   (about 1 GB per architecture for `kindest/node`, two architectures; a Docker Hub `toomanyrequests` or a timeout there is a re-run, not a fault of the list).
-2. Make each of the 17 packages above public. For each: your profile or organisation, **Packages**, the package named `<repo>/mirror/<name>`,
-   **Package settings**, **Change visibility**, **Public**, and type the name to confirm. Do not skip one: a missed package fails the job that pulls it.
-3. Tell whoever does the follow-up (below) that the packages are public. The check is `docker pull ghcr.io/<owner>/<repo>/mirror/postgres:18-alpine` from
-   a machine that is not logged in to GHCR.
+One script, `scripts/ci_mirror.py`, and one step at the start of every job that pulls an image (`Use the GHCR image mirror`, which runs `python3 scripts/ci_mirror.py setup`
+with `SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}` as its only environment). The pins stay in `deploy/mirror/images.txt`; no workflow repeats a digest.
 
-If the first run fails on a package with `denied` or `403`, open that package's settings, **Manage Actions access**, and add this repository with the
-**Write** role (a package created by the workflow is linked to the repository and normally has it already).
+`setup` asks the registry, anonymously (the packages are public; no `docker login`), whether `<mirror>@<digest>` answers the pinned digest, for every mirrored row, a few at a time and with
+a 60 s limit per call. An image that answers is **switched**; one that does not (a package that is private again, GHCR unreachable, a repository without the packages such as a fork) is **not**
+switched and stays on its upstream registry. For each one `setup` prints `::warning::GHCR image mirror: <image> is not used, this job pulls it from its upstream registry: <why>`, which shows as an
+annotation of the run. It never fails the job for a mirror problem. Then it writes, under `smo/.ci-mirror/` (git-ignored; never committed; not a default of anything):
 
-## The follow-up change (not in this one)
+| File | What it holds | Used by |
+|---|---|---|
+| `state.json` | the switched references (upstream reference to mirror reference) and the failures | `ci_mirror.py image`, `build-contexts` |
+| `docker-compose.mirror.yml` | a compose override: `image:` of each service whose image is switched, `build.additional_contexts` for each switched `FROM` of a service's Dockerfile; `services: {}` when nothing is | `COMPOSE_FILE` / `-f` |
+| `helm-values.yaml` | the chart's switched `image:` values (`postgres.image`, `observability.*.image`); `{}` when nothing is | `helm install|upgrade -f` |
 
-After step 2, one pull request switches the references. It must change no digest:
+and appends one variable per list row to `$GITHUB_ENV`: `SMO_IMAGE_<NAME>`, the mirror reference when switched and the upstream `repo:tag@digest` otherwise (`python:3.11-slim` is
+`SMO_IMAGE_PYTHON_3_11_SLIM`, `postgres:18-alpine` is `SMO_IMAGE_POSTGRES_18_ALPINE`, `kindest/node:v1.37.0` is `SMO_IMAGE_KIND_NODE_V1_37_0`; the name is the mirror name, or the last path component
+of an unmirrored source, plus the tag). **Every reference keeps the pinned digest**: the mirror reference is `<prefix>/<name>:<tag>@sha256:<the same digest>`, so a pull returns the bytes the
+repository pins. Tag and digest together is the form `kind` and `docker` already accept; the digest decides.
 
-- the Dockerfiles' `FROM`, the compose file's `image:`, the chart's `postgres.image` and `observability.*.image`, the workflows' `*_IMAGE` variables,
-  the `docker run` and `services:` images and the scripts' pinned images change their repository part to `ghcr.io/<owner>/<repo>/mirror/<name>` and keep
-  the tag and the `@sha256:` as they are. The mirror holds the same digest, so a pull by digest returns the same bytes;
-- an operator who runs their own registry mirror can already override the chart's images (`values.yaml`); the product's defaults point at GHCR only if
-  that change is wanted outside CI, which is a decision for that pull request (a Docker Hub default has the advantage of no dependency on this
-  repository's packages staying public);
-- `tests_integration/test_image_mirror_list.py` then reads the mirror prefix off each reference (extend `_DIGEST_REF` and the key to strip it), and
-  Dependabot's ecosystems (below) keep working because they update the tag and digest in place.
+### What is switched, by kind
 
-No switch is built into this change: the compose file and chart pin by `name:tag@sha256:...`, and a `${SMO_IMAGE_MIRROR}` prefix would not map onto
-the mirror names (`grafana/tempo` is `mirror/tempo`) without a per-image variable and a change to the chart's own image test; that is more than the
-switch itself, so it waits for the pull request that needs it.
+| Kind | Where | How |
+|---|---|---|
+| **Compose lanes** (`docker compose up --build`, `run`) | `smo-tests.yml` (`compose-e2e`, `compose-pooler`, `compose-replicas`, `obs-stack`, `compose-mtls`, `compose-pgtls`, `netconf-lab`), `deploy-on-main.yml`, `smo-dast.yml` (both jobs), `smo-gui-e2e.yml` (both), `smo-load.yml`, `smo-soak.yml`, `smo-stress.yml` (both), and `compose_new` of `scripts/check_upgrade_from_previous_release.sh` | The generated override is named in the job's `COMPOSE_FILE` (`docker-compose.yml:.ci-mirror/docker-compose.mirror.yml`, plus the lane's own overlay) or, in a lane that passes `-f`, as one more `-f`. Third-party services (`postgres`, `edge-tls`, `netconf-lab`, `tempo`, `loki`, `fluent-bit`, `grafana`) get `image:`; every service built from the root, `gui`, `pgbouncer` or `backup` Dockerfile gets named contexts |
+| **`docker build` of module images** | `image-scan.yml`, `smo-ha-kind.yml` (both), `smo-upgrade-kind.yml`, `smo-tests.yml` (`helm`, `postgres-ha`, `sdk-java`'s example) | `mapfile -t mirror < <(python3 scripts/ci_mirror.py build-contexts <dir>)` then `docker build ... "${mirror[@]}" ...`: one `--build-context '<FROM text>=docker-image://<mirror reference>'` per switched `FROM` (BuildKit named contexts replace the base image). The key is the whole `FROM` reference, digest included: a key without the digest does not match a digest-pinned `FROM` (shown with a local BuildKit and with `docker compose build` while writing this) |
+| **`docker run`** | `deploy-on-main.yml`, `smo-tests.yml`, `smo-load.yml`, `smo-soak.yml`, `smo-stress.yml`, `smo-dast.yml` (testssl.sh, Nuclei), `smo-gui-e2e.yml` (Keycloak), `smo-db-volume.yml`, `smo-dr.yml` (Postgres), and the demo consumer of both previous-release scripts | `"$SMO_IMAGE_..."` in place of the literal image |
+| **Service containers** | `smo-tests.yml` `migration-postgres` | A `services:` image is pulled by the runner before any step, so neither the mirror nor the fallback can be chosen. The Postgres is a `docker run -d` step now, with the same user, database, port and health check. A test fails if any workflow uses `services:` or `container:` |
+| **`kind create cluster --image`** | all six calls (`smo-tests.yml` `helm` and `postgres-ha`, `smo-ha-kind.yml` `ha` and `hpa`, `smo-upgrade-kind.yml`, `smo-dr.yml` `cnpg-wal-archive`) | `--image "$SMO_IMAGE_KIND_NODE_V1_37_0"`; kind pulls the node image through the runner's Docker, which pulls the public package |
+| **Helm installs on kind** | `smo-tests.yml` `helm` (one install, four upgrades), `smo-ha-kind.yml` (two installs) | `-f .ci-mirror/helm-values.yaml`, after `kind-values.yaml`. The chart exposes the image fields, so nothing in the chart changes. The same file goes on every upgrade of a release, so the database's image text never changes mid-test |
 
-## Dependabot and the list
+### The fallback
 
-Dependabot's `docker` ecosystem (the Dockerfiles) and `docker-compose` ecosystem (`docker-compose.yml`) bump a pin's tag and digest in place. The mirror
-list does not follow by itself, so `tests_integration/test_image_mirror_list.py` fails that pull request until `deploy/mirror/images.txt` carries
-the same reference and digest. The edit is one line: copy the new `name:tag` and digest into the list (the workflow then copies the new image when the
-change reaches `main`). The same test fails when a reference is removed from the repository and left in the list. Dependabot does not read workflows'
-`env` image variables, the chart's values or the scripts; those are bumped by hand, and the same test catches a list that falls behind.
+The decision is made once per job, per image, when `setup` runs: an image whose mirror reference does not answer its digest is simply not switched, and the rest of the job is exactly the
+pre-mirror job for it (Docker Hub, with its limit). The warning names the image and the reason. The fallback does **not** cover a mirror image that answered the manifest request and then fails
+mid-job (a blob that cannot be fetched): that pull fails the step, and the repair is the kill switch below. Release builds do not have a fallback to need: they never use the mirror.
 
-## What the mirror does not solve
+### The kill switch
 
-- **Images pulled by actions themselves** (an action that runs in a container, `docker://` steps, the tools an action downloads) and by the runner image.
-- **The kind node image is mirrored, but kind still pulls it from Docker Hub.** `kind create cluster --image kindest/node:v1.37.0@sha256:...` names
-  Docker Hub; the pin makes the version reproducible and the mirror holds the same digest (`kind-node`), and the follow-up change (`OPS-12.3`) repoints it.
-- **The CloudNativePG operator image.** `smo-dr.yml` and `smo-tests.yml` apply the operator's release manifest, which names an image on `ghcr.io`
-  (not Docker Hub); it is not in this repository, so the test cannot see it.
-- **Base images no file here names**, such as an image a `docker build` pulls through a `FROM` the list does not hold. The drift test reads every
-  `Dockerfile*` and fails on one not in the list.
+Set the repository variable `SMO_IMAGE_MIRROR` to `off` (GitHub, Settings, Secrets and variables, Actions, Variables; `false`, `0` and `no` also work, any case). Every job's `setup` then
+switches nothing, prints a notice, and the job runs against the upstream references as before step 2. Unset, empty or any other value leaves the mirror on. The variable is read in exactly one
+place per job (the `setup` step's `env`), and `tests_integration/test_ci_image_mirror.py` holds it there.
+
+### Adding or bumping an image
+
+- **A Dependabot bump of a pin** (compose file, Dockerfile) changes the tag and digest in place. `test_image_mirror_list.py` then fails until `images.txt` carries the same `name:tag` and
+  digest (the one-line edit); on merge to `main` the mirror workflow copies the new image; from then on CI pulls it from the mirror. Until that workflow has run, the new digest does not answer at the
+  mirror, so `setup` leaves that one image on Docker Hub with a warning (the fallback working as designed) instead of failing. Workflows hold no digest, so there is nothing else to bump. A bump of
+  the kind node, Keycloak, testssl.sh or Nuclei is one edit of `images.txt` (and, for kind and Keycloak, nothing else); Dependabot does not read those.
+- **A new third-party image** in a Dockerfile, compose file or chart needs a row in `images.txt` (the drift test says so); a new `docker run` takes it as `"$SMO_IMAGE_<NAME>"`, a new compose
+  service needs nothing (the override is generated from `docker compose config`), a new job that pulls anything starts with the `Use the GHCR image mirror` step. The tests in
+  `test_ci_image_mirror.py` fail on a job without it, a `docker run` with a literal image, a `docker compose up` that does not reach the override, a `docker build` without the contexts, a
+  `helm install|upgrade` without the values file, and a workflow that names a mirrored image.
+
+### Not covered
+
+What stays on its upstream registry, and why. The keys in backticks are the names `tests_integration/test_ci_image_mirror.py` uses for its exceptions.
+
+- `workflow:release-images.yml`: release images are built from the upstream references on purpose, so a release stays reproducible without any package of this repository (the build is `docker buildx build`
+  with no named contexts). Only CI uses the mirror.
+- `workflow:mirror-images.yml`: it fills the mirror, so it reads the sources from their own registries (and can meet the same pull limit; the script retries three times, and the workflow can be run again).
+- `docker-run:ZAP_IMAGE`: the ZAP image is `ghcr.io/zaproxy/zaproxy:stable@sha256:...`, already on ghcr.io (no Docker Hub limit); `smo-dast.yml` pins it itself and the list does not copy it.
+- `helm:smo-upgrade-kind.yml`: the upgrade lanes install a previous release's chart and then this checkout's; the two charts' database image would differ in text if only one were mirrored, and a changed
+  image restarts Postgres in the middle of the upgrade being tested. That lane's cluster pulls the database image from Docker Hub. Its `kind` node, and the module images it builds from this checkout and
+  from the previous release's source, do use the mirror where the previous release's `FROM` is a listed digest (a base image the list does not hold is simply built from upstream).
+- `helm:cnpg`: the CloudNativePG installs (`smo-tests.yml` `postgres-ha`) run no chart database; the operator and the operand are on `ghcr.io`.
+- **The previous release's own stack** (`check_previous_release_code.sh`, and the previous half of `check_upgrade_from_previous_release.sh`): it builds and pulls the pins of an older tag, which the
+  mirror does not hold. Only the demo consumer container and, in the upgrade script, this commit's own stack use the mirror.
+- **Images pulled by actions themselves** (`ossf/scorecard-action`, `google/clusterfuzzlite`, `actions/dependency-review-action` and the tools an action downloads), by the runner image, and by tools
+  the jobs install (`go install` of Trivy and its vulnerability database from `public.ecr.aws` / `ghcr.io`, the `metrics-server` and CloudNativePG manifests, which name images on `registry.k8s.io` and
+  `ghcr.io`).
 - **Package registries** (PyPI, npm, Maven Central, Go proxy) and **other downloads** (apt, release tarballs); they have their own limits.
-- **The first copy and any run of the mirror workflow itself** pulls from Docker Hub anonymously and can meet the same limit; the script retries
-  (three attempts, 15 s and 30 s apart), and the workflow can simply be run again.
-- **Anything while a package is private**: a job without a login cannot pull it.
+- **A mirror image that answers the manifest and then fails mid-job**: see "The fallback".
 - **Supply chain**: the mirror is a copy of the digest the repository already pins, so it adds no new trust in the source; it is not a scan or a
   signature check (the release images are signed, `docs/RELEASES.md`).
+
+### What was exercised before merge, and what first runs in CI
+
+Run locally: the list and drift tests, `test_ci_image_mirror.py` (the generator and `setup` against a fake registry, the workflow rules over every workflow), `docker compose config` with the
+generated override merged into `docker-compose.yml`, `docker compose build` and `docker build --build-context` against a local BuildKit (named contexts replace a digest-pinned `FROM` only when
+the key carries the digest; tag and digest together in `docker-image://` works), `helm template` with the generated values. **First exercised by CI** (a workflow cannot run here): the anonymous
+manifest probe against the real GHCR packages from a GitHub runner, a real pull of every mirror image by compose, `docker build`, `docker run` and the kind node, the converted Postgres step of
+`migration-postgres`, `kind create cluster --image <mirror>:<tag>@<digest>`, and the Helm installs with the generated values on a kind cluster.

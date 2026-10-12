@@ -37,12 +37,20 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
+
       - name: Start the stack (a small per-caller rate budget for the limiter scenario)
         working-directory: smo
         run: |
           scripts/init_secrets.sh
           cp .env.example .env
-          docker compose -f docker-compose.yml -f docker-compose.stress-limiter.yml up -d --build
+          docker compose -f docker-compose.yml -f docker-compose.stress-limiter.yml -f .ci-mirror/docker-compose.mirror.yml up -d --build
           for i in $(seq 1 60); do
             curl -fsS http://localhost:8080/health > /dev/null 2>&1 && break
             sleep 5
@@ -53,7 +61,7 @@ jobs:
         run: |
           mkdir -p stress-out
           docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/smo -w /smo -e HOME=/tmp -e PIP_DISABLE_PIP_VERSION_CHECK=1 \
-            python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 \
+            "$SMO_IMAGE_PYTHON_3_11_SLIM" \
             pip install --quiet --no-warn-script-location --require-hashes --target /smo/stress-out/site -r requirements/runtime.txt
 
       - name: Stress scenarios
@@ -64,7 +72,7 @@ jobs:
           stress() {
             docker run --rm --network "$network" --user "$(id -u):$(id -g)" -v "$PWD":/smo -w /smo \
               -v "$PWD/secrets/enrollment_secret":/run/secrets/enrollment_secret:ro -e HOME=/tmp -e PYTHONPATH=/smo/stress-out/site:/smo/scripts \
-              python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 python scripts/stress_run.py --token-file /smo/stress-out/token "$@"
+              "$SMO_IMAGE_PYTHON_3_11_SLIM" python scripts/stress_run.py --token-file /smo/stress-out/token "$@"
           }
           status=0
           {
@@ -72,7 +80,7 @@ jobs:
             stress limiter --burst 100 || status=1
             stress oversize  || status=1
             # the rate limiter off for the saturation ramp: the gateway is recreated with the load override
-            docker compose -f docker-compose.yml -f docker-compose.load.yml up -d r1-termination
+            docker compose -f docker-compose.yml -f docker-compose.load.yml -f .ci-mirror/docker-compose.mirror.yml up -d r1-termination
             for i in $(seq 1 30); do curl -fsS http://localhost:8080/health > /dev/null 2>&1 && break; sleep 2; done
             stress saturate  || status=1
             # the database taken away, then given back
@@ -107,7 +115,7 @@ jobs:
       - name: Stop the stack
         if: ${{ always() }}
         working-directory: smo
-        run: docker compose -f docker-compose.yml -f docker-compose.load.yml down -v
+        run: docker compose -f docker-compose.yml -f docker-compose.load.yml -f .ci-mirror/docker-compose.mirror.yml down -v
 
   # The gateway's shared rate budget under a burst through three replicas (PR-V-9, SEC-8.5): proved before only at the statement level (tests_integration/test_rate_limit_postgres.py).
   stress-replicas:
@@ -115,9 +123,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      COMPOSE_FILE: docker-compose.yml:docker-compose.stress-shared.yml
+      COMPOSE_FILE: docker-compose.yml:docker-compose.stress-shared.yml:.ci-mirror/docker-compose.mirror.yml
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
 
       - name: Start the stack, three gateway replicas, each with its own buckets
         working-directory: smo
@@ -137,7 +153,7 @@ jobs:
         run: |
           mkdir -p stress-out
           docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/smo -w /smo -e HOME=/tmp -e PIP_DISABLE_PIP_VERSION_CHECK=1 \
-            python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 \
+            "$SMO_IMAGE_PYTHON_3_11_SLIM" \
             pip install --quiet --no-warn-script-location --require-hashes --target /smo/stress-out/site -r requirements/runtime.txt
 
       - name: The burst, with each replica's own buckets (the control) and then with the shared store
@@ -148,7 +164,7 @@ jobs:
           stress() {
             docker run --rm --network "$network" --user "$(id -u):$(id -g)" -v "$PWD":/smo -w /smo \
               -v "$PWD/secrets/enrollment_secret":/run/secrets/enrollment_secret:ro -e HOME=/tmp -e PYTHONPATH=/smo/stress-out/site:/smo/scripts \
-              python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 python scripts/stress_run.py --token-file /smo/stress-out/token "$@"
+              "$SMO_IMAGE_PYTHON_3_11_SLIM" python scripts/stress_run.py --token-file /smo/stress-out/token "$@"
           }
           wait_healthy() {
             for i in $(seq 1 60); do

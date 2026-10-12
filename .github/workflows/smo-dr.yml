@@ -50,7 +50,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      POSTGRES_IMAGE: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
       PGPASSWORD: smo
       AWS_ACCESS_KEY_ID: smo-ci-access
       AWS_SECRET_ACCESS_KEY: smo-ci-secret-key
@@ -62,6 +61,14 @@ jobs:
       RTO_SECONDS: "3600"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -94,7 +101,7 @@ jobs:
         env:
           SMO_DATABASE_URL: postgresql+psycopg://smo:smo@localhost:5432/smo
         run: |
-          docker run -d --name pg-source -p 5432:5432 -e POSTGRES_USER=smo -e POSTGRES_PASSWORD=smo -e POSTGRES_DB=smo "$POSTGRES_IMAGE"
+          docker run -d --name pg-source -p 5432:5432 -e POSTGRES_USER=smo -e POSTGRES_PASSWORD=smo -e POSTGRES_DB=smo "$SMO_IMAGE_POSTGRES_18_ALPINE"
           for i in $(seq 1 30); do pg_isready -h localhost -p 5432 -U smo && break; sleep 2; done
           python scripts/migrate.py
 
@@ -136,7 +143,7 @@ jobs:
       - name: Start a fresh Postgres 18 and run the drill (RPO and RTO gates)
         working-directory: smo
         run: |
-          docker run -d --name pg-target -p 5433:5432 -e POSTGRES_USER=smo -e POSTGRES_PASSWORD=smo -e POSTGRES_DB=postgres "$POSTGRES_IMAGE"
+          docker run -d --name pg-target -p 5433:5432 -e POSTGRES_USER=smo -e POSTGRES_PASSWORD=smo -e POSTGRES_DB=postgres "$SMO_IMAGE_POSTGRES_18_ALPINE"
           for i in $(seq 1 30); do pg_isready -h localhost -p 5433 -U smo && break; sleep 2; done
           scripts/dr_drill.sh --admin-url postgresql+psycopg://smo:smo@localhost:5433/postgres \
             --probe public.periodic_run:last_run_at --high-water "$(cat "$RUNNER_TEMP/high-water")" \
@@ -183,6 +190,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
+
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
@@ -193,7 +208,7 @@ jobs:
         working-directory: smo
         run: |
           pip install --quiet --require-hashes -r requirements/dr.txt
-          kind create cluster --name dr --image kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5 --wait 180s
+          kind create cluster --name dr --image "$SMO_IMAGE_KIND_NODE_V1_37_0" --wait 180s
           gateway=$(docker network inspect kind -f '{{range .IPAM.Config}}{{println .Gateway}}{{end}}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
           [ -n "$gateway" ] || { docker network inspect kind; echo "::error::no IPv4 gateway on the kind network"; exit 1; }
           echo "S3_ENDPOINT=http://$gateway:9000" >> "$GITHUB_ENV"

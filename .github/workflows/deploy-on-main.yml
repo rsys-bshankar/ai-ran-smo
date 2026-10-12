@@ -29,8 +29,18 @@ jobs:
     name: Redeploy the stack from empty and replay the runbook
     runs-on: ubuntu-latest
     timeout-minutes: 25          # below the 30 minutes of the PR job and far below the monthly minutes budget
+    env:
+      COMPOSE_FILE: docker-compose.yml:.ci-mirror/docker-compose.mirror.yml
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
 
       - name: Seeded break (workflow_dispatch with seed_break only)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.seed_break }}
@@ -82,7 +92,7 @@ jobs:
         run: |
           docker run --rm --network smo_default --network-alias demo-consumer \
             -e SMO_E2E_LIVE=1 -e PYTHONPATH=/work/smo/shared:/work/smo/sdk \
-            -v "$PWD/..:/work" -w /work/smo python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 sh -c '
+            -v "$PWD/..:/work" -w /work/smo "$SMO_IMAGE_PYTHON_3_11_SLIM" sh -c '
               pip install -q --require-hashes -r requirements/dev.txt &&
               pip install -q --no-deps -e shared &&
               python -m pytest tests_integration/test_demo_runbook.py -v -p no:cacheprovider'

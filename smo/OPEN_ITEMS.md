@@ -607,14 +607,13 @@ Purpose: show the GUI and the rApp flows to people. Used **on demand only**: cre
 | OPS-11.5 | Optional prebuild of the image on master so a fresh codespace starts quickly (watch prebuild storage; skip if it costs more than it saves) | Start time measured before and after | OPS-11.2 |
 | OPS-11.6 | Once Helm exists: the same script installs the chart on kind so the demo shows the packaged install (check it fits the machine) | Demo runs on the chart | OPS-2.9, OPS-11.3 |
 
-#### PR-OPS-12 — GHCR mirror of third-party images (OPS-12.1 and 12.4 done: `HISTORY.md` PR-OPS-12.1, PR-OPS-12.4)
+#### PR-OPS-12 — GHCR mirror of third-party images (OPS-12.1 to 12.4 done: `HISTORY.md` PR-OPS-12.1 to PR-OPS-12.4)
 
-CI jobs pull Postgres, Grafana, Loki, Tempo, Fluent Bit, Keycloak, base images and others anonymously from Docker Hub; concurrent runners share an address and sometimes meet its pull limit (`toomanyrequests`). The mirror (`docs/MIRROR.md`, `deploy/mirror/images.txt`, `.github/workflows/mirror-images.yml`) is built; nothing points at it yet. Every third-party reference, and the kind node image, is pinned by digest (OPS-12.4). Its first run mirrored 14 of 16 images; the two single-platform ones failed verification (the copy tool re-wrapped them under a new digest) and the copy is now `skopeo copy --all --preserve-digests` (`HISTORY.md` PR-OPS-12.1); the fixed workflow has not run yet.
+CI jobs pulled Postgres, Grafana, Loki, Tempo, Fluent Bit, Keycloak, base images and others anonymously from Docker Hub; concurrent runners share an address and sometimes met its pull limit (`toomanyrequests`). The mirror (`docs/MIRROR.md`, `deploy/mirror/images.txt`, `.github/workflows/mirror-images.yml`) holds all 17 packages, public, and CI now pulls from it (`scripts/ci_mirror.py`, OPS-12.3): per image, with the upstream registry as the fallback and the repository variable `SMO_IMAGE_MIRROR=off` as the kill switch. Release builds and everything an operator runs still name the upstream images. What is not switched, and why, is the "Not covered" list of `docs/MIRROR.md`.
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OPS-12.2 ★ | The owner runs **Mirror images** (again, after the fix) until all 17 rows of its summary say `mirrored` or `up-to-date` (`kind-node`, added by OPS-12.4, is copied for the first time), then makes each of the 17 `<repo>/mirror/<name>` packages public in the GitHub UI (`docs/MIRROR.md`, "One-time steps for the owner"); a person does this | `docker pull ghcr.io/<owner>/<repo>/mirror/postgres:18-alpine` works without a login | – |
-| OPS-12.3 | One pull request repoints the Dockerfiles, compose file, chart values, workflows and scripts at the mirror, keeping every tag and digest; the drift test learns the prefix | CI green with no Docker Hub pull of a listed image | OPS-12.2 |
+| OPS-12.5 | Read the first runs on the mirror: a run of **SMO tests** on `main` where every job's `Use the GHCR image mirror` step says `18 of 18 images switched`, no `::warning::` names an image, and no job pulled a listed image from Docker Hub (the compose, build, `docker run`, kind and Helm paths of `docs/MIRROR.md` were exercised only against a fake registry and a local BuildKit before merge); then the same for the nightly lanes (DAST, load, soak, stress, HA, upgrade, DR) | One green `main` run of each workflow with the mirror, read; or the first failure turned into a fix, or into a line of "Not covered" | OPS-12.3 merged |
 
 ### 5.7 High availability and DR (`PR-HA`)
 

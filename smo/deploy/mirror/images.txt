@@ -13,7 +13,9 @@
 # This file is the source of truth for scripts/mirror_images.py (validate, copy, verify) and is held in step with the pins by
 # tests_integration/test_image_mirror_list.py: a pin in docker-compose.yml, deploy/helm/smo/values.yaml, deploy/helm/smo/ci, a Dockerfile, a
 # workflow or a script that is missing here, or has another digest, fails that test. A Dependabot bump of a pin therefore needs the same edit here.
-# Nothing here changes a pin; the pins stay where they are until the follow-up change that points them at the mirror (docs/MIRROR.md).
+# CI takes these pins from here: scripts/ci_mirror.py setup exports each row as a variable SMO_IMAGE_<NAME> (the mirror reference when it answers, this row's
+# `source@digest` otherwise), writes the compose override and the Helm values, and the workflows hold no digest of a row that is mirrored. The files an operator
+# runs (compose, chart, Dockerfiles) keep naming the upstream images (docs/MIRROR.md).
 # A `-` digest stays legal for a reference the repository cannot pin (the note says why), but there is none today and the drift test holds the set empty.
 
 # --- pinned by digest in the repository, copied to the mirror (every third-party image the repository pulls has a digest, OPEN_ITEMS.md PR-OPS-12.4) ---

@@ -7,6 +7,7 @@ Entries are written for an operator: what changed in behaviour, configuration or
 
 ### Changed
 
+- CI pulls the third-party images from the repository's GHCR mirror (`docs/MIRROR.md`) instead of Docker Hub, to stop `toomanyrequests` failures when many jobs run at once. **CI only: nothing changes for an operator.** `docker-compose.yml`, the chart, the Dockerfiles and the GitOps overlays still name the upstream images, and every pull keeps its pinned digest. Each job starts with a step (`scripts/ci_mirror.py setup`) that checks the mirror and uses it per image; an image that does not answer is pulled from its upstream registry with a warning, and the repository variable `SMO_IMAGE_MIRROR=off` switches the mirror off in every job. The release workflow does not use the mirror. The Postgres of the `migration-postgres` job is started by a step instead of a `services:` container so that it can use it.
 - The Tempo, Loki, Fluent Bit and Grafana images of the `tracing` and `logging` profiles (`docker-compose.yml`) and of the chart's `observability.*` (`values.yaml`) are now pinned by digest (`name:tag@sha256:...`). The versions are the same (Tempo 2.10.8, Loki 3.7.8, Fluent Bit 5.1.3, Grafana 13.2.3); nothing changes for an operator who does not override them. If you override one of these images, pin yours the same way. CI now also pins Keycloak (the GUI sign-in test) and the kind node image (`kindest/node:v1.37.0`) by digest (`docs/MIRROR.md`, `OPS-12.4`).
 
 ### Fixed

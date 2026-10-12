@@ -3,8 +3,10 @@
 Covers: the list parses and validates; every `name[:tag]@sha256:...` pin in docker-compose files, the Helm chart's values and CI values, Dockerfiles,
 workflows and scripts is in the list with the same digest (so a Dependabot bump that forgets the list fails here); no third-party
 reference is left without a digest (the known-unpinned set below is empty, so a NEW unpinned image fails); every `kind create cluster` names the
-kind node image by `--image name:tag@sha256:...`, the same one everywhere and a listed one; no list entry is stale; the workflow cannot run on a
-pull request; docs/MIRROR.md names every package; no conflict marker is left in the mirror's files.
+kind node image through the list's variable (`--image "$SMO_IMAGE_KIND_NODE_V1_37_0"`, which scripts/ci_mirror.py setup resolves to the mirror's or the upstream
+reference, both at the listed digest), one node image everywhere and a listed one; no list entry is stale (still pinned somewhere, or still used through its
+`SMO_IMAGE_*` variable); the workflow cannot run on a pull request; docs/MIRROR.md names every package; no conflict marker is left in the mirror's files.
+That the CI workflows really use the mirror is tests_integration/test_ci_image_mirror.py.
 No network and no fixtures; run: `cd smo && PYTHONPATH=shared python -m pytest tests_integration/test_image_mirror_list.py -q`.
 """
 
@@ -26,7 +28,6 @@ _YAML_IMAGE = re.compile(r"^[ \t]*(?:-[ \t]+)?image:[ \t]*[\"']?(?P<ref>[^\s\"'#
 _ENV_IMAGE = re.compile(r"^[ \t]*[A-Z][A-Z0-9_]*IMAGE[A-Z0-9_]*:[ \t]*[\"']?(?P<ref>[^\s\"'#]+)", re.M)
 _FROM = re.compile(r"^FROM[ \t]+(?:--\S+[ \t]+)?(?P<ref>\S+)(?:[ \t]+AS[ \t]+(?P<stage>\S+))?", re.M | re.I)
 _KIND_CREATE = re.compile(r"\bkind create cluster\b[^\n]*")
-_KIND_IMAGE = re.compile(r"--image[ =](?P<ref>kindest/node:[A-Za-z0-9_.-]+@sha256:[0-9a-f]{64})")
 _CONFLICT = re.compile(r"^(<{7}|={7}|>{7})( |$)", re.M)
 
 
@@ -38,6 +39,18 @@ def _load_script():
 
 
 mirror = _load_script()
+
+
+def _load_ci_script():
+    """Loads scripts/ci_mirror.py (it imports its sibling mirror_images.py through its own sys.path line) by path, like the list reader above."""
+    spec = importlib.util.spec_from_file_location("ci_mirror", SMO_ROOT / "scripts" / "ci_mirror.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+ci_mirror = _load_ci_script()
+_ENV_VAR = re.compile(r"\bSMO_IMAGE_[A-Z0-9_]+\b")
 
 
 def _files(root: Path, *patterns: str) -> list[Path]:
@@ -54,8 +67,8 @@ def _scanned() -> dict[str, list[Path]]:
         "yaml": _files(SMO_ROOT, "docker-compose*.yml", "sdk-*/examples/**/docker-compose*.yml", "netconf-lab/*.yml", "deploy/**/*.yaml")
         + _files(REPO_ROOT / ".github", "workflows/*.yml"),
         "docker": _files(SMO_ROOT, "**/Dockerfile*"),
-        # scripts/mirror_images.py and the tests only talk about images; they pin none
-        "script": [p for p in _files(SMO_ROOT, "scripts/*.sh", "scripts/*.py") if p.name != "mirror_images.py"],
+        # scripts/mirror_images.py and scripts/ci_mirror.py (and the tests) only talk about images; they pin none
+        "script": [p for p in _files(SMO_ROOT, "scripts/*.sh", "scripts/*.py") if p.name not in ("mirror_images.py", "ci_mirror.py")],
     }
 
 
@@ -130,28 +143,36 @@ def test_the_unpinned_references_are_the_known_set_and_are_listed_as_unpinned():
 
 def test_every_kind_cluster_names_one_pinned_node_image_and_it_is_listed():
     """`kind create cluster` pulls the node image (kindest/node, Docker Hub) of the kind binary's default unless told: every call in a workflow or a script
-    must pass `--image kindest/node:<tag>@sha256:...`, all with the same value, and that image must be in the list (so it is mirrored) with that digest.
+    must pass `--image "$SMO_IMAGE_KIND_NODE_<TAG>"`, the one variable that scripts/ci_mirror.py setup exports for the list's single `kindest/node` entry (the
+    GHCR mirror's `kind-node` reference when it answers, the pinned upstream one otherwise, both at the listed digest). The entry itself must carry a digest.
     """
     calls: list[tuple[Path, str]] = []
     for paths in _scanned().values():
         for path in paths:
             calls += [(path, m.group(0)) for m in _KIND_CREATE.finditer(path.read_text(errors="replace"))]
     assert len(calls) >= 6, "the scan found fewer kind clusters than the workflows create: the pattern or the globs are broken"
-    refs = set()
+    nodes = [e for e in _listed().values() if e.repository == "kindest/node"]
+    assert len(nodes) == 1, f"the list must hold exactly one kindest/node image, not {[e.source for e in nodes]}"
+    node = nodes[0]
+    assert node.digest and node.mirror == "kind-node", node.source
+    var = ci_mirror.env_name(node)
     for path, line in calls:
-        found = _KIND_IMAGE.search(line)
-        assert found, f"{path.relative_to(REPO_ROOT)}: `{line.strip()}` has no `--image kindest/node:<tag>@sha256:<digest>`; kind would pull its default, unpinned"
-        refs.add(found.group("ref"))
-    assert len(refs) == 1, f"the kind clusters use {len(refs)} different node images: {sorted(refs)}"
-    name, digest = next(iter(refs)).split("@")
-    listed = _listed()
-    assert name in listed and listed[name].digest == digest and listed[name].mirror == "kind-node", name
+        assert re.search(rf'--image "\${var}"', line), (
+            f"{path.relative_to(REPO_ROOT)}: `{line.strip()}` does not pass `--image \"${var}\"`; kind would pull its default, unpinned, from Docker Hub"
+        )
 
 
 def test_no_list_entry_is_stale():
-    """Every list entry is still referenced somewhere in the repository, so an image dropped from compose or a workflow leaves the list too."""
+    """Every list entry is still referenced somewhere in the repository, so an image dropped from compose or a workflow leaves the list too. An entry is
+    referenced when its `name:tag@digest` pin is written somewhere, or when a workflow or script uses its `SMO_IMAGE_*` variable (the CI steps that take
+    their pin from the list rather than repeating the digest).
+    """
     pinned, unpinned = references()
-    stale = [s for s in _listed() if s not in pinned and s not in unpinned]
+    used_vars = set()
+    for paths in _scanned().values():
+        for path in paths:
+            used_vars.update(_ENV_VAR.findall(path.read_text(errors="replace")))
+    stale = [s for s, e in _listed().items() if s not in pinned and s not in unpinned and not (e.digest and ci_mirror.env_name(e) in used_vars)]
     assert stale == []
 
 
@@ -180,15 +201,17 @@ def test_the_mirror_doc_names_every_package_the_owner_makes_public():
 
 
 def test_no_conflict_marker_is_left_in_the_mirror_files():
-    """No file of the mirror holds a git conflict marker (`<<<<<<<`, `=======`, `>>>>>>>`), so a merge that kept one in the list, the script,
+    """No file of the mirror holds a git conflict marker (`<<<<<<<`, `=======`, `>>>>>>>`), so a merge that kept one in the list, the scripts,
     the workflow, the doc or the tests fails here.
     """
     files = [
         SMO_ROOT / "deploy" / "mirror" / "images.txt",
         SMO_ROOT / "scripts" / "mirror_images.py",
+        SMO_ROOT / "scripts" / "ci_mirror.py",
         SMO_ROOT / "docs" / "MIRROR.md",
         SMO_ROOT / "tests_integration" / "test_image_mirror_list.py",
         SMO_ROOT / "tests_integration" / "test_mirror_images.py",
+        SMO_ROOT / "tests_integration" / "test_ci_image_mirror.py",
         REPO_ROOT / ".github" / "workflows" / "mirror-images.yml",
     ]
     assert [str(f.relative_to(REPO_ROOT)) for f in files if _CONFLICT.search(f.read_text())] == []
