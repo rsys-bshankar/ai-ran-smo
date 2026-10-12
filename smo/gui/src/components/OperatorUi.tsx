@@ -482,7 +482,7 @@ function useMayPress(): (action: Obj) => boolean {
 
 /**
  * The declared action buttons of an actions panel. Without the permission to change it shows a line naming the actions that need the operator role instead of the buttons;
- * an admin-only action is left out for anyone else, and a line names it.
+ * an admin-only action is left out for anyone else, and a line names it (for a viewer too, so a panel of only admin actions never says "operator").
  */
 function ActionsPanel({ instanceId, panel, canChange }: { instanceId: string; panel: Obj; canChange: boolean; registered: boolean }) {
   const t = useT();
@@ -491,14 +491,13 @@ function ActionsPanel({ instanceId, panel, canChange }: { instanceId: string; pa
   if (actions.length === 0) return <Unsupported title={str(panel.title)} what="panel" />;
   const mine = actions.filter(mayPress);
   const adminOnly = actions.filter((a) => !mayPress(a));
+  const operatorOnes = actions.filter((a) => a.role !== "admin");
   return (
     <Card title={str(panel.title)}>
-      {canChange
-        ? <>
-          {mine.length > 0 && <div className="row gap">{mine.map((a) => <DeclaredButton key={str(a.id)} instanceId={instanceId} action={a} />)}</div>}
-          {adminOnly.length > 0 && <p className="muted small">{t("components.operatorUi.needsAdminFor", { actions: adminOnly.map((a) => str(a.label)).join(", ") })}</p>}
-        </>
-        : <p className="muted small">{t("components.operatorUi.needsRoleFor", { actions: actions.map((a) => str(a.label)).join(", ") })}</p>}
+      {canChange && mine.length > 0 && <div className="row gap">{mine.map((a) => <DeclaredButton key={str(a.id)} instanceId={instanceId} action={a} />)}</div>}
+      {!canChange && operatorOnes.length > 0
+        && <p className="muted small">{t("components.operatorUi.needsRoleFor", { actions: operatorOnes.map((a) => str(a.label)).join(", ") })}</p>}
+      {adminOnly.length > 0 && <p className="muted small">{t("components.operatorUi.needsAdminFor", { actions: adminOnly.map((a) => str(a.label)).join(", ") })}</p>}
     </Card>
   );
 }
