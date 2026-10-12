@@ -5,6 +5,10 @@ Entries are written for an operator: what changed in behaviour, configuration or
 
 ## [Unreleased]
 
+### Fixed
+
+- The GHCR mirror workflow (CI only; nothing changes for an operator; `docs/MIRROR.md`) copies with `skopeo copy --all --preserve-digests` instead of `docker buildx imagetools create`, which re-wrapped single-platform images under a new digest (two of the 16 images failed verification on its first run). The verification is unchanged.
+
 ## [0.8.0] - 2026-10-12
 
 The security hardening release, and the operator console finished. A review of October 2026 (`PR-SEC-15`) found routes that trusted the caller's word, and they are closed: ownership and scope checks on the actions of a configuration job, on rApp Management, DME and AIMgF; an approval decided by the signed-in person the gateway vouches for, not by the request body; feature-group tokens given by reference; model checks in MLMR; escaped NETCONF XML; the MSAC credential checked; the console's sign-in lockout by source address; an audit path with no query; and a hardened shared library (the callback SSRF guard reads every spelling of an address, the rApp role patterns match the whole path, the SQLite fallback is an explicit opt-in, package size limits). The console was redesigned and completed: an alarm console with history and comments, KPIs over time by region, a containment tree on Topology, console users limited to regions and tenants, live counts from a new event feed, the whole console in German, change windows for CM jobs that start and expire by themselves, and a second approver for an rApp's change. The console, change-window, second-approver, console-scope and event-feed features are opt in; the security hardening is not, so read *Upgrading from 0.7.0*: the order of the upgrade matters for the approver identity, feature groups no longer return their `token`, a job can now be `EXPIRED`, and the introspection cache is on by default. What is still open is named under *Known limitations*.

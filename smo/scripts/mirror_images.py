@@ -3,16 +3,19 @@
 
     python scripts/mirror_images.py validate                       # check deploy/mirror/images.txt, no network
     python scripts/mirror_images.py packages --prefix ghcr.io/<owner>/<repo>/mirror   # the GHCR package names the owner makes public
-    python scripts/mirror_images.py sync --prefix ghcr.io/<owner>/<repo>/mirror [--dry-run] [--summary-file FILE]
+    python scripts/mirror_images.py sync --prefix ghcr.io/<owner>/<repo>/mirror [--dry-run] [--summary-file FILE] [--authfile FILE]
 
 What it is: the list reader, validator and copier behind `.github/workflows/mirror-images.yml`. The list is `deploy/mirror/images.txt`
 (its header explains the columns); `tests_integration/test_image_mirror_list.py` holds the list in step with every image the repository pins.
-The copy uses `docker buildx imagetools create`, which is on the GitHub-hosted runners (nothing to install) and copies the whole manifest
-list by digest, so every architecture comes across and the digest at the mirror equals the source's. `sync` is idempotent (an image whose
-mirror tag already resolves to the source digest is skipped) and verifies after each copy that `<mirror>@<digest>` answers with the source digest.
+The copy is `skopeo copy --all --preserve-digests`, which writes the source's manifest bytes unchanged (a single-platform image or a manifest
+list with every architecture), so the digest at the mirror equals the source's. `docker buildx imagetools create` is NOT used for a
+single-platform source: it wraps that manifest in a new one and the tag answers a different digest (the first run of the workflow found this).
+Without `skopeo` a manifest-list source is still copied with `imagetools create` (which keeps its digest) and a single-platform source fails with a
+message saying so. `sync` is idempotent (an image whose mirror tag already resolves to the source digest is skipped; a tag with another digest is
+copied over) and verifies after each copy that `<mirror>@<digest>` and `<mirror>:<tag>` both answer with the source digest.
 
 What it does not do: change any pin, make a package public (GitHub offers no API for that to a workflow token; the owner does it once in the
-GitHub UI), or log in (the workflow runs `docker login ghcr.io` first). Exit codes: 0 all good, 1 an image failed or the list is invalid, 2 usage.
+GitHub UI), or log in (the workflow runs `docker login ghcr.io` first; skopeo reads that login from `--authfile`, default `~/.docker/config.json`). Exit codes: 0 all good, 1 an image failed or the list is invalid, 2 usage.
 Needs only the standard library; the registry commands go through an injectable runner so the tests need no network.
 """
 
@@ -39,6 +42,9 @@ _MIRROR_NAME_RE = re.compile(rf"^{_COMPONENT}$")
 _PREFIX_RE = re.compile(rf"^ghcr\.io/{_COMPONENT}(?:/{_COMPONENT})+$")
 # What a registry says for an image that is simply not there (as opposed to a login or network failure, which must not read as "absent")
 _NOT_FOUND_RE = re.compile(r"not found|manifest unknown|name unknown|404|no such manifest", re.IGNORECASE)
+
+# The media types of a manifest list (Docker) and an index (OCI); anything else is a single-platform image manifest
+_INDEX_TYPES = frozenset({"application/vnd.docker.distribution.manifest.list.v2+json", "application/vnd.oci.image.index.v1+json"})
 
 Runner = Callable[[Sequence[str]], tuple[int, str, str]]
 
@@ -174,8 +180,11 @@ def package_names(entries: Sequence[Entry], prefix: str) -> list[str]:
 
 
 def _default_runner(argv: Sequence[str]) -> tuple[int, str, str]:
-    """Runs a command without a shell and returns (exit code, stdout, stderr); the production runner of every registry call."""
-    done = subprocess.run(list(argv), capture_output=True, text=True, timeout=600, check=False)  # noqa: S603
+    """Runs a command without a shell and returns (exit code, stdout, stderr; 127 when the program is not installed); the production runner."""
+    try:
+        done = subprocess.run(list(argv), capture_output=True, text=True, timeout=600, check=False)  # noqa: S603
+    except FileNotFoundError:
+        return 127, "", f"{argv[0]}: command not found"
     return done.returncode, done.stdout, done.stderr
 
 
@@ -197,14 +206,59 @@ def inspect_digest(ref: str, run: Runner) -> str | None:
     raise RegistryError(f"inspect {ref}: {err.strip()[:300] or f'exit {code}'}")
 
 
-def copy_image(source_ref: str, target_ref: str, run: Runner, *, attempts: int = 3, sleep: Callable[[float], None] = time.sleep) -> None:
-    """Copies `source_ref` (always a `repo@digest`) to `target_ref` (`mirror:tag`) with the whole manifest list; raises RegistryError after `attempts` tries.
+def _tool_available(run: Runner, tool: str) -> bool:
+    """True when `<tool> --version` runs (the production runner reports a missing program as exit 127)."""
+    return run([tool, "--version"])[0] == 0
 
-    Retries with a growing pause because the usual failure is the source registry's pull limit (`toomanyrequests`), which clears in minutes.
+
+def is_manifest_list(ref: str, run: Runner) -> bool:
+    """True when `ref` (a `repo@digest`) is a manifest list / OCI index, False when it is a single-platform image manifest.
+
+    Reads the raw manifest (`imagetools inspect --raw`): the `mediaType` says it, and a manifest without one is an index when it has `manifests`.
+    Raises RegistryError when the manifest cannot be read.
     """
+    code, out, err = run(["docker", "buildx", "imagetools", "inspect", "--raw", ref])
+    if code != 0:
+        raise RegistryError(f"inspect --raw {ref}: {err.strip()[:300] or f'exit {code}'}")
+    try:
+        manifest = json.loads(out)
+        media = manifest.get("mediaType", "")
+        return media in _INDEX_TYPES or (not media and "manifests" in manifest)
+    except (ValueError, AttributeError) as exc:
+        raise RegistryError(f"inspect --raw {ref}: unreadable answer: {out[:200]!r}") from exc
+
+
+def copy_image(
+    source_ref: str,
+    target_ref: str,
+    run: Runner,
+    *,
+    authfile: Path | None = None,
+    attempts: int = 3,
+    sleep: Callable[[float], None] = time.sleep,
+) -> None:
+    """Copies `source_ref` (always a `repo@digest`) to `target_ref` (`mirror:tag`) keeping the digest; raises RegistryError after `attempts` tries.
+
+    With skopeo: `skopeo copy --all --preserve-digests` (every architecture, the manifest bytes unchanged; it refuses, rather than change the digest,
+    when it could not preserve it), logging in to the destination with `authfile` (the docker config `docker login` wrote; never a token on the
+    command line). Without skopeo a manifest-list source goes through `docker buildx imagetools create`, which keeps its digest, and a single-platform
+    source raises (imagetools would re-wrap it under a new digest). A missing skopeo or authfile is not retried. Retries with a growing pause because
+    the usual failure is the source registry's pull limit (`toomanyrequests`), which clears in minutes.
+    """
+    if _tool_available(run, "skopeo"):
+        if authfile is None or not authfile.is_file():
+            raise RegistryError(f"copy {source_ref} -> {target_ref}: no registry login file at {authfile} (run `docker login ghcr.io` first)")
+        argv = ["skopeo", "copy", "--all", "--preserve-digests", "--dest-authfile", str(authfile), f"docker://{source_ref}", f"docker://{target_ref}"]
+    elif is_manifest_list(source_ref, run):
+        argv = ["docker", "buildx", "imagetools", "create", "--tag", target_ref, source_ref]
+    else:
+        raise RegistryError(
+            f"copy {source_ref} -> {target_ref}: skopeo is not installed, and this source is a single-platform image, which "
+            "`docker buildx imagetools create` would re-wrap under a different digest; install skopeo (it is on the GitHub ubuntu runners)"
+        )
     last = ""
     for attempt in range(1, attempts + 1):
-        code, _, err = run(["docker", "buildx", "imagetools", "create", "--tag", target_ref, source_ref])
+        code, _, err = run(argv)
         if code == 0:
             return
         last = err.strip()[:300] or f"exit {code}"
@@ -213,11 +267,13 @@ def copy_image(source_ref: str, target_ref: str, run: Runner, *, attempts: int =
     raise RegistryError(f"copy {source_ref} -> {target_ref}: {last}")
 
 
-def sync_entry(entry: Entry, prefix: str, run: Runner, *, dry_run: bool = False, sleep: Callable[[float], None] = time.sleep) -> Result:
+def sync_entry(
+    entry: Entry, prefix: str, run: Runner, *, dry_run: bool = False, sleep: Callable[[float], None] = time.sleep, authfile: Path | None = None
+) -> Result:
     """Mirrors one entry and returns what happened; never raises (a failure is `Result.status == "failed"` so the other images still go).
 
     The digest to copy is the pinned one, or (no pin) what the source tag resolves to now. If the mirror tag already answers with that digest
-    nothing is copied. After a copy, both `<mirror>@<digest>` and `<mirror>:<tag>` must answer with the source digest, or the entry fails.
+    nothing is copied (a tag with another digest is not "present": it is copied over). After a copy, both `<mirror>@<digest>` and `<mirror>:<tag>` must answer with the source digest, or the entry fails.
     """
     if entry.mirror is None:
         return Result(entry, "not-mirrored", entry.digest or "", entry.note)
@@ -231,7 +287,7 @@ def sync_entry(entry: Entry, prefix: str, run: Runner, *, dry_run: bool = False,
             return Result(entry, "up-to-date", digest)
         if dry_run:
             return Result(entry, "would-copy", digest)
-        copy_image(f"{entry.repository}@{digest}", tag_ref, run, sleep=sleep)
+        copy_image(f"{entry.repository}@{digest}", tag_ref, run, authfile=authfile, sleep=sleep)
         # The copy must be the same image: a re-pushed manifest with another digest would break every `@sha256:` pin that follows.
         by_digest = inspect_digest(f"{mirror}@{digest}", run)
         by_tag = inspect_digest(tag_ref, run)
@@ -242,10 +298,18 @@ def sync_entry(entry: Entry, prefix: str, run: Runner, *, dry_run: bool = False,
         return Result(entry, "failed", entry.digest or "", str(exc))
 
 
-def sync(entries: Sequence[Entry], prefix: str, run: Runner = _default_runner, *, dry_run: bool = False, sleep: Callable[[float], None] = time.sleep) -> list[Result]:
-    """Mirrors every entry in order and returns one Result each; the caller decides the exit code from the statuses."""
+def sync(
+    entries: Sequence[Entry],
+    prefix: str,
+    run: Runner = _default_runner,
+    *,
+    dry_run: bool = False,
+    sleep: Callable[[float], None] = time.sleep,
+    authfile: Path | None = None,
+) -> list[Result]:
+    """Mirrors every entry in order and returns one Result each; the caller decides the exit code from the statuses. `authfile` is the docker config skopeo logs in with."""
     prefix = check_prefix(prefix)
-    return [sync_entry(e, prefix, run, dry_run=dry_run, sleep=sleep) for e in entries]
+    return [sync_entry(e, prefix, run, dry_run=dry_run, sleep=sleep, authfile=authfile) for e in entries]
 
 
 def render_table(results: Sequence[Result], prefix: str) -> str:
@@ -283,6 +347,7 @@ def main(argv: Sequence[str] | None = None, run: Runner = _default_runner) -> in
     sy = sub.add_parser("sync", help="copy, verify, print the table")
     sy.add_argument("--prefix", required=True)
     sy.add_argument("--dry-run", action="store_true", help="resolve and compare, copy nothing")
+    sy.add_argument("--authfile", type=Path, default=Path.home() / ".docker" / "config.json", help="the registry login skopeo uses (what `docker login` wrote)")
     sy.add_argument("--summary-file", type=Path, help="append the table here (GITHUB_STEP_SUMMARY)")
     args = parser.parse_args(argv)
     try:
@@ -294,7 +359,7 @@ def main(argv: Sequence[str] | None = None, run: Runner = _default_runner) -> in
         if args.command == "packages":
             print("\n".join(package_names(entries, args.prefix)))
             return 0
-        results = sync(entries, args.prefix, run, dry_run=args.dry_run)
+        results = sync(entries, args.prefix, run, dry_run=args.dry_run, authfile=args.authfile)
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
