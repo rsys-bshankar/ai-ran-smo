@@ -28,6 +28,7 @@ How each kind of write reaches O1:
 
 import datetime
 import json
+import time
 import uuid
 from typing import cast
 
@@ -62,6 +63,12 @@ _r1 = R1Client()
 sdk = AiRuntimeSdk(_r1)
 
 RAPP_ID = "coverage-optimization-rapp"
+
+# The fulfilment report of a dispatched Intent is not there when the dispatch answers: Intent Service queues the push to the handler (an outbox row, sent
+# right after the commit with a 2 s timeout, then retried by the delivery sweep every few seconds), and the handler enacts the change and publishes the
+# report afterwards. `_intent_actions` therefore polls for it, at most this long, every this often, before it counts the change as not enacted.
+INTENT_REPORT_WAIT_SECONDS = 30.0
+INTENT_REPORT_POLL_SECONDS = 0.5
 DATASET, SIM_DATASET = "COVERAGE_PERFORMANCE", "COVERAGE_PERFORMANCE_SIM"
 NODE_GROUPS = ["coverage-optimization"]
 TILT_TARGET = "CommonBeamformingFunction.digitalTilt"
@@ -199,15 +206,21 @@ def _restore(inst: CoverageInstance, settings: dict[str, dict], execution_id: st
 
 
 def _intent_actions(intent_id: str) -> dict[str, dict]:
-    """{expectationId: DME action} from the Intent's fulfilment report."""
-    for report in sdk.intent.list_intent_reports(intent_id):
-        info = (report["attributes"].get("intentFulfilmentReport") or {}).get("additionalFulfilmentInfo")
-        if info:
-            try:
-                return {a["expectationId"]: a for a in json.loads(info).get("actions", [])}
-            except ValueError:
-                return {}
-    return {}
+    """{expectationId: DME action} from the Intent's fulfilment report.
+    Waits for it: it polls the reports until one carries `additionalFulfilmentInfo`, for at most `INTENT_REPORT_WAIT_SECONDS`; only then is the
+    answer empty (the change counts as not enacted)."""
+    deadline = time.monotonic() + INTENT_REPORT_WAIT_SECONDS
+    while True:
+        for report in sdk.intent.list_intent_reports(intent_id):
+            info = (report["attributes"].get("intentFulfilmentReport") or {}).get("additionalFulfilmentInfo")
+            if info:
+                try:
+                    return {a["expectationId"]: a for a in json.loads(info).get("actions", [])}
+                except ValueError:
+                    return {}
+        if time.monotonic() >= deadline:
+            return {}
+        time.sleep(INTENT_REPORT_POLL_SECONDS)
 
 
 def _changed_knob(d: CoverageDecision) -> tuple[str, int]:

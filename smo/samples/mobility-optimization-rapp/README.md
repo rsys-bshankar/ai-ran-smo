@@ -14,7 +14,7 @@ A Non-RT RIC rApp that classifies handover failures per neighbour relation and t
 | Operator API | served on `:8000` as `/instances/...`; the instance's base URL is registered at rApp Management (`operatorApiBase` when the instance is created) and R1 Termination reaches it at `/rapps/<instance>/operator/...`. The page the GUI draws for it is declared in `manifest.yaml` (`operatorUi`) |
 | Call flow | [23 Mobility Optimization closed loop](../../docs/call-flows/23-mobility-optimization-closed-loop.md) |
 | Demo runbook | [DEMO_RUNBOOK.md section 25](../../DEMO_RUNBOOK.md) (Demo 00-11) |
-| Unit tests | 46 passed (`tests/test_engine.py`, `tests/test_model.py`, `tests/test_routes.py`; 98 % of `app/`) |
+| Unit tests | 52 passed (`tests/test_engine.py`, `tests/test_model.py`, `tests/test_routes.py`; 98 % of `app/`) |
 
 ## What it does
 
@@ -23,7 +23,7 @@ One `POST /instances/{id}/evaluate` is one pass of the loop over the instance's 
 - **Data in.** Hourly per-relation `MM.*` counters (attempts, too-late, too-early, wrong-cell, ping-pong) are read from DME as `HO_PERFORMANCE`.
 - **Model.** The model computes the mobility problem rate (failures plus ping-pongs, per attempt, in %), names the dominant failure class, and predicts next-hour rate. An inference job is recorded in AIMgF.
 - **Decision.** The engine checks the last change's KPI, then the guards, then the prediction, then takes one bounded CIO step.
-- **Autonomy dispatch.** CIO changes (RAISE or LOWER) go to `AutonomyDispatch`. SHADOW only records a recommendation. ASSIST waits for the operator, and `reconcile` settles it afterwards. AUTONOMOUS goes through an Intent, the SA SMOS O1-CM handler, DME and RAN NF OAM.
+- **Autonomy dispatch.** CIO changes (RAISE or LOWER) go to `AutonomyDispatch`. SHADOW only records a recommendation. ASSIST waits for the operator, and `reconcile` settles it afterwards. AUTONOMOUS goes through an Intent, the SA SMOS O1-CM handler, DME and RAN NF OAM. The handler publishes its fulfilment report after the dispatch answers (and later still when Intent Service has to retry the push), so the rApp polls for the report, every 0.5 s for at most 30 s (`INTENT_REPORT_WAIT_SECONDS`), before it counts a change as `NOT_ENACTED`.
 - **O1 write.** `NRCellRelation.cellIndividualOffset` is written (six identical entries per TS 28.541). At deploy, the DMRO bounds are written to `DMROFunction`.
 - **Verify.** Every write is read back over O1. A failed or unverified write is rolled back to the previous CIO.
 - **Decision record.** The direct writes (revert, rollback, and the DMRO bounds at deploy) send a `decision` (`PR-AI-13`): a reference to the execution, the model version and the reason in words, kept by RAN NF OAM as the decision record of the config job. Writes made through an Intent carry none.
@@ -101,7 +101,7 @@ Paths are relative to the service root; through R1 Termination they sit under `/
 
 ```bash
 cd smo/samples/mobility-optimization-rapp
-PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # 46 passed
+PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # 52 passed
 ```
 
 The demo runs against a live stack, from inside the compose network (for example the `r1-termination` container). Steps are Demo 00 to 11:

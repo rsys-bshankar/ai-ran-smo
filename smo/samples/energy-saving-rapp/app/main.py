@@ -38,6 +38,7 @@ same DME path.
 
 import datetime
 import json
+import time
 import uuid
 from typing import cast
 
@@ -73,6 +74,12 @@ _r1 = R1Client()
 sdk = AiRuntimeSdk(_r1)
 
 RAPP_ID = "energy-saving-rapp"
+
+# The fulfilment report of a dispatched Intent is not there when the dispatch answers: Intent Service queues the push to the handler (an outbox row, sent
+# right after the commit with a 2 s timeout, then retried by the delivery sweep every few seconds), and the handler enacts the change and publishes the
+# report afterwards. `_intent_actions` therefore polls for it, at most this long, every this often, before it counts the change as not enacted.
+INTENT_REPORT_WAIT_SECONDS = 30.0
+INTENT_REPORT_POLL_SECONDS = 0.5
 DATASET, SIM_DATASET = "PRB_UTILIZATION", "PRB_UTILIZATION_SIM"
 NODE_GROUPS = ["energy-saving"]
 
@@ -210,15 +217,21 @@ def _restore(inst: EnergySavingInstance, cells: list[str], execution_id: str, re
 
 def _intent_actions(intent_id: str) -> list[dict]:
     """The DME actions the intent handler took, from the Intent's own
-    fulfilment report (TS 28.312 IntentReport, additionalFulfilmentInfo)."""
-    for report in sdk.intent.list_intent_reports(intent_id):
-        info = (report["attributes"].get("intentFulfilmentReport") or {}).get("additionalFulfilmentInfo")
-        if info:
-            try:
-                return json.loads(info).get("actions", [])
-            except ValueError:
-                return []
-    return []
+    fulfilment report (TS 28.312 IntentReport, additionalFulfilmentInfo).
+    Waits for it: it polls the reports until one carries `additionalFulfilmentInfo`, for at most `INTENT_REPORT_WAIT_SECONDS`; only then is the
+    answer empty (the change counts as not enacted)."""
+    deadline = time.monotonic() + INTENT_REPORT_WAIT_SECONDS
+    while True:
+        for report in sdk.intent.list_intent_reports(intent_id):
+            info = (report["attributes"].get("intentFulfilmentReport") or {}).get("additionalFulfilmentInfo")
+            if info:
+                try:
+                    return json.loads(info).get("actions", [])
+                except ValueError:
+                    return []
+        if time.monotonic() >= deadline:
+            return []
+        time.sleep(INTENT_REPORT_POLL_SECONDS)
 
 
 def _finish_lock(db: Session, inst: EnergySavingInstance, rows: dict, decisions: dict[str, EnergySavingDecision],
