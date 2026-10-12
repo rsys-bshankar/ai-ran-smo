@@ -35,3 +35,5 @@ The scripts take the same inputs, so a report can be checked on a laptop: `scrip
 
 An external test is a criterion for 1.0.0, commissioned after the security hardening items and against the 0.5.0 release candidate or later (`docs/VALIDATION.md`, V-7c). What it
 should be given is in `docs/PENTEST_SCOPE.md`.
+
+**The token scan runs without the gateway's rate limiter.** `dast-authenticated` adds `docker-compose.load.yml` to `COMPOSE_FILE` (`R1_RATE_PER_SECOND=0`): ZAP's active scan sends thousands of requests from one caller, and a limiter that answers some of a true/false payload pair with 429 and the rest with 422 looks to ZAP's boolean-based rule (40018) like an injection. The limiter is tested by the stress lane and the unit and integration suites, not by this scan. If a `SQL Injection [40018]` alert appears, read the "gateway requests by status" line of the job: 429 in it means the limiter is back on.

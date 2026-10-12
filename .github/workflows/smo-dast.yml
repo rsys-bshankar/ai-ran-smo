@@ -151,7 +151,10 @@ jobs:
           - {role: internal, group: b, modules: "nfo focom aimgf mlmr mllf"}
           - {role: internal, group: c, modules: "ran-analytics mdaf intent-service so-smos sa-smos"}
     env:
-      COMPOSE_FILE: docker-compose.yml:.ci-mirror/docker-compose.mirror.yml
+      # docker-compose.load.yml: the gateway's per-caller rate limiter is off for this throwaway stack. ZAP's active scan sends thousands of requests from one caller; with the
+      # limiter on, some of the answers to its paired true/false payloads were 429 and the others 422, which its boolean-based SQL injection rule (40018) reads as an injection
+      # (OPEN_ITEMS.md QA-9.1). The limiter itself is tested where it is meant to be (the stress lane, the unit and integration suites).
+      COMPOSE_FILE: docker-compose.yml:docker-compose.load.yml:.ci-mirror/docker-compose.mirror.yml
       MODULES: ${{ matrix.modules }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -189,9 +192,14 @@ jobs:
             python3 scripts/dast_gateway_spec.py "docs/openapi/$m.json" "/$m" "../zap-wrk/$m.json"
             chmod a+r "../zap-wrk/$m.json"
             # scanner.maxScanDurationInMins: a module's active scan is cut at 5 minutes; -I: ZAP's own exit status is not the verdict (the baseline comparison is)
-            docker run --rm --network "$network" -v "$PWD/../zap-wrk:/zap/wrk:rw" \
-              -e ZAP_AUTH_HEADER=Authorization -e ZAP_AUTH_HEADER_VALUE="Bearer $token" -e ZAP_AUTH_HEADER_SITE=r1-termination "$ZAP_IMAGE" \
-              zap-api-scan.py -t "$m.json" -f openapi -O http://r1-termination:8000 -r "zap-$m.html" -J "zap-$m.json" -I -z "-config scanner.maxScanDurationInMins=5" | grep -E "Number of Imported URLs|Total of|FAIL-NEW|WARN-NEW" || true
+            # a second try only when ZAP wrote no report at all (it once could not bind its proxy port, "Address already in use", and scanned nothing)
+            for attempt in 1 2; do
+              docker run --rm --network "$network" -v "$PWD/../zap-wrk:/zap/wrk:rw" \
+                -e ZAP_AUTH_HEADER=Authorization -e ZAP_AUTH_HEADER_VALUE="Bearer $token" -e ZAP_AUTH_HEADER_SITE=r1-termination "$ZAP_IMAGE" \
+                zap-api-scan.py -t "$m.json" -f openapi -O http://r1-termination:8000 -r "zap-$m.html" -J "zap-$m.json" -I -z "-config scanner.maxScanDurationInMins=5" | grep -E "Number of Imported URLs|Total of|FAIL-NEW|WARN-NEW" || true
+              [ -s "../zap-wrk/zap-$m.json" ] && break
+              echo "::warning::ZAP wrote no report for $m (attempt $attempt)"
+            done
             cp "../zap-wrk/zap-$m.html" "../zap-wrk/zap-$m.json" ../scan-out/ 2>/dev/null
             echo "== $m as ${{ matrix.role }}"
             python3 scripts/dast_baseline.py zap security/zap-baseline.json "../scan-out/zap-$m.json" || status=1
