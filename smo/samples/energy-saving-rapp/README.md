@@ -15,7 +15,7 @@ A Non-RT RIC rApp that predicts sustained low PRB utilisation from O1 PM data, p
 | Operator API | served on `:8000` as `/instances/...`; the instance's base URL is registered at rApp Management (`operatorApiBase` when the instance is created) and R1 Termination reaches it at `/rapps/<instance>/operator/...`. The page the GUI draws for it is declared in `manifest.yaml` (`operatorUi`) |
 | Call flow | [22-energy-saving-closed-loop.md](../../docs/call-flows/22-energy-saving-closed-loop.md) |
 | Demo runbook | [DEMO_RUNBOOK.md](../../DEMO_RUNBOOK.md) section 24 (`demo.py` steps 00-11) |
-| Unit tests | 61 passed |
+| Unit tests | 63 passed |
 
 ## What it does
 
@@ -25,7 +25,7 @@ One pass of the closed loop is `POST /instances/{id}/evaluate`; its `X-Correlati
 - Model: an AIMgF inference job on the ACTIVE MLIF runtime; the model returns `futurePrb`, `recommendedState` and `confidence` for each cell.
 - Decision: `app/engine.py` returns LOCK, UNLOCK or NO_CHANGE per cell after the safety evaluation.
 - Idempotency: a cell whose live O1 value already equals the wanted one gets no action (`NO_ACTION_ALREADY_IN_STATE`).
-- Autonomy dispatch (LOCK only): the LOCK expectation goes to `sdk.intent` as an AutonomyDispatch. SHADOW records it as `SHADOWED`; ASSIST waits in `AWAITING_SCOPE` until an operator resolves or rejects it; AUTONOMOUS runs Intent, SA SMOS O1-CM handler, DME, RAN NF OAM, NETCONF.
+- Autonomy dispatch (LOCK only): the LOCK expectation goes to `sdk.intent` as an AutonomyDispatch. SHADOW records it as `SHADOWED`; ASSIST waits in `AWAITING_SCOPE` until an operator resolves or rejects it; AUTONOMOUS runs Intent, SA SMOS O1-CM handler, DME, RAN NF OAM, NETCONF. The handler publishes its fulfilment report after the dispatch answers (and later still when Intent Service has to retry the push), so the rApp polls for the report, every 0.5 s for at most 30 s (`INTENT_REPORT_WAIT_SECONDS`), before it counts a change as `NOT_ENACTED`.
 - O1 write (UNLOCK, rollback, override): these restore service, so they go straight to DME `/actions` in every enforcing mode, each with its own `actionId`. In SHADOW an UNLOCK is only recorded. Each such write sends a `decision` (`execute_action(decision=...)`, `PR-AI-13`): a reference to the execution (`inputsRef`), the model version and the reason in words (`rationale`), kept by RAN NF OAM as the decision record of the config job and shown to a person asked to approve it. The writes that go through an Intent are made by the handler and carry no `decision`.
 - Verify: every write is read back with `sdk.data.read_config`.
 - Revert: a failed, partial or unverified LOCK is rolled back to UNLOCKED through the same DME path, re-sent once if the read-back still disagrees. Every pass writes one `energy_saving_decision` row per cell (prediction, safety, intent, action, verification, rollback, final state).
@@ -104,7 +104,7 @@ Served on port 8000. R1 Termination reaches it at `/rapps/<instance>/operator/..
 
 ## Run and test
 
-Unit tests (61 passed):
+Unit tests (63 passed):
 
 ```bash
 cd smo/samples/energy-saving-rapp && PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q

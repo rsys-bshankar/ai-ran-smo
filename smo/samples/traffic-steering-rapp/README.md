@@ -16,7 +16,7 @@ cell individual offset.
 | Operator API | served on `:8000` as `/instances/...`; the instance's base URL is registered at rApp Management (`operatorApiBase` when the instance is created) and R1 Termination reaches it at `/rapps/<instance>/operator/...`. The page the GUI draws for it is declared in `manifest.yaml` (`operatorUi`) |
 | Call flow | [25 Traffic Steering closed loop](../../docs/call-flows/25-traffic-steering-closed-loop.md) |
 | Demo runbook | [DEMO_RUNBOOK.md section 27](../../DEMO_RUNBOOK.md) (Demo 00-11) |
-| Unit tests | 55 passed (`tests/test_engine.py`, `tests/test_model.py`, `tests/test_routes.py`; 98 % of `app/`) |
+| Unit tests | 61 passed (`tests/test_engine.py`, `tests/test_model.py`, `tests/test_routes.py`; 98 % of `app/`) |
 
 ## What it does
 
@@ -32,7 +32,7 @@ One pass is `POST /instances/{id}/evaluate`, per source cell:
   and 70 nothing changes; below 50 existing steering is released one step.
 - Dispatch: one AutonomyDispatch per pass, one expectation per step. SHADOW
   only recommends, ASSIST waits for the operator, AUTONOMOUS goes through an
-  Intent, the SA SMOS O1-CM handler, DME and RAN NF OAM.
+  Intent, the SA SMOS O1-CM handler, DME and RAN NF OAM. The handler publishes its fulfilment report after the dispatch answers (and later still when Intent Service has to retry the push), so the rApp polls for the report, every 0.5 s for at most 30 s (`INTENT_REPORT_WAIT_SECONDS`), before it counts a change as `NOT_ENACTED`.
 - O1 write: sets the reselection priority or the relation's CIO, then reads
   the value back to verify. A failed or unverified write is rolled back
   directly through DME `/actions`. Each direct write sends a `decision`
@@ -125,7 +125,7 @@ This package declares:
 ## Run and test
 ```bash
 cd traffic-steering-rapp
-PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # 55 passed
+PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # 61 passed
 ```
 Demo, run inside the compose network (e.g. from `r1-termination`):
 ```bash

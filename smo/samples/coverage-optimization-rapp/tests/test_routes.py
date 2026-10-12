@@ -140,6 +140,10 @@ class FakePlatform:
         return self.dispatch
 
     def list_intent_reports(self, intent_id):
+        self.report_reads = getattr(self, "report_reads", 0) + 1
+        if self.report_reads <= self.dispatch.get("lateReport", 0) or self.dispatch.get("silentReport"):
+            # the handler has not published yet: only the RECEIVED report Intent Service wrote when it stored the intent
+            return [{"attributes": {"intentFulfilmentReport": {"intentFulfilmentInfo": {"fulfilmentStatus": "NOT_FULFILLED", "notFullfilledState": "RECEIVED"}}}}]
         if self.dispatch.get("noReport"):
             return [{"attributes": {}}, {"attributes": {"intentFulfilmentReport": {"additionalFulfilmentInfo": "{not json"}}}]
         info = json.dumps({"actions": [{"expectationId": e["expectationId"], "actionId": "a-1", "status": self.action_status}
@@ -549,3 +553,25 @@ def test_the_sim_producer_registers_publishes_and_answers_dme_callbacks(client, 
     assert client.get("/sim-producer/health").json() == {"status": "healthy"}
     assert client.post("/sim-producer/jobs", json={"dataJobId": "j"}).json() == {"status": "accepted"}
     assert client.delete("/sim-producer/jobs/j-1").status_code == 204
+
+
+def test_a_fulfilment_report_that_arrives_after_the_dispatch_is_waited_for(client, platform, r1, monkeypatch):
+    """The handler publishes its report after the dispatch answers (the push is an outbox row, retried if the first send times out): the first reads
+    find only the RECEIVED report, and the change is still enacted, verified and recorded once the report is there; it is not NOT_ENACTED."""
+    monkeypatch.setattr(main, "INTENT_REPORT_POLL_SECONDS", 0.0)
+    instance_id = _deployed(client, platform, r1)
+    platform.dispatch = _dispatched(lateReport=3)
+    moves = _moved(_evaluate(client, instance_id))
+    assert platform.report_reads == 4
+    assert moves and all(d["outcome"] == "EXECUTED" and d["verification"]["result"] == "VERIFIED" for d in moves)
+
+
+def test_the_wait_for_a_fulfilment_report_is_bounded(client, platform, r1, monkeypatch):
+    """A handler that never publishes does not hang the evaluation: after INTENT_REPORT_WAIT_SECONDS the change counts as NOT_ENACTED and is rolled back."""
+    monkeypatch.setattr(main, "INTENT_REPORT_WAIT_SECONDS", 0.05)
+    monkeypatch.setattr(main, "INTENT_REPORT_POLL_SECONDS", 0.01)
+    instance_id = _deployed(client, platform, r1)
+    platform.dispatch = _dispatched(silentReport=True)
+    moves = _moved(_evaluate(client, instance_id))
+    assert platform.report_reads >= 2
+    assert moves and all(d["outcome"] == "ACTION_FAILED_ROLLED_BACK" and d["action"]["status"] == "NOT_ENACTED" for d in moves)

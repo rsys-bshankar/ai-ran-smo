@@ -14,7 +14,7 @@ A Non-RT RIC rApp that learns how weak coverage, overshoot and pilot pollution r
 | Operator API | served on `:8000` as `/instances/...`; the instance's base URL is registered at rApp Management (`operatorApiBase` when the instance is created) and R1 Termination reaches it at `/rapps/<instance>/operator/...`. The page the GUI draws for it is declared in `manifest.yaml` (`operatorUi`) |
 | Call flow | [24 Coverage Optimization closed loop](../../docs/call-flows/24-coverage-optimization-closed-loop.md) |
 | Demo runbook | [DEMO_RUNBOOK.md section 26](../../DEMO_RUNBOOK.md) (Demo 00-11) |
-| Unit tests | 48 passed (`tests/test_engine.py`, `tests/test_model.py`, `tests/test_routes.py`; 98 % of `app/`) |
+| Unit tests | 54 passed (`tests/test_engine.py`, `tests/test_model.py`, `tests/test_routes.py`; 98 % of `app/`) |
 
 ## What it does
 
@@ -24,7 +24,7 @@ One `POST /instances/{id}/evaluate` is one pass of the loop over the whole clust
 - **KPI check first.** While a change set is OBSERVING, nothing else moves. After 60 minutes of post-change PM it is confirmed, or reverted if the cluster got worse.
 - **Model.** The sensitivities predict how each problem share responds to a cell's own step and, weighted by overlap, to its neighbours' steps. An inference job is recorded in AIMgF.
 - **Decision.** Guards and bounds decide which moves each cell may make; the joint optimiser picks the best move set (at most 2 cells).
-- **Autonomy dispatch.** The change set goes to one `AutonomyDispatch` with one expectation per cell. SHADOW only recommends, ASSIST waits for the operator (`reconcile` settles it), AUTONOMOUS goes through an Intent, the SA SMOS O1-CM handler, DME and RAN NF OAM.
+- **Autonomy dispatch.** The change set goes to one `AutonomyDispatch` with one expectation per cell. SHADOW only recommends, ASSIST waits for the operator (`reconcile` settles it), AUTONOMOUS goes through an Intent, the SA SMOS O1-CM handler, DME and RAN NF OAM. The handler publishes its fulfilment report after the dispatch answers (and later still when Intent Service has to retry the push), so the rApp polls for the report, every 0.5 s for at most 30 s (`INTENT_REPORT_WAIT_SECONDS`), before it counts a change as `NOT_ENACTED`.
 - **O1 write and verify.** `digitalTilt` or `configuredMaxTxPower` is written and read back. A failed or unverified write is rolled back.
 - **Revert.** A degraded cluster restores every cell in the set straight through DME `/actions`, with a `decision` (`PR-AI-13`): a reference to the execution, the model version and the reason in words, kept by RAN NF OAM as the decision record of the job. Writes made through an Intent carry none.
 - **Audit.** One decision row per cell per pass, keyed by the request's correlation id.
@@ -100,7 +100,7 @@ Paths are relative to the service root; through R1 Termination they sit under `/
 
 ```bash
 cd smo/samples/coverage-optimization-rapp
-PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # 48 passed
+PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # 54 passed
 ```
 
 The demo runs against a live stack, from inside the compose network (for example the `r1-termination` container). Steps are Demo 00 to 11:

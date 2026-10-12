@@ -20,7 +20,7 @@ several specs (or none) rather than implement exactly one 1:1.
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 
-from .errors import install_integrity_handlers, install_out_of_range_handler
+from .errors import install_integrity_handlers, install_out_of_range_handler, install_validation_error_handler, install_validation_error_handler
 
 BEARER_SCHEME_NAME = "r1BearerAuth"
 ERROR_ENVELOPE = "ErrorEnvelope"
@@ -38,6 +38,8 @@ def apply_r1_gateway_security(app: FastAPI, *, public_paths: frozenset[str] = fr
     """
     app.version = R1_CONTRACT_VERSION
     install_out_of_range_handler(app)  # a number too large for its column is a 422, not a 500 (errors.py)
+    install_validation_error_handler(app)  # a 422 for a refused parameter no longer echoes the caller's input (errors.py, OPEN_ITEMS QA-9.1)
+    install_validation_error_handler(app)  # a 422 for a refused parameter no longer echoes the caller's input (errors.py, OPEN_ITEMS QA-9.1)
     install_integrity_handlers(app)    # a reference to nothing, a duplicate, a value a CHECK refuses: 4xx; anything else unhandled: a problem document (errors.py)
 
     def custom_openapi() -> dict:
