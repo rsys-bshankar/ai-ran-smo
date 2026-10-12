@@ -3,6 +3,7 @@ name: SMO soak
 # PR-V-9b: a steady load for a long time, with the stack watched: memory and open file descriptors of the gateway, SME and RAN NF OAM, the database connections and
 # the notifications waiting in the outbox are sampled every minute; at the end smo/scripts/soak_check.py compares the first third of the run with the last
 # and fails if anything grew (memory 25 % and 50 MiB, descriptors 50, connections 10, outbox 100), and the load itself must have had no errors (0.1 % allowed).
+# The load takes a new token every 30 minutes (scripts/load_run.py --token-refresh): SME's tokens last an hour, so a 120-minute run on one token is refused (401) on every route after the first hour.
 # Weekly for two hours, and on demand with the minutes you choose (a release candidate: 360, the most one job can run). Not a required check.
 
 on:
@@ -101,8 +102,12 @@ jobs:
             [ -f soak-out/load-results.md ] && cat soak-out/load-results.md; echo
             python3 scripts/soak_check.py soak-out/soak-samples.csv | tee soak-out/soak-check.md
           } >> "$GITHUB_STEP_SUMMARY"
-          python3 scripts/soak_check.py soak-out/soak-samples.csv > /dev/null
-          test "$(cat soak-out/load-exit)" = "0"
+          # which of the two failed, and the numbers, in the log itself (the block above goes only to the job summary)
+          status=0
+          python3 scripts/soak_check.py soak-out/soak-samples.csv || { echo "::error::soak_check: something grew, or could not be measured (table above)"; status=1; }
+          [ -f soak-out/load-results.md ] && cat soak-out/load-results.md
+          test "$(cat soak-out/load-exit)" = "0" || { echo "::error::the load itself failed (exit $(cat soak-out/load-exit)): see the error timeline above and soak-out/load.log"; status=1; }
+          exit $status
 
       - name: Container logs on failure
         if: ${{ failure() }}

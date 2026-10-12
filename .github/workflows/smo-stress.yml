@@ -4,7 +4,7 @@ name: SMO stress and failure injection
 #   limiter   a burst past the per-caller budget -> 429 with Retry-After, never a 5xx; served again after the wait
 #   oversize  a body over the 1 MiB cap -> 413; the gateway keeps answering
 #   saturate  callers in flight ramped 20 -> 200 (rate limiter off) -> only 200, or 429/503 with Retry-After; no hang, no other 5xx
-#   sme       SME stopped -> 503 with Retry-After within the deadline (the token check cannot be answered); started again -> 200 within 90 s
+#   sme       SME stopped, introspection cache off -> 503 with Retry-After within the deadline (the token check cannot be answered); started again -> 200 within 90 s
 #   limiter-shared  three gateway replicas (docker-compose.stress-shared.yml): one burst; with each replica's own buckets (the control) several budgets get through, with R1_RATE_STORE=postgres
 #             about one (SEC-8.5 under load, across replicas); the job also counts the requests each replica answered, so a burst that reached one replica cannot pass for either
 #   database  Postgres stopped -> a database-backed route answers with a 5xx within the deadline (no hang); started again -> 200 within 90 s
@@ -79,8 +79,10 @@ jobs:
             echo "### Stress and failure injection"; echo; echo '```'
             stress limiter --burst 100 || status=1
             stress oversize  || status=1
-            # the rate limiter off for the saturation ramp: the gateway is recreated with the load override
-            docker compose -f docker-compose.yml -f docker-compose.load.yml -f .ci-mirror/docker-compose.mirror.yml up -d r1-termination
+            # the rate limiter off for the saturation ramp: the gateway is recreated with the load override. The introspection cache is off too (the shipped default is 30 s):
+            # the SME scenario below asks what the gateway does when SME cannot answer a token check, and a token checked in the last 30 s is served from the cache without
+            # asking (r1-termination/README.md, "Introspection cache": SME unreachable), which is a gain and not what this scenario measures.
+            R1_INTROSPECTION_CACHE_SECONDS=0 docker compose -f docker-compose.yml -f docker-compose.load.yml -f .ci-mirror/docker-compose.mirror.yml up -d r1-termination
             for i in $(seq 1 30); do curl -fsS http://localhost:8080/health > /dev/null 2>&1 && break; sleep 2; done
             stress saturate  || status=1
             # the database taken away, then given back

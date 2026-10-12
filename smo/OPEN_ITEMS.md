@@ -1281,6 +1281,7 @@ Nothing open (GUI-9.10 and GUI-9.11 closed: `HISTORY.md` PR-GUI-9d).
 | QA-7.2 | Same for `ran-analytics`, `mock-o1-adaptor`, `so-smos`, `r1-termination` | Counts raised, one PR each | – |
 | QA-7.3 | Coverage floor in CI (done: `coverage_floors.json`, `scripts/coverage_floor.py`) | Floor enforced | QA-7.1 |
 | QA-8.1 | Nightly lane: NETCONF server | Job green | SB-1.9 |
+| QA-9.1 | **The DAST lane "ZAP through the gateway with a token" reports `SQL Injection [40018]` (high) since 11 October, on a different route each run** (`HISTORY.md` "The heavy lanes red since 11 October"). Not caused by an injectable parameter that anyone has found: the routes are unchanged modules too (SME, MLMR), the scan is not repeatable (a group red on `main` was green on the re-run), and the payloads (`limit=102-2`, `total=true AND 1=1`) are refused with a 422 by the framework. The next run's job summary now lists the gateway's requests by status. | Read the `dast-authenticated-*` artifacts' `zap-<module>.json` (the alert's attack, evidence and "other info") and the status line of the new step; if 429 or 5xx are in it, give the scan a gateway without the per-caller limiter (as `docker-compose.load.yml` does) or ZAP a lower rate; if not, find which request pair ZAP compares | – |
 
 ### 5.16 Suggested first slices
 
