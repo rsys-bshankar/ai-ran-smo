@@ -55,7 +55,7 @@ jobs:
 
       - name: Create the three-node cluster and load the images
         run: |
-          kind create cluster --name smo --config smo/deploy/helm/smo/ci/kind-3node.yaml --wait 180s
+          kind create cluster --name smo --image kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5 --config smo/deploy/helm/smo/ci/kind-3node.yaml --wait 180s
           kubectl get nodes
           kind load docker-image --name smo $(docker image ls 'local/smo-*' --format '{{.Repository}}:{{.Tag}}')
 
@@ -171,7 +171,7 @@ jobs:
 
       - name: Create the cluster, load the images, install metrics-server
         run: |
-          kind create cluster --name smo --wait 180s
+          kind create cluster --name smo --image kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5 --wait 180s
           kind load docker-image --name smo $(docker image ls 'local/smo-*' --format '{{.Repository}}:{{.Tag}}')
           curl -fsSL -o metrics-server.yaml https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.7.2/components.yaml
           echo "f103539a54ed72efe66616afc74a8bfaed651703cb3918797599046af5617441  metrics-server.yaml" | sha256sum -c -

@@ -139,7 +139,7 @@ jobs:
     env:
       # Keycloak is reached as http://keycloak:8180 from both sides (8180, not 8080: compose publishes R1 on the runner's 8080): the backend's container (a network alias on the compose network) and the
       # browser on this runner (an /etc/hosts entry below). The issuer Keycloak puts in its tokens is the same name (KC_HOSTNAME).
-      KEYCLOAK_IMAGE: quay.io/keycloak/keycloak:26.4
+      KEYCLOAK_IMAGE: quay.io/keycloak/keycloak:26.4@sha256:9409c59bdfb65dbffa20b11e6f18b8abb9281d480c7ca402f51ed3d5977e6007
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 

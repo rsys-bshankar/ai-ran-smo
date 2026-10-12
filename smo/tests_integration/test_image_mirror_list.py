@@ -1,8 +1,9 @@
 """The GHCR mirror list (deploy/mirror/images.txt) stays in step with every third-party image the repository references (docs/MIRROR.md).
 
 Covers: the list parses and validates; every `name[:tag]@sha256:...` pin in docker-compose files, the Helm chart's values and CI values, Dockerfiles,
-workflows and scripts is in the list with the same digest (so a Dependabot bump that forgets the list fails here); every reference that pins NO
-digest is in the list as unpinned and in the known set below (so a NEW unpinned image fails); no list entry is stale; the workflow cannot run on a
+workflows and scripts is in the list with the same digest (so a Dependabot bump that forgets the list fails here); no third-party
+reference is left without a digest (the known-unpinned set below is empty, so a NEW unpinned image fails); every `kind create cluster` names the
+kind node image by `--image name:tag@sha256:...`, the same one everywhere and a listed one; no list entry is stale; the workflow cannot run on a
 pull request; docs/MIRROR.md names every package; no conflict marker is left in the mirror's files.
 No network and no fixtures; run: `cd smo && PYTHONPATH=shared python -m pytest tests_integration/test_image_mirror_list.py -q`.
 """
@@ -16,20 +17,16 @@ import yaml
 SMO_ROOT = Path(__file__).resolve().parent.parent
 REPO_ROOT = SMO_ROOT.parent
 
-# The references that pin no digest today (OPEN_ITEMS.md, PR-OPS-12). A new unpinned image must pin its digest; a pin added to one of these
-# shrinks this set and the list's `-` digest together.
-KNOWN_UNPINNED = {
-    "grafana/tempo:2.10.8",
-    "grafana/loki:3.7.8",
-    "fluent/fluent-bit:5.1.3",
-    "grafana/grafana:13.2.3",
-    "quay.io/keycloak/keycloak:26.4",
-}
+# The references that pin no digest (OPEN_ITEMS.md, PR-OPS-12.4 pinned the last five and the kind node image, so the set is empty). A new unpinned image
+# must pin its digest; adding a name here instead is the loosening this test exists to stop, and needs the list's `-` digest and a note saying why.
+KNOWN_UNPINNED: set[str] = set()
 
 _DIGEST_REF = re.compile(r"(?P<ref>[a-z0-9][a-z0-9._/-]*(?::[A-Za-z0-9_][A-Za-z0-9_.-]*)?)@(?P<digest>sha256:[0-9a-f]{64})")
 _YAML_IMAGE = re.compile(r"^[ \t]*(?:-[ \t]+)?image:[ \t]*[\"']?(?P<ref>[^\s\"'#]+)", re.M)
 _ENV_IMAGE = re.compile(r"^[ \t]*[A-Z][A-Z0-9_]*IMAGE[A-Z0-9_]*:[ \t]*[\"']?(?P<ref>[^\s\"'#]+)", re.M)
 _FROM = re.compile(r"^FROM[ \t]+(?:--\S+[ \t]+)?(?P<ref>\S+)(?:[ \t]+AS[ \t]+(?P<stage>\S+))?", re.M | re.I)
+_KIND_CREATE = re.compile(r"\bkind create cluster\b[^\n]*")
+_KIND_IMAGE = re.compile(r"--image[ =](?P<ref>kindest/node:[A-Za-z0-9_.-]+@sha256:[0-9a-f]{64})")
 _CONFLICT = re.compile(r"^(<{7}|={7}|>{7})( |$)", re.M)
 
 
@@ -95,7 +92,7 @@ def _listed() -> dict[str, "mirror.Entry"]:
 def test_the_list_parses_and_validates():
     """The committed list is well formed: every entry has a digest or a reason, no duplicates, valid mirror names (the rules of `mirror_images.validate`)."""
     entries = mirror.load()
-    assert len(entries) >= 15
+    assert len(entries) >= 19
     assert len({e.source for e in entries}) == len(entries)
 
 
@@ -119,8 +116,8 @@ def test_every_pinned_image_is_in_the_list_with_the_same_digest():
 
 
 def test_the_unpinned_references_are_the_known_set_and_are_listed_as_unpinned():
-    """The third-party references that carry no digest are exactly KNOWN_UNPINNED, each is in the list with a `-` digest and a note; a new unpinned
-    image (or a newly pinned one) changes the set and fails here, so an unpinned pull cannot slip in.
+    """The third-party references that carry no digest are exactly KNOWN_UNPINNED (empty today), each is in the list with a `-` digest and a note; a new
+    unpinned image (or a newly pinned one) changes the set and fails here, so an unpinned pull cannot slip in.
     """
     pinned, unpinned = references()
     unpinned -= {r for r in unpinned if r in pinned}  # a tag that is pinned elsewhere is a pin written twice, not an unpinned image
@@ -129,6 +126,26 @@ def test_the_unpinned_references_are_the_known_set_and_are_listed_as_unpinned():
     for ref in KNOWN_UNPINNED:
         assert ref in listed and listed[ref].digest is None and listed[ref].note, ref
     assert {s for s, e in listed.items() if e.digest is None} == KNOWN_UNPINNED
+
+
+def test_every_kind_cluster_names_one_pinned_node_image_and_it_is_listed():
+    """`kind create cluster` pulls the node image (kindest/node, Docker Hub) of the kind binary's default unless told: every call in a workflow or a script
+    must pass `--image kindest/node:<tag>@sha256:...`, all with the same value, and that image must be in the list (so it is mirrored) with that digest.
+    """
+    calls: list[tuple[Path, str]] = []
+    for paths in _scanned().values():
+        for path in paths:
+            calls += [(path, m.group(0)) for m in _KIND_CREATE.finditer(path.read_text(errors="replace"))]
+    assert len(calls) >= 6, "the scan found fewer kind clusters than the workflows create: the pattern or the globs are broken"
+    refs = set()
+    for path, line in calls:
+        found = _KIND_IMAGE.search(line)
+        assert found, f"{path.relative_to(REPO_ROOT)}: `{line.strip()}` has no `--image kindest/node:<tag>@sha256:<digest>`; kind would pull its default, unpinned"
+        refs.add(found.group("ref"))
+    assert len(refs) == 1, f"the kind clusters use {len(refs)} different node images: {sorted(refs)}"
+    name, digest = next(iter(refs)).split("@")
+    listed = _listed()
+    assert name in listed and listed[name].digest == digest and listed[name].mirror == "kind-node", name
 
 
 def test_no_list_entry_is_stale():
