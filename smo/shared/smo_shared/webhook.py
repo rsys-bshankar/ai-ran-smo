@@ -28,22 +28,33 @@ mean before the blocked ranges are applied (`_literal_ip`).
 
 `is_safe_webhook_destination` does not resolve DNS: unit tests across this build register fictional subscriber hostnames (`http://consumer/cb`,
 `http://rapp-1/cb`, ...) that do not resolve outside a real Docker Compose network, and the check also runs at enqueue time, where a lookup would be a
-network call per registration. The send itself (`_send`, `forward_to_destination`) does resolve the host and refuses the call when any address it resolves
-to is blocked, so a name that points at loopback or the metadata address is not called. A name that does not resolve is let through as before (the call
-then fails by itself). Residual risk, registered in OPEN_ITEMS.md: the resolver is asked once for the check and again by the HTTP client when it connects,
-so a name whose records change between the two (DNS rebinding) is not caught; closing that needs the client to connect to the vetted address, which
-the module-level `httpx` calls the callers and their tests rely on do not allow.
+network call per registration. The send itself (`_send`, `forward_to_destination`) resolves the host once (`_vet_resolution`) and refuses the call when any
+address it resolves to is blocked, so a name that points at loopback or the metadata address is not called.
+
+The connection then goes to the addresses that were vetted, not to whatever the name resolves to a second time (SEC-15.16, DNS rebinding). The callers and their
+tests call the module-level `httpx.post`/`get`/`delete` and `httpx.AsyncClient`, which take no transport, so the pin is applied one level down: while a send is
+in progress, a context variable holds `(host, port) -> vetted addresses`, and `httpcore`'s `connect_tcp` (the sync and the anyio backend, wrapped once at import,
+`_install_pinned_connect`) opens the socket to those addresses, in the order the resolver gave them, instead of resolving the name. Only the TCP connect changes:
+the request URL, the `Host` header, the TLS server name (SNI) and the certificate check all keep the original host name, and a literal IP is connected to
+as before. A name that did not resolve at the check is pinned to no address, so the connect fails and a record that appears in between is not followed. A
+redirect is not followed (httpx's default), so no second host is ever connected to; a proxy configured in the environment is connected to by its own name
+(the proxy resolves the destination and is a trusted part of the deployment's network).
 """
 
 import asyncio
+import contextlib
+import contextvars
 import ipaddress
 import logging
 import re
 import socket
 import time
 import unicodedata
+from collections.abc import Awaitable, Callable, Iterator
+from typing import Any, NamedTuple
 from urllib.parse import urlsplit
 
+import httpcore
 import httpx
 
 from . import metrics, mtls
@@ -158,25 +169,131 @@ def _resolved_addresses(host: str, port: int | None) -> list[ipaddress.IPv4Addre
     return found
 
 
-def _resolves_to_blocked_address(destination: str | None) -> bool:
-    """True when the host of `destination` resolves to at least one blocked address. Every address counts, not the first: a name with one public and one
-    loopback record could be connected to on either. A literal IP needs no lookup (the literal check has judged it), and a name that does not resolve is
-    not blocked here."""
+class _Vetting(NamedTuple):
+    """The outcome of vetting a destination's host: `blocked` (do not call), and for a host name `addresses`, every distinct address the one lookup gave (in the
+    resolver's order; empty when the name did not resolve). `addresses` is None for a literal IP and for a destination that is blocked for want of a host."""
+    blocked: bool
+    addresses: tuple[str, ...] | None
+
+
+def _vet_resolution(destination: str | None) -> _Vetting:
+    """Resolves the host of `destination` once and judges it. Blocked when the host resolves to at least one blocked address: every address counts, not the
+    first, because a name with one public and one loopback record could be connected to on either. A literal IP needs no lookup (the literal check has judged
+    it), and a name that does not resolve is not blocked here (its `addresses` are empty, and the send pins it to nothing)."""
     if not destination:
-        return True
+        return _Vetting(True, None)
     try:
         parts = urlsplit(destination)
         host, port = parts.hostname, parts.port
     except ValueError:
-        return True
+        return _Vetting(True, None)
     if not host:
-        return True
+        return _Vetting(True, None)
     try:
         if _literal_ip(host) is not None:
-            return False
+            return _Vetting(False, None)
     except ValueError:
-        return True
-    return any(_is_blocked_address(ip) for ip in _resolved_addresses(host, port))
+        return _Vetting(True, None)
+    found = _resolved_addresses(host, port)
+    return _Vetting(any(_is_blocked_address(ip) for ip in found), tuple(dict.fromkeys(str(ip) for ip in found)))
+
+
+def _resolves_to_blocked_address(destination: str | None) -> bool:
+    """True when the host of `destination` resolves to at least one blocked address (see `_vet_resolution`)."""
+    return _vet_resolution(destination).blocked
+
+
+# SEC-15.16: the connection goes to the vetted addresses. `(host, port) -> addresses` for the send in progress in this thread or task; None outside a send.
+_PINNED: contextvars.ContextVar[dict[tuple[str, int], tuple[str, ...]] | None] = contextvars.ContextVar("smo_webhook_pinned", default=None)
+_MARK, _CONNECT = "_smo_pinned", "connect_tcp"        # the attribute that marks a wrapped connect_tcp, and the method wrapped
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def _pin_key(destination: str) -> tuple[str, int] | None:
+    """The `(host, port)` the HTTP client will ask `connect_tcp` for when it calls `destination`, spelled as httpx spells it; None when httpx cannot read the URL."""
+    try:
+        url = httpx.URL(destination)
+    except httpx.InvalidURL:
+        return None
+    return url.raw_host.decode(), url.port or _DEFAULT_PORTS.get(url.scheme, 0)
+
+
+@contextlib.contextmanager
+def _pinned_to(destination: str | None, vetting: _Vetting) -> Iterator[None]:
+    """For the length of the block, a connection to the host of `destination` is opened to the addresses in `vetting` and the name is not looked up again. No-op for
+    a literal IP (nothing to resolve)."""
+    key = _pin_key(destination) if destination and vetting.addresses is not None else None
+    if key is None or vetting.addresses is None:
+        yield
+        return
+    token = _PINNED.set({**(_PINNED.get() or {}), key: vetting.addresses})
+    try:
+        yield
+    finally:
+        _PINNED.reset(token)
+
+
+def _pinned_addresses(host: str, port: int) -> tuple[str, ...] | None:
+    """The vetted addresses for a connection to `host`:`port` made inside `_pinned_to`; None when it is not pinned (connect as the client would)."""
+    pins = _PINNED.get()
+    return None if pins is None else pins.get((host, port))
+
+
+def _connect_pinned(connect: Callable[..., Any], host: str, port: int, args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
+    """Calls `connect(address, port, ...)` for each vetted address of `host`:`port` in turn and returns the first connection; the last failure is raised when
+    none connects (a `ConnectError` when the name has no vetted address). `connect` is the original `connect_tcp` with `self` bound."""
+    addresses = _pinned_addresses(host, port)
+    if addresses is None:
+        return connect(host, port, *args, **kwargs)
+    failure: Exception = httpcore.ConnectError("the destination had no vetted address")
+    for address in addresses:
+        try:
+            return connect(address, port, *args, **kwargs)
+        except (httpcore.ConnectError, httpcore.ConnectTimeout) as exc:
+            failure = exc
+    raise failure
+
+
+async def _connect_pinned_async(connect: Callable[..., Awaitable[Any]], host: str, port: int, args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
+    """`_connect_pinned` for the asynchronous backend."""
+    addresses = _pinned_addresses(host, port)
+    if addresses is None:
+        return await connect(host, port, *args, **kwargs)
+    failure: Exception = httpcore.ConnectError("the destination had no vetted address")
+    for address in addresses:
+        try:
+            return await connect(address, port, *args, **kwargs)
+        except (httpcore.ConnectError, httpcore.ConnectTimeout) as exc:
+            failure = exc
+    raise failure
+
+
+def _pin_sync(original: Callable[..., Any]) -> Callable[..., Any]:
+    """`original` (a synchronous backend's `connect_tcp`, unbound) as a function that connects to the vetted addresses inside `_pinned_to`; marked so it is wrapped once."""
+    def connect_tcp(self: Any, host: str, port: int, *args: Any, **kwargs: Any) -> Any:
+        return _connect_pinned(lambda h, p, *a, **k: original(self, h, p, *a, **k), host, port, args, kwargs)
+    setattr(connect_tcp, _MARK, True)
+    return connect_tcp
+
+
+def _pin_async(original: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
+    """`_pin_sync` for an asynchronous backend's `connect_tcp`."""
+    async def connect_tcp(self: Any, host: str, port: int, *args: Any, **kwargs: Any) -> Any:
+        return await _connect_pinned_async(lambda h, p, *a, **k: original(self, h, p, *a, **k), host, port, args, kwargs)
+    setattr(connect_tcp, _MARK, True)
+    return connect_tcp
+
+
+def _install_pinned_connect(sync_backend: type, async_backend: type) -> None:
+    """Wraps `connect_tcp` of a synchronous and an asynchronous httpcore backend class, once each, so a connection made inside `_pinned_to` goes to the vetted
+    address (SEC-15.16). TLS is started later by httpcore on the stream with the origin's host name as the server name, so SNI and the certificate check are unaffected."""
+    if not hasattr(getattr(sync_backend, _CONNECT), _MARK):
+        setattr(sync_backend, _CONNECT, _pin_sync(getattr(sync_backend, _CONNECT)))
+    if not hasattr(getattr(async_backend, _CONNECT), _MARK):
+        setattr(async_backend, _CONNECT, _pin_async(getattr(async_backend, _CONNECT)))
+
+
+_install_pinned_connect(httpcore.SyncBackend, httpcore.AnyIOBackend)
 
 
 def is_safe_webhook_destination(destination: str | None) -> bool:
@@ -204,14 +321,16 @@ def is_safe_webhook_destination(destination: str | None) -> bool:
 def _send(method: str, destination: str | None, **kwargs) -> httpx.Response | None:
     """The one place a callback leaves the process (PR-OBS-2.6): counted by outcome under the constant target `callback`, never by host
     (the destination is caller-supplied, so a host label would be unbounded)."""
-    if not is_safe_webhook_destination(destination) or _resolves_to_blocked_address(destination):
+    vetting = _vet_resolution(destination) if is_safe_webhook_destination(destination) else None
+    if vetting is None or vetting.blocked:
         if destination and method == "post":
             log.warning("webhook destination %r rejected by SSRF guard; notification dropped", destination)
         metrics.record_outbound("webhook", "callback", method, "blocked")
         return None
     started = time.perf_counter()
     try:
-        resp = getattr(httpx, method)(destination, **mtls.webhook_kwargs(destination), **kwargs)   # PR-SEC-2: the client certificate only to an https destination inside the deployment
+        with _pinned_to(destination, vetting):          # SEC-15.16: the connect goes to the addresses vetted above
+            resp = getattr(httpx, method)(destination, **mtls.webhook_kwargs(destination), **kwargs)   # PR-SEC-2: the client certificate only to an https destination inside the deployment
     except httpx.TimeoutException:
         metrics.record_outbound("webhook", "callback", method, "timeout", time.perf_counter() - started)
         return None
@@ -278,13 +397,15 @@ async def forward_to_destination(method: str, destination: str | None, *, header
     504 / 502 body: neither the exception text nor the destination is ever put in a response.
     """
     # the lookup blocks, so it runs in a thread: this coroutine serves the gateway's event loop
-    if not is_safe_webhook_destination(destination) or await asyncio.to_thread(_resolves_to_blocked_address, destination):
+    vetting = await asyncio.to_thread(_vet_resolution, destination) if is_safe_webhook_destination(destination) else None
+    if vetting is None or vetting.blocked:
         metrics.record_outbound("webhook", "operator-api", method.lower(), "blocked")
         return None
     started = time.perf_counter()
     try:
-        async with httpx.AsyncClient(timeout=timeout, **mtls.webhook_kwargs(destination)) as client:
-            resp = await client.request(method, str(destination), headers=headers, params=params, content=content)
+        with _pinned_to(destination, vetting):          # SEC-15.16
+            async with httpx.AsyncClient(timeout=timeout, **mtls.webhook_kwargs(destination)) as client:
+                resp = await client.request(method, str(destination), headers=headers, params=params, content=content)
     except httpx.TimeoutException:
         metrics.record_outbound("webhook", "operator-api", method.lower(), "timeout", time.perf_counter() - started)
         raise
