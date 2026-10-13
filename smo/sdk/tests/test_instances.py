@@ -1,6 +1,7 @@
 """`smo_sdk.instances`: an rApp instance's own identity inside the rApp process (docs/call-flows/01-rapp-onboarding-to-deployment.md, 01c and 01d).
 The credentials route, the request that acts for its instance, and `bootstrap`. Run with: cd smo/sdk && PYTHONPATH=.:../shared python -m pytest tests -q"""
 
+import types
 import uuid
 
 import pytest
@@ -72,10 +73,8 @@ class _Platform:
 
 
 def _sdk(outcome):
-    """An SDK whose `platform` is a `_Platform` with `outcome`."""
-    sdk = AiRuntimeSdk(r1=object())
-    sdk.platform = _Platform(outcome)
-    return sdk
+    """A stand-in for the SDK: only `platform`, a `_Platform` with `outcome` (all `instances.bootstrap` uses)."""
+    return types.SimpleNamespace(platform=_Platform(outcome))
 
 
 def test_bootstrap_reports_the_instance_up_only_with_its_credentials(app):
