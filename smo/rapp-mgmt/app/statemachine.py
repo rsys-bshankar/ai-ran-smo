@@ -77,6 +77,21 @@ def _reconsider_dme_registration(instance: RAppInstance, **_) -> None:
         pass
 
 
+def _close_dme_data_jobs(instance: RAppInstance, **_) -> None:
+    """OI-7-rapp-data-jobs-teardown: close the DME data jobs this instance opened as a consumer. The rApp acts as the instance (call flow 01c), so DME
+    recorded the instance's own invoker id as each job's `created_by`, and every job of it is deleted in one call (`DELETE /dme/data-jobs?created_by=`;
+    DME tells the producers). Left open, the jobs kept receiving every record of their type, and every PM fan-out of RAN NF OAM grew with each
+    terminate-and-redeploy. Run on the moves into UNDEPLOYED only, not on a crash: a crashed instance keeps its identity for a recover, and its jobs with
+    it. Best-effort, like the deregistrations: an unreachable DME must not stop a terminate. Jobs an rApp opened under its own identity (no instance
+    credentials) are not the instance's to close."""
+    if instance.oauth_client_id is None:
+        return
+    try:
+        R1Client().delete("/dme/data-jobs", params={"created_by": instance.oauth_client_id})
+    except httpx.HTTPError:
+        pass
+
+
 def _reconsider_sme_registration(instance: RAppInstance, **_) -> None:
     """HISTORY.md §7's Onboarding/rApp Mgmt finding 3 (SME auto-
     registration): the mirror image of _reconsider_dme_registration
@@ -132,10 +147,11 @@ def _terminate_side_effects(instance: RAppInstance, **_) -> None:
     # Reconsideration must run BEFORE credential revocation — it reads
     # instance.oauth_client_id as the DME producer_id/SME apfId, which
     # _revoke_credential clears to None.
-    """The transition action of every move into UNDEPLOYED: deregister the instance at DME, SME, RAN NF OAM (limit and approval policy), then revoke its credential.
+    """The transition action of every move into UNDEPLOYED: deregister the instance at DME, SME, RAN NF OAM (limit and approval policy), close its DME data jobs, then revoke its credential.
     The order matters: the deregistrations read `oauth_client_id` as the producer and provider id, and `_revoke_credential` sets it to None, so it must run last.
     """
     _reconsider_registrations(instance)
+    _close_dme_data_jobs(instance)
     _revoke_credential(instance)
 
 

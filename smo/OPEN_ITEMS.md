@@ -78,12 +78,6 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
 - **OI-7-nfo-scale-size** — Runtime scaling takes no target size: `POST /nfo/deployments/{id}/scale` has no
   replica or resource argument, so AIMgF `runtime/scale` cannot ask for one. Approach: add `replicas` /
   `resources` to the NFO scale call and the AIMgF scale request, and pass the manifest's runtime profile bounds.
-- **OI-7-rapp-data-jobs-teardown** — Terminating (or deleting) an rApp instance leaves the DME data jobs it opened as a consumer
-  (`consumerId` `<rapp>:<instanceId>`, one per lifecycle stage): rApp Management's teardown stops the package usage, the NFO deployment and the
-  credentials, not the data jobs, and the rApp is not told. They stay open and keep receiving every record of their type, so each
-  terminate-and-redeploy makes the PM fan-out of RAN NF OAM slower (it delivers each measurement to every open job, one DME record at a time;
-  seen as the demo's **2 · Load history PM** taking twice as long after one redeploy). Approach: a teardown step that asks the rApp to close
-  its jobs (its operator API, as the credentials push does) or DME deleting the jobs of a consumer id on rApp Management's word.
 
 ## 3. Spec conformance still open
 
@@ -330,7 +324,7 @@ Postgres table with `NOTIFY` at commit, the feed on DME, the state-machine hook 
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | MSG-6.1 | Resolve the hostname at send and apply the existing blocked-address rules to every result | Test with a hostname that resolves to loopback is refused | – |
-| MSG-6.2 | Connect to the checked address (pinned transport), keep the original `Host` | Rebinding test cannot switch addresses | MSG-6.1 |
+| MSG-6.2 | Connect to the checked address (pinned transport), keep the original `Host` | Rebinding test cannot switch addresses | MSG-6.1 (done, `SEC-15.16`, `HISTORY.md`) |
 | MSG-6.3 | Flag so fictional hostnames in unit tests keep working | Existing tests green | MSG-6.1 |
 
 ### 5.4 Security (`PR-SEC`)
@@ -456,7 +450,6 @@ of what the routes accept, PR 4 = clients, tooling and migrations; "none yet" me
 | SEC-15.6b | What remains of the MSAC credential (`SEC-15.6`; the SDK's `msac_credential`, DME passing the header on and RAN NF OAM asking an SMO module that carries `X-R1-On-Behalf-Of` for it are done, `HISTORY.md` `SEC-15.6b`): the `MGT-2` reach checks on reads and subscriptions use the gateway's invoker id as the Identity name, so there is no credential to present (needs a decision on how an rApp's Identity is named); the console cannot send the header; a credential is optional on an Identity (an Identity without one is trusted on the caller's word, as before); the Go and Java SDKs have no parameter for it | `ran-nf-oam/app/msac.py`, `gui`, `sdk-go`, `sdk-java` | A decision on how an rApp's Identity is named |
 | SEC-15.11b | The sign-in lockout (`SEC-15.11`) does not slow one account guessed from many addresses at once (each address gets its own 5 tries per name), and a source's throttle rows are never cleared or purged (`docs/RETENTION.md`); a deployment with a different number of proxies than `GUI_TRUSTED_PROXY_HOPS` says is wrong in one direction or the other (documented). Related: `SEC-8.6`, a request limiter on the login routes | `gui-bff/app` | A decision |
 | SEC-15.13b | SME's `POST /invoker-registrations` does not honour an `Idempotency-Key` (it would have to store the answer, which holds the onboarding secret in clear), so an SDK is kept from registering twice only by not repeating the call after a lost answer; the Java SDK now does that (`HISTORY.md` "PR-SEC-15 (part 4)"). A registration a lost answer left behind is an orphan invoker that SME's stale-invoker purge removes | `sme/app`, `sdk-java/` | none yet |
-| SEC-15.16 | The webhook guard resolves a host name once to check it and the HTTP client resolves it again to connect, so DNS rebinding between the two is not caught; closing it needs the client to connect to the vetted address (a pinned transport) | `shared/smo_shared/webhook.py` | none yet |
 
 Closed by this change (details in `CHANGELOG.md` and the `shared` README): the webhook SSRF guard accepted spellings of loopback, unspecified and link-local addresses
 (`localhost.`, `127.1`, `2130706433`, `0x7f.0.0.1`, octal, `0`, IPv4-mapped IPv6) and did not look at what a name resolves to; `roles.py` allow-list patterns ended in `$`, which

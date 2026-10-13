@@ -58,7 +58,7 @@ Also provided, outside that table: `db` (engine and session), `statemachine` (FS
 | One shared Postgres, partitioned by `moduleScope` columns, not per-module databases | Requirements v0.1 section 3. `db.py` offers one `Base`/engine; each module's models set and filter by their own scope. |
 | `R1Client` is synchronous `httpx` with one process-wide identity and token cache | Cross-module calls inside request handlers are sync. One invoker per module, shared by its replicas through the `module_identity` table (or pinned by `SMO_INVOKER_ID`/`SMO_INVOKER_SECRET`); refreshed 30 s before expiry and once on 401. |
 | When no token can be obtained, `R1Client` sends the call without `Authorization` and logs a warning rather than raising | R1 answers 401, which every caller already treats as an ordinary failed call. |
-| Webhook guard blocks by scheme and literal address only (no DNS resolution, no hostname allowlist) | Legitimate callback hosts (rApp/producer containers) are assigned at deploy time and unknown in advance; unit tests use fictional hostnames. Residual risk: a hostname resolving to a blocked address (DNS rebinding) is accepted. |
+| Webhook guard blocks by scheme and literal address, and at send by every address the host name resolves to; the connection then goes to those vetted addresses (no hostname allowlist) | Legitimate callback hosts (rApp/producer containers) are assigned at deploy time and unknown in advance; unit tests use fictional hostnames. The send resolves the name once and `httpcore`'s `connect_tcp` is pinned to the vetted addresses for the length of the call (`SEC-15.16`), so DNS rebinding between the check and the connect is closed; the URL, `Host` header, TLS server name and certificate check keep the host name. A proxy set in the environment is connected to by its own name. |
 | Webhook helpers never raise on an unreachable destination | Callbacks are best effort; each call site previously swallowed `httpx.HTTPError`. |
 | FSM base holds only a transition table; state lives on the entity | One table per model class, reused across instances. |
 | Error codes are tuples `(title, status)` in one `FrameworkError` class | One importable name per code; routes raise `framework_error(code, detail)`. |
@@ -170,7 +170,7 @@ The package installs no exception handler. FastAPI therefore serialises these as
 | Name | Contract |
 |---|---|
 | `is_safe_webhook_destination(dest)` | True only for `http`/`https` with a hostname that is not `localhost` (also `localhost.` and `*.localhost`), `metadata.google.internal` or `metadata`, and not an IP in a blocked range in any spelling a client accepts (`127.1`, `2130706433`, `0x7f.0.0.1`, octal, `0`, IPv4-mapped / 6to4 / NAT64 IPv6): loopback, link-local (includes 169.254.169.254), multicast, unspecified or reserved. Numeric-looking text that is not an address is refused. No DNS resolution here |
-| `post_webhook(dest, json, timeout=5.0)` | Best-effort POST; returns the `httpx.Response`, or `None` if the destination is missing/unsafe, or its host name resolves to a blocked address (every resolved address is checked; a name that does not resolve is attempted as before; DNS rebinding between the check and the connect is registered as `SEC-15.16`) (a warning is logged for an unsafe non-empty one) or the call raises `httpx.HTTPError` |
+| `post_webhook(dest, json, timeout=5.0)` | Best-effort POST; returns the `httpx.Response`, or `None` if the destination is missing/unsafe, or its host name resolves to a blocked address (every resolved address is checked; a name that does not resolve at the check is attempted but its connect fails, since the call is pinned to the addresses of the check; the connection goes to those addresses in the resolver's order, with the host name kept for `Host`, SNI and the certificate check, `SEC-15.16`) (a warning is logged for an unsafe non-empty one) or the call raises `httpx.HTTPError` |
 | `get_webhook(dest, timeout=5.0)` / `delete_webhook(dest, timeout=5.0)` | Same semantics for GET / DELETE (no log line on rejection) |
 
 Rule: any caller-supplied callback URL (`notificationDestination`, `callbackUri`, ...) is called only through these helpers, never a raw `httpx` call.
@@ -308,7 +308,7 @@ Defined but never raised anywhere in the repo: `NODE_GROUP_NOT_CLEARED` (MLLF de
 ### 2.8 Limits and open items
 
 - `R1Client` and the webhook helpers are synchronous; an async caller would block the event loop.
-- Webhook guard: DNS-rebinding residual risk accepted (1.5).
+- Webhook guard: DNS rebinding closed by connecting to the vetted addresses (`SEC-15.16`); a proxy configured in the environment resolves the destination itself and is trusted.
 - `db.engine` is built at import from `SMO_DATABASE_URL`; modules that need a different database in tests override `get_session` or use `make_test_engine()`.
 - Stale docstrings in the package: `__init__.py` and `db.py` say "fourteen modules"; the build has more services (documentation only, no behaviour).
 - No OPEN_ITEMS ids refer to this package.

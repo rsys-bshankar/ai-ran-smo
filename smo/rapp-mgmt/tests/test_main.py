@@ -7,6 +7,7 @@ Run with: pytest smo/rapp-mgmt/tests -q
 
 import uuid
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Column, Table, Uuid as UuidType, create_engine
@@ -317,11 +318,12 @@ def test_terminate_instance_deregisters_dme_producer(client, monkeypatch):
     resp = client.post(f"/instances/{created['instanceId']}/terminate")
     assert resp.status_code == 200
     workload_ref = client.get(f"/instances/{created['instanceId']}").json()["workloadRef"]
-    assert len(calls) == 4
+    assert len(calls) == 5
     assert calls[0] == ("/dme/production-capabilities", {"producer_id": created["oauthClientId"]})
     assert calls[1] == (f"/sme/provider-registrations/{created['oauthClientId']}", None)
-    assert calls[2] == (f"/sme/invoker-registrations/{created['oauthClientId']}", None)   # PR-SEC-14: the instance's invoker goes with its credential
-    assert calls[3] == (f"/nfo/deployments/{workload_ref}", None)  # OI-2-terminate-workload, after DME/SME
+    assert calls[2] == ("/dme/data-jobs", {"created_by": created["oauthClientId"]})       # OI-7-rapp-data-jobs-teardown: the jobs it opened as a consumer
+    assert calls[3] == (f"/sme/invoker-registrations/{created['oauthClientId']}", None)   # PR-SEC-14: the instance's invoker goes with its credential
+    assert calls[4] == (f"/nfo/deployments/{workload_ref}", None)  # OI-2-terminate-workload, after DME/SME
 
 
 def test_crash_via_critical_fault_deregisters_dme_producer(client, monkeypatch):
@@ -500,6 +502,7 @@ def test_terminate_instance_deregisters_sme_service_apis_too(client, monkeypatch
         "/dme/production-capabilities",
         f"/sme/published-apis/v1/{created['oauthClientId']}/service-apis/{service_id}",
         f"/sme/provider-registrations/{created['oauthClientId']}",
+        "/dme/data-jobs",                                               # OI-7-rapp-data-jobs-teardown
         f"/sme/invoker-registrations/{created['oauthClientId']}",      # PR-SEC-14
         f"/nfo/deployments/{workload_ref}",
     ]
@@ -918,6 +921,7 @@ def test_upgrade_commit_via_route_releases_the_old_instance(client, monkeypatch,
     assert resp.json()["instanceId"] == upgrade["newInstanceId"] and resp.json()["state"] == "RUNNING"
     assert [p for p, _ in fake_r1_delete] == [
         "/dme/production-capabilities", f"/sme/provider-registrations/{created['oauthClientId']}",
+        "/dme/data-jobs",                                               # OI-7-rapp-data-jobs-teardown: the retired instance's consumer jobs
         f"/sme/invoker-registrations/{created['oauthClientId']}",
         f"/nfo/deployments/{old_workload}",
     ]
@@ -1223,3 +1227,31 @@ def test_create_instance_with_an_idempotency_key_creates_one_instance(client, db
 
     other = client.post("/instances", json={**body, "packageId": str(uuid.uuid4())}, headers={"Idempotency-Key": "create-1"})
     assert other.status_code == 422 and other.json()["detail"]["title"] == "IDEMPOTENCY_KEY_REUSED"
+
+
+def test_terminate_closes_the_instances_dme_data_jobs_and_a_crash_does_not(client, monkeypatch):
+    """OI-7-rapp-data-jobs-teardown: TERMINATE deletes the DME data jobs the instance created (by its invoker id, before the id is revoked); a crash keeps
+    them, since a crashed instance keeps its identity for a recover; an unreachable DME does not stop the terminate."""
+    fake_get, fake_post = _route_r1_get_post()
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+    calls = []
+
+    def delete(self, path, params=None, **kw):
+        calls.append((path, params))
+        if path == "/dme/data-jobs":
+            raise httpx.ConnectError("DME down")
+        return FakeR1Response(204, {})
+
+    monkeypatch.setattr("app.statemachine.R1Client.delete", delete)
+    crashed = client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}}).json()
+    client.post(f"/instances/{crashed['instanceId']}/bootstrap-complete")
+    assert client.post(f"/instances/{crashed['instanceId']}/fault", params={"severity": "critical"}).status_code == 200
+    assert ("/dme/data-jobs", {"created_by": crashed["oauthClientId"]}) not in calls
+
+    created = client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}}).json()
+    client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
+    calls.clear()
+    resp = client.post(f"/instances/{created['instanceId']}/terminate")
+    assert resp.status_code == 200 and resp.json()["state"] == "UNDEPLOYED"
+    assert ("/dme/data-jobs", {"created_by": created["oauthClientId"]}) in calls

@@ -24,7 +24,7 @@ from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
 from smo_shared.invoker import invoker_id
-from smo_shared.roles import ROLE_INTERNAL, role_of
+from smo_shared.roles import ROLE_INTERNAL, ROLE_RAPP, role_of
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate, paginate_list
@@ -132,6 +132,7 @@ class TypeSubscriptionRequest(BaseModel):
 
 
 DME_TYPE_NOT_OWNER = ("DME_TYPE_NOT_OWNER", 403)       # kept here, not in smo_shared.errors, as ran-nf-oam keeps its approval codes
+DATA_JOBS_NOT_OWNER = ("DATA_JOBS_NOT_OWNER", 403)     # an rApp naming another invoker in DELETE /data-jobs?created_by=
 
 
 def _redefines(t: DMEType, body: DMETypeRegistration) -> bool:
@@ -450,7 +451,7 @@ def _validate_lifecycle_eligibility(db: Session, dme_type_id: uuid.UUID, lifecyc
 
 
 @app.post("/data-jobs", status_code=202)
-def create_data_job(body: DataJobRequest, db: Session = Depends(get_session)):
+def create_data_job(body: DataJobRequest, request: Request, db: Session = Depends(get_session)):
     # Creates an ACTIVE job. Order of checks: the type is registered (404 DME_TYPE_NOT_FOUND, SEC-15.10), the delivery method (409 DELIVERY_METHOD_NOT_OFFERED), the production definition against the registered type's schema (422 SCHEMA_VALIDATION_FAILED), then
     # the lifecycle stage and the rule that a Digital Twin source may not feed Inference (422 SCHEMA_VALIDATION_FAILED, DIGITAL_TWIN_INFERENCE_NOT_ELIGIBLE). One outbox row per producer of the type is written in the same transaction,
     # so each producer is told after the commit. Answers 202 with the job id.
@@ -465,6 +466,7 @@ def create_data_job(body: DataJobRequest, db: Session = Depends(get_session)):
         data_delivery_method=body.dataDeliveryMethod,
         delivery_details=body.deliveryDetails,
         consumer_id=body.consumerId,
+        created_by=invoker_id(request),     # who asked, as the gateway vouched for it: what rApp Management tears an instance's jobs down by
         status="ACTIVE",
         lifecycle_stage=body.lifecycleStage,
         expected_interval_seconds=body.expectedIntervalSeconds,
@@ -551,15 +553,24 @@ def terminate_data_job(data_job_id: uuid.UUID, db: Session = Depends(get_session
 
 
 @app.delete("/data-jobs", status_code=204)
-def terminate_data_jobs_for_consumer(consumer_id: str, db: Session = Depends(get_session)):
+def terminate_data_jobs_for_consumer(request: Request, consumer_id: str | None = None, created_by: str | None = None, db: Session = Depends(get_session)):
     """HISTORY.md §7's DME vs. real ICS finding: the real
     `DELETE /data-consumer/v1/info-jobs?owner=X` (ics-api.yaml's own
     `deleteJobsForOwner`) — every job one consumer owns, torn down in
     one call, not one `terminate_data_job` at a time. Same per-job
     teardown as that route (producer notification included), just
     fanned out across every matching job.
+
+    Exactly one of `consumer_id` (the consumer the job names) and `created_by` (the invoker that created it, OI-7-rapp-data-jobs-teardown: what rApp
+    Management closes an instance's jobs by) is given, else 422. A caller with the rApp role may name only its own invoker id in `created_by` (403
+    DATA_JOBS_NOT_OWNER).
     """
-    jobs = db.scalars(select(DataJob).where(DataJob.consumer_id == consumer_id)).all()
+    if (consumer_id is None) == (created_by is None):
+        raise HTTPException(status_code=422, detail="give exactly one of consumer_id and created_by")
+    if created_by is not None and role_of(request) == ROLE_RAPP and created_by != invoker_id(request):
+        raise framework_error(DATA_JOBS_NOT_OWNER, detail="an rApp may delete only the data jobs it created")
+    owner = DataJob.consumer_id == consumer_id if consumer_id is not None else DataJob.created_by == created_by
+    jobs = db.scalars(select(DataJob).where(owner)).all()
     for job in jobs:
         dme_type = db.get(DMEType, job.dme_type_id)
         db.delete(job)
@@ -681,7 +692,7 @@ def _set_late_after(job: DataJob) -> None:
 
 
 def _job_view(j: DataJob) -> dict:
-    """The wire form of a data job. GUI-9.8 keys: `expectedIntervalSeconds`, `lastDeliveryAt` (null until a producer delivered a record) and `late`
+    """The wire form of a data job; `createdBy` is the invoker that created it (null before revision 0045). GUI-9.8 keys: `expectedIntervalSeconds`, `lastDeliveryAt` (null until a producer delivered a record) and `late`
     (null when no interval is declared; else whether two intervals passed since the last delivery, or since the job was declared before any)."""
     return {
         "dataJobId": str(j.data_job_id),
@@ -691,6 +702,7 @@ def _job_view(j: DataJob) -> dict:
         "dataDeliveryMethod": j.data_delivery_method,
         "deliveryDetails": j.delivery_details or {},
         "consumerId": j.consumer_id,
+        "createdBy": j.created_by,
         "status": j.status,
         "lifecycleStage": j.lifecycle_stage,
         "expectedIntervalSeconds": j.expected_interval_seconds,
