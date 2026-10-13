@@ -42,6 +42,7 @@ that record (`roles.py`).
 
 import contextlib
 import contextvars
+from collections.abc import Callable
 import logging
 import os
 import secrets
@@ -84,7 +85,8 @@ class _ModuleIdentity:
         """
         self.lock = threading.Lock()
         self.pinned = invoker_id is not None
-        self.reload = None          # for an instance's identity: reads the stored credentials again (set by `_instance_identity_of`)
+        # for an instance's identity: reads the stored credentials again (set by `_new_instance_identity`)
+        self.reload: Callable[[], tuple[str, str] | None] | None = None
         self.invoker_id: str | None = invoker_id or os.environ.get("SMO_INVOKER_ID") or None
         self.invoker_secret: str | None = invoker_secret or os.environ.get("SMO_INVOKER_SECRET") or None
         # Where this module's invoker identity is shared with its other replicas (module_identity.py).
