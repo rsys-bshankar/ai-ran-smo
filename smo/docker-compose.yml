@@ -326,6 +326,10 @@ services:
     environment:
       SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}
       MOCK_O1_OAM_URL: http://ran-nf-oam:8000    # where POST /emit/alarm, /emit/pm-report, ... send (SB-9.8): this stub is a source of FM, PM, SW and heartbeat for RAN NF OAM
+      # the gNB's own heartbeat (mock-o1-adaptor/app/keepalive.py): every 30 s for the endpoints registered with this adaptor's URL that had a first
+      # heartbeat, so they stay ACTIVE past RAN NF OAM's 90 s threshold during a demo; 0 switches it off
+      MOCK_O1_HEARTBEAT_SECONDS: ${MOCK_O1_HEARTBEAT_SECONDS:-30}
+      MOCK_O1_SELF_URL: http://mock-o1-adaptor:8000
     stop_grace_period: 30s
     <<: *hardening
     healthcheck: *ready_probe

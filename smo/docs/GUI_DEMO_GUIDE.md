@@ -60,7 +60,9 @@ The values to type for each rApp are in [The four rApps' values](#the-four-rapps
 **Do**
 
 1. **Infrastructure** → **O1 endpoints & jobs** → **Register endpoint**: managed element `gnb-du-demo-01`, adaptor URI
-   `http://mock-o1-adaptor:8000/edit-config`, protocol NETCONF, entity type O-DU, vendor `mock-vendor`. Then press **Heartbeat** on its row.
+   `http://mock-o1-adaptor:8000/edit-config`, protocol NETCONF, entity type O-DU, vendor `mock-vendor`. Then press **Heartbeat** on its row. From then on
+   the simulated gNB sends its own heartbeat every 30 s (`MOCK_O1_HEARTBEAT_SECONDS`), as a real one does, so the endpoint stays ACTIVE however long the demo takes
+   (RAN NF OAM refuses an O1 write to an endpoint whose last heartbeat is more than 90 s old).
 2. **KPIs & Assurance** → **PM subscriptions** → **New PM subscription**: element `gnb-du-demo-01`, counter `PRB_UTILIZATION`, delivery
    **pull**, granularity **300** s (the form defaults to push and 900: change both). **Subscribe**.
 3. Open the element (**Topology** or the element's link) → **Cell guards** → **Add a cell guard**: cell `103`, class **EMERGENCY**.
@@ -275,6 +277,7 @@ Autonomy mode is AUTONOMOUS.
 | **7 · Deploy the runtime** is refused | The model is not CERTIFIED and PROMOTED yet: step 06. |
 | Evaluate now shows no write, or the write is not enacted | The O1-CM handler is not registered (step 00, Handlers), or the live PM is missing (**8 · Send live PM**). |
 | A deleted package is not in the package list | Deleting is final: the package leaves the list (pick **DELETING** in the state filter to see it). The same CSAR can be onboarded again. |
+| Evaluate now's write is refused because the O1 endpoint is not ACTIVE (DEGRADED) | No heartbeat for 90 s. The simulated gNB sends one every 30 s once the endpoint had its first: press **Heartbeat** on the endpoint's row (Infrastructure) once. If it goes stale again, the stack was started with `MOCK_O1_HEARTBEAT_SECONDS=0` or an older `mock-o1-adaptor` image: rebuild it (`docker compose up -d --build mock-o1-adaptor`). |
 | To start again | `docker compose down -v && docker compose up -d`, then this guide from the top. |
 
 Running the whole demo without the console: `DEMO_RUNBOOK.md` §24–§27 (`demo.py all`).

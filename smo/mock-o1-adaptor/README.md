@@ -78,6 +78,7 @@ The real O-RAN-SC `sim-o1-interface` (`ntsim-ng`) is a YANG-validated NETCONF / 
 |---|---|
 | `app/profile.py` | The vendor profile loader and checker, and the onboarding body for RAN NF OAM (`SB-10`) |
 | `app/profiles/<name>/` | One vendor profile: `profile.json`, `yang/`, `schema/`, `README.md` (the deviations), `conformance-report.md` |
+| `app/keepalive.py` | The periodic heartbeat: a daemon thread started by the app's lifespan when `MOCK_O1_HEARTBEAT_SECONDS` is above 0 |
 | `app/main.py` | The whole service: RPC handling, the RESTCONF routes over the same state, defaults, capability declaration, fault and introspection routes, and the emit triggers (`_emit` and the five `/emit/...` routes) |
 
 ### 2.2 Data model
@@ -167,9 +168,11 @@ Inbound HTTP, and one outbound call per emit trigger (`httpx.post` to RAN NF OAM
 | `MOCK_O1_SUPPORTED_SERVICES` | `PROV,FM,PM,FILE,STREAM,SWM,SUBSCRIPTION,HEARTBEAT` (the profile's, with `MOCK_O1_PROFILE`) | Comma-separated `supportedServices`, and the services the emit routes are offered for (1.5) |
 | `MOCK_O1_OAM_URL` | unset | RAN NF OAM's origin for the emit routes; compose and the chart set `http://ran-nf-oam:8000`. Unset: the emit routes answer 409 unless the request names a `target` |
 | `MOCK_O1_VENDOR_MODES` | `O1_NETCONF,O1_RESTCONF` (the profile's, with `MOCK_O1_PROFILE`) | Comma-separated `supportedVendorModes`. Without `O1_RESTCONF` the RESTCONF routes answer 404 |
+| `MOCK_O1_HEARTBEAT_SECONDS` | `0` (off); compose and the chart set `30` | How often the stub heartbeats, as a real gNB does, every endpoint registered at RAN NF OAM (`MOCK_O1_OAM_URL`) whose `adaptorUri` starts with `MOCK_O1_SELF_URL` and that had its first heartbeat (the operator's, or `/emit/heartbeat`). Keeps it ACTIVE past RAN NF OAM's 90 s missed-heartbeat threshold, so an O1 write later in a demo is not refused. Read at start |
+| `MOCK_O1_SELF_URL` | unset; compose and the chart set `http://mock-o1-adaptor:8000` | This stub's own URL as endpoints register it; without it there is no periodic heartbeat |
 | `MOCK_O1_PROFILE` | unset | Name of a vendor profile in `app/profiles/` (1.5). Sets the vendor name, services, modes and class defaults of the declaration; the three variables above override it. Unset: the generic mock |
 
-The variables are read on every request. The container listens on :8000.
+The variables are read on every request (the two heartbeat ones at start). The container listens on :8000.
 
 ### 2.7 Error codes
 
@@ -197,6 +200,7 @@ cd smo/mock-o1-adaptor && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | Test file | Covers | Count |
 |---|---|---|
 | `tests/test_emit.py` | The emitter: each of the five triggers posts the right URL, query or JSON (unset fields left out, a new UUID `sourceAlarmId` per call, path ids encoded); a refusal from RAN NF OAM is relayed with `emitted: false`; non-JSON answers relayed as text; connect error and timeout are a 502 problem body; no target is a 409; a request `target` is honoured and a loopback, `file:` or link-local one is a 422 and nothing is sent; a service not in `MOCK_O1_SUPPORTED_SERVICES` is a 409 (all five parametrised) and absent from `/capabilities`; the OpenAPI document lists the error responses | 24 |
+| `tests/test_keepalive.py` | The periodic heartbeat: only this stub's endpoints that had a first heartbeat (not a DISCOVERED one, not another adaptor's, not a host that merely shares the prefix), every page of the list, off unless the interval and both URLs are set, the thread beating and stopping | 9 |
 | `tests/test_emit_exact.py` | The guarded sender for a named `target` (the body is forwarded, an unreachable target is a 502 that names the kind and not the address), the 502 for the configured OAM, and the words of the 409 and 422 (4) |
 | `tests/test_main.py` | `edit-config` ok / applied-change recording / empty payload rejected / delete and remove with empty payload accepted / malformed XML / entity-expansion XML rejected; introspection of an unknown ref; configurable capability declaration; per-function state read back via `get-config`; fault consumption order; neighbour-relation, DMRO, coverage and frequency-relation defaults and writes; RESTCONF: root discovery, GET answering IOC defaults, PATCH merge read back by both protocols, PUT replace (201 / 204), POST create once (409 `data-exists`), DELETE of a missing object (`data-missing`), mismatched or malformed bodies and unmodelled paths refused, shared fault injection | 25 |
 | `tests/test_profile.py` | The vendor profile (`SB-10`): the loader's checks (a name is a directory name, never a path; every malformed profile refused with the reason), the onboarding body, the descriptor equal to what the YANG gives, nothing changing without `MOCK_O1_PROFILE`, the declaration, the environment winning, a NETCONF-only vendor having no RESTCONF root, the vendor's defaults on `get-config`, a bad name stopping the stub, and the conformance kit passing the stub in the profile | 24 |
