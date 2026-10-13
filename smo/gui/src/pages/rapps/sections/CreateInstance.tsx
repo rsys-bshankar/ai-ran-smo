@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 
 import { useSmoAction } from "../../../api/hooks";
 import type { Package } from "../../../api/types";
+import { useToast } from "../../../components/Toast";
 import { Field, Modal } from "../../../components/ui";
 import { useT } from "../../../i18n";
 import { parseJsonObject } from "../../../lib/domain";
@@ -17,16 +18,24 @@ export function CreateInstance({ pkg, onClose }: { pkg: Package; onClose: () => 
   const [regionScope, setRegionScope] = useState("{}");
   const [operatorApiBase, setOperatorApiBase] = useState("");
   const action = useSmoAction();
+  const toast = useToast();
   const parsed = parseJsonObject(config, t);
   const parsedScope = parseJsonObject(regionScope, t);
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (!parsed.ok || !parsedScope.ok) return;
+    const base = operatorApiBase.trim();
+    // rApp Management answers 202 even when it could not hand the instance's credentials to the rApp at `base` (`credentialsDelivered: false`): a wrong
+    // URL or a stopped rApp. Said here, at Deploy, so it is not found later as an UPSTREAM_UNAVAILABLE on the rApp's page.
+    const warnIfUnreachable = (created: unknown) => {
+      if (base && (created as { credentialsDelivered?: boolean } | null)?.credentialsDelivered === false) toast.push({ tone: "error", text: t("rapps.deploy.unreachable", { base }) });
+      onClose();
+    };
     action.mutate({ method: "POST", path: INSTANCES_PATH, json: {
       packageId: pkg.packageId, config: parsed.value, autonomyMode,
       regionScope: autonomyMode === "AUTONOMOUS" ? parsedScope.value : null,
-      ...(operatorApiBase.trim() ? { operatorApiBase: operatorApiBase.trim() } : {}),
-    }, success: t("rapps.deploy.created") }, { onSuccess: onClose });
+      ...(base ? { operatorApiBase: base } : {}),
+    }, success: t("rapps.deploy.created") }, { onSuccess: warnIfUnreachable });
   };
   return (
     <Modal title={t("rapps.deploy.title", { name: pkg.name, version: pkg.version })} onClose={onClose}>

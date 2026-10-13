@@ -56,6 +56,8 @@ export interface InstanceSummary {
   autonomyMode: string;
   // PR-SEC-10.3: the scope claim the instance was created with; null or absent: unscoped (it may touch every managed element, as before).
   authzScope?: AuthzScope | null;
+  // PR-GUI-8: where the gateway reaches the rApp's operator API for this instance; null when none is registered (both rApp Management routes return it).
+  operatorApiBase?: string | null;
 }
 /**
  * One rApp instance in full: the summary plus its workload reference, configuration, pending upgrade, the SME service ids it registered, its autonomous region scope and the outcome of its last teardown.

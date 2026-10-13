@@ -231,3 +231,22 @@ def test_the_allow_list_names_only_modules_the_gateway_routes_to():
     """Every module prefix in `RAPP_MAY_CHANGE` is in the gateway's route table, so an entry cannot name a module that does not exist."""
     from app.main import ROUTES
     assert set(roles.RAPP_MAY_CHANGE) <= set(ROUTES)
+
+
+def test_an_rapp_reports_pm_only_with_the_demo_switch_on(gateway, monkeypatch, caplog):
+    """`POST /ran-nf-oam/pm-reports` (the PM an NF reports) is refused to an rApp, with a hint naming the switch; with R1_DEMO_RAPP_PM_REPORTS on it is
+    forwarded and logged. The switch opens nothing else: another ran-nf-oam change, and an internal-only route, stay refused."""
+    monkeypatch.delenv("R1_DEMO_RAPP_PM_REPORTS", raising=False)
+    off = client.post("/ran-nf-oam/pm-reports", headers=AUTH, json={})
+    assert off.status_code == 403 and off.json()["title"] == "ROLE_NOT_PERMITTED" and "R1_DEMO_RAPP_PM_REPORTS=on" in off.json()["detail"]
+    assert "R1_DEMO_RAPP_PM_REPORTS" not in client.post("/ran-nf-oam/o1-adaptor-endpoints", headers=AUTH, json={}).json()["detail"]
+    assert gateway["forwarded"] == []
+
+    monkeypatch.setenv("R1_DEMO_RAPP_PM_REPORTS", "on")
+    with caplog.at_level("WARNING", logger="app.main"):
+        assert client.post("/ran-nf-oam/pm-reports", headers=AUTH, json={}).status_code == 200
+    assert [url for _, url, _ in gateway["forwarded"]] == [f"{ROUTES['/ran-nf-oam']}/pm-reports"]
+    assert any("reported PM" in r.getMessage() and "inv-1" in r.getMessage() for r in caplog.records)
+    assert client.post("/ran-nf-oam/o1-adaptor-endpoints", headers=AUTH, json={}).status_code == 403
+    assert client.put("/ran-nf-oam/rapp-limits/x", headers=AUTH, json={}).status_code == 403
+    assert client.post("/ran-nf-oam/pm-reports/x", headers=AUTH, json={}).status_code == 403

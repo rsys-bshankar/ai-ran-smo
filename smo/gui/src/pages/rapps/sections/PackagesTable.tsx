@@ -44,7 +44,9 @@ export function PackagesTable() {
         })}
         <span className="muted small">{t("rapps.packages.inAll", { n: formatCount(count(summary.data, "packages.total")) })}</span>
       </div>
-      <ServerTable<Package> path={PACKAGES_PATH} query={{ state: state || undefined }} rowKey={(p) => p.packageId}
+      {/* "All states" leaves out the deleted packages: DELETING is final (the row is kept as the record), so listing them reads as a delete that never ends. The
+          state filter's DELETING option still shows them. */}
+      <ServerTable<Package> path={PACKAGES_PATH} query={state ? { state } : { include_deleted: false }} rowKey={(p) => p.packageId}
         empty={state ? t("rapps.packages.emptyState", { state }) : t("rapps.packages.empty")} onRowClick={setDetail} selectedKey={detail?.packageId ?? null} onRows={onRows}
         columns={[
           { header: t("rapps.packages.col.package"), render: (p) => <><strong>{p.name}</strong> <span className="muted">{p.version}</span><div className="muted small">{p.vendor ?? ""} {p.applicationType}</div></> },

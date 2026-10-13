@@ -754,14 +754,21 @@ def _demo_cluster(inst: CoverageInstance) -> dict[str, list[str]]:
     return {c: [j for j in producer.NEIGHBOURS.get(c, []) if j in inst.cells] for c in inst.cells}
 
 
+# How many measurements one demo PM report carries (`_report_pm`).
+PM_REPORT_CHUNK = 96
+
+
 def _report_pm(inst: CoverageInstance, measurements: list[dict]) -> int:
-    """Sends `measurements` to RAN NF OAM as one COVERAGE_PERFORMANCE report of the instance's element; returns how many went. A refusal (no PM
+    """Sends `measurements` to RAN NF OAM as COVERAGE_PERFORMANCE reports of the instance's element; returns how many went. A refusal (no PM
     subscription, an element outside the rApp's scope) is answered as RAN NF OAM gave it. The caller's read transaction is ended first
     (`db.commit()` by the caller), as RAN NF OAM does before it fans out: nothing of ours is held while others write."""
-    resp = _r1.post("/ran-nf-oam/pm-reports", json={"managedElementRef": inst.managed_element_ref, "counterType": DATASET,
-                                                     "measurements": measurements})
-    if resp.status_code != 201:
-        raise SdkError(resp.status_code, resp.json() if resp.content else None)
+    # in reports of at most PM_REPORT_CHUNK measurements: RAN NF OAM delivers each one to every open data job, one DME record at a time, so a whole
+    # history in one report outlasts the 30 s this rApp's R1 call allows (call it at least once, as a single report did)
+    for first in range(0, max(len(measurements), 1), PM_REPORT_CHUNK):
+        chunk = measurements[first:first + PM_REPORT_CHUNK]
+        resp = _r1.post("/ran-nf-oam/pm-reports", json={"managedElementRef": inst.managed_element_ref, "counterType": DATASET, "measurements": chunk})
+        if resp.status_code != 201:
+            raise SdkError(resp.status_code, resp.json() if resp.content else None)
     return len(measurements)
 
 

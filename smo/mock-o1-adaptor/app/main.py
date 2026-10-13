@@ -3,7 +3,7 @@
 What it is: one FastAPI app that answers, over plain HTTP, what RAN NF OAM sends a managed element's registered `adaptor_uri`: an RFC 6241 `<edit-config>` /
 `<get-config>` RPC as XML (`POST /edit-config`, RAN NF OAM LLD section 5.1, client `ran-nf-oam/app/netconf_client.py`) and the RFC 8040 RESTCONF data resources
 (`/restconf/data/...`, OI-1-cm-sync-restconf, client `ran-nf-oam/app/restconf_client.py`), both over one in-memory running configuration. It also declares itself
-(`GET /capabilities`, read by RAN NF OAM's vendor onboarding), can emit alarms, PM, software-phase results and heartbeats towards RAN NF OAM on request (`/emit/*`,
+(`GET /capabilities`, read by RAN NF OAM's vendor onboarding), can emit alarms, PM, software-phase results and heartbeats towards RAN NF OAM on request (`/emit/*`; heartbeats also on its own, `keepalive.py`,
 PR-SB-9b, SB-9.8; the target of the conformance kit in `conformance/o1`), and can become a vendor from a profile (`profile.py`, SB-10).
 It stands in for the O-RAN-SC reference simulator (ntsim-ng), which is a YANG-validated NETCONF/SSH simulator out of proportion with this build's single-stack
 design (HISTORY.md section 2: ADOPT repositories stay pattern references); it is deliberately minimal, "give the real caller something real to call", not a protocol
@@ -17,6 +17,7 @@ Before editing: the routes are mirrored by tests in `tests/` and by the conforma
 in `docs/openapi` is generated from the routes and models, so a change to a route or model needs the specs regenerated (`scripts/generate_openapi_specs.py`).
 """
 
+import contextlib
 import logging
 import os
 import uuid
@@ -36,9 +37,18 @@ from smo_shared.logconfig import install_logging
 from smo_shared.metrics import install_metrics
 from smo_shared.health import install_health
 
-from . import profile as vendor_profile
+from . import keepalive, profile as vendor_profile
 
-app = FastAPI(title="Mock O1 Adaptor (NETCONF and RESTCONF test double)")
+@contextlib.asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    """Starts the periodic heartbeat (`keepalive.py`, off unless MOCK_O1_HEARTBEAT_SECONDS is set) and stops it on shutdown."""
+    stop = keepalive.start()
+    yield
+    if stop is not None:
+        stop.set()
+
+
+app = FastAPI(title="Mock O1 Adaptor (NETCONF and RESTCONF test double)", lifespan=_lifespan)
 install_logging(app)  # structured JSON logs and one access-log line per request (PR-OBS-1)
 install_metrics(app)  # /metrics and request count/latency series (PR-OBS-2)
 install_health(app)  # /live, /ready and /health for the compose healthcheck (PR-ST-7)

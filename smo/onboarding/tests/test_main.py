@@ -439,6 +439,21 @@ def test_delete_available_package_with_no_dependents_succeeds(client, monkeypatc
     assert resp.json()["state"] == "DELETING"
 
 
+def test_the_list_leaves_out_deleted_packages_when_asked(client, monkeypatch):
+    """`include_deleted=false` drops a deleted (DELETING) package from the list and its total; the default and `state=DELETING` still return it."""
+    deleted = _make_available_package(client, monkeypatch)
+    assert client.delete(f"/packages/{deleted}").status_code == 200
+
+    def ids(**params):
+        page = client.get("/packages", params=params).json()
+        assert page["total"] == len(page["items"])
+        return {p["packageId"] for p in page["items"]}
+
+    assert deleted not in ids(include_deleted="false")
+    assert deleted in ids()
+    assert deleted in ids(state="DELETING", include_deleted="false")
+
+
 def test_delete_blocked_by_dependent_child_package(client, db_session_factory, monkeypatch):
     """Onboarding/rApp Mgmt LLD section 4's cascade-delete guard, one half:
     an AVAILABLE/DEPRECATED child package blocks its parent's deletion.

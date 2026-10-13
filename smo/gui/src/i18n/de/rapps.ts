@@ -117,6 +117,8 @@ export const rapps: Partial<Record<MessageKey, string>> = {
   "rapps.instance.package": "Paket",
   "rapps.instance.workload": "NFO-Deployment (workloadRef)",
   "rapps.instance.pendingUpgrade": "Ausstehendes Upgrade auf",
+  "rapps.instance.operatorApi": "Basis-URL der Operator-API",
+  "rapps.instance.operatorApi.none": "nicht registriert",
   "rapps.instance.sme": "SME-Service-API(s)",
   "rapps.instance.sme.none": "keine registriert",
   "rapps.instance.autonomy": "Autonomiemodus",
@@ -213,6 +215,7 @@ export const rapps: Partial<Record<MessageKey, string>> = {
 
   "rapps.deploy.title": "{name} {version} bereitstellen",
   "rapps.deploy.created": "Instanz angelegt (DEPLOYING)",
+  "rapps.deploy.unreachable": "Die rApp war unter {base} nicht erreichbar; sie hat daher die Zugangsdaten der Instanz nicht erhalten, und die Schaltflächen ihrer Seite schlagen fehl (UPSTREAM_UNAVAILABLE). Prüfen Sie die URL (die Beispiel-rApps: http://<rapp-name>:8000) und dass die rApp läuft, dann an der Instanz „Zugangsdaten neu senden“, oder mit der richtigen URL neu bereitstellen.",
   "rapps.deploy.intro": "rApp Management prüft, dass das Paket AVAILABLE ist, instanziiert es auf NFO aus seinem NF-Deployment-Deskriptor und registriert die Paketnutzung.",
   "rapps.deploy.config": "Instanzkonfiguration (JSON)",
   "rapps.deploy.config.hint": "Optional. requiredResourceTypeId wird zur Platzierung an NFO übergeben.",

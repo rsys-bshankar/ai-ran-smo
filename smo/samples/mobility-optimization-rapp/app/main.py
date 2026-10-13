@@ -701,9 +701,13 @@ def _demo_scenarios(inst: MobilityInstance) -> dict[str, str]:
     return {r["relation"]: DEMO_SCENARIOS.get(r["relation"], fallback[i % len(fallback)]) for i, r in enumerate(inst.relations)}
 
 
+# How many measurements one demo PM report carries (`_report_pm`).
+PM_REPORT_CHUNK = 96
+
+
 def _report_pm(inst: MobilityInstance, scenarios: dict[str, str], start: datetime.datetime, hours: int) -> int:
     """Sends `hours` hourly handover windows from `start` for each relation in `scenarios` (relation -> scenario, counters from producer.py as demo.py
-    makes them) to RAN NF OAM as one HO_PERFORMANCE report of the instance's element; returns how many measurements went. A refusal (no PM
+    makes them) to RAN NF OAM as HO_PERFORMANCE reports of the instance's element; returns how many measurements went. A refusal (no PM
     subscription, an element outside the rApp's scope) is answered as RAN NF OAM gave it. The caller ends its read transaction first (`db.commit()`),
     as RAN NF OAM does before it fans out: nothing of ours is held while others write."""
     sources = {r["relation"]: r["source"] for r in inst.relations}
@@ -711,9 +715,13 @@ def _report_pm(inst: MobilityInstance, scenarios: dict[str, str], start: datetim
                      "values": producer.relation_counters(rel, t, scenario)}
                     for rel, scenario in scenarios.items()
                     for t in (start + datetime.timedelta(hours=h) for h in range(hours))]
-    resp = _r1.post("/ran-nf-oam/pm-reports", json=producer.pm_report(inst.managed_element_ref, measurements))
-    if resp.status_code != 201:
-        raise SdkError(resp.status_code, resp.json() if resp.content else None)
+    # in reports of at most PM_REPORT_CHUNK measurements: RAN NF OAM delivers each one to every open data job, one DME record at a time, so a whole
+    # history in one report outlasts the 30 s this rApp's R1 call allows (call it at least once, as a single report did)
+    for first in range(0, max(len(measurements), 1), PM_REPORT_CHUNK):
+        chunk = measurements[first:first + PM_REPORT_CHUNK]
+        resp = _r1.post("/ran-nf-oam/pm-reports", json=producer.pm_report(inst.managed_element_ref, chunk))
+        if resp.status_code != 201:
+            raise SdkError(resp.status_code, resp.json() if resp.content else None)
     return len(measurements)
 
 

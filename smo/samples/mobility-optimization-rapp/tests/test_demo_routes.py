@@ -3,7 +3,7 @@ Twin. The R1 double records the HO_PERFORMANCE PM reports the rApp sends to RAN 
 
 import datetime
 
-from app.main import DEMO_HISTORY_START, DEMO_LIVE_START
+from app.main import DEMO_HISTORY_START, DEMO_LIVE_START, PM_REPORT_CHUNK
 from app.model.series import ATTEMPTS, TOO_LATE
 from test_routes import ME, FakeResponse, _deployed, _start, client, platform, r1  # noqa: F401  (fixtures)
 
@@ -36,14 +36,17 @@ def test_prepare_registers_the_twin_producer_and_starts_the_instance(client, pla
 
 
 def test_history_reports_three_days_of_hourly_handovers_with_the_demo_faults(client, platform, r1):  # noqa: F811
-    """`demo/history` sends one HO_PERFORMANCE report of the element: 72 hourly windows per relation, 201->203 too late and 202->203 too early."""
+    """`demo/history` sends HO_PERFORMANCE reports of the element: 72 hourly windows per relation, 201->203 too late and 202->203 too early."""
     instance_id = _start(client, r1, relations=RELATIONS)
     sent = _record_pm(r1)
     resp = client.post(f"/instances/{instance_id}/demo/history")
     assert resp.status_code == 200, resp.text
     assert resp.json()["measurements"] == 72 * 4
     assert resp.json()["scenarios"] == {"201-202": "HEALTHY", "201-203": "TOO_LATE", "202-203": "TOO_EARLY", "203-204": "HEALTHY"}
-    (report,) = sent
+    # in reports of at most PM_REPORT_CHUNK measurements of the same element and counter (each R1 call stays under its timeout), read as one
+    assert len(sent) == -(-resp.json()["measurements"] // PM_REPORT_CHUNK) and all(len(r["measurements"]) <= PM_REPORT_CHUNK for r in sent)
+    assert {(r["managedElementRef"], r["counterType"]) for r in sent} == {(sent[0]["managedElementRef"], sent[0]["counterType"])}
+    report = {**sent[0], "measurements": [m for r in sent for m in r["measurements"]]}
     assert report["managedElementRef"] == ME and report["counterType"] == "HO_PERFORMANCE"
     first = report["measurements"][0]
     assert first["timestamp"] == DEMO_HISTORY_START.isoformat() and first["cellId"] == "201" and first["relation"] == "201-202"
