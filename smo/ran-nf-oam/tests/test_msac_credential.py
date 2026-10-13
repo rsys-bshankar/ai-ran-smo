@@ -81,3 +81,15 @@ def test_check_credential_uses_a_constant_time_comparison(monkeypatch):
 def test_a_missing_or_damaged_stored_hash_refuses_without_an_error(stored):
     """Nothing stored, or something that is not `scrypt$<hex>$<hex>`, is a False and never an exception (a damaged row must not turn into a 500 or a pass)."""
     assert msac.check_credential("anything", stored) is False
+
+
+def test_an_smo_module_passing_on_an_rapp_is_asked_for_the_credential(client, db_session_factory, applied):
+    """`SEC-15.6b`: a call by an SMO module (role internal) that carries `X-R1-On-Behalf-Of` is an rApp's request passed on (DME's `POST /actions`), so it is asked too; the same module on its own account (no such header) is not."""
+    _alice(client, db_session_factory)
+    through_dme = {**INTERNAL, "X-R1-On-Behalf-Of": "es-client"}
+    for headers in (through_dme, {**through_dme, msac.CREDENTIAL_HEADER: "wrong"}):
+        resp = _write(client, headers)
+        assert resp.status_code == 403 and "MSAC_ACCESS_DENIED" in resp.text and "s3cret" not in resp.text
+    assert applied == []
+    assert _write(client, {**through_dme, msac.CREDENTIAL_HEADER: "s3cret"}).status_code == 202 and applied
+    assert _write(client, INTERNAL).status_code == 202

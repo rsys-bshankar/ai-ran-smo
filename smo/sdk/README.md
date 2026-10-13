@@ -149,7 +149,7 @@ Usage: `sdk = AiRuntimeSdk()` (or `AiRuntimeSdk(r1=R1Client(base_url, bearer_tok
 | `unsubscribe_type_changes(subscription_id)` -> None | `DELETE /dme/type-subscriptions/{id}` | |
 | `ingest_data_record(data_job_id, payload)` | `POST /dme/data-jobs/{id}/records` | body `{payload}` |
 | `fetch_data_records(data_job_id, limit=100)` | `GET /dme/data-jobs/{id}/records` | |
-| `mediate_action(requested_by, changes, scope="single-ME", msac_role=None, source_context=None, decision=None)` | `POST /dme/actions` | DME forwards to RAN NF OAM's config-job dispatch |
+| `mediate_action(requested_by, changes, scope="single-ME", msac_role=None, source_context=None, decision=None, *, msac_credential=None)` | `POST /dme/actions` | DME forwards to RAN NF OAM's config-job dispatch. `msac_credential` (`SEC-15.6b`) is sent in the `X-MSAC-Credential` header, only when given: see "MSAC credential" under 2.5 |
 | `get_action(action_id)` | `GET /dme/actions/{id}` | |
 | `list_actions(managed_element_ref=None, requested_by=None)` | `GET /dme/actions` | |
 | `query_cell_guards(managed_element_ref=None, cell_id=None, cell_class=None, sector_group=None, incident_zone=None)` | `GET /ran-nf-oam/cell-guards` | unset filters omitted |
@@ -262,13 +262,15 @@ Module function `energy_saving_expectation(object_instance, cells=None, max_ener
 | `subscribe_to_events(subscriber_id, event_types, callback_uri, api_ids=None, api_invoker_ids=None, aef_ids=None)` | `POST /sme/capif-events/v1/{subscriber}/subscriptions` | `callbackUri` is SME's CAPIF-fixed name; the three lists are CAPIFEventFilter |
 | `list_event_subscriptions(subscriber_id)` | `GET /sme/capif-events/v1/{subscriber}/subscriptions` | |
 | `unsubscribe_from_events(subscriber_id, subscription_id)` -> None | `DELETE /sme/capif-events/v1/{subscriber}/subscriptions/{id}` | |
-| `execute_action(requested_by, changes, action_id=None, source_context=None, scope="single-ME", msac_role=None, decision=None)` | `POST /dme/actions` | An O1 configuration action mediated by DME to RAN NF OAM (NETCONF). `action_id` is an idempotency key: a repeat is `IGNORED` (DME reports the original status). Same route as `data.mediate_action`, which has no `actionId` parameter |
+| `execute_action(requested_by, changes, action_id=None, source_context=None, scope="single-ME", msac_role=None, decision=None, *, msac_credential=None)` | `POST /dme/actions` | An O1 configuration action mediated by DME to RAN NF OAM (NETCONF). `msac_credential`: see "MSAC credential" under 2.5. `action_id` is an idempotency key: a repeat is `IGNORED` (DME reports the original status). Same route as `data.mediate_action`, which has no `actionId` parameter |
 | `bootstrap_complete(instance_id)` | `POST /rapp-mgmt/instances/{id}/bootstrap-complete` | Call flow 01d: the instance is up. rApp Management puts its limits and approval policy in force (fail closed), registers its SME declarations and moves it `DEPLOYING → RUNNING`. Made as the instance (`smo_sdk.instances`); another caller's is 403 `NOT_THIS_INSTANCE`, an instance not `DEPLOYING` 409 |
 | `get_approval(approval_id)` | `GET /ran-nf-oam/rapp-approvals/{id}` | `AI-11`: the state of an action the operator holds for approval (`execute_action` answered `PENDING_APPROVAL` with an `approvalId`): `status` `PENDING`, `APPROVED` (then `jobId`), `REJECTED`, `EXPIRED` or `REFUSED`; `requiredApprovals` (1, or 2 when the policy asks for two different people) and `approvals` (the approvals so far: a `PENDING` request with one of two is still waiting). `decision={"inputsRef", "modelVersion", "rationale"}` on `execute_action` / `mediate_action` is why the rApp acts, kept by the platform as the decision record of the job (`AI-13`) |
 
 ### 2.5 Interactions
 
 Every call is one synchronous HTTP request through `R1Client`: `Authorization: Bearer <process token>` (obtained from SME the way an rApp does, see [`../shared/README.md`](../shared/README.md)) and `X-Correlation-ID` when called inside a request handler that applied the correlation middleware (the sample rApps do). No callbacks are received by the SDK; callback URLs it passes (`notification_destination`, `callback_uri`, job callback URLs) are called later by the owning module through `smo_shared.webhook`. No background tasks, retries or timeouts of its own: a 401 is retried once by `R1Client`; `get_dataset` makes several sequential calls with no atomicity (a concurrent caller can create a second data job).
+
+**MSAC credential (`SEC-15.6b`).** An rApp that names, in `requested_by`, an MSAC Identity that has a credential must present it (RAN NF OAM answers 403 `MSAC_ACCESS_DENIED` otherwise, `ran-nf-oam/README.md` 2.5). `execute_action` and `mediate_action`, the two methods that lead to a configuration job, take `msac_credential=None`, keyword only. Given, the SDK sends it in the `X-MSAC-Credential` header of the `POST /dme/actions` and in nothing else: not in the body, not in a log line, not in an exception or a `repr`; the SDK reads no environment variable for it, so the rApp passes in the secret it holds from wherever it keeps secrets. Not given (or None), the call is made exactly as before. DME declares the header on `POST /actions` and passes it on to RAN NF OAM's `POST /config-jobs` (only when sent), which asks for it of an SMO module that passes an rApp's request on (`X-R1-On-Behalf-Of`) as of an rApp itself, so this works end to end.
 
 ### 2.6 Configuration
 
@@ -285,7 +287,7 @@ The SDK defines one exception, `SdkError(status_code, body)` (`str()` is `"<stat
 - `analytics.subscribe` and `lifecycle.subscribe_performance_monitoring` split their arguments between query and body exactly as those routes do; adding a route field needs a matching SDK change.
 - Docstring staleness: `smo_sdk/__init__.py` says no caller has been migrated to the SDK; the four sample rApps use it (the SMO modules themselves do not, as the root `Dockerfile` states).
 - Method docstrings cite wave numbers and `HISTORY.md` sections; behaviour is as described here.
-- No OPEN_ITEMS ids refer to this module.
+- `OPEN_ITEMS.md` `SEC-15.6b` refers to this module only for what remains elsewhere (the `MGT-2` read checks, the console); the SDK part is done.
 
 ## 3. Unit tests
 
@@ -309,6 +311,7 @@ Each test asserts the verb, path, params and body the client sends against a scr
 | `tests/test_alarm_scope.py` | Which cell an alarm is about (cell IOCs, relation IOCs, element-level functions, no ref); a cell alarm holds that cell only; an element alarm holds every cell; only critical alarms hold; `query_critical_alarms` | 16 |
 | `tests/test_platform.py` | Provider register/deregister, publish/list/unpublish service, discover, event subscribe (with every CAPIFEventFilter)/list/unsubscribe; 4xx | 11 |
 | `tests/test_operator_ui.py` | Builders drop unset fields; a mistake is raised where it is written (`..`, a GET action, a sparkline without `y`); block-style YAML round trip; `add_to_manifest` keeps comments, creates the file, refuses a second declaration and writes nothing when the check fails; a table with a row detail builds and its per-row source is a declared read, a `{row.x}` naming no column is refused; the minimal example (with a row drawer) builds a byte-identical package whose declaration passes; the ADR example loads | 12 |
+| `tests/test_msac_credential.py` | `SEC-15.6b`: `msac_credential` is sent as `X-MSAC-Credential` by `execute_action` and `mediate_action` and not in the body; no headers when it is None or left out; keyword only; the header survives the retry wrapper next to `Idempotency-Key`, on the repeat too; the value is not in an `SdkError`, a `repr`, the return value or the log; no environment fallback; the header name equals RAN NF OAM's | 7 |
 | `tests/test_wave10_wrappers.py` | `get_dataset` (reuses the consumer's job, pages records oldest first; creates a job; 404 for unknown dataset), `store_model` (registers once, then adds artifact versions), the `start_*`/`complete_*` wrappers, `execute_action`, `read_config`, autonomy dispatch | 5 |
 
 ### 3.3 What is not covered here

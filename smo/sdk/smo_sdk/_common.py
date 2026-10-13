@@ -51,6 +51,18 @@ def ensure_ok(resp) -> Any:
     return body
 
 
+MSAC_CREDENTIAL_HEADER = "X-MSAC-Credential"   # the header RAN NF OAM reads (`ran-nf-oam/app/msac.py` CREDENTIAL_HEADER, SEC-15.6)
+
+
+def credential_kwargs(msac_credential: str | None) -> dict[str, dict[str, str]]:
+    """The extra keyword arguments of an R1 call that carry an MSAC Identity's credential: `{"headers": {"X-MSAC-Credential": value}}`, or `{}` when none is given.
+
+    The value goes into that header and nowhere else: not into the body, a log line, an exception or a `repr`, and the SDK reads no environment variable for it (the rApp passes in the secret it
+    holds). An empty `{}` for None, so a call without a credential is made exactly as it was before.
+    """
+    return {} if msac_credential is None else {"headers": {MSAC_CREDENTIAL_HEADER: msac_credential}}
+
+
 def _is_concurrent_modification(resp) -> bool:
     """409 whose ProblemDetails title is CONCURRENT_MODIFICATION (smo_shared/versioning.py), as
     opposed to the other 409s (an illegal transition, a name conflict), which are final answers."""
