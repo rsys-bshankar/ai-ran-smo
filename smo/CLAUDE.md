@@ -118,6 +118,10 @@ string, for instance, silently breaks the sequence-diagram grammar and
 only shows up as a render error on the PR, never in a text diff. Run it
 (or let CI run it) after touching any file under `docs/call-flows/`.
 
+A call flow that has PNG images (`docs/call-flows/images/`, OPEN_ITEMS.md DOC-CF) is drawn again when its diagrams change:
+`python3 scripts/render_call_flows.py docs/call-flows/<flow>.md` (needs `npm ci` in gui/ and `pip install playwright`);
+`tests_integration/test_call_flow_images.py` fails on an image older than its diagram.
+
 **6. Code documentation** (CI job `Code documentation`; the rule is `docs/CODE_DOCUMENTATION.md`):
 
 ```bash
