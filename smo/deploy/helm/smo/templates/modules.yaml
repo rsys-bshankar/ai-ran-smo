@@ -164,6 +164,7 @@ spec:
             - { name: ONBOARDING_TRUST_STORE, value: /run/rapp-trust }
             {{- end }}
             {{- if $.Values.rappSigning.requireSigned }}
+            {{- if not $.Values.rappSigning.trustStoreConfigMap }}{{ fail "rappSigning.requireSigned=true needs rappSigning.trustStoreConfigMap: without the accepted publishers' keys every package would be refused (values-production.yaml turns signing on)" }}{{ end }}
             - { name: ONBOARDING_REQUIRE_SIGNED_PACKAGES, value: "true" }
             {{- end }}
             {{- end }}

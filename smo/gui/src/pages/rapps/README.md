@@ -10,7 +10,7 @@ Route: `/rapps` (tabs in the hash: `#directory` (default), `#instances`, `#packa
 | rapps.pinned | sections/PinnedAttention.tsx | pinned, then FAULTED and UPGRADING rApps, max 6 cards, each with its headline KPI | `/api/me/pins` (shared with the sidebar); `/api/rapps?state=FAULTED\|UPGRADING&limit=6` only when the summary counts any; `/rapp-mgmt/instances/performance/latest?ids=` for the cards | 15 s | 0–3 calls |
 | rapps.directory | sections/Directory.tsx | every rApp, search, state / owner / page / pinned filters, star to pin | `/api/rapps` (BFF, server paging) | 15 s | 1 call/page |
 | rapps.instances | sections/InstanceTable.tsx (+ InstanceDrawer, InstanceActions, UpgradeModal, VersionHistory, LifecycleCell, HeadlineKpi) | instance server table, state filter, flow 07 lifecycle column, headline KPI column | `/rapp-mgmt/instances?state=&limit=&offset=`; package names `/onboarding/packages?limit=500`; `/rapp-mgmt/instances/performance/latest?ids=<the page's ids>` | 15 s / 60 s | 3 calls |
-| rapps.onboard | sections/OnboardForm.tsx | onboard a CSAR | `POST /onboarding/packages` | — | 0 |
+| rapps.onboard | sections/OnboardForm.tsx | onboard a CSAR: upload the file, or give a location | `POST /onboarding/packages/upload` (multipart), `POST /onboarding/packages` | — | 0 |
 | rapps.packages | sections/PackagesTable.tsx (+ PackageDrawer, CreateInstance) | package pipeline counts (filter chips), package server table, Deploy, lifecycle calls | summary; `/onboarding/packages?state=` (`include_deleted=false` for All states: a deleted package is shown only under DELETING) | 15 s | 1 call/page |
 | rapps.rollouts | sections/Rollouts.tsx | instances UPGRADING, with resolve actions | `/rapp-mgmt/instances?state=UPGRADING` | 15 s | 2 calls |
 

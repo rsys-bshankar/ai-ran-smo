@@ -24,7 +24,7 @@ export function fakeBff(routes: Record<string, Handler | Reply>) {
     const [rawPath, search = ""] = String(url).replace(/^\/api/, "").split("?");
     const headers: Record<string, string> = {};
     new Headers(init?.headers).forEach((v, k) => { headers[k.toLowerCase()] = v; });
-    const call: Call = { method: (init?.method ?? "GET").toUpperCase(), path: rawPath, query: new URLSearchParams(search), headers, body: init?.body ? JSON.parse(String(init.body)) : undefined };
+    const call: Call = { method: (init?.method ?? "GET").toUpperCase(), path: rawPath, query: new URLSearchParams(search), headers, body: init?.body instanceof FormData ? init.body : init?.body ? JSON.parse(String(init.body)) : undefined };   // a multipart upload is kept as its FormData
     calls.push(call);
     const key = `${call.method} ${call.path}`;
     const found = Object.entries(routes).find(([k]) => k === key || (k.endsWith("*") && key.startsWith(k.slice(0, -1))));

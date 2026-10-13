@@ -23,6 +23,7 @@ import yaml
 from smo_shared import csar_signing
 from smo_shared.operator_ui import OperatorUiInvalid, validate_operator_ui
 from smo_shared.runtime_resources import is_quantity
+from smo_shared.webhook import normalise_base_url
 
 
 class PackageValidationFailed(Exception):
@@ -103,7 +104,7 @@ def _parse_ai_capabilities(z: zipfile.ZipFile) -> dict | None:
     """Reads the optional AI Platform declarations from `manifest.yaml` and `capabilities.yaml` at the CSAR root; returns a dict, or None when neither file gives anything.
 
     `manifest.yaml`: `rappManifest.manifestVersion` and `aiRuntimeSdkVersion`; the AI-runtime keys `executionModes`, `autonomyModes`, `requiredServices` and `runtimeProfiles`
-    (under `rappManifest` or at the top level, W7-03); `limits` (AI-10.1); `operatorUi` (GUI-8.2). `capabilities.yaml`: `capabilities.consumes` and `provides`, each a list of
+    (under `rappManifest` or at the top level, W7-03); `limits` (AI-10.1); `operatorApi.baseUrl` (call flow 01b); `operatorUi` (GUI-8.2). `capabilities.yaml`: `capabilities.consumes` and `provides`, each a list of
     `{namespace, description}` naming which of the SDK's six namespaces (data, analytics, models, lifecycle, intent, platform) the rApp uses. The layout is specified in
     docs/RAPP_PACKAGING.md.
 
@@ -137,6 +138,11 @@ def _parse_ai_capabilities(z: zipfile.ZipFile) -> dict | None:
         limits = rapp_manifest.get("limits", manifest.get("limits"))
         if limits is not None:
             result["limits"] = _validate_limits(limits)
+        # Call flow 01b (DOC-CF-1.1 review): where the rApp's operator API is reached, so CreateInstance needs no address typed by the operator (who may still
+        # give one, which wins). `operatorApi.baseUrl` passes the same guard as an operator-given `operatorApiBase` (smo_shared.webhook.normalise_base_url).
+        operator_api = rapp_manifest.get("operatorApi", manifest.get("operatorApi"))
+        if operator_api is not None:
+            result["operatorApi"] = _validate_operator_api(operator_api)
         # GUI-8.2: the operator page the rApp declares (docs/adr/0004-operator-ui-declaration.md). Optional; absent -> the key is absent.
         operator_ui = rapp_manifest.get("operatorUi", manifest.get("operatorUi"))
         if operator_ui is not None:
@@ -196,6 +202,19 @@ def _validate_runtime_profiles(profiles, execution_modes) -> dict:
 
 # name -> (whole numbers only?, largest value). Every limit is positive. Enforced by RAN NF OAM (AI-10.2, AI-10.3).
 LIMIT_SPECS = {"configJobsPerHour": (True, 100_000), "maxElementsPerJob": (True, 10_000), "maxChangePercent": (False, 10_000)}
+
+
+def _validate_operator_api(operator_api) -> dict:
+    """`operatorApi` is a mapping with one key, `baseUrl`: an http(s) base URL with no credentials, query or fragment and not a loopback, link-local or
+    metadata address (`normalise_base_url`, the rule an operator-given `operatorApiBase` follows). Returns `{"baseUrl": <normalised>}`; anything else raises
+    PackageValidationFailed naming the rule."""
+    if not isinstance(operator_api, dict) or set(operator_api) != {"baseUrl"}:
+        raise PackageValidationFailed("operatorApi must be a mapping with exactly one key, baseUrl")
+    base = normalise_base_url(operator_api["baseUrl"]) if isinstance(operator_api["baseUrl"], str) else None
+    if base is None:
+        raise PackageValidationFailed("operatorApi.baseUrl must be an http or https URL without credentials, query or fragment, "
+                                      "and not a loopback, link-local or metadata address")
+    return {"baseUrl": base}
 
 
 def _validate_limits(limits) -> dict:

@@ -149,6 +149,26 @@ describe("rApps page", () => {
     expect(container.textContent).toContain("Onboard a package");
   });
 
+  // call flow 01a: a chosen .csar is uploaded as multipart to /onboarding/packages/upload, and the location field is not required then
+  it("uploads a chosen .csar file instead of posting a location", async () => {
+    const calls = bff({}, { "POST /smo/onboarding/packages/upload": { status: 202, body: { packageId: "p9", trackingId: "p9" } } });
+    const { container } = await open("#packages");
+    await settle(6);
+    const form = container.querySelector<HTMLFormElement>("[data-section='rapps.onboard'] form")!;
+    const input = form.querySelector<HTMLInputElement>("input[type=file]")!;
+    const csar = new File([new Uint8Array([80, 75, 3, 4])], "my-rapp.csar", { type: "application/zip" });
+    Object.defineProperty(input, "files", { value: [csar] });
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    await settle(2);
+    expect(form.querySelector<HTMLInputElement>("input[pattern]")!.required).toBe(false);
+    await submit(form);
+    await settle(4);
+    const upload = calls.find((c) => c.method === "POST" && c.path === "/smo/onboarding/packages/upload")!;
+    expect((upload.body as FormData).get("file")).toBeInstanceOf(File);
+    expect(((upload.body as FormData).get("file") as File).name).toBe("my-rapp.csar");
+    expect(calls.some((c) => c.method === "POST" && c.path === "/smo/onboarding/packages")).toBe(false);
+  });
+
   // faulted rApps are asked from the directory only when the summary counts some
   it("asks for faulted rApps only when there are some, and shows them in the strip", async () => {
     const quiet = bff();

@@ -37,18 +37,23 @@ sequenceDiagram
     participant Host as Package host
     participant NFO as NFO
 
-    Op->>Onb: POST /onboarding/packages<br/>{location: http(s)://…/name.csar, applicationType: rApp}
-    Note over Onb: insert package ONBOARDING (committed)<br/>location must end .csar and pass the SSRF guard
-    Onb->>Host: GET location (30 s, no redirects)
-    Host-->>Onb: CSAR bytes
-    Note over Onb: 1. signature over TOSCA-Metadata/DIGESTS.sha256<br/>   (ONBOARDING_TRUST_STORE, when set)<br/>2. TOSCA.meta → Entry-Definitions<br/>3. identity (name, version, vendor, descriptor ids)<br/>4. manifest: aiCapabilities, operatorUi, limits,<br/>   runtimeProfiles · Files/Sme declarations<br/>5. Artifacts/ registered · integrity hash (SHA-256)<br/>6. same hash already onboarded → refused
+    alt upload from the console (multipart, up to 50 MiB)
+        Op->>Onb: POST /onboarding/packages/upload<br/>{file: name.csar, applicationType: rApp}
+        Note over Onb: insert package ONBOARDING (committed)<br/>location recorded as upload:name.csar<br/>file name must end .csar
+    else a location Onboarding fetches
+        Op->>Onb: POST /onboarding/packages<br/>{location: http(s)://…/name.csar, applicationType: rApp}
+        Note over Onb: insert package ONBOARDING (committed)<br/>location must end .csar and pass the SSRF guard
+        Onb->>Host: GET location (30 s, no redirects)
+        Host-->>Onb: CSAR bytes
+    end
+    Note over Onb: 1. signature over TOSCA-Metadata/DIGESTS.sha256<br/>   (ONBOARDING_TRUST_STORE, when set)<br/>2. TOSCA.meta → Entry-Definitions<br/>3. identity (name, version, vendor, descriptor ids)<br/>4. manifest: aiCapabilities, operatorApi.baseUrl,<br/>   operatorUi, limits, runtimeProfiles · Files/Sme<br/>5. Artifacts/ registered · integrity hash (SHA-256)<br/>6. same hash already onboarded → refused
     Onb->>NFO: POST /nfo/descriptors<br/>{packageId, name: entry definitions,<br/>workloadTemplate{toscaEntryDefinitions, containerResourcesByMode}}
     Note over NFO: store NFDeploymentDescriptor<br/>(FK to the package row committed above)
     alt every step passed and NFO answered 201
         NFO-->>Onb: 201 {nfDeploymentDescriptorId}
         Note over Onb: ONBOARDING → AVAILABLE<br/>keep descriptor id, identity, declarations
         Onb-->>Op: 202 {packageId, trackingId}
-    else location refused, fetch failed, signature, TOSCA, manifest or declaration invalid, duplicate hash
+    else not .csar, location refused, fetch failed, signature, TOSCA, manifest or declaration invalid, duplicate hash
         Note over Onb: ONBOARDING → FAILED (NFO not called)
         Onb-->>Op: 202 {packageId, failureReason: place and rule broken}
     else NFO refused the descriptor
@@ -78,11 +83,11 @@ sequenceDiagram
     participant FOCOM as FOCOM
     participant App as rApp (operatorApiBase)
 
-    Op->>RM: POST /rapp-mgmt/instances<br/>{packageId, config, autonomyMode (default SHADOW),<br/>regionScope, operatorApiBase, approvalPolicy, authzScope}
+    Op->>RM: POST /rapp-mgmt/instances<br/>{packageId, config, autonomyMode (default SHADOW),<br/>regionScope, operatorApiBase (optional), approvalPolicy, authzScope}
     Note over RM: operatorApiBase: http(s), no credentials,<br/>not loopback/link-local/metadata (else 422)<br/>approvalPolicy only with ASSIST (else 422)<br/>authzScope well-formed (else 422)
     RM->>Onb: GET /onboarding/packages/{packageId}/onboarding-status
     alt AVAILABLE or PRIMED, with nfDeploymentDescriptorId
-        Onb-->>RM: {state, nfDeploymentDescriptorId, …}
+        Onb-->>RM: {state, nfDeploymentDescriptorId,<br/>aiCapabilities.operatorApi.baseUrl, …}
     else unknown package
         Onb-->>RM: 404
         RM-->>Op: 404 PACKAGE_NOT_FOUND (nothing created)
@@ -117,15 +122,16 @@ sequenceDiagram
     Note over NFO: deployment INITIAL → RUNNING in this request<br/>Phase 1: records it, starts no workload
     NFO-->>RM: 202 {nfDeploymentId, state RUNNING, clusterId}
     Note over RM: workloadRef = nfDeploymentId (null if NFO refused)
-    Note over RM: commit the instance (DEPLOYING)
-    opt operatorApiBase given (01c)
+    Note over RM: operator API base = the operator's operatorApiBase,<br/>else the package's operatorApi.baseUrl, else none<br/>commit the instance (DEPLOYING)
+    opt a base is known (01c)
         RM->>App: POST /rapps/{id}/operator/instances/{id}/credentials (via R1)<br/>{oauthClientId, oauthClientSecret}
         App-->>RM: 204 (or an error: not delivered)
     end
     RM-->>Op: 202 {instanceId, oauthClientId, credentialsDelivered}
 ```
 
-`credentialsDelivered: false` (no base, or the rApp did not take them) leaves the instance DEPLOYING; the rApp cannot bootstrap it until it
+The operator types no address for a package that declares one (`operatorApi.baseUrl` in its manifest, checked by Onboarding with the
+`operatorApiBase` rule); a typed address overrides it. `credentialsDelivered: false` (no base at all, or the rApp did not take them) leaves the instance DEPLOYING; the rApp cannot bootstrap it until it
 gets them: the operator sends them with **Re-send credentials** (01e) once the rApp is reachable.
 
 ## 01c — The rApp receives the instance's credentials
@@ -193,7 +199,8 @@ sequenceDiagram
     RM->>OAM: PUT /rapp-limits/{oauthClientId} (manifest limits)
     RM->>OAM: PUT /rapp-approval-policy/{oauthClientId} (if one was given)
     alt both put in force (or none asked)
-        RM->>SME: POST provider and service registrations<br/>(package Files/Sme declarations, apfId = oauthClientId, best effort)
+        RM->>SME: POST provider and service registrations<br/>(package Files/Sme declarations, apfId = oauthClientId)
+        Note over RM: best effort, unless RAPP_MGMT_REQUIRE_SME_REGISTRATION<br/>(on in values-production.yaml): then a refusal is<br/>502 UPSTREAM_FAILED, no answer 503, and it stays DEPLOYING
         Note over RM: DEPLOYING → RUNNING
         RM-->>App: 200 {state RUNNING}
         App-->>Op: 200 {…instance, bootstrap: {state RUNNING}}
@@ -261,3 +268,11 @@ instance runs, because its registrations at SME and DME are under the old id.
 - **`autonomyMode` and `regionScope` are fixed at CreateInstance** for the instance's lifetime; call flow 09 shows what they drive (HISTORY.md
   OI-6.3). `usage/start` (first, at CreateInstance, which fails without it) and `usage/stop` (at terminate) let Onboarding's deprime and delete
   guards see every instance (call flow 06).
+- **Decided in the review of this flow with the product owner (DOC-CF-1.1 review):**
+  - A package can be uploaded from the console (`POST /onboarding/packages/upload`); the URL path stays for automation.
+  - The package says where its rApp's operator API is (`operatorApi.baseUrl`), so Deploy needs no typed address; a typed one overrides it.
+  - `SHADOW` stays the default autonomy mode: a new instance writes nothing until someone raises it.
+  - Production (`deploy/helm/smo/values-production.yaml`) requires signed packages (the chart refuses to render without a trust store) and makes the
+    SME registration of a package's declarations a condition of the bootstrap. The defaults keep both off, for a lab.
+  - Not done yet, tracked in `OPEN_ITEMS.md`: the instance secrets are stored unencrypted in the identity table (as the modules' own identities
+    are), and secrets are rotated only by hand (**Re-send credentials**).

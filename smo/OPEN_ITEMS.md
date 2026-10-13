@@ -458,6 +458,8 @@ of what the routes accept, PR 4 = clients, tooling and migrations; "none yet" me
 | SEC-15.11b | The sign-in lockout (`SEC-15.11`) does not slow one account guessed from many addresses at once (each address gets its own 5 tries per name), and a source's throttle rows are never cleared or purged (`docs/RETENTION.md`); a deployment with a different number of proxies than `GUI_TRUSTED_PROXY_HOPS` says is wrong in one direction or the other (documented). Related: `SEC-8.6`, a request limiter on the login routes | `gui-bff/app` | A decision |
 | SEC-15.13b | SME's `POST /invoker-registrations` does not honour an `Idempotency-Key` (it would have to store the answer, which holds the onboarding secret in clear), so an SDK is kept from registering twice only by not repeating the call after a lost answer; the Java SDK now does that (`HISTORY.md` "PR-SEC-15 (part 4)"). A registration a lost answer left behind is an orphan invoker that SME's stale-invoker purge removes | `sme/app`, `sdk-java/` | none yet |
 | SEC-15.16 | The webhook guard resolves a host name once to check it and the HTTP client resolves it again to connect, so DNS rebinding between the two is not caught; closing it needs the client to connect to the vetted address (a pinned transport) | `shared/smo_shared/webhook.py` | none yet |
+| SEC-15.18 | The secrets of the rApp instances' identities (and of the modules' own) are stored unencrypted in the shared `module_identity` table: whoever reads the database can act as an instance. Decided in the review of call flow 01: encrypt them with a key from the environment (a mounted secret), as `GUI_TOTP_KEY` does for the sign-in secrets | `shared/smo_shared/module_identity.py`, `smo_shared/r1_client.py` | none yet |
+| SEC-15.19 | An instance's secret is rotated only by hand (**Re-send credentials**, `POST /rapp-mgmt/instances/{id}/credentials/renew`). Decided in the review of call flow 01: later, an automatic rotation on a schedule | `rapp-mgmt/app/main.py` | none yet |
 
 Closed by this change (details in `CHANGELOG.md` and the `shared` README): the webhook SSRF guard accepted spellings of loopback, unspecified and link-local addresses
 (`localhost.`, `127.1`, `2130706433`, `0x7f.0.0.1`, octal, `0`, IPv4-mapped IPv6) and did not look at what a name resolves to; `roles.py` allow-list patterns ended in `$`, which
@@ -1312,9 +1314,9 @@ there, what is right, what is wrong), agree the corrections, then build what the
 
 | ID | Flow | State |
 |---|---|---|
-| DOC-CF-1.1 | 01 rApp onboarding → running instance (01a-01e; the instance identity and the rApp's own bootstrap built for it) | done: `HISTORY.md` DOC-CF-1.1 |
-| DOC-CF-1.2 | 06 package lifecycle (06a-06d; the usage-registration contract, package error codes and NFO descriptor delete built for it) | done in this change: `HISTORY.md` DOC-CF-1.2 |
-| DOC-CF-1.3 | 07 rApp instance lifecycle (upgrade, rollback, terminate, faults, kill switch) | next. Seen while doing 1.2: NFO lets a descriptor be deployed once, so a second instance of one package gets no NFO deployment (its `workloadRef` is null) and rApp Management creates it anyway |
+| DOC-CF-1.1 | 01 rApp onboarding → running instance (01a-01e; the instance identity and the rApp's own bootstrap built for it; then, after the review with the product owner, package upload, the operator API address from the manifest and the production settings) | done: `HISTORY.md` DOC-CF-1.1 and DOC-CF-1.1 review |
+| DOC-CF-1.2 | 06 package lifecycle (06a-06d; the usage-registration contract, package error codes and NFO descriptor delete built for it) | done: `HISTORY.md` DOC-CF-1.2 |
+| DOC-CF-1.3 | 07 rApp instance lifecycle (upgrade, rollback, terminate, faults, kill switch) | next. Seen while doing 1.1's review: an upgrade's replacement instance does not get the old instance's operator API base (nor the new package's declared one), so its credentials are never pushed. Seen while doing 1.2: NFO lets a descriptor be deployed once, so a second instance of one package gets no NFO deployment (its `workloadRef` is null) and rApp Management creates it anyway |
 | DOC-CF-1.4 | 15 NFO workload lifecycle | open |
 | DOC-CF-1.5 | 17 model runtime lifecycle | open |
 | DOC-CF-1.6 | 02 AI/ML model train → inference | open |

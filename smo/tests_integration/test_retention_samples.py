@@ -142,7 +142,7 @@ def test_the_production_sample_renders_and_sets_the_retention_of_the_workers_and
     """Rendered with the production values, each module's Deployment (the GUI backend included) carries the proposed retention values, and no
     CronJob is added. Needs helm.
     """
-    docs = _render("-f", str(CHART / "values-production.yaml"))
+    docs = _render("-f", str(CHART / "values-production.yaml"), "--set", "rappSigning.trustStoreConfigMap=rapp-publishers")
     for variable, value in PROPOSED.items():
         for where in WHERE[variable]:
             name = "gui-bff" if where == "gui" else where

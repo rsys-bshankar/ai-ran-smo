@@ -2765,6 +2765,26 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.1 review — call flow 01 walked through with the product owner: package upload, the address from the manifest, production settings
+
+Flow 01 was rewritten (DOC-CF-1.1) before it was walked through; the walk-through raised seven questions, decided as recommended, with the browser
+upload brought forward:
+
+- **Upload from the console.** `POST /onboarding/packages/upload` (multipart `file`, `applicationType`) runs the onboarding pipeline of
+  `POST /packages` on the uploaded bytes (`_onboard`, shared by both routes; the location is recorded as `upload:<file name>`). R1 Termination's body cap
+  lets that route carry 50 MiB (`R1_MAX_BODY_OVERRIDES` default), like the model artifact upload and the GUI's nginx; the GUI backend allows it to an
+  operator. **Onboard a package** takes a file or, with none chosen, a location.
+- **The package says where its rApp is.** `operatorApi.baseUrl` in the manifest is validated by Onboarding with the `operatorApiBase` rule
+  (`smo_shared.webhook.normalise_base_url`) and kept in `aiCapabilities.operatorApi`; CreateInstance uses it when the operator gives no
+  `operatorApiBase`, and a given one wins. The four sample manifests declare their service (`http://<rapp>:8000`); the `.csar` files are rebuilt.
+- **Production settings.** `values-production.yaml` sets `rappSigning.requireSigned: true`, and the chart now fails to render when signing is required
+  with no trust store ConfigMap. It also sets the new `RAPP_MGMT_REQUIRE_SME_REGISTRATION=true`: a package's SME declarations must be registered for
+  the bootstrap to be accepted (502 `UPSTREAM_FAILED` for a refusal, 503 for no answer, the instance stays DEPLOYING). Both stay off by default.
+- **Kept:** `SHADOW` as the default autonomy mode.
+- **Deferred, tracked:** encrypting the identity secrets in `module_identity` (`OPEN_ITEMS.md` SEC-15.18) and an automatic secret rotation (SEC-15.19).
+- The GUI demo integration test now uploads the sample `.csar` and deploys with no address (`tests_integration/test_gui_demo_buttons.py`); the demo
+  guide says to do the same.
+
 ### DOC-CF-1.2 — call flow 06 rewritten from the code, and the package usage contract made to hold
 
 The second flow of the call-flow audit, decided with the product owner (the recommendations of the audit, all taken). The old flow 06 repeated

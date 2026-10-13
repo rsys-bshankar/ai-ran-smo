@@ -22,7 +22,7 @@ import uuid
 from typing import Literal
 
 import httpx
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, File, Form, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -76,11 +76,15 @@ apply_correlation_id(app)
 install_health(app, checks=[database_check, sme_token_check])  # /live, /ready and the /health alias (PR-ST-7)
 
 
+# The application types the `application_package.application_type` CHECK constraint accepts; both onboarding routes take only these (any other is a 422).
+OnboardApplicationType = Literal["rApp", "xApp", "CloudifiedNF", "PNF"]
+
+
 # Request body of POST /packages. `location` is caller-supplied and untrusted: it is checked for `.csar` and against the SSRF guard before it is fetched
 # (`_validate_package`). `applicationType` is limited to the values the column's CHECK constraint accepts, so any other value is a 422 here and not a database error.
 class OnboardRequest(BaseModel):
     location: str
-    applicationType: Literal["rApp", "xApp", "CloudifiedNF", "PNF"] = "rApp"      # the column's CHECK (migrations/001_init.sql): any other value was a 500
+    applicationType: OnboardApplicationType = "rApp"      # the column's CHECK (migrations/001_init.sql): any other value was a 500
 
 
 @app.post("/packages", status_code=202)
@@ -101,11 +105,38 @@ def onboard_package(body: OnboardRequest, db: Session = Depends(get_session)):
     # a package stayed in ONBOARDING for good.
     # `failureReason` is the exact message for PackageValidationFailed and only the exception class name for anything else, so internals are not returned;
     # it is logged and never stored.
+    return _onboard(db, body.applicationType, body.location, lambda: _validate_package(body.location))
+
+
+@app.post("/packages/upload", status_code=202)
+def upload_package(file: UploadFile = File(...), applicationType: OnboardApplicationType = Form("rApp"), db: Session = Depends(get_session)):
+    """OnboardPackage from an uploaded CSAR (call flow 01a): the same pipeline as `POST /packages`, with the bytes sent in the request (multipart
+    `file`) instead of fetched from a location. Answers 202 `{packageId, trackingId[, failureReason]}` the same way: the verdict is the package state.
+    """
+    # Maintainer notes (not published). The package's location is recorded as `upload:<file name>` (and its artifacts' accessUrl as `upload:<file name>#<path>`):
+    # the bytes are not kept, as for a fetched package. A file name not ending in .csar ends FAILED, like a location that does not. R1 Termination lets this route
+    # carry up to 50 MiB (its body cap); the zip limits of `validate_package_bytes` apply inside.
+    name = (file.filename or "package.csar").replace("/", "_").replace("\\", "_")
+    data = file.file.read()      # a plain def: FastAPI runs it in its thread pool, so the validation and the NFO call do not block the event loop
+    return _onboard(db, applicationType, f"upload:{name}", lambda: _validate_uploaded(name, data))
+
+
+def _validate_uploaded(name: str, data: bytes) -> tuple[str, list[tuple[str, str]], str, dict]:
+    """`_validate_package` for bytes that were uploaded: the .csar name rule and the signature policy, then `validate_package_bytes`."""
+    if not name.endswith(".csar"):
+        raise PackageValidationFailed(f"uploaded file {name!r} does not end with .csar")
+    trust, require_signed = _signing_policy()
+    return validate_package_bytes(data, f"upload:{name}", trust=trust, require_signed=require_signed)
+
+
+def _onboard(db: Session, application_type: str, location: str, load) -> dict:
+    """The onboarding pipeline both routes share: insert the package ONBOARDING (committed), `load()` the validated content, reject a duplicate, keep the
+    identity, artifacts and declarations, ask NFO for the descriptor, then AVAILABLE; any failure ends FAILED (see `onboard_package`)."""
     pkg = ApplicationPackage(
-        application_type=body.applicationType,
+        application_type=application_type,
         name="unresolved-until-validated",
         version="0.0.0",
-        manifest_ref=body.location,
+        manifest_ref=location,
         state=PackageState.ONBOARDING,
     )
     db.add(pkg)
@@ -124,7 +155,7 @@ def onboard_package(body: OnboardRequest, db: Session = Depends(get_session)):
 
     failure_reason: str | None = None
     try:
-        entry_definitions, artifacts, integrity_hash, identity = _validate_package(body.location)
+        entry_definitions, artifacts, integrity_hash, identity = load()
         # AsdDescriptorValidator's own duplicate-descriptor-id detection,
         # adapted to this build's own package identity (a content hash,
         # since real ASD descriptor data doesn't exist here) — a
