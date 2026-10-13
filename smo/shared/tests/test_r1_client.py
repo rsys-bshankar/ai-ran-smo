@@ -24,6 +24,7 @@ class FakeNetwork:
         self.issued: list[str] = []
         self.revoked: set[str] = set()
         self.invokers = 0
+        self.grants: list[str] = []           # the client_id of each token request, in order
         self.sme_up = True
 
     def _resp(self, status, payload, method, url):
@@ -44,6 +45,7 @@ class FakeNetwork:
                 self.invokers += 1
                 return self._resp(201, {"apiInvokerId": f"api-invoker-{self.invokers}", "onboardingSecret": "s"}, "POST", url)
             assert json["grant_type"] == "client_credentials" and json["client_secret"] == "s"
+            self.grants.append(json["client_id"])
             token = f"tok-{len(self.issued) + 1}"
             self.issued.append(token)
             return self._resp(200, {"access_token": token, "expires_in": 3600}, "POST", url)
@@ -192,3 +194,37 @@ def test_the_bootstrap_key_may_be_a_file(net, monkeypatch, tmp_path):
     monkeypatch.setenv("SMO_BOOTSTRAP_KEY_FILE", str(keyfile))
     R1Client(R1).get("/focom/inventory")
     assert net.calls[0][2]["X-Bootstrap-Key"] == "file-key"
+
+
+def test_a_call_made_for_a_bound_instance_carries_that_instances_token(net, monkeypatch):
+    """Call flow 01c: a process given an instance's credentials uses them for the calls it makes while acting for that instance, its own identity
+    otherwise, and an instance it holds nothing for falls back to its own."""
+    monkeypatch.setattr(r1_client, "_instance_identities", {})
+    r1_client.bind_instance_identity("i-1", "api-invoker-of-i-1", "s")
+    with r1_client.acting_for("i-1"):
+        R1Client(R1).get("/rapp-mgmt/instances/i-1")
+    R1Client(R1).get("/focom/inventory")
+    with r1_client.acting_for("i-unknown"):
+        R1Client(R1).get("/focom/inventory")
+    assert net.grants == ["api-invoker-of-i-1", "api-invoker-1"] and net.invokers == 1
+    assert r1_client.instance_identity("i-1") == "api-invoker-of-i-1"
+    r1_client.forget_instance_identity("i-1")
+    assert r1_client.instance_identity("i-1") is None
+
+
+def test_an_instance_identity_sme_no_longer_knows_is_not_replaced_by_a_new_one(net, monkeypatch):
+    """A 400 from the token endpoint for a bound instance identity gives no token; the process never registers a new identity in its place."""
+    monkeypatch.setattr(r1_client, "_instance_identities", {})
+    r1_client.bind_instance_identity("i-2", "gone", "s")
+
+    real_post = net.post
+
+    def refusing(url, json=None, headers=None, **kw):
+        if url == f"{SME}/oauth2/token" and json["client_id"] == "gone":
+            return httpx.Response(400, json={}, request=httpx.Request("POST", url))
+        return real_post(url, json=json, headers=headers, **kw)
+
+    monkeypatch.setattr(r1_client.httpx, "post", refusing)
+    with r1_client.acting_for("i-2"):
+        assert R1Client(R1).get("/rapp-mgmt/instances/i-2").status_code == 401
+    assert net.invokers == 0

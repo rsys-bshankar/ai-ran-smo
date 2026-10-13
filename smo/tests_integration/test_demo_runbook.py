@@ -806,6 +806,7 @@ def test_energy_saving_demo_01_to_11_runs_end_to_end(mesh, loaded_apps, monkeypa
         demo.run(step, state)
     out = capsys.readouterr().out
     assert "Demo 11" in out
+    assert state["bootstrap"] == {"state": "RUNNING"}                            # Demo 01: the rApp bootstrapped as the instance (call flow 01d)
     assert state["historyRecords"] == 72 * len(demo.CELLS)                       # Demo 02
     assert state["emulation"]["midnightRecommendation"] == "LOCKED"               # Demo 05
     assert state["promoted"] == "PROMOTED" and state["runtime"] == "ACTIVE"       # Demo 06/07
@@ -838,6 +839,7 @@ def test_mobility_optimization_demo_00_to_11_runs_end_to_end(mesh, loaded_apps, 
         demo.run(step, state)
     out = capsys.readouterr().out
     assert "Demo 11" in out
+    assert state["bootstrap"] == {"state": "RUNNING"}                            # Demo 01: the rApp bootstrapped as the instance (call flow 01d)
     assert state["historyRecords"] == 72 * len(demo.RELATIONS)                    # Demo 02
     assert state["emulation"]["directionAccuracy"] >= 0.9                          # Demo 05
     assert state["promoted"] == "PROMOTED" and state["runtime"] == "ACTIVE"       # Demo 06/07
@@ -873,6 +875,7 @@ def test_coverage_optimization_demo_00_to_11_runs_end_to_end(mesh, loaded_apps, 
         demo.run(step, state)
     out = capsys.readouterr().out
     assert "Demo 11" in out
+    assert state["bootstrap"] == {"state": "RUNNING"}                            # Demo 01: the rApp bootstrapped as the instance (call flow 01d)
     assert state["historyRecords"] == 72 * len(demo.CELLS)                         # Demo 02
     assert state["emulation"]["moveAccuracy"] >= 0.9                                # Demo 05
     assert state["promoted"] == "PROMOTED" and state["runtime"] == "ACTIVE"       # Demo 06/07
@@ -906,6 +909,7 @@ def test_traffic_steering_demo_00_to_11_runs_end_to_end(mesh, loaded_apps, monke
         demo.run(step, state)
     out = capsys.readouterr().out
     assert "Demo 11" in out
+    assert state["bootstrap"] == {"state": "RUNNING"}                            # Demo 01: the rApp bootstrapped as the instance (call flow 01d)
     assert state["historyRecords"] == 72 * 4                                       # Demo 02
     assert state["emulation"]["steeringAccuracy"] >= 0.9                           # Demo 05
     assert state["promoted"] == "PROMOTED" and state["runtime"] == "ACTIVE"       # Demo 06/07

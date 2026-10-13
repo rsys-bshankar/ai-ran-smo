@@ -102,6 +102,12 @@
     "queryMatch": {}
   },
   {
+    "method": "POST",
+    "pattern": "^/rapp-mgmt/instances/[^/]+/credentials/renew$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
     "method": "DELETE",
     "pattern": "^/rapp-mgmt/instances/[^/]+$",
     "role": "admin",

@@ -126,6 +126,8 @@ def demo_01(state: dict) -> None:
     state.update(packageId=package["packageId"], instanceId=instance["instanceId"])
     started = call("post", "energy-saving-rapp", f"/instances/{instance['instanceId']}/start")
     state["datasets"] = started["datasets"]
+    state["bootstrap"] = started.get("bootstrap")      # call flow 01d: the rApp reported the instance up, as the instance
+    show("instance bootstrap", state["bootstrap"])
     show("package state", status["state"])
     show("execution modes", status["aiCapabilities"]["executionModes"])
     show("autonomy modes", status["aiCapabilities"]["autonomyModes"])

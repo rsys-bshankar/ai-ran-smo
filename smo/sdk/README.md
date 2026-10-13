@@ -78,6 +78,7 @@ It never calls a module directly and never touches a database.
 | `smo_sdk/lifecycle.py` | `LifecycleClient` |
 | `smo_sdk/intent.py` | `IntentClient`, module function `energy_saving_expectation` |
 | `smo_sdk/platform.py` | `PlatformClient` |
+| `smo_sdk/instances.py` | Call flow 01c, 01d: the rApp instance's own identity in the rApp process. `install(app)` adds the route rApp Management pushes an instance's credentials to (`POST /instances/{id}/credentials`, accepted only with the internal role R1 stamps) and a middleware that makes each `/instances/{id}/…` request act for that instance, so every SDK call it makes carries that instance's token (`smo_shared.r1_client.bind_instance_identity`, in memory only; outside an instance, or for one without credentials, the process's own). `bootstrap(sdk, id)` reports the instance up as itself and says how it went, never raising; `is_bound`, `invoker_of` |
 | `smo_sdk/operator_ui.py` | Authoring helper for a rApp's operator page (§2.9); not one of the six namespaces, no R1 call |
 | `examples/hello_operator_ui.py` | The smallest package that declares an operator page |
 | `tests/test_java_example_package.py` | Builds the Java SDK's example package (`../sdk-java/examples/hello-rapp/package/`) with `samples/build_csar.py --source-dir` and checks its manifest and `operatorUi` with the code Onboarding runs |
@@ -262,6 +263,7 @@ Module function `energy_saving_expectation(object_instance, cells=None, max_ener
 | `list_event_subscriptions(subscriber_id)` | `GET /sme/capif-events/v1/{subscriber}/subscriptions` | |
 | `unsubscribe_from_events(subscriber_id, subscription_id)` -> None | `DELETE /sme/capif-events/v1/{subscriber}/subscriptions/{id}` | |
 | `execute_action(requested_by, changes, action_id=None, source_context=None, scope="single-ME", msac_role=None, decision=None)` | `POST /dme/actions` | An O1 configuration action mediated by DME to RAN NF OAM (NETCONF). `action_id` is an idempotency key: a repeat is `IGNORED` (DME reports the original status). Same route as `data.mediate_action`, which has no `actionId` parameter |
+| `bootstrap_complete(instance_id)` | `POST /rapp-mgmt/instances/{id}/bootstrap-complete` | Call flow 01d: the instance is up. rApp Management puts its limits and approval policy in force (fail closed), registers its SME declarations and moves it `DEPLOYING → RUNNING`. Made as the instance (`smo_sdk.instances`); another caller's is 403 `NOT_THIS_INSTANCE`, an instance not `DEPLOYING` 409 |
 | `get_approval(approval_id)` | `GET /ran-nf-oam/rapp-approvals/{id}` | `AI-11`: the state of an action the operator holds for approval (`execute_action` answered `PENDING_APPROVAL` with an `approvalId`): `status` `PENDING`, `APPROVED` (then `jobId`), `REJECTED`, `EXPIRED` or `REFUSED`; `requiredApprovals` (1, or 2 when the policy asks for two different people) and `approvals` (the approvals so far: a `PENDING` request with one of two is still waiting). `decision={"inputsRef", "modelVersion", "rationale"}` on `execute_action` / `mediate_action` is why the rApp acts, kept by the platform as the decision record of the job (`AI-13`) |
 
 ### 2.5 Interactions

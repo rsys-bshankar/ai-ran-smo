@@ -1001,3 +1001,18 @@ def test_nothing_is_announced_when_the_registration_does_not_commit(client, db_s
     assert calls == [] and _outbox_rows(db_session_factory) == []
     with db_session_factory() as db:
         assert db.query(ServiceProfile).count() == 0
+
+
+def test_a_renewed_secret_keeps_the_invoker_and_ends_the_old_secret_and_tokens(client):
+    """Call flow 01d: a new secret for the same invoker id; the old secret is refused, the tokens issued before are revoked, the new secret works,
+    and an unknown invoker is 400 INVOKER_NOT_REGISTERED."""
+    inv = _register_invoker(client)
+    grant = {"grant_type": "client_credentials", "client_id": inv["apiInvokerId"]}
+    old_token = client.post("/oauth2/token", json={**grant, "client_secret": inv["onboardingSecret"]}).json()["access_token"]
+    renewed = client.post(f"/invoker-registrations/{inv['apiInvokerId']}/secret")
+    assert renewed.status_code == 200 and renewed.json()["apiInvokerId"] == inv["apiInvokerId"]
+    assert renewed.json()["onboardingSecret"] != inv["onboardingSecret"]
+    assert client.post("/oauth2/token", json={**grant, "client_secret": inv["onboardingSecret"]}).status_code == 400
+    assert client.post("/oauth2/token", json={**grant, "client_secret": renewed.json()["onboardingSecret"]}).status_code == 200
+    assert client.post("/oauth2/introspect", json={"token": old_token}).json()["active"] is False
+    assert client.post("/invoker-registrations/unknown/secret").status_code == 400

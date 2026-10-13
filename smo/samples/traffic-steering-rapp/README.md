@@ -114,7 +114,8 @@ This package declares:
 
 | Route | Purpose |
 |---|---|
-| `POST /instances/{id}/start` | Bind to a rapp-mgmt instance, discover datasets |
+| `POST /instances/{id}/start` | Bind to a rapp-mgmt instance, discover datasets; then reports the instance up **as the instance** (`smo_sdk.instances.bootstrap` → `bootstrap-complete`, call flow 01d): the answer's `bootstrap` is `{state: RUNNING}`, or `{state: null, reason}` (`NO_CREDENTIALS` when rApp Management has not pushed the instance's credentials) |
+| `POST /instances/{id}/credentials` | Where rApp Management pushes the instance's credentials (`smo_sdk.instances`, call flow 01c): accepted with the internal role only; kept in memory. Every request under `/instances/{id}/` then acts as that instance |
 | `POST /instances/{id}/lifecycle/{train,validate,emulate,deploy}` | Model lifecycle |
 | `POST /instances/{id}/evaluate` | One closed-loop pass (409 `MODEL_NOT_DEPLOYED` before deploy) |
 | `POST /instances/{id}/reconcile` | Settle pending ASSIST dispatches |

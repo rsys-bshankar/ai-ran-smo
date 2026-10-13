@@ -86,7 +86,8 @@ Served on port 8000. R1 Termination reaches it at `/rapps/<instance>/operator/..
 | Route | Purpose |
 |---|---|
 | `GET /health` | Liveness |
-| `POST /instances/{id}/start` | Bind to the rapp-mgmt instance; discover one data job per mode |
+| `POST /instances/{id}/start` | Bind to the rapp-mgmt instance; discover one data job per mode; then reports the instance up **as the instance** (`smo_sdk.instances.bootstrap` → `bootstrap-complete`, call flow 01d): the answer's `bootstrap` is `{state: RUNNING}`, or `{state: null, reason}` (`NO_CREDENTIALS` when rApp Management has not pushed the instance's credentials) |
+| `POST /instances/{id}/credentials` | Where rApp Management pushes the instance's credentials (`smo_sdk.instances`, call flow 01c): accepted with the internal role only; kept in memory. Every request under `/instances/{id}/` then acts as that instance |
 | `GET /instances`, `GET /instances/{id}` | List or read instances |
 | `POST /instances/{id}/lifecycle/train` | Register the model in MLMR, train, store the artifact |
 | `POST /instances/{id}/lifecycle/validate` | Validation job (held-out score) |

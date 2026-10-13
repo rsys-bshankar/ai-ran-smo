@@ -58,9 +58,11 @@ def _deploy(mesh, rapp: str, csar_url: str, config: dict, region: dict) -> str:
     """Step 01 in the console: Onboard a package, then Deploy with the configuration, AUTONOMOUS, the region and the operator API base URL."""
     package = mesh["onboarding"].post("/packages", json={"location": csar_url}).json()
     assert mesh["onboarding"].get(f"/packages/{package['packageId']}/onboarding-status").json()["state"] == "AVAILABLE"
-    return mesh["rapp-mgmt"].post("/instances", json={
+    created = mesh["rapp-mgmt"].post("/instances", json={
         "packageId": package["packageId"], "autonomyMode": "AUTONOMOUS", "config": config, "regionScope": region,
-        "operatorApiBase": f"http://{rapp}:8000"}).json()["instanceId"]
+        "operatorApiBase": f"http://{rapp}:8000"}).json()
+    assert created["credentialsDelivered"] is True, created         # call flow 01b: the rApp holds the instance's credentials
+    return created["instanceId"]
 
 
 def _govern(mesh, model_id: str, *events: str) -> None:
@@ -72,7 +74,9 @@ def _govern(mesh, model_id: str, *events: str) -> None:
 
 def _lifecycle(mesh, page: Page) -> None:
     """Steps 01 (the rApp's part) to 07: the demo buttons, with the governance decisions on the AI/ML page between them."""
-    page.press("demo-prepare")
+    prepared = page.press("demo-prepare")
+    assert prepared["instance"]["bootstrap"] == {"state": "RUNNING"}, prepared["instance"]["bootstrap"]   # call flow 01d, as the instance
+    assert mesh["rapp-mgmt"].get(f"/instances/{page.instance_id}").json()["state"] == "RUNNING"
     assert page.press("demo-history")["measurements"] > 0
     model_id = page.press("demo-train")["modelId"]
     _govern(mesh, model_id, "APPROVE_TRAINING")

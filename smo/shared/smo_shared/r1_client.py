@@ -40,6 +40,8 @@ own key in the module identity store. R1 Termination applies its role policy on
 that record (`roles.py`).
 """
 
+import contextlib
+import contextvars
 import logging
 import os
 import secrets
@@ -72,16 +74,18 @@ def identity_kind() -> str:
 class _ModuleIdentity:
     """This process's OAuth2 client identity at SME, and its cached token."""
 
-    def __init__(self, store=None):
-        """Starts with the invoker id and secret pinned by `SMO_INVOKER_ID` / `SMO_INVOKER_SECRET` when both are set in the environment, else none
-        (registered on first use).
+    def __init__(self, store=None, invoker_id: str | None = None, invoker_secret: str | None = None):
+        """Starts with the invoker id and secret given, else those pinned by `SMO_INVOKER_ID` / `SMO_INVOKER_SECRET` when both are set in the
+        environment, else none (registered on first use). An identity given here is an rApp instance's (`bind_instance_identity`): it is never
+        replaced by a registration of this process's own, so a refused one gives no token rather than another identity.
 
         `store` is the shared identity store; when None it is resolved on first use by `_identity_store`. No network or database access happens
         here.
         """
         self.lock = threading.Lock()
-        self.invoker_id: str | None = os.environ.get("SMO_INVOKER_ID") or None
-        self.invoker_secret: str | None = os.environ.get("SMO_INVOKER_SECRET") or None
+        self.pinned = invoker_id is not None
+        self.invoker_id: str | None = invoker_id or os.environ.get("SMO_INVOKER_ID") or None
+        self.invoker_secret: str | None = invoker_secret or os.environ.get("SMO_INVOKER_SECRET") or None
         # Where this module's invoker identity is shared with its other replicas (module_identity.py).
         # None = decide on first use: the database store when MODULE is set, else a per-process identity.
         self._store = store
@@ -186,7 +190,7 @@ class _ModuleIdentity:
     def _grant(self, token_endpoint: str) -> httpx.Response:
         return httpx.post(token_endpoint, json={
             "grant_type": "client_credentials", "client_id": self.invoker_id,
-            "client_secret": self.invoker_secret, "scope": RAPP_SCOPE if identity_kind() == "rapp" else "smo-internal",
+            "client_secret": self.invoker_secret, "scope": RAPP_SCOPE if self.pinned or identity_kind() == "rapp" else "smo-internal",
         }, timeout=5.0, **mtls.client_kwargs(token_endpoint))
 
     def token_for(self, base_url: str, refresh: bool = False) -> str | None:
@@ -207,7 +211,8 @@ class _ModuleIdentity:
                     self._onboard(token_endpoint)
                 resp = self._grant(token_endpoint)
                 # SME answers 400 when it no longer knows the invoker id (for example the registry was reset): register afresh, once, and ask again.
-                if resp.status_code == 400:   # SME no longer knows this invoker: onboard afresh, once
+                # An rApp instance's identity is never replaced this way: its id is what rApp Management and the safeguards know it by.
+                if resp.status_code == 400 and not self.pinned:   # SME no longer knows this invoker: onboard afresh, once
                     self._onboard(token_endpoint, stale_invoker_id=self.invoker_id)
                     resp = self._grant(token_endpoint)
                 resp.raise_for_status()
@@ -225,8 +230,62 @@ class _ModuleIdentity:
 
 _identity = _ModuleIdentity()
 
+# docs/call-flows/01-rapp-onboarding-to-deployment.md (01c, 01d): one rApp process may serve several rApp instances, and each instance has its own
+# identity at SME (made by rApp Management at CreateInstance, with its scope claim; its limits, kill switch and approval policy key on it). The
+# identities this process was given, by instance id, and the instance the code running now acts for: a call made while acting for a bound instance
+# carries that instance's token, any other call this process's own.
+_instance_identities: dict[str, _ModuleIdentity] = {}
+_instances_lock = threading.Lock()
+_acting_instance: contextvars.ContextVar[str | None] = contextvars.ContextVar("smo_acting_instance", default=None)
+
+
+def bind_instance_identity(instance_id: str, invoker_id: str, invoker_secret: str) -> None:
+    """Keeps, in this process's memory only, the credentials rApp Management issued for an rApp instance; a later call replaces them (a rotation)."""
+    with _instances_lock:
+        _instance_identities[str(instance_id)] = _ModuleIdentity(store=False, invoker_id=invoker_id, invoker_secret=invoker_secret)
+
+
+def forget_instance_identity(instance_id: str) -> None:
+    """Drops an instance's credentials (nothing happens when there are none)."""
+    with _instances_lock:
+        _instance_identities.pop(str(instance_id), None)
+
+
+def instance_identity(instance_id: str) -> str | None:
+    """The invoker id bound for an instance, or None."""
+    with _instances_lock:
+        found = _instance_identities.get(str(instance_id))
+    return found.invoker_id if found else None
+
+
+def set_acting_instance(instance_id: str | None) -> contextvars.Token:
+    """Makes the calls of the current context act for `instance_id` (None: this process's own identity); returns the token `reset_acting_instance` takes."""
+    return _acting_instance.set(str(instance_id) if instance_id else None)
+
+
+def reset_acting_instance(token: contextvars.Token) -> None:
+    """Undoes a `set_acting_instance`."""
+    _acting_instance.reset(token)
+
+
+@contextlib.contextmanager
+def acting_for(instance_id: str | None):
+    """`with acting_for(id):` the calls inside carry that instance's token when its identity is bound."""
+    token = set_acting_instance(instance_id)
+    try:
+        yield
+    finally:
+        reset_acting_instance(token)
+
 
 def _module_token(base_url: str, refresh: bool = False) -> str | None:
+    """The token of the instance the current context acts for, when its identity is bound; else this process's own."""
+    acting = _acting_instance.get()
+    if acting:
+        with _instances_lock:
+            bound = _instance_identities.get(acting)
+        if bound is not None:
+            return bound.token_for(base_url, refresh)
     return _identity.token_for(base_url, refresh)
 
 

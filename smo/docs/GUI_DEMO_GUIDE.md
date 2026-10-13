@@ -74,16 +74,21 @@ rApp never writes to the network itself: it states an Intent, and the platform's
    - **Instance configuration (JSON)**: `{"managedElementRef": "gnb-du-demo-01", "cells": ["101", "102", "103", "104"], "actuator": "ADMINISTRATIVE_STATE"}`
    - **Autonomy mode**: **AUTONOMOUS**
    - **Region scope (JSON)**: `{"objectInstance": "gnb-du-demo-01", "cells": ["101", "102", "103", "104"]}`
-   - **Operator API base URL**: `http://energy-saving-rapp:8000` (without it the rApp's page has no panels and says "operator API is not registered")
+   - **Operator API base URL**: `http://energy-saving-rapp:8000` (without it the rApp's page has no panels and says "operator API is not registered",
+     and the rApp never gets the instance's credentials)
+
+   The instance is **DEPLOYING**: the SMO has made it its own identity at SME and handed that to the rApp (call flow 01b, 01c).
 3. Open the instance (**rApps** → its row) → **Operator page** → **Demo / simulation (admin)** → **1 · Prepare and start**: the rApp
-   registers its Digital Twin data producer and starts on the instance (it subscribes to its datasets in DME).
+   registers its Digital Twin data producer, starts on the instance (it subscribes to its datasets in DME) and reports it up **as the
+   instance**: the instance goes **RUNNING**, with its limits and approval policy in force (call flow 01d).
 
 **Show** the package's details: signature verified, the AI capabilities it declares (execution modes, autonomy modes), the datasets it
 needs. Then the instance's page: RUNNING, AUTONOMOUS, the region it may write, **Stop rApp**; the Instance panel now shows the element and
 the actuator.
 
-**Say** "An rApp arrives as a signed package. The SMO checks the signature and the declarations before anything runs. The region scope is
-enforced by the platform: this rApp can only ever write these four cells. Its page here is drawn from what the package declares; the
+**Say** "An rApp arrives as a signed package. The SMO checks the signature and the declarations before anything runs. Each instance gets
+its own identity; everything the rApp does for it carries that identity, so its limits, its kill switch and the audit trail are per instance.
+The region scope is enforced by the platform: this rApp can only ever write these four cells. Its page here is drawn from what the package declares; the
 console has no code for this rApp."
 
 ### Step 02 — The dataset
@@ -253,6 +258,7 @@ Autonomy mode is AUTONOMOUS.
 | The rApp's page says "operator API is not registered" | The instance was deployed without **Operator API base URL**. Deploy a new instance with it. |
 | No **Demo / simulation (admin)** buttons | Sign in as admin: the panel's buttons are admin-only. |
 | A demo button answers `INSTANCE_NOT_STARTED` | Press **1 · Prepare and start** first. |
+| **1 · Prepare and start** leaves the instance DEPLOYING (its answer's `bootstrap` says `NO_CREDENTIALS`) | The rApp does not hold the instance's credentials: it was restarted, or was down at Deploy. On the instance's page press **Re-send credentials** (admin), then **1 · Prepare and start** again. |
 | **2 · Load history PM** or **8 · Send live PM** answers "no PM subscription" | Step 00's PM subscription is missing or on another counter: create it. |
 | **3 · Train** answers "not enough history" | Press **2 · Load history PM** first (after **1 · Prepare and start**). |
 | **7 · Deploy the runtime** is refused | The model is not CERTIFIED and PROMOTED yet: step 06. |

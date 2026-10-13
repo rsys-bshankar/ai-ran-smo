@@ -40,6 +40,10 @@ export function Header({ data }: { data: RappPage }) {
           {sg?.invokerId && (sg.killed
             ? <ActionButton label={t("rappDetail.header.resume")} confirm={t("rappDetail.header.resumeConfirm")} action={{ method: "DELETE", path: killPath, success: t("rappDetail.header.resumed") }} />
             : <Can method="PUT" path={killPath}><button type="button" className="btn danger" onClick={() => setStopping(true)}>{t("rappDetail.header.stop")}</button></Can>)}
+          {data.operatorApiRegistered && data.state !== "UNDEPLOYED" && (
+            <ActionButton label={t("rappDetail.header.renewCredentials")} title={t("rappDetail.header.renewCredentialsTitle")}
+              confirm={t("rappDetail.header.renewCredentialsConfirm")}
+              action={{ method: "POST", path: `${instanceBase(data.instanceId)}/credentials/renew`, success: t("rappDetail.header.credentialsRenewed") }} />)}
           <Link className="btn" to="/rapps">{t("rappDetail.back")}</Link>
         </>} />
       <p className="gap-note">{t("rappDetail.header.modeNote")}</p>
