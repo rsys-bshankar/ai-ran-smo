@@ -9,7 +9,7 @@
 | Depends on (over R1) | NFO (`POST /nfo/descriptors`, `DELETE /nfo/descriptors/{id}` on delete); rApp Management (`GET /rapp-mgmt/instances/{id}`, only to release an orphaned usage registration); the package location itself (plain HTTP GET, not over R1) |
 | Called by | rApp Management (`onboarding-status`, `usage/start`, `usage/stop`: the only writer of usage registrations); AIMgF (`onboarding-status`, for `aiCapabilities.runtimeProfiles`); GUI BFF (operator and admin actions, `usage/{id}/release` for an admin); operators |
 | Database tables | `application_package` (versioned), `artifact`, `package_usage_registration` |
-| Unit tests | 199 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 201 passed (`tests/`, SQLite, standalone) |
 | Status | Done. Package signatures are verified against an operator-held trust store when one is configured (`PR-RAPP-1`; off by default, see 1.5, 2.6, 2.8) |
 
 ## 1. High-level design (HLD)
@@ -145,12 +145,12 @@ Security: the package location is fetched with a direct `httpx.get` (30 s timeou
 | `PRIMING` | `PRIME_COMPLETE` | `PRIMED` | fired in the same request as `PRIME` |
 | `PRIMED` | `DEPRIME` | `DEPRIMING` | guard `_no_active_instances`: no usage registration without `stopped_at` |
 | `DEPRIMING` | `DEPRIME_COMPLETE` | `AVAILABLE` | fired in the same request as `DEPRIME` |
-| `AVAILABLE` | `DEPRECATE` | `DEPRECATED` | |
-| `DEPRECATED` | `CANCEL_DELETE` | `AVAILABLE` | |
+| `AVAILABLE`, `PRIMED` | `DEPRECATE` | `DEPRECATED` | none: running instances keep running, only new ones are refused (call flow 06b) |
+| `DEPRECATED` | `CANCEL_DELETE` | `AVAILABLE` | also for a package deprecated from `PRIMED` (priming provisions nothing yet, so it is not remembered) |
 | `AVAILABLE`, `DEPRECATED` | `DELETE` | `DELETING` | guard `_no_blocking_dependents`: no child in `AVAILABLE` / `DEPRECATED`, no open usage |
 | `FAILED` | (direct delete) | row removed | handled by the route, not the FSM |
 
-`PRIMING` and `DEPRIMING` are never observable from outside. Forbidden: everything not in the table, for example `PRIMED → DEPRECATE` or `PRIMED → DELETE` (deprime first), `DEPRECATED → PRIME`, `AVAILABLE → DEPRIME`, any event from `FAILED` through the FSM, any event from `DELETING`. `models.PACKAGE_STATES` lists only five of the eight states and is not used by any code.
+`PRIMING` and `DEPRIMING` are never observable from outside. Forbidden: everything not in the table, for example `PRIMED → DELETE` (deprime, or deprecate, first), `DEPRECATED → PRIME`, `AVAILABLE → DEPRIME`, any event from `FAILED` through the FSM, any event from `DELETING`. `models.PACKAGE_STATES` lists only five of the eight states and is not used by any code.
 
 Event routes and refusals: an event with no edge from the current state gives `409 LIFECYCLE_ILLEGAL_TRANSITION` naming the state and the event. An event whose edge exists but whose guard refuses gives `409 PACKAGE_IN_USE` with the reason.
 
@@ -165,7 +165,7 @@ Event routes and refusals: an event with no edge from the current state gives `4
 | GET | `/packages/{id}/usage` | Paged `{registrationId, consumerId, stoppedAt, active}`: what blocks a delete | 404 |
 | POST | `/packages/{id}/prime` | `AVAILABLE → PRIMED` | 409 `LIFECYCLE_ILLEGAL_TRANSITION` |
 | POST | `/packages/{id}/deprime` | `PRIMED → AVAILABLE` | 409 `PACKAGE_IN_USE` (open usage); 409 `LIFECYCLE_ILLEGAL_TRANSITION` |
-| POST | `/packages/{id}/deprecate` | `AVAILABLE → DEPRECATED` | 409 `LIFECYCLE_ILLEGAL_TRANSITION` |
+| POST | `/packages/{id}/deprecate` | `AVAILABLE` / `PRIMED → DEPRECATED` | 409 `LIFECYCLE_ILLEGAL_TRANSITION` |
 | POST | `/packages/{id}/cancel-delete` | `DEPRECATED → AVAILABLE` | 409 `LIFECYCLE_ILLEGAL_TRANSITION` |
 | DELETE | `/packages/{id}` | `AVAILABLE` / `DEPRECATED → DELETING` (returns the view, `nfDeploymentDescriptorId` cleared); `FAILED` → row, artifacts and stopped registrations deleted, `{"status": "deleted"}`. Either way the NFO descriptor is deleted first (`DELETE /nfo/descriptors/{id}`) | 409 `PACKAGE_IN_USE` (child or open usage, NFO not called; or NFO says a deployment still uses the descriptor); 503 `ENDPOINT_UNREACHABLE` (NFO failed); 409 `LIFECYCLE_ILLEGAL_TRANSITION` (any other state) |
 | POST | `/packages/{id}/usage/start?consumer_id=` | Open a usage → `{registrationId}`. rApp Management's route: the GUI BFF has no rule for it | 404; 409 `PACKAGE_NOT_DEPLOYABLE` (package not `AVAILABLE` / `PRIMED`) |
@@ -252,10 +252,10 @@ cd smo/onboarding && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | | Illegal events are 409 naming state and event; delete without an edge | 9 |
 | | Unknown package / registration is 404 on every route | 10 |
 | | Usage: stop idempotent, listing shows what blocks a delete | 2 |
-| | Call flow 06 (DOC-CF-1.2): delete deletes the NFO descriptor and clears it, NFO refusing (409, 500) leaves the package, a guard refusal never calls NFO, a FAILED delete takes its descriptor and stopped registrations, usage/start refuses 4 non-deployable states and takes a PRIMED one, an unexpected onboarding error ends FAILED and deletable, NFO unreachable on delete (503), release (instance gone or UNDEPLOYED; refused for 4 live states; 503 for no answer and for an error answer; a non-instance consumer without asking; 404) | 22 |
+| | Call flow 06 (DOC-CF-1.2): delete deletes the NFO descriptor and clears it, NFO refusing (409, 500) leaves the package, a guard refusal never calls NFO, a FAILED delete takes its descriptor and stopped registrations, usage/start refuses 4 non-deployable states and takes a PRIMED one, a PRIMED package with a running instance deprecated (and restored AVAILABLE), an unexpected onboarding error ends FAILED and deletable, NFO unreachable on delete (503), release (instance gone or UNDEPLOYED; refused for 4 live states; 503 for no answer and for an error answer; a non-instance consumer without asking; 404) | 23 |
 | | Package list and state filter, identity fields for the GUI, health | 3 |
 | | Package row committed before the NFO call | 1 |
-| `tests/test_statemachine.py` | The FSM alone: success and failure onboarding, deprecate round trip, delete guards (child, usage, after stop), no transition from `FAILED`, prime / deprime round trip and guard, no `ONBOARDING → PRIME`, no `PRIMED → DELETE` | 11 |
+| `tests/test_statemachine.py` | The FSM alone: success and failure onboarding, deprecate round trip, delete guards (child, usage, after stop), no transition from `FAILED`, prime / deprime round trip and guard, no `ONBOARDING → PRIME`, no `PRIMED → DELETE`, `PRIMED → DEPRECATED` with no guard | 12 |
 | `tests/test_business_metrics.py` | `smo_rapp_packages` counts packages by state with every state of `PackageState` present | 1 |
 | `tests/test_signing.py` | `PR-RAPP-1` on the real route, real CSAR bytes, a trust store directory: nothing set (signed and unsigned package both onboard, `signatureVerified` true); the policy flag alone refuses every package and says why; a trusted publisher; unsigned accepted but unverified, refused when required; tampered, added and removed file each refused whatever the policy; unknown publisher; wrong key under a trusted key id; digest list without a signature; a refused package does not block the next attempt; a key added to the store is seen without a restart; a missing or empty store fails the package with a reason that does not show the path; the four committed samples verify against the demo publisher | 20 |
 | `tests/test_package_validation.py` | The validation module alone: the result of a good package, a `TOSCA.meta` without `Entry-Definitions:` (a validation failure, not a `StopIteration`), the `.csar` name check An unsigned zip bomb (60 MiB from a few kilobytes), too many entries, a file or a total over its limit, a read over the limit, each of the six files the parse reads, the probe for signing entries (`SEC-15.17`) | 14 |

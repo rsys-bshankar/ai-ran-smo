@@ -100,7 +100,7 @@ def _no_active_instances(db: Session, package: ApplicationPackage) -> bool:
 def build_onboarding_fsm() -> StateMachine[PackageState, PackageEvent]:
     """Builds the package transition table (README section 2.3); `ONBOARDING_FSM` below is the one instance every route uses.
 
-    Edges: ONBOARDING -> AVAILABLE or FAILED; AVAILABLE -> PRIMING -> PRIMED; PRIMED -> DEPRIMING (guarded) -> AVAILABLE; AVAILABLE -> DEPRECATED -> AVAILABLE (cancel);
+    Edges: ONBOARDING -> AVAILABLE or FAILED; AVAILABLE -> PRIMING -> PRIMED; PRIMED -> DEPRIMING (guarded) -> AVAILABLE; AVAILABLE or PRIMED -> DEPRECATED -> AVAILABLE (cancel);
     AVAILABLE or DEPRECATED -> DELETING (guarded). Every other (state, event) pair is illegal.
     """
     fsm: StateMachine[PackageState, PackageEvent] = StateMachine()
@@ -127,6 +127,10 @@ def build_onboarding_fsm() -> StateMachine[PackageState, PackageEvent]:
     )
     fsm.add(PackageState.DEPRIMING, PackageEvent.DEPRIME_COMPLETE, PackageState.AVAILABLE)
     fsm.add(PackageState.AVAILABLE, PackageEvent.DEPRECATE, PackageState.DEPRECATED)
+    # DOC-CF-1.2 (call flow 06b): a PRIMED package can be deprecated too, without depriming, which is refused while instances run: deprecation only stops
+    # new instances. No guard: running instances keep running. Priming provisions nothing in Phase 1, so DEPRECATED does not remember it: CANCEL_DELETE
+    # returns AVAILABLE (prime again if wanted), and DELETE from DEPRECATED needs no deprime first.
+    fsm.add(PackageState.PRIMED, PackageEvent.DEPRECATE, PackageState.DEPRECATED)
     fsm.add(PackageState.DEPRECATED, PackageEvent.CANCEL_DELETE, PackageState.AVAILABLE)
     fsm.add(
         PackageState.DEPRECATED,

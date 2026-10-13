@@ -5,7 +5,7 @@
   "01-rapp-onboarding-to-deployment/01d-the-rapp-bootstraps-as-the-instance.png": "5c616abacbe27a7c52cf73927adaf475a35080d8aca215e4826c628d6e3dd6e7",
   "01-rapp-onboarding-to-deployment/01e-re-send-the-credentials.png": "dea1710c8c6404f1247301276cc1f6361689a2181cd72e2e639f7c2e8606ccce",
   "06-package-lifecycle/06a-prime-and-deprime.png": "36cb2924c25aed493398999a90dd32f4802abf1f9076888ab2cd8bd926a41740",
-  "06-package-lifecycle/06b-deprecate-and-cancel-the-deprecation.png": "c58beb843cee5ffd8a90145c3d0561bda49c5caafbbf2bd2f7c8778f2ba390f0",
+  "06-package-lifecycle/06b-deprecate-and-cancel-the-deprecation.png": "bea0ac023d5003b1e737182ca190170ab880720eaf5a28e7eb4597fb7cf697bf",
   "06-package-lifecycle/06c-delete-a-package-and-release-an-orphaned-registration.png": "dca92ce8d214bf7e554f1234c1424a59a866234356c47a526c979f37f55daf9b",
   "06-package-lifecycle/06d-a-package-that-failed-to-onboard.png": "aa6ddf96e77a519c694e8658f9139fab195639b336a7635cd48a271d032eaeb1"
 }

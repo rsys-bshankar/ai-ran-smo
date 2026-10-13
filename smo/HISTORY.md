@@ -2795,6 +2795,9 @@ registration, including a running instance's, which lifted the guard at will.
 - **No package stays in ONBOARDING.** Any exception during onboarding, not only the listed validation failures, now rolls the session back and
   ends the package FAILED with the exception's class as `failureReason` (an NFO 201 without a usable id used to be a 500 and left a row no route
   could move or delete).
+- **A PRIMED package can be deprecated** (decided with the product owner in the review of this flow). Depriming is refused while instances run, so a
+  primed package in use had no way to stop new instances. `PRIMED → DEPRECATED` has no guard; priming provisions nothing yet, so the DEPRECATED
+  package does not remember it: cancel-delete returns AVAILABLE and its delete needs no deprime. The console offers Deprecate on a PRIMED package.
 - **Kept, with a note:** the delete guard's child-package half (`parent_package_id`, which nothing sets yet), and DELETING as a final state
   whose row and artifacts are the record.
 - `scripts/render_call_flows.py`: a heading is one line (a section without a diagram, like flow 06's state table, borrowed the next

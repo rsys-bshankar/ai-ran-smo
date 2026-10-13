@@ -48,7 +48,7 @@ describe("package lifecycle", () => {
   // A package offers only the lifecycle calls the onboarding state machine accepts in its state.
   it("offers only the onboarding FSM's legal calls", () => {
     expect(packageActions("AVAILABLE").map((a) => a.action)).toEqual(["prime", "deprecate", "delete"]);
-    expect(packageActions("PRIMED").map((a) => a.action)).toEqual(["deprime"]);
+    expect(packageActions("PRIMED").map((a) => a.action)).toEqual(["deprime", "deprecate"]);
     expect(packageActions("DEPRECATED").map((a) => a.action)).toEqual(["cancel-delete", "delete"]);
     expect(packageActions("ONBOARDING")).toEqual([]);
   });

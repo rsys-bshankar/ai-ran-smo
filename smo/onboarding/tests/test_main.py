@@ -770,8 +770,8 @@ def _set_state(db_session_factory, package_id, state):
 
 
 @pytest.mark.parametrize("route,state,event", [
-    ("deprecate", "PRIMED", "DEPRECATE"),
     ("deprecate", "DEPRECATED", "DEPRECATE"),
+    ("deprecate", "DELETING", "DEPRECATE"),
     ("prime", "DEPRECATED", "PRIME"),
     ("prime", "PRIMED", "PRIME"),
     ("deprime", "AVAILABLE", "DEPRIME"),
@@ -1296,3 +1296,19 @@ def test_release_is_503_when_rapp_management_answers_an_error(client, monkeypatc
 
     assert resp.status_code == 503 and resp.json()["detail"]["title"] == "ENDPOINT_UNREACHABLE"
     assert client.get(f"/packages/{package_id}/usage").json()["items"][0]["active"] is True
+
+
+def test_a_primed_package_with_a_running_instance_can_be_deprecated(client, monkeypatch):
+    """Call flow 06b: a PRIMED package is deprecated without depriming, even while an instance holds it (deprime would be refused); the registration
+    stays open, a new registration is refused, and cancel-delete brings the package back AVAILABLE."""
+    package_id = _make_available_package(client, monkeypatch)
+    client.post(f"/packages/{package_id}/prime")
+    client.post(f"/packages/{package_id}/usage/start", params={"consumer_id": "instance-1"})
+    assert client.post(f"/packages/{package_id}/deprime").status_code == 409
+
+    resp = client.post(f"/packages/{package_id}/deprecate")
+
+    assert resp.status_code == 200 and resp.json()["state"] == "DEPRECATED"
+    assert client.get(f"/packages/{package_id}/usage").json()["items"][0]["active"] is True
+    assert client.post(f"/packages/{package_id}/usage/start", params={"consumer_id": "instance-2"}).json()["detail"]["title"] == "PACKAGE_NOT_DEPLOYABLE"
+    assert client.post(f"/packages/{package_id}/cancel-delete").json()["state"] == "AVAILABLE"

@@ -164,7 +164,7 @@ export function packageActions(state: string, t: Translator = ENGLISH): { action
   const del = { action: "delete" as const, label: t("domain.action.delete") };
   switch (state) {
     case "AVAILABLE": return [{ action: "prime", label: t("domain.action.prime") }, { action: "deprecate", label: t("domain.action.deprecate") }, del];
-    case "PRIMED": return [{ action: "deprime", label: t("domain.action.deprime") }];
+    case "PRIMED": return [{ action: "deprime", label: t("domain.action.deprime") }, { action: "deprecate", label: t("domain.action.deprecate") }];
     case "DEPRECATED": return [{ action: "cancel-delete", label: t("domain.action.restore") }, del];
     case "FAILED": return [del];
     default: return [];

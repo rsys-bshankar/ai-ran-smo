@@ -1175,7 +1175,7 @@
     },
     "/packages/{package_id}/deprecate": {
       "post": {
-        "description": "AVAILABLE -> DEPRECATED; 409 LIFECYCLE_ILLEGAL_TRANSITION from any other state.",
+        "description": "AVAILABLE or PRIMED -> DEPRECATED: no new instances, running ones are not touched; 409 LIFECYCLE_ILLEGAL_TRANSITION from any other state.",
         "operationId": "deprecate_package_packages__package_id__deprecate_post",
         "parameters": [
           {

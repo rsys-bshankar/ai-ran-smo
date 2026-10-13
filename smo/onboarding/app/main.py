@@ -311,7 +311,7 @@ def query_packages(state: str | None = None, limit: int = PageLimit, offset: int
 
 @app.post("/packages/{package_id}/deprecate")
 def deprecate_package(package_id: uuid.UUID, db: Session = Depends(get_session)):
-    """AVAILABLE -> DEPRECATED; 409 LIFECYCLE_ILLEGAL_TRANSITION from any other state."""
+    """AVAILABLE or PRIMED -> DEPRECATED: no new instances, running ones are not touched; 409 LIFECYCLE_ILLEGAL_TRANSITION from any other state."""
     # Maintainer notes (not published). One FSM event, one commit; the guard-less edge, so the only refusal is the 409 from `_fire`.
     pkg = _get_package_or_404(db, package_id)
     pkg.state = _fire(db, pkg, PackageEvent.DEPRECATE)

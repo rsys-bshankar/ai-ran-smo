@@ -226,7 +226,7 @@ export function flow06(pkg: Package | undefined, usage: PackageUsage[], instance
     step("refuse", failed ? t("flows.lib.f06.refused") : t("flows.lib.f06.usable"), "rApp Mgmt",
       failed ? true : pkg.state !== "ONBOARDING", failed ? undefined : t("flows.lib.f06.instances", { n: instanceCount })),
     step("deprecate", t("flows.lib.f06.deprecate"), "Operator → Onboarding",
-      failed || ["DEPRECATED", "DELETING"].includes(pkg.state), primed ? t("flows.lib.f06.deprimeFirst") : undefined),
+      failed || ["DEPRECATED", "DELETING"].includes(pkg.state)),
     step("guard", t("flows.lib.f06.guard"), "Onboarding",
       // active usage is a hard stop for delete (and deprime): shown as the
       // failing step so the delete step reads as blocked, not next

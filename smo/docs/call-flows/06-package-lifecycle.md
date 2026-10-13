@@ -5,7 +5,7 @@ What happens to an rApp package after onboarding (call flow 01a), until it is de
 | | Step | Who starts it | Ends with |
 |---|---|---|---|
 | 06a | Prime and deprime | Operator | package PRIMED, or back to AVAILABLE once no instance holds it |
-| 06b | Deprecate, and cancel the deprecation | Operator | package DEPRECATED (no new instances), or AVAILABLE again |
+| 06b | Deprecate, and cancel the deprecation | Operator | package DEPRECATED (no new instances; from AVAILABLE or PRIMED), or AVAILABLE again |
 | 06c | Delete a package, and release an orphaned registration | Admin | package DELETING, its NFO descriptor deleted |
 | 06d | A package that failed to onboard | Admin | the FAILED package's row deleted; its CSAR can be onboarded again |
 
@@ -37,7 +37,7 @@ that moment, recorded in the instance's `lastTeardown`), an admin releases it (0
 | `ONBOARDING` | `VALIDATE_OK` → `AVAILABLE`, `VALIDATE_FAILED` → `FAILED` | none |
 | `AVAILABLE` | `PRIME` → `PRIMING`, `DEPRECATE` → `DEPRECATED`, `DELETE` → `DELETING` | `DELETE`: no open usage, no blocking child |
 | `PRIMING` | `PRIME_COMPLETE` → `PRIMED` | none |
-| `PRIMED` | `DEPRIME` → `DEPRIMING` | `DEPRIME`: no open usage |
+| `PRIMED` | `DEPRIME` → `DEPRIMING`, `DEPRECATE` → `DEPRECATED` | `DEPRIME`: no open usage |
 | `DEPRIMING` | `DEPRIME_COMPLETE` → `AVAILABLE` | none |
 | `DEPRECATED` | `CANCEL_DELETE` → `AVAILABLE`, `DELETE` → `DELETING` | `DELETE`: no open usage, no blocking child |
 | `DELETING` | none: terminal, the row is kept as the record | — |
@@ -94,10 +94,10 @@ sequenceDiagram
     participant RM as rApp Management
 
     Op->>Onb: POST /onboarding/packages/{id}/deprecate
-    alt package AVAILABLE
-        Note over Onb: AVAILABLE → DEPRECATED<br/>running instances are not touched
+    alt package AVAILABLE or PRIMED
+        Note over Onb: AVAILABLE/PRIMED → DEPRECATED, no guard<br/>running instances are not touched<br/>(a PRIMED one needs no deprime first)
         Onb-->>Op: 200 {package view, state DEPRECATED}
-    else PRIMED (deprime first) or any other state
+    else any other state
         Onb-->>Op: 409 LIFECYCLE_ILLEGAL_TRANSITION (state, event DEPRECATE)
     end
 
@@ -109,7 +109,7 @@ sequenceDiagram
 
     Op->>Onb: POST /onboarding/packages/{id}/cancel-delete
     alt package DEPRECATED
-        Note over Onb: DEPRECATED → AVAILABLE
+        Note over Onb: DEPRECATED → AVAILABLE<br/>(also when it was PRIMED: prime again if wanted)
         Onb-->>Op: 200 {package view, state AVAILABLE}
     else any other state
         Onb-->>Op: 409 LIFECYCLE_ILLEGAL_TRANSITION (state, event CANCEL_DELETE)
@@ -117,7 +117,9 @@ sequenceDiagram
 ```
 
 Deprecation only stops new instances: an instance already running keeps running and keeps its registration, and it is what blocks the
-delete in 06c.
+delete in 06c. A PRIMED package is deprecated as it is: depriming first would be refused while its instances run, which left no way to stop new
+ones (decided with the product owner, DOC-CF-1.2). Priming provisions nothing yet, so a DEPRECATED package does not remember it was primed:
+cancel-delete returns it AVAILABLE, and its delete needs no deprime.
 
 ## 06c — Delete a package, and release an orphaned registration
 
