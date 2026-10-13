@@ -37,7 +37,7 @@ from smo_shared.pagination import PageLimit, PageOffset, paginate, paginate_list
 from . import ts28105
 from .main import (
     ACTIVE_TRAINING_STATUSES, RuntimeProfile, _activate_runtime, _cancel_training_job, _deploy_runtime, _expire_overdue_jobs,
-    _fire_model_event, _get_model, _get_or_create_lifecycle, _nfo_terminate_execution, _owned_model, _resolve_runtime_profile,
+    _fire_model_event, _get_or_create_lifecycle, _nfo_terminate_execution, _owned_model, _resolve_runtime_profile,
     _resume_training_job, _start_training, _start_validation, _sync_training_process, _validate_dme_data_job_ids,
 )
 from .models import (
@@ -224,10 +224,10 @@ def _training_request_view(j: TrainingJob) -> dict:
 
 
 @router.post("/ml-training-requests", status_code=201)
-def create_ml_training_request(body: MLTrainingRequestBody, db: Session = Depends(get_session)):
+def create_ml_training_request(body: MLTrainingRequestBody, request: Request, db: Session = Depends(get_session)):
     # Route notes. Checks, in order: the named MLTrainingFunction exists (404), exactly one target (422 `COORDINATION_GROUP_MISMATCH`), every `dmeDataJobIds`
     # entry resolves in DME (422 `DME_ARTIFACT_NOT_FOUND`), the package or profile resolves (404 `PACKAGE_NOT_FOUND`), then `_start_training`: 404
-    # `MODEL_NOT_FOUND` for an unknown model, 409 `LIFECYCLE_ILLEGAL_TRANSITION` for a model that cannot be (re)trained or for INITIAL_TRAINING on a model that
+    # `MODEL_NOT_FOUND` for an unknown model, 403 `MODEL_ACCESS_DENIED` for an rApp that is not the model's owner (SEC-15.3c), 409 `LIFECYCLE_ILLEGAL_TRANSITION` for a model that cannot be (re)trained or for INITIAL_TRAINING on a model that
     # is not REGISTERED. The NFO descriptor and deployment are created inside `_start_training`, before the single commit at the end, so a failure after that
     # point leaves no AIMgF row but an NFO runtime. A coordination group id is not looked up anywhere. No NRM route takes an Idempotency-Key.
     if body.mLTrainingFunctionRef is not None:
@@ -250,7 +250,7 @@ def create_ml_training_request(body: MLTrainingRequestBody, db: Session = Depend
         clustering_info=ts28105.dump(body.clusteringInfo), dme_data_job_ids=body.dmeDataJobIds,
         notification_uri=body.notificationUri,
         runtime_profile=_resolve_runtime_profile("TRAINING", body.packageId, body.runtimeProfile),
-        timeout_seconds=body.timeoutSeconds,
+        timeout_seconds=body.timeoutSeconds, request=request,
     )
     db.commit()
     return _training_request_view(job)
@@ -535,14 +535,14 @@ def _testing_request_view(j: ValidationJob) -> dict:
 
 
 @router.post("/ml-testing-requests", status_code=201)
-def create_ml_testing_request(body: MLTestingRequestBody, db: Session = Depends(get_session)):
+def create_ml_testing_request(body: MLTestingRequestBody, request: Request, db: Session = Depends(get_session)):
     # Route notes: 404 for an unknown MLTestingFunction; then `_start_validation` applies the same gates as POST /validation-jobs (422
-    # `COORDINATION_GROUP_MISMATCH`, 404 `MODEL_NOT_FOUND`, 409 `LIFECYCLE_ILLEGAL_TRANSITION` unless the model is TRAINED, 409 `TRAINING_NOT_APPROVED` without
+    # `COORDINATION_GROUP_MISMATCH`, 404 `MODEL_NOT_FOUND`, 403 `MODEL_ACCESS_DENIED` for an rApp that is not the model's owner (SEC-15.3c), 409 `LIFECYCLE_ILLEGAL_TRANSITION` unless the model is TRAINED, 409 `TRAINING_NOT_APPROVED` without
     # APPROVE_TRAINING), creates the NFO runtime and fires CREATE_VALIDATION; one commit at the end. A coordination group id is not looked up.
     if body.mLTestingFunctionRef is not None:
         _get(db, MLTestingFunction, body.mLTestingFunctionRef, "MLTestingFunction")
     job = _start_validation(db, model_id=body.mLModelRef, group_id=body.mLModelCoordinationGroupRef,
-                            producer_id=body.requestSource, training_job_id=body.trainingJobId,
+                            producer_id=body.requestSource, request=request, training_job_id=body.trainingJobId,
                             validation_criteria=body.validationCriteria, notification_uri=body.notificationUri,
                             ml_testing_function_id=body.mLTestingFunctionRef,
                             runtime_profile=_resolve_runtime_profile("VALIDATION", body.packageId, body.runtimeProfile),
@@ -1152,7 +1152,7 @@ def delete_ml_update_function(function_id: uuid.UUID, db: Session = Depends(get_
 
 
 @router.post("/ml-update-requests", status_code=201)
-def create_ml_update_request(body: MLUpdateRequestBody, db: Session = Depends(get_session)):
+def create_ml_update_request(body: MLUpdateRequestBody, request: Request, db: Session = Depends(get_session)):
     """An ML update is realised as FINE_TUNING training of every named
     model (one MLTrainingRequest each, through the normal training start
     path and its lifecycle gate), tracked by one MLUpdateProcess; when all
@@ -1160,7 +1160,7 @@ def create_ml_update_request(body: MLUpdateRequestBody, db: Session = Depends(ge
     be trainable and not already training (REGISTERED/CERTIFIED/PROMOTED/
     FAILED) — checked before any run starts, so the update is
     all-or-nothing at start."""
-    # Route notes. Checks in order: empty list (422 `SCHEMA_VALIDATION_FAILED`), function exists (404), then per model `_get_model` (404 `MODEL_NOT_FOUND`) and
+    # Route notes. Checks in order: empty list (422 `SCHEMA_VALIDATION_FAILED`), function exists (404), then per model `_owned_model` (404 `MODEL_NOT_FOUND`; 403 `MODEL_ACCESS_DENIED` for an rApp that is not the model's owner, SEC-15.3c, so one foreign model refuses the whole update) and
     # a state in `TRAINABLE_STATES` but not TRAINING (409 `LIFECYCLE_ILLEGAL_TRANSITION` naming the state). Only after every model passed are the request, the
     # process and one FINE_TUNING run per model created, all in this transaction. The states are read before any run starts, so a model listed twice passes both
     # times; its second run then finds the model TRAINING and supersedes the first (`_start_training`), leaving the first run CANCELLED inside the same update.
@@ -1170,7 +1170,7 @@ def create_ml_update_request(body: MLUpdateRequestBody, db: Session = Depends(ge
     if body.mLUpdateFunctionRef is not None:
         _get(db, MLUpdateFunction, body.mLUpdateFunctionRef, "MLUpdateFunction")
     for model_id in body.mLModelRefList:
-        _get_model(model_id)
+        _owned_model(request, model_id, "update")
         state = _get_or_create_lifecycle(db, model_id).model_lifecycle_state
         if state not in TRAINABLE_STATES or state == ModelLifecycleState.TRAINING:
             raise framework_error(FrameworkError.LIFECYCLE_ILLEGAL_TRANSITION, detail=f"cannot update model {model_id} in state {state}")

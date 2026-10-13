@@ -1,4 +1,5 @@
-"""SEC-15.3b through the mesh: the rApp that registers a model at MLMR owns it, and AIMgF refuses another rApp's scale, terminate, node-groups and model-loading calls on it.
+"""SEC-15.3b and SEC-15.3c through the mesh: the rApp that registers a model at MLMR owns it, and AIMgF refuses another rApp's scale, terminate, node-groups and model-loading calls on it
+(SEC-15.3b), its training, validation, emulation and update requests, its lifecycle reads and its MLMF subscriptions (SEC-15.3c); MLMR keeps an rApp from setting or changing the owner (SEC-15.3c).
 
 The in-process mesh has no gateway, so the headers R1 Termination would stamp on the inbound call (`X-R1-Role`, `X-R1-Invoker-Id`) are sent by hand, as `test_on_behalf_of.py` does.
 AIMgF's own onward call to MLMR goes through the mesh as an SMO module's. Run with `cd smo && PYTHONPATH=shared python -m pytest tests_integration/test_model_ownership.py -q`.
@@ -45,3 +46,57 @@ def test_a_model_an_smo_module_registers_stays_open_to_any_rapp(mesh):
     named = _register(mesh, SMO, owner="es-client")
     assert mesh["aimgf"].patch(f"/models/{named}/runtime/node-groups", headers=OTHER, json={"clearedNodeGroups": ["ng1"]}).status_code == 403
     assert mesh["aimgf"].patch(f"/models/{named}/runtime/node-groups", headers=ES, json={"clearedNodeGroups": ["ng1"]}).status_code == 200
+
+
+def test_aimgf_start_and_read_routes_apply_the_owner_rule_through_the_mesh(mesh):
+    """SEC-15.3c: another rApp is 403 `MODEL_ACCESS_DENIED` on training, validation, emulation and update requests, the lifecycle and its history and the MLMF subscriptions of a model
+    (AIMgF reads the owner from MLMR over the mesh); the owner, the operator and a model with no owner pass, and nothing is created for the refused call.
+    """
+    model_id = _register(mesh, ES)
+    aimgf = mesh["aimgf"]
+    training = {"modelId": model_id, "producerId": "other"}
+    subscription = {"model_id": model_id, "dme_type_id": str(uuid.uuid4())}
+    refused = [
+        aimgf.post("/training-jobs", headers=OTHER, json=training),
+        aimgf.post("/ml-training-requests", headers=OTHER, json={"mLModelRef": model_id, "trainingRequestSource": "other"}),
+        aimgf.post("/validation-jobs", headers=OTHER, json=training),
+        aimgf.post("/emulation-jobs", headers=OTHER, json=training),
+        aimgf.post("/ml-update-requests", headers=OTHER, json={"mLModelRefList": [model_id]}),
+        aimgf.get(f"/models/{model_id}/lifecycle", headers=OTHER),
+        aimgf.get(f"/models/{model_id}/lifecycle-history", headers=OTHER),
+        aimgf.post("/mlmf/subscriptions", headers=OTHER, params=subscription, json={"metric_types": ["accuracy"]}),
+        aimgf.get("/mlmf/subscriptions", headers=OTHER, params={"model_id": model_id}),
+    ]
+    assert [r.status_code for r in refused] == [403] * len(refused), [r.text for r in refused]
+    assert all("MODEL_ACCESS_DENIED" in r.text for r in refused)
+    assert aimgf.get("/training-jobs", params={"model_id": model_id}).json()["total"] == 0
+
+    # the registering rApp (the same client id) reads and starts; the console and an SMO module are not asked
+    assert aimgf.get(f"/models/{model_id}/lifecycle", headers=ES).status_code == 200
+    assert aimgf.get(f"/models/{model_id}/lifecycle-history", headers=ES).status_code == 200
+    assert aimgf.get(f"/models/{model_id}/lifecycle", headers=SMO).status_code == 200
+    assert aimgf.post("/mlmf/subscriptions", headers=ES, params=subscription, json={"metric_types": ["accuracy"]}).status_code == 201
+    assert aimgf.get("/mlmf/subscriptions", headers=OTHER).json()["items"] == []     # not another rApp's
+    assert aimgf.post("/training-jobs", headers=ES, json={"modelId": model_id, "producerId": "es"}).status_code == 201
+    open_model = _register(mesh, SMO)
+    assert aimgf.get(f"/models/{open_model}/lifecycle", headers=OTHER).status_code == 200
+
+
+def test_mlmr_put_and_post_keep_the_owner_out_of_an_rapps_hands_through_the_mesh(mesh):
+    """SEC-15.3c: an rApp cannot register a model for another owner, nor change, clear or claim the owner through PUT, nor update a model another rApp owns; the owner updates its own
+    model's other fields, and the operator (role internal) still sets the owner.
+    """
+    mlmr = mesh["mlmr"]
+    forged = mlmr.post("/models", headers=ES, json={"modelType": "forged-" + uuid.uuid4().hex[:6], "version": "1", "owner": "other-client"})
+    assert forged.status_code == 403 and "MODEL_OWNER_IMMUTABLE" in forged.text
+    model_id = _register(mesh, ES, owner="es-client")
+    stored = mlmr.get(f"/models/{model_id}").json()
+    body = {"modelType": stored["modelType"], "version": stored["version"]}
+    assert mlmr.put(f"/models/{model_id}", headers=ES, json={**body, "description": "mine", "owner": "es-client"}).json()["description"] == "mine"
+    for owner in ("other-client", ""):
+        refused = mlmr.put(f"/models/{model_id}", headers=ES, json={**body, "owner": owner})
+        assert refused.status_code == 403 and "MODEL_OWNER_IMMUTABLE" in refused.text
+    foreign = mlmr.put(f"/models/{model_id}", headers=OTHER, json={**body, "description": "hijacked"})
+    assert foreign.status_code == 403 and "MODEL_ACCESS_DENIED" in foreign.text
+    assert mlmr.get(f"/models/{model_id}").json()["owner"] == "es-client"
+    assert mlmr.put(f"/models/{model_id}", headers=SMO, json={**body, "owner": "other-client"}).json()["owner"] == "other-client"

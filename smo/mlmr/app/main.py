@@ -206,10 +206,15 @@ def register_model(request: Request, body: RegisterModelRequest, db: Session = D
     # constraint at commit (not a prior SELECT), so two concurrent registrations cannot both succeed. The session is rolled
     # back before the error is raised. Owner (SEC-15.3b): a caller with role `rapp` that names no `owner` is stamped as the owner with its own invoker id (the id the
     # gateway vouched for, `X-R1-Invoker-Id`); an `owner` the request names is kept as sent; an SMO module (role `internal`, or no role) that names none leaves it unset.
+    # SEC-15.3c: a caller with role `rapp` that names an `owner` other than its own invoker id is refused with 403 `MODEL_OWNER_IMMUTABLE` before anything is written (an rApp
+    # cannot register a model for another rApp); an SMO module and the console keep full control of `owner`, as that is how they register a model for an rApp.
     _validate_domain(body.domain)
     owner = body.owner
-    if not owner and role_of(request) == ROLE_RAPP:
-        owner = invoker_id(request)
+    if role_of(request) == ROLE_RAPP:
+        if owner and owner != invoker_id(request):
+            raise framework_error(FrameworkError.MODEL_OWNER_IMMUTABLE,
+                                  detail="an rApp can register a model only as its own owner: name its own id as `owner`, or none")
+        owner = owner or invoker_id(request)
     model = MLModel(registration_id=str(uuid.uuid4()), model_type=body.modelType, version=body.version,
                      required_resource_type_id=body.requiredResourceTypeId,
                      description=body.description, author=body.author, owner=owner,
@@ -273,7 +278,7 @@ def get_model(model_id: uuid.UUID, db: Session = Depends(get_session)):
 
 
 @app.put("/models/{model_id}")
-def update_model(model_id: uuid.UUID, body: UpdateModelRequest, db: Session = Depends(get_session)):
+def update_model(request: Request, model_id: uuid.UUID, body: UpdateModelRequest, db: Session = Depends(get_session)):
     """UpdateModel (mmes_apis.go) — 404s on an unknown id, same as
     GetModelInfoById there. The reference also rejects a modelName/
     modelVersion mismatch between the path's existing record and the
@@ -291,9 +296,19 @@ def update_model(model_id: uuid.UUID, body: UpdateModelRequest, db: Session = De
     # Replaces a model's metadata. 404 MODEL_NOT_FOUND; 400 MODEL_IDENTITY_IMMUTABLE when modelType or version differ from the
     # stored ones; 422 for an unknown domain. Does not touch `artifact_location` (the artifact upload owns it) or any lifecycle
     # state. Commits once at the end; nothing is written when a check fails.
+    # SEC-15.3c, for a caller with role `rapp` (judged on the gateway's `X-R1-Invoker-Id`): 403 `MODEL_ACCESS_DENIED` when the model has an `owner` that is not the caller (a model
+    # without an owner stays open to any rApp); then 403 `MODEL_OWNER_IMMUTABLE` when the body's `owner` is anything but the stored one (an omitted `owner` keeps the stored one
+    # instead of clearing it, and the stored value is accepted and ignored). Both come after the 404 and before the identity check. An SMO module, the console and a call with no
+    # role may set `owner` as before.
     model = db.get(MLModel, model_id)
     if model is None:
         raise framework_error(FrameworkError.MODEL_NOT_FOUND, detail="no such model")
+    is_rapp = role_of(request) == ROLE_RAPP
+    if is_rapp:
+        if model.owner and model.owner != invoker_id(request):
+            raise framework_error(FrameworkError.MODEL_ACCESS_DENIED, detail=f"model {model_id} belongs to another producer: only its owner may update it")
+        if body.owner is not None and (body.owner or None) != (model.owner or None):
+            raise framework_error(FrameworkError.MODEL_OWNER_IMMUTABLE, detail="an rApp cannot change or clear the owner of a model")
     if model.model_type != body.modelType or model.version != body.version:
         raise framework_error(
             FrameworkError.MODEL_IDENTITY_IMMUTABLE,
@@ -303,7 +318,9 @@ def update_model(model_id: uuid.UUID, body: UpdateModelRequest, db: Session = De
     model.required_resource_type_id = body.requiredResourceTypeId
     model.training_data_lineage = body.trainingDataLineage
     model.integrity_hash = body.integrityHash
-    model.description, model.author, model.owner = body.description, body.author, body.owner
+    model.description, model.author = body.description, body.author
+    if not is_rapp:
+        model.owner = body.owner
     model.input_data_type, model.output_data_type = body.inputDataType, body.outputDataType
     model.target_environments = body.targetEnvironments
     model.domain, model.custom_domain, model.vendors = body.domain, body.customDomain, body.vendors

@@ -96,7 +96,7 @@ def _get_model_or_none(model_id: uuid.UUID) -> dict | None:
 def _get_model(model_id: uuid.UUID) -> dict:
     """Returns MLMR's JSON for the model or raises 404 `MODEL_NOT_FOUND`.
 
-    AIMgF never reads MLMR's tables, so this call is the only existence check for a model id. The routes that act on a model's runtime or serve it go through `_owned_model` (ownership) or `_serving_model` (ownership and phase), which call this.
+    AIMgF never reads MLMR's tables, so this call is the only existence check for a model id. Every route that takes a model id on behalf of a caller goes through `_owned_model` (ownership) or `_serving_model` (ownership and phase), which call this; a caller-less internal path (group retrain, `advance`) uses it directly.
     """
     model = _get_model_or_none(model_id)
     if model is None:
@@ -119,15 +119,64 @@ def _owned_model(request: Request, model_id: uuid.UUID, action: str, *, inferenc
     changes the serving runtime, which only the owner may.
     """
     model = _get_model(model_id)
-    if role_of(request) == ROLE_RAPP:
-        caller, owner = invoker_id(request), model.get("owner")
-        access = (model.get("storeDiscReqs") or {}).get("accessReqs") or {}
-        shared = inference and (access.get("accessReq") == "PUBLICLY_AVAILABLE" or (
-            access.get("accessReq") == "RESTRICTED" and caller is not None
-            and caller in (set(access.get("valServerIds") or []) | set(access.get("valClientIds") or []))))
-        if owner and caller != owner and not shared:
-            raise framework_error(FrameworkError.MODEL_ACCESS_DENIED, detail=f"model {model_id} belongs to another producer: only its owner may {action}")
+    _refuse_unless_owner(request, model, model_id, action, inference=inference)
     return model
+
+
+def _owner_may_act(request: Request, model: dict, *, inference: bool = False) -> bool:
+    """Returns whether the caller passes the ownership rule for a model MLMR returned (`_owned_model` without the lookup and without raising).
+
+    True for every caller but one with the rApp role, and for an rApp when the model has no `owner`, the `owner` is the caller's invoker id, or (`inference` only) the model's
+    `accessReqs` let the caller use it. The one place the rule is written.
+    """
+    if role_of(request) != ROLE_RAPP:
+        return True
+    caller, owner = invoker_id(request), model.get("owner")
+    access = (model.get("storeDiscReqs") or {}).get("accessReqs") or {}
+    shared = inference and (access.get("accessReq") == "PUBLICLY_AVAILABLE" or (
+        access.get("accessReq") == "RESTRICTED" and caller is not None
+        and caller in (set(access.get("valServerIds") or []) | set(access.get("valClientIds") or []))))
+    return not owner or caller == owner or shared
+
+
+def _refuse_unless_owner(request: Request, model: dict, model_id: uuid.UUID, action: str, *, inference: bool = False) -> None:
+    """Raises 403 `MODEL_ACCESS_DENIED` unless `_owner_may_act`; `action` completes the message ("only its owner may {action}")."""
+    if not _owner_may_act(request, model, inference=inference):
+        raise framework_error(FrameworkError.MODEL_ACCESS_DENIED, detail=f"model {model_id} belongs to another producer: only its owner may {action}")
+
+
+def _check_rapp_owns(request: Request, model_id: uuid.UUID, action: str) -> None:
+    """For a caller with the rApp role only, runs `_owned_model` (404 `MODEL_NOT_FOUND`, 403 `MODEL_ACCESS_DENIED`); every other caller is not asked and MLMR is not called.
+
+    For the MLMF subscription routes and the lifecycle history, which have never required the model to exist for the console or an SMO module.
+    """
+    if role_of(request) == ROLE_RAPP:
+        _owned_model(request, model_id, action)
+
+
+def _check_rapp_owns_if_known(request: Request, model_id: uuid.UUID, action: str) -> None:
+    """Like `_check_rapp_owns`, but a model MLMR no longer knows passes (an rApp may still remove or read what was recorded against a deleted model)."""
+    if role_of(request) == ROLE_RAPP:
+        model = _get_model_or_none(model_id)
+        if model is not None:
+            _refuse_unless_owner(request, model, model_id, action)
+
+
+def _visible_model_ids(request: Request, db: Session) -> list[uuid.UUID] | None:
+    """Returns the ids of the models with an MLMF subscription that the caller may see, or None when the caller is not restricted (any caller but one with the rApp role).
+
+    For an rApp: each distinct subscribed model is looked up in MLMR once, and one the caller owns, one with no owner, or one MLMR no longer knows is kept. Used to keep a listing from
+    showing another rApp's subscriptions and reports.
+    """
+    if role_of(request) != ROLE_RAPP:
+        return None
+    ids = db.execute(select(MLMFSubscription.model_id).distinct()).scalars().all()
+    visible = []
+    for model_id in ids:
+        model = _get_model_or_none(model_id)
+        if model is None or _owner_may_act(request, model):
+            visible.append(model_id)
+    return visible
 
 
 def _serving_model(request: Request, model_id: uuid.UUID, action: str, *, inference: bool = False) -> dict:
@@ -613,7 +662,7 @@ def _sync_training_process(db: Session, job: TrainingJob) -> None:
 
 def _start_training(db: Session, *, model_id: uuid.UUID | None, group_id: uuid.UUID | None, producer_id: str,
                     ml_training_type: str | None = None, priority: int = 0, termination_conditions: str | None = None,
-                    runtime_profile: dict | None = None, timeout_seconds: int | None = None,
+                    runtime_profile: dict | None = None, timeout_seconds: int | None = None, request: Request | None = None,
                     **job_fields) -> TrainingJob:
     """Starts a training run and returns the new `TrainingJob`. The one place a run starts: POST /training-jobs, POST /ml-training-requests, group-retrain propagation and
     an MLUpdateRequest all call it, so every run gets the same lifecycle gate, NFO runtime and MLTrainingProcess. Flushes, does not commit; the caller commits.
@@ -621,7 +670,9 @@ def _start_training(db: Session, *, model_id: uuid.UUID | None, group_id: uuid.U
     A `model_id` target also drives the model's lifecycle: REGISTERED, CERTIFIED (rolled back), PROMOTED or FAILED fire CREATE_TRAINING. A model already TRAINING is treated
     as the operator's decision to supersede the in-flight run: that job is marked CANCELLED, its NFO runtime torn down, and the new job becomes the model's current run
     (no event fires). Any other state (mid-pipeline, DEPRECATED, RETIRED) raises 409 `LIFECYCLE_ILLEGAL_TRANSITION` naming the state; so does INITIAL_TRAINING for a model
-    that is not REGISTERED. Raises 404 `MODEL_NOT_FOUND` for an unknown model. A `group_id` target drives no model and is not looked up.
+    that is not REGISTERED. Raises 404 `MODEL_NOT_FOUND` for an unknown model. A `group_id` target drives no model and is not looked up. With `request` (the inbound call of a
+    route) a caller with the rApp role is also held to the ownership rule (403 `MODEL_ACCESS_DENIED` for a model another rApp owns, `_owned_model`, SEC-15.3c); without it (group retrain
+    propagation, the update request's own runs after its check) the model only has to exist.
 
     `ml_training_type` is derived (INITIAL_TRAINING for a REGISTERED model, else RE_TRAINING) unless the caller names one. Side effects: a job and process row; an NFO
     descriptor and deployment (two calls, no status check); the model's phase written back to MLMR on a best-effort basis (`_record_training_start`); `job_fields` are
@@ -629,7 +680,10 @@ def _start_training(db: Session, *, model_id: uuid.UUID | None, group_id: uuid.U
     """
     lifecycle = None
     if model_id is not None:
-        _get_model(model_id)
+        if request is not None:
+            _owned_model(request, model_id, "train")
+        else:
+            _get_model(model_id)
         lifecycle = _get_or_create_lifecycle(db, model_id)
         if lifecycle.model_lifecycle_state not in TRAINABLE_STATES:
             raise framework_error(FrameworkError.LIFECYCLE_ILLEGAL_TRANSITION,
@@ -720,7 +774,7 @@ def request_training(body: RequestTrainingRequest, request: Request, db: Session
     """
     # Route notes. 201 `{"trainingJobId"}`. Checks in order: exactly one target (422 `COORDINATION_GROUP_MISMATCH`), every `dmeDataJobIds` entry (422
     # `DME_ARTIFACT_NOT_FOUND`), the package or profile (404 `PACKAGE_NOT_FOUND`, evaluated as an argument of the next call), then `_start_training` (404
-    # `MODEL_NOT_FOUND`, 409 `LIFECYCLE_ILLEGAL_TRANSITION`). The NFO runtime is created before the single commit, so a failure after that leaves an NFO runtime
+    # `MODEL_NOT_FOUND`, 403 `MODEL_ACCESS_DENIED` for an rApp that is not the model's owner (SEC-15.3c), 409 `LIFECYCLE_ILLEGAL_TRANSITION`). The NFO runtime is created before the single commit, so a failure after that leaves an NFO runtime
     # and no job row. `@idempotent("aimgf")`: with an `Idempotency-Key` header a repeat returns the first answer; the `request` parameter exists for that
     # decorator and is otherwise unused. A coordination group id is not looked up.
     if (body.modelId is None) == (body.modelCoordinationGroupId is None):
@@ -733,7 +787,7 @@ def request_training(body: RequestTrainingRequest, request: Request, db: Session
                           training_dataset=body.trainingDataset, validation_dataset=body.validationDataset,
                           consumer_rapp_id=body.consumerRappId, producer_rapp_id=body.producerRappId,
                           runtime_profile=_resolve_runtime_profile("TRAINING", body.packageId, body.runtimeProfile),
-                          timeout_seconds=body.timeoutSeconds)
+                          timeout_seconds=body.timeoutSeconds, request=request)
     db.commit()
     return {"trainingJobId": str(job.training_job_id)}
 
@@ -1036,12 +1090,13 @@ def list_training_jobs(model_id: uuid.UUID | None = None, status: str | None = N
 
 # ---------------------------------------------------------------- Validation
 
-def _start_validation(db: Session, *, model_id: uuid.UUID | None, group_id: uuid.UUID | None, producer_id: str,
+def _start_validation(db: Session, *, model_id: uuid.UUID | None, group_id: uuid.UUID | None, producer_id: str, request: Request,
                       **job_fields) -> ValidationJob:
     """Starts a validation (TS 28.105 testing) run and returns the new `ValidationJob`. The one place a run starts, shared by POST /validation-jobs and POST /ml-testing-requests.
     Flushes, does not commit.
 
-    Raises 422 `COORDINATION_GROUP_MISMATCH` unless exactly one of `model_id` and `group_id` is given. A model-targeted run needs the model to exist (404 `MODEL_NOT_FOUND`), to be
+    Raises 422 `COORDINATION_GROUP_MISMATCH` unless exactly one of `model_id` and `group_id` is given. A model-targeted run needs the model to exist (404 `MODEL_NOT_FOUND`), not to
+    belong to another rApp when the caller (`request`) has the rApp role (403 `MODEL_ACCESS_DENIED`, `_owned_model`, SEC-15.3c), to be
     TRAINED (409 `LIFECYCLE_ILLEGAL_TRANSITION`) and an operator to have fired APPROVE_TRAINING (409 `TRAINING_NOT_APPROVED`): the state alone is not the gate (HISTORY.md OI-6.1). A
     group-targeted run tests the group as a unit, drives no model's lifecycle and the group is not looked up. Side effects: the job row, an NFO descriptor and deployment, and
     CREATE_VALIDATION on the model. `job_fields` go to the `ValidationJob` columns unvalidated, so only trusted keyword names belong there.
@@ -1049,7 +1104,7 @@ def _start_validation(db: Session, *, model_id: uuid.UUID | None, group_id: uuid
     if (model_id is None) == (group_id is None):
         raise framework_error(FrameworkError.COORDINATION_GROUP_MISMATCH)
     if model_id is not None:
-        _get_model(model_id)
+        _owned_model(request, model_id, "validate")
         lifecycle = _get_or_create_lifecycle(db, model_id)
         if lifecycle.model_lifecycle_state != ModelLifecycleState.TRAINED:
             raise framework_error(FrameworkError.LIFECYCLE_ILLEGAL_TRANSITION,
@@ -1080,8 +1135,9 @@ def _start_validation(db: Session, *, model_id: uuid.UUID | None, group_id: uuid
 def request_validation(body: RequestValidationRequest, request: Request, db: Session = Depends(get_session)):
     """CreateValidation — see `_start_validation`."""
     # Route notes: 201 `{"validationJobId"}`. Gates and error codes are those of `_start_validation`; the package or profile is resolved first (404
-    # `PACKAGE_NOT_FOUND`). One commit after the NFO calls. `@idempotent("aimgf")` replays by `Idempotency-Key`.
-    job = _start_validation(db, model_id=body.modelId, group_id=None, producer_id=body.producerId,
+    # `PACKAGE_NOT_FOUND`), plus 403 `MODEL_ACCESS_DENIED` for an rApp that is not the model's owner (SEC-15.3c). One commit after the NFO calls. `@idempotent("aimgf")` replays by
+    # `Idempotency-Key`.
+    job = _start_validation(db, model_id=body.modelId, group_id=None, producer_id=body.producerId, request=request,
                             training_job_id=body.trainingJobId, validation_criteria=body.validationCriteria,
                             notification_uri=body.notificationUri,
                             runtime_profile=_resolve_runtime_profile("VALIDATION", body.packageId, body.runtimeProfile),
@@ -1158,11 +1214,11 @@ def request_emulation(body: RequestEmulationRequest, request: Request, db: Sessi
     is. Requires the model to have passed validation (VALIDATED) AND an
     operator to have already fired APPROVE_VALIDATION (HISTORY.md OI-6.1) — the same gate shape as request_validation's own.
     """
-    # Route notes. 201 `{"emulationJobId"}`. Order: model exists (404 `MODEL_NOT_FOUND`), model VALIDATED (409 `LIFECYCLE_ILLEGAL_TRANSITION`),
+    # Route notes. 201 `{"emulationJobId"}`. Order: model exists (404 `MODEL_NOT_FOUND`), an rApp caller owns it or it has no owner (403 `MODEL_ACCESS_DENIED`, SEC-15.3c), model VALIDATED (409 `LIFECYCLE_ILLEGAL_TRANSITION`),
     # APPROVE_VALIDATION fired (409 `VALIDATION_NOT_APPROVED`), the named emulation function exists (404 `NRM_OBJECT_NOT_FOUND`), the package or profile
     # resolves (404 `PACKAGE_NOT_FOUND`); then the job row, the NFO descriptor and deployment, CREATE_EMULATION, one commit. Always model-targeted.
     # `@idempotent("aimgf")` replays by `Idempotency-Key`.
-    _get_model(body.modelId)
+    _owned_model(request, body.modelId, "emulate")
     lifecycle = _get_or_create_lifecycle(db, body.modelId)
     if lifecycle.model_lifecycle_state != ModelLifecycleState.VALIDATED:
         raise framework_error(FrameworkError.LIFECYCLE_ILLEGAL_TRANSITION,
@@ -1314,10 +1370,10 @@ def advance_model_lifecycle(model_id: uuid.UUID, event: str, request: Request, d
 
 
 @app.get("/models/{model_id}/lifecycle")
-def get_model_lifecycle(model_id: uuid.UUID, db: Session = Depends(get_session)):
-    # Route notes: 404 `MODEL_NOT_FOUND` when MLMR does not know the model. Creates the lifecycle row on first use and commits, so this GET writes (the row
-    # starts REGISTERED / NOT_DEPLOYED).
-    _get_model(model_id)
+def get_model_lifecycle(request: Request, model_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: 404 `MODEL_NOT_FOUND` when MLMR does not know the model; 403 `MODEL_ACCESS_DENIED` for an rApp that is not the model's owner (SEC-15.3c; the console, an SMO
+    # module such as MLLF and a call with no role are not asked). Creates the lifecycle row on first use and commits, so this GET writes (the row starts REGISTERED / NOT_DEPLOYED).
+    _owned_model(request, model_id, "read the lifecycle of")
     lifecycle = _get_or_create_lifecycle(db, model_id)
     db.commit()
     return _lifecycle_view(lifecycle)
@@ -1379,10 +1435,12 @@ def list_governance_history(model_id: uuid.UUID, limit: int = PageLimit, offset:
 
 
 @app.get("/models/{model_id}/lifecycle-history")
-def list_lifecycle_history(model_id: uuid.UUID, fsm: str | None = None, limit: int = PageLimit,
+def list_lifecycle_history(request: Request, model_id: uuid.UUID, fsm: str | None = None, limit: int = PageLimit,
                             offset: int = PageOffset, db: Session = Depends(get_session)):
-    # Route notes: oldest first. `fsm` (MODEL or RUNTIME) is matched as given and not validated; any other value gives an empty list. The model is not looked
-    # up.
+    # Route notes: oldest first. `fsm` (MODEL or RUNTIME) is matched as given and not validated; any other value gives an empty list. For a caller with the rApp role the model
+    # is looked up first (404 `MODEL_NOT_FOUND`, 403 `MODEL_ACCESS_DENIED` unless it owns the model or the model has no owner; SEC-15.3c); for the console, an SMO module and a call
+    # with no role it is not looked up, so the history of a model MLMR has since deleted is still readable.
+    _check_rapp_owns(request, model_id, "read the lifecycle history of")
     stmt = select(LifecycleTransition).where(LifecycleTransition.model_id == model_id)
     if fsm:
         stmt = stmt.where(LifecycleTransition.fsm == fsm)
@@ -1681,7 +1739,7 @@ def list_inference_jobs(model_id: uuid.UUID | None = None, status: str | None = 
 # ---------------------------------------------------------------- MLMF performance monitoring
 
 @app.post("/mlmf/subscriptions", status_code=201)
-def subscribe_performance_monitoring(model_id: uuid.UUID, metric_types: list[str], dme_type_id: uuid.UUID, guard_kpi_floor: dict | None = None,
+def subscribe_performance_monitoring(request: Request, model_id: uuid.UUID, metric_types: list[str], dme_type_id: uuid.UUID, guard_kpi_floor: dict | None = None,
                                       notification_destination: str | None = None, db: Session = Depends(get_session)):
     """MLMF — new sub-function, AI/ML Workflow LLD section 2. Distinct
     domain from RAN Analytics' MDAF (model performance, not RAN behavior).
@@ -1691,8 +1749,10 @@ def subscribe_performance_monitoring(model_id: uuid.UUID, metric_types: list[str
     permissive shape — a purely poll-based consumer may still omit it).
     """
     # Route notes: 201 `{"subscriptionId"}`. `model_id`, `dme_type_id` and `notification_destination` are query parameters; `metric_types` and `guard_kpi_floor`
-    # are read from the JSON body. Neither the model nor the DME type is looked up. `notification_destination` is stored as given and screened by the outbox's
-    # SSRF guard when a report is queued, not here. One commit.
+    # are read from the JSON body. The DME type is not looked up. For a caller with the rApp role the model is looked up first (404 `MODEL_NOT_FOUND`, 403 `MODEL_ACCESS_DENIED`
+    # unless it owns the model or the model has no owner; SEC-15.3c); the console, an SMO module and a call with no role are not asked and the model is not looked up for them.
+    # `notification_destination` is stored as given and screened by the outbox's SSRF guard when a report is queued, not here. One commit.
+    _check_rapp_owns(request, model_id, "subscribe to the performance of")
     sub = MLMFSubscription(model_id=model_id, metric_types=metric_types, dme_type_id=dme_type_id, guard_kpi_floor=guard_kpi_floor,
                             notification_destination=notification_destination)
     db.add(sub)
@@ -1701,15 +1761,17 @@ def subscribe_performance_monitoring(model_id: uuid.UUID, metric_types: list[str
 
 
 @app.delete("/mlmf/subscriptions/{subscription_id}", status_code=204)
-def unsubscribe_performance_monitoring(subscription_id: uuid.UUID, db: Session = Depends(get_session)):
+def unsubscribe_performance_monitoring(request: Request, subscription_id: uuid.UUID, db: Session = Depends(get_session)):
     """HISTORY.md §7's `MLMFSubscription` finding, closed: previously
     this subscription could only be created and read, never torn down —
     idempotent, matching every other subscription-shaped resource's own
     unsubscribe route (DME/MDAF/Intent Service).
     """
-    # Route notes: 204 whether or not the subscription existed. Its reports go with it (the database cascades the delete).
+    # Route notes: 204 whether or not the subscription existed. Its reports go with it (the database cascades the delete). An rApp is refused with 403
+    # `MODEL_ACCESS_DENIED` for a subscription on a model another rApp owns (SEC-15.3c); a model MLMR no longer knows does not stop an rApp from removing what was recorded for it.
     sub = db.get(MLMFSubscription, subscription_id)
     if sub is not None:
+        _check_rapp_owns_if_known(request, sub.model_id, "remove a subscription to the performance of")
         db.delete(sub)
         db.commit()
 
@@ -1726,7 +1788,7 @@ def _find_coordination_group_for_model(model_id: uuid.UUID) -> dict | None:
 
 
 @app.post("/mlmf/subscriptions/{subscription_id}/reports")
-def report_performance(subscription_id: uuid.UUID, metrics: dict, db: Session = Depends(get_session)):
+def report_performance(request: Request, subscription_id: uuid.UUID, metrics: dict, db: Session = Depends(get_session)):
     """`docs/call-flows/13-mlmf-subscription-lifecycle.md`'s own gap,
     closed: a report against an unsubscribed or never-existed
     subscription used to raise an unhandled `AttributeError` (a bare
@@ -1734,7 +1796,8 @@ def report_performance(subscription_id: uuid.UUID, metrics: dict, db: Session = 
     404, matching every comparable cross-reference elsewhere in this
     build.
     """
-    # Route notes. 404 `MLMF_SUBSCRIPTION_NOT_FOUND`. The body is the metrics object (metric name to number). A report breaches when the subscription has a
+    # Route notes. 404 `MLMF_SUBSCRIPTION_NOT_FOUND`; 403 `MODEL_ACCESS_DENIED` for an rApp that does not own the subscribed model (SEC-15.3c; a report can start a group retrain, so it is
+    # the owner's to file; MDAF files drift reports as an SMO module and is not asked). The body is the metrics object (metric name to number). A report breaches when the subscription has a
     # floor and any guarded metric is below it; a guarded metric missing from the report counts as 0, and a non-numeric value raises a TypeError (500). The
     # report and its subscriber notification (`{reportId, modelId, metrics, breachedFloor}`) are committed first. Only then, for a breach, is the model's
     # coordination group fetched from MLMR and `should_trigger_group_retrain` asked with `breached_count=1`; a raise from it (WEIGHTED_TRIGGERS or an unknown
@@ -1743,6 +1806,7 @@ def report_performance(subscription_id: uuid.UUID, metrics: dict, db: Session = 
     sub = db.get(MLMFSubscription, subscription_id)
     if sub is None:
         raise framework_error(FrameworkError.MLMF_SUBSCRIPTION_NOT_FOUND, detail="no such MLMF subscription")
+    _check_rapp_owns_if_known(request, sub.model_id, "report the performance of")
     # A guarded metric absent from the report is read as 0, so it breaches any floor above 0; a subscription with no floor never breaches.
     breached = bool(sub.guard_kpi_floor) and any(metrics.get(k, 0) < v for k, v in (sub.guard_kpi_floor or {}).items())
     report = PerformanceReport(subscription_id=subscription_id, metrics=metrics, breached_floor=breached)
@@ -1776,12 +1840,19 @@ def report_performance(subscription_id: uuid.UUID, metrics: dict, db: Session = 
 
 
 @app.get("/mlmf/subscriptions")
-def list_performance_subscriptions(model_id: uuid.UUID | None = None, limit: int = PageLimit, offset: int = PageOffset,
+def list_performance_subscriptions(request: Request, model_id: uuid.UUID | None = None, limit: int = PageLimit, offset: int = PageOffset,
                                     db: Session = Depends(get_session)):
-    # Route notes: paginated; `model_id` filters in SQL. Answers each subscription with its floor and destination.
+    # Route notes: paginated; `model_id` filters in SQL. Answers each subscription with its floor and destination. For a caller with the rApp role (SEC-15.3c): naming a model
+    # another rApp owns is 403 `MODEL_ACCESS_DENIED` (a model MLMR does not know gives the empty list as before), and without `model_id` only the subscriptions of the models it may see
+    # are listed (`_visible_model_ids`: owned, owner-less or unknown to MLMR). The console, an SMO module (MDAF reads its subscriptions this way) and a call with no role see all.
     stmt = select(MLMFSubscription)
     if model_id:
+        _check_rapp_owns_if_known(request, model_id, "list the subscriptions to the performance of")
         stmt = stmt.where(MLMFSubscription.model_id == model_id)
+    else:
+        visible = _visible_model_ids(request, db)
+        if visible is not None:
+            stmt = stmt.where(MLMFSubscription.model_id.in_(visible))
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"subscriptionId": str(sub.subscription_id), "modelId": str(sub.model_id), "metricTypes": sub.metric_types,
              "dmeTypeId": str(sub.dme_type_id), "guardKpiFloor": sub.guard_kpi_floor,
@@ -1789,21 +1860,27 @@ def list_performance_subscriptions(model_id: uuid.UUID | None = None, limit: int
 
 
 @app.get("/mlmf/subscriptions/{subscription_id}/reports")
-def list_performance_reports(subscription_id: uuid.UUID, limit: int = PageLimit, offset: int = PageOffset,
+def list_performance_reports(request: Request, subscription_id: uuid.UUID, limit: int = PageLimit, offset: int = PageOffset,
                               db: Session = Depends(get_session)):
-    # Route notes: 404 `MLMF_SUBSCRIPTION_NOT_FOUND` for an unknown subscription; newest first.
-    if db.get(MLMFSubscription, subscription_id) is None:
+    # Route notes: 404 `MLMF_SUBSCRIPTION_NOT_FOUND` for an unknown subscription; 403 `MODEL_ACCESS_DENIED` for an rApp that does not own the subscribed model (SEC-15.3c); newest first.
+    sub = db.get(MLMFSubscription, subscription_id)
+    if sub is None:
         raise framework_error(FrameworkError.MLMF_SUBSCRIPTION_NOT_FOUND, detail="no such MLMF subscription")
+    _check_rapp_owns_if_known(request, sub.model_id, "read the performance reports of")
     stmt = select(PerformanceReport).where(PerformanceReport.subscription_id == subscription_id).order_by(PerformanceReport.reported_at.desc())
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [_performance_report_view(r) for r in page["items"]]}
 
 
 @app.get("/mlmf/reports")
-def list_recent_performance_reports(breached_only: bool = False, limit: int = PageLimit, offset: int = PageOffset,
+def list_recent_performance_reports(request: Request, breached_only: bool = False, limit: int = PageLimit, offset: int = PageOffset,
                                      db: Session = Depends(get_session)):
-    # Route notes: reports across all subscriptions, newest first; `breached_only` keeps the ones with a breach. Paginated.
+    # Route notes: reports across all subscriptions, newest first; `breached_only` keeps the ones with a breach. Paginated. For a caller with the rApp role only the reports of
+    # subscriptions on the models it may see are listed (SEC-15.3c, `_visible_model_ids`).
     stmt = select(PerformanceReport)
+    visible = _visible_model_ids(request, db)
+    if visible is not None:
+        stmt = stmt.join(MLMFSubscription, MLMFSubscription.subscription_id == PerformanceReport.subscription_id).where(MLMFSubscription.model_id.in_(visible))
     if breached_only:
         stmt = stmt.where(PerformanceReport.breached_floor.is_(True))
     page = paginate(db, stmt.order_by(PerformanceReport.reported_at.desc()), limit, offset)
