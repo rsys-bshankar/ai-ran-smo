@@ -180,6 +180,16 @@ Recurring conventions referred to below:
 - **OI-2-package-redeploy** — The duplicate-hash check ignores `DELETING` and `FAILED` packages, so a
   deleted or failed CSAR can be onboarded again.
 - **OI-5-onboarding-priming (residual)** — `CreateInstance` accepts `AVAILABLE` or `PRIMED`.
+- **OI-7-rapp-data-jobs-teardown** — Terminating an instance left the DME data jobs it opened as a consumer open: they kept receiving every
+  record of their type, so each terminate-and-redeploy made RAN NF OAM's PM fan-out slower (it delivers each measurement to every open job,
+  one DME record at a time; the GUI demo's **2 · Load history PM** took twice as long after one redeploy). DME now records who created a job
+  (`data_job.created_by`, revision 0045: the invoker id the gateway vouched for; an rApp acts as its instance, so it is the instance's own),
+  `DELETE /dme/data-jobs` takes `created_by` as well as `consumer_id` (exactly one; an rApp may name only itself, 403 `DATA_JOBS_NOT_OWNER`),
+  and rApp Management's terminate side effects (`TERMINATE`, `UPGRADE_COMMIT`) close the instance's jobs by it, after the DME and SME
+  deregistrations and before the credential is revoked. Best-effort, like those. Not taken: matching the rApp's own `consumerId` naming
+  (`<rapp>:<instanceId>` is a sample-rApp convention, not a contract) and asking the rApp to close them over its operator API (every rApp would
+  have to implement it, and one that is down would keep its jobs). `CRASH` keeps the jobs, as it keeps the identity, for a recover. A job created
+  before the revision, or by an rApp under its own identity instead of the instance's, has no instance creator and is not closed. Call flow 07.
 - **OI-2-model-eol-serving** — `DEPRECATED`/`RETIRED` models refuse runtime activate and scale;
   `RETIRED` also refuses inference, and `RETIRE` terminates the runtime (NFO teardown and runtime
   events). A `DEPRECATED` model's active runtime keeps serving until retirement (a grace period for

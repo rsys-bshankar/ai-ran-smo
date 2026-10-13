@@ -31,7 +31,7 @@ The data plane follows the O-RAN-SC Information Coordination Service (ICS) as R1
 |---|---|
 | Information Producer (`PUT /data-producer/v1/info-producers/{id}`) | `DMEProducer`; `POST /production-capabilities` upserts it; `GET /production-capabilities[/{id}]`, `.../status` |
 | Information Type (`info-types`), many-to-many with producers | `DMEType` keyed on `(namespace, name, version)`, link table `DMEProducerType`; `DELETE /dme-types/{id}` |
-| Information Job (`info-jobs`, `PUT`, `deleteJobsForOwner`) | `DataJob`; `POST/PUT/DELETE /data-jobs`, `DELETE /data-jobs?consumer_id=` |
+| Information Job (`info-jobs`, `PUT`, `deleteJobsForOwner`) | `DataJob`; `POST/PUT/DELETE /data-jobs`, `DELETE /data-jobs?consumer_id=` (or `?created_by=`) |
 | `ProducerCallbacks.startInfoJob` / `stopInfoJob` | Job push to every producer's `jobCallbackUrl` on create and update; `DELETE {jobCallbackUrl}/{jobId}` on terminate |
 | Type status (ENABLED if any supporting producer is available) | `typeStatus` computed at read time from each producer's health callback |
 | `InfoTypeSubscriptions` / `ConsumerCallbacks` | `DMETypeSubscription`; notified on type registered / removed, unfiltered |
@@ -139,6 +139,7 @@ Cross-module references are bare UUIDs or strings; there are none to other modul
 | `data_delivery_method` | one of `DELIVERY_METHODS` |
 | `delivery_details` (JSON) | `targetUri` is forwarded to producers |
 | `consumer_id` | rAppId, or `DME_FRAMEWORK` for a job the framework itself created against a producer |
+| `created_by` | The invoker id the gateway vouched for when the job was created (revision 0045; for an rApp acting as an instance, the instance's own). Null for a job created before, or not through the gateway. Returned as `createdBy`; what rApp Management closes an instance's jobs by (OI-7-rapp-data-jobs-teardown) |
 | `status` | set to `ACTIVE` on create; never changed afterwards |
 | `lifecycle_stage` (null) | one of `LIFECYCLE_STAGES` |
 | `expected_interval_seconds` (null) | how often the consumer expects a delivery (`expectedIntervalSeconds`, > 0, optional; `GUI-9.8`, revision `0037`) |
@@ -208,7 +209,7 @@ All routes sit under `/dme`. Lists marked "paged" return `{items, total, limit, 
 | GET | `/data-jobs/{id}/status` | `{dataJobId, status}` | 404 |
 | PUT | `/data-jobs/{id}` | Update definition, method, details, stage, `expectedIntervalSeconds` (left out: none); re-validated; producers re-notified | 404; 400 `DATA_JOB_TARGET_IMMUTABLE`; plus the create errors |
 | DELETE | `/data-jobs/{id}` (204) | Terminate; stops the job at every producer. Idempotent. | |
-| DELETE | `/data-jobs?consumer_id=` (204) | Terminate every job one consumer owns | |
+| DELETE | `/data-jobs?consumer_id=` or `?created_by=` (204) | Terminate every job one consumer owns, or every job one invoker created (rApp Management's instance teardown). Exactly one of the two | 422 neither or both; 403 `DATA_JOBS_NOT_OWNER` an rApp naming another invoker in `created_by` |
 
 **Offers (R1AP reverse-direction availability)**
 
@@ -266,6 +267,7 @@ ProblemDetails `title` / status (see [R1 API conventions](../docs/ARCHITECTURE.m
 | `DME_TYPE_HAS_ACTIVE_PRODUCERS` | 409 | Delete of a type that still has a producer |
 | `DME_TYPE_NOT_OWNER` | 403 | `POST /production-capabilities` changes the definition of a type another producer registered, from a caller that is neither that producer nor `internal` (defined in `app/main.py`, not in `smo_shared.errors`) |
 | `DME_TYPE_VERSION_CONFLICT` | 409 | Used only for `POST /offers/{id}/notify` on an unknown offer (the registration conflict it was named for no longer exists, since registration is an upsert) |
+| `DATA_JOBS_NOT_OWNER` | 403 | `DELETE /data-jobs?created_by=` from a caller with the rApp role naming another invoker (defined in `app/main.py`) |
 | `DATA_JOB_TARGET_IMMUTABLE` | 400 | `PUT /data-jobs` changes `dmeTypeId`, `consumerId` or `dataDeliveryMode` |
 | `PRODUCER_NOT_FOUND`, `DME_TYPE_NOT_FOUND`, `TYPE_SUBSCRIPTION_NOT_FOUND`, `DATA_JOB_NOT_FOUND`, `DATA_OFFER_NOT_FOUND`, `DME_ACTION_NOT_FOUND` | 404 | Unknown id on a read, update or ingest (deletes of unknown ids are silent 204s, except `DELETE /dme-types`) |
 | (RAN NF OAM's) `O1_SERVICE_NOT_SUPPORTED` 409, `SCHEMA_VALIDATION_FAILED` 422, `MSAC_ACCESS_DENIED` 403, `PROTOCOL_NOT_SUPPORTED` 409, `ENDPOINT_UNREACHABLE` 503, ... | as received | Passed back from `POST /actions`; DME adds none of its own |
@@ -309,8 +311,9 @@ cd smo/dme && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | | Data records: ingest, fetch, limit, unknown job | 4 |
 | | Action mediation: forward and record, RAN NF OAM refusal surfaced, empty changes, unknown action, list filter, replayed `actionId` ignored | 6 |
 | | Health probe | 1 |
+| `tests/test_data_job_owner.py` | OI-7-rapp-data-jobs-teardown (4): a job records the gateway's invoker id (null without one); `created_by` deletes exactly that invoker's jobs, whatever their consumer id; an rApp may delete only its own; neither or both filters is a 422 | 4 |
 | `tests/test_delivery_health.py` | `GUI-9.8` delivery health: no interval means no verdict, LATE two intervals after the last delivery and on time again after the next, a job that never delivered turns LATE, PUT declares or drops the interval, the `late` list filter both ways, a non-positive interval is 422 | 6 |
-| | Total | 127 |
+| | Total | 144 |
 
 ### 3.3 What is not covered here
 

@@ -15,10 +15,10 @@ a retrain decision).
 
 | State | Events out (→ target) | Action on the transition |
 |---|---|---|
-| `DEPLOYING` | `BOOTSTRAP_OK` → `RUNNING`, `BOOTSTRAP_FAILED` → `FAULTED`, `TERMINATE` → `UNDEPLOYED` | `TERMINATE`: deregister DME and SME, then revoke the credential |
-| `RUNNING` | `START_UPGRADE` → `UPGRADING`, `TERMINATE` → `UNDEPLOYED`, `CRASH` → `FAULTED` | `TERMINATE`: deregister DME and SME, then revoke the credential. `CRASH`: deregister DME and SME |
+| `DEPLOYING` | `BOOTSTRAP_OK` → `RUNNING`, `BOOTSTRAP_FAILED` → `FAULTED`, `TERMINATE` → `UNDEPLOYED` | `TERMINATE`: deregister DME and SME, close its DME data jobs, then revoke the credential |
+| `RUNNING` | `START_UPGRADE` → `UPGRADING`, `TERMINATE` → `UNDEPLOYED`, `CRASH` → `FAULTED` | `TERMINATE`: deregister DME and SME, close its DME data jobs, then revoke the credential. `CRASH`: deregister DME and SME |
 | `UPGRADING` | `UPGRADE_COMMIT` → `UNDEPLOYED`, `UPGRADE_ROLLBACK` → `RUNNING` | `UPGRADE_COMMIT`: deregister DME and SME, then revoke the credential |
-| `FAULTED` | `RECOVER` → `DEPLOYING`, `TERMINATE` → `UNDEPLOYED` | `TERMINATE`: deregister DME and SME, then revoke the credential |
+| `FAULTED` | `RECOVER` → `DEPLOYING`, `TERMINATE` → `UNDEPLOYED` | `TERMINATE`: deregister DME and SME, close its DME data jobs, then revoke the credential |
 | `UNDEPLOYED` | none (terminal). `DELETE /instances/{id}` removes the row | — |
 
 No transition has a guard. Every route that leaves the FSM's own action out of a teardown —
@@ -202,6 +202,8 @@ sequenceDiagram
     Rapp->>Rapp: state: RUNNING, FAULTED or DEPLOYING -> UNDEPLOYED (TERMINATE)
     Rapp->>DME: DELETE /dme/production-capabilities (producer_id=oauthClientId)
     Rapp->>SME: DELETE each published service API, then the provider registration
+    Rapp->>DME: DELETE /dme/data-jobs (created_by=oauthClientId)
+    DME->>DME: delete every data job the instance created, tell their producers
     Rapp->>Rapp: revoke credential — oauth_client_id = NULL
     Rapp->>NFO: DELETE /nfo/deployments/{workloadRef}
     NFO-->>Rapp: 204, the NF deployment is terminated
@@ -219,6 +221,7 @@ sequenceDiagram
 **Key decisions this flow depends on:**
 - Only `severity == "critical"` drives a state transition. `report_fault` records every report regardless of severity, and the history is readable at `GET /instances/{id}/faults` (and `/performance` for metrics, newest first). A critical fault on an instance that is not `RUNNING` is refused with 409 and not recorded.
 - `CRASH`, `TERMINATE` and `UPGRADE_COMMIT` deregister the instance's DME production capabilities and SME service APIs keyed by its `oauth_client_id` (HISTORY.md OI-1-producer-reconsideration). These calls are best-effort. `TERMINATE` and `UPGRADE_COMMIT` run them before revoking the credential, because revocation clears the id they key on. `CRASH` keeps the credential so `RECOVER` can reuse the same identity.
+- `TERMINATE` and `UPGRADE_COMMIT` also close the DME data jobs the instance opened as a consumer (`DELETE /dme/data-jobs?created_by=<oauthClientId>`, HISTORY.md OI-7-rapp-data-jobs-teardown). The rApp acts as the instance, so DME recorded the instance's invoker id as each job's `created_by`. `CRASH` keeps them, with the identity. Best-effort, like the deregistrations. Jobs an rApp opened under its own identity, without the instance's credentials, are not closed.
 - `TERMINATE` also terminates the NFO deployment behind `workloadRef` (the `nfDeploymentId` NFO Instantiate returned to `CreateInstance`) and stops the package usage registration. Both are best-effort and recorded in `lastTeardown` (`rapp_instance.last_teardown`). `workloadRef` is kept after teardown as the record of which deployment ran. A successfully stopped usage registration is cleared from the row.
 - `TERMINATE` is legal from `RUNNING`, `FAULTED` and `DEPLOYING`. A crashed instance is retired without recovering first. `UPGRADING` must be resolved first.
 - `RECOVER` (`FAULTED -> DEPLOYING`) is fired by `POST /instances/{id}/recover` (HISTORY.md OI-2-recover). It re-enters where `CreateInstance` does: the container re-bootstraps and calls `bootstrap-complete`, which re-registers the package's SME declarations. There is no lightweight path straight back to `RUNNING`, matching AI/ML Workflow's retraining re-entry (call flow 02).
