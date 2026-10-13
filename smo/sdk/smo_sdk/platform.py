@@ -86,7 +86,7 @@ class PlatformClient(BaseClient):
         (PR-AI-11) the answer has `status` `PENDING_APPROVAL`, no `forwardedJobId` and an `approvalId`; follow it with `get_approval`. Design record: `HISTORY.md` W10-03 (decision D-4).
 
         `msac_credential` (keyword only, `SEC-15.6b`) is the credential of the MSAC Identity named by `requested_by`, sent in the `X-MSAC-Credential` header and only when given; it is never put in the body or
-        in a log line or message. RAN NF OAM asks an rApp for it when the Identity has one (403 `MSAC_ACCESS_DENIED` without it). DME does not pass the header on to RAN NF OAM yet (`OPEN_ITEMS.md` SEC-15.6b).
+        in a log line or message. RAN NF OAM asks an rApp for it when the Identity has one (403 `MSAC_ACCESS_DENIED` without it). DME passes the header on to RAN NF OAM, which asks an rApp for it.
         """
         payload = {"requestedBy": requested_by, "changes": changes, "scope": scope, "msacRole": msac_role,
                    "sourceContext": source_context, "actionId": str(action_id) if action_id else None}

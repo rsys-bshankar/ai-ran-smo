@@ -148,7 +148,7 @@ class DataClient(BaseClient):
         """Submit an O1 configuration action to DME, which mediates it to RAN NF OAM's NETCONF dispatch (`POST /dme/actions`); DME does not speak O1 itself.
 
         `msac_credential` (keyword only, `SEC-15.6b`) is the credential of the MSAC Identity named by `requested_by`, sent in the `X-MSAC-Credential` header and only when given; it is never put in the body or
-        in a log line or message. RAN NF OAM asks an rApp for it when the Identity has one (403 `MSAC_ACCESS_DENIED` without it). DME does not pass the header on to RAN NF OAM yet (`OPEN_ITEMS.md` SEC-15.6b).
+        in a log line or message. RAN NF OAM asks an rApp for it when the Identity has one (403 `MSAC_ACCESS_DENIED` without it). DME passes the header on to RAN NF OAM, which asks an rApp for it.
 
         The same route as `PlatformClient.execute_action`, without its `action_id` idempotency key and without the approval hint; `decision` (PR-AI-13, why the rApp acts) is sent only when given.
         Returns the action record; raises `SdkError` for the route's refusals.

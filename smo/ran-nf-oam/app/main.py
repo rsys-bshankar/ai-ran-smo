@@ -827,8 +827,9 @@ def write_configuration_changes(body: WriteConfigRequest, request: Request, db: 
     """
     # SEC-15.6: first of all, an rApp that names an MSAC Identity with a credential must present it (403 `MSAC_ACCESS_DENIED`). Only a caller with the rApp role is asked: `requestedBy` is
     # its own word. The console and an SMO module (role internal) authenticate a person themselves and are trusted as elsewhere in this module, and a call with no role did not come
-    # through the gateway.
-    if role_of(request) == ROLE_RAPP:
+    # through the gateway. An SMO module that passes an rApp's request on (DME's `POST /actions`, `X-R1-On-Behalf-Of`, which the gateway sets itself) is the rApp asking, so it is asked too
+    # (SEC-15.6b); the credential comes in the same header, which DME forwards.
+    if role_of(request) == ROLE_RAPP or (role_of(request) == ROLE_INTERNAL and request.headers.get(ON_BEHALF_OF_HEADER)):
         msac.verify_identity_credential(db, body.requestedBy, msac_credential)
     caller = invoker_id(request)
     scope = scoping.request_scope(request)
