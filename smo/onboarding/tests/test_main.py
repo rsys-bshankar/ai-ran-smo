@@ -1268,3 +1268,31 @@ def test_release_of_an_unknown_registration_is_404(client, monkeypatch):
     package_id = _make_available_package(client, monkeypatch)
     resp = client.post(f"/packages/{package_id}/usage/{uuid.uuid4()}/release")
     assert resp.status_code == 404 and resp.json()["detail"]["title"] == "PACKAGE_USAGE_REGISTRATION_NOT_FOUND"
+
+
+def test_delete_when_nfo_cannot_be_reached_is_503_and_changes_nothing(client, monkeypatch):
+    """NFO not answering the descriptor delete is 503 ENDPOINT_UNREACHABLE; the package stays AVAILABLE with its descriptor."""
+    import httpx
+
+    package_id = _make_available_package(client, monkeypatch)
+
+    def unreachable(self, path, **kw):
+        raise httpx.ConnectError("down")
+
+    monkeypatch.setattr("app.main.R1Client.delete", unreachable)
+
+    resp = client.delete(f"/packages/{package_id}")
+
+    assert resp.status_code == 503 and resp.json()["detail"]["title"] == "ENDPOINT_UNREACHABLE"
+    assert client.get(f"/packages/{package_id}/onboarding-status").json()["state"] == "AVAILABLE"
+
+
+def test_release_is_503_when_rapp_management_answers_an_error(client, monkeypatch):
+    """rApp Management answering anything but 200 or 404 is 503 ENDPOINT_UNREACHABLE; the registration stays open."""
+    package_id, reg = _registration(client, monkeypatch, str(uuid.uuid4()))
+    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeR1Response(500, {}))
+
+    resp = client.post(f"/packages/{package_id}/usage/{reg}/release")
+
+    assert resp.status_code == 503 and resp.json()["detail"]["title"] == "ENDPOINT_UNREACHABLE"
+    assert client.get(f"/packages/{package_id}/usage").json()["items"][0]["active"] is True

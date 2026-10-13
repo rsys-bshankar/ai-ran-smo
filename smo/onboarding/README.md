@@ -9,7 +9,7 @@
 | Depends on (over R1) | NFO (`POST /nfo/descriptors`, `DELETE /nfo/descriptors/{id}` on delete); rApp Management (`GET /rapp-mgmt/instances/{id}`, only to release an orphaned usage registration); the package location itself (plain HTTP GET, not over R1) |
 | Called by | rApp Management (`onboarding-status`, `usage/start`, `usage/stop`: the only writer of usage registrations); AIMgF (`onboarding-status`, for `aiCapabilities.runtimeProfiles`); GUI BFF (operator and admin actions, `usage/{id}/release` for an admin); operators |
 | Database tables | `application_package` (versioned), `artifact`, `package_usage_registration` |
-| Unit tests | 197 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 199 passed (`tests/`, SQLite, standalone) |
 | Status | Done. Package signatures are verified against an operator-held trust store when one is configured (`PR-RAPP-1`; off by default, see 1.5, 2.6, 2.8) |
 
 ## 1. High-level design (HLD)
@@ -252,7 +252,7 @@ cd smo/onboarding && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | | Illegal events are 409 naming state and event; delete without an edge | 9 |
 | | Unknown package / registration is 404 on every route | 10 |
 | | Usage: stop idempotent, listing shows what blocks a delete | 2 |
-| | Call flow 06 (DOC-CF-1.2): delete deletes the NFO descriptor and clears it, NFO refusing (409, 500) leaves the package, a guard refusal never calls NFO, a FAILED delete takes its descriptor and stopped registrations, usage/start refuses 4 non-deployable states and takes a PRIMED one, an unexpected onboarding error ends FAILED and deletable, release (instance gone or UNDEPLOYED; refused for 4 live states; 503; a non-instance consumer without asking; 404) | 20 |
+| | Call flow 06 (DOC-CF-1.2): delete deletes the NFO descriptor and clears it, NFO refusing (409, 500) leaves the package, a guard refusal never calls NFO, a FAILED delete takes its descriptor and stopped registrations, usage/start refuses 4 non-deployable states and takes a PRIMED one, an unexpected onboarding error ends FAILED and deletable, NFO unreachable on delete (503), release (instance gone or UNDEPLOYED; refused for 4 live states; 503 for no answer and for an error answer; a non-instance consumer without asking; 404) | 22 |
 | | Package list and state filter, identity fields for the GUI, health | 3 |
 | | Package row committed before the NFO call | 1 |
 | `tests/test_statemachine.py` | The FSM alone: success and failure onboarding, deprecate round trip, delete guards (child, usage, after stop), no transition from `FAILED`, prime / deprime round trip and guard, no `ONBOARDING → PRIME`, no `PRIMED → DELETE` | 11 |
