@@ -1,4 +1,4 @@
-# Production sample: the retention periods proposed in docs/RETENTION.md (DB-3.10). The chart's own defaults keep every row (0), so an upgrade deletes
+# Production sample: the retention periods proposed in docs/RETENTION.md (DB-3.10), and the production safeguards at the end and under rapp-mgmt (signed packages, SME registration; call flow 01). The chart's own defaults keep every row (0), so an upgrade deletes
 # nothing; this file is what an operator who has confirmed the periods layers on top:
 #   helm upgrade --install smo deploy/helm/smo -f deploy/helm/smo/values-production.yaml -f my-values.yaml
 # The numbers are proposals, not legal advice: the retention a law or a contract requires is yours to decide (docs/PRIVACY.md). Change a number here

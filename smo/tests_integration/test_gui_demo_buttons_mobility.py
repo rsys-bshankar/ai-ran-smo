@@ -9,16 +9,13 @@ RELATIONS = [{"relation": "201-202", "source": "201", "target": "202"}, {"relati
              {"relation": "202-203", "source": "202", "target": "203"}, {"relation": "203-204", "source": "203", "target": "204"}]
 
 
-def test_mobility_optimization_demo_from_the_console(mesh, loaded_apps, monkeypatch, callbacks):
+def test_mobility_optimization_demo_from_the_console(mesh, loaded_apps):
     """Mobility Optimization: after the live PM, Evaluate now raises 201->203's CIO to 2 dB, lowers 202->203's to -2 dB and leaves 203->204 (towards
     the emergency cell) alone; after the next hour's PM, Evaluate now confirms the 201->203 change and O1 reads back the new CIO."""
-    from mobility_env import CSAR_URL, serve_csar
-
-    serve_csar(loaded_apps, monkeypatch)
     mesh["mock-o1-adaptor"].delete("/state")
     me = "gnb-du-mro-demo-01"
     _set_up_ran(mesh, me, "HO_PERFORMANCE", 3600, "204")
-    instance_id = _deploy(mesh, "mobility-optimization-rapp", callbacks.csar_url(CSAR_URL),
+    instance_id = _deploy(mesh, "mobility-optimization-rapp",
                           {"managedElementRef": me, "relations": RELATIONS}, {"objectInstance": me, "cells": [r["relation"] for r in RELATIONS]})
     page = Page(mesh, "mobility-optimization-rapp", instance_id)
     assert page.demo_buttons() == ["demo-prepare", "demo-history", "demo-train", "demo-validate", "demo-emulate", "demo-deploy", "demo-live",

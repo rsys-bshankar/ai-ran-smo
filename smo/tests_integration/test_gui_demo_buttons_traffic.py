@@ -10,19 +10,16 @@ from test_gui_demo_buttons import Page, _deploy, _lifecycle, _set_up_ran
 RAPP = "traffic-steering-rapp"
 
 
-def test_traffic_steering_demo_from_the_console(mesh, loaded_apps, monkeypatch, callbacks):
+def test_traffic_steering_demo_from_the_console(mesh, loaded_apps):
     """Traffic Steering: after the demo buttons, Evaluate now on the hotspot hour steers 401 towards a neighbour with one step that O1 reads back,
     and Evaluate now on the next hour's PM confirms it."""
-    from traffic_env import CSAR_URL, serve_csar
-
-    serve_csar(loaded_apps, monkeypatch)
     mesh["mock-o1-adaptor"].delete("/state")
     gen = loaded_apps[RAPP].producer
     me = "gnb-mlb-demo-01"
     _set_up_ran(mesh, me, "LOAD_PERFORMANCE", 3600, None)
     region = sorted({f"{c}-{t}" for c, n in gen.NEIGHBOURS.items() for t in n} |
                     {f"{c}-{gen.LAYERS[t]}" for c, n in gen.NEIGHBOURS.items() for t in n if gen.LAYERS[t] != gen.LAYERS[c]})
-    instance_id = _deploy(mesh, RAPP, callbacks.csar_url(CSAR_URL),
+    instance_id = _deploy(mesh, RAPP,
                           {"managedElementRef": me, "cells": [{"cellId": c, "layer": layer} for c, layer in gen.LAYERS.items()]},
                           {"objectInstance": me, "cells": region})
     page = Page(mesh, RAPP, instance_id)
