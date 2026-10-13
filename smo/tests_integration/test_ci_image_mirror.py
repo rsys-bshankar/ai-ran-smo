@@ -187,6 +187,20 @@ def test_setup_exports_the_mirror_reference_when_it_answers_and_never_changes_a_
     assert json.loads((tmp_path / "state.json").read_text())["images"]
 
 
+def test_report_says_the_count_as_a_notice_and_in_the_job_summary_only_in_actions(tmp_path, capsys):
+    """In Actions the "images switched" line is also a `::notice::` annotation and lands in `$GITHUB_STEP_SUMMARY` (a long job's log is cut, the annotation is not);
+    outside Actions the lines are only printed and nothing is written."""
+    lines = ["GHCR image mirror: 18 of 18 images switched (ghcr.io/o/r/mirror)", "other line"]
+    summary = tmp_path / "summary.md"
+    ci.report(lines, {"GITHUB_ACTIONS": "true", "GITHUB_STEP_SUMMARY": str(summary)})
+    out = capsys.readouterr().out
+    assert out.count("::notice title=GHCR image mirror::GHCR image mirror: 18 of 18 images switched") == 1
+    assert "::notice" not in out.replace("::notice title=GHCR image mirror::GHCR image mirror: 18 of 18", "")
+    assert summary.read_text() == "### GHCR image mirror\n\n- " + lines[0] + "\n- other line\n"
+    ci.report(lines, {})
+    assert "::notice" not in capsys.readouterr().out
+
+
 def test_setup_with_the_kill_switch_off_switches_nothing(tmp_path):
     """`SMO_IMAGE_MIRROR=off` (any case; also false, 0, no): every variable is the upstream reference, the compose override and Helm values are empty and the
     registry is not even asked. Unset, empty or any other value leaves the mirror on.

@@ -352,6 +352,23 @@ def export_env(variables: Mapping[str, str], env_file: str | None) -> None:
         print(text, end="")
 
 
+def report(lines: Sequence[str], environ: Mapping[str, str]) -> None:
+    """Prints the lines of `setup`; in GitHub Actions it also says the count line as a `::notice::` annotation and writes the lines to the job summary.
+
+    A job's log is cut to its last 5000 lines by the tools that read it (and this step runs first), so a long job's "N of M images switched" could not be read
+    afterwards (`OPEN_ITEMS.md` OPS-12.5); an annotation is listed with the job's check run whatever the log's length.
+    """
+    print("\n".join(lines))
+    if environ.get("GITHUB_ACTIONS") == "true":
+        for line in lines:
+            if "images switched" in line:
+                print(f"::notice title=GHCR image mirror::{line}")
+    summary = environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with open(summary, "a") as fh:
+            fh.write("### GHCR image mirror\n\n" + "".join(f"- {line}\n" for line in lines))
+
+
 def main(argv: Sequence[str] | None = None, run: mi.Runner | None = None, environ: Mapping[str, str] | None = None) -> int:
     """The command line: `setup`, `image`, `build-contexts` (see the module docstring); returns the exit code.
 
@@ -379,7 +396,7 @@ def main(argv: Sequence[str] | None = None, run: mi.Runner | None = None, enviro
     try:
         if args.command == "setup":
             variables, lines = setup(entries, environ, run or timed_runner(60), state_dir=args.state_dir, prefix=args.prefix)
-            print("\n".join(lines))
+            report(lines, environ)
             export_env(variables, environ.get("GITHUB_ENV"))
             return 0
         switched = read_switched(args.state_dir)
