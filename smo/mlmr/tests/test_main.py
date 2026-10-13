@@ -180,6 +180,116 @@ def test_a_model_without_an_owner_stays_open_to_any_rapp_but_cannot_be_claimed(c
     assert client.get(f"/models/{model_id}").json()["owner"] is None
 
 
+_OTHER_RAPP = {"X-R1-Role": "rapp", "X-R1-Invoker-Id": "other-client"}
+_ZIP = {"file": ("model.zip", b"pkzip-bytes", "application/zip")}
+
+
+def _model_exists(db_session_factory, model_id) -> bool:
+    """True when the model row is still in the database (read through a session of its own, not through the API)."""
+    with db_session_factory() as db:
+        return db.get(MLModel, uuid.UUID(model_id)) is not None
+
+
+def _artifact_count(db_session_factory, model_id) -> int:
+    """The number of artifact rows stored for the model, read straight from the database."""
+    with db_session_factory() as db:
+        return db.query(ModelArtifact).filter(ModelArtifact.model_id == uuid.UUID(model_id)).count()
+
+
+def test_an_rapp_deletes_only_its_own_model(client, db_session_factory):
+    """SEC-15.3d: the owner rApp's DELETE removes the model; another rApp's DELETE is 403 MODEL_ACCESS_DENIED and the model and its artifact are still in the database."""
+    model_id = _register_for(client, _RAPP)
+    client.post(f"/models/{model_id}/artifact", files=_ZIP, headers=_RAPP)
+    resp = client.delete(f"/models/{model_id}", headers=_OTHER_RAPP)
+    assert resp.status_code == 403 and "MODEL_ACCESS_DENIED" in resp.text
+    assert _model_exists(db_session_factory, model_id) and _artifact_count(db_session_factory, model_id) == 1
+    assert client.delete(f"/models/{model_id}", headers=_RAPP).status_code == 204
+    assert not _model_exists(db_session_factory, model_id) and _artifact_count(db_session_factory, model_id) == 0
+
+
+def test_internal_roleless_and_unowned_delete_are_not_refused(client, db_session_factory):
+    """SEC-15.3d: an internal caller and a call with no role delete another rApp's model; a model with no owner is deleted by any rApp; an unknown id stays an idempotent 204 for an rApp."""
+    for headers in (_INTERNAL, {}):
+        model_id = _register_for(client, _RAPP)
+        assert client.delete(f"/models/{model_id}", headers=headers).status_code == 204
+        assert not _model_exists(db_session_factory, model_id)
+    open_model = _register_for(client, _INTERNAL)
+    assert client.delete(f"/models/{open_model}", headers=_OTHER_RAPP).status_code == 204
+    assert not _model_exists(db_session_factory, open_model)
+    assert client.delete(f"/models/{uuid.uuid4()}", headers=_OTHER_RAPP).status_code == 204
+
+
+def test_an_rapp_uploads_an_artifact_only_for_its_own_model(client, db_session_factory):
+    """SEC-15.3d: the owner rApp uploads (201, version 1); another rApp is 403 MODEL_ACCESS_DENIED and no artifact row or artifact location is written; an unknown model is 404 for every caller."""
+    model_id = _register_for(client, _RAPP)
+    resp = client.post(f"/models/{model_id}/artifact", files=_ZIP, headers=_OTHER_RAPP)
+    assert resp.status_code == 403 and "MODEL_ACCESS_DENIED" in resp.text
+    assert _artifact_count(db_session_factory, model_id) == 0 and client.get(f"/models/{model_id}").json()["artifactLocation"] is None
+    assert client.post(f"/models/{model_id}/artifact", files=_ZIP, headers=_RAPP).json()["artifactVersion"] == 1
+    for headers in (_OTHER_RAPP, _RAPP, _INTERNAL, {}):
+        assert client.post(f"/models/{uuid.uuid4()}/artifact", files=_ZIP, headers=headers).status_code == 404
+
+
+def test_internal_roleless_and_unowned_upload_are_not_refused(client):
+    """SEC-15.3d: an internal caller and a call with no role upload for another rApp's model, and any rApp uploads for a model with no owner."""
+    owned = _register_for(client, _RAPP)
+    for headers in (_INTERNAL, {}):
+        assert client.post(f"/models/{owned}/artifact", files=_ZIP, headers=headers).status_code == 201
+    open_model = _register_for(client, _INTERNAL)
+    assert client.post(f"/models/{open_model}/artifact", files=_ZIP, headers=_OTHER_RAPP).status_code == 201
+
+
+def test_an_rapp_downloads_another_rapps_artifact_only_when_the_model_allows_it(client):
+    """SEC-15.3d: another rApp is 403 MODEL_ACCESS_DENIED on an owned model that sets no accessReqs, or PRIVATE_USE_ONLY, or RESTRICTED without its id; PUBLICLY_AVAILABLE and RESTRICTED naming it pass. The
+    owner, an internal caller, a call with no role and any rApp on a model with no owner download as before.
+    """
+    plain = _register_for(client, _RAPP)
+    client.post(f"/models/{plain}/artifact", files=_ZIP, headers=_RAPP)
+    assert client.get(f"/models/{plain}/artifact/1", headers=_OTHER_RAPP).status_code == 403
+    for headers in (_RAPP, _INTERNAL, {}):
+        assert client.get(f"/models/{plain}/artifact/1", headers=headers).content == b"pkzip-bytes"
+    cases = {"PRIVATE_USE_ONLY": {}, "RESTRICTED": {"valClientIds": ["third-client"]}}
+    for kind, extra in cases.items():
+        model_id = _register_for(client, _RAPP, storeDiscReqs={"accessReqs": {"accessReq": kind, **extra}})
+        client.post(f"/models/{model_id}/artifact", files=_ZIP, headers=_RAPP)
+        assert client.get(f"/models/{model_id}/artifact/1", headers=_OTHER_RAPP).status_code == 403
+    for access in ({"accessReq": "PUBLICLY_AVAILABLE"}, {"accessReq": "RESTRICTED", "valClientIds": ["other-client"]}):
+        model_id = _register_for(client, _RAPP, storeDiscReqs={"accessReqs": access})
+        client.post(f"/models/{model_id}/artifact", files=_ZIP, headers=_RAPP)
+        assert client.get(f"/models/{model_id}/artifact/1", headers=_OTHER_RAPP).status_code == 200
+    open_model = _register_for(client, _INTERNAL)
+    client.post(f"/models/{open_model}/artifact", files=_ZIP, headers=_INTERNAL)
+    assert client.get(f"/models/{open_model}/artifact/1", headers=_OTHER_RAPP).status_code == 200
+    assert client.get(f"/models/{uuid.uuid4()}/artifact/1", headers=_OTHER_RAPP).status_code == 404
+
+
+def test_an_rapp_may_write_phase_info_only_of_its_own_model(client):
+    """SEC-15.3d: PATCH /models/{id}/phase-info by another rApp is 403 MODEL_ACCESS_DENIED and the phase is not written; the owner, an internal caller (AIMgF) and any rApp on an owner-less model write it; unknown is 404."""
+    model_id = _register_for(client, _RAPP)
+    refused = client.patch(f"/models/{model_id}/phase-info", json={"phase": "DEPLOYED"}, headers=_OTHER_RAPP)
+    assert refused.status_code == 403 and "MODEL_ACCESS_DENIED" in refused.text
+    assert client.get(f"/models/{model_id}").json().get("phaseInfo") is None
+    for headers in (_RAPP, _INTERNAL, {}):
+        assert client.patch(f"/models/{model_id}/phase-info", json={"phase": "TRAINED"}, headers=headers).status_code == 200
+    open_model = _register_for(client, _INTERNAL)
+    assert client.patch(f"/models/{open_model}/phase-info", json={"phase": "TRAINED"}, headers=_OTHER_RAPP).status_code == 200
+    assert client.patch(f"/models/{uuid.uuid4()}/phase-info", json={"phase": "TRAINED"}, headers=_OTHER_RAPP).status_code == 404
+
+
+def test_an_rapp_groups_only_models_it_owns_or_that_have_no_owner(client, db_session_factory):
+    """SEC-15.3d: a coordination group naming another rApp's model is 403 MODEL_ACCESS_DENIED from an rApp and no group is stored; own models, owner-less models and ids MLMR does not know pass; internal and no role are not asked."""
+    mine, mine2 = _register_for(client, _RAPP), _register_for(client, _RAPP)
+    theirs, open_model = _register_for(client, _OTHER_RAPP), _register_for(client, _INTERNAL)
+    resp = client.post("/coordination-groups", json={"memberModelIds": [mine, theirs]}, headers=_RAPP)
+    assert resp.status_code == 403 and "MODEL_ACCESS_DENIED" in resp.text
+    with db_session_factory() as db:
+        assert db.query(MLModelCoordinationGroup).count() == 0
+    for members in ([mine, mine2], [mine, open_model], [mine, str(uuid.uuid4())]):
+        assert client.post("/coordination-groups", json={"memberModelIds": members}, headers=_RAPP).status_code == 201
+    for headers in (_INTERNAL, {}):
+        assert client.post("/coordination-groups", json={"memberModelIds": [mine, theirs]}, headers=headers).status_code == 201
+
+
 def test_a_model_an_smo_module_registers_without_an_owner_stays_unowned(client):
     """An internal caller that names no owner, and a call with no role at all (a test, an in-process call), leave the owner unset: only an rApp is stamped, and a module acting on behalf of an rApp is not."""
     assert _registered_owner(client, _INTERNAL) is None
