@@ -153,7 +153,7 @@ jobs:
     env:
       # docker-compose.load.yml: the gateway's per-caller rate limiter is off for this throwaway stack. ZAP's active scan sends thousands of requests from one caller; with the
       # limiter on, some of the answers to its paired true/false payloads were 429 and the others 422, which its boolean-based SQL injection rule (40018) reads as an injection
-      # (OPEN_ITEMS.md QA-9.1). The limiter itself is tested where it is meant to be (the stress lane, the unit and integration suites).
+      # (HISTORY.md QA-9.1). The limiter itself is tested where it is meant to be (the stress lane, the unit and integration suites).
       COMPOSE_FILE: docker-compose.yml:docker-compose.load.yml:.ci-mirror/docker-compose.mirror.yml
       MODULES: ${{ matrix.modules }}
     steps:
