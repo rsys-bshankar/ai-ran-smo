@@ -8,7 +8,7 @@ make has to be one the gateway lets an rApp make (`smo_shared/roles.py`, `RAPP_M
 
 import uuid
 
-from ._common import BaseClient, ensure_ok
+from ._common import BaseClient, credential_kwargs, ensure_ok
 
 
 class PlatformClient(BaseClient):
@@ -78,18 +78,21 @@ class PlatformClient(BaseClient):
     # ---------------------------------------------------------------- Wave 10.1: O1 actions
     def execute_action(self, requested_by: str, changes: list[dict], action_id: uuid.UUID | str | None = None,
                        source_context: dict | None = None, scope: str = "single-ME", msac_role: str | None = None,
-                       decision: dict | None = None) -> dict:
+                       decision: dict | None = None, *, msac_credential: str | None = None) -> dict:
         """Submit an O1 configuration action, mediated by DME (`POST /dme/actions`, then RAN NF OAM and NETCONF).
 
         `action_id` is an idempotency key: DME ignores a re-sent id and never applies the action twice. `decision` (PR-AI-13) is why the rApp acts, kept by RAN NF OAM as the decision record of
         the job: `{"inputsRef": ..., "modelVersion": ..., "rationale": ...}`, each optional (a reference to the inputs, never the data). When the operator holds this rApp's writes for approval
         (PR-AI-11) the answer has `status` `PENDING_APPROVAL`, no `forwardedJobId` and an `approvalId`; follow it with `get_approval`. Design record: `HISTORY.md` W10-03 (decision D-4).
+
+        `msac_credential` (keyword only, `SEC-15.6b`) is the credential of the MSAC Identity named by `requested_by`, sent in the `X-MSAC-Credential` header and only when given; it is never put in the body or
+        in a log line or message. RAN NF OAM asks an rApp for it when the Identity has one (403 `MSAC_ACCESS_DENIED` without it). DME does not pass the header on to RAN NF OAM yet (`OPEN_ITEMS.md` SEC-15.6b).
         """
         payload = {"requestedBy": requested_by, "changes": changes, "scope": scope, "msacRole": msac_role,
                    "sourceContext": source_context, "actionId": str(action_id) if action_id else None}
         if decision is not None:
             payload["decision"] = decision
-        return ensure_ok(self._r1.post("/dme/actions", json=payload))
+        return ensure_ok(self._r1.post("/dme/actions", json=payload, **credential_kwargs(msac_credential)))
 
     def get_approval(self, approval_id: uuid.UUID | str) -> dict:
         """PR-AI-11: the state of an action held for a human: `status` is PENDING, APPROVED (then `jobId` is the config job), REJECTED, EXPIRED or REFUSED."""
