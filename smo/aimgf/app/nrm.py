@@ -25,7 +25,7 @@ the timeout sweep first.
 import datetime
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -37,7 +37,7 @@ from smo_shared.pagination import PageLimit, PageOffset, paginate, paginate_list
 from . import ts28105
 from .main import (
     ACTIVE_TRAINING_STATUSES, RuntimeProfile, _activate_runtime, _cancel_training_job, _deploy_runtime, _expire_overdue_jobs,
-    _fire_model_event, _get_model, _get_or_create_lifecycle, _nfo_terminate_execution, _resolve_runtime_profile,
+    _fire_model_event, _get_model, _get_or_create_lifecycle, _nfo_terminate_execution, _owned_model, _resolve_runtime_profile,
     _resume_training_job, _start_training, _start_validation, _sync_training_process, _validate_dme_data_job_ids,
 )
 from .models import (
@@ -874,14 +874,15 @@ def _loading_process_view(p: MLModelLoadingProcess) -> dict:
         "loadedMLModelRef": list(p.loaded_ml_model_refs or [])}}
 
 
-def _check_loadable(db: Session, model_ids: list[uuid.UUID]) -> None:
+def _check_loadable(request: Request, db: Session, model_ids: list[uuid.UUID]) -> None:
     """Raises unless every model in `model_ids` may be loaded now; changes nothing except that it may add a missing lifecycle row to the session.
 
-    Per model: 404 `MODEL_NOT_FOUND` (asked of MLMR through `_get_model`), 409 `MODEL_NOT_CERTIFIED` unless the model is CERTIFIED or PROMOTED, 409
+    Per model: 404 `MODEL_NOT_FOUND` (asked of MLMR), 403 `MODEL_ACCESS_DENIED` for an rApp caller that is not the model's owner (`_owned_model`, SEC-15.3b: loading deploys and activates the
+    model's runtime, which only its owner may do), 409 `MODEL_NOT_CERTIFIED` unless the model is CERTIFIED or PROMOTED, 409
     `LIFECYCLE_ILLEGAL_TRANSITION` if its runtime is TERMINATING or TERMINATED. Run before anything is deployed so a request loads every named model or none.
     """
     for model_id in model_ids:
-        _get_model(model_id)
+        _owned_model(request, model_id, "load")
         lifecycle = _get_or_create_lifecycle(db, model_id)
         if lifecycle.model_lifecycle_state not in (ModelLifecycleState.CERTIFIED, ModelLifecycleState.PROMOTED):
             raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED,
@@ -966,7 +967,7 @@ def delete_ml_model_loading_policy(policy_id: uuid.UUID, db: Session = Depends(g
 
 
 @router.post("/ml-model-loading-policies/{policy_id}/trigger", status_code=201)
-def trigger_ml_model_loading_policy(policy_id: uuid.UUID, db: Session = Depends(get_session)):
+def trigger_ml_model_loading_policy(request: Request, policy_id: uuid.UUID, db: Session = Depends(get_session)):
     """Policy-driven loading: called when the policy's own condition
     (its thresholdList, evaluated by whoever monitors it — e.g. an MLMF
     subscription's breach) is met. Starts an MLModelLoadingProcess with no
@@ -977,21 +978,21 @@ def trigger_ml_model_loading_policy(policy_id: uuid.UUID, db: Session = Depends(
     p = _get(db, MLModelLoadingPolicy, policy_id, "MLModelLoadingPolicy")
     function = _get(db, AIMLInferenceFunction, p.aiml_inference_function_id, "AIMLInferenceFunction")
     model_ids = [uuid.UUID(m) for m in p.ml_model_refs]
-    _check_loadable(db, model_ids)
+    _check_loadable(request, db, model_ids)
     process = _run_loading(db, function, model_ids, policy=p)
     db.commit()
     return _loading_process_view(process)
 
 
 @router.post("/ml-model-loading-requests", status_code=201)
-def create_ml_model_loading_request(body: MLModelLoadingRequestBody, db: Session = Depends(get_session)):
+def create_ml_model_loading_request(request: Request, body: MLModelLoadingRequestBody, db: Session = Depends(get_session)):
     """A request created with suspendRequest=true waits (SUSPENDED) until
     PATCHed back; cancelRequest=true records it CANCELLED and loads nothing."""
     # Route notes: 404 for an unknown function; `_check_loadable` runs before the flags are looked at, so even a cancelled or suspended request is refused for
     # an uncertified model (409 `MODEL_NOT_CERTIFIED`). The row is flushed first so it has an id. Then: cancel records CANCELLED, suspend records SUSPENDED,
     # otherwise `_run_loading` runs inside this request and the answer is the FINISHED request. One commit at the end.
     function = _get(db, AIMLInferenceFunction, body.aIMLInferenceFunctionRef, "AIMLInferenceFunction")
-    _check_loadable(db, body.mLModelToLoadRef)
+    _check_loadable(request, db, body.mLModelToLoadRef)
     r = MLModelLoadingRequest(aiml_inference_function_id=function.aiml_inference_function_id,
                               ml_model_to_load_refs=[str(m) for m in body.mLModelToLoadRef],
                               cancel_request=body.cancelRequest, suspend_request=body.suspendRequest)
@@ -1020,7 +1021,7 @@ def get_ml_model_loading_request(request_id: uuid.UUID, db: Session = Depends(ge
 
 
 @router.patch("/ml-model-loading-requests/{request_id}")
-def modify_ml_model_loading_request(request_id: uuid.UUID, body: RequestFlagsBody, db: Session = Depends(get_session)):
+def modify_ml_model_loading_request(request: Request, request_id: uuid.UUID, body: RequestFlagsBody, db: Session = Depends(get_session)):
     # Route notes: 409 `TRAINING_JOB_ILLEGAL_TRANSITION` for a request that is already FINISHED or CANCELLED. Otherwise, in this order: `cancelRequest` records
     # CANCELLED; `suspendRequest` false on a SUSPENDED request re-checks `_check_loadable` and runs the loading; `suspendRequest` true records SUSPENDED;
     # anything else (including `suspendRequest` false on a request that is not SUSPENDED) changes nothing. The 409 code is the one this module uses for every
@@ -1035,7 +1036,7 @@ def modify_ml_model_loading_request(request_id: uuid.UUID, body: RequestFlagsBod
         r.suspend_request = False
         function = _get(db, AIMLInferenceFunction, r.aiml_inference_function_id, "AIMLInferenceFunction")
         model_ids = [uuid.UUID(m) for m in r.ml_model_to_load_refs]
-        _check_loadable(db, model_ids)
+        _check_loadable(request, db, model_ids)
         _run_loading(db, function, model_ids, request=r)
     elif body.suspendRequest is True:
         r.suspend_request, r.request_status = True, "SUSPENDED"

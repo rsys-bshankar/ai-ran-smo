@@ -123,3 +123,108 @@ def test_public_access_does_not_let_another_rapp_deploy_the_model(client, mlmr, 
     model_id = mlmr.add_model(owner="es-client", storeDiscReqs={"accessReqs": {"accessReq": "PUBLICLY_AVAILABLE"}})
     _certified(db_session_factory, model_id)
     assert _deploy(client, model_id, OTHER).status_code == 403
+
+
+# ---------------------------------------------------------------- SEC-15.3b: scale, terminate, node-groups, model loading
+
+def _scale(client, model_id, headers=None):
+    """POST the runtime scale of the model."""
+    return client.post(f"/models/{model_id}/runtime/scale", headers=headers or {})
+
+
+def _terminate(client, model_id, headers=None):
+    """POST the runtime termination of the model."""
+    return client.post(f"/models/{model_id}/runtime/terminate", headers=headers or {})
+
+
+def _node_groups(client, model_id, headers=None):
+    """PATCH the cleared node groups of the model."""
+    return client.patch(f"/models/{model_id}/runtime/node-groups", json={"clearedNodeGroups": ["ng1"]}, headers=headers or {})
+
+
+@pytest.mark.parametrize("call", [_scale, _terminate, _node_groups])
+def test_scale_terminate_and_node_groups_of_an_unknown_model_are_404_and_leave_no_row(client, db_session_factory, mlmr, call):
+    """The three routes asked MLMR nothing before: an id MLMR does not know is 404 `MODEL_NOT_FOUND`, and no lifecycle row is created for it."""
+    from app.models import ModelLifecycle
+    resp = call(client, uuid.uuid4())
+    assert resp.status_code == 404 and "MODEL_NOT_FOUND" in resp.text
+    with db_session_factory() as db:
+        assert db.query(ModelLifecycle).count() == 0
+
+
+@pytest.mark.parametrize("call", [_scale, _terminate, _node_groups])
+def test_another_rapp_cannot_scale_terminate_or_place_a_model(client, db_session_factory, mlmr, call):
+    """An rApp that is not the owner is 403 `MODEL_ACCESS_DENIED` on scale, terminate and node-groups: the runtime stays as it was, NFO is not called, the node groups are not written."""
+    from app.models import ModelLifecycle
+    model_id = mlmr.add_model(owner="es-client")
+    _certified(db_session_factory, model_id, RuntimeLifecycleState.ACTIVE)
+    deployments_before = dict(mlmr.nfo.deployments)
+    resp = call(client, model_id, OTHER)
+    assert resp.status_code == 403 and "MODEL_ACCESS_DENIED" in resp.text
+    assert mlmr.nfo.deployments == deployments_before
+    with db_session_factory() as db:
+        row = db.query(ModelLifecycle).one()
+        assert row.runtime_lifecycle_state == RuntimeLifecycleState.ACTIVE and not row.cleared_node_groups
+
+
+@pytest.mark.parametrize("call", [_scale, _terminate, _node_groups])
+def test_the_owner_the_operator_and_an_unowned_model_pass_scale_terminate_and_node_groups(client, db_session_factory, mlmr, call):
+    """The owner rApp, the operator's console (role internal), a call with no role and any rApp on a model with no owner get past the ownership check on the three routes."""
+    for attributes, headers in (({"owner": "es-client"}, OWNER), ({"owner": "es-client"}, OPERATOR), ({"owner": "es-client"}, None), ({}, OTHER)):
+        model_id = mlmr.add_model(**attributes)
+        _certified(db_session_factory, model_id, RuntimeLifecycleState.ACTIVE)
+        assert call(client, model_id, headers).status_code == 200
+
+
+def test_the_phase_does_not_stop_a_terminate(client, db_session_factory, mlmr):
+    """Only existence and ownership are checked on terminate: a model MLMR shows as IN_TRAINING (a runtime from an earlier version being torn down) is not refused on its phase."""
+    model_id = mlmr.add_model(owner="es-client", phaseInfo={"phase": "IN_TRAINING"})
+    _certified(db_session_factory, model_id, RuntimeLifecycleState.ACTIVE)
+    assert _terminate(client, model_id, OWNER).status_code == 200
+
+
+def _function(client):
+    """Creates an AIMLInferenceFunction and returns its id."""
+    return client.post("/aiml-inference-functions", json={}).json()["id"]
+
+
+def test_model_loading_refuses_a_model_of_another_rapp(client, db_session_factory, mlmr):
+    """MLModelLoadingRequest (create and resume) and the loading policy trigger are 403 `MODEL_ACCESS_DENIED` for an rApp that does not own the model; nothing is deployed in NFO and no
+    request row is stored. The owner, the operator and an unowned model load.
+    """
+    function_id = _function(client)
+    foreign = mlmr.add_model(owner="es-client")
+    _certified(db_session_factory, foreign)
+    body = {"aIMLInferenceFunctionRef": function_id, "mLModelToLoadRef": [str(foreign)]}
+    resp = client.post("/ml-model-loading-requests", json=body, headers=OTHER)
+    assert resp.status_code == 403 and "MODEL_ACCESS_DENIED" in resp.text
+    assert client.get("/ml-model-loading-requests").json()["total"] == 0 and mlmr.nfo.descriptors == {}
+
+    # a request suspended by the owner and resumed by another rApp is refused at the resume too
+    suspended = client.post("/ml-model-loading-requests", json={**body, "suspendRequest": True}, headers=OWNER)
+    assert suspended.status_code == 201
+    resumed = client.patch(f"/ml-model-loading-requests/{suspended.json()['id']}", json={"suspendRequest": False}, headers=OTHER)
+    assert resumed.status_code == 403 and mlmr.nfo.descriptors == {}
+
+    policy = client.post("/ml-model-loading-policies", json={"aIMLInferenceFunctionRef": function_id, "mLModelRef": [str(foreign)]}).json()["id"]
+    assert client.post(f"/ml-model-loading-policies/{policy}/trigger", headers=OTHER).status_code == 403
+    assert mlmr.nfo.descriptors == {}
+
+    assert client.post("/ml-model-loading-requests", json=body, headers=OWNER).status_code == 201
+    unowned = mlmr.add_model()
+    _certified(db_session_factory, unowned)
+    assert client.post("/ml-model-loading-requests", json={**body, "mLModelToLoadRef": [str(unowned)]}, headers=OTHER).status_code == 201
+    operated = mlmr.add_model(owner="es-client")
+    _certified(db_session_factory, operated)
+    assert client.post("/ml-model-loading-requests", json={**body, "mLModelToLoadRef": [str(operated)]}, headers=OPERATOR).status_code == 201
+
+
+def test_model_loading_is_all_or_nothing_across_owners(client, db_session_factory, mlmr):
+    """A request naming one model of the caller and one of another rApp is refused as a whole: the caller's own model is not deployed either."""
+    function_id = _function(client)
+    mine, theirs = mlmr.add_model(owner="someone-else"), mlmr.add_model(owner="es-client")
+    _certified(db_session_factory, mine)
+    _certified(db_session_factory, theirs)
+    resp = client.post("/ml-model-loading-requests", json={
+        "aIMLInferenceFunctionRef": function_id, "mLModelToLoadRef": [str(mine), str(theirs)]}, headers=OTHER)
+    assert resp.status_code == 403 and mlmr.nfo.descriptors == {}

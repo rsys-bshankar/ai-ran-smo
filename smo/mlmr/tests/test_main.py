@@ -92,6 +92,37 @@ def test_register_model_stores_and_exposes_registration_metadata(client):
     assert view["targetEnvironments"] == target_environments
 
 
+# Headers R1 Termination stamps: the role and the invoker id of the caller.
+_RAPP = {"X-R1-Role": "rapp", "X-R1-Invoker-Id": "es-client"}
+_INTERNAL = {"X-R1-Role": "internal", "X-R1-Invoker-Id": "smo-aimgf"}
+
+
+def _registered_owner(client, headers, **body):
+    """Registers a model with the given gateway headers and request fields, and returns the `owner` MLMR stores for it."""
+    resp = client.post("/models", json={"modelType": "t-" + str(uuid.uuid4())[:8], "version": "1", **body}, headers=headers)
+    assert resp.status_code == 201, resp.text
+    return client.get(f"/models/{resp.json()['modelId']}").json()["owner"]
+
+
+def test_a_model_an_rapp_registers_is_owned_by_that_rapp(client):
+    """SEC-15.3b: an rApp (role rapp) that names no owner is stamped as the owner with its invoker id; an empty owner counts as none."""
+    assert _registered_owner(client, _RAPP) == "es-client"
+    assert _registered_owner(client, _RAPP, owner="") == "es-client"
+
+
+def test_an_owner_the_request_names_is_kept(client):
+    """An internal caller registering for an rApp names the owner itself and it is kept; so is an owner an rApp names (not overridden by the stamp)."""
+    assert _registered_owner(client, _INTERNAL, owner="mobility-client") == "mobility-client"
+    assert _registered_owner(client, _RAPP, owner="team-ran-oncall") == "team-ran-oncall"
+
+
+def test_a_model_an_smo_module_registers_without_an_owner_stays_unowned(client):
+    """An internal caller that names no owner, and a call with no role at all (a test, an in-process call), leave the owner unset: only an rApp is stamped, and a module acting on behalf of an rApp is not."""
+    assert _registered_owner(client, _INTERNAL) is None
+    assert _registered_owner(client, {**_INTERNAL, "X-R1-On-Behalf-Of": "es-client"}) is None
+    assert _registered_owner(client, {}) is None
+
+
 def test_register_model_without_metadata_defaults_to_empty(client):
     """Every registration metadata field is optional; unset ones read back as None or an empty list."""
     model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]

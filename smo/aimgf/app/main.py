@@ -96,8 +96,7 @@ def _get_model_or_none(model_id: uuid.UUID) -> dict | None:
 def _get_model(model_id: uuid.UUID) -> dict:
     """Returns MLMR's JSON for the model or raises 404 `MODEL_NOT_FOUND`.
 
-    AIMgF never reads MLMR's tables, so this call is the only existence check for a model id. Routes that do not call it (the runtime scale, terminate and
-    node-groups routes) accept any id; the deploy, activate and inference routes go through `_serving_model`, which calls this and adds the ownership and phase checks.
+    AIMgF never reads MLMR's tables, so this call is the only existence check for a model id. The routes that act on a model's runtime or serve it go through `_owned_model` (ownership) or `_serving_model` (ownership and phase), which call this.
     """
     model = _get_model_or_none(model_id)
     if model is None:
@@ -109,15 +108,15 @@ def _get_model(model_id: uuid.UUID) -> dict:
 _PHASES_NOT_SERVABLE = frozenset({"NOT_TRAINED", "IN_TRAINING"})
 
 
-def _serving_model(request: Request, model_id: uuid.UUID, action: str, *, inference: bool = False) -> dict:
-    """Returns MLMR's JSON for a model that the caller may deploy, activate or run inference on, or raises (SEC-15.3).
+def _owned_model(request: Request, model_id: uuid.UUID, action: str, *, inference: bool = False) -> dict:
+    """Returns MLMR's JSON for a model the caller may act on, or raises 404 `MODEL_NOT_FOUND` / 403 `MODEL_ACCESS_DENIED` (SEC-15.3, SEC-15.3b).
 
-    Checks in order: the model exists in MLMR (404 `MODEL_NOT_FOUND`); the caller may use it (403 `MODEL_ACCESS_DENIED`); its MLMR phase allows serving (409: `INFERENCE_MODEL_NOT_ACTIVE`
-    for `inference`, else `LIFECYCLE_ILLEGAL_TRANSITION`). Ownership is judged for a caller with the rApp role only, on the id the gateway stamped (`X-R1-Invoker-Id`); the operator's console, an SMO
-    module and a call with no role are trusted as elsewhere in this module. A model whose `owner` is unset is nobody's, so it is not refused on that ground (the lifecycle gates still
-    apply). An rApp that is not the owner may still run inference, as MLMR lets it download the model, when the model's `storeDiscReqs.accessReqs` is PUBLICLY_AVAILABLE or RESTRICTED with the
-    caller named in `valServerIds` / `valClientIds`; deploy and activate change the serving runtime, which only the owner may. A model with no `phaseInfo` (MLMR was unreachable when the
-    training run wrote it back, which is best effort) is not refused on the phase: the CERTIFIED gate of the lifecycle already requires a trained model.
+    The existence and ownership half of `_serving_model`, and the whole check of the routes that act on a model's runtime without serving it (scale, terminate, node-groups) and of the
+    model-loading routes. Ownership is judged for a caller with the rApp role only, on the id the gateway stamped (`X-R1-Invoker-Id`); the operator's console, an SMO module and a call with
+    no role are trusted as elsewhere in this module. A model whose `owner` is unset is nobody's, so it is not refused on that ground (MLMR stamps the owner of a model an rApp registers,
+    so only a model registered before SEC-15.3b, or by an SMO module that named no owner, is in that state). An rApp that is not the owner may still run inference, as MLMR lets it download the
+    model, when `inference` is set and the model's `storeDiscReqs.accessReqs` is PUBLICLY_AVAILABLE or RESTRICTED with the caller named in `valServerIds` / `valClientIds`; every other action
+    changes the serving runtime, which only the owner may.
     """
     model = _get_model(model_id)
     if role_of(request) == ROLE_RAPP:
@@ -128,6 +127,17 @@ def _serving_model(request: Request, model_id: uuid.UUID, action: str, *, infere
             and caller in (set(access.get("valServerIds") or []) | set(access.get("valClientIds") or []))))
         if owner and caller != owner and not shared:
             raise framework_error(FrameworkError.MODEL_ACCESS_DENIED, detail=f"model {model_id} belongs to another producer: only its owner may {action}")
+    return model
+
+
+def _serving_model(request: Request, model_id: uuid.UUID, action: str, *, inference: bool = False) -> dict:
+    """Returns MLMR's JSON for a model that the caller may deploy, activate or run inference on, or raises (SEC-15.3).
+
+    Checks in order: `_owned_model` (404 `MODEL_NOT_FOUND`, 403 `MODEL_ACCESS_DENIED`); then the model's MLMR phase allows serving (409: `INFERENCE_MODEL_NOT_ACTIVE` for `inference`, else
+    `LIFECYCLE_ILLEGAL_TRANSITION`). A model with no `phaseInfo` (MLMR was unreachable when the training run wrote it back, which is best effort) is not refused on the phase: the CERTIFIED
+    gate of the lifecycle already requires a trained model.
+    """
+    model = _owned_model(request, model_id, action, inference=inference)
     phase = (model.get("phaseInfo") or {}).get("phase")
     if phase in _PHASES_NOT_SERVABLE:
         if inference:
@@ -1489,11 +1499,12 @@ def activate_model_runtime(request: Request, model_id: uuid.UUID, db: Session = 
 
 
 @app.post("/models/{model_id}/runtime/scale")
-def scale_model_runtime(model_id: uuid.UUID, db: Session = Depends(get_session)):
+def scale_model_runtime(request: Request, model_id: uuid.UUID, db: Session = Depends(get_session)):
     """Refused (409) for a DEPRECATED/RETIRED model."""
-    # Route notes: the model is not looked up in MLMR. Order: end-of-life check (409), REQUEST_SCALE (409 unless the runtime is ACTIVE), `POST
+    # Route notes: `_owned_model` first (404 `MODEL_NOT_FOUND`, 403 `MODEL_ACCESS_DENIED` for an rApp that is not the owner; SEC-15.3b). Order then: end-of-life check (409), REQUEST_SCALE (409 unless the runtime is ACTIVE), `POST
     # /nfo/deployments/{id}/scale` when the row has a deployment id (no body: NFO's scale takes no target size), SCALE_COMPLETE, one commit. NFO's answer is not
     # checked.
+    _owned_model(request, model_id, "scale")
     lifecycle = _get_or_create_lifecycle(db, model_id)
     _refuse_end_of_life(lifecycle, "scale")
     _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.REQUEST_SCALE)
@@ -1525,24 +1536,26 @@ def _terminate_runtime(db: Session, model_id: uuid.UUID) -> ModelLifecycle:
 
 
 @app.post("/models/{model_id}/runtime/terminate")
-def terminate_model_runtime(model_id: uuid.UUID, db: Session = Depends(get_session)):
-    # Route notes: the model is not looked up in MLMR. 409 `LIFECYCLE_ILLEGAL_TRANSITION` unless the runtime is DEPLOYMENT_REQUESTED, DEPLOYED or ACTIVE; one
+def terminate_model_runtime(request: Request, model_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: `_owned_model` first (404 `MODEL_NOT_FOUND`, 403 `MODEL_ACCESS_DENIED` for an rApp that is not the owner; SEC-15.3b). Then 409 `LIFECYCLE_ILLEGAL_TRANSITION` unless the runtime is DEPLOYMENT_REQUESTED, DEPLOYED or ACTIVE; one
     # commit after the NFO delete. TERMINATED is final.
+    _owned_model(request, model_id, "terminate")
     lifecycle = _terminate_runtime(db, model_id)
     db.commit()
     return _lifecycle_view(lifecycle)
 
 
 @app.patch("/models/{model_id}/runtime/node-groups")
-def update_node_groups(model_id: uuid.UUID, body: UpdateNodeGroupsRequest, db: Session = Depends(get_session)):
+def update_node_groups(request: Request, model_id: uuid.UUID, body: UpdateNodeGroupsRequest, db: Session = Depends(get_session)):
     """Called by MLLF's own `request_model_deployment` (MultiNode Q2's
     targeting gap, LLD section 5) — MLLF owns the *decision* of which
     node groups a model is placed on, AIMgF owns the row it's written to
     (the same shape as Wave 1's `PATCH /mlmr/models/{id}/lifecycle`, just
     against AIMgF's own storage now instead of MLMR's).
     """
-    # Route notes: the model is not looked up in MLMR, so any id gets a lifecycle row. The list replaces the stored `cleared_node_groups` and is not validated.
-    # One commit; answers the lifecycle view.
+    # Route notes: `_owned_model` first (404 `MODEL_NOT_FOUND`, 403 `MODEL_ACCESS_DENIED` for an rApp that is not the owner; SEC-15.3b), so only a model MLMR knows gets a lifecycle row.
+    # The list replaces the stored `cleared_node_groups` and is not validated. One commit; answers the lifecycle view.
+    _owned_model(request, model_id, "change the node groups of")
     lifecycle = _get_or_create_lifecycle(db, model_id)
     lifecycle.cleared_node_groups = body.clearedNodeGroups
     db.commit()
