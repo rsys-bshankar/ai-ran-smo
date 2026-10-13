@@ -21,6 +21,7 @@ export const rappDetail = {
   "rappDetail.header.pin": "☆ Pin",
   "rappDetail.header.resume": "Resume",
   "rappDetail.header.resumeConfirm": "Let this rApp start config jobs again?",
+  "rappDetail.operator.unreachable": "Check the instance's operator API base URL (rApps → Instances → the instance) and that the rApp is running; R1 Termination's log names the address it tried.",
   "rappDetail.header.renewCredentials": "Re-send credentials",
   "rappDetail.header.renewCredentialsTitle": "A new secret for this instance's identity, sent to the rApp that serves it (when the rApp was unreachable at Deploy, or to rotate the secret)",
   "rappDetail.header.renewCredentialsConfirm": "Issue a new secret for this instance and send it to its rApp? The old one stops working at once.",

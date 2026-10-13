@@ -1,5 +1,5 @@
-"""SEC-15.3b and SEC-15.3c through the mesh: the rApp that registers a model at MLMR owns it, and AIMgF refuses another rApp's scale, terminate, node-groups and model-loading calls on it
-(SEC-15.3b), its training, validation, emulation and update requests, its lifecycle reads and its MLMF subscriptions (SEC-15.3c); MLMR keeps an rApp from setting or changing the owner (SEC-15.3c).
+"""SEC-15.3b, SEC-15.3c and SEC-15.3d (MLMR delete, artifact, phase-info and groups) through the mesh: the rApp that registers a model at MLMR owns it, and AIMgF refuses another rApp's scale, terminate, node-groups and model-loading calls on it
+(SEC-15.3b), its training, validation, emulation and update requests, its lifecycle reads and its MLMF subscriptions (SEC-15.3c); MLMR keeps an rApp from setting or changing the owner (SEC-15.3c) and from deleting, uploading to, downloading from, phasing or grouping a model it does not own (SEC-15.3d).
 
 The in-process mesh has no gateway, so the headers R1 Termination would stamp on the inbound call (`X-R1-Role`, `X-R1-Invoker-Id`) are sent by hand, as `test_on_behalf_of.py` does.
 AIMgF's own onward call to MLMR goes through the mesh as an SMO module's. Run with `cd smo && PYTHONPATH=shared python -m pytest tests_integration/test_model_ownership.py -q`.
@@ -100,3 +100,41 @@ def test_mlmr_put_and_post_keep_the_owner_out_of_an_rapps_hands_through_the_mesh
     assert foreign.status_code == 403 and "MODEL_ACCESS_DENIED" in foreign.text
     assert mlmr.get(f"/models/{model_id}").json()["owner"] == "es-client"
     assert mlmr.put(f"/models/{model_id}", headers=SMO, json={**body, "owner": "other-client"}).json()["owner"] == "other-client"
+
+
+def test_mlmr_delete_upload_download_phase_and_groups_apply_the_owner_rule_through_the_mesh(mesh):
+    """SEC-15.3d: another rApp is 403 `MODEL_ACCESS_DENIED` on MLMR's DELETE, artifact upload, artifact download (the model sets no `accessReqs`), phase-info write and on a coordination group naming
+    the model, and nothing changes; the owner (the same client id the SDK registers with) uploads, downloads, groups and deletes; the console and AIMgF (role internal) are not asked, a model with
+    no owner is open to every rApp, and a model that is PUBLICLY_AVAILABLE can be downloaded by another rApp.
+    """
+    mlmr = mesh["mlmr"]
+    zip_file = {"file": ("model.zip", b"pkzip-bytes", "application/zip")}
+    model_id = _register(mesh, ES)
+
+    assert mlmr.post(f"/models/{model_id}/artifact", headers=OTHER, files=zip_file).status_code == 403
+    assert mlmr.get(f"/models/{model_id}").json()["artifactLocation"] is None
+    assert mlmr.post(f"/models/{model_id}/artifact", headers=ES, files=zip_file).status_code == 201
+    assert mlmr.post(f"/models/{model_id}/artifact", headers=SMO, files=zip_file).status_code == 201
+
+    denied = mlmr.get(f"/models/{model_id}/artifact/1", headers=OTHER)
+    assert denied.status_code == 403 and "MODEL_ACCESS_DENIED" in denied.text
+    assert mlmr.get(f"/models/{model_id}/artifact/1", headers=ES).content == b"pkzip-bytes"
+    assert mlmr.get(f"/models/{model_id}/artifact/1", headers=SMO).content == b"pkzip-bytes"
+    shared = _register(mesh, ES, storeDiscReqs={"accessReqs": {"accessReq": "PUBLICLY_AVAILABLE"}})
+    mlmr.post(f"/models/{shared}/artifact", headers=ES, files=zip_file)
+    assert mlmr.get(f"/models/{shared}/artifact/1", headers=OTHER).status_code == 200
+
+    other_model = _register(mesh, OTHER)
+    assert mlmr.post("/coordination-groups", headers=ES, json={"memberModelIds": [model_id, other_model]}).status_code == 403
+    assert mlmr.post("/coordination-groups", headers=ES, json={"memberModelIds": [model_id, shared]}).status_code == 201
+    # AIMgF writes the phase as an SMO module; another rApp may not
+    assert mlmr.patch(f"/models/{model_id}/phase-info", headers=OTHER, json={"phase": "DEPLOYED"}).status_code == 403
+    assert mlmr.patch(f"/models/{model_id}/phase-info", headers=SMO, json={"phase": "TRAINED"}).status_code == 200
+
+    assert mlmr.delete(f"/models/{model_id}", headers=OTHER).status_code == 403
+    assert mlmr.get(f"/models/{model_id}").status_code == 200
+    assert mlmr.delete(f"/models/{model_id}", headers=ES).status_code == 204
+    assert mlmr.get(f"/models/{model_id}").status_code == 404
+    assert mlmr.delete(f"/models/{shared}", headers=SMO).status_code == 204
+    open_model = _register(mesh, SMO)
+    assert mlmr.delete(f"/models/{open_model}", headers=OTHER).status_code == 204

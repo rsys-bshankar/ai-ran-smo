@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider } from "../../../auth/AuthContext";
 import { fakeBff, mountWith, type Call } from "../../../testing/bff";
-import { byText, cleanup, click, settle } from "../../../testing/dom";
+import { byText, cleanup, click, field, settle, submit, type } from "../../../testing/dom";
 import { Rapps } from "..";
 import { signatureText } from "../sections/PackageDrawer";
 import { instanceLifecycle } from "../data/lifecycle";
@@ -92,6 +92,39 @@ describe("rApps page", () => {
     const table = container.querySelector("[data-section='rapps.instances']")!.textContent!;
     expect(table).toContain("prbUsage 41.3");
     expect(table).toContain("+1");
+  });
+
+  // a deleted package (DELETING is final) is left out of "All states" and shown only when DELETING is picked in the filter
+  it("leaves deleted packages out of the package list unless DELETING is picked", async () => {
+    const calls = bff();
+    const { container } = await open("packages");
+    await settle(6);
+    const packages = () => calls.filter((c) => c.path === "/smo/onboarding/packages" && c.query.get("offset") === "0").at(-1)!;
+    expect(packages().query.get("include_deleted")).toBe("false");
+    expect(packages().query.get("state")).toBeNull();
+    const select = container.querySelector("[data-section='rapps.packages'] select") as HTMLSelectElement;
+    select.value = "DELETING";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    await settle();
+    expect(packages().query.get("state")).toBe("DELETING");
+    expect(packages().query.get("include_deleted")).toBeNull();
+  });
+
+  // Deploy with an operator API base the rApp is not reached at (credentialsDelivered false) warns at once, instead of leaving it to the rApp's page
+  it("warns at Deploy when the rApp could not be reached at the operator API base URL", async () => {
+    for (const delivered of [false, true]) {
+      bff({}, { "POST /smo/rapp-mgmt/instances": { instanceId: IID, oauthClientId: "inv", credentialsDelivered: delivered } });
+      await open("packages");
+      await settle(6);
+      await click(byText(document.body, "[data-section='rapps.packages'] button", "Deploy")!);
+      await settle();
+      const base = field(document.body, "Operator API base URL");
+      await type(base, "http://energy-saving:8000");
+      await submit(base.closest("form")!);
+      await settle(6);
+      expect(document.body.textContent?.includes("could not be reached at http://energy-saving:8000")).toBe(!delivered);
+      cleanup();
+    }
   });
 
   // Rollouts lists only UPGRADING instances, with the resolve actions

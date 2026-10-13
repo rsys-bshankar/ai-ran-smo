@@ -32,13 +32,15 @@ import datetime
 import uuid
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
+from smo_shared.invoker import invoker_id
+from smo_shared.roles import ROLE_RAPP, role_of
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from .models import MODEL_DOMAINS, MLModel, MLModelProfile, MLModelsStorage, ModelArtifact
@@ -263,6 +265,20 @@ def require_usable(m: MLModel, caller: str | None) -> None:
         raise framework_error(FrameworkError.MODEL_ACCESS_DENIED, detail=f"model {m.model_id}: {reason}")
 
 
+# The model ownership rule of SEC-15.3 .. SEC-15.3d, written once for every MLMR route that changes a model (PUT, DELETE, artifact upload, phase-info, a coordination group naming
+# the model; the routes of `main.py` call these) and for an rApp's artifact download: a caller with role `rapp` (the role the gateway vouched for) may act only on a model whose `owner` is its own invoker id; a
+# model with no `owner` is open to any rApp; role `internal` (the console, SMO modules) and a call with no role are never asked.
+def owner_may_act(request: Request, model: MLModel) -> bool:
+    """True when the caller may act on `model` under the owner rule: not an rApp, or the model has no owner, or the owner is the caller's invoker id."""
+    return role_of(request) != ROLE_RAPP or not model.owner or model.owner == invoker_id(request)
+
+
+def refuse_unless_owner(request: Request, model: MLModel, action: str) -> None:
+    """Raises 403 `MODEL_ACCESS_DENIED` when `owner_may_act` is false; `action` completes the sentence "only its owner may ..." in the error detail."""
+    if not owner_may_act(request, model):
+        raise framework_error(FrameworkError.MODEL_ACCESS_DENIED, detail=f"model {model.model_id} belongs to another producer: only its owner may {action}")
+
+
 # ---------------------------------------------------------------- phase info (AIMgF)
 
 # Body of `PATCH /models/{id}/phase-info`: every attribute optional here, the merge rules are on the route.
@@ -275,16 +291,19 @@ class PhaseInfoPatch(_Spec):
 
 
 @router.patch("/models/{model_id}/phase-info")
-def patch_phase_info(model_id: uuid.UUID, body: PhaseInfoPatch, db: Session = Depends(get_session)):
+def patch_phase_info(request: Request, model_id: uuid.UUID, body: PhaseInfoPatch, db: Session = Depends(get_session)):
     """AIMgF's write-back (SA-MLMR-7): the model's phase and training lineage
     (`trainingInfo.baseModelId`, `dataSources`). The sent attributes are merged
     into `phaseInfo`; the first write must carry a `phase`."""
     # Merge rules: the sent attributes overwrite the stored ones, except `trainingInfo`, which is merged field by field with
     # the stored one. The first write for a model must carry `phase` (422 SCHEMA_VALIDATION_FAILED). 404 MODEL_NOT_FOUND.
     # Single commit; returns the model's MLModel record.
+    # SEC-15.3d: the route is on the rApp allow-list, so a caller with role `rapp` that is not the model's owner is 403 `MODEL_ACCESS_DENIED` (after the 404, before anything is merged);
+    # AIMgF writes as an SMO module (role `internal`) and is not asked.
     model = db.get(MLModel, model_id)
     if model is None:
         raise framework_error(FrameworkError.MODEL_NOT_FOUND, detail="no such model")
+    refuse_unless_owner(request, model, "write its phase")
     info = dict(model.phase_info or {})
     if "phase" not in info and body.phase is None:
         raise _invalid("the first phaseInfo write needs a phase")

@@ -50,8 +50,10 @@ class RecordingR1Client:
     def get(self, path, params=None, **kw):
         return self._record("get", path, params=params)
 
-    def post(self, path, json=None, params=None, files=None, **kw):
-        return self._record("post", path, json=json, params=params, files=files)
+    def post(self, path, json=None, params=None, files=None, headers=None, **kw):
+        """Record a POST; the headers a call adds beyond the `Idempotency-Key` the retry wrapper puts on every POST are recorded, and only when there are some, so the exact-dict assertions of the other tests are unchanged."""
+        extra = {k: v for k, v in (headers or {}).items() if k != "Idempotency-Key"}
+        return self._record("post", path, json=json, params=params, files=files, **({"headers": extra} if extra else {}))
 
     def put(self, path, json=None, params=None, **kw):
         return self._record("put", path, json=json, params=params)

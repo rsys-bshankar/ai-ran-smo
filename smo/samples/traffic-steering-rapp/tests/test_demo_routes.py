@@ -4,7 +4,7 @@ to RAN NF OAM. Run with: pytest samples/traffic-steering-rapp/tests -q"""
 
 import datetime
 
-from app.main import DEMO_HISTORY_START, DEMO_LIVE_START
+from app.main import DEMO_HISTORY_START, DEMO_LIVE_START, PM_REPORT_CHUNK
 from app.model.series import CIO, PRB
 from app.producer import LAYERS, NEIGHBOURS, history
 from test_routes import ME, FakeResponse, _deployed, _start, client, platform, r1  # noqa: F401  (fixtures)
@@ -35,14 +35,17 @@ def test_prepare_registers_the_twin_producer_and_starts_the_instance(client, pla
 
 
 def test_history_reports_demo_02s_three_days_of_stepped_load(client, platform, r1):  # noqa: F811
-    """`demo/history` sends one LOAD_PERFORMANCE report of the element: the load model's 72 hourly windows per cell from the simulation's first day,
+    """`demo/history` sends LOAD_PERFORMANCE reports of the element: the load model's 72 hourly windows per cell from the simulation's first day,
     exactly what demo.py's step 02 sends."""
     instance_id = _start(client, r1)
     sent = _record_pm(r1)
     resp = client.post(f"/instances/{instance_id}/demo/history")
     assert resp.status_code == 200, resp.text
     assert resp.json()["measurements"] == 72 * 4
-    (report,) = sent
+    # in reports of at most PM_REPORT_CHUNK measurements of the same element and counter (each R1 call stays under its timeout), read as one
+    assert len(sent) == -(-resp.json()["measurements"] // PM_REPORT_CHUNK) and all(len(r["measurements"]) <= PM_REPORT_CHUNK for r in sent)
+    assert {(r["managedElementRef"], r["counterType"]) for r in sent} == {(sent[0]["managedElementRef"], sent[0]["counterType"])}
+    report = {**sent[0], "measurements": [m for r in sent for m in r["measurements"]]}
     assert report["managedElementRef"] == ME and report["counterType"] == "LOAD_PERFORMANCE"
     assert report["measurements"] == history(NEIGHBOURS, LAYERS, DEMO_HISTORY_START, 72)
 

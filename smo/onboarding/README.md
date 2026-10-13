@@ -9,7 +9,7 @@
 | Depends on (over R1) | NFO (`POST /nfo/descriptors`, `DELETE /nfo/descriptors/{id}` on delete); rApp Management (`GET /rapp-mgmt/instances/{id}`, only to release an orphaned usage registration); the package location itself (plain HTTP GET, not over R1) |
 | Called by | rApp Management (`onboarding-status`, `usage/start`, `usage/stop`: the only writer of usage registrations); AIMgF (`onboarding-status`, for `aiCapabilities.runtimeProfiles`); GUI BFF (operator and admin actions, `usage/{id}/release` for an admin); operators |
 | Database tables | `application_package` (versioned), `artifact`, `package_usage_registration` |
-| Unit tests | 201 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 202 passed (`tests/`, SQLite, standalone) |
 | Status | Done. Package signatures are verified against an operator-held trust store when one is configured (`PR-RAPP-1`; off by default, see 1.5, 2.6, 2.8) |
 
 ## 1. High-level design (HLD)
@@ -85,7 +85,7 @@ Onboarding calls rApp Management only to release an orphaned usage registration 
 | Size limits on every package zip (`SEC-15.17`). A package arrives from outside, so the zip is opened through `_open_zip` and read through `_read` in `app/package_validation.py`, signed or not: the central directory is checked against `ZIP_LIMITS` (the `csar_signing.ZipLimits` defaults `verify_zip` applies: 2000 entries, 50 MiB for a file, 200 MiB in all, a ratio of 200 to 1 above 1 MiB) before anything is decompressed, and each file read is bounded. A package over them is `PackageValidationFailed` ("package too large to read: ...") and so `FAILED` with that `failureReason`. | An unsigned package used to be opened and parsed with no limit at all, so a zip bomb exhausted the worker before any check ran (a signed package was already limited by `verify_zip`). |
 | `runtimeProfiles.<MODE>.memory` must be a Kubernetes quantity, and the descriptor created for NFO carries `containerResourcesByMode` (requests and limits per mode, `PR-RAPP-2.1`). | The memory becomes a container limit; a value like `16 GB` would be an invalid pod spec the day a deployment manager applies it. |
 | Delete from `AVAILABLE` or `DEPRECATED` is blocked while a child package is `AVAILABLE` / `DEPRECATED` or a usage registration has no `stopped_at`; deprime is blocked while a usage registration is open. | Cascade-delete guard; the reference's own deprime guard. |
-| `DELETING` is terminal and keeps the row. | Nothing re-enters; the row remains as the record. |
+| `DELETING` is terminal and keeps the row. | Nothing re-enters; the row remains as the record. The list leaves it out on `include_deleted=false`, so the console does not show a finished delete as one in progress; the name lookups keep the default and still find it. |
 | Instances may be created from `AVAILABLE` or `PRIMED` packages only. rApp Management checks it, and `usage/start` refuses any other state (`PACKAGE_NOT_DEPLOYABLE`). | Priming is optional. The second check closes the race with a deprecate or delete after rApp Management read the state, and keeps registrations off a `FAILED` package. |
 | Deleting a package deletes its NF deployment descriptor at NFO first; a refusal (a deployment still uses it, or NFO unreachable) leaves the package unchanged. | A deleted package leaves nothing deployable behind (call flow 06c). |
 | A usage registration can be released only when its instance is gone or `UNDEPLOYED`; Onboarding asks rApp Management. | The console must not be able to lift the guard while an instance runs (call flow 06c). |
@@ -159,7 +159,7 @@ Event routes and refusals: an event with no edge from the current state gives `4
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
 | POST | `/packages` (202) | `{location, applicationType="rApp"}` → `{packageId, trackingId}`, plus `failureReason` when the package ended `FAILED` (the message of a validation failure; the exception name for any other). Runs the validation pipeline. | none for a validation failure (the package is `FAILED`) |
-| GET | `/packages?state=` | Paged list of package views | |
+| GET | `/packages?state=&include_deleted=` | Paged list of package views; `include_deleted=false` (default `true`) leaves out `DELETING` packages, ignored with a `state` (the console's package list asks for it) | |
 | GET | `/packages/{id}/onboarding-status` | `{packageId, state, nfDeploymentDescriptorId, smeDeclarations, aiCapabilities}`; the read rApp Management and AIMgF depend on | 404 `PACKAGE_NOT_FOUND` |
 | GET | `/packages/{id}/artifacts` | Paged `{artifactId, path, accessUrl}` | 404 |
 | GET | `/packages/{id}/usage` | Paged `{registrationId, consumerId, stoppedAt, active}`: what blocks a delete | 404 |

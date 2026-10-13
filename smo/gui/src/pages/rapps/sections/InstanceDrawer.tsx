@@ -31,6 +31,7 @@ export function InstanceDrawer({ id, onClose }: { id: string; onClose: () => voi
           [t("rapps.instance.id"), <code>{inst.data.instanceId}</code>], [t("rapps.instance.package"), <code>{inst.data.packageId}</code>],
           [t("rapps.instance.workload"), inst.data.workloadRef && <code>{inst.data.workloadRef}</code>],
           [t("rapps.instance.pendingUpgrade"), inst.data.pendingUpgradeInstanceId && <code>{inst.data.pendingUpgradeInstanceId}</code>],
+          [t("rapps.instance.operatorApi"), inst.data.operatorApiBase ? <code>{inst.data.operatorApiBase}</code> : <span className="muted">{t("rapps.instance.operatorApi.none")}</span>],
           [t("rapps.instance.sme"), inst.data.smeServiceIds?.length
             ? <code className="small">{inst.data.smeServiceIds.join(", ")}</code>
             : <span className="muted">{t("rapps.instance.sme.none")}</span>],

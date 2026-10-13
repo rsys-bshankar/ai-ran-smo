@@ -116,6 +116,8 @@ export const rapps = {
   "rapps.instance.package": "Package",
   "rapps.instance.workload": "NFO deployment (workloadRef)",
   "rapps.instance.pendingUpgrade": "Pending upgrade to",
+  "rapps.instance.operatorApi": "Operator API base URL",
+  "rapps.instance.operatorApi.none": "not registered",
   "rapps.instance.sme": "SME service API(s)",
   "rapps.instance.sme.none": "none registered",
   "rapps.instance.autonomy": "Autonomy mode",
@@ -212,6 +214,7 @@ export const rapps = {
 
   "rapps.deploy.title": "Deploy {name} {version}",
   "rapps.deploy.created": "Instance created (DEPLOYING)",
+  "rapps.deploy.unreachable": "The rApp could not be reached at {base}, so it does not hold the instance's credentials and its page's buttons will fail (UPSTREAM_UNAVAILABLE). Check the URL (the sample rApps: http://<rapp-name>:8000) and that the rApp is running, then Re-send credentials on the instance, or deploy again with the right URL.",
   "rapps.deploy.intro": "rApp Management checks the package is AVAILABLE, instantiates it on NFO from its NF deployment descriptor, and registers package usage.",
   "rapps.deploy.config": "Instance configuration (JSON)",
   "rapps.deploy.config.hint": "Optional. requiredResourceTypeId is passed to NFO for placement.",

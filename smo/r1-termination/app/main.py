@@ -278,6 +278,20 @@ def _drop_revoked_tokens(method: str, full_path: str, status: int) -> None:
             _introspection_cache.clear()                 # it offboarded invokers whose names we are not told (a dry run offboarded none, and clearing is harmless)
 
 
+DEMO_PM_REPORTS_ENV = "R1_DEMO_RAPP_PM_REPORTS"
+
+
+def _demo_pm_reports_on() -> bool:
+    """Whether `R1_DEMO_RAPP_PM_REPORTS` is on (`on`, `true`, `1`, `yes`, any case; default off), read on every call."""
+    return os.environ.get(DEMO_PM_REPORTS_ENV, "off").strip().lower() in ("on", "true", "1", "yes")
+
+
+def _demo_pm_report(prefix: str, method: str, rest: str) -> bool:
+    """True for exactly `POST /ran-nf-oam/pm-reports`: the PM an NF reports, which the sample rApps' Demo / simulation buttons send when they play the
+    network (docs/GUI_DEMO_GUIDE.md). Refused to an rApp like any change outside `roles.RAPP_MAY_CHANGE`, unless `R1_DEMO_RAPP_PM_REPORTS` is on."""
+    return prefix == "/ran-nf-oam" and method.upper() == "POST" and rest == "pm-reports"
+
+
 def _path_problem(rest: str) -> bool:
     """True when `rest` (the path after the module prefix) is not in resolved form, so the caller gets a 400 instead of a forward.
 
@@ -339,17 +353,23 @@ async def _proxy(full_path: str, request: Request):
         return JSONResponse(status_code=400, content={"title": "INVALID_PATH", "status": 400,
                                                       "detail": "the path has a '.', '..' or empty segment, or a backslash: send the resolved path"})
     rest_of_path = rest_of_path.removesuffix("/")        # one trailing slash is the same route, so policy and forwarding see the same path
-    if role == roles.ROLE_RAPP and (roles.internal_only(prefix, request.method, rest_of_path)
-                                    or not roles.rapp_may_change(prefix, request.method, rest_of_path)):
+    demo_pm = role == roles.ROLE_RAPP and _demo_pm_report(prefix, request.method, rest_of_path)
+    if demo_pm and _demo_pm_reports_on():
+        # the one demo exception: a sample rApp's demo button plays the NF and reports PM (R1_DEMO_RAPP_PM_REPORTS, off by default); every one is logged,
+        # and audited like any change
+        log.warning("demo: rApp %s reported PM (%s=on lets an rApp send POST /ran-nf-oam/pm-reports)", invoker_id, DEMO_PM_REPORTS_ENV)
+    elif role == roles.ROLE_RAPP and (roles.internal_only(prefix, request.method, rest_of_path)
+                                      or not roles.rapp_may_change(prefix, request.method, rest_of_path)):
         # PR-SEC-14: a route that changes what the platform allows rApps to do is not one an rApp may call, and an rApp changes only what
         # roles.RAPP_MAY_CHANGE lists
         action = "refused" if roles.enforcement_mode() == "enforce" else "audited"
         record_role_refusal(prefix, action)
         if action == "refused":
             request.state.audit = (invoker_id, role, "ROLE_NOT_PERMITTED", None)
+            hint = f"; a demo that plays the network from an rApp needs {DEMO_PM_REPORTS_ENV}=on at the gateway (docs/GUI_DEMO_GUIDE.md)" if demo_pm else ""
             return JSONResponse(status_code=403, content={
                 "title": "ROLE_NOT_PERMITTED", "status": 403,
-                "detail": f"{request.method} {prefix}/{rest_of_path} is for SMO modules and operators, not for an rApp"})
+                "detail": f"{request.method} {prefix}/{rest_of_path} is for SMO modules and operators, not for an rApp{hint}"})
         log.warning("role audit: rApp %s called %s %s/%s", invoker_id, request.method, prefix, rest_of_path)
 
     # AI-10.4, extended: a stopped rApp (or a module acting for one) changes nothing through the gateway (smo_shared/killswitch.py)
@@ -505,11 +525,18 @@ async def _forward_operator_api(request: Request, rest_of_path: str, body: bytes
                                                     content=body, timeout=upstream_timeout())
             if upstream is not None:
                 tracing.mark_status(client_span, upstream.status_code)
+    # The response never says why (a fixed title); the gateway's log does, so the operator can tell a wrong operator API base URL or a stopped rApp
+    # from a refusal of the SSRF guard. The base is the one rApp Management holds for the instance (no credentials: normalise_base_url refuses them).
     except httpx.TimeoutException:
+        log.warning("operator API of instance %s at %s did not answer within %g s", instance_id, base, upstream_timeout())
         return _problem(504, "UPSTREAM_TIMEOUT", "the rApp's operator API did not answer in time")
-    except httpx.HTTPError:
+    except httpx.HTTPError as exc:
+        log.warning("operator API of instance %s at %s could not be reached (%s); check the instance's operator API base URL and that the rApp is running",
+                    instance_id, base, exc.__class__.__name__)
         return _problem(502, "UPSTREAM_UNAVAILABLE", "the rApp's operator API could not be reached")
     if upstream is None:                                       # the registered address failed the SSRF guard again (it changed, or the guard did)
+        log.warning("operator API of instance %s at %s not called: the address is refused by the SSRF guard (loopback, link-local or metadata)",
+                    instance_id, base)
         return _problem(502, "UPSTREAM_UNAVAILABLE", "the rApp's operator API could not be reached")
     out = {k: v for k, v in upstream.headers.items() if k.lower() not in _OPERATOR_API_DROP_RESPONSE}
     return Response(content=upstream.content, status_code=upstream.status_code, headers=out)

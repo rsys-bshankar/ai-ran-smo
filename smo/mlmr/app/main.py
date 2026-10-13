@@ -304,9 +304,8 @@ def update_model(request: Request, model_id: uuid.UUID, body: UpdateModelRequest
     if model is None:
         raise framework_error(FrameworkError.MODEL_NOT_FOUND, detail="no such model")
     is_rapp = role_of(request) == ROLE_RAPP
+    mlr.refuse_unless_owner(request, model, "update it")
     if is_rapp:
-        if model.owner and model.owner != invoker_id(request):
-            raise framework_error(FrameworkError.MODEL_ACCESS_DENIED, detail=f"model {model_id} belongs to another producer: only its owner may update it")
         if body.owner is not None and (body.owner or None) != (model.owner or None):
             raise framework_error(FrameworkError.MODEL_OWNER_IMMUTABLE, detail="an rApp cannot change or clear the owner of a model")
     if model.model_type != body.modelType or model.version != body.version:
@@ -331,7 +330,7 @@ def update_model(request: Request, model_id: uuid.UUID, body: UpdateModelRequest
 
 
 @app.delete("/models/{model_id}", status_code=204)
-def deregister_model(model_id: uuid.UUID, db: Session = Depends(get_session)):
+def deregister_model(request: Request, model_id: uuid.UUID, db: Session = Depends(get_session)):
     """DeleteModel (mmes_apis.go). Only cleans up MLMR's own dependent
     table (ModelArtifact) directly — before Wave 1's split, this route
     also explicitly cleaned up TrainingJob/InferenceJob/
@@ -356,9 +355,13 @@ def deregister_model(model_id: uuid.UUID, db: Session = Depends(get_session)):
     # Deletes a model, its artifacts and its profiles. Idempotent: an unknown id is 204 too. The artifact and profile rows are
     # removed here explicitly; rows other modules hold against the model (AIMgF jobs, subscriptions) go through the
     # `ON DELETE CASCADE` foreign keys in the schema, which the SQLite unit tests do not enforce.
+    # SEC-15.3d: a caller with role `rapp` may delete only a model it owns (403 `MODEL_ACCESS_DENIED` for another rApp's model, nothing deleted); a model with no owner, the console,
+    # an SMO module and a call with no role are not refused. The unknown id stays a silent 204 for every caller (the route is idempotent, so a retried retire does not fail, and
+    # the answer tells an rApp nothing about other rApps' models).
     model = db.get(MLModel, model_id)
     if model is None:
         return
+    mlr.refuse_unless_owner(request, model, "delete it")
     db.query(ModelArtifact).filter(ModelArtifact.model_id == model_id).delete()
     db.query(MLModelProfile).filter(MLModelProfile.model_id == model_id).delete()
     db.delete(model)
@@ -366,7 +369,7 @@ def deregister_model(model_id: uuid.UUID, db: Session = Depends(get_session)):
 
 
 @app.post("/models/{model_id}/artifact", status_code=201)
-def upload_model_artifact(model_id: uuid.UUID, file: UploadFile = File(...), db: Session = Depends(get_session)):
+def upload_model_artifact(request: Request, model_id: uuid.UUID, file: UploadFile = File(...), db: Session = Depends(get_session)):
     """UploadModel (aiml-fw-awmf-modelmgmtservice apis/mmes_apis.go) — the
     reference looks the model up first (404 if unregistered), validates a
     .zip suffix (415 otherwise), then stamps a fresh artifactVersion,
@@ -378,9 +381,11 @@ def upload_model_artifact(model_id: uuid.UUID, file: UploadFile = File(...), db:
     # file name does not end in .zip (only the name is checked, not the content). The version is max+1 per model, read and written
     # without a lock, and the table has no unique constraint on (model_id, artifact_version). The whole file is read into memory.
     # Updates the model's `artifact_location` to the new version in the same commit.
+    # SEC-15.3d: 404 first, then 403 `MODEL_ACCESS_DENIED` for a caller with role `rapp` that is not the model's owner (before the file is read; a model with no owner is open to any rApp).
     model = db.get(MLModel, model_id)
     if model is None:
         raise framework_error(FrameworkError.MODEL_NOT_FOUND, detail="no such model")
+    mlr.refuse_unless_owner(request, model, "upload an artifact for it")
     if not file.filename or not file.filename.endswith(".zip"):
         raise framework_error(FrameworkError.ARTIFACT_FORMAT_INVALID, detail="artifact must be a .zip file")
 
@@ -408,8 +413,13 @@ def download_model_artifact(request: Request, model_id: uuid.UUID, artifact_vers
     # MODEL_ACCESS_DENIED, judged on the forwarded caller id); only then is the artifact looked up (404 ARTIFACT_VERSION_NOT_FOUND).
     # An unknown model skips the check and falls through to that 404. The file name in Content-Disposition is the name the
     # uploader sent, inserted unescaped.
+    # SEC-15.3d: an rApp that is not the owner of an owned model downloads it only when the model's `storeDiscReqs.accessReqs` says so (PUBLICLY_AVAILABLE, or RESTRICTED naming the
+    # caller, which `require_usable` judges); a model that sets no `accessReqs` is its owner's alone against another rApp (the rule inference follows in AIMgF). A model with no owner,
+    # the console, an SMO module and a call with no role keep the old rule (open unless `accessReqs` excludes the caller).
     model = db.get(MLModel, model_id)
     if model is not None:
+        if not mlr.owner_may_act(request, model) and not (model.store_disc_reqs or {}).get("accessReqs"):
+            mlr.refuse_unless_owner(request, model, "download its artifact unless it sets accessReqs")
         mlr.require_usable(model, invoker_id(request))
     artifact = db.scalar(
         select(ModelArtifact).where(ModelArtifact.model_id == model_id, ModelArtifact.artifact_version == artifact_version)
@@ -423,7 +433,7 @@ def download_model_artifact(request: Request, model_id: uuid.UUID, artifact_vers
 
 
 @app.post("/coordination-groups", status_code=201)
-def create_coordination_group(body: CreateCoordinationGroupRequest, db: Session = Depends(get_session)):
+def create_coordination_group(request: Request, body: CreateCoordinationGroupRequest, db: Session = Depends(get_session)):
     """AI/ML Workflow LLD section 4.5's call flow, step 1: register the
     group as a sibling of individual model registrations.
 
@@ -444,6 +454,10 @@ def create_coordination_group(body: CreateCoordinationGroupRequest, db: Session 
 
     if body.mLModelRepositoryRef is not None and db.get(MLModelRepository, body.mLModelRepositoryRef) is None:
         raise framework_error(FrameworkError.NRM_OBJECT_NOT_FOUND, detail=f"no such MLModelRepository {body.mLModelRepositoryRef}")
+    # SEC-15.3d: a group makes a breach of one member retrain the others, so a caller with role `rapp` may name only models it owns or that have no owner (403 `MODEL_ACCESS_DENIED`, nothing
+    # stored); a member id MLMR does not know is not checked, as before.
+    for member in db.scalars(select(MLModel).where(MLModel.model_id.in_(body.memberModelIds))):
+        mlr.refuse_unless_owner(request, member, "put it in a coordination group")
     group = MLModelCoordinationGroup(member_model_ids=body.memberModelIds, member_use_cases=body.memberUseCases,
                                       shared_feature_pipeline_ref=body.sharedFeaturePipelineRef,
                                       retrain_propagation=body.retrainPropagation,

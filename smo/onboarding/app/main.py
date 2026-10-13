@@ -298,13 +298,18 @@ def query_onboarding_status(package_id: uuid.UUID, db: Session = Depends(get_ses
 
 
 @app.get("/packages")
-def query_packages(state: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
+def query_packages(state: str | None = None, include_deleted: bool = True, limit: int = PageLimit, offset: int = PageOffset,
                     db: Session = Depends(get_session)):
+    """`include_deleted=false` leaves out the deleted packages (`DELETING`, the terminal state whose row is kept as the record); ignored with a `state`."""
     # Maintainer notes (not published). Lists packages in `_package_view` form, optionally filtered by an exact `state` string (an unknown state gives an empty
     # page, not an error). Paginated by smo_shared.pagination, which orders an unordered statement by primary key (package_id, a random UUID), so the order is stable but not chronological.
+    # `include_deleted` defaults to true because the name lookups (the GUI backend's rApp directory, the console's package names) need the package of an
+    # instance whose package was deleted; the console's package list asks for false, so a finished delete leaves the list instead of reading DELETING for ever.
     stmt = select(ApplicationPackage)
     if state:
         stmt = stmt.where(ApplicationPackage.state == state)
+    elif not include_deleted:
+        stmt = stmt.where(ApplicationPackage.state != PackageState.DELETING)
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [_package_view(p) for p in page["items"]]}
 

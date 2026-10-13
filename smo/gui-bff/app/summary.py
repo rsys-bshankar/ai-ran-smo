@@ -86,6 +86,8 @@ MODEL_GATES = {"modelGates.waiting": Count("/aimgf/model-lifecycles", (("awaitin
 INSTANCES = _states("/rapp-mgmt/instances", "state", ("DEPLOYING", "RUNNING", "UPGRADING", "UNDEPLOYED", "FAULTED"), "instances")
 STOPPED = {"rappsStopped": Count("/rapp-mgmt/kill-all", field="stopped")}     # GUI-9.6: how many rApps have their writes stopped
 PACKAGES = _states("/onboarding/packages", "state", ("ONBOARDING", "AVAILABLE", "PRIMED", "DEPRECATED", "FAILED"), "packages")
+# a deleted package (DELETING, its row kept as the record) is not counted, as the console's package list does not show it
+PACKAGES["packages.total"] = Count("/onboarding/packages", (("include_deleted", "false"),))
 DEPLOYMENTS = _states("/nfo/deployments", "state", ("INSTANTIATING", "RUNNING", "UPDATING", "TERMINATING", "ABNORMAL"), "deployments")
 INTENTS = _states("/intent-service/intents", "admin_state", ("ACTIVATED", "DEACTIVATED"), "intents")
 CONFIG_JOBS = _states("/ran-nf-oam/config-jobs", "status", ("PENDING", "PENDING_APPROVAL", "SCHEDULED", "PROCESSING", "HALTED", "COMPLETED",

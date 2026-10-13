@@ -36,6 +36,10 @@ PACKAGE_INDEX_SECONDS = 30.0
 PACKAGE_INDEX_REFRESH_SECONDS = 2.0
 DECLARATION_SECONDS = 60.0
 MAX_CACHED_DECLARATIONS = 500
+# How long a call to a rApp's operator API may take, in seconds: longer than the gateway waits for the rApp (R1_UPSTREAM_TIMEOUT_SECONDS, 60), so the
+# gateway's own 504 is what the user sees. The BFF's 30 s for every other call is too short for a declared action that works for a while (a demo button
+# that sends three days of PM).
+OPERATOR_CALL_TIMEOUT_SECONDS = 65.0
 _NEVER_FORWARD_RESPONSE = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "trailers", "transfer-encoding",
                            "upgrade", "content-length", "content-encoding", "set-cookie", "server", "date"}
 
@@ -270,7 +274,8 @@ def install(app: FastAPI, *, current_session: Callable, audit: Callable, problem
         if content is not None:
             headers["content-type"] = "application/json"
         try:
-            upstream = await app.state.gateway.request(method, target, params=decision.query or None, content=content, headers=headers)
+            upstream = await app.state.gateway.request(method, target, params=decision.query or None, content=content, headers=headers,
+                                                       timeout=OPERATOR_CALL_TIMEOUT_SECONDS)
         except SmoAuthError as exc:
             log.warning("operator call %s %s: SMO token unavailable: %s", method, target, exc)
             if change:

@@ -28,7 +28,16 @@ not an action). Energy Saving has no button 10 (its step 10 is the O1 read-back)
 
 ## Before the customer arrives (once)
 
-1. Start the stack (`DEMO_RUNBOOK.md` §0) and open the console at `http://localhost:3000`.
+1. Start the stack (`DEMO_RUNBOOK.md` §0) **with the demo switch on**, and open the console at `http://localhost:3000`:
+
+   ```bash
+   cd smo
+   R1_DEMO_RAPP_PM_REPORTS=on docker compose up -d --build
+   ```
+
+   The buttons that play the network (**2 · Load history PM**, **8 · Send live PM**, **10 · Send the next hour's PM**) have the rApp report PM as the
+   NF would (`POST /ran-nf-oam/pm-reports`), and R1 Termination refuses that to an rApp unless `R1_DEMO_RAPP_PM_REPORTS` is on. Keep it off on any
+   stack that is not a demo: with it on, an rApp can put any PM it likes into the platform.
 2. Serve the rApp packages on the compose network (repeat the `cp` line for each rApp you will show):
 
    ```bash
@@ -51,7 +60,9 @@ The values to type for each rApp are in [The four rApps' values](#the-four-rapps
 **Do**
 
 1. **Infrastructure** → **O1 endpoints & jobs** → **Register endpoint**: managed element `gnb-du-demo-01`, adaptor URI
-   `http://mock-o1-adaptor:8000/edit-config`, protocol NETCONF, entity type O-DU, vendor `mock-vendor`. Then press **Heartbeat** on its row.
+   `http://mock-o1-adaptor:8000/edit-config`, protocol NETCONF, entity type O-DU, vendor `mock-vendor`. Then press **Heartbeat** on its row. From then on
+   the simulated gNB sends its own heartbeat every 30 s (`MOCK_O1_HEARTBEAT_SECONDS`), as a real one does, so the endpoint stays ACTIVE however long the demo takes
+   (RAN NF OAM refuses an O1 write to an endpoint whose last heartbeat is more than 90 s old).
 2. **KPIs & Assurance** → **PM subscriptions** → **New PM subscription**: element `gnb-du-demo-01`, counter `PRB_UTILIZATION`, delivery
    **pull**, granularity **300** s (the form defaults to push and 900: change both). **Subscribe**.
 3. Open the element (**Topology** or the element's link) → **Cell guards** → **Add a cell guard**: cell `103`, class **EMERGENCY**.
@@ -255,14 +266,18 @@ Autonomy mode is AUTONOMOUS.
 | Symptom | Why, and what to do |
 |---------|---------------------|
 | Onboard leaves the package not AVAILABLE ("already onboarded") | Onboarding refuses a byte-identical package. Use the package already AVAILABLE in the list and Deploy that one. |
+| Deploy says the rApp could not be reached, or a button answers `UPSTREAM_UNAVAILABLE: the rApp's operator API could not be reached` | R1 Termination could not connect to the **Operator API base URL** the instance was deployed with (shown in the instance's drawer): a different host name or port, or the rApp is not running. Its log says which (`docker compose logs r1-termination \| grep "operator API of instance"`). For the sample rApps the URL is `http://<rapp-name>:8000` (the table above); check `docker compose ps` for the rApp, then deploy a new instance with the right URL, or press **Re-send credentials** once the rApp is up. |
 | The rApp's page says "operator API is not registered" | The instance was deployed without **Operator API base URL**. Deploy a new instance with it. |
 | No **Demo / simulation (admin)** buttons | Sign in as admin: the panel's buttons are admin-only. |
 | A demo button answers `INSTANCE_NOT_STARTED` | Press **1 · Prepare and start** first. |
 | **1 · Prepare and start** leaves the instance DEPLOYING (its answer's `bootstrap` says `NO_CREDENTIALS`) | The rApp does not hold the instance's credentials: it was down or unreachable at Deploy. On the instance's page press **Re-send credentials** (admin), then **1 · Prepare and start** again. |
+| **2 · Load history PM**, **8 · Send live PM** or **10 · Send the next hour's PM** answers `ROLE_NOT_PERMITTED` ("... is for SMO modules and operators, not for an rApp") | The gateway was started without the demo switch. Restart it with it on: `R1_DEMO_RAPP_PM_REPORTS=on docker compose up -d r1-termination`, then press the button again. |
 | **2 · Load history PM** or **8 · Send live PM** answers "no PM subscription" | Step 00's PM subscription is missing or on another counter: create it. |
 | **3 · Train** answers "not enough history" | Press **2 · Load history PM** first (after **1 · Prepare and start**). |
 | **7 · Deploy the runtime** is refused | The model is not CERTIFIED and PROMOTED yet: step 06. |
 | Evaluate now shows no write, or the write is not enacted | The O1-CM handler is not registered (step 00, Handlers), or the live PM is missing (**8 · Send live PM**). |
+| A deleted package is not in the package list | Deleting is final: the package leaves the list (pick **DELETING** in the state filter to see it). The same CSAR can be onboarded again. |
+| Evaluate now's write is refused because the O1 endpoint is not ACTIVE (DEGRADED) | No heartbeat for 90 s. The simulated gNB sends one every 30 s once the endpoint had its first: press **Heartbeat** on the endpoint's row (Infrastructure) once. If it goes stale again, the stack was started with `MOCK_O1_HEARTBEAT_SECONDS=0` or an older `mock-o1-adaptor` image: rebuild it (`docker compose up -d --build mock-o1-adaptor`). |
 | To start again | `docker compose down -v && docker compose up -d`, then this guide from the top. |
 
 Running the whole demo without the console: `DEMO_RUNBOOK.md` §24–§27 (`demo.py all`).

@@ -679,6 +679,26 @@
       },
       "post": {
         "operationId": "mediate_action_actions_post",
+        "parameters": [
+          {
+            "description": "The credential of the MSAC Identity named in `requestedBy`, when that Identity has one (`SEC-15.6b`). Passed on to RAN NF OAM in the same header, which asks an rApp for it; never stored, logged or returned.",
+            "in": "header",
+            "name": "X-MSAC-Credential",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The credential of the MSAC Identity named in `requestedBy`, when that Identity has one (`SEC-15.6b`). Passed on to RAN NF OAM in the same header, which asks an rApp for it; never stored, logged or returned.",
+              "title": "X-Msac-Credential"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {

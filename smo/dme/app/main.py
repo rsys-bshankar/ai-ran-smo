@@ -11,7 +11,7 @@ import uuid
 
 import httpx
 import jsonschema
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -842,7 +842,10 @@ DME_TO_RAN_NF_OAM_TIMEOUT_SECONDS = 10.0
 
 
 @app.post("/actions", status_code=202, responses={200: {"description": "the actionId was already recorded: the replay is IGNORED and nothing is forwarded again"}})
-def mediate_action(body: ActionRequest, db: Session = Depends(get_session)):
+def mediate_action(body: ActionRequest, db: Session = Depends(get_session),
+                   msac_credential: str | None = Header(default=None, alias="X-MSAC-Credential", description=(
+                       "The credential of the MSAC Identity named in `requestedBy`, when that Identity has one (`SEC-15.6b`). Passed on to RAN NF OAM in the same header, which asks an rApp for it; "
+                       "never stored, logged or returned."))):
     # Records an rApp's O1 change request and forwards it to RAN NF OAM as a configuration job (10 s limit). Order: empty `changes` is 422; an `actionId` already recorded is answered 200 `IGNORED` with the
     # original status and nothing is forwarded again; otherwise the record is committed first (status FORWARDED, its default), then the job is requested. RAN NF OAM's answer decides the status: a body that is
     # not JSON or a 5xx is 502 UPSTREAM_FAILED and the record becomes REJECTED; a 4xx is relayed as it came and the record becomes REJECTED; an answer with no job id (the change waits for human approval) is 202 with the
@@ -875,6 +878,8 @@ def mediate_action(body: ActionRequest, db: Session = Depends(get_session)):
     # Wave 9 (W9-02): className is forwarded too — RAN NF OAM's write
     # pre-check validates each change against its vendor's data model.
     # Wave 10.1 (W10-19): DME → RAN NF OAM is bounded at 10 s.
+    # SEC-15.6b: the credential of the MSAC Identity named by `requestedBy`, if the rApp sent one, is passed on in the header RAN NF OAM reads and only then. It is not part of the stored
+    # record, the body or any answer, and is not logged.
     decision = {**body.decision} if body.decision else None
     if body.actionId is not None and decision is not None:
         decision.setdefault("actionId", str(body.actionId))
@@ -882,7 +887,7 @@ def mediate_action(body: ActionRequest, db: Session = Depends(get_session)):
         resp = _r1.post("/ran-nf-oam/config-jobs", json={
             "requestedBy": body.requestedBy, "scope": body.scope, "msacRole": body.msacRole, "changes": body.changes,
             **({"decision": decision} if decision is not None else {}),
-        }, timeout=DME_TO_RAN_NF_OAM_TIMEOUT_SECONDS)
+        }, timeout=DME_TO_RAN_NF_OAM_TIMEOUT_SECONDS, **({"headers": {"X-MSAC-Credential": msac_credential}} if msac_credential is not None else {}))
     except Exception as exc:  # noqa: BLE001 - deliberate catch-all (SEC-15.10): whatever stopped the call, the record must not stay FORWARDED when nothing was forwarded
         record.status = "REJECTED"  # the same state as an unusable answer below; the outcome at RAN NF OAM is unknown, and a replay of this `actionId` is IGNORED like any REJECTED one
         db.commit()
