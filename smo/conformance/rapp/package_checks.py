@@ -45,11 +45,51 @@ def onboarding():
 
 
 def _open(ctx: PackageContext) -> zipfile.ZipFile:
-    """The package as a `ZipFile`, or `Skip` (naming PK-1) when it is not a zip, so one broken file fails PK-1 once and the later checks skip."""
+    """The package as a `ZipFile`, or `Skip` (naming PK-1) when it is not a zip or is over Onboarding's zip limits, so one broken file fails PK-1 once and the later checks skip.
+
+    SEC-15.17b: it opens the zip with Onboarding's own `_open_zip`, so the entry-count, size and compression-ratio limits (`onboarding().ZIP_LIMITS`, the ones
+    `csar_signing.verify_zip` applies) are checked from the directory before anything is decompressed, and every read in this module goes through `_read`.
+    """
+    module = onboarding()
     try:
-        return zipfile.ZipFile(io.BytesIO(ctx.data))
+        return module._open_zip(ctx.data)
     except zipfile.BadZipFile:
         raise Skip("the package is not a readable zip file (PK-1)") from None
+    except module.PackageValidationFailed as exc:
+        raise Skip(f"the package is over the zip limits Onboarding applies (PK-1): {exc}") from None
+
+
+def _read(z: zipfile.ZipFile, name: str) -> bytes:
+    """One file of the package, read the way Onboarding reads it (bounded by `ZIP_LIMITS.max_member_bytes`); `KeyError` for a missing file, `PackageValidationFailed` for a file that is too big."""
+    return onboarding()._read(z, name)
+
+
+def _verify_crcs(z: zipfile.ZipFile) -> None:
+    """`ZipFile.testzip` without its unbounded reads: streams every file in chunks, so the CRC is checked at the end of each, and stops with `Fail` once a file really holds more
+    than `ZIP_LIMITS.max_member_bytes` or the files together more than `max_total_bytes` (a directory that understates a size cannot make this read a bomb in full)."""
+    limits = onboarding().ZIP_LIMITS
+    total = 0
+    for info in z.infolist():
+        if info.is_dir():
+            continue
+        size = 0
+        try:
+            with z.open(info) as member:
+                while chunk := member.read(1024 * 1024):
+                    size += len(chunk)
+                    total += len(chunk)
+                    if size > limits.max_member_bytes or total > limits.max_total_bytes:
+                        raise Fail(f"package too large to read: {info.filename[:80]!r} really holds more than the zip limits allow ({limits.max_member_bytes} bytes a file, {limits.max_total_bytes} in all)")
+        except zipfile.BadZipFile:
+            raise Fail(f"entry {info.filename} is corrupt (its CRC does not match)") from None
+
+
+def _scanned(z: zipfile.ZipFile, name: str) -> bytes:
+    """The bytes PK-9 scans: a file that really holds more than `MAX_SCANNED_BYTES` (its directory entry understated it) is not read past that, and is not scanned."""
+    try:
+        return csar_signing.read_member(z, name, MAX_SCANNED_BYTES)
+    except csar_signing.SignatureError:
+        return b""
 
 
 def _only(z: zipfile.ZipFile, *names: str) -> zipfile.ZipFile:
@@ -58,40 +98,48 @@ def _only(z: zipfile.ZipFile, *names: str) -> zipfile.ZipFile:
     with zipfile.ZipFile(out, "w") as target:
         for name in names:
             if name in z.namelist():
-                target.writestr(name, z.read(name))
+                target.writestr(name, _read(z, name))
     return zipfile.ZipFile(io.BytesIO(out.getvalue()))
 
 
 def _asd_definitions(z: zipfile.ZipFile) -> tuple[str, str]:
     """`(path, text)` of the entry definitions file that TOSCA.meta names; `Fail` when TOSCA.meta, its `Entry-Definitions:` line or the file it names is missing."""
     try:
-        meta = z.read("TOSCA-Metadata/TOSCA.meta").decode()
+        meta = _read(z, "TOSCA-Metadata/TOSCA.meta").decode()
     except KeyError:
         raise Fail("TOSCA-Metadata/TOSCA.meta is missing") from None
+    except onboarding().PackageValidationFailed as exc:
+        raise Fail(str(exc)) from None
     entry = next((line.split(":", 1)[1].strip() for line in meta.splitlines() if line.startswith("Entry-Definitions:")), None)
     if not entry:
         raise Fail("TOSCA-Metadata/TOSCA.meta has no Entry-Definitions: line")
     try:
-        return entry, z.read(entry).decode(errors="replace")
+        return entry, _read(z, entry).decode(errors="replace")
     except KeyError:
         raise Fail(f"the entry definitions file {entry} named by TOSCA.meta is not in the package") from None
+    except onboarding().PackageValidationFailed as exc:
+        raise Fail(str(exc)) from None
 
 
 @check("PK-1", "STRUCTURE", "the package is a .csar zip file with no entry listed twice", PACKAGE)
 def pk_zip(ctx: PackageContext) -> None:
-    """PK-1: the file name ends with .csar (Onboarding refuses a location that does not), it is a zip, no entry appears twice and every entry's CRC is good."""
+    """PK-1: the file name ends with .csar (Onboarding refuses a location that does not), it is a zip within Onboarding's zip limits (entry count, size of a file and of all, compression ratio; SEC-15.17), no entry appears twice, no entry path is absolute or climbs out with `..` (Onboarding refuses that for a signed package) and every entry's CRC is good."""
     if not ctx.name.endswith(".csar"):
         raise Fail(f"the file name {ctx.name!r} does not end with .csar (Onboarding refuses a location that does not)")
+    module = onboarding()
     try:
-        z = zipfile.ZipFile(io.BytesIO(ctx.data))
+        z = module._open_zip(ctx.data)
     except zipfile.BadZipFile:
         raise Fail("not a zip file") from None
+    except module.PackageValidationFailed as exc:
+        raise Fail(str(exc)) from None
     names = [i.filename for i in z.infolist() if not i.is_dir()]
     if len(set(names)) != len(names):
         raise Fail("an entry is listed twice, so which one a reader sees depends on the reader")
-    bad = z.testzip()
-    if bad is not None:
-        raise Fail(f"entry {bad} is corrupt (its CRC does not match)")
+    unsafe = [n for n in names if n.startswith("/") or ".." in n.split("/") or "\\" in n]
+    if unsafe:
+        raise Fail(f"an entry has an unsafe path ({unsafe[0][:80]!r}): a reader that extracts the package would write outside its directory")
+    _verify_crcs(z)
 
 
 @check("PK-2", "STRUCTURE", "TOSCA-Metadata/TOSCA.meta names an entry definitions file that is in the package", PACKAGE)
@@ -192,7 +240,7 @@ def pk_hygiene(ctx: PackageContext) -> None:
 def pk_no_private_key(ctx: PackageContext) -> None:
     """PK-9: no file up to `MAX_SCANNED_BYTES` holds a PEM private key or the SMO's `ed25519-seed:` key form; a package is distributed, so a key inside it is published."""
     z = _open(ctx)
-    holders = [i.filename for i in z.infolist() if not i.is_dir() and i.file_size <= MAX_SCANNED_BYTES and PRIVATE_KEY.search(z.read(i.filename))]
+    holders = [i.filename for i in z.infolist() if not i.is_dir() and i.file_size <= MAX_SCANNED_BYTES and PRIVATE_KEY.search(_scanned(z, i.filename))]
     if holders:
         raise Fail(f"{', '.join(holders[:3])} holds a private key: anyone who gets the package gets the key")
 
