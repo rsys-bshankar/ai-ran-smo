@@ -40,6 +40,9 @@ own key in the module identity store. R1 Termination applies its role policy on
 that record (`roles.py`).
 """
 
+import contextlib
+import contextvars
+from collections.abc import Callable
 import logging
 import os
 import secrets
@@ -72,16 +75,20 @@ def identity_kind() -> str:
 class _ModuleIdentity:
     """This process's OAuth2 client identity at SME, and its cached token."""
 
-    def __init__(self, store=None):
-        """Starts with the invoker id and secret pinned by `SMO_INVOKER_ID` / `SMO_INVOKER_SECRET` when both are set in the environment, else none
-        (registered on first use).
+    def __init__(self, store=None, invoker_id: str | None = None, invoker_secret: str | None = None):
+        """Starts with the invoker id and secret given, else those pinned by `SMO_INVOKER_ID` / `SMO_INVOKER_SECRET` when both are set in the
+        environment, else none (registered on first use). An identity given here is an rApp instance's (`bind_instance_identity`): it is never
+        replaced by a registration of this process's own, so a refused one gives no token rather than another identity.
 
         `store` is the shared identity store; when None it is resolved on first use by `_identity_store`. No network or database access happens
         here.
         """
         self.lock = threading.Lock()
-        self.invoker_id: str | None = os.environ.get("SMO_INVOKER_ID") or None
-        self.invoker_secret: str | None = os.environ.get("SMO_INVOKER_SECRET") or None
+        self.pinned = invoker_id is not None
+        # for an instance's identity: reads the stored credentials again (set by `_new_instance_identity`)
+        self.reload: Callable[[], tuple[str, str] | None] | None = None
+        self.invoker_id: str | None = invoker_id or os.environ.get("SMO_INVOKER_ID") or None
+        self.invoker_secret: str | None = invoker_secret or os.environ.get("SMO_INVOKER_SECRET") or None
         # Where this module's invoker identity is shared with its other replicas (module_identity.py).
         # None = decide on first use: the database store when MODULE is set, else a per-process identity.
         self._store = store
@@ -186,7 +193,7 @@ class _ModuleIdentity:
     def _grant(self, token_endpoint: str) -> httpx.Response:
         return httpx.post(token_endpoint, json={
             "grant_type": "client_credentials", "client_id": self.invoker_id,
-            "client_secret": self.invoker_secret, "scope": RAPP_SCOPE if identity_kind() == "rapp" else "smo-internal",
+            "client_secret": self.invoker_secret, "scope": RAPP_SCOPE if self.pinned or identity_kind() == "rapp" else "smo-internal",
         }, timeout=5.0, **mtls.client_kwargs(token_endpoint))
 
     def token_for(self, base_url: str, refresh: bool = False) -> str | None:
@@ -207,9 +214,16 @@ class _ModuleIdentity:
                     self._onboard(token_endpoint)
                 resp = self._grant(token_endpoint)
                 # SME answers 400 when it no longer knows the invoker id (for example the registry was reset): register afresh, once, and ask again.
-                if resp.status_code == 400:   # SME no longer knows this invoker: onboard afresh, once
+                # An rApp instance's identity is never replaced this way: its id is what rApp Management and the safeguards know it by.
+                if resp.status_code == 400 and not self.pinned:   # SME no longer knows this invoker: onboard afresh, once
                     self._onboard(token_endpoint, stale_invoker_id=self.invoker_id)
                     resp = self._grant(token_endpoint)
+                elif resp.status_code == 400 and self.reload is not None:
+                    # an instance's secret renewed through another replica (call flow 01e): read the stored one, once, and ask again
+                    fresh = self.reload()
+                    if fresh is not None and fresh != (self.invoker_id, self.invoker_secret):
+                        self.invoker_id, self.invoker_secret = fresh
+                        resp = self._grant(token_endpoint)
                 resp.raise_for_status()
             except (httpx.HTTPError, StopIteration, KeyError, ValueError) as exc:
                 # No token: the call still goes out and R1 answers 401, which
@@ -225,8 +239,110 @@ class _ModuleIdentity:
 
 _identity = _ModuleIdentity()
 
+# docs/call-flows/01-rapp-onboarding-to-deployment.md (01c, 01d): one rApp process may serve several rApp instances, and each instance has its own
+# identity at SME (made by rApp Management at CreateInstance, with its scope claim; its limits, kill switch and approval policy key on it). The
+# identities this process was given are kept in the shared identity store (module_identity, key `rapp-instance:<id>`, the same table and trust
+# as the process's own identity, PR-ST-4), so every replica and a restarted process have them; this dict is the per-process cache of the
+# store. The instance the code running now acts for is a context variable: a call made while acting for an instance with credentials carries
+# that instance's token, any other call this process's own.
+_instance_identities: dict[str, _ModuleIdentity] = {}
+_instances_lock = threading.Lock()
+_acting_instance: contextvars.ContextVar[str | None] = contextvars.ContextVar("smo_acting_instance", default=None)
+
+
+def _instance_key(instance_id: str) -> str:
+    return f"rapp-instance:{instance_id}"
+
+
+def _store():
+    """The shared identity store this process uses (None: memory only, as in a test or a process without MODULE)."""
+    return _identity._identity_store() or None
+
+
+def bind_instance_identity(instance_id: str, invoker_id: str, invoker_secret: str) -> None:
+    """Keeps the credentials rApp Management issued for an rApp instance: in the shared store (every replica, and after a restart) and in this
+    process's cache; a later call replaces them (a rotation). A store that cannot be written is logged and the credentials kept in memory."""
+    instance_id = str(instance_id)
+    store = _store()
+    if store is not None:
+        try:
+            store.put(_instance_key(instance_id), invoker_id, invoker_secret)
+        except Exception as exc:  # the store is shared state, not the only copy: keep serving from memory
+            log.warning("could not store the credentials of rApp instance %s, keeping them in memory: %r", instance_id, exc)
+    with _instances_lock:
+        _instance_identities[instance_id] = _new_instance_identity(instance_id, invoker_id, invoker_secret)
+
+
+def _new_instance_identity(instance_id: str, invoker_id: str, invoker_secret: str) -> _ModuleIdentity:
+    identity = _ModuleIdentity(store=False, invoker_id=invoker_id, invoker_secret=invoker_secret)
+    identity.reload = lambda: _load_stored(instance_id)
+    return identity
+
+
+def _load_stored(instance_id: str) -> tuple[str, str] | None:
+    """The credentials stored for the instance, or None (no store, nothing stored, or the store failed)."""
+    store = _store()
+    if store is None:
+        return None
+    try:
+        return store.load(_instance_key(instance_id))
+    except Exception as exc:
+        log.warning("could not read the stored credentials of rApp instance %s: %r", instance_id, exc)
+        return None
+
+
+def _instance_identity_of(instance_id: str) -> _ModuleIdentity | None:
+    """The identity of an instance: from this process's cache, else from the shared store (and then cached), else None."""
+    with _instances_lock:
+        found = _instance_identities.get(instance_id)
+    if found is not None:
+        return found
+    stored = _load_stored(instance_id)
+    if stored is None:
+        return None
+    with _instances_lock:
+        return _instance_identities.setdefault(instance_id, _new_instance_identity(instance_id, *stored))
+
+
+def forget_instance_identity(instance_id: str) -> None:
+    """Drops an instance's credentials from this process's cache (nothing happens when there are none)."""
+    with _instances_lock:
+        _instance_identities.pop(str(instance_id), None)
+
+
+def instance_identity(instance_id: str) -> str | None:
+    """The invoker id held for an instance (cache or shared store), or None."""
+    found = _instance_identity_of(str(instance_id))
+    return found.invoker_id if found else None
+
+
+def set_acting_instance(instance_id: str | None) -> contextvars.Token:
+    """Makes the calls of the current context act for `instance_id` (None: this process's own identity); returns the token `reset_acting_instance` takes."""
+    return _acting_instance.set(str(instance_id) if instance_id else None)
+
+
+def reset_acting_instance(token: contextvars.Token) -> None:
+    """Undoes a `set_acting_instance`."""
+    _acting_instance.reset(token)
+
+
+@contextlib.contextmanager
+def acting_for(instance_id: str | None):
+    """`with acting_for(id):` the calls inside carry that instance's token when its identity is bound."""
+    token = set_acting_instance(instance_id)
+    try:
+        yield
+    finally:
+        reset_acting_instance(token)
+
 
 def _module_token(base_url: str, refresh: bool = False) -> str | None:
+    """The token of the instance the current context acts for, when its identity is bound; else this process's own."""
+    acting = _acting_instance.get()
+    if acting:
+        bound = _instance_identity_of(acting)
+        if bound is not None:
+            return bound.token_for(base_url, refresh)
     return _identity.token_for(base_url, refresh)
 
 

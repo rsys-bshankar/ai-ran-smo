@@ -13,6 +13,12 @@ from ._common import BaseClient, ensure_ok
 
 class PlatformClient(BaseClient):
     """The `sdk.platform` namespace: provider registration, service publish and discovery and event subscriptions at SME, and `execute_action` / `get_approval` for O1 actions."""
+    def bootstrap_complete(self, instance_id: str) -> dict:
+        """Tells rApp Management that the instance is up (`POST /rapp-mgmt/instances/{id}/bootstrap-complete`): it puts the instance's limits and
+        approval policy in force, registers its SME declarations and moves it DEPLOYING -> RUNNING. Made as the instance (its credentials, bound
+        with `smo_sdk.instances`); rApp Management refuses another caller's (403 NOT_THIS_INSTANCE) and an instance not DEPLOYING (409)."""
+        return ensure_ok(self._r1.post(f"/rapp-mgmt/instances/{instance_id}/bootstrap-complete"))
+
     def register_provider(self, apf_id: str, provider_domain_info: str | None = None) -> dict:
         return ensure_ok(self._r1.post("/sme/provider-registrations", json={
             "apfId": apf_id, "providerDomainInfo": provider_domain_info,

@@ -48,7 +48,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from smo_sdk import AiRuntimeSdk, SdkError
+from smo_sdk import AiRuntimeSdk, SdkError, instances
 from smo_sdk.data import AlarmScope
 from smo_shared.logconfig import install_logging
 from smo_shared.metrics import install_metrics
@@ -66,6 +66,7 @@ from .models import EnergySavingCell, EnergySavingDecision, EnergySavingInstance
 from .producer import SimPublishRequest, diurnal_prb, pm_report, publish_sim, register_sim_type, router as producer_router
 
 app = FastAPI(title="EnergySaving rApp")
+instances.install(app)  # the credentials route rApp Management pushes to, and acting as the instance of each /instances/{id}/... request (call flow 01c)
 install_logging(app)  # structured JSON logs and one access-log line per request (PR-OBS-1)
 install_metrics(app)  # /metrics and request count/latency series (PR-OBS-2)
 apply_correlation_id(app)
@@ -366,7 +367,8 @@ def start_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     db.add(inst)
     _cells(db, inst)
     db.commit()
-    return _instance_view(inst)
+    # call flow 01d: the rApp reports the instance up itself, as the instance (its credentials were pushed at CreateInstance)
+    return {**_instance_view(inst), "bootstrap": instances.bootstrap(sdk, str(instance_id))}
 
 
 @app.get("/instances")

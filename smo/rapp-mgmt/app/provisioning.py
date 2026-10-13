@@ -60,7 +60,10 @@ def provision_instance(db: Session, package_id: uuid.UUID, configuration: dict |
                         authz_scope=authz_scope)
     db.add(inst)
     db.flush()
-    deliver_credentials(inst, register_instance_invoker(inst))   # replaces the placeholder identity; the secret goes to the workload's Secret (or nowhere: see there)
+    secret = register_instance_invoker(inst)
+    # replaces the placeholder identity; the secret goes to the workload's Secret, or, when the deployment has none, is kept on the object (never in
+    # the database) for the caller to push to the instance's operator API once the instance is committed (`push_credentials`)
+    inst.issued_secret = None if deliver_credentials(inst, secret) else secret
 
     nfo_resp = r1.post("/nfo/deployments", json={
         "nfDeploymentDescriptorId": nf_deployment_descriptor_id,  # the real descriptor, per section 5
@@ -209,6 +212,21 @@ def deliver_credentials(inst: RAppInstance, secret: str) -> dict | None:
         with suppress(httpx.HTTPError):
             R1Client().delete(f"/sme/invoker-registrations/{inst.oauth_client_id}")
         raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"the instance's credentials could not be delivered to its workload: {exc}") from exc
+
+
+def push_credentials(inst: RAppInstance, secret: str | None) -> bool:
+    """Hands the instance's credentials to the rApp that serves it: `POST /instances/{id}/credentials` on its operator API, through R1 Termination
+    (`/rapps/{id}/operator/...`, which stamps this module's internal role; the rApp accepts them from no one else). Needs the instance committed with
+    an `operatorApiBase`, since the gateway looks the base up here. True when the rApp took them; False when there is no base or no secret, or the
+    rApp did not answer 2xx (the operator can issue them again: `POST /instances/{id}/credentials`)."""
+    if not inst.operator_api_base or not secret:
+        return False
+    try:
+        resp = R1Client().post(f"/rapps/{inst.instance_id}/operator/instances/{inst.instance_id}/credentials",
+                               json={"oauthClientId": inst.oauth_client_id, "oauthClientSecret": secret})
+    except httpx.HTTPError:
+        return False
+    return 200 <= resp.status_code < 300
 
 
 def onboarding_status(inst: RAppInstance) -> dict:

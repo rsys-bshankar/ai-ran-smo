@@ -1,1 +1,3 @@
-{}
+{
+  "rapp-mgmt/app/provisioning.py POST /rapps/{}/operator/instances/{}/credentials": "call flow 01c: the gateway's dynamic prefix /rapps/{instanceId}/operator/<route> (GUI-8.3, resolved per instance, not in ROUTES); the route is the rApp's own credentials route from smo_sdk.instances, which has no producer spec"
+}

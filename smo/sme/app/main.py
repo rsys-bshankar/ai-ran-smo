@@ -339,6 +339,25 @@ def set_invoker_authz_scope(api_invoker_id: str, body: AuthzScopeRequest, db: Se
     return {"apiInvokerId": inv.api_invoker_id, "authzScope": inv.authz_scope}
 
 
+@app.post("/invoker-registrations/{api_invoker_id}/secret")
+def renew_invoker_secret(api_invoker_id: str, db: Session = Depends(get_session)):
+    """A new onboarding secret for the same invoker id (call flow 01e): rApp Management uses it to re-send a running instance's credentials (its
+    rApp was unreachable when the instance was created, or a rotation), so the instance keeps the id its limits, kill switch and approval policy key on. The old secret stops
+    working at once and the invoker's tokens are revoked, so whoever held them can do nothing more. Internal-only at R1 (`roles.INTERNAL_ONLY`).
+    Emits API_INVOKER_UPDATED."""
+    # Route notes: 200 `{apiInvokerId, onboardingSecret}`, the secret shown here once and stored only as its hash; 400 `INVOKER_NOT_REGISTERED` for an
+    # unknown id (as the PUT above). One transaction: the hash, the revoked tokens and the outbox row commit together.
+    inv = db.get(InvokerRegistration, api_invoker_id)
+    if inv is None:
+        raise framework_error(FrameworkError.INVOKER_NOT_REGISTERED, detail=f"invoker {api_invoker_id} not registered")
+    onboarding_secret = secrets.token_urlsafe(32)
+    inv.onboarding_secret_hash = _hash_secret(onboarding_secret)
+    db.query(IssuedAccessToken).filter(IssuedAccessToken.api_invoker_id == api_invoker_id).delete()
+    notify_invoker_change(db, api_invoker_id, "API_INVOKER_UPDATED")
+    db.commit()
+    return {"apiInvokerId": api_invoker_id, "onboardingSecret": onboarding_secret}
+
+
 @app.delete("/invoker-registrations/{api_invoker_id}", status_code=204)
 def offboard_invoker(api_invoker_id: str, db: Session = Depends(get_session)):
     """DeleteOnboardedInvokersApiInvokerId — offboarding. The invoker's

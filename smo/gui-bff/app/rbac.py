@@ -123,6 +123,9 @@ RULES: list[Rule] = [
           json_overrides=lambda u: {"requestedBy": f"smo-gui:{u.username}"}),
     _rule("DELETE", "/rapp-mgmt/kill-all", A),
     _rule("POST", "/rapp-mgmt/instances/{id}/terminate", A),
+    # call flow 01d: a new secret for the instance's identity, pushed to the rApp that serves it (it lost the credentials it held, a restart); an
+    # identity's secret is an admin's matter, like the invoker registrations
+    _rule("POST", "/rapp-mgmt/instances/{id}/credentials/renew", A),
     _rule("DELETE", "/rapp-mgmt/instances/{id}", A),
     _rule("POST", "/rapp-mgmt/instances/{id}/(performance|fault)", A),   # test-data injection
 

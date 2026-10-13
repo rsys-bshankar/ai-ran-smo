@@ -8,15 +8,17 @@ from test_main import _route_r1_get_post, client, db_session_factory, fake_r1_de
 from app.models import RAppInstance
 
 
-def _create(client, monkeypatch, **extra) -> dict:
-    """Creates an instance through the route with R1 stubbed (`extra` adds request fields such as `operatorApiBase`) and returns the answer.
+def _create(client, monkeypatch, push_status: int = 204, **extra) -> dict:
+    """Creates an instance through the route with R1 stubbed (`extra` adds request fields such as `operatorApiBase`; `push_status` is how the rApp
+    answers the credentials push) and returns the answer, with the pushes made under `_pushed`.
     """
     fake_get, fake_post = _route_r1_get_post()
+    fake_post.push_status = push_status
     monkeypatch.setattr("app.main.R1Client.get", fake_get)
     monkeypatch.setattr("app.main.R1Client.post", fake_post)
     resp = client.post("/instances", json={"packageId": str(uuid.uuid4()), **extra})
     assert resp.status_code == 202, resp.text
-    return resp.json()
+    return {**resp.json(), "_pushed": fake_post.pushed}
 
 
 def test_a_new_instance_has_no_operator_api(client, monkeypatch):
@@ -105,3 +107,43 @@ def test_a_terminated_instance_has_nothing_to_serve(client, monkeypatch):
     assert client.post(f"/instances/{created['instanceId']}/terminate").status_code == 200
     assert client.get(url).json() == {"instanceId": created["instanceId"], "state": "UNDEPLOYED", "operatorApiBase": None}
     assert client.put(url, json={"operatorApiBase": "http://rapp:8000"}).status_code == 409
+
+
+def test_the_credentials_are_pushed_to_the_instances_rapp_at_create(client, monkeypatch):
+    """Call flow 01b: with an operator API base, the new identity's id and secret go to the instance's own rApp, through the gateway's operator path."""
+    created = _create(client, monkeypatch, operatorApiBase="http://energy-saving-rapp:8000")
+    iid = created["instanceId"]
+    assert created["credentialsDelivered"] is True
+    assert created["_pushed"] == [(f"/rapps/{iid}/operator/instances/{iid}/credentials",
+                                   {"oauthClientId": created["oauthClientId"], "oauthClientSecret": "s3cret"})]
+
+
+def test_without_a_base_or_when_the_rapp_refuses_nothing_is_delivered(client, monkeypatch):
+    """No operator API base: nothing is pushed. A rApp that refuses the push: the instance is still created, and the answer says the credentials
+    were not delivered."""
+    assert _create(client, monkeypatch)["credentialsDelivered"] is False
+    assert _create(client, monkeypatch)["_pushed"] == []
+    assert _create(client, monkeypatch, push_status=503, operatorApiBase="http://energy-saving-rapp:8000")["credentialsDelivered"] is False
+
+
+def test_renew_keeps_the_identity_and_pushes_a_new_secret(client, monkeypatch):
+    """Call flow 01d: a renewal asks SME for a new secret of the same invoker and pushes it; without a base the secret is in the answer instead,
+    and an unknown instance is 404."""
+    created = _create(client, monkeypatch, operatorApiBase="http://energy-saving-rapp:8000")
+    renewed = client.post(f"/instances/{created['instanceId']}/credentials/renew")
+    assert renewed.status_code == 200 and renewed.headers["Cache-Control"] == "no-store"
+    assert renewed.json() == {"instanceId": created["instanceId"], "oauthClientId": created["oauthClientId"], "credentialsDelivered": True}
+    assert created["_pushed"][-1][1] == {"oauthClientId": created["oauthClientId"], "oauthClientSecret": "renewed"}
+    bare = _create(client, monkeypatch)
+    answer = client.post(f"/instances/{bare['instanceId']}/credentials/renew").json()
+    assert answer["credentialsDelivered"] is False and answer["oauthClientSecret"] == "renewed"
+    assert client.post(f"/instances/{uuid.uuid4()}/credentials/renew").status_code == 404
+
+
+def test_renew_is_an_error_without_the_secret_when_the_rapp_does_not_take_it(client, monkeypatch):
+    """With an operator API whose rApp refuses the push, the renewal is 503 ENDPOINT_UNREACHABLE and the answer carries no secret."""
+    created = _create(client, monkeypatch, operatorApiBase="http://energy-saving-rapp:8000")
+    import app.main as main_module
+    main_module.R1Client.post.push_status = 503
+    resp = client.post(f"/instances/{created['instanceId']}/credentials/renew")
+    assert resp.status_code == 503 and "renewed" not in resp.text

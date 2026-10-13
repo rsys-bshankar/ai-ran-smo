@@ -80,6 +80,23 @@ class DbIdentityStore:
                 db.rollback()
                 return False
 
+    def put(self, module: str, invoker_id: str, secret: str) -> None:
+        """Stores the identity under `module`, replacing any (an rApp instance's credentials pushed by rApp Management: the push is the truth,
+        there is no race to win)."""
+        with self._session() as db:
+            row = db.get(ModuleIdentityRow, module)
+            if row is None:
+                db.add(ModuleIdentityRow(module=module, invoker_id=invoker_id, invoker_secret=secret))
+            else:
+                row.invoker_id, row.invoker_secret, row.created_at = invoker_id, secret, _now()
+            try:
+                db.commit()
+            except IntegrityError:            # another replica inserted it at the same moment: write over it
+                db.rollback()
+                db.execute(update(ModuleIdentityRow).where(ModuleIdentityRow.module == module)
+                           .values(invoker_id=invoker_id, invoker_secret=secret, created_at=_now()))
+                db.commit()
+
     def replace(self, module: str, stale_invoker_id: str, invoker_id: str, secret: str) -> bool:
         """Compare-and-swap: True only if the stored identity was still `stale_invoker_id`."""
         with self._session() as db:

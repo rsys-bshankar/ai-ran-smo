@@ -2762,6 +2762,39 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.1 — call flow 01 rewritten from the code, and the rApp acting as its instance
+
+The first flow of the call-flow audit (`OPEN_ITEMS.md` DOC-CF), done with the product owner. The old flow 01 drew a workload NFO does not
+start (`docker run --gpus`), a TOSCA read rApp Management does not make, and a container that bootstraps itself, and left out the NFO
+descriptor made at onboarding, the instance's SME identity, `usage/start`, and the limits, approval policy and SME declarations put in force at
+`bootstrap-complete`. Rewritten as five diagrams (onboard, create, credentials, bootstrap, re-send), each call with its inputs, a box on each
+receiver for what it does, and every outcome in an `alt` block; that format is now the rule for every flow.
+
+The audit found what the old diagram hid: rApp Management made a per-instance identity at SME (its scope claim, limits, kill switch, approval
+policy and audit key on it), but the sample rApps, each one process serving every instance of its package, called the platform under one
+identity of their own, so none of that bound them, and no one called `bootstrap-complete` (an instance stayed DEPLOYING). Decided (option B of
+three): one process, one identity per instance.
+
+- **Credentials pushed.** CreateInstance with an `operatorApiBase` commits the instance, then pushes `{oauthClientId, oauthClientSecret}` to
+  `POST /rapps/{id}/operator/instances/{id}/credentials` through R1 Termination (`provisioning.push_credentials`); the answer says
+  `credentialsDelivered`. The secret is never stored by rApp Management.
+- **The SDK keeps an identity per instance** (`smo_shared.r1_client.bind_instance_identity`, stored in the shared `module_identity` table under
+  `rapp-instance:<id>`, the table and trust of the process's own identity, so both replicas of the replicas lane and a restarted rApp have it;
+  cached per process, re-read once when SME refuses a secret renewed through another replica; chosen per call through a context variable;
+  `smo_sdk.instances.install` adds the push route, accepted with the internal role only, and a middleware making each `/instances/{id}/…`
+  request act for that instance). A bound identity is never replaced by a fresh registration when SME refuses it.
+- **The rApp bootstraps itself.** The four samples call `bootstrap-complete` from `/start` (`smo_sdk.instances.bootstrap`, which reports instead
+  of raising); `demo.py` and the runbook test assert RUNNING (the live-stack replay proves it through the real gateway: the in-process mesh
+  stamps every call internal and cannot).
+- **Re-sending the credentials.** For an rApp that was unreachable when the instance was created, or to rotate the secret:
+  `POST /rapp-mgmt/instances/{id}/credentials/renew` (the GUI's **Re-send credentials**, admin) asks SME
+  for a new secret of the **same** invoker (`POST /sme/invoker-registrations/{id}/secret`, internal-only; the old secret and its tokens stop
+  working) and pushes it; a failed push is 503 without the secret, which reaches an answer only when there is no operator API to push to.
+
+Not taken: one workload per instance started by NFO (option A; NFO starts nothing in Phase 1), and accepting the rApp process's own identity
+for an instance (option C; the instance's safeguards would stay unbound). Credentials only in memory were the first cut and are not kept: the
+replicas lane runs two copies of each sample rApp, and a push reaches one of them.
+
 ### A DAST false positive from an echoed 422, and a demo that read a report too early (12 October)
 
 - **DAST `SQL Injection [40018] x121` (`OPEN_ITEMS.md` QA-9.1, one cause found).** Reproduced on `ran-nf-oam` `GET /managed-entities` with `total=true AND 1=1 --`: `total` is a `bool` query parameter, so FastAPI answers 422 with a `bool_parsing` error whose `input` is the raw value. ZAP compares the answer to its `1=1` payload with the answers to the `1=2` payload and to the original request; the only difference was the echoed text, and a response that differs exactly where the payload differs is what its boolean-based test reports. `search` is not injectable (true and false payloads give the same 200). The fix is one handler for every module: `smo_shared.errors.install_validation_error_handler` (installed by `apply_r1_gateway_security`, which every module calls) answers a `RequestValidationError` with the same `{"detail": [...]}` 422 as before with `input`, `ctx` and `url` removed from each error (`type`, `loc` and `msg` stay, so a client still learns which parameter and why). The OpenAPI documents are unchanged (`HTTPValidationError` already has `input` and `ctx` optional) and no test depended on `input`. Not taken: a suppression in `security/zap-baseline.json` (the cause was a real reflection, not noise); escaping or truncating the echo (still reflects the input); handling it only in `ran-nf-oam` (every module has bool and number parameters). Whether this was the whole of QA-9.1 is decided by the next DAST run.

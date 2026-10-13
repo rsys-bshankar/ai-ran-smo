@@ -63,6 +63,8 @@ INTERNAL_ONLY: tuple[tuple[str, frozenset[str], re.Pattern], ...] = tuple(
         ("/ran-nf-oam", ("GET",), r"^/decision-records(/export\.csv)?$"),
         # SEC-10: what a caller (or a target) is scoped to is set by the platform, never by an rApp
         ("/sme", ("PUT",), r"^/invoker-registrations/[^/]+/authz-scope$"),
+        # call flow 01d: a new secret for an existing invoker is rApp Management's act for a RUNNING instance, never an rApp's (it would take the identity over)
+        ("/sme", ("POST",), r"^/invoker-registrations/[^/]+/secret$"),
         ("/ran-nf-oam", ("PUT",), r"^/managed-entities/[^/]+/scope$"),
         # MSG-3.2: the SMO's event feed names every module's entities; the platform and its console follow it, an rApp subscribes through DME's data jobs
         ("/dme", ("GET",), r"^/smo-events$"),

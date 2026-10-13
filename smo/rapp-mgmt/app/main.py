@@ -38,7 +38,7 @@ from smo_shared.timeutil import as_utc
 
 from .models import RAppFaultReport, RAppInstance, RAppPerformanceReport
 from .provisioning import (DEPLOYABLE_PACKAGE_STATES, apply_approval_policy, apply_rapp_limits, onboarding_status, provision_instance, register_instance_invoker, register_sme_declarations,  # noqa: F401
-                           release_instance_resources, deliver_credentials)
+                           release_instance_resources, deliver_credentials, push_credentials)
 from .statemachine import RAPP_INSTANCE_FSM, InstanceEvent, InstanceState
 from .upgrade import (current_instance_id, expire_overdue_upgrade, resolve_upgrade, rollback_target, start_rollback,
                       start_upgrade, version_history)
@@ -183,7 +183,10 @@ def create_instance(body: CreateInstanceRequest, request: Request, db: Session =
                               authz_scope=claim)
     inst.operator_api_base = base
     db.commit()
-    return {"instanceId": str(inst.instance_id), "oauthClientId": inst.oauth_client_id}
+    # call flow 01b: the rApp that serves the instance gets its credentials now, so it can bootstrap as the instance (01c, 01d)
+    with on_own_account():
+        delivered = push_credentials(inst, inst.issued_secret)
+    return {"instanceId": str(inst.instance_id), "oauthClientId": inst.oauth_client_id, "credentialsDelivered": delivered}
 
 
 def _checked_operator_api_base(value: str) -> str:
@@ -230,7 +233,38 @@ def issue_instance_credentials(instance_id: uuid.UUID, response: Response, db: S
     response.headers["Cache-Control"] = "no-store"
     if delivered:       # with delivery on, the secret went to the workload's Secret and goes nowhere else, not even into this answer
         return {"instanceId": str(inst.instance_id), "oauthClientId": inst.oauth_client_id, "credentialSecret": delivered["kubernetesSecret"]}
+    with on_own_account():
+        pushed = push_credentials(inst, secret)
+    if pushed:          # the rApp serving the instance took them: the secret goes nowhere else either
+        return {"instanceId": str(inst.instance_id), "oauthClientId": inst.oauth_client_id, "credentialsDelivered": True}
     return {"instanceId": str(inst.instance_id), "oauthClientId": inst.oauth_client_id, "oauthClientSecret": secret}
+
+
+@app.post("/instances/{instance_id}/credentials/renew")
+def renew_instance_credentials(instance_id: uuid.UUID, response: Response, db: Session = Depends(get_session)):
+    """Call flow 01d: the instance keeps its identity (the id its limits, kill switch and approval policy key on) and gets a new secret, pushed to
+    the rApp that serves it. For an rApp that was unreachable when the instance was created, or to rotate the secret; `/credentials` makes a
+    new identity instead and is for a DEPLOYING instance. 409 for a terminated instance; 503 when SME does not issue the secret, and when the rApp
+    does not take it (retry; the secret is not shown, so it never reaches a browser). Without an operator API to push to, the secret is in this
+    answer, once, for the operator to hand over."""
+    inst = _load_instance(db, instance_id)
+    if not _serves(inst) or not inst.oauth_client_id:
+        raise illegal_transition_error(IllegalTransition(InstanceState(inst.state), InstanceEvent.BOOTSTRAP_OK),
+                                       f"RAppInstance {instance_id}: a terminated instance has no credentials to renew")
+    with on_own_account():
+        try:
+            resp = R1Client().post(f"/sme/invoker-registrations/{inst.oauth_client_id}/secret")
+        except httpx.HTTPError:
+            resp = None
+        if resp is None or resp.status_code != 200:
+            raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail="SME did not issue a new secret for the instance's identity")
+        secret = resp.json()["onboardingSecret"]
+        pushed = push_credentials(inst, secret)
+    if inst.operator_api_base and not pushed:
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail="the rApp serving the instance did not take its new credentials; retry")
+    response.headers["Cache-Control"] = "no-store"
+    body = {"instanceId": str(inst.instance_id), "oauthClientId": inst.oauth_client_id, "credentialsDelivered": pushed}
+    return body if pushed else {**body, "oauthClientSecret": secret}
 
 
 # The body of the kill-switch route: `requestedBy` is recorded at RAN NF OAM as who stopped the instance (the GUI forces it to the signed-in user) and `reason` is optional free text.

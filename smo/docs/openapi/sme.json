@@ -2046,6 +2046,134 @@
         "summary": "Set Invoker Authz Scope"
       }
     },
+    "/invoker-registrations/{api_invoker_id}/secret": {
+      "post": {
+        "description": "A new onboarding secret for the same invoker id (call flow 01e): rApp Management uses it to re-send a running instance's credentials (its\nrApp was unreachable when the instance was created, or a rotation), so the instance keeps the id its limits, kill switch and approval policy key on. The old secret stops\nworking at once and the invoker's tokens are revoked, so whoever held them can do nothing more. Internal-only at R1 (`roles.INTERNAL_ONLY`).\nEmits API_INVOKER_UPDATED.",
+        "operationId": "renew_invoker_secret_invoker_registrations__api_invoker_id__secret_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "api_invoker_id",
+            "required": true,
+            "schema": {
+              "title": "Api Invoker Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Renew Invoker Secret"
+      }
+    },
     "/live": {
       "get": {
         "description": "Liveness probe: the process is up. Depends on nothing else.",

@@ -119,8 +119,14 @@ def _route_r1_get_post(*, onboarding_status="AVAILABLE", registration_id=None, s
             return FakeR1Response(201, {"apfId": json["apfId"]})
         if "/sme/published-apis/" in path and "/service-apis" in path:
             return FakeR1Response(201, {"serviceId": str(service_id)})
+        if path.startswith("/rapps/") and path.endswith("/credentials"):   # call flow 01b: the push to the instance's rApp
+            fake_post.pushed.append((path, json))
+            return FakeR1Response(fake_post.push_status, {})
+        if path.startswith("/sme/invoker-registrations/") and path.endswith("/secret"):   # call flow 01d: a new secret, same id
+            return FakeR1Response(200, {"apiInvokerId": path.split("/")[3], "onboardingSecret": "renewed"})
         raise AssertionError(f"unexpected R1 POST to {path}")
 
+    fake_post.pushed, fake_post.push_status = [], 204
     return fake_get, fake_post
 
 

@@ -258,3 +258,11 @@ def test_deleting_the_stored_invoker_makes_the_next_start_register_a_new_one(sme
     other = replica(store)
     assert other.token_for(R1) and other.invoker_id == "api-invoker-2"
     assert sme.registrations == 2
+
+
+def test_put_stores_or_replaces_whatever_is_there(store):
+    """`put` (an rApp instance's pushed credentials, call flow 01c) writes a new row, then replaces it with the next push."""
+    store.put("rapp-instance:i-1", "inv-1", "s1")
+    assert store.load("rapp-instance:i-1") == ("inv-1", "s1")
+    store.put("rapp-instance:i-1", "inv-1", "s2")
+    assert store.load("rapp-instance:i-1") == ("inv-1", "s2")

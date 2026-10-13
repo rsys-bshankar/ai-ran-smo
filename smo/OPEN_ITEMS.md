@@ -1295,6 +1295,53 @@ Pick any, or mix them. `Needs` is the only constraint.
 7. **Later:** HA, mesh, federation, vendor profiles.
 8. **Dev sanity and demo:** OPS-10.1–10.4 done (the redeploy gate, `.github/workflows/deploy-on-main.yml`); OPS-11.1–11.4 (on-demand Codespaces demo, $0 spending limit) need nothing else; OPS-10.5 onward follows OPS-2 and OPS-5 (OPS-1.6 is done).
 
+## 6. Call-flow enrichment (`DOC-CF`)
+
+The call flows in `docs/call-flows/` are being rewritten, **one at a time, each reviewed with the product owner**, to show what the code does
+and nothing else. Every diagram follows the format set with flow 01: each call with its inputs, a box on the receiver saying what it does
+with them, and an `alt` block for every outcome (success first, then each failure and what the caller gets); a step a person or component
+takes is its own diagram; gaps against the target design are marked as Phase 1 notes, never drawn as if done. For each flow: audit (what is
+there, what is right, what is wrong), agree the corrections, then build what the agreed flow needs and rewrite the document in one change.
+
+### DOC-CF-1 — rApp lifecycle flows
+
+| ID | Flow | State |
+|---|---|---|
+| DOC-CF-1.1 | 01 rApp onboarding → running instance (01a-01e; the instance identity and the rApp's own bootstrap built for it) | done in this change: `HISTORY.md` DOC-CF-1.1 |
+| DOC-CF-1.2 | 06 package lifecycle | next |
+| DOC-CF-1.3 | 07 rApp instance lifecycle (upgrade, rollback, terminate, faults, kill switch) | open |
+| DOC-CF-1.4 | 15 NFO workload lifecycle | open |
+| DOC-CF-1.5 | 17 model runtime lifecycle | open |
+| DOC-CF-1.6 | 02 AI/ML model train → inference | open |
+| DOC-CF-1.7 | 26 model governance and end of life | open |
+| DOC-CF-1.8 | the rest: 03, 04, 08-14, 16, 18-25, 27 | open |
+
+### DOC-CF-2 — Each module's own lifecycle, from that module's point of view
+
+One document per module, under the module (`<module>/docs/lifecycle.md`), for the engineer who owns the module: how it comes up and becomes ready
+to serve (configuration and secrets read, database and migrations, its identity at SME, what it registers, its probes), what it does in its
+life (each request, subscription, notification and indication it sends or receives, its workers and scheduled tasks, its retries and outbox),
+and how it stops and recovers. Same diagram format.
+
+| ID | Modules | State |
+|---|---|---|
+| DOC-CF-2.1 | R1 Termination, SME | open |
+| DOC-CF-2.2 | Onboarding, rApp Management, NFO, FOCOM | open |
+| DOC-CF-2.3 | DME, RAN NF OAM, mock O1 adaptor | open |
+| DOC-CF-2.4 | AIMgF, MLMR, MLLF, RAN Analytics, MDAF | open |
+| DOC-CF-2.5 | Intent Service, SO SMOS, SA SMOS | open |
+| DOC-CF-2.6 | GUI backend and GUI; the sample rApps and the SDK | open |
+
+### DOC-CF-3 — Deployment and operations flows
+
+| ID | Flow | State |
+|---|---|---|
+| DOC-CF-3.1 | Docker compose: start-up order, `migrate`, secrets, readiness, profiles (tracing, logging, mTLS, PgBouncer, replicas) | open |
+| DOC-CF-3.2 | Kubernetes with the Helm chart: install, readiness, secrets, the GitOps overlays | open |
+| DOC-CF-3.3 | Upgrade: rolling upgrade, expand/contract migrations, the previous release's code on the new schema | open |
+| DOC-CF-3.4 | Schema migration on its own (Alembic, roles and grants) | open |
+| DOC-CF-3.5 | Backup, restore and disaster recovery drill | open |
+
 ## v0.5.0 validation inventory (started)
 - **Every CHECK constraint on a status/enum column against the code that writes it: done (V-5).** `tests_integration/test_check_constraints.py` covers all 97 single-column lists (ten state-machine columns by enum, the rest by assigned literals); computed values and multi-column checks are not covered.
 - **The whole v0.5.0 validation plan** (by category, with the order of work, lanes and exit criteria) is `docs/VALIDATION.md`.

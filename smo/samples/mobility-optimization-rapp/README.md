@@ -85,7 +85,8 @@ Paths are relative to the service root; through R1 Termination they sit under `/
 | Route | Purpose |
 |---|---|
 | `GET /health` | Liveness |
-| `POST /instances/{id}/start` | Bind to the rapp-mgmt instance, discover datasets |
+| `POST /instances/{id}/start` | Bind to the rapp-mgmt instance, discover datasets; then reports the instance up **as the instance** (`smo_sdk.instances.bootstrap` → `bootstrap-complete`, call flow 01d): the answer's `bootstrap` is `{state: RUNNING}`, or `{state: null, reason}` (`NO_CREDENTIALS` when rApp Management has not pushed the instance's credentials) |
+| `POST /instances/{id}/credentials` | Where rApp Management pushes the instance's credentials (`smo_sdk.instances`, call flow 01c): accepted with the internal role only; kept in the shared identity table (every replica, and after a restart). Every request under `/instances/{id}/` then acts as that instance |
 | `GET /instances`, `GET /instances/{id}` | Instance state |
 | `POST /instances/{id}/lifecycle/{train,validate,emulate,deploy}` | Model lifecycle; deploy also writes DMRO bounds |
 | `POST /instances/{id}/evaluate` | One closed-loop pass |
