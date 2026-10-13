@@ -115,12 +115,13 @@ describe("flow 06 — the cascade-delete guard", () => {
   it("a FAILED package skips straight to delete", () => {
     expect(statuses(flow06(pkg("FAILED"), [], 0))).toEqual(["warn", "done", "done", "done", "done", "current"]);
   });
-  // Priming is optional, and a primed package is told to deprime before it is deprecated.
-  it("priming is optional, and a primed package must be deprimed before it is deprecated", () => {
+  // Priming is optional, and a primed package can be deprecated as it is (call flow 06b): deprecate is the next step, with no "deprime first".
+  it("priming is optional, and a primed package can be deprecated without depriming", () => {
     expect(flow06(pkg("AVAILABLE"), [], 0)[1].detail).toBe("optional — not primed");
     const primed = flow06(pkg("PRIMED"), [], 1);
     expect(primed[1].detail).toBe("PRIMED");
-    expect(primed[3]).toMatchObject({ status: "current", detail: "deprime first (refused while usage is active)" });
+    expect(primed[3]).toMatchObject({ status: "current" });
+    expect(primed[3].detail).toBeUndefined();
   });
 });
 

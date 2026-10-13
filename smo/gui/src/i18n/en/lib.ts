@@ -86,7 +86,6 @@ export const lib = {
   "flows.lib.f06.usable": "Package usable: instances may reference it",
   "flows.lib.f06.instances": "{n} instance(s)",
   "flows.lib.f06.deprecate": "Deprecate (AVAILABLE → DEPRECATED)",
-  "flows.lib.f06.deprimeFirst": "deprime first (refused while usage is active)",
   "flows.lib.f06.guard": "Cascade-delete guard: no active usage registrations",
   "flows.lib.f06.usage": "{active} active / {n} usage registration(s)",
   "flows.lib.f06.usage.blocked": "{active} active / {n} usage registration(s) — delete is blocked",

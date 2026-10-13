@@ -54,8 +54,19 @@ def db_session_factory():
 
 
 @pytest.fixture
-def client(db_session_factory):
-    """A TestClient of the app whose database sessions come from `db_session_factory`; the override is removed after the test."""
+def client(db_session_factory, monkeypatch):
+    """A TestClient of the app whose database sessions come from `db_session_factory`; the override is removed after the test.
+
+    NFO's DeleteDescriptor (`app.main.R1Client.delete`) answers 204 unless a test patches it again; the paths it was called with are in `client.nfo_deletes`.
+    """
+    nfo_deletes: list[str] = []
+
+    def fake_delete(self, path, **kw):
+        nfo_deletes.append(path)
+        return FakeR1Response(204, {})
+
+    monkeypatch.setattr("app.main.R1Client.delete", fake_delete)
+
     def override_get_session():
         session = db_session_factory()
         try:
@@ -64,7 +75,9 @@ def client(db_session_factory):
             session.close()
 
     app.dependency_overrides[get_session] = override_get_session
-    yield TestClient(app)
+    test_client = TestClient(app)
+    test_client.nfo_deletes = nfo_deletes  # type: ignore[attr-defined]
+    yield test_client
     app.dependency_overrides.clear()
 
 
@@ -468,7 +481,7 @@ def test_delete_blocked_by_dependent_child_package(client, db_session_factory, m
 
     resp = client.delete(f"/packages/{parent_id}")
     assert resp.status_code == 409
-    assert resp.json()["detail"]["title"] == "SERVICE_NAME_CONFLICT"
+    assert resp.json()["detail"]["title"] == "PACKAGE_IN_USE"
 
 
 def test_delete_blocked_by_active_usage_registration(client, monkeypatch):
@@ -481,7 +494,7 @@ def test_delete_blocked_by_active_usage_registration(client, monkeypatch):
 
     resp = client.delete(f"/packages/{package_id}")
     assert resp.status_code == 409
-    assert resp.json()["detail"]["title"] == "SERVICE_NAME_CONFLICT"
+    assert resp.json()["detail"]["title"] == "PACKAGE_IN_USE"
 
 
 def test_delete_succeeds_once_usage_registration_is_stopped(client, monkeypatch):
@@ -526,7 +539,7 @@ def test_deprime_blocked_by_active_usage_registration(client, monkeypatch):
 
     resp = client.post(f"/packages/{package_id}/deprime")
     assert resp.status_code == 409
-    assert resp.json()["detail"]["title"] == "SERVICE_NAME_CONFLICT"
+    assert resp.json()["detail"]["title"] == "PACKAGE_IN_USE"
 
     with_package = client.get("/packages", params={"state": "PRIMED"}).json()["items"]
     assert [p["packageId"] for p in with_package] == [package_id]
@@ -772,8 +785,8 @@ def _set_state(db_session_factory, package_id, state):
 
 
 @pytest.mark.parametrize("route,state,event", [
-    ("deprecate", "PRIMED", "DEPRECATE"),
     ("deprecate", "DEPRECATED", "DEPRECATE"),
+    ("deprecate", "DELETING", "DEPRECATE"),
     ("prime", "DEPRECATED", "PRIME"),
     ("prime", "PRIMED", "PRIME"),
     ("deprime", "AVAILABLE", "DEPRIME"),
@@ -1117,3 +1130,200 @@ def test_an_unsigned_zip_bomb_ends_the_package_failed_with_the_reason(client, mo
     answer, pkg = _onboard_raw(client, monkeypatch, "x: " + "0" * (60 * 1024 * 1024))
     assert pkg["state"] == "FAILED" and "too large to read" in answer["failureReason"]
     assert pkg["aiCapabilities"] is None and pkg["nfDeploymentDescriptorId"] is None
+
+
+# ---- call flow 06 (DOC-CF-1.2): descriptor cleanup, the usage contract, no package left in ONBOARDING
+
+def test_delete_deletes_the_nfo_descriptor_and_clears_it(client, monkeypatch):
+    """Deleting an AVAILABLE package deletes its NF deployment descriptor at NFO, and the DELETING package no longer names it."""
+    package_id = _make_available_package(client, monkeypatch)
+    descriptor = client.get(f"/packages/{package_id}/onboarding-status").json()["nfDeploymentDescriptorId"]
+
+    resp = client.delete(f"/packages/{package_id}")
+
+    assert resp.status_code == 200 and resp.json()["state"] == "DELETING"
+    assert resp.json()["nfDeploymentDescriptorId"] is None
+    assert client.nfo_deletes == [f"/nfo/descriptors/{descriptor}"]
+
+
+@pytest.mark.parametrize("nfo_status,status,title", [(409, 409, "PACKAGE_IN_USE"), (500, 503, "ENDPOINT_UNREACHABLE")])
+def test_delete_refused_by_nfo_leaves_the_package_as_it_was(client, monkeypatch, nfo_status, status, title):
+    """NFO refusing the descriptor delete (a deployment still uses it) is 409 PACKAGE_IN_USE, any other failure 503; the package stays AVAILABLE."""
+    package_id = _make_available_package(client, monkeypatch)
+    monkeypatch.setattr("app.main.R1Client.delete", lambda self, path, **kw: FakeR1Response(nfo_status, {}))
+
+    resp = client.delete(f"/packages/{package_id}")
+
+    assert resp.status_code == status and resp.json()["detail"]["title"] == title
+    status_now = client.get(f"/packages/{package_id}/onboarding-status").json()
+    assert status_now["state"] == "AVAILABLE" and status_now["nfDeploymentDescriptorId"] is not None
+
+
+def test_guard_refusal_does_not_call_nfo(client, monkeypatch):
+    """A delete the cascade guard refuses never reaches NFO: the descriptor stays."""
+    package_id = _make_available_package(client, monkeypatch)
+    client.post(f"/packages/{package_id}/usage/start", params={"consumer_id": "instance-1"})
+
+    assert client.delete(f"/packages/{package_id}").status_code == 409
+    assert client.nfo_deletes == []
+
+
+def test_delete_failed_package_deletes_its_descriptor_and_stopped_registrations(client, db_session_factory, monkeypatch):
+    """A FAILED package that NFO made a descriptor for has it deleted, and the package's stopped registrations go with the row (no foreign key in the way)."""
+    package_id = _make_available_package(client, monkeypatch)
+    reg = client.post(f"/packages/{package_id}/usage/start", params={"consumer_id": "i-1"}).json()["registrationId"]
+    client.post(f"/packages/{package_id}/usage/{reg}/stop")
+    descriptor = client.get(f"/packages/{package_id}/onboarding-status").json()["nfDeploymentDescriptorId"]
+    _set_state(db_session_factory, package_id, "FAILED")
+
+    resp = client.delete(f"/packages/{package_id}")
+
+    assert resp.status_code == 200 and resp.json() == {"status": "deleted"}
+    assert client.nfo_deletes == [f"/nfo/descriptors/{descriptor}"]
+    with db_session_factory() as session:
+        assert session.query(PackageUsageRegistration).count() == 0
+
+
+@pytest.mark.parametrize("state", ["DEPRECATED", "FAILED", "DELETING", "ONBOARDING"])
+def test_usage_start_refuses_a_package_that_is_not_deployable(client, db_session_factory, monkeypatch, state):
+    """usage/start is refused with 409 PACKAGE_NOT_DEPLOYABLE unless the package is AVAILABLE or PRIMED, and opens nothing."""
+    package_id = _make_available_package(client, monkeypatch)
+    _set_state(db_session_factory, package_id, state)
+
+    resp = client.post(f"/packages/{package_id}/usage/start", params={"consumer_id": "i-1"})
+
+    assert resp.status_code == 409 and resp.json()["detail"]["title"] == "PACKAGE_NOT_DEPLOYABLE"
+    assert client.get(f"/packages/{package_id}/usage").json()["items"] == []
+
+
+def test_usage_start_on_a_primed_package(client, monkeypatch):
+    """A PRIMED package takes usage registrations like an AVAILABLE one."""
+    package_id = _make_available_package(client, monkeypatch)
+    client.post(f"/packages/{package_id}/prime")
+    assert client.post(f"/packages/{package_id}/usage/start", params={"consumer_id": "i-1"}).status_code == 200
+
+
+def test_an_unexpected_error_while_onboarding_ends_failed_not_onboarding(client, monkeypatch):
+    """An error outside the validation failures (here NFO answering 201 with no usable id) ends the package FAILED, and it can be deleted."""
+    monkeypatch.setattr("app.main._validate_package", lambda location: ("Definitions/main.yaml", [], "deadbeef", {}))
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(201, {"nfDeploymentDescriptorId": "not-a-uuid"}))
+
+    accepted = client.post("/packages", json={"location": "http://example/pkg.csar"})
+
+    assert accepted.status_code == 202 and accepted.json()["failureReason"] == "ValueError"
+    package_id = accepted.json()["packageId"]
+    assert client.get(f"/packages/{package_id}/onboarding-status").json()["state"] == "FAILED"
+    assert client.delete(f"/packages/{package_id}").json() == {"status": "deleted"}
+
+
+def _registration(client, monkeypatch, consumer_id):
+    """An AVAILABLE package with one open registration for `consumer_id`; returns (package id, registration id)."""
+    package_id = _make_available_package(client, monkeypatch)
+    reg = client.post(f"/packages/{package_id}/usage/start", params={"consumer_id": consumer_id}).json()["registrationId"]
+    return package_id, reg
+
+
+@pytest.mark.parametrize("answer", [FakeR1Response(404, {}), FakeR1Response(200, {"state": "UNDEPLOYED"})])
+def test_release_closes_a_registration_whose_instance_is_gone(client, monkeypatch, answer):
+    """release stops a registration whose rApp instance no longer exists or is UNDEPLOYED, and the delete guard lifts."""
+    instance_id = str(uuid.uuid4())
+    package_id, reg = _registration(client, monkeypatch, instance_id)
+    asked = []
+    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: asked.append(path) or answer)
+
+    resp = client.post(f"/packages/{package_id}/usage/{reg}/release")
+
+    assert resp.status_code == 200 and asked == [f"/rapp-mgmt/instances/{instance_id}"]
+    assert client.get(f"/packages/{package_id}/usage").json()["items"][0]["active"] is False
+    assert client.delete(f"/packages/{package_id}").json()["state"] == "DELETING"
+
+
+@pytest.mark.parametrize("state", ["DEPLOYING", "RUNNING", "UPGRADING", "FAULTED"])
+def test_release_refuses_while_the_instance_still_holds_the_package(client, monkeypatch, state):
+    """An instance that still exists, in any state but UNDEPLOYED, holds its registration: 409 PACKAGE_IN_USE, the registration stays open."""
+    package_id, reg = _registration(client, monkeypatch, str(uuid.uuid4()))
+    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeR1Response(200, {"state": state}))
+
+    resp = client.post(f"/packages/{package_id}/usage/{reg}/release")
+
+    assert resp.status_code == 409 and resp.json()["detail"]["title"] == "PACKAGE_IN_USE"
+    assert client.get(f"/packages/{package_id}/usage").json()["items"][0]["active"] is True
+
+
+def test_release_is_503_when_rapp_management_cannot_answer(client, monkeypatch):
+    """No answer from rApp Management is 503 ENDPOINT_UNREACHABLE, the registration stays open."""
+    import httpx
+
+    package_id, reg = _registration(client, monkeypatch, str(uuid.uuid4()))
+
+    def unreachable(self, path, **kw):
+        raise httpx.ConnectError("down")
+
+    monkeypatch.setattr("app.main.R1Client.get", unreachable)
+
+    resp = client.post(f"/packages/{package_id}/usage/{reg}/release")
+
+    assert resp.status_code == 503 and resp.json()["detail"]["title"] == "ENDPOINT_UNREACHABLE"
+    assert client.get(f"/packages/{package_id}/usage").json()["items"][0]["active"] is True
+
+
+def test_release_of_a_consumer_that_was_never_an_instance_asks_no_one(client, monkeypatch):
+    """A consumer id that is not a UUID (the GUI's old test registrations) was never an rApp instance: released without asking rApp Management, and a second
+    release answers 200 too."""
+    package_id, reg = _registration(client, monkeypatch, "smo-gui-test")
+    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: pytest.fail("rApp Management was asked"))
+
+    assert client.post(f"/packages/{package_id}/usage/{reg}/release").status_code == 200
+    assert client.post(f"/packages/{package_id}/usage/{reg}/release").status_code == 200
+    assert client.get(f"/packages/{package_id}/usage").json()["items"][0]["active"] is False
+
+
+def test_release_of_an_unknown_registration_is_404(client, monkeypatch):
+    """release answers like usage/stop for an unknown registration."""
+    package_id = _make_available_package(client, monkeypatch)
+    resp = client.post(f"/packages/{package_id}/usage/{uuid.uuid4()}/release")
+    assert resp.status_code == 404 and resp.json()["detail"]["title"] == "PACKAGE_USAGE_REGISTRATION_NOT_FOUND"
+
+
+def test_delete_when_nfo_cannot_be_reached_is_503_and_changes_nothing(client, monkeypatch):
+    """NFO not answering the descriptor delete is 503 ENDPOINT_UNREACHABLE; the package stays AVAILABLE with its descriptor."""
+    import httpx
+
+    package_id = _make_available_package(client, monkeypatch)
+
+    def unreachable(self, path, **kw):
+        raise httpx.ConnectError("down")
+
+    monkeypatch.setattr("app.main.R1Client.delete", unreachable)
+
+    resp = client.delete(f"/packages/{package_id}")
+
+    assert resp.status_code == 503 and resp.json()["detail"]["title"] == "ENDPOINT_UNREACHABLE"
+    assert client.get(f"/packages/{package_id}/onboarding-status").json()["state"] == "AVAILABLE"
+
+
+def test_release_is_503_when_rapp_management_answers_an_error(client, monkeypatch):
+    """rApp Management answering anything but 200 or 404 is 503 ENDPOINT_UNREACHABLE; the registration stays open."""
+    package_id, reg = _registration(client, monkeypatch, str(uuid.uuid4()))
+    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeR1Response(500, {}))
+
+    resp = client.post(f"/packages/{package_id}/usage/{reg}/release")
+
+    assert resp.status_code == 503 and resp.json()["detail"]["title"] == "ENDPOINT_UNREACHABLE"
+    assert client.get(f"/packages/{package_id}/usage").json()["items"][0]["active"] is True
+
+
+def test_a_primed_package_with_a_running_instance_can_be_deprecated(client, monkeypatch):
+    """Call flow 06b: a PRIMED package is deprecated without depriming, even while an instance holds it (deprime would be refused); the registration
+    stays open, a new registration is refused, and cancel-delete brings the package back AVAILABLE."""
+    package_id = _make_available_package(client, monkeypatch)
+    client.post(f"/packages/{package_id}/prime")
+    client.post(f"/packages/{package_id}/usage/start", params={"consumer_id": "instance-1"})
+    assert client.post(f"/packages/{package_id}/deprime").status_code == 409
+
+    resp = client.post(f"/packages/{package_id}/deprecate")
+
+    assert resp.status_code == 200 and resp.json()["state"] == "DEPRECATED"
+    assert client.get(f"/packages/{package_id}/usage").json()["items"][0]["active"] is True
+    assert client.post(f"/packages/{package_id}/usage/start", params={"consumer_id": "instance-2"}).json()["detail"]["title"] == "PACKAGE_NOT_DEPLOYABLE"
+    assert client.post(f"/packages/{package_id}/cancel-delete").json()["state"] == "AVAILABLE"

@@ -22,7 +22,7 @@ FLOWS = SMO / "docs" / "call-flows"
 IMAGES = FLOWS / "images"
 MANIFEST = IMAGES / "manifest.json"
 MERMAID_JS = SMO / "gui" / "node_modules" / "mermaid" / "dist" / "mermaid.min.js"
-_BLOCK = re.compile(r"^## (.+?)\n(?:(?!^## ).)*?```mermaid\n(.*?)```", re.S | re.M)
+_BLOCK = re.compile(r"^## ([^\n]+)\n(?:(?!^## ).)*?```mermaid\n(.*?)```", re.S | re.M)  # the heading is one line: a `.+?` there let a section with no diagram borrow the next one
 
 
 def diagrams(document: Path) -> list[tuple[str, str, str]]:
@@ -63,6 +63,10 @@ def render(documents: list[Path]) -> None:
         for document in documents:
             folder = IMAGES / document.stem
             folder.mkdir(parents=True, exist_ok=True)
+            # the document is drawn whole: images of diagrams it no longer has (a heading renamed or removed) go, from the folder and the manifest
+            for stale in folder.glob("*.png"):
+                stale.unlink()
+            manifest = {key: value for key, value in manifest.items() if not key.startswith(f"{document.stem}/")}
             for name, title, source in diagrams(document):
                 page.set_content(_page(f"Call flow {title}", source, library))
                 page.wait_for_function("document.body.dataset.done")

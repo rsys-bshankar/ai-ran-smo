@@ -151,7 +151,7 @@ def test_creating_an_instance_fails_if_sme_will_not_register_its_identity(client
     """If SME refuses the registration, create is 503 and nothing is deregistered."""
     seen = _wire_invokers(monkeypatch)
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(503, {}) if path == "/sme/invoker-registrations"
-                        else FakeR1Response(200, {"nfDeploymentId": "x"}))
+                        else FakeR1Response(200, {"nfDeploymentId": "x", "registrationId": str(uuid.uuid4())}))
     assert client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}}).status_code == 503
     assert seen["delete"] == []
 

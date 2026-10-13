@@ -456,3 +456,26 @@ def test_instantiate_and_scale_with_an_idempotency_key_run_once(client, monkeypa
 def test_an_unknown_operation_is_404(client):
     """An operation id that does not exist is a 404."""
     assert client.get("/operations/e3e70682-c209-1cac-a29f-6fbed82c07cd").status_code == 404
+
+
+def test_delete_descriptor_removes_it_and_is_idempotent(client, db_session_factory):
+    """DeleteDescriptor (call flow 06c) answers 204 and the row is gone; deleting it again, or an unknown id, is 204 too."""
+    descriptor_id = _create_descriptor(client)
+
+    assert client.delete(f"/descriptors/{descriptor_id}").status_code == 204
+    with db_session_factory() as session:
+        assert session.get(NFDeploymentDescriptor, uuid.UUID(descriptor_id)) is None
+    assert client.delete(f"/descriptors/{descriptor_id}").status_code == 204
+    assert client.delete(f"/descriptors/{uuid.uuid4()}").status_code == 204
+
+
+def test_delete_descriptor_refused_while_deployed_then_allowed_after_terminate(client, monkeypatch):
+    """A descriptor a deployment uses is 409 NFDEPLOYMENT_DESCRIPTOR_ALREADY_DEPLOYED; once that deployment is terminated the delete succeeds."""
+    descriptor_id = _create_descriptor(client)
+    deployment_id = _instantiate(client, monkeypatch, descriptor_id=descriptor_id).json()["nfDeploymentId"]
+
+    refused = client.delete(f"/descriptors/{descriptor_id}")
+    assert refused.status_code == 409 and refused.json()["detail"]["title"] == "NFDEPLOYMENT_DESCRIPTOR_ALREADY_DEPLOYED"
+
+    client.delete(f"/deployments/{deployment_id}")
+    assert client.delete(f"/descriptors/{descriptor_id}").status_code == 204

@@ -144,3 +144,15 @@ def test_delete_has_no_edge_from_primed(db):
     pkg = make_package(db, state=PackageState.PRIMED)
     with pytest.raises(IllegalTransition):
         ONBOARDING_FSM.fire(PackageState.PRIMED, PackageEvent.DELETE, db=db, package=pkg)
+
+
+def test_primed_package_can_be_deprecated_without_a_guard(db):
+    """DOC-CF-1.2: DEPRECATE has an edge from PRIMED with no guard, so an open usage registration does not block it; CANCEL_DELETE then returns AVAILABLE."""
+    pkg = make_package(db, state=PackageState.PRIMED)
+    db.add(PackageUsageRegistration(package_id=pkg.package_id, consumer_id="instance-1"))
+    db.flush()
+
+    state = ONBOARDING_FSM.fire(PackageState.PRIMED, PackageEvent.DEPRECATE, db=db, package=pkg)
+
+    assert state == PackageState.DEPRECATED
+    assert ONBOARDING_FSM.fire(state, PackageEvent.CANCEL_DELETE, db=db, package=pkg) == PackageState.AVAILABLE

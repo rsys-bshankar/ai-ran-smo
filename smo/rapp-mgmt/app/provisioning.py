@@ -37,48 +37,75 @@ def provision_instance(db: Session, package_id: uuid.UUID, configuration: dict |
                        autonomy_mode: str, region_scope: dict | None, approval_policy: dict | None = None, authz_scope: dict | None = None) -> RAppInstance:
     """Requires a validated package: AVAILABLE, or PRIMED (AVAILABLE plus
     pre-provisioned resources; D-SEC-RAPP-1) — 404 PACKAGE_NOT_FOUND for an
-    unknown package, 409 MODEL_NOT_CERTIFIED for any other state. NFO handoff
+    unknown package, 409 PACKAGE_NOT_DEPLOYABLE for any other state. NFO handoff
     per Onboarding/rApp Mgmt LLD section 5: reads the package's TOSCA service
     template and issues NFO.Instantiate. The new row is flushed, not committed.
+
+    Call flow 06: the package usage registration is opened first, before
+    anything else is made for the instance, and the instance is not created
+    without it — Onboarding's PACKAGE_NOT_DEPLOYABLE (the package changed
+    state since it was read) is passed on, any other refusal is 502
+    UPSTREAM_FAILED, no answer 503 ENDPOINT_UNREACHABLE. When a later step
+    raises, the registration is stopped again (best-effort), so a failed
+    create leaves no registration holding the package.
     """
     r1 = R1Client()
     pkg_resp = r1.get(f"/onboarding/packages/{package_id}/onboarding-status")
     if pkg_resp.status_code == 404:
         raise framework_error(FrameworkError.PACKAGE_NOT_FOUND, detail=f"no such package {package_id}")
     if pkg_resp.status_code != 200 or pkg_resp.json().get("state") not in DEPLOYABLE_PACKAGE_STATES:
-        raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED, detail="package is not AVAILABLE or PRIMED")
+        raise framework_error(FrameworkError.PACKAGE_NOT_DEPLOYABLE, detail="package is not AVAILABLE or PRIMED")
     nf_deployment_descriptor_id = pkg_resp.json().get("nfDeploymentDescriptorId")
     if not nf_deployment_descriptor_id:
         # Every package that reaches AVAILABLE has one — OnboardPackage's own
         # validation pipeline creates it via NFO's CreateDescriptor (NFO+FOCOM
         # LLD section 2). Missing here means an inconsistent record, not a
         # normal refusal.
-        raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED, detail="package has no nfDeploymentDescriptorId")
+        raise framework_error(FrameworkError.PACKAGE_NOT_DEPLOYABLE, detail="package has no nfDeploymentDescriptorId")
 
     inst = RAppInstance(package_id=package_id, configuration=configuration, state=InstanceState.DEPLOYING,
                         oauth_client_id=str(uuid.uuid4()), autonomy_mode=autonomy_mode, region_scope=region_scope, approval_policy=approval_policy,
                         authz_scope=authz_scope)
     db.add(inst)
     db.flush()
-    secret = register_instance_invoker(inst)
-    # replaces the placeholder identity; the secret goes to the workload's Secret, or, when the deployment has none, is kept on the object (never in
-    # the database) for the caller to push to the instance's operator API once the instance is committed (`push_credentials`)
-    inst.issued_secret = None if deliver_credentials(inst, secret) else secret
+    inst.package_usage_registration_id = _start_usage(r1, package_id, inst.instance_id)
+    try:
+        secret = register_instance_invoker(inst)
+        # replaces the placeholder identity; the secret goes to the workload's Secret, or, when the deployment has none, is kept on the object (never in
+        # the database) for the caller to push to the instance's operator API once the instance is committed (`push_credentials`)
+        inst.issued_secret = None if deliver_credentials(inst, secret) else secret
 
-    nfo_resp = r1.post("/nfo/deployments", json={
-        "nfDeploymentDescriptorId": nf_deployment_descriptor_id,  # the real descriptor, per section 5
-        "name": f"rapp-instance-{inst.instance_id}",  # NFO's own duplication guard (HISTORY.md §5) needs a real name
-        "requiredResourceTypeId": (configuration or {}).get("requiredResourceTypeId"),
-    })
-    # NFO Instantiate answers 202 Accepted (nfo/app/main.py) — a 200-only check
-    # dropped every real workloadRef. workload_ref IS the NFO nfDeploymentId,
-    # which TERMINATE later hands back to NFO's DELETE /deployments/{id}.
-    inst.workload_ref = nfo_resp.json().get("nfDeploymentId") if nfo_resp.status_code in (200, 202) else None
-
-    usage_resp = r1.post(f"/onboarding/packages/{package_id}/usage/start", params={"consumer_id": str(inst.instance_id)})
-    if usage_resp.status_code == 200:
-        inst.package_usage_registration_id = uuid.UUID(usage_resp.json()["registrationId"])
+        nfo_resp = r1.post("/nfo/deployments", json={
+            "nfDeploymentDescriptorId": nf_deployment_descriptor_id,  # the real descriptor, per section 5
+            "name": f"rapp-instance-{inst.instance_id}",  # NFO's own duplication guard (HISTORY.md §5) needs a real name
+            "requiredResourceTypeId": (configuration or {}).get("requiredResourceTypeId"),
+        })
+        # NFO Instantiate answers 202 Accepted (nfo/app/main.py) — a 200-only check
+        # dropped every real workloadRef. workload_ref IS the NFO nfDeploymentId,
+        # which TERMINATE later hands back to NFO's DELETE /deployments/{id}.
+        inst.workload_ref = nfo_resp.json().get("nfDeploymentId") if nfo_resp.status_code in (200, 202) else None
+    except Exception:
+        # the instance is not created (the flushed row is rolled back with the request), so nothing may keep holding the package for it
+        with suppress(httpx.HTTPError):
+            r1.post(f"/onboarding/packages/{package_id}/usage/{inst.package_usage_registration_id}/stop")
+        raise
     return inst
+
+
+def _start_usage(r1: R1Client, package_id: uuid.UUID, instance_id: uuid.UUID) -> uuid.UUID:
+    """Opens the package usage registration for a new instance (`usage/start`, consumer = the instance id) and returns its id; raises when Onboarding refuses
+    or does not answer (see `provision_instance`), so the instance is not created."""
+    try:
+        resp = r1.post(f"/onboarding/packages/{package_id}/usage/start", params={"consumer_id": str(instance_id)})
+    except httpx.HTTPError as exc:
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"Onboarding usage/start: {type(exc).__name__}") from exc
+    if resp.status_code == 409:
+        raise framework_error(FrameworkError.PACKAGE_NOT_DEPLOYABLE, detail="package is not AVAILABLE or PRIMED (Onboarding refused the usage registration)")
+    if resp.status_code == 404:
+        raise framework_error(FrameworkError.PACKAGE_NOT_FOUND, detail=f"no such package {package_id}")
+    if resp.status_code != 200:
+        raise framework_error(FrameworkError.UPSTREAM_FAILED, detail=f"Onboarding usage/start answered {resp.status_code}")
+    return uuid.UUID(resp.json()["registrationId"])
 
 
 def _step(call) -> str:

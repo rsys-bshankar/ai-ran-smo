@@ -759,7 +759,7 @@
     },
     "/packages/{package_id}": {
       "delete": {
-        "description": "AVAILABLE/DEPRECATED -> DELETING behind the cascade-delete guard (409\nSERVICE_NAME_CONFLICT when a dependent child package or an active usage\nregistration blocks it); a FAILED package's row is deleted directly.\nAny other state (PRIMED, DELETING, ...): 409 LIFECYCLE_ILLEGAL_TRANSITION.",
+        "description": "AVAILABLE/DEPRECATED -> DELETING behind the cascade-delete guard (409\nPACKAGE_IN_USE when a dependent child package or an active usage\nregistration blocks it); a FAILED package's row is deleted directly.\nEither way the package's NF deployment descriptor is deleted at NFO first\n(409 PACKAGE_IN_USE while an NFO deployment still uses it, 503\nENDPOINT_UNREACHABLE when NFO cannot be asked; the package is unchanged).\nAny other state (PRIMED, DELETING, ...): 409 LIFECYCLE_ILLEGAL_TRANSITION.",
         "operationId": "delete_package_packages__package_id__delete",
         "parameters": [
           {
@@ -1186,7 +1186,7 @@
     },
     "/packages/{package_id}/deprecate": {
       "post": {
-        "description": "AVAILABLE -> DEPRECATED; 409 LIFECYCLE_ILLEGAL_TRANSITION from any other state.",
+        "description": "AVAILABLE or PRIMED -> DEPRECATED: no new instances, running ones are not touched; 409 LIFECYCLE_ILLEGAL_TRANSITION from any other state.",
         "operationId": "deprecate_package_packages__package_id__deprecate_post",
         "parameters": [
           {
@@ -1315,7 +1315,7 @@
     },
     "/packages/{package_id}/deprime": {
       "post": {
-        "description": "The reference's own deprimeRapp guard: blocked while any rApp\ninstance still references this package (mirrors the cascade-delete\nguard's active-usage-registration check): 409 SERVICE_NAME_CONFLICT.\nAny state but PRIMED: 409 LIFECYCLE_ILLEGAL_TRANSITION.",
+        "description": "The reference's own deprimeRapp guard: blocked while any rApp\ninstance still references this package (mirrors the cascade-delete\nguard's active-usage-registration check): 409 PACKAGE_IN_USE.\nAny state but PRIMED: 409 LIFECYCLE_ILLEGAL_TRANSITION.",
         "operationId": "deprime_package_packages__package_id__deprime_post",
         "parameters": [
           {
@@ -1871,7 +1871,7 @@
     },
     "/packages/{package_id}/usage/start": {
       "post": {
-        "description": "404 PACKAGE_NOT_FOUND for an unknown package.",
+        "description": "404 PACKAGE_NOT_FOUND for an unknown package, 409 PACKAGE_NOT_DEPLOYABLE for a package that is not AVAILABLE or PRIMED.",
         "operationId": "register_usage_start_packages__package_id__usage_start_post",
         "parameters": [
           {
@@ -2005,6 +2005,145 @@
           }
         },
         "summary": "Register Usage Start"
+      }
+    },
+    "/packages/{package_id}/usage/{registration_id}/release": {
+      "post": {
+        "description": "Closes a usage registration that no rApp instance holds any more (an orphan), so it stops blocking deprime and delete.\n\nThe registration's consumer is looked up at rApp Management: when that instance no longer exists, or is UNDEPLOYED, the registration is stopped as by\nusage/stop. 409 PACKAGE_IN_USE while the instance exists in any other state (terminate it instead), 503 ENDPOINT_UNREACHABLE when rApp Management\ncannot answer, 404 PACKAGE_NOT_FOUND / PACKAGE_USAGE_REGISTRATION_NOT_FOUND as usage/stop. Idempotent for a registration already stopped.",
+        "operationId": "release_orphaned_usage_packages__package_id__usage__registration_id__release_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "package_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Package Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "registration_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Registration Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Release Orphaned Usage"
       }
     },
     "/packages/{package_id}/usage/{registration_id}/stop": {

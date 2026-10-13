@@ -228,19 +228,16 @@ def test_terminate_instance_calls_usage_stop(client, monkeypatch):
     assert any(f"/usage/{reg_id}/stop" in c for c in calls)
 
 
-def test_terminate_instance_skips_usage_stop_when_never_registered(client, monkeypatch):
-    """CreateInstance's usage/start call can fail without failing the
-    whole request (best-effort); TerminateInstance must not crash trying
-    to stop a registration that was never recorded.
-    """
+def test_create_instance_is_refused_when_usage_start_fails(client, db_session_factory, monkeypatch):
+    """Call flow 06: the usage registration is opened first and the instance is not created without it. Onboarding answering 503 makes CreateInstance a
+    502 UPSTREAM_FAILED, and nothing else was made for the instance (no SME invoker, no NFO deployment, no row)."""
+    calls = []
+
     def fake_get(self, path, **kw):
         return FakeR1Response(200, {"state": "AVAILABLE", "nfDeploymentDescriptorId": str(uuid.uuid4())})
 
     def fake_post(self, path, json=None, **kw):
-        if "/nfo/deployments" in path:
-            return FakeR1Response(200, {"nfDeploymentId": str(uuid.uuid4())})
-        if path == "/sme/invoker-registrations":
-            return FakeR1Response(201, {"apiInvokerId": f"api-invoker-{uuid.uuid4()}", "onboardingSecret": "s3cret", "role": "rapp"})
+        calls.append(path)
         if "/usage/start" in path:
             return FakeR1Response(503, {})  # onboarding unreachable
         raise AssertionError(f"unexpected R1 POST to {path}")
@@ -248,12 +245,49 @@ def test_terminate_instance_skips_usage_stop_when_never_registered(client, monke
     monkeypatch.setattr("app.main.R1Client.get", fake_get)
     monkeypatch.setattr("app.main.R1Client.post", fake_post)
 
-    created = client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}}).json()
-    client.post(f"/instances/{created['instanceId']}/bootstrap-complete")  # DEPLOYING -> RUNNING; TERMINATE needs RUNNING
-    resp = client.post(f"/instances/{created['instanceId']}/terminate")
-    assert resp.status_code == 200
+    resp = client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}})
+
+    assert resp.status_code == 502 and resp.json()["detail"]["title"] == "UPSTREAM_FAILED"
+    assert len(calls) == 1
+    with db_session_factory() as session:
+        assert session.query(RAppInstance).count() == 0
 
 
+def test_create_instance_passes_on_onboardings_package_not_deployable(client, monkeypatch):
+    """A package deprecated between rApp Management's read and usage/start: Onboarding's 409 is passed on as 409 PACKAGE_NOT_DEPLOYABLE."""
+    monkeypatch.setattr("app.main.R1Client.get",
+                        lambda self, path, **kw: FakeR1Response(200, {"state": "AVAILABLE", "nfDeploymentDescriptorId": str(uuid.uuid4())}))
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(409, {"detail": {"title": "PACKAGE_NOT_DEPLOYABLE"}}))
+
+    resp = client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}})
+
+    assert resp.status_code == 409 and resp.json()["detail"]["title"] == "PACKAGE_NOT_DEPLOYABLE"
+
+
+def test_create_instance_stops_the_usage_registration_when_a_later_step_fails(client, monkeypatch):
+    """When a step after usage/start raises (here SME cannot be reached), the registration just opened is stopped again, so it does not hold the package."""
+    import httpx
+
+    registration = str(uuid.uuid4())
+    calls = []
+
+    def fake_post(self, path, json=None, **kw):
+        calls.append(path)
+        if path.endswith("/usage/start"):
+            return FakeR1Response(200, {"registrationId": registration})
+        if path.endswith("/stop"):
+            return FakeR1Response(200, {"status": "stopped"})
+        raise httpx.ConnectError("sme down")
+
+    monkeypatch.setattr("app.main.R1Client.get",
+                        lambda self, path, **kw: FakeR1Response(200, {"state": "AVAILABLE", "nfDeploymentDescriptorId": str(uuid.uuid4())}))
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+
+    package_id = uuid.uuid4()
+    resp = client.post("/instances", json={"packageId": str(package_id), "config": {}})
+
+    assert resp.status_code == 503
+    assert calls[-1] == f"/onboarding/packages/{package_id}/usage/{registration}/stop"
 def test_terminate_instance_deregisters_dme_producer(client, monkeypatch):
     """rApp-as-producer reconsideration trigger (HISTORY.md §1):
     TERMINATE must reach DME too, deregistering every DMEType this
@@ -843,7 +877,7 @@ def test_upgrade_route_provisions_a_complete_replacement(client, monkeypatch):
 
 
 def test_upgrade_route_refuses_a_package_that_is_not_deployable(client, monkeypatch):
-    """Upgrading to a package that is not AVAILABLE or PRIMED is 409 MODEL_NOT_CERTIFIED, the old instance stays RUNNING and no replacement row is left behind.
+    """Upgrading to a package that is not AVAILABLE or PRIMED is 409 PACKAGE_NOT_DEPLOYABLE, the old instance stays RUNNING and no replacement row is left behind.
     """
     created = _running_instance(client, monkeypatch)
     monkeypatch.setattr("app.main.R1Client.get", _route_r1_get_post(onboarding_status="DEPRECATED")[0])
@@ -851,7 +885,7 @@ def test_upgrade_route_refuses_a_package_that_is_not_deployable(client, monkeypa
     resp = client.post(f"/instances/{created['instanceId']}/upgrade", json={"newPackageId": str(uuid.uuid4())})
 
     assert resp.status_code == 409
-    assert resp.json()["detail"]["title"] == "MODEL_NOT_CERTIFIED"
+    assert resp.json()["detail"]["title"] == "PACKAGE_NOT_DEPLOYABLE"
     assert client.get(f"/instances/{created['instanceId']}").json()["state"] == "RUNNING"
     assert client.get("/instances").json()["total"] == 1  # no replacement row left behind
 
@@ -1143,7 +1177,7 @@ def test_rollback_of_an_instance_that_is_not_running_is_409(client, monkeypatch)
 
 
 def test_rollback_to_a_package_no_longer_deployable_is_refused(client, monkeypatch):
-    """If the earlier package is no longer deployable the rollback is 409 MODEL_NOT_CERTIFIED and the current instance stays RUNNING.
+    """If the earlier package is no longer deployable the rollback is 409 PACKAGE_NOT_DEPLOYABLE and the current instance stays RUNNING.
     """
     created = _running_instance(client, monkeypatch)
     v2_id = _commit_upgrade(client, created["instanceId"], str(uuid.uuid4()))
@@ -1151,7 +1185,7 @@ def test_rollback_to_a_package_no_longer_deployable_is_refused(client, monkeypat
 
     resp = client.post(f"/instances/{v2_id}/rollback")
 
-    assert resp.status_code == 409 and resp.json()["detail"]["title"] == "MODEL_NOT_CERTIFIED"
+    assert resp.status_code == 409 and resp.json()["detail"]["title"] == "PACKAGE_NOT_DEPLOYABLE"
     assert client.get(f"/instances/{v2_id}").json()["state"] == "RUNNING"
 
 

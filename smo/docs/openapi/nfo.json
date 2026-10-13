@@ -1971,6 +1971,130 @@
         "summary": "Create Descriptor"
       }
     },
+    "/descriptors/{descriptor_id}": {
+      "delete": {
+        "description": "DeleteDescriptor \u2014 the counterpart of CreateDescriptor, called by Onboarding when its package is deleted (call flow 06c, 06d).\n\n204 once the descriptor is gone, also for an unknown id (idempotent). 409 NFDEPLOYMENT_DESCRIPTOR_ALREADY_DEPLOYED while a deployment still uses\nit: terminate that deployment first.",
+        "operationId": "delete_descriptor_descriptors__descriptor_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "descriptor_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Descriptor Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Delete Descriptor"
+      }
+    },
     "/health": {
       "get": {
         "description": "Liveness probe, kept as an alias of `/live`. The GUI BFF's `GET /modules/status` fans out to\n`/<module>/health` through R1 Termination for every module in parallel, and DME supervises\nproducers on it.",

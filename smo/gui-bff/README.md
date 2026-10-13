@@ -63,7 +63,7 @@ Browser --/api--> gui (nginx :3000) --> gui-bff --Bearer (SME-issued)--> R1 Term
 
 | Decision | Reason |
 |---|---|
-| Allowlist RBAC, first match wins, unmatched = refused for everyone | A new module route is unreachable from the GUI until someone adds a rule. Machine-to-machine routes (SME token/registration, DME producer registration, NFO Instantiate, heartbeats, `usage/*`) are simply absent. |
+| Allowlist RBAC, first match wins, unmatched = refused for everyone | A new module route is unreachable from the GUI until someone adds a rule. Machine-to-machine routes (SME token/registration, DME producer registration, NFO Instantiate, heartbeats, package `usage/start` and `usage/stop`) are simply absent; an admin may only `release` an orphaned usage registration (call flow 06c). |
 | Role read from the `gui_user` row on every request, never from the JWT | A demotion applies on the next request. |
 | A user's region/tenant scope claim (GUI-5) read from the `gui_user` row on every request and sent with every call made for the user (`X-R1-Acting-User-Scope`) | The modules narrow the answer, as for a scoped rApp; what the BFF computes for many users (counts, the event stream, search, exports) is asked with the claim and cached under it, so it never crosses users. A narrower scope applies on the next request. |
 | JWT carries `ver` = `gui_user.token_version`; bumped on password change/reset and on (de)activation | Existing sessions die at once without a session store. Self password change re-issues the caller's own token. |

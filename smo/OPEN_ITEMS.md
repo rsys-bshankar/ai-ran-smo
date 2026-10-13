@@ -1312,9 +1312,9 @@ there, what is right, what is wrong), agree the corrections, then build what the
 
 | ID | Flow | State |
 |---|---|---|
-| DOC-CF-1.1 | 01 rApp onboarding → running instance (01a-01e; the instance identity and the rApp's own bootstrap built for it) | done in this change: `HISTORY.md` DOC-CF-1.1 |
-| DOC-CF-1.2 | 06 package lifecycle | next |
-| DOC-CF-1.3 | 07 rApp instance lifecycle (upgrade, rollback, terminate, faults, kill switch) | open |
+| DOC-CF-1.1 | 01 rApp onboarding → running instance (01a-01e; the instance identity and the rApp's own bootstrap built for it) | done: `HISTORY.md` DOC-CF-1.1 |
+| DOC-CF-1.2 | 06 package lifecycle (06a-06d; the usage-registration contract, package error codes and NFO descriptor delete built for it) | done in this change: `HISTORY.md` DOC-CF-1.2 |
+| DOC-CF-1.3 | 07 rApp instance lifecycle (upgrade, rollback, terminate, faults, kill switch) | next. Seen while doing 1.2: NFO lets a descriptor be deployed once, so a second instance of one package gets no NFO deployment (its `workloadRef` is null) and rApp Management creates it anyway |
 | DOC-CF-1.4 | 15 NFO workload lifecycle | open |
 | DOC-CF-1.5 | 17 model runtime lifecycle | open |
 | DOC-CF-1.6 | 02 AI/ML model train → inference | open |

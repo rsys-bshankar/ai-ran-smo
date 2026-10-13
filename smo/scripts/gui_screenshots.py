@@ -365,12 +365,11 @@ def lcm_rapps(w: Walk):
     inst = w.wait_for("the instance", lambda: [x for x in w.items("/rapp-mgmt/instances") if x["packageId"] == pkg1["packageId"]])[0]["instanceId"]
     w.ctx["assist_instance"] = inst
 
-    # prime the package and hold a second usage registration: deprime is blocked
+    # prime the package: the ASSIST instance's usage registration blocks deprime (call flow 06a)
     w.goto(p, "/rapps#packages")
     w.open_row(w.section(p, "rapps.packages"), v1, 3)
     d = w.drawer(p)
     w.click(p, d.get_by_role("button", name="Prime"))
-    w.click(p, d.get_by_role("button", name="Register test usage"))
     w.wait_for("the package to be PRIMED", lambda: package(v1)["state"] == "PRIMED")
     w.settle(p, 1500)
     w.shot(p, "lcm/rapps-package-primed-deprime-blocked")
@@ -456,14 +455,11 @@ def lcm_rapps(w: Walk):
     d = open_instance(final)
     w.shot(p, "lcm/rapps-instance-terminated")
 
-    # release the remaining usage, deprime, deprecate, delete
+    # terminating stopped the usage registrations (call flow 06): deprime, deprecate, delete
     w.goto(p, "/rapps#packages")
     w.open_row(w.section(p, "rapps.packages"), v1, 3)
     d = w.drawer(p)
     usage = f"/onboarding/packages/{pkg1['packageId']}/usage"
-    for reg in [u for u in w.items(usage) if u["active"]]:
-        stop = w.row(d, reg["consumerId"][:7]).get_by_role("button", name="Stop", exact=True)
-        w.click(p, stop, dispatch=True)
     w.wait_for("the usage to stop", lambda: not [u for u in w.items(usage) if u["active"]])
     d.get_by_role("button", name="Deprime").and_(d.locator(":enabled")).wait_for()
     w.settle(p, 1000)
@@ -488,9 +484,9 @@ def lcm_rapps(w: Walk):
 
     # an instance that keeps its fault history (upgrade commits delete the instance they replace): flow 07 follows it
     _fault_story(w, pkg2["packageId"])
-    # leave 1.2 PRIMED with an active usage registration: flow 06's guard-blocking screen follows it
+    # leave 1.2 PRIMED with an instance holding it (an active usage registration): flow 06's guard-blocking screen follows it
     w.api("POST", f"/onboarding/packages/{pkg2['packageId']}/prime")
-    w.api("POST", f"/onboarding/packages/{pkg2['packageId']}/usage/start", params={"consumer_id": "smo-gui-test"})
+    w.api("POST", "/rapp-mgmt/instances", json={"packageId": pkg2["packageId"], "config": {}})
     w.ctx["blocked_package"] = pkg2["packageId"]
 
 

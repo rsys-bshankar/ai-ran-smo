@@ -3,7 +3,7 @@
 import { Link } from "react-router-dom";
 
 import type { Package } from "../../../api/types";
-import { ActionButton, Can, DataTable, Drawer, Id, KeyValue, StateBadge } from "../../../components/ui";
+import { ActionButton, DataTable, Drawer, Id, KeyValue, StateBadge } from "../../../components/ui";
 import { useT, type Translator } from "../../../i18n";
 import { ENGLISH, formatTime } from "../../../lib/domain";
 import { packageBase, usePackageArtifacts, usePackageUsage } from "../data/queries";
@@ -73,13 +73,10 @@ export function PackageDrawer({ pkg, onClose }: { pkg: Package; onClose: () => v
       <DataTable rows={usage.data} error={usage.error} rowKey={(u) => u.registrationId} empty={t("rapps.package.usage.none")} columns={[
         { header: t("rapps.package.usage.consumer"), render: (u) => <Id value={u.consumerId} /> },
         { header: t("rapps.package.usage.state"), render: (u) => u.active ? <StateBadge state="ACTIVE" /> : <>{t("rapps.package.usage.stopped")} {formatTime(u.stoppedAt)}</> },
-        { header: "", className: "actions", render: (u) => u.active && <ActionButton label={t("rapps.package.usage.stop")} title={t("rapps.package.usage.stop.title")}
-          action={{ method: "POST", path: `${base}/usage/${u.registrationId}/stop`, success: t("rapps.package.usage.stop.done") }} /> },
+        // call flow 06: rApp Management opens and closes registrations; an admin may only release an orphan (Onboarding refuses one an instance still holds)
+        { header: "", className: "actions", render: (u) => u.active && <ActionButton label={t("rapps.package.usage.release")} title={t("rapps.package.usage.release.title")}
+          action={{ method: "POST", path: `${base}/usage/${u.registrationId}/release`, success: t("rapps.package.usage.release.done") }} /> },
       ]} />
-      <Can method="POST" path={`${base}/usage/start`}>
-        <div className="row gap"><ActionButton label={t("rapps.package.usage.register")} title={t("rapps.package.usage.register.title")}
-          action={{ method: "POST", path: `${base}/usage/start`, query: { consumer_id: "smo-gui-test" }, success: t("rapps.package.usage.register.done") }} /></div>
-      </Can>
     </Drawer>
   );
 }

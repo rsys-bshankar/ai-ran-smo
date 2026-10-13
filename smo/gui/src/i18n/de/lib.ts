@@ -79,7 +79,6 @@ export const lib: Partial<Record<MessageKey, string>> = {
   "flows.lib.f06.usable": "Paket nutzbar: Instanzen dürfen darauf verweisen",
   "flows.lib.f06.instances": "{n} Instanz(en)",
   "flows.lib.f06.deprecate": "Abkündigen (AVAILABLE → DEPRECATED)",
-  "flows.lib.f06.deprimeFirst": "zuerst entprimen (abgewiesen, solange eine Nutzung aktiv ist)",
   "flows.lib.f06.guard": "Schutz vor kaskadierendem Löschen: keine aktiven Nutzungsregistrierungen",
   "flows.lib.f06.usage": "{active} aktiv / {n} Nutzungsregistrierung(en)",
   "flows.lib.f06.usage.blocked": "{active} aktiv / {n} Nutzungsregistrierung(en) — Löschen ist blockiert",

@@ -203,6 +203,10 @@ class FrameworkError:
     # after its upgradeTimeoutSeconds deadline (already rolled back).
     PACKAGE_USAGE_REGISTRATION_NOT_FOUND = ("PACKAGE_USAGE_REGISTRATION_NOT_FOUND", 404)
     RAPP_UPGRADE_TIMED_OUT = ("RAPP_UPGRADE_TIMED_OUT", 409)
+    # DOC-CF-1.2 (call flow 06) — a package that an open usage registration (an rApp instance) still holds: deprime, delete and the release of
+    # a registration whose instance still exists are refused; and a package no instance may be created from (not AVAILABLE or PRIMED).
+    PACKAGE_IN_USE = ("PACKAGE_IN_USE", 409)
+    PACKAGE_NOT_DEPLOYABLE = ("PACKAGE_NOT_DEPLOYABLE", 409)
     # PR-ST-2 — a row's version changed between load and write (another request
     # committed first); smo_shared/versioning.py. The caller repeats the request.
     CONCURRENT_MODIFICATION = ("CONCURRENT_MODIFICATION", 409)

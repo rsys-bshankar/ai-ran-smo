@@ -7,10 +7,10 @@
 | Standards basis | O-RAN SMO NFO / O2-DMS-style deployment + internal NF descriptor model |
 | R1 route / port | `/nfo` via R1 Termination (container :8000) |
 | Depends on (over R1) | FOCOM (`GET /focom/inventory`, to resolve the cluster / O-Cloud id) |
-| Called by | AIMgF (runtime create / scale / terminate, per model runtime and per training / validation / emulation run), rApp Management (`POST /nfo/deployments`, `DELETE /nfo/deployments/{id}`), SO SMOS (`POST /nfo/deployments`), SA SMOS (`POST /nfo/deployments/{id}/heal`), Onboarding (`POST /nfo/descriptors`), GUI / GUI BFF |
+| Called by | AIMgF (runtime create / scale / terminate, per model runtime and per training / validation / emulation run), rApp Management (`POST /nfo/deployments`, `DELETE /nfo/deployments/{id}`), SO SMOS (`POST /nfo/deployments`), SA SMOS (`POST /nfo/deployments/{id}/heal`), Onboarding (`POST /nfo/descriptors`, `DELETE /nfo/descriptors/{id}` when its package is deleted), GUI / GUI BFF |
 | Database tables | `nf_deployment_descriptor`, `nf_deployment` (versioned), `nf_ocloud_resource`, `lcm_operation` |
 | Idempotency | `POST /deployments` and `.../scale` accept an `Idempotency-Key` header (`smo_shared/idempotency.py`; the `idempotency_key` table is shared, not this module's) |
-| Unit tests | 42 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 45 passed (`tests/`, SQLite, standalone) |
 | Status | Done for the Phase 1 scope (single O-Cloud; synchronous by default, asynchronous Terminate on request). Scale takes no target size (see `OI-7-nfo-scale-size` in [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md)) |
 
 ## 1. High-level design (HLD)
@@ -132,6 +132,7 @@ All routes are under `/nfo` through R1. Lists return `{items, total, limit, offs
 |---|---|---|
 | POST | `/descriptors` | Create a descriptor (201 `{nfDeploymentDescriptorId}`); body `packageId?`, `name`, `workloadTemplate` (default `{}`), `requiredResourceTypeId?` |
 | GET | `/descriptors` | List; filter `package_id` |
+| DELETE | `/descriptors/{id}` | Delete a descriptor (204; also for an unknown id). Onboarding calls it when its package is deleted (call flow 06c, 06d). 409 `NFDEPLOYMENT_DESCRIPTOR_ALREADY_DEPLOYED` while a deployment (running, `TERMINATING` or `ABNORMAL`) still uses it |
 | POST | `/deployments` | Instantiate (202 `{nfDeploymentId, state, clusterId}`); body `nfDeploymentDescriptorId`, `name`, `requiredResourceTypeId?`. 422 `NFDEPLOYMENT_DESCRIPTOR_NOT_FOUND`, 409 `NFDEPLOYMENT_NAME_CONFLICT`, 409 `NFDEPLOYMENT_DESCRIPTOR_ALREADY_DEPLOYED` |
 | GET | `/deployments` | List; filter `state`. Items: `nfDeploymentId, name, state, clusterId, nfDeploymentDescriptorId, workloadRef, requiredResourceTypeId, abnormalReason` |
 | GET | `/deployments/{id}` | One deployment, same shape; 404 `NFDEPLOYMENT_NOT_FOUND` |
@@ -168,7 +169,7 @@ Returned as `{"detail": {"type": "about:blank", "title": <code>, "status", "deta
 |---|---|---|
 | `NFDEPLOYMENT_DESCRIPTOR_NOT_FOUND` | 422 | Instantiate with an unknown descriptor id |
 | `NFDEPLOYMENT_NAME_CONFLICT` | 409 | A deployment with that name already exists |
-| `NFDEPLOYMENT_DESCRIPTOR_ALREADY_DEPLOYED` | 409 | The descriptor already has a deployment |
+| `NFDEPLOYMENT_DESCRIPTOR_ALREADY_DEPLOYED` | 409 | The descriptor already has a deployment (Instantiate, and DeleteDescriptor) |
 | `NFDEPLOYMENT_NOT_FOUND` | 404 | Heal or scale of an unknown deployment |
 | `NFDEPLOYMENT_ILLEGAL_OPERATION` | 409 | Heal outside `ABNORMAL` / `RUNNING`, scale outside `RUNNING`, a DMS event the deployment's state can't take |
 
@@ -194,7 +195,7 @@ cd smo/nfo && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 | Test file | Covers | Count |
 |---|---|---|
-| `tests/test_main.py` | Descriptor create (with and without a package) and list; Instantiate (FOCOM cluster resolution, fallback when FOCOM is unreachable, resource link, unknown descriptor, duplicate name, descriptor already deployed); Terminate (removal, resource link and operation history deleted, after scale, repeat on `TERMINATING`, `DELETING` -> `ABNORMAL`, unknown id idempotent); Heal (from `ABNORMAL`, idempotent when `RUNNING`, refused mid-instantiate, unknown 404); Scale (`RUNNING` round trip, refused when not running, unknown 404); operation status, placement, resources, list filters, `/health` | 29 |
+| `tests/test_main.py` | Descriptor create (with and without a package), list and delete (idempotent; refused while deployed, allowed after Terminate); Instantiate (FOCOM cluster resolution, fallback when FOCOM is unreachable, resource link, unknown descriptor, duplicate name, descriptor already deployed); Terminate (removal, resource link and operation history deleted, after scale, repeat on `TERMINATING`, `DELETING` -> `ABNORMAL`, unknown id idempotent); Heal (from `ABNORMAL`, idempotent when `RUNNING`, refused mid-instantiate, unknown 404); Scale (`RUNNING` round trip, refused when not running, unknown 404); operation status, placement, resources, list filters, `/health` | 31 |
 | `tests/test_dms_lifecycle.py` | Asynchronous Terminate through `DELETING` to removal; the descriptor held until then; uninstall / delete failure -> `ABNORMAL` with its reason, then Terminate retries; runtime failure -> `ABNORMAL`, Heal recovers; repeat Terminate while uninstalling; events a state can't take; unknown event / deployment; default Terminate still synchronous | 11 |
 
 FOCOM is replaced by a monkeypatched `R1Client.get`.
