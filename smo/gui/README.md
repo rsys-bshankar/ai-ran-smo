@@ -371,7 +371,7 @@ Each table: the page's tabs first, then the lifecycle screens for that module.
 | [Model: retrain requested](docs/screenshots/lcm/aiml-model-retrain-requested.png) | A second model whose training run failed: Retry training started a new job (the FAILED one stays in the list) |
 | [New coordination group](docs/screenshots/lcm/aiml-coordination-group-form.png) | Two members picked, use cases entered |
 | [MLMF: subscription and reports](docs/screenshots/lcm/aiml-mlmf-subscription-and-reports.png) | The subscription, then three reports: two above the floor, one BREACHED, drawn against the floor |
-| [New feature group](docs/screenshots/lcm/aiml-feature-group-form.png) | Name, features and datalake settings; the token field is masked |
+| [New feature group](docs/screenshots/lcm/aiml-feature-group-form.png) | Name, features and datalake settings; the secret reference field takes the name of a secret, never a token |
 
 #### Alarms (RAN NF OAM O1 FM, FOCOM)
 

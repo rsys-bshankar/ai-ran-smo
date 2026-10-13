@@ -314,7 +314,7 @@ export interface PackageArtifact { artifactId: string; path: string; accessUrl: 
 export interface NfDescriptor { nfDeploymentDescriptorId: string; packageId: string; name: string; requiredResourceTypeId: string | null; workloadTemplate: Record<string, unknown> }
 export interface LcmOperation { operationId: string; operationType: string; status: string }
 export interface InventorySubscription { subscriptionId: string; callback: string; consumerSubscriptionId: string | null; resourceTypeId: string | null }
-export interface FeatureGroup { featureGroupId: string; featureGroupName: string; featureList: string; datalakeSource: string; host: string; port: string; bucket: string; dbOrg: string; measurement: string; enableDme: boolean; measuredObjClass: string | null; sourceName: string | null; dmeTypeId: string | null; dmeDataJobId: string | null }
+export interface FeatureGroup { featureGroupId: string; featureGroupName: string; featureList: string; datalakeSource: string; host: string; port: string; bucket: string; tokenSet: boolean; tokenRef: string | null; dbOrg: string; measurement: string; enableDme: boolean; measuredObjClass: string | null; sourceName: string | null; dmeTypeId: string | null; dmeDataJobId: string | null }
 
 // ---------------------------------------------------------------- rApp safeguards (AI-10.x)
 /**

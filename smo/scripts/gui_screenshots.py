@@ -671,11 +671,11 @@ def lcm_aiml(w: Walk):
     w.settle(p, 1500)
     w.shot(p, "lcm/aiml-mlmf-subscription-and-reports")
 
-    # a feature group: datalake settings, the token masked
+    # a feature group: datalake settings, the token given by secret reference
     w.goto(p, "/aiml#features")
     form = w.section(p, "aiml.newFeatureGroup")
     for label, value in (("^Name", f"prb_features_{w.run}"), ("^Features", "pdcpBytesDl,pdcpBytesUl,prbUsedDl"), ("^Host", "influxdb.datalake"),
-                         ("^Bucket", "ran-pm"), ("^Datalake token", "walk-through-token"), ("^DB org", "radisys"), ("^Measurement", "cell_pm")):
+                         ("^Bucket", "ran-pm"), ("^Secret reference", "walk-through-token"), ("^DB org", "radisys"), ("^Measurement", "cell_pm")):
         form.get_by_label(re.compile(label)).fill(value)
     w.shot(p, "lcm/aiml-feature-group-form")
     w.click(p, form.get_by_role("button", name="Create feature group"))

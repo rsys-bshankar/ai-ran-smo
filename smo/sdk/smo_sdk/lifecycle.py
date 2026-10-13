@@ -7,6 +7,7 @@ lifecycle (`HISTORY.md` W10-03, D-4).
 """
 
 import uuid
+import warnings
 
 from ._common import BaseClient, SdkError, ensure_ok
 
@@ -122,17 +123,38 @@ class LifecycleClient(BaseClient):
     # ---------------------------------------------------------------- AIMgF: feature groups
 
     def create_feature_group(self, feature_group_name: str, feature_list: str, datalake_source: str, host: str,
-                              port: str, bucket: str, token: str, db_org: str, measurement: str,
-                              enable_dme: bool = False, measured_obj_class: str | None = None,
-                              dme_port: str | None = None, source_name: str | None = None,
-                              dme_type_id: uuid.UUID | str | None = None, data_delivery_method: str = "PULL_HTTP") -> dict:
-        """Create a feature group (`POST /aimgf/feature-groups`); with `enable_dme` AIMgF creates the group's DME data job of `dme_type_id` (required then) and returns its `dmeDataJobId`."""
-        return ensure_ok(self._r1.post("/aimgf/feature-groups", json={
+                              port: str, bucket: str, token: str | None = None, db_org: str | None = None,
+                              measurement: str | None = None, enable_dme: bool = False,
+                              measured_obj_class: str | None = None, dme_port: str | None = None,
+                              source_name: str | None = None, dme_type_id: uuid.UUID | str | None = None,
+                              data_delivery_method: str = "PULL_HTTP", *, token_ref: str | None = None) -> dict:
+        """Create a feature group (`POST /aimgf/feature-groups`); with `enable_dme` AIMgF creates the group's DME data job of `dme_type_id` (required then) and returns its `dmeDataJobId`.
+
+        The data-lake credential is `token_ref`, the NAME of a secret that the AIMgF service resolves itself (lower-case letters, digits, `-` and `_`, starting
+        with a letter; the secret is `AIMGF_FEATURE_GROUP_TOKEN_<NAME>`, `docs/SECRETS.md`). Give `token_ref`, `db_org` and `measurement` by keyword. The answer
+        shows `tokenSet` and `tokenRef`, never a token.
+
+        `token` (the clear-text credential) is DEPRECATED (`SEC-15.2b`): it is still sent when given, for one more minor release, and then the server drops it;
+        a call that uses it raises a `DeprecationWarning` (which never contains the value). Give exactly one of `token_ref` and `token`, else `ValueError`
+        (the message never contains either value). `db_org` and `measurement` are required; they have a default only so that `token` can keep its old position.
+        """
+        if (token is None) == (token_ref is None):
+            raise ValueError("create_feature_group: give exactly one of token_ref (the name of a secret) and the deprecated token")
+        if db_org is None or measurement is None:
+            raise ValueError("create_feature_group: db_org and measurement are required")
+        body: dict = {
             "featureGroupName": feature_group_name, "featureList": feature_list, "datalakeSource": datalake_source,
-            "host": host, "port": port, "bucket": bucket, "token": token, "dbOrg": db_org, "measurement": measurement,
+            "host": host, "port": port, "bucket": bucket, "dbOrg": db_org, "measurement": measurement,
             "enableDme": enable_dme, "measuredObjClass": measured_obj_class, "dmePort": dme_port, "sourceName": source_name,
             "dmeTypeId": _str(dme_type_id), "dataDeliveryMethod": data_delivery_method,
-        }))
+        }
+        if token_ref is not None:
+            body["tokenRef"] = token_ref
+        else:
+            warnings.warn("create_feature_group(token=...) is deprecated and the server drops the field in a later minor release: register a secret and pass token_ref",
+                          DeprecationWarning, stacklevel=2)
+            body["token"] = token
+        return ensure_ok(self._r1.post("/aimgf/feature-groups", json=body))
 
     def list_feature_groups(self) -> list[dict]:
         return ensure_ok(self._r1.get("/aimgf/feature-groups"))

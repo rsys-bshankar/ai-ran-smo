@@ -224,8 +224,8 @@ Usage: `sdk = AiRuntimeSdk()` (or `AiRuntimeSdk(r1=R1Client(base_url, bearer_tok
 | `report_performance(subscription_id, metrics)` | `POST /aimgf/mlmf/subscriptions/{id}/reports` | body is `metrics` unwrapped |
 | `list_performance_reports(subscription_id, limit=100)` | `GET /aimgf/mlmf/subscriptions/{id}/reports` | |
 | `list_recent_performance_reports(breached_only=False, limit=50)` | `GET /aimgf/mlmf/reports` | |
-| `create_feature_group(feature_group_name, feature_list, datalake_source, host, port, bucket, token, db_org, measurement, enable_dme=False, measured_obj_class=None, dme_port=None, source_name=None, dme_type_id=None, data_delivery_method="PULL_HTTP")` | `POST /aimgf/feature-groups` | with `enable_dme`, AIMgF creates the group's DME data job of `dme_type_id` (required then) |
-| `list_feature_groups()` | `GET /aimgf/feature-groups` | feature groups carry datalake tokens |
+| `create_feature_group(feature_group_name, feature_list, datalake_source, host, port, bucket, token=None, db_org=None, measurement=None, enable_dme=False, measured_obj_class=None, dme_port=None, source_name=None, dme_type_id=None, data_delivery_method="PULL_HTTP", *, token_ref=None)` | `POST /aimgf/feature-groups` | give `token_ref` (the name of a secret AIMgF resolves itself, `docs/SECRETS.md`) and `db_org` and `measurement` by keyword. `token` (clear text) is **deprecated** (`SEC-15.2b`): still sent, with a `DeprecationWarning`, dropped by the server in a later minor release; exactly one of `token_ref` and `token`, else `ValueError`. The answer has `tokenSet` and `tokenRef`, never a token. With `enable_dme`, AIMgF creates the group's DME data job of `dme_type_id` (required then) |
+| `list_feature_groups()` | `GET /aimgf/feature-groups` | a group shows `tokenSet` and `tokenRef`, never a token |
 | `delete_feature_group(feature_group_name)` | `DELETE /aimgf/feature-groups/{name}` | also terminates the group's DME data job |
 | `deploy_model(model_id, node_groups: list[str])` | `POST /mllf/models/{id}/deploy` | body is the plain list; 404 `MODEL_NOT_FOUND`, 409 `MODEL_NOT_CERTIFIED` unless CERTIFIED or PROMOTED |
 

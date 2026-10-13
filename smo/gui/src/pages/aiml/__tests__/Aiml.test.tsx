@@ -2,14 +2,14 @@
 /** Tests of the AI/ML page (pages/aiml): the stage board (columns, the server's stage counts, the red "under floor" outline), training progress
  * (epoch bar and ETA), the first-load call budget of the
  * Models tab, the model detail with its governance history and the admin-only roll back with a rationale (feature 7), Suspend / Resume on
- * training jobs (feature 7), the Registry tab (feature 8), and that the pre-redesign tab ids still open their tab. `fetch` is stubbed by
+ * training jobs (feature 7), the feature-group form (it sends `tokenRef`, never a token; SEC-15.2b), the Registry tab (feature 8), and that the pre-redesign tab ids still open their tab. `fetch` is stubbed by
  * `testing/bff.tsx` `fakeBff` with the permission table of `auth/permissions.fixture.json`; no BFF runs. Run: `npx vitest run src/pages/aiml`. */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider } from "../../../auth/AuthContext";
 import rules from "../../../auth/permissions.fixture.json";
 import { fakeBff, mountWith, type Call } from "../../../testing/bff";
-import { byText, cleanup, click, settle, type } from "../../../testing/dom";
+import { byText, cleanup, click, field, settle, type } from "../../../testing/dom";
 import { Aiml } from "../index";
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
@@ -154,6 +154,54 @@ describe("training jobs (feature 7)", () => {
     expect(container.textContent).toContain("IN_PROGRESS");
     expect(byText(container, "button", "Suspend")).toBeNull();
     expect(byText(container, "button", "Resume")).toBeNull();
+  });
+});
+
+describe("feature groups (SEC-15.2b)", () => {
+  const groups = page([
+    { featureGroupId: "g1", featureGroupName: "fg_ref", featureList: "rsrp", datalakeSource: "InfluxSource", host: "h", port: "8086", bucket: "b", measurement: "m", tokenSet: true, tokenRef: "lake-ref", enableDme: false, dmeDataJobId: null },
+    { featureGroupId: "g2", featureGroupName: "fg_old", featureList: "rsrp", datalakeSource: "InfluxSource", host: "h", port: "8086", bucket: "b", measurement: "m", tokenSet: true, tokenRef: null, enableDme: false, dmeDataJobId: null },
+  ]);
+  const operatorBff = () => fakeBff({
+    "GET /me": { username: "ana", role: "operator", csrfToken: "c", local: true, totpEnrolled: true, mfaEnrolmentRequired: false },
+    "GET /permissions": { role: "operator", rules },
+    "GET /summary/aiml": { page: "aiml", computedAt: "now", counts: {}, partial: [] },
+    "GET /smo/aimgf/feature-groups": groups,
+    "POST /smo/aimgf/feature-groups": { featureGroupId: "g3", tokenSet: true, tokenRef: "lake-ref" },
+  });
+
+  // The form asks for the NAME of a secret (no password field), says so when the value is not a name, and posts `tokenRef` with no `token` key.
+  it("registers a group with a secret reference and sends no token", async () => {
+    window.location.hash = "#features";
+    const calls = operatorBff();
+    const { container } = await open();
+    const form = container.querySelector('[data-section="aiml.newFeatureGroup"]') as HTMLElement;
+    expect(form.querySelector("input[type=password]")).toBeNull();
+    await type(field(form, "Secret reference"), "Not A Name!");
+    expect(form.textContent).toContain("Use lower-case letters");
+    await type(field(form, "Secret reference"), "lake-ref");
+    await type(field(form, "Name"), "fg_new");
+    await type(field(form, "Features"), "rsrp");
+    await type(field(form, "Host"), "influx.demo");
+    await type(field(form, "Bucket"), "b");
+    await type(field(form, "DB org"), "o");
+    await type(field(form, "Measurement"), "m");
+    await click(byText(form, "button", "Create feature group")!);
+    await settle();
+    const post = calls.find((c) => c.method === "POST")!;
+    expect(post.path).toBe("/smo/aimgf/feature-groups");
+    expect((post.body as Record<string, unknown>).tokenRef).toBe("lake-ref");
+    expect(Object.keys(post.body as object)).not.toContain("token");
+  });
+
+  // The table shows the reference's name, says "clear-text token (deprecated)" for a group that has only the old token, and never a token value.
+  it("lists the reference, or that an old clear-text token is set, and no token", async () => {
+    window.location.hash = "#features";
+    operatorBff();
+    const { container } = await open();
+    const table = container.querySelector('[data-section="aiml.features"]') as HTMLElement;
+    expect(table.textContent).toContain("lake-ref");
+    expect(table.textContent).toContain("clear-text token (deprecated)");
   });
 });
 
