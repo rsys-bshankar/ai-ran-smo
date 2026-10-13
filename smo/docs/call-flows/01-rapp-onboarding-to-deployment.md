@@ -11,6 +11,13 @@ diagrams, each one step a person or a component takes:
 | 01d | The rApp bootstraps as the instance | rApp code (`/start`) | instance RUNNING, its safeguards in force |
 | 01e | Re-send the credentials (rApp unreachable at create, or a rotation) | Operator | the rApp holds a new secret for the same identity |
 
+**As images:** [01a](images/01-rapp-onboarding-to-deployment/01a-onboard-a-package.png) ·
+[01b](images/01-rapp-onboarding-to-deployment/01b-create-an-instance.png) ·
+[01c](images/01-rapp-onboarding-to-deployment/01c-the-rapp-receives-the-instance-s-credentials.png) ·
+[01d](images/01-rapp-onboarding-to-deployment/01d-the-rapp-bootstraps-as-the-instance.png) ·
+[01e](images/01-rapp-onboarding-to-deployment/01e-re-send-the-credentials.png)
+(PNG, drawn from the diagrams below by `scripts/render_call_flows.py`; a test fails when a diagram changes and its image is not drawn again).
+
 **How to read the diagrams.** An arrow is one call: method, route and the inputs that matter. A box (`Note over`) on the receiver says what it
 does with them. An `alt` block is the outcome: the first branch is success, each `else` a failure and what the caller gets. Every operator call
 goes from the console (GUI → GUI backend → R1 Termination) to the module; that path is the same everywhere and is not drawn: the actor
