@@ -6,10 +6,10 @@
 |---|---|
 | Standards basis | O-RAN rApp package onboarding (ASD / TOSCA CSAR, O-RAN-SC rApp Manager) + internal manifest.yaml/capabilities.yaml extension |
 | R1 route / port | `/onboarding` via R1 Termination (container `:8000`) |
-| Depends on (over R1) | NFO (`POST /nfo/descriptors`); the package location itself (plain HTTP GET, not over R1) |
-| Called by | rApp Management (`onboarding-status`, `usage/start`, `usage/stop`); AIMgF (`onboarding-status`, for `aiCapabilities.runtimeProfiles`); GUI BFF (operator and admin actions); operators |
+| Depends on (over R1) | NFO (`POST /nfo/descriptors`, `DELETE /nfo/descriptors/{id}` on delete); rApp Management (`GET /rapp-mgmt/instances/{id}`, only to release an orphaned usage registration); the package location itself (plain HTTP GET, not over R1) |
+| Called by | rApp Management (`onboarding-status`, `usage/start`, `usage/stop`: the only writer of usage registrations); AIMgF (`onboarding-status`, for `aiCapabilities.runtimeProfiles`); GUI BFF (operator and admin actions, `usage/{id}/release` for an admin); operators |
 | Database tables | `application_package` (versioned), `artifact`, `package_usage_registration` |
-| Unit tests | 177 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 197 passed (`tests/`, SQLite, standalone) |
 | Status | Done. Package signatures are verified against an operator-held trust store when one is configured (`PR-RAPP-1`; off by default, see 1.5, 2.6, 2.8) |
 
 ## 1. High-level design (HLD)
@@ -21,7 +21,7 @@ Onboarding turns a package location into a deployable, governed package:
 1. **Validate.** Fetch the CSAR, check its structure, read its identity and optional AI-platform declarations, register its artifacts.
 2. **Register with NFO.** Create the NF deployment descriptor NFO will later instantiate, so rApp Management has a real descriptor id to deploy.
 3. **Govern the lifecycle.** `AVAILABLE`, `PRIMED`, `DEPRECATED`, `DELETING`, `FAILED`, with a delete guard that protects anything still in use.
-4. **Track usage.** rApp Management registers one usage per instance; open usages block depriming and deletion.
+4. **Track usage.** rApp Management registers one usage per instance (before anything else at CreateInstance) and stops it at teardown; open usages block depriming and deletion. An admin can release one whose instance is gone (call flow 06c).
 
 It does not deploy anything (rApp Management and NFO do), does not validate that an rApp works, and does not store the package bytes: the artifacts table records where each file inside the package can be read.
 
@@ -53,11 +53,12 @@ The result is stored as `application_package.ai_capabilities` and exposed on the
                                                       │  POST /nfo/descriptors
                                                       ▼
                                                      NFO
- rApp Management ──GET onboarding-status, POST usage/start|stop──▶ Onboarding
+ rApp Management ──GET onboarding-status, POST usage/start|stop──▶ Onboarding ──DELETE /nfo/descriptors/{id} (package delete)──▶ NFO
+ GUI BFF (admin) ──POST usage/{id}/release──▶ Onboarding ──GET /rapp-mgmt/instances/{consumer}──▶ rApp Management
  AIMgF           ──GET onboarding-status (aiCapabilities.runtimeProfiles)──▶ Onboarding
 ```
 
-Onboarding never calls rApp Management, AIMgF or SME. The FK from NFO's descriptor table to `application_package` is a cross-module reference declared in the SQL migration, not in the ORM.
+Onboarding calls rApp Management only to release an orphaned usage registration (it asks whether the instance still exists), and never AIMgF or SME. The FK from NFO's descriptor table to `application_package` is a cross-module reference declared in the SQL migration, not in the ORM.
 
 ### 1.4 Ownership
 
@@ -85,7 +86,10 @@ Onboarding never calls rApp Management, AIMgF or SME. The FK from NFO's descript
 | `runtimeProfiles.<MODE>.memory` must be a Kubernetes quantity, and the descriptor created for NFO carries `containerResourcesByMode` (requests and limits per mode, `PR-RAPP-2.1`). | The memory becomes a container limit; a value like `16 GB` would be an invalid pod spec the day a deployment manager applies it. |
 | Delete from `AVAILABLE` or `DEPRECATED` is blocked while a child package is `AVAILABLE` / `DEPRECATED` or a usage registration has no `stopped_at`; deprime is blocked while a usage registration is open. | Cascade-delete guard; the reference's own deprime guard. |
 | `DELETING` is terminal and keeps the row. | Nothing re-enters; the row remains as the record. |
-| Instances may be created from `AVAILABLE` or `PRIMED` packages only. Enforced by rApp Management, not here. | Priming is optional. |
+| Instances may be created from `AVAILABLE` or `PRIMED` packages only. rApp Management checks it, and `usage/start` refuses any other state (`PACKAGE_NOT_DEPLOYABLE`). | Priming is optional. The second check closes the race with a deprecate or delete after rApp Management read the state, and keeps registrations off a `FAILED` package. |
+| Deleting a package deletes its NF deployment descriptor at NFO first; a refusal (a deployment still uses it, or NFO unreachable) leaves the package unchanged. | A deleted package leaves nothing deployable behind (call flow 06c). |
+| A usage registration can be released only when its instance is gone or `UNDEPLOYED`; Onboarding asks rApp Management. | The console must not be able to lift the guard while an instance runs (call flow 06c). |
+| Any error while onboarding ends the package `FAILED`, never in `ONBOARDING`. | A package stuck in `ONBOARDING` could not be deleted (call flow 06d). |
 
 Idempotency: usage stop is idempotent (an already stopped registration keeps its first `stoppedAt`). Onboarding the same location twice is refused by the duplicate check, not deduplicated.
 
@@ -148,7 +152,7 @@ Security: the package location is fetched with a direct `httpx.get` (30 s timeou
 
 `PRIMING` and `DEPRIMING` are never observable from outside. Forbidden: everything not in the table, for example `PRIMED → DEPRECATE` or `PRIMED → DELETE` (deprime first), `DEPRECATED → PRIME`, `AVAILABLE → DEPRIME`, any event from `FAILED` through the FSM, any event from `DELETING`. `models.PACKAGE_STATES` lists only five of the eight states and is not used by any code.
 
-Event routes and refusals: an event with no edge from the current state gives `409 LIFECYCLE_ILLEGAL_TRANSITION` naming the state and the event. An event whose edge exists but whose guard refuses gives `409 SERVICE_NAME_CONFLICT` with the reason.
+Event routes and refusals: an event with no edge from the current state gives `409 LIFECYCLE_ILLEGAL_TRANSITION` naming the state and the event. An event whose edge exists but whose guard refuses gives `409 PACKAGE_IN_USE` with the reason.
 
 ### 2.4 API
 
@@ -160,12 +164,13 @@ Event routes and refusals: an event with no edge from the current state gives `4
 | GET | `/packages/{id}/artifacts` | Paged `{artifactId, path, accessUrl}` | 404 |
 | GET | `/packages/{id}/usage` | Paged `{registrationId, consumerId, stoppedAt, active}`: what blocks a delete | 404 |
 | POST | `/packages/{id}/prime` | `AVAILABLE → PRIMED` | 409 `LIFECYCLE_ILLEGAL_TRANSITION` |
-| POST | `/packages/{id}/deprime` | `PRIMED → AVAILABLE` | 409 `SERVICE_NAME_CONFLICT` (open usage); 409 `LIFECYCLE_ILLEGAL_TRANSITION` |
+| POST | `/packages/{id}/deprime` | `PRIMED → AVAILABLE` | 409 `PACKAGE_IN_USE` (open usage); 409 `LIFECYCLE_ILLEGAL_TRANSITION` |
 | POST | `/packages/{id}/deprecate` | `AVAILABLE → DEPRECATED` | 409 `LIFECYCLE_ILLEGAL_TRANSITION` |
 | POST | `/packages/{id}/cancel-delete` | `DEPRECATED → AVAILABLE` | 409 `LIFECYCLE_ILLEGAL_TRANSITION` |
-| DELETE | `/packages/{id}` | `AVAILABLE` / `DEPRECATED → DELETING` (returns the view); `FAILED` → row deleted, `{"status": "deleted"}` | 409 `SERVICE_NAME_CONFLICT` (child or open usage); 409 `LIFECYCLE_ILLEGAL_TRANSITION` (any other state) |
-| POST | `/packages/{id}/usage/start?consumer_id=` | Open a usage → `{registrationId}` | 404 |
-| POST | `/packages/{id}/usage/{registration_id}/stop` | Close it (idempotent) → `{status: stopped}` | 404 `PACKAGE_NOT_FOUND`; 404 `PACKAGE_USAGE_REGISTRATION_NOT_FOUND` (unknown, or belongs to another package) |
+| DELETE | `/packages/{id}` | `AVAILABLE` / `DEPRECATED → DELETING` (returns the view, `nfDeploymentDescriptorId` cleared); `FAILED` → row, artifacts and stopped registrations deleted, `{"status": "deleted"}`. Either way the NFO descriptor is deleted first (`DELETE /nfo/descriptors/{id}`) | 409 `PACKAGE_IN_USE` (child or open usage, NFO not called; or NFO says a deployment still uses the descriptor); 503 `ENDPOINT_UNREACHABLE` (NFO failed); 409 `LIFECYCLE_ILLEGAL_TRANSITION` (any other state) |
+| POST | `/packages/{id}/usage/start?consumer_id=` | Open a usage → `{registrationId}`. rApp Management's route: the GUI BFF has no rule for it | 404; 409 `PACKAGE_NOT_DEPLOYABLE` (package not `AVAILABLE` / `PRIMED`) |
+| POST | `/packages/{id}/usage/{registration_id}/stop` | Close it (idempotent) → `{status: stopped}`. rApp Management's route: the GUI BFF has no rule for it | 404 `PACKAGE_NOT_FOUND`; 404 `PACKAGE_USAGE_REGISTRATION_NOT_FOUND` (unknown, or belongs to another package) |
+| POST | `/packages/{id}/usage/{registration_id}/release` | Close an orphan (admin, call flow 06c): `GET /rapp-mgmt/instances/{consumerId}`; stopped when the instance is unknown or `UNDEPLOYED` (a consumer id that is not a UUID is released without asking) → `{status: stopped}`; idempotent | 409 `PACKAGE_IN_USE` (the instance exists in any other state); 503 `ENDPOINT_UNREACHABLE` (rApp Management did not answer); 404 as `stop` |
 
 Package view: `packageId, name, version, vendor, applicationType, state, toscaEntryDefinitions, descriptorId, descriptorInvariantId, descriptorVersion, schemaVersion, signatureVerified, nfDeploymentDescriptorId, aiCapabilities, smeDeclarations`. `GET /health` is liveness.
 
@@ -183,10 +188,11 @@ The onboarding pipeline, in order, inside `POST /packages`:
 | 5 | Duplicate check on the SHA-256 against packages not `DELETING` / `FAILED` | `FAILED` |
 | 6 | `POST /nfo/descriptors` `{packageId, name: <entry definitions>, workloadTemplate: {toscaEntryDefinitions, containerResourcesByMode?}}`; needs `201` and `nfDeploymentDescriptorId` | `FAILED` (any other status) |
 | 7 | Fire `VALIDATE_OK`, commit | |
+| any | Any other exception (e.g. NFO's 201 without a usable id) | the session is rolled back, then `FAILED` with the exception's class as `failureReason` |
 
 A `FAILED` package keeps whatever identity fields and artifact rows steps 3 to 5 had already set. The descriptor's `workloadTemplate` is a thin reference to the entry definitions, not a parsed TOSCA node template. An NFO transport failure (as opposed to a non-201 reply) is an `httpx` error and is also treated as a validation failure.
 
-Inbound: rApp Management calls `onboarding-status` on every create, upgrade and bootstrap-complete, and `usage/start` / `usage/stop` around an instance's life; AIMgF reads `aiCapabilities.runtimeProfiles` before it sizes a runtime. There are no callbacks and no background tasks.
+Inbound: rApp Management calls `onboarding-status` on every create, upgrade and bootstrap-complete, and `usage/start` (first, at create and at an upgrade's replacement) / `usage/stop` (at every teardown); AIMgF reads `aiCapabilities.runtimeProfiles` before it sizes a runtime. There are no callbacks and no background tasks.
 
 ### 2.6 Configuration
 
@@ -206,7 +212,9 @@ Through `smo_shared`: `SMO_DATABASE_URL` (required, no default) and `R1_GATEWAY_
 | `PACKAGE_NOT_FOUND` | 404 | Unknown package on any `/packages/{id}` route |
 | `PACKAGE_USAGE_REGISTRATION_NOT_FOUND` | 404 | Usage stop for an unknown or foreign registration |
 | `LIFECYCLE_ILLEGAL_TRANSITION` | 409 | The lifecycle event has no edge from the package's current state |
-| `SERVICE_NAME_CONFLICT` | 409 | The edge exists but its guard refused: open usage (deprime, delete) or a dependent child (delete). The code name is borrowed from SME; the detail says what blocked it |
+| `PACKAGE_IN_USE` | 409 | The edge exists but its guard refused: open usage (deprime, delete) or a dependent child (delete); NFO refusing the descriptor delete (a deployment uses it); a release while the instance still holds the package. The detail says what blocked it. (Before DOC-CF-1.2 a guard refusal was `SERVICE_NAME_CONFLICT`.) |
+| `PACKAGE_NOT_DEPLOYABLE` | 409 | `usage/start` on a package that is not `AVAILABLE` / `PRIMED` |
+| `ENDPOINT_UNREACHABLE` | 503 | NFO (delete) or rApp Management (release) failed or did not answer; nothing was changed |
 
 The reasons a package becomes `FAILED` are not HTTP errors; they are listed in 2.5 and, in full, in `RAPP_PACKAGING.md`.
 
@@ -215,7 +223,8 @@ The reasons a package becomes `FAILED` are not HTTP errors; they are listed in 2
 - Signatures are optional and operator-held (`PR-RAPP-1`): no certificate chain, expiry, revocation list or timestamp; the check is at fetch time only; the publisher is logged, not stored (`signature_verified` means "validated" until a trust store is set, see 1.5; `docs/RAPP_PACKAGING.md` §8.3).
 - Package location is fetched as given (suffix check only); no allowlist, no size limit.
 - Priming performs no resource pre-provisioning; `PRIMING` and `DEPRIMING` are instantaneous.
-- `parent_package_id` is read by the delete guard but nothing sets it, so the child-package guard is only reachable through direct database writes.
+- `parent_package_id` is read by the delete guard but nothing sets it, so the child-package guard is only reachable through direct database writes (kept for the day child packages exist; call flow 06).
+- A `DELETING` package's row and artifact rows are kept as its record; nothing purges them.
 - ASD identity is a line scan of flat `key: value` lines, not a YAML parse.
 - Package bytes are not stored; `access_url` points back into the original location.
 - `models.PACKAGE_STATES` is stale (see 2.3).
@@ -243,6 +252,7 @@ cd smo/onboarding && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | | Illegal events are 409 naming state and event; delete without an edge | 9 |
 | | Unknown package / registration is 404 on every route | 10 |
 | | Usage: stop idempotent, listing shows what blocks a delete | 2 |
+| | Call flow 06 (DOC-CF-1.2): delete deletes the NFO descriptor and clears it, NFO refusing (409, 500) leaves the package, a guard refusal never calls NFO, a FAILED delete takes its descriptor and stopped registrations, usage/start refuses 4 non-deployable states and takes a PRIMED one, an unexpected onboarding error ends FAILED and deletable, release (instance gone or UNDEPLOYED; refused for 4 live states; 503; a non-instance consumer without asking; 404) | 20 |
 | | Package list and state filter, identity fields for the GUI, health | 3 |
 | | Package row committed before the NFO call | 1 |
 | `tests/test_statemachine.py` | The FSM alone: success and failure onboarding, deprecate round trip, delete guards (child, usage, after stop), no transition from `FAILED`, prime / deprime round trip and guard, no `ONBOARDING → PRIME`, no `PRIMED → DELETE` | 11 |

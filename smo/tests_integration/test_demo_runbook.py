@@ -771,7 +771,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
 
     blocked_deprime = mesh["onboarding"].post(f"/packages/{package_id}/deprime")
     assert blocked_deprime.status_code == 409
-    assert blocked_deprime.json()["detail"]["title"] == "SERVICE_NAME_CONFLICT"
+    assert blocked_deprime.json()["detail"]["title"] == "PACKAGE_IN_USE"
 
     term = mesh["rapp-mgmt"].post(f"/instances/{instance_id}/terminate")
     assert term.status_code == 200

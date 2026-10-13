@@ -1407,7 +1407,7 @@ print(r.status_code, r.json())
 "
 ```
 
-`409`, with `detail.title` = `SERVICE_NAME_CONFLICT`; the package stays
+`409`, with `detail.title` = `PACKAGE_IN_USE`; the package stays
 `PRIMED`.
 
 Terminate the instance:

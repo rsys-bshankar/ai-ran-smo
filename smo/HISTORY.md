@@ -2763,6 +2763,46 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.2 — call flow 06 rewritten from the code, and the package usage contract made to hold
+
+The second flow of the call-flow audit, decided with the product owner (the recommendations of the audit, all taken). The old flow 06 repeated
+onboarding (now 01a's alone), used one *Operator* actor with no inputs or receiver boxes, and drew the usage registrations as if they always
+held. The audit found that they did not: rApp Management ignored a failed `usage/start` (the instance ran with no registration, so the
+package could be deprimed or deleted under it), and the console offered an admin a "test usage" registration and a **Stop** on any
+registration, including a running instance's, which lifted the guard at will.
+
+- **Rewritten as four diagrams** (`docs/call-flows/06-package-lifecycle.md`): 06a prime and deprime, 06b deprecate and cancel, 06c delete and
+  the release of an orphaned registration, 06d a FAILED package and its re-onboarding; images under `docs/call-flows/images/06-package-lifecycle/`.
+  Flow 01b and the upgrade part of 07 now open the registration first.
+- **Error codes say what happened.** A guard refusal is 409 `PACKAGE_IN_USE` (it was `SERVICE_NAME_CONFLICT`, SME's code for a taken service
+  name), and a package an instance may not be created from is 409 `PACKAGE_NOT_DEPLOYABLE` (it was `MODEL_NOT_CERTIFIED`, AIMgF's). The
+  routes and statuses are unchanged; only the `title` differs.
+- **rApp Management is the only writer of usage registrations, and cannot skip one.** `provision_instance` opens the registration right after
+  the row is flushed, before the SME invoker or the NFO deployment: Onboarding's 409 is passed on as `PACKAGE_NOT_DEPLOYABLE`, another error is
+  502 `UPSTREAM_FAILED`, no answer 503, and nothing is created. If a later step raises, the registration is stopped again (best-effort).
+  `usage/start` now refuses a package that is not AVAILABLE or PRIMED (409 `PACKAGE_NOT_DEPLOYABLE`), which closes the race with a
+  deprecate after rApp Management's read and keeps registrations off FAILED packages (whose direct delete tripped on their foreign key on
+  PostgreSQL). The GUI backend no longer has rules for `usage/start` and `usage/stop`; an rApp could already change nothing under
+  `/onboarding`.
+- **Releasing an orphan.** `POST /onboarding/packages/{id}/usage/{rid}/release` (admin in the console) asks rApp Management for the consumer
+  instance and stops the registration only when it is unknown or UNDEPLOYED (409 `PACKAGE_IN_USE` otherwise, 503 when rApp Management does not
+  answer); a consumer id that is not a UUID (the old test registrations) is released without asking. It is for a teardown whose `usage/stop`
+  failed (`lastTeardown.usageStop`). The drawer and the flow 06 page offer **Release** in place of Stop and Register test usage.
+- **Delete leaves nothing at NFO.** NFO gained `DELETE /nfo/descriptors/{id}` (204, idempotent; 409 `NFDEPLOYMENT_DESCRIPTOR_ALREADY_DEPLOYED`
+  while a deployment uses it). Onboarding calls it after the guard passes and before the state changes, so a refusal (409 `PACKAGE_IN_USE`, or
+  503) leaves the package as it was; the DELETING package's `nfDeploymentDescriptorId` is cleared. A FAILED package's delete also removes its
+  descriptor, if NFO made one, and its stopped registrations.
+- **No package stays in ONBOARDING.** Any exception during onboarding, not only the listed validation failures, now rolls the session back and
+  ends the package FAILED with the exception's class as `failureReason` (an NFO 201 without a usable id used to be a 500 and left a row no route
+  could move or delete).
+- **Kept, with a note:** the delete guard's child-package half (`parent_package_id`, which nothing sets yet), and DELETING as a final state
+  whose row and artifacts are the record.
+- `scripts/render_call_flows.py`: a heading is one line (a section without a diagram, like flow 06's state table, borrowed the next
+  section's diagram and name), and drawing a document replaces its images, so a renamed heading leaves no stale image or manifest entry.
+
+Not done here, for flow 07: NFO lets a descriptor be deployed once, so a second instance of the same package gets no NFO deployment and is
+still created (`OPEN_ITEMS.md` DOC-CF-1.3). The GUI screenshots of the package drawer and the flow 06 page were not recaptured.
+
 ### DOC-CF-1.1 — call flow 01 rewritten from the code, and the rApp acting as its instance
 
 The first flow of the call-flow audit (`OPEN_ITEMS.md` DOC-CF), done with the product owner. The old flow 01 drew a workload NFO does not

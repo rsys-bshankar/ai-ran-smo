@@ -5,7 +5,8 @@ location, validates it (`package_validation.py`), registers its artifacts, asks 
 AVAILABLE or FAILED. The other routes move the package through its lifecycle (`statemachine.py`), register usage by rApp instances, and list packages,
 artifacts and usages.
 
-Where it sits: rApp Management, AIMgF and the GUI BFF call it over R1; it calls NFO (`POST /nfo/descriptors`) through `R1Client`, and fetches the package
+Where it sits: rApp Management, AIMgF and the GUI BFF call it over R1; it calls NFO (`POST /nfo/descriptors`, and `DELETE /nfo/descriptors/{id}` when a
+package is deleted) and, to release an orphaned usage registration, rApp Management (`GET /rapp-mgmt/instances/{id}`) through `R1Client`, and fetches the package
 itself with a plain HTTP GET (not over R1). Design: SMO Design v1.3 section 3.4 and Onboarding/rApp Mgmt LLD sections 1-4; module README sections 1.5 and 2.
 
 What it owns: the `application_package`, `artifact` and `package_usage_registration` tables (`models.py`). It does not store the package bytes, deploy
@@ -95,8 +96,9 @@ def onboard_package(body: OnboardRequest, db: Session = Depends(get_session)):
     # row; ask NFO for the descriptor; fire VALIDATE_OK; set the state and commit. An exception in ONBOARD_VALIDATION_FAILURES fires VALIDATE_FAILED instead.
     # The identity fields and Artifact rows set before a late failure (NFO refusing the descriptor) are committed with the FAILED package; a failure during the
     # fetch or the validation never reaches them.
-    # An exception outside ONBOARD_VALIDATION_FAILURES (for example NFO answering 201 with a body that is not a UUID) is not caught: the request is a 500 and the
-    # row committed first stays in ONBOARDING, from which no route moves it on or deletes it.
+    # Any other exception (for example NFO answering 201 with a body that is not a UUID) also ends the package FAILED (call flow 06d): the session is rolled
+    # back, so nothing written after the first commit is kept, and the row committed first is set FAILED, from where it can be deleted. Before DOC-CF-1.2 such
+    # a package stayed in ONBOARDING for good.
     # `failureReason` is the exact message for PackageValidationFailed and only the exception class name for anything else, so internals are not returned;
     # it is logged and never stored.
     pkg = ApplicationPackage(
@@ -163,6 +165,11 @@ def onboard_package(body: OnboardRequest, db: Session = Depends(get_session)):
         # The message of a PackageValidationFailed is written for the operator (the place and the rule broken). Any other exception reports only its class name, so a library message (paths, URLs) is not returned.
         failure_reason = str(exc) if isinstance(exc, PackageValidationFailed) else type(exc).__name__
         log.warning("package %s failed validation: %s", pkg.package_id, failure_reason)
+    except Exception as exc:  # noqa: BLE001  (call flow 06d: no package is left in ONBOARDING, whatever went wrong)
+        log.exception("package %s failed to onboard", pkg.package_id)
+        db.rollback()
+        new_state = ONBOARDING_FSM.fire(PackageState.ONBOARDING, PackageEvent.VALIDATE_FAILED, db=db, package=pkg)
+        failure_reason = type(exc).__name__
 
     pkg.state = new_state
     db.commit()
@@ -256,7 +263,7 @@ def _fire(db: Session, pkg: ApplicationPackage, event: PackageEvent, guard_refus
     """Fires `event` on `pkg` and returns the new state; the caller stores it and commits.
 
     An IllegalTransition becomes a 409. When the event has an edge from the current state, the refusal came from that edge's guard (active usage or blocking
-    dependents) and is reported as 409 SERVICE_NAME_CONFLICT with `guard_refusal`; otherwise the event is not allowed from this state at all: 409
+    dependents) and is reported as 409 PACKAGE_IN_USE with `guard_refusal`; otherwise the event is not allowed from this state at all: 409
     LIFECYCLE_ILLEGAL_TRANSITION naming the state and the event (OI-2-lcm-error-mapping). A guard refusal with no `guard_refusal` text is reported as an illegal
     transition.
     """
@@ -265,7 +272,7 @@ def _fire(db: Session, pkg: ApplicationPackage, event: PackageEvent, guard_refus
         return ONBOARDING_FSM.fire(state, event, db=db, package=pkg)
     except IllegalTransition as exc:
         if guard_refusal is not None and event in ONBOARDING_FSM.legal_events(state):
-            raise framework_error(FrameworkError.SERVICE_NAME_CONFLICT, detail=guard_refusal) from exc
+            raise framework_error(FrameworkError.PACKAGE_IN_USE, detail=guard_refusal) from exc
         raise illegal_transition_error(exc, f"package {pkg.package_id}") from exc
 
 
@@ -335,11 +342,11 @@ def prime_package(package_id: uuid.UUID, db: Session = Depends(get_session)):
 def deprime_package(package_id: uuid.UUID, db: Session = Depends(get_session)):
     """The reference's own deprimeRapp guard: blocked while any rApp
     instance still references this package (mirrors the cascade-delete
-    guard's active-usage-registration check): 409 SERVICE_NAME_CONFLICT.
+    guard's active-usage-registration check): 409 PACKAGE_IN_USE.
     Any state but PRIMED: 409 LIFECYCLE_ILLEGAL_TRANSITION.
     """
     # Maintainer notes (not published). DEPRIME carries a guard (no open usage registration), so a refusal while the package is PRIMED is reported as 409
-    # SERVICE_NAME_CONFLICT through `guard_refusal`; DEPRIME_COMPLETE follows in the same request and the same commit.
+    # PACKAGE_IN_USE through `guard_refusal`; DEPRIME_COMPLETE follows in the same request and the same commit.
     pkg = _get_package_or_404(db, package_id)
     pkg.state = _fire(db, pkg, PackageEvent.DEPRIME, guard_refusal="blocked by an active usage registration")
     pkg.state = _fire(db, pkg, PackageEvent.DEPRIME_COMPLETE)
@@ -360,33 +367,64 @@ def cancel_delete(package_id: uuid.UUID, db: Session = Depends(get_session)):
 @app.delete("/packages/{package_id}")
 def delete_package(package_id: uuid.UUID, db: Session = Depends(get_session)):
     """AVAILABLE/DEPRECATED -> DELETING behind the cascade-delete guard (409
-    SERVICE_NAME_CONFLICT when a dependent child package or an active usage
+    PACKAGE_IN_USE when a dependent child package or an active usage
     registration blocks it); a FAILED package's row is deleted directly.
+    Either way the package's NF deployment descriptor is deleted at NFO first
+    (409 PACKAGE_IN_USE while an NFO deployment still uses it, 503
+    ENDPOINT_UNREACHABLE when NFO cannot be asked; the package is unchanged).
     Any other state (PRIMED, DELETING, ...): 409 LIFECYCLE_ILLEGAL_TRANSITION.
     """
-    # Maintainer notes (not published). Two paths. FAILED: the row is deleted directly (its Artifact rows go with it through the ondelete CASCADE), no FSM event, and the
-    # answer is {"status": "deleted"}. Otherwise: the DELETE event runs its guard (`_no_blocking_dependents`) and the answer is the package view in state DELETING, the
-    # row kept. A usage registration has a foreign key to the package with no ondelete rule and usage/start does not check the package state, so on PostgreSQL the
-    # direct delete of a FAILED package that has a registration fails on that key.
+    # Maintainer notes (not published). Two paths (call flow 06c, 06d). FAILED: the descriptor (if NFO made one) and the package's stopped usage registrations
+    # go, then the row (its Artifact rows go with it through the ondelete CASCADE), no FSM event, and the answer is {"status": "deleted"}. usage/start refuses a
+    # package that is not AVAILABLE or PRIMED, so a FAILED package has no open registration. Otherwise: the DELETE event runs its guard
+    # (`_no_blocking_dependents`) before NFO is called, and the answer is the package view in state DELETING with no descriptor, the row kept.
     pkg = _get_package_or_404(db, package_id)
     if pkg.state == PackageState.FAILED:
         # FAILED never reached AVAILABLE, so nothing can depend on it — cascade
         # check skipped entirely, per Onboarding LLD section 3.
+        _delete_descriptor(pkg)
+        db.query(PackageUsageRegistration).filter(PackageUsageRegistration.package_id == package_id).delete()
         db.delete(pkg)
         db.commit()
         return {"status": "deleted"}
-    pkg.state = _fire(db, pkg, PackageEvent.DELETE,
+    new_state = _fire(db, pkg, PackageEvent.DELETE,
                       guard_refusal="blocked by a dependent child package or active usage registration")
+    _delete_descriptor(pkg)
+    pkg.nf_deployment_descriptor_id = None
+    pkg.state = new_state
     db.commit()
     return _package_view(pkg)
 
 
+def _delete_descriptor(pkg: ApplicationPackage) -> None:
+    """Deletes the package's NF deployment descriptor at NFO (`DELETE /nfo/descriptors/{id}`); nothing to do for a package without one.
+
+    NFO answers 204 (deleted, or already gone) or 409 while a deployment still uses the descriptor, raised here as PACKAGE_IN_USE; anything else, or
+    no answer, is 503 ENDPOINT_UNREACHABLE. The caller has not changed the package yet, so a refusal leaves it as it was.
+    """
+    if not pkg.nf_deployment_descriptor_id:
+        return
+    try:
+        resp = R1Client().delete(f"/nfo/descriptors/{pkg.nf_deployment_descriptor_id}")
+    except httpx.HTTPError as exc:
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"NFO could not be asked to delete the descriptor: {type(exc).__name__}") from exc
+    if resp.status_code == 409:
+        raise framework_error(FrameworkError.PACKAGE_IN_USE, detail=f"an NFO deployment still uses descriptor {pkg.nf_deployment_descriptor_id}")
+    if resp.status_code not in (200, 204, 404):
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"NFO DeleteDescriptor returned {resp.status_code}")
+
+
 @app.post("/packages/{package_id}/usage/start")
 def register_usage_start(package_id: uuid.UUID, consumer_id: str, db: Session = Depends(get_session)):
-    """404 PACKAGE_NOT_FOUND for an unknown package."""
-    # Maintainer notes (not published). `consumer_id` (the rApp instance id) is a query parameter, taken as given. Every call inserts a new registration, so a repeated
-    # call by the same consumer opens a second one. The package's state is not checked. The open registration (no stopped_at) is what blocks DEPRIME and DELETE.
-    _get_package_or_404(db, package_id)
+    """404 PACKAGE_NOT_FOUND for an unknown package, 409 PACKAGE_NOT_DEPLOYABLE for a package that is not AVAILABLE or PRIMED."""
+    # Maintainer notes (not published). Called by rApp Management only (the GUI cannot reach it, the BFF lists no rule for it; an rApp may not change
+    # /onboarding). `consumer_id` (the rApp instance id) is a query parameter, taken as given. Every call inserts a new registration, so a repeated
+    # call by the same consumer opens a second one. The state check closes the race with a deprecate or a delete after rApp Management read the state (call
+    # flow 06), and keeps registrations off a FAILED package, whose direct delete would otherwise trip on them. The open registration (no stopped_at) is what
+    # blocks DEPRIME and DELETE.
+    pkg = _get_package_or_404(db, package_id)
+    if pkg.state not in (PackageState.AVAILABLE, PackageState.PRIMED):
+        raise framework_error(FrameworkError.PACKAGE_NOT_DEPLOYABLE, detail=f"package {package_id} is {pkg.state}, not AVAILABLE or PRIMED")
     reg = PackageUsageRegistration(package_id=package_id, consumer_id=consumer_id)
     db.add(reg)
     db.commit()
@@ -414,6 +452,50 @@ def register_usage_stop(package_id: uuid.UUID, registration_id: uuid.UUID, db: S
     db.commit()
     return {"status": "stopped"}
 
+
+
+# The rApp instance states in which an instance no longer holds its package: it was torn down. Any other state (or an unknown state) holds it.
+_RELEASED_INSTANCE_STATES = ("UNDEPLOYED",)
+
+
+@app.post("/packages/{package_id}/usage/{registration_id}/release")
+def release_orphaned_usage(package_id: uuid.UUID, registration_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Closes a usage registration that no rApp instance holds any more (an orphan), so it stops blocking deprime and delete.
+
+    The registration's consumer is looked up at rApp Management: when that instance no longer exists, or is UNDEPLOYED, the registration is stopped as by
+    usage/stop. 409 PACKAGE_IN_USE while the instance exists in any other state (terminate it instead), 503 ENDPOINT_UNREACHABLE when rApp Management
+    cannot answer, 404 PACKAGE_NOT_FOUND / PACKAGE_USAGE_REGISTRATION_NOT_FOUND as usage/stop. Idempotent for a registration already stopped.
+    """
+    # Maintainer notes (not published). The administrator's tool for the one case the usage contract cannot close itself: a teardown whose usage/stop failed
+    # (rApp Management records it in `last_teardown`), or a registration left by an instance that is gone (call flow 06c). A consumer id that is not a UUID was
+    # never an rApp instance (the GUI's old "test usage" registrations), so it is released without asking.
+    import datetime
+
+    _get_package_or_404(db, package_id)
+    reg = db.get(PackageUsageRegistration, registration_id)
+    if reg is None or reg.package_id != package_id:
+        raise framework_error(FrameworkError.PACKAGE_USAGE_REGISTRATION_NOT_FOUND,
+                              detail=f"no usage registration {registration_id} for package {package_id}")
+    if reg.stopped_at is not None:
+        return {"status": "stopped"}
+    try:
+        instance_id = uuid.UUID(reg.consumer_id)
+    except ValueError:
+        instance_id = None
+    if instance_id is not None:
+        try:
+            resp = R1Client().get(f"/rapp-mgmt/instances/{instance_id}")
+        except httpx.HTTPError as exc:
+            raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"rApp Management could not be asked: {type(exc).__name__}") from exc
+        if resp.status_code == 200 and resp.json().get("state") not in _RELEASED_INSTANCE_STATES:
+            raise framework_error(FrameworkError.PACKAGE_IN_USE,
+                                  detail=f"rApp instance {instance_id} is {resp.json().get('state')} and still holds the package: terminate it")
+        if resp.status_code not in (200, 404):
+            raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"rApp Management answered {resp.status_code}")
+    reg.stopped_at = datetime.datetime.now(datetime.UTC)
+    db.commit()
+    log.info("usage registration %s of package %s released (consumer %s held it no longer)", registration_id, package_id, reg.consumer_id)
+    return {"status": "stopped"}
 
 def _package_view(pkg: ApplicationPackage) -> dict:
     """The JSON view of a package that the lifecycle routes and the list route return.

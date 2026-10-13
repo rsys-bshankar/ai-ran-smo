@@ -43,13 +43,7 @@
   },
   {
     "method": "POST",
-    "pattern": "^/onboarding/packages/[^/]+/usage/start$",
-    "role": "admin",
-    "queryMatch": {}
-  },
-  {
-    "method": "POST",
-    "pattern": "^/onboarding/packages/[^/]+/usage/[^/]+/stop$",
+    "pattern": "^/onboarding/packages/[^/]+/usage/[^/]+/release$",
     "role": "admin",
     "queryMatch": {}
   },

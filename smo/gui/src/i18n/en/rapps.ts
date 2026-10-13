@@ -270,10 +270,7 @@ export const rapps = {
   "rapps.package.usage.consumer": "Consumer",
   "rapps.package.usage.state": "State",
   "rapps.package.usage.stopped": "stopped",
-  "rapps.package.usage.stop": "Stop",
-  "rapps.package.usage.stop.title": "Simulates the consumer releasing the package",
-  "rapps.package.usage.stop.done": "Usage stopped",
-  "rapps.package.usage.register": "Register test usage",
-  "rapps.package.usage.register.title": "Simulates an instance holding this package, to exercise the guard",
-  "rapps.package.usage.register.done": "Usage registered",
+  "rapps.package.usage.release": "Release",
+  "rapps.package.usage.release.title": "Closes a registration whose rApp instance is gone or UNDEPLOYED; refused while the instance still holds the package",
+  "rapps.package.usage.release.done": "Usage released",
 } as const;

@@ -105,10 +105,9 @@ RULES: list[Rule] = [
     _rule("POST", "/onboarding/packages", O),
     _rule("POST", "/onboarding/packages/{id}/(prime|deprime|deprecate|cancel-delete)", O),
     _rule("DELETE", "/onboarding/packages/{id}", A),
-    # usage registrations are what an rApp instance itself files (call flow 06):
-    # simulating one, to exercise the cascade-delete guard, is admin-only
-    _rule("POST", "/onboarding/packages/{id}/usage/start", A),
-    _rule("POST", "/onboarding/packages/{id}/usage/{id}/stop", A),
+    # usage registrations are rApp Management's to open and close (call flow 06): the GUI cannot start or stop one. An admin may only release an
+    # orphan, a registration whose instance is gone; Onboarding asks rApp Management and refuses one an instance still holds
+    _rule("POST", "/onboarding/packages/{id}/usage/{id}/release", A),
 
     # --- rApp Management
     _rule("POST", "/rapp-mgmt/instances", O),

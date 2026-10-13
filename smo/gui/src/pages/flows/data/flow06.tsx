@@ -25,11 +25,10 @@ export function useFlow06(subjectId: string | null): FlowBoardData {
     empty: <>{t("flows.f01.empty")} {go("/rapps#packages", t("flows.f01.onboardOne"))}</>,
     actions: {
       deprecate: <ActionButton label={t("flows.deprecate")} action={{ method: "POST", path: `${base}/deprecate`, success: t("flows.f06.deprecated") }} />,
+      // call flow 06: an active registration is an instance holding the package; the admin can only release an orphan (Onboarding asks rApp Management)
       guard: <div className="row gap wrap">
-        {active.map((u) => <ActionButton key={u.registrationId} label={t("flows.f06.stopUsage", { consumer: u.consumerId.slice(0, 8) })} title={t("flows.f06.stopUsage.title")}
-          action={{ method: "POST", path: `${base}/usage/${u.registrationId}/stop`, success: t("flows.f06.stopped") }} />)}
-        {active.length === 0 && <ActionButton label={t("flows.f06.testUsage")} title={t("flows.f06.testUsage.title")}
-          action={{ method: "POST", path: `${base}/usage/start`, query: { consumer_id: "smo-gui-test" }, success: t("flows.f06.registered") }} />}
+        {active.map((u) => <ActionButton key={u.registrationId} label={t("flows.f06.releaseUsage", { consumer: u.consumerId.slice(0, 8) })} title={t("flows.f06.releaseUsage.title")}
+          action={{ method: "POST", path: `${base}/usage/${u.registrationId}/release`, success: t("flows.f06.released") }} />)}
       </div>,
       delete: <ActionButton label={t("flows.f06.delete")} tone="danger" confirm={t("flows.f06.delete.confirm")} action={{ method: "DELETE", path: base, success: t("flows.f06.deleteRequested") }} />,
     },

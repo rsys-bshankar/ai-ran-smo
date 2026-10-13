@@ -92,6 +92,25 @@ def create_descriptor(body: CreateDescriptorRequest, db: Session = Depends(get_s
     return {"nfDeploymentDescriptorId": str(descriptor.nf_deployment_descriptor_id)}
 
 
+@app.delete("/descriptors/{descriptor_id}", status_code=204)
+def delete_descriptor(descriptor_id: uuid.UUID, db: Session = Depends(get_session)):
+    """DeleteDescriptor — the counterpart of CreateDescriptor, called by Onboarding when its package is deleted (call flow 06c, 06d).
+
+    204 once the descriptor is gone, also for an unknown id (idempotent). 409 NFDEPLOYMENT_DESCRIPTOR_ALREADY_DEPLOYED while a deployment still uses
+    it: terminate that deployment first.
+    """
+    # The deployment check is the same SELECT Instantiate's duplication guard runs; a terminated deployment is removed (`_remove_deployment`), so only a
+    # live one, or one still TERMINATING or ABNORMAL, refuses the delete.
+    descriptor = db.get(NFDeploymentDescriptor, descriptor_id)
+    if descriptor is None:
+        return
+    if db.scalar(select(NFDeployment).where(NFDeployment.nf_deployment_descriptor_id == descriptor_id).limit(1)) is not None:
+        raise framework_error(FrameworkError.NFDEPLOYMENT_DESCRIPTOR_ALREADY_DEPLOYED,
+                              detail=f"NfDeploymentDescriptor {descriptor_id} is used by a deployment")
+    db.delete(descriptor)
+    db.commit()
+
+
 @app.post("/deployments", status_code=202)
 @idempotent("nfo", status_code=202)
 def instantiate(body: InstantiateRequest, request: Request, db: Session = Depends(get_session)):

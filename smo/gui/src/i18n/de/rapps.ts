@@ -271,10 +271,7 @@ export const rapps: Partial<Record<MessageKey, string>> = {
   "rapps.package.usage.consumer": "Verbraucher",
   "rapps.package.usage.state": "Zustand",
   "rapps.package.usage.stopped": "gestoppt",
-  "rapps.package.usage.stop": "Stoppen",
-  "rapps.package.usage.stop.title": "Simuliert, dass der Verbraucher das Paket freigibt",
-  "rapps.package.usage.stop.done": "Nutzung gestoppt",
-  "rapps.package.usage.register": "Testnutzung registrieren",
-  "rapps.package.usage.register.title": "Simuliert eine Instanz, die dieses Paket hält, um den Schutz zu prüfen",
-  "rapps.package.usage.register.done": "Nutzung registriert",
+  "rapps.package.usage.release": "Freigeben",
+  "rapps.package.usage.release.title": "Schließt eine Registrierung, deren rApp-Instanz nicht mehr existiert oder UNDEPLOYED ist; abgelehnt, solange die Instanz das Paket hält",
+  "rapps.package.usage.release.done": "Nutzung freigegeben",
 };

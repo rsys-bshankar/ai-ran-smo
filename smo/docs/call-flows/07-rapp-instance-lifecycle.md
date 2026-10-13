@@ -106,12 +106,12 @@ sequenceDiagram
     Rapp->>Rapp: old must be RUNNING, else 409 LIFECYCLE_ILLEGAL_TRANSITION
     Rapp->>Onb: GET /packages/P2/onboarding-status
     Onb-->>Rapp: state=AVAILABLE or PRIMED, nfDeploymentDescriptorId
-    Note over Rapp: any other state is 409 MODEL_NOT_CERTIFIED, unknown P2 is 404,<br/>and the old instance stays RUNNING
+    Note over Rapp: any other state is 409 PACKAGE_NOT_DEPLOYABLE, unknown P2 is 404,<br/>and the old instance stays RUNNING
     Rapp->>Rapp: insert replacement, packageId=P2, state=DEPLOYING, own oauth_client_id,<br/>configuration, autonomyMode and regionScope copied from old
+    Rapp->>Onb: POST /packages/P2/usage/start (consumer_id=replacement id)
+    Onb-->>Rapp: registrationId (a refusal fails the upgrade, call flow 06)
     Rapp->>NFO: POST /nfo/deployments (descriptor of P2)
     NFO-->>Rapp: 202 nfDeploymentId, stored as the replacement's workloadRef
-    Rapp->>Onb: POST /packages/P2/usage/start (consumer_id=replacement id)
-    Onb-->>Rapp: registrationId
     Rapp->>Rapp: old: RUNNING -> UPGRADING (START_UPGRADE),<br/>old.pending_upgrade_instance_id = replacement id
     Rapp-->>Operator: newInstanceId, oldInstanceState=UPGRADING, oauthClientId
 

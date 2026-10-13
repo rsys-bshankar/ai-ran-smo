@@ -55,6 +55,9 @@ sequenceDiagram
         NFO-->>Onb: 4xx/5xx
         Note over Onb: ONBOARDING → FAILED (identity kept for the record)
         Onb-->>Op: 202 {packageId, failureReason: DescriptorCreationFailed}
+    else any other error (e.g. NFO's 201 carries no usable id)
+        Note over Onb: work after the first commit rolled back<br/>ONBOARDING → FAILED (never left ONBOARDING)
+        Onb-->>Op: 202 {packageId, failureReason: exception class}
     end
     Op->>Onb: GET /onboarding/packages/{id}/onboarding-status
     Onb-->>Op: {state AVAILABLE or FAILED, nfDeploymentDescriptorId, aiCapabilities, smeDeclarations}
@@ -84,16 +87,28 @@ sequenceDiagram
         Onb-->>RM: 404
         RM-->>Op: 404 PACKAGE_NOT_FOUND (nothing created)
     else any other state, or no descriptor
-        RM-->>Op: 409 MODEL_NOT_CERTIFIED (nothing created)
+        RM-->>Op: 409 PACKAGE_NOT_DEPLOYABLE (nothing created)
     end
     Note over RM: new RAppInstance DEPLOYING<br/>(autonomyMode and regionScope fixed for its lifetime)
+    RM->>Onb: POST /onboarding/packages/{packageId}/usage/start?consumer_id={id}
+    Note over Onb: package still AVAILABLE or PRIMED?<br/>open a usage registration (call flow 06)
+    alt registration opened
+        Onb-->>RM: 200 {registrationId}
+        Note over RM: keep packageUsageRegistrationId<br/>(the deprime and delete guards now see the instance)
+    else package changed state since it was read
+        Onb-->>RM: 409 PACKAGE_NOT_DEPLOYABLE
+        RM-->>Op: 409 PACKAGE_NOT_DEPLOYABLE (nothing created)
+    else Onboarding refused or did not answer
+        RM-->>Op: 502 UPSTREAM_FAILED / 503 ENDPOINT_UNREACHABLE (nothing created)
+    end
     RM->>SME: POST /sme/invoker-registrations<br/>{apiInvokerPublicKey: rapp-instance:{id}, authzScope}
     Note over SME: new invoker, kind rapp (no enrollment secret)<br/>keeps only the secret's hash
     alt registered, with the scope asked for
         SME-->>RM: 201 {apiInvokerId, onboardingSecret, authzScope}
         Note over RM: oauthClientId = apiInvokerId<br/>(limits, kill switch, approval policy, audit key on it)<br/>secret held for this request only, never stored
     else SME unreachable or refused, or scope not recorded
-        RM-->>Op: 503 ENDPOINT_UNREACHABLE (invoker removed, nothing created)
+        RM->>Onb: POST …/usage/{registrationId}/stop (best-effort)
+        RM-->>Op: 503 ENDPOINT_UNREACHABLE (invoker removed, registration stopped, nothing created)
     end
     RM->>NFO: POST /nfo/deployments<br/>{nfDeploymentDescriptorId, name: rapp-instance-{id}, requiredResourceTypeId}
     Note over NFO: descriptor exists (else 422) · name unused,<br/>descriptor not yet deployed (else 409)
@@ -102,8 +117,6 @@ sequenceDiagram
     Note over NFO: deployment INITIAL → RUNNING in this request<br/>Phase 1: records it, starts no workload
     NFO-->>RM: 202 {nfDeploymentId, state RUNNING, clusterId}
     Note over RM: workloadRef = nfDeploymentId (null if NFO refused)
-    RM->>Onb: POST /onboarding/packages/{packageId}/usage/start?consumer_id={id}
-    Onb-->>RM: {registrationId} (the delete guard of call flow 06 now sees the instance)
     Note over RM: commit the instance (DEPLOYING)
     opt operatorApiBase given (01c)
         RM->>App: POST /rapps/{id}/operator/instances/{id}/credentials (via R1)<br/>{oauthClientId, oauthClientSecret}
@@ -246,4 +259,5 @@ instance runs, because its registrations at SME and DME are under the old id.
   are put in force, fail-closed, before it may run.
 - **NFO resolves a placement through FOCOM** even though Phase 1's answer is one cluster and nothing is started (NFO+FOCOM LLD section 4).
 - **`autonomyMode` and `regionScope` are fixed at CreateInstance** for the instance's lifetime; call flow 09 shows what they drive (HISTORY.md
-  OI-6.3). `usage/start` and `usage/stop` (at terminate) let Onboarding's delete guard see every instance (call flow 06).
+  OI-6.3). `usage/start` (first, at CreateInstance, which fails without it) and `usage/stop` (at terminate) let Onboarding's deprime and delete
+  guards see every instance (call flow 06).
