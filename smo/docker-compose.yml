@@ -174,6 +174,8 @@ services:
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_r1-termination
       R1_KILL_SWITCH_SCHEMA: ran_nf_oam    # the gateway reads RAN NF OAM's rapp_kill, read-only (migrations/db_roles.json)
       R1_AUDIT: ${R1_AUDIT:-on}    # off: no audit rows (the gateway then needs no database)
+      # on: an rApp may POST /ran-nf-oam/pm-reports, which the sample rApps' Demo / simulation buttons need to play the network (docs/GUI_DEMO_GUIDE.md); off by default
+      R1_DEMO_RAPP_PM_REPORTS: ${R1_DEMO_RAPP_PM_REPORTS:-off}
       # PR-SEC-1.6: unset, /bootstrap names SME on the compose network; set to the HTTPS door (https://localhost:8443 with the tls
       # profile) and it names that address instead, so a consumer that only reaches the edge can complete the flow.
       R1_PUBLIC_BASE_URL: ${R1_PUBLIC_BASE_URL:-}

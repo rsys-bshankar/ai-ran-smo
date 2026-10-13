@@ -21,6 +21,7 @@ export const rappDetail: Partial<Record<MessageKey, string>> = {
   "rappDetail.header.pin": "☆ Anheften",
   "rappDetail.header.resume": "Fortsetzen",
   "rappDetail.header.resumeConfirm": "Darf diese rApp wieder Konfigurationsjobs starten?",
+  "rappDetail.operator.unreachable": "Prüfen Sie die Basis-URL der Operator-API der Instanz (rApps → Instanzen → die Instanz) und dass die rApp läuft; das Log von R1 Termination nennt die versuchte Adresse.",
   "rappDetail.header.renewCredentials": "Zugangsdaten neu senden",
   "rappDetail.header.renewCredentialsTitle": "Ein neues Geheimnis für die Identität dieser Instanz, an den rApp gesendet, der sie bedient (wenn der rApp beim Deploy nicht erreichbar war, oder zum Wechseln des Geheimnisses)",
   "rappDetail.header.renewCredentialsConfirm": "Ein neues Geheimnis für diese Instanz ausstellen und an ihren rApp senden? Das alte ist sofort ungültig.",

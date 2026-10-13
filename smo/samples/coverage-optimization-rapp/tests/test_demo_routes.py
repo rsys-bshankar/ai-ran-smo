@@ -3,7 +3,7 @@ Twin. The R1 double records the PM reports the rApp sends to RAN NF OAM. Run wit
 
 import datetime
 
-from app.main import DEMO_HISTORY_START, DEMO_LIVE_START
+from app.main import DEMO_HISTORY_START, DEMO_LIVE_START, PM_REPORT_CHUNK
 from app.model.series import TILT
 from app.producer import BASELINE_POWER, BASELINE_TILT, CELLS
 from test_routes import ME, FakeResponse, _deployed, _start, client, platform, r1  # noqa: F401  (fixtures)
@@ -34,13 +34,16 @@ def test_prepare_registers_the_twin_producer_and_starts_the_instance(client, pla
 
 
 def test_history_reports_three_days_of_hourly_coverage_for_every_cell(client, platform, r1):  # noqa: F811
-    """`demo/history` sends one COVERAGE_PERFORMANCE report of the element: 72 hourly windows per cell from the simulation's first day."""
+    """`demo/history` sends COVERAGE_PERFORMANCE reports of the element: 72 hourly windows per cell from the simulation's first day."""
     instance_id = _start(client, r1)
     sent = _record_pm(r1)
     resp = client.post(f"/instances/{instance_id}/demo/history")
     assert resp.status_code == 200, resp.text
     assert resp.json()["measurements"] == 72 * len(CELLS)
-    (report,) = sent
+    # in reports of at most PM_REPORT_CHUNK measurements of the same element and counter (each R1 call stays under its timeout), read as one
+    assert len(sent) == -(-resp.json()["measurements"] // PM_REPORT_CHUNK) and all(len(r["measurements"]) <= PM_REPORT_CHUNK for r in sent)
+    assert {(r["managedElementRef"], r["counterType"]) for r in sent} == {(sent[0]["managedElementRef"], sent[0]["counterType"])}
+    report = {**sent[0], "measurements": [m for r in sent for m in r["measurements"]]}
     assert report["managedElementRef"] == ME and report["counterType"] == "COVERAGE_PERFORMANCE"
     assert report["measurements"][0]["timestamp"] == DEMO_HISTORY_START.isoformat()
     assert {m["cellId"] for m in report["measurements"]} == set(CELLS)

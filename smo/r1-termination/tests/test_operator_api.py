@@ -210,6 +210,15 @@ def test_an_unreachable_rapp_is_a_502_and_a_slow_one_a_504_with_no_exception_tex
     assert resp.status_code == 504 and resp.json()["title"] == "UPSTREAM_TIMEOUT" and "my-rapp" not in resp.text
 
 
+def test_an_unreachable_rapp_is_logged_with_the_instance_and_the_base(world, caplog):
+    """The 502 says nothing about why; the gateway's log names the instance, the registered base and the failure, so a wrong base URL can be found."""
+    world["rapp_error"] = httpx.ConnectError("connect failed")
+    with caplog.at_level("WARNING", logger="app.main"):
+        assert client.get(f"/rapps/{INSTANCE}/operator/x", headers=AUTH).status_code == 502
+    line = next(r.getMessage() for r in caplog.records if "could not be reached" in r.getMessage())
+    assert INSTANCE in line and "http://my-rapp:8000" in line and "ConnectError" in line
+
+
 @pytest.mark.parametrize("base", ["http://127.0.0.1:8000", "http://169.254.169.254", "file:///etc/passwd", "http://u:p@my-rapp:8000"])
 def test_a_registered_base_that_fails_the_guard_is_never_called(world, base):
     """rApp Management checks the base when it is stored; the gateway does not trust the stored value: a row written another way is not called."""

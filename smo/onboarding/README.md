@@ -84,7 +84,7 @@ Onboarding never calls rApp Management, AIMgF or SME. The FK from NFO's descript
 | Size limits on every package zip (`SEC-15.17`). A package arrives from outside, so the zip is opened through `_open_zip` and read through `_read` in `app/package_validation.py`, signed or not: the central directory is checked against `ZIP_LIMITS` (the `csar_signing.ZipLimits` defaults `verify_zip` applies: 2000 entries, 50 MiB for a file, 200 MiB in all, a ratio of 200 to 1 above 1 MiB) before anything is decompressed, and each file read is bounded. A package over them is `PackageValidationFailed` ("package too large to read: ...") and so `FAILED` with that `failureReason`. | An unsigned package used to be opened and parsed with no limit at all, so a zip bomb exhausted the worker before any check ran (a signed package was already limited by `verify_zip`). |
 | `runtimeProfiles.<MODE>.memory` must be a Kubernetes quantity, and the descriptor created for NFO carries `containerResourcesByMode` (requests and limits per mode, `PR-RAPP-2.1`). | The memory becomes a container limit; a value like `16 GB` would be an invalid pod spec the day a deployment manager applies it. |
 | Delete from `AVAILABLE` or `DEPRECATED` is blocked while a child package is `AVAILABLE` / `DEPRECATED` or a usage registration has no `stopped_at`; deprime is blocked while a usage registration is open. | Cascade-delete guard; the reference's own deprime guard. |
-| `DELETING` is terminal and keeps the row. | Nothing re-enters; the row remains as the record. |
+| `DELETING` is terminal and keeps the row. | Nothing re-enters; the row remains as the record. The list leaves it out on `include_deleted=false`, so the console does not show a finished delete as one in progress; the name lookups keep the default and still find it. |
 | Instances may be created from `AVAILABLE` or `PRIMED` packages only. Enforced by rApp Management, not here. | Priming is optional. |
 
 Idempotency: usage stop is idempotent (an already stopped registration keeps its first `stoppedAt`). Onboarding the same location twice is refused by the duplicate check, not deduplicated.
@@ -155,7 +155,7 @@ Event routes and refusals: an event with no edge from the current state gives `4
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
 | POST | `/packages` (202) | `{location, applicationType="rApp"}` → `{packageId, trackingId}`, plus `failureReason` when the package ended `FAILED` (the message of a validation failure; the exception name for any other). Runs the validation pipeline. | none for a validation failure (the package is `FAILED`) |
-| GET | `/packages?state=` | Paged list of package views | |
+| GET | `/packages?state=&include_deleted=` | Paged list of package views; `include_deleted=false` (default `true`) leaves out `DELETING` packages, ignored with a `state` (the console's package list asks for it) | |
 | GET | `/packages/{id}/onboarding-status` | `{packageId, state, nfDeploymentDescriptorId, smeDeclarations, aiCapabilities}`; the read rApp Management and AIMgF depend on | 404 `PACKAGE_NOT_FOUND` |
 | GET | `/packages/{id}/artifacts` | Paged `{artifactId, path, accessUrl}` | 404 |
 | GET | `/packages/{id}/usage` | Paged `{registrationId, consumerId, stoppedAt, active}`: what blocks a delete | 404 |

@@ -319,6 +319,18 @@ describe("DeclaredPage: buttons", () => {
     await settle();
     expect(document.body.textContent).toContain("evaluate failed");
     expect(document.body.textContent).toContain("BUSY");
+    expect(document.body.textContent).not.toContain("operator API base URL");
+  });
+
+  // The gateway could not reach the rApp at all (502 UPSTREAM_UNAVAILABLE): the toast says what to check, not only the title.
+  it("a change the gateway could not deliver says to check the operator API base URL and the rApp", async () => {
+    bff({ [`POST ${OP}/instances/${IID}/evaluate`]: { status: 502, body: { title: "UPSTREAM_UNAVAILABLE", detail: "the rApp's operator API could not be reached" } } });
+    const { container } = await page(ES);
+    await settle();
+    await click(byText(container, "button", "Evaluate now")!);
+    await settle();
+    expect(document.body.textContent).toContain("evaluate failed — UPSTREAM_UNAVAILABLE");
+    expect(document.body.textContent).toContain("Check the instance's operator API base URL");
   });
 
   // A row value that is not one safe path segment ("../x") must not be put into a route: the row button is not drawn, so nothing can be sent.

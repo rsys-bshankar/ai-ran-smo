@@ -449,6 +449,7 @@
     },
     "/packages": {
       "get": {
+        "description": "`include_deleted=false` leaves out the deleted packages (`DELETING`, the terminal state whose row is kept as the record); ignored with a `state`.",
         "operationId": "query_packages_packages_get",
         "parameters": [
           {
@@ -465,6 +466,16 @@
                 }
               ],
               "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_deleted",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Include Deleted",
+              "type": "boolean"
             }
           },
           {

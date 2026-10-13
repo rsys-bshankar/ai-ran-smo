@@ -9,6 +9,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useToast } from "../components/Toast";
+import { useT } from "../i18n";
 import { refreshInterval, type Obj } from "../lib/operatorUi";
 import { invalidateAfter } from "../data/keys";
 import { api, ApiError, type Query } from "./client";
@@ -82,6 +83,7 @@ export interface OperatorAction { actionId: string; method: "POST" | "PUT" | "PA
 export function useOperatorAction(instanceId: string) {
   const qc = useQueryClient();
   const toast = useToast();
+  const t = useT();
   return useMutation<unknown, ApiError, OperatorAction>({
     mutationFn: (a) => api(`/rapps/${instanceId}/operator${a.path}`, { method: a.method, json: a.method === "DELETE" ? undefined : a.body ?? {}, headers: { "X-Action-Id": a.actionId } }),
     onSuccess: (_data, a) => {
@@ -90,7 +92,8 @@ export function useOperatorAction(instanceId: string) {
       // a declared action changes the rApp, and through its config jobs the network: those reads only (SCALE.md P8)
       void invalidateAfter(qc, "/rapp-mgmt", ["ran-nf-oam"]);
     },
-    onError: (err, a) => toast.push({ tone: "error", text: `${a.actionId} failed — ${err.message}` }),
+    // R1 Termination's 502 UPSTREAM_UNAVAILABLE: it could not open a connection to the rApp at the instance's registered base, so say what to check
+    onError: (err, a) => toast.push({ tone: "error", text: `${a.actionId} failed — ${err.message}${err.title === "UPSTREAM_UNAVAILABLE" ? `. ${t("rappDetail.operator.unreachable")}` : ""}` }),
   });
 }
 

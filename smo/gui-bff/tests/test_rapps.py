@@ -441,3 +441,11 @@ def test_deleting_a_user_removes_the_pins(app, smo):
     assert app.state.test_db.pins("temp") == [I_RUN]
     assert admin.delete("/api/admin/users/temp").status_code == 204
     assert app.state.test_db.pins("temp") == []
+
+
+def test_a_call_to_the_operator_api_waits_longer_than_the_gateway_does(app, smo):
+    """An operator-API call gets OPERATOR_CALL_TIMEOUT_SECONDS (longer than the gateway's 60 s wait for the rApp), not the BFF's 30 s for other calls,
+    so a long declared action (a demo button sending three days of PM) is not cut off by the BFF first."""
+    from app.rapps import OPERATOR_CALL_TIMEOUT_SECONDS
+    assert login(app, "operator").post(op_url(I_RUN, f"/instances/{I_RUN}/evaluate")).status_code == 200
+    assert smo.operator_calls[0].extensions["timeout"]["read"] == OPERATOR_CALL_TIMEOUT_SECONDS > 60
