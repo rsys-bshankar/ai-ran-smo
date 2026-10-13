@@ -77,3 +77,49 @@ def test_the_thread_beats_on_its_interval_and_stops(oam, monkeypatch):
         assert len(oam["beats"]) >= 2
     finally:
         stop.set()
+
+
+def test_a_refused_heartbeat_is_logged_and_not_counted(oam, monkeypatch, caplog):
+    """RAN NF OAM answering an endpoint's heartbeat with an error (the endpoint deleted meanwhile) is logged, not counted, and the others still go."""
+    oam["endpoints"] = [_ep("gone", f"{SELF}/edit-config"), _ep("a", f"{SELF}/edit-config")]
+    monkeypatch.setattr(keepalive.httpx, "post", lambda url, timeout=None: httpx.Response(404 if "/gone/" in url else 200, json={}))
+    with caplog.at_level("WARNING", logger="app.keepalive"):
+        assert keepalive.beat_once(OAM, SELF) == 1
+    assert any("gone" in r.getMessage() and "404" in r.getMessage() for r in caplog.records)
+
+
+def test_a_failed_round_is_logged_and_the_next_one_still_runs(monkeypatch, caplog):
+    """RAN NF OAM unreachable: the round is logged and the thread goes on to the next one instead of dying."""
+    import threading
+    calls = []
+    two = threading.Event()
+
+    def flaky(oam_url, self_url):
+        calls.append(1)
+        if len(calls) >= 2:
+            two.set()
+        raise httpx.ConnectError("down")
+
+    monkeypatch.setattr(keepalive, "beat_once", flaky)
+    monkeypatch.setenv("MOCK_O1_HEARTBEAT_SECONDS", "0.02")
+    monkeypatch.setenv("MOCK_O1_OAM_URL", OAM)
+    monkeypatch.setenv("MOCK_O1_SELF_URL", SELF)
+    with caplog.at_level("WARNING", logger="app.keepalive"):
+        stop = keepalive.start()
+        try:
+            assert two.wait(2)
+        finally:
+            stop.set()
+    assert any("heartbeat round" in r.getMessage() and "ConnectError" in r.getMessage() for r in caplog.records)
+
+
+def test_the_app_starts_the_heartbeat_with_its_lifespan_and_stops_it_on_shutdown(monkeypatch):
+    """The app's lifespan starts the thread (when configured) and sets its stop event when the app shuts down."""
+    import threading
+    from fastapi.testclient import TestClient
+    from app.main import app
+    stop = threading.Event()
+    monkeypatch.setattr(keepalive, "start", lambda: stop)
+    with TestClient(app):
+        assert not stop.is_set()
+    assert stop.is_set()
