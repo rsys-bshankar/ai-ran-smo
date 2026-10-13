@@ -377,7 +377,7 @@ Errors are RFC 7807 ProblemDetails from `framework_error()`; the code is carried
 - No distributed-training engine consumes the FL / RL requirements.
 - NFO call results are not status-checked (2.5): a failed instantiate surfaces as a 500 with nothing committed, but a failed delete is ignored and can leave an NFO deployment behind. A crash between the NFO call and `commit` leaves an NFO deployment AIMgF does not know of.
 - `GET /aiml-inference-reports` filters and paginates in Python after loading all rows (not SQL `LIMIT` / `OFFSET`), and `nrm-refs` scans all reports and functions.
-- A feature group registered with the deprecated clear-text `token` still has it in `feature_group.token` (not returned by any route); it is moved to a secret by registering the group again with a `tokenRef`. `SEC-15.2b` in `OPEN_ITEMS.md`.
+- A feature group registered with the deprecated clear-text `token` still has it in `feature_group.token` (not returned by any route); it is moved to a secret by registering the group again with a `tokenRef`. The SDK and the console send `tokenRef` (`SEC-15.2b`); the server still accepts `token` until a later minor release. `SEC-15.2b` in `OPEN_ITEMS.md`.
 - MLTrainingReport's `trainingProcessRef` is filled by the list / get views, not stored.
 
 ## 3. Unit tests

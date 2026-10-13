@@ -186,21 +186,49 @@ def test_list_recent_performance_reports(client, r1):
 
 
 def test_create_feature_group(client, r1):
-    """`create_feature_group` posts the group's datalake settings and defaults `enableDme` to false."""
-    client.create_feature_group("fg-1", "feat1,feat2", "influx", "host", "8086", "bucket", "token", "org", "meas")
+    """`create_feature_group` posts the group's datalake settings with `tokenRef` (no `token` key) and defaults `enableDme` to false."""
+    client.create_feature_group("fg-1", "feat1,feat2", "influx", "host", "8086", "bucket", token_ref="lake-token", db_org="org", measurement="meas")
     call = r1.calls[0]
     assert call["path"] == "/aimgf/feature-groups"
     assert call["json"]["featureGroupName"] == "fg-1"
+    assert call["json"]["tokenRef"] == "lake-token"
+    assert "token" not in call["json"]
     assert call["json"]["enableDme"] is False
 
 
 def test_create_feature_group_with_its_dme_type(client, r1):
     """With `enable_dme` the DME type id is sent as a string and the delivery method defaults to PULL_HTTP."""
     type_id = uuid.uuid4()
-    client.create_feature_group("fg-1", "feat1", "influx", "host", "8086", "bucket", "token", "org", "meas",
+    client.create_feature_group("fg-1", "feat1", "influx", "host", "8086", "bucket", token_ref="lake-token", db_org="org", measurement="meas",
                                 enable_dme=True, dme_type_id=type_id)
     json = r1.calls[0]["json"]
     assert (json["enableDme"], json["dmeTypeId"], json["dataDeliveryMethod"]) == (True, str(type_id), "PULL_HTTP")
+
+
+def test_create_feature_group_with_the_deprecated_token_still_sends_it_and_warns_without_the_value(client, r1):
+    """The deprecated clear-text `token` (old positional form) is still sent as `token`, with a `DeprecationWarning` whose text does not contain the secret."""
+    with pytest.warns(DeprecationWarning) as caught:
+        client.create_feature_group("fg-1", "feat1", "influx", "host", "8086", "bucket", "s3cret-value", "org", "meas")
+    json = r1.calls[0]["json"]
+    assert json["token"] == "s3cret-value" and "tokenRef" not in json
+    assert "s3cret-value" not in str(caught[0].message)
+
+
+def test_create_feature_group_needs_exactly_one_credential_and_never_names_it(client, r1):
+    """Neither or both of `token_ref` and `token` is a `ValueError` raised before any call, and the message holds neither value."""
+    with pytest.raises(ValueError) as both:
+        client.create_feature_group("fg-1", "f", "influx", "h", "1", "b", "s3cret-value", "org", "meas", token_ref="lake-token")
+    with pytest.raises(ValueError):
+        client.create_feature_group("fg-1", "f", "influx", "h", "1", "b", db_org="org", measurement="meas")
+    assert "s3cret-value" not in str(both.value) and "lake-token" not in str(both.value)
+    assert r1.calls == []
+
+
+def test_create_feature_group_requires_db_org_and_measurement(client, r1):
+    """`db_org` and `measurement` have no default in practice: leaving one out is a `ValueError` before any call."""
+    with pytest.raises(ValueError):
+        client.create_feature_group("fg-1", "f", "influx", "h", "1", "b", token_ref="lake-token", measurement="meas")
+    assert r1.calls == []
 
 
 def test_list_feature_groups(client, r1):
