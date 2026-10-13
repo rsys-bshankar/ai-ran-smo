@@ -22,7 +22,7 @@ Needs `httpx`, `pyyaml` and `cryptography` (the SMO's runtime requirements) and 
 
 | Check | Group | What | Fails or warns |
 |---|---|---|---|
-| PK-1 | STRUCTURE | a `.csar` zip file, no entry listed twice, no corrupt entry | fail |
+| PK-1 | STRUCTURE | a `.csar` zip file within Onboarding's zip limits (entries, size of a file and of all, compression ratio), no entry listed twice, no entry path that is absolute or climbs out with `..`, no corrupt entry | fail |
 | PK-2 | STRUCTURE | `TOSCA-Metadata/TOSCA.meta` names an `Entry-Definitions:` file that is in the package | fail |
 | PK-3 | STRUCTURE | the ASD sets `application_name`, `application_version`, `provider` | warn (Onboarding accepts a package without them) |
 | PK-4 | MANIFEST | `manifest.yaml`, when present, is valid YAML and `runtimeProfiles` (including `memory` as a Kubernetes quantity), `limits` and `operatorUi` pass Onboarding's rules | fail |
@@ -33,6 +33,8 @@ Needs `httpx`, `pyyaml` and `cryptography` (the SMO's runtime requirements) and 
 | PK-9 | HYGIENE | no file holds a private key | fail |
 | PK-S | SIGNATURE | with `--trust`: signed by a publisher of the trust store and unchanged since (tampered, added or removed file, unknown publisher, wrong key); without a signature: warn, or fail with `--require-signed`; without `--trust`: skipped (fail with `--require-signed`) | |
 | PK-V | ONBOARDING | Onboarding's validation accepts the package, with the same trust store and policy | fail |
+
+The zip limits are Onboarding's own (`ZIP_LIMITS`, `csar_signing.DEFAULT_LIMITS`: 2000 entries, 50 MiB a file, 200 MiB in all, 200 to 1 above 1 MiB), and every file is read bounded, so a zip bomb fails PK-1 (and PK-V) and is never decompressed in full. An unsafe entry path fails PK-1 although Onboarding refuses it only for a signed package.
 
 A check that needs an earlier one to have passed is **skipped** with the reason, not failed a second time (a file that is not a zip fails PK-1 and skips the rest of the structure checks).
 

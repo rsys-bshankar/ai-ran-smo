@@ -5,6 +5,7 @@ Runtime: the kit takes a sample package through onboard, register, heartbeat, R1
 thing show the checks read the platform back instead of counting 2xx answers.
 """
 
+import dataclasses
 import io
 import json
 import re
@@ -44,10 +45,10 @@ def entries(path: Path = ES) -> dict[str, bytes]:
         return {i.filename: z.read(i.filename) for i in z.infolist()}
 
 
-def zipped(files: dict[str, bytes]) -> bytes:
-    """Builds package bytes (a zip) from {name: bytes}."""
+def zipped(files: dict[str, bytes], compression=zipfile.ZIP_STORED) -> bytes:
+    """Builds package bytes (a zip) from {name: bytes}; stored, or deflated when a test needs a small file that expands."""
     buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w") as z:
+    with zipfile.ZipFile(buf, "w", compression) as z:
         for name, content in files.items():
             z.writestr(name, content)
     return buf.getvalue()
@@ -126,6 +127,86 @@ def test_a_package_that_is_not_a_zip_does_not_crash_the_checks_that_need_one():
     """Bytes that are not a zip do not crash the checks: those that need the archive are skipped."""
     results = offline(b"nope")
     assert {r.id for r in results if r.status == SKIP} >= {"PK-2", "PK-3", "PK-4", "PK-8", "PK-9"}
+
+
+def zip_limited(monkeypatch, **changes):
+    """Lowers Onboarding's zip limits for the test (the kit reads them from `onboarding().ZIP_LIMITS`, so one change moves both)."""
+    module = package_checks.onboarding()
+    monkeypatch.setattr(module, "ZIP_LIMITS", dataclasses.replace(module.ZIP_LIMITS, **changes))
+
+
+def over_limit(results, check_id="PK-1"):
+    """True when the package failed `check_id` for the zip limits and every check that opens the zip was skipped, not crashed."""
+    by_id = {r.id: r for r in results}
+    skipped = {"PK-2", "PK-3", "PK-4", "PK-6", "PK-7", "PK-8", "PK-9"}
+    return by_id[check_id].status == FAIL and {i for i in skipped if by_id[i].status == SKIP} == skipped
+
+
+def test_the_conformance_kit_applies_the_zip_limits_onboarding_applies():
+    """The kit has no limits of its own: it reads Onboarding's `ZIP_LIMITS`, which are the ones `csar_signing.verify_zip` uses (SEC-15.17b)."""
+    assert package_checks.onboarding().ZIP_LIMITS is cs.DEFAULT_LIMITS
+
+
+def test_a_zip_bomb_fails_pk_1_and_pk_v_and_is_not_decompressed_by_the_other_checks():
+    """60 MiB of zeros in a 60 kB zip: above the member limit and the ratio, so PK-1 fails and PK-V agrees, and the checks that open the zip skip."""
+    files = {k: v for k, v in entries().items() if k not in cs.SIGNING_FILES}
+    files["Artifacts/bomb.bin"] = bytes(60 * 1024 * 1024)
+    data = zipped(files, zipfile.ZIP_DEFLATED)
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        assert any(i.file_size > 50 * 1024 * 1024 for i in z.infolist())
+    assert len(data) < 200_000
+    results = offline(data)
+    assert over_limit(results)
+    assert "too large" in failures(results)["PK-1"]
+    assert "package too large to read" in failures(results)["PK-V"]
+
+
+def test_a_package_with_too_many_entries_fails_pk_1():
+    """More entries than `max_entries` (2000 by default) fails PK-1 before any is read."""
+    data = unsigned(lambda f: f.update({f"Artifacts/f{i}.txt": b"x" for i in range(2001)}))
+    results = offline(data)
+    assert over_limit(results)
+    assert "2000 allowed" in failures(results)["PK-1"]
+
+
+def test_an_oversize_member_fails_pk_1_and_a_total_over_the_limit_does_too(monkeypatch):
+    """A file above `max_member_bytes`, and files that together pass `max_total_bytes`, each fail PK-1 (limits lowered so the test stays small)."""
+    zip_limited(monkeypatch, max_member_bytes=10_000)
+    data = unsigned(lambda f: f.__setitem__("Artifacts/big.bin", b"\x01\x02" * 6_000))
+    results = offline(data)
+    assert over_limit(results) and "more than the 10000 allowed" in failures(results)["PK-1"]
+    zip_limited(monkeypatch, max_member_bytes=1_000_000, max_total_bytes=50_000)
+    results = offline(unsigned(lambda f: f.update({"Artifacts/a.bin": bytes(range(256)) * 100, "Artifacts/b.bin": bytes(range(256)) * 100})))
+    assert over_limit(results) and "bytes uncompressed" in failures(results)["PK-1"]
+
+
+def test_a_member_over_the_ratio_fails_pk_1(monkeypatch):
+    """A file above the ratio floor that compresses more than `max_ratio` to 1 fails PK-1 (a zip bomb below the size limits)."""
+    zip_limited(monkeypatch, ratio_floor_bytes=1000, max_ratio=20)
+    files = {k: v for k, v in entries().items() if k not in cs.SIGNING_FILES}
+    files["Artifacts/zeros.bin"] = bytes(200_000)
+    results = offline(zipped(files, zipfile.ZIP_DEFLATED))
+    assert over_limit(results) and "zip bomb" in failures(results)["PK-1"]
+
+
+@pytest.mark.parametrize("path", ["../escape.txt", "Artifacts/../../escape.txt", "/etc/cron.d/x", "Artifacts\\..\\x.txt"])
+def test_an_entry_path_that_climbs_out_or_is_absolute_fails_pk_1(path):
+    """A path with `..`, a leading `/` or a backslash fails PK-1, as `csar_signing.verify_zip` refuses it in a signed package."""
+    results = offline(unsigned(lambda f: f.__setitem__(path, b"x")))
+    assert "unsafe path" in failures(results)["PK-1"]
+
+
+def test_the_normal_packages_still_pass_pk_1_and_the_zip_limits_do_not_touch_them():
+    """The committed sample passes PK-1 with the real limits, unsigned and signed."""
+    assert outcome(offline(unsigned()))["PK-1"] == PASS
+    assert outcome(offline(ES.read_bytes()))["PK-1"] == PASS
+
+
+def test_a_member_that_is_larger_than_the_scan_limit_is_not_read_past_it_by_pk_9():
+    """PK-9 reads at most `MAX_SCANNED_BYTES` of a file whatever its directory entry says, and a key beyond that is not found (as documented)."""
+    big = bytes(package_checks.MAX_SCANNED_BYTES + 10)
+    with zipfile.ZipFile(io.BytesIO(zipped({"x.bin": big}))) as z:
+        assert package_checks._scanned(z, "x.bin") == b""
 
 
 def test_advice_is_a_warning_not_a_failure():
