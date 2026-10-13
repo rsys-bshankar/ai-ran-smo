@@ -2,16 +2,16 @@
 
 rApp Management makes an identity at SME for every instance it creates (with the instance's scope claim; the instance's limits, kill switch and
 approval policy key on it) and pushes the credentials to the instance's operator API (`POST /instances/{id}/credentials`, through R1 Termination).
-One rApp process may serve several instances, so the SDK keeps one identity per instance (`smo_shared.r1_client.bind_instance_identity`, in memory
-only) and every call made while handling a request for `/instances/{id}/...` carries that instance's token. A call for an instance with no
+One rApp process may serve several instances, so the SDK keeps one identity per instance (`smo_shared.r1_client.bind_instance_identity`: in the
+shared identity table `module_identity`, so every replica and a restarted process have it, cached per process) and every call made while handling a request for `/instances/{id}/...` carries that instance's token. A call for an instance with no
 credentials, or outside any instance, carries the process's own.
 
     from smo_sdk import instances
     instances.install(app)                      # the credentials route, and acting for the instance of each /instances/{id}/... request
     sdk.platform.bootstrap_complete(instance_id)   # DEPLOYING -> RUNNING, as the instance itself
 
-The credentials are kept in memory: after a restart the rApp acts for none of its instances until rApp Management issues them again
-(`POST /rapp-mgmt/instances/{id}/credentials`).
+Re-sending them (`POST /rapp-mgmt/instances/{id}/credentials/renew`) gives the same identity a new secret: for an rApp that was unreachable
+when the instance was created, or to rotate the secret.
 """
 
 import re

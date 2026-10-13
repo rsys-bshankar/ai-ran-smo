@@ -341,8 +341,8 @@ def set_invoker_authz_scope(api_invoker_id: str, body: AuthzScopeRequest, db: Se
 
 @app.post("/invoker-registrations/{api_invoker_id}/secret")
 def renew_invoker_secret(api_invoker_id: str, db: Session = Depends(get_session)):
-    """A new onboarding secret for the same invoker id (call flow 01d): rApp Management uses it when an rApp that served a RUNNING instance lost
-    the instance's credentials (a restart), so the instance keeps the id its limits, kill switch and approval policy key on. The old secret stops
+    """A new onboarding secret for the same invoker id (call flow 01e): rApp Management uses it to re-send a running instance's credentials (its
+    rApp was unreachable when the instance was created, or a rotation), so the instance keeps the id its limits, kill switch and approval policy key on. The old secret stops
     working at once and the invoker's tokens are revoked, so whoever held them can do nothing more. Internal-only at R1 (`roles.INTERNAL_ONLY`).
     Emits API_INVOKER_UPDATED."""
     # Route notes: 200 `{apiInvokerId, onboardingSecret}`, the secret shown here once and stored only as its hash; 400 `INVOKER_NOT_REGISTERED` for an

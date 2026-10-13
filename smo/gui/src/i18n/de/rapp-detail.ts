@@ -22,7 +22,7 @@ export const rappDetail: Partial<Record<MessageKey, string>> = {
   "rappDetail.header.resume": "Fortsetzen",
   "rappDetail.header.resumeConfirm": "Darf diese rApp wieder Konfigurationsjobs starten?",
   "rappDetail.header.renewCredentials": "Zugangsdaten neu senden",
-  "rappDetail.header.renewCredentialsTitle": "Ein neues Geheimnis für die Identität dieser Instanz, an den rApp gesendet, der sie bedient (nach einem Neustart des rApps)",
+  "rappDetail.header.renewCredentialsTitle": "Ein neues Geheimnis für die Identität dieser Instanz, an den rApp gesendet, der sie bedient (wenn der rApp beim Deploy nicht erreichbar war, oder zum Wechseln des Geheimnisses)",
   "rappDetail.header.renewCredentialsConfirm": "Ein neues Geheimnis für diese Instanz ausstellen und an ihren rApp senden? Das alte ist sofort ungültig.",
   "rappDetail.header.credentialsRenewed": "Neue Zugangsdaten an den rApp gesendet",
   "rappDetail.header.resumed": "rApp darf wieder schreiben",

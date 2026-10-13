@@ -2765,7 +2765,7 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 The first flow of the call-flow audit (`OPEN_ITEMS.md` DOC-CF), done with the product owner. The old flow 01 drew a workload NFO does not
 start (`docker run --gpus`), a TOSCA read rApp Management does not make, and a container that bootstraps itself, and left out the NFO
 descriptor made at onboarding, the instance's SME identity, `usage/start`, and the limits, approval policy and SME declarations put in force at
-`bootstrap-complete`. Rewritten as five diagrams (onboard, create, credentials, bootstrap, recovery), each call with its inputs, a box on each
+`bootstrap-complete`. Rewritten as five diagrams (onboard, create, credentials, bootstrap, re-send), each call with its inputs, a box on each
 receiver for what it does, and every outcome in an `alt` block; that format is now the rule for every flow.
 
 The audit found what the old diagram hid: rApp Management made a per-instance identity at SME (its scope claim, limits, kill switch, approval
@@ -2776,19 +2776,22 @@ three): one process, one identity per instance.
 - **Credentials pushed.** CreateInstance with an `operatorApiBase` commits the instance, then pushes `{oauthClientId, oauthClientSecret}` to
   `POST /rapps/{id}/operator/instances/{id}/credentials` through R1 Termination (`provisioning.push_credentials`); the answer says
   `credentialsDelivered`. The secret is never stored by rApp Management.
-- **The SDK keeps an identity per instance** (`smo_shared.r1_client.bind_instance_identity`, in memory, chosen through a context variable;
+- **The SDK keeps an identity per instance** (`smo_shared.r1_client.bind_instance_identity`, stored in the shared `module_identity` table under
+  `rapp-instance:<id>`, the table and trust of the process's own identity, so both replicas of the replicas lane and a restarted rApp have it;
+  cached per process, re-read once when SME refuses a secret renewed through another replica; chosen per call through a context variable;
   `smo_sdk.instances.install` adds the push route, accepted with the internal role only, and a middleware making each `/instances/{id}/…`
   request act for that instance). A bound identity is never replaced by a fresh registration when SME refuses it.
 - **The rApp bootstraps itself.** The four samples call `bootstrap-complete` from `/start` (`smo_sdk.instances.bootstrap`, which reports instead
   of raising); `demo.py` and the runbook test assert RUNNING (the live-stack replay proves it through the real gateway: the in-process mesh
   stamps every call internal and cannot).
-- **Recovery after an rApp restart.** `POST /rapp-mgmt/instances/{id}/credentials/renew` (the GUI's **Re-send credentials**, admin) asks SME
+- **Re-sending the credentials.** For an rApp that was unreachable when the instance was created, or to rotate the secret:
+  `POST /rapp-mgmt/instances/{id}/credentials/renew` (the GUI's **Re-send credentials**, admin) asks SME
   for a new secret of the **same** invoker (`POST /sme/invoker-registrations/{id}/secret`, internal-only; the old secret and its tokens stop
   working) and pushes it; a failed push is 503 without the secret, which reaches an answer only when there is no operator API to push to.
 
 Not taken: one workload per instance started by NFO (option A; NFO starts nothing in Phase 1), and accepting the rApp process's own identity
-for an instance (option C; the instance's safeguards would stay unbound). Not done: keeping the credentials across an rApp restart (they are in
-memory; **Re-send credentials** restores them).
+for an instance (option C; the instance's safeguards would stay unbound). Credentials only in memory were the first cut and are not kept: the
+replicas lane runs two copies of each sample rApp, and a push reaches one of them.
 
 ### A DAST false positive from an echoed 422, and a demo that read a report too early (12 October)
 

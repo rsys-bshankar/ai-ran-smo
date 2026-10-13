@@ -2048,7 +2048,7 @@
     },
     "/invoker-registrations/{api_invoker_id}/secret": {
       "post": {
-        "description": "A new onboarding secret for the same invoker id (call flow 01d): rApp Management uses it when an rApp that served a RUNNING instance lost\nthe instance's credentials (a restart), so the instance keeps the id its limits, kill switch and approval policy key on. The old secret stops\nworking at once and the invoker's tokens are revoked, so whoever held them can do nothing more. Internal-only at R1 (`roles.INTERNAL_ONLY`).\nEmits API_INVOKER_UPDATED.",
+        "description": "A new onboarding secret for the same invoker id (call flow 01e): rApp Management uses it to re-send a running instance's credentials (its\nrApp was unreachable when the instance was created, or a rotation), so the instance keeps the id its limits, kill switch and approval policy key on. The old secret stops\nworking at once and the invoker's tokens are revoked, so whoever held them can do nothing more. Internal-only at R1 (`roles.INTERNAL_ONLY`).\nEmits API_INVOKER_UPDATED.",
         "operationId": "renew_invoker_secret_invoker_registrations__api_invoker_id__secret_post",
         "parameters": [
           {

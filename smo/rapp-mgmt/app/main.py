@@ -243,7 +243,7 @@ def issue_instance_credentials(instance_id: uuid.UUID, response: Response, db: S
 @app.post("/instances/{instance_id}/credentials/renew")
 def renew_instance_credentials(instance_id: uuid.UUID, response: Response, db: Session = Depends(get_session)):
     """Call flow 01d: the instance keeps its identity (the id its limits, kill switch and approval policy key on) and gets a new secret, pushed to
-    the rApp that serves it. For an rApp that lost the credentials it held in memory (a restart) while the instance runs; `/credentials` makes a
+    the rApp that serves it. For an rApp that was unreachable when the instance was created, or to rotate the secret; `/credentials` makes a
     new identity instead and is for a DEPLOYING instance. 409 for a terminated instance; 503 when SME does not issue the secret, and when the rApp
     does not take it (retry; the secret is not shown, so it never reaches a browser). Without an operator API to push to, the secret is in this
     answer, once, for the operator to hand over."""

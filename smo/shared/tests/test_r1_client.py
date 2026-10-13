@@ -228,3 +228,50 @@ def test_an_instance_identity_sme_no_longer_knows_is_not_replaced_by_a_new_one(n
     with r1_client.acting_for("i-2"):
         assert R1Client(R1).get("/rapp-mgmt/instances/i-2").status_code == 401
     assert net.invokers == 0
+
+
+class _FakeStore:
+    """The shared identity store, in a dict: what `put` writes, every replica's `load` reads."""
+
+    def __init__(self):
+        self.rows: dict[str, tuple[str, str]] = {}
+
+    def put(self, module, invoker_id, secret):
+        self.rows[module] = (invoker_id, secret)
+
+    def load(self, module):
+        return self.rows.get(module)
+
+
+def test_another_replica_finds_the_instances_credentials_in_the_shared_store(net, monkeypatch):
+    """Credentials pushed to one replica are stored under `rapp-instance:<id>`; a replica (or a restarted process) with an empty cache reads them
+    from the store and calls as the instance."""
+    store = _FakeStore()
+    monkeypatch.setattr(r1_client, "_instance_identities", {})
+    monkeypatch.setattr(r1_client, "_store", lambda: store)
+    r1_client.bind_instance_identity("i-3", "api-invoker-of-i-3", "s")
+    assert store.rows == {"rapp-instance:i-3": ("api-invoker-of-i-3", "s")}
+    r1_client._instance_identities.clear()                      # the other replica: nothing cached
+    with r1_client.acting_for("i-3"):
+        R1Client(R1).get("/rapp-mgmt/instances/i-3")
+    assert net.grants == ["api-invoker-of-i-3"] and net.invokers == 0
+
+
+def test_a_secret_renewed_through_another_replica_is_read_again_once(net, monkeypatch):
+    """When SME refuses the cached secret (renewed and pushed to another replica), the stored one is read and the grant asked again."""
+    store = _FakeStore()
+    monkeypatch.setattr(r1_client, "_instance_identities", {})
+    monkeypatch.setattr(r1_client, "_store", lambda: store)
+    r1_client.bind_instance_identity("i-4", "inv-4", "stale")
+    store.rows["rapp-instance:i-4"] = ("inv-4", "s")              # the other replica took the renewed secret
+    real_post = net.post
+
+    def refusing_stale(url, json=None, headers=None, **kw):
+        if url == f"{SME}/oauth2/token" and json["client_secret"] == "stale":
+            return httpx.Response(400, json={}, request=httpx.Request("POST", url))
+        return real_post(url, json=json, headers=headers, **kw)
+
+    monkeypatch.setattr(r1_client.httpx, "post", refusing_stale)
+    with r1_client.acting_for("i-4"):
+        assert R1Client(R1).get("/rapp-mgmt/instances/i-4").status_code == 200
+    assert net.grants == ["inv-4"]

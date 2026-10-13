@@ -22,7 +22,7 @@ export const rappDetail = {
   "rappDetail.header.resume": "Resume",
   "rappDetail.header.resumeConfirm": "Let this rApp start config jobs again?",
   "rappDetail.header.renewCredentials": "Re-send credentials",
-  "rappDetail.header.renewCredentialsTitle": "A new secret for this instance's identity, sent to the rApp that serves it (after the rApp restarted)",
+  "rappDetail.header.renewCredentialsTitle": "A new secret for this instance's identity, sent to the rApp that serves it (when the rApp was unreachable at Deploy, or to rotate the secret)",
   "rappDetail.header.renewCredentialsConfirm": "Issue a new secret for this instance and send it to its rApp? The old one stops working at once.",
   "rappDetail.header.credentialsRenewed": "New credentials sent to the rApp",
   "rappDetail.header.resumed": "rApp may write again",

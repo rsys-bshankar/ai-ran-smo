@@ -9,7 +9,7 @@ diagrams, each one step a person or a component takes:
 | 01b | Create an instance | Operator | instance DEPLOYING, its identity made and pushed to its rApp |
 | 01c | The rApp receives the instance's credentials | rApp Management (inside 01b) | the rApp holds them in its SDK |
 | 01d | The rApp bootstraps as the instance | rApp code (`/start`) | instance RUNNING, its safeguards in force |
-| 01e | Recovery: the rApp lost the credentials | Operator | the rApp holds a new secret for the same identity |
+| 01e | Re-send the credentials (rApp unreachable at create, or a rotation) | Operator | the rApp holds a new secret for the same identity |
 
 **How to read the diagrams.** An arrow is one call: method, route and the inputs that matter. A box (`Note over`) on the receiver says what it
 does with them. An `alt` block is the outcome: the first branch is success, each `else` a failure and what the caller gets. Every operator call
@@ -84,7 +84,7 @@ sequenceDiagram
     Note over SME: new invoker, kind rapp (no enrollment secret)<br/>keeps only the secret's hash
     alt registered, with the scope asked for
         SME-->>RM: 201 {apiInvokerId, onboardingSecret, authzScope}
-        Note over RM: oauthClientId = apiInvokerId<br/>(limits, kill switch, approval policy, audit key on it)<br/>secret kept in memory only
+        Note over RM: oauthClientId = apiInvokerId<br/>(limits, kill switch, approval policy, audit key on it)<br/>secret held for this request only, never stored
     else SME unreachable or refused, or scope not recorded
         RM-->>Op: 503 ENDPOINT_UNREACHABLE (invoker removed, nothing created)
     end
@@ -123,7 +123,7 @@ sequenceDiagram
         R1->>App: POST {base}/instances/{id}/credentials<br/>X-R1-Role: internal
         Note over App: accepted from role internal only (else 403)<br/>a browser cannot reach it: the GUI backend<br/>forwards only the routes the package declares
         App->>SDK: bind_instance_identity(id, oauthClientId, secret)
-        Note over SDK: kept in this process's memory, by instance id<br/>(a later push replaces it)
+        Note over SDK: stored in the shared identity table<br/>(module_identity, key rapp-instance:{id}): every replica<br/>and a restarted process have it · a later push replaces it
         App-->>R1: 204
         R1-->>RM: 204 → credentialsDelivered true
     else no base, instance terminated
@@ -190,10 +190,11 @@ sequenceDiagram
 From here on, every call the rApp makes for the instance carries the instance's identity: the instance's scope claim narrows what it reads and
 writes, its limits and approval policy apply to its writes, the kill switch stops it, and the audit trail names it.
 
-## 01e — Recovery: the rApp lost the credentials
+## 01e — Re-send the credentials
 
-The rApp keeps the credentials in memory only, so a restart loses them; the instance keeps running at rApp Management. The operator presses
-**Re-send credentials** on the rApp's page (admin).
+The rApp keeps an instance's credentials in the shared identity table, so a restart or another replica does not lose them. They are re-sent
+when the rApp was down or unreachable when the instance was created (`credentialsDelivered: false`; the instance stays DEPLOYING and its
+bootstrap says `NO_CREDENTIALS`), or to rotate the secret. The operator presses **Re-send credentials** on the rApp's page (admin).
 
 ```mermaid
 sequenceDiagram
@@ -232,8 +233,8 @@ instance runs, because its registrations at SME and DME are under the old id.
 - **The rApp acts as the instance it serves.** One rApp process may serve several instances, so the SDK holds one identity per instance and picks
   it per request (`smo_sdk.instances`, `smo_shared.r1_client.bind_instance_identity`); a call outside any instance uses the process's own.
 - **Credentials are pushed, never fetched or shown.** rApp Management pushes them through R1 Termination to the instance's operator API, which
-  accepts them from an SMO module only; the secret is never stored by rApp Management and reaches a browser only when there is no operator API to
-  push to.
+  accepts them from an SMO module only and keeps them in the shared identity table (every replica, and after a restart); rApp Management never
+  stores the secret, and it reaches a browser only when there is no operator API to push to.
 - **The rApp reports itself up.** `bootstrap-complete` from an rApp is accepted for its own instance only, and is where the instance's safeguards
   are put in force, fail-closed, before it may run.
 - **NFO resolves a placement through FOCOM** even though Phase 1's answer is one cluster and nothing is started (NFO+FOCOM LLD section 4).

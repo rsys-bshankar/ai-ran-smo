@@ -258,7 +258,7 @@ Autonomy mode is AUTONOMOUS.
 | The rApp's page says "operator API is not registered" | The instance was deployed without **Operator API base URL**. Deploy a new instance with it. |
 | No **Demo / simulation (admin)** buttons | Sign in as admin: the panel's buttons are admin-only. |
 | A demo button answers `INSTANCE_NOT_STARTED` | Press **1 · Prepare and start** first. |
-| **1 · Prepare and start** leaves the instance DEPLOYING (its answer's `bootstrap` says `NO_CREDENTIALS`) | The rApp does not hold the instance's credentials: it was restarted, or was down at Deploy. On the instance's page press **Re-send credentials** (admin), then **1 · Prepare and start** again. |
+| **1 · Prepare and start** leaves the instance DEPLOYING (its answer's `bootstrap` says `NO_CREDENTIALS`) | The rApp does not hold the instance's credentials: it was down or unreachable at Deploy. On the instance's page press **Re-send credentials** (admin), then **1 · Prepare and start** again. |
 | **2 · Load history PM** or **8 · Send live PM** answers "no PM subscription" | Step 00's PM subscription is missing or on another counter: create it. |
 | **3 · Train** answers "not enough history" | Press **2 · Load history PM** first (after **1 · Prepare and start**). |
 | **7 · Deploy the runtime** is refused | The model is not CERTIFIED and PROMOTED yet: step 06. |
