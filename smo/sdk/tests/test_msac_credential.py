@@ -52,9 +52,9 @@ def test_no_header_is_sent_without_a_credential(r1):
 def test_the_credential_is_keyword_only(r1):
     """It cannot be passed by position, so it can never be mistaken for `decision` or another argument."""
     with pytest.raises(TypeError):
-        PlatformClient(r1).execute_action("es-rapp", CHANGES, None, None, "single-ME", None, None, SECRET)
+        PlatformClient(r1).execute_action("es-rapp", CHANGES, None, None, "single-ME", None, None, SECRET)  # type: ignore[call-arg]  # the point: it must not be accepted
     with pytest.raises(TypeError):
-        DataClient(r1).mediate_action("es-rapp", CHANGES, "single-ME", None, None, None, SECRET)
+        DataClient(r1).mediate_action("es-rapp", CHANGES, "single-ME", None, None, None, SECRET)  # type: ignore[call-arg]
 
 
 def test_the_header_survives_the_retry_wrapper_with_the_idempotency_key():
