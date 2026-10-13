@@ -32,6 +32,7 @@ from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.invoker import invoker_id
+from smo_shared.roles import ROLE_RAPP, role_of
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.r1_client import R1Client
 
@@ -183,7 +184,7 @@ def _validate_domain(domain: str | None) -> None:
 
 
 @app.post("/models", status_code=201)
-def register_model(body: RegisterModelRequest, db: Session = Depends(get_session)):
+def register_model(request: Request, body: RegisterModelRequest, db: Session = Depends(get_session)):
     """HISTORY.md §5: the reference's own RegisterModel
     (mmes_apis.go) 409s on a (modelName, modelVersion) unique-constraint
     violation — this build accepted a duplicate (modelType, version)
@@ -203,11 +204,15 @@ def register_model(body: RegisterModelRequest, db: Session = Depends(get_session
     # exist, 409 MODEL_ALREADY_REGISTERED when (modelType, version) already exists.
     # Ordering: validation and reference checks run before the row is added; the duplicate is detected from the database's unique
     # constraint at commit (not a prior SELECT), so two concurrent registrations cannot both succeed. The session is rolled
-    # back before the error is raised.
+    # back before the error is raised. Owner (SEC-15.3b): a caller with role `rapp` that names no `owner` is stamped as the owner with its own invoker id (the id the
+    # gateway vouched for, `X-R1-Invoker-Id`); an `owner` the request names is kept as sent; an SMO module (role `internal`, or no role) that names none leaves it unset.
     _validate_domain(body.domain)
+    owner = body.owner
+    if not owner and role_of(request) == ROLE_RAPP:
+        owner = invoker_id(request)
     model = MLModel(registration_id=str(uuid.uuid4()), model_type=body.modelType, version=body.version,
                      required_resource_type_id=body.requiredResourceTypeId,
-                     description=body.description, author=body.author, owner=body.owner,
+                     description=body.description, author=body.author, owner=owner,
                      input_data_type=body.inputDataType, output_data_type=body.outputDataType,
                      target_environments=body.targetEnvironments,
                      domain=body.domain, custom_domain=body.customDomain, vendors=body.vendors)

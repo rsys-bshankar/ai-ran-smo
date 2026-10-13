@@ -9,7 +9,7 @@
 | Depends on (over R1) | AIMgF (`GET /aimgf/ml-models/{id}/nrm-refs`, best-effort) |
 | Called by | AIMgF (`/mlmr/models/{id}`, `/mlmr/coordination-groups`), rApps through the SDK (`/mlmr/coordination-groups`), GUI via the BFF (`/mlmr/models`, artifact upload, coordination groups) |
 | Database tables | `aiml_model`, `model_artifact`, `ml_model_coordination_group`, `ml_model_repository`, `ml_models_storage`, `ml_model_profile`, `model_change_subscription` (declared, unused) |
-| Unit tests | 54 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 57 passed (`tests/`, SQLite, standalone) |
 | Status | Done for Phase 1. TS 29.482 `MLModel`, storages / profiles, store / discovery requirements and discovery are built (`SA-MLMR-1`, `-6`, `-7`, `-8`, `-9`); limits in [section 2.8](#28-limits-and-open-items). Object storage (S3) is out of scope |
 
 ## 1. High-level design (HLD)
@@ -61,7 +61,7 @@ The cross-module AI/ML responsibility matrix (lifecycle state, model metadata, a
 - **Degradation.** The AIMgF join in `GET /ml-models/{id}` is best-effort: an unreachable or erroring AIMgF yields empty read-only attributes instead of failing the read of MLMR's own truth.
 - **Idempotency.** `DELETE` of an unknown model or repository returns 204 silently. Registration is not idempotent (duplicates are 409).
 - **Caller identity.** R1 Termination forwards the introspected token's client id in `X-R1-Invoker-Id` (any inbound value is dropped); MLMR's `storeDiscReqs` enforcement reads it (`smo_shared/invoker.py`). A call that did not come through R1 has none and is refused by a `RESTRICTED` or `PRIVATE_USE_ONLY` model.
-- **Security.** Authentication is R1 Termination's bearer introspection. Roles are enforced by the GUI BFF (`gui-bff/app/rbac.py`): register, update, artifact upload and coordination-group creation need operator; model delete needs admin. Artifacts are downloadable by any authenticated caller unless the model sets `storeDiscReqs` (`SA-MLMR-6`, enforced; see 1.2).
+- **Security.** Authentication is R1 Termination's bearer introspection. A model an rApp registers is owned by that rApp (`owner` is stamped with its invoker id unless the request names one, `SEC-15.3b`); AIMgF refuses another rApp's deploy, activate, scale, terminate, node-groups and model loading on it. `PUT /models/{id}` still replaces `owner` with the body's value (open: `OPEN_ITEMS.md` `SEC-15.3c`). Roles are enforced by the GUI BFF (`gui-bff/app/rbac.py`): register, update, artifact upload and coordination-group creation need operator; model delete needs admin. Artifacts are downloadable by any authenticated caller unless the model sets `storeDiscReqs` (`SA-MLMR-6`, enforced; see 1.2).
 
 ## 2. Low-level design (LLD)
 
@@ -110,7 +110,7 @@ Paths relative to `/mlmr`. Lists are `{items, total, limit, offset}`.
 
 | Method | Path | Purpose / notable errors |
 |---|---|---|
-| POST | `/models` | Register. Required `modelType`, `version`. Optional metadata, `domain` / `customDomain` / `vendors`, TS 28.105 attributes incl. `mLModelRepositoryRef`. 409 `MODEL_ALREADY_REGISTERED`; 422 `SCHEMA_VALIDATION_FAILED` (unknown domain); 404 `NRM_OBJECT_NOT_FOUND` (unknown repository), `MODEL_NOT_FOUND` (unknown `sourceTrainedMLModelRef`). Returns `{modelId}` |
+| POST | `/models` | Register. Required `modelType`, `version`. Optional metadata, `domain` / `customDomain` / `vendors`, TS 28.105 attributes incl. `mLModelRepositoryRef`. 409 `MODEL_ALREADY_REGISTERED`; 422 `SCHEMA_VALIDATION_FAILED` (unknown domain); 404 `NRM_OBJECT_NOT_FOUND` (unknown repository), `MODEL_NOT_FOUND` (unknown `sourceTrainedMLModelRef`). Returns `{modelId}`. `owner` (`SEC-15.3b`): when the gateway-vouched role is `rapp` and the request names no `owner` (or an empty one), MLMR stores the caller's invoker id (`X-R1-Invoker-Id`) as `owner`; an `owner` the request names is kept; a caller with role `internal` (or none) that names none leaves it unset. A model registered before this change keeps `owner` NULL (no backfill). AIMgF judges ownership on this value |
 | GET | `/models` | Paginated list, filter `model_type`; with `filt-criteria` (an MLModel JSON), `supported-features`, `include-models`: TS 29.482 discovery (`DiscoveryResp`; 404 `MODEL_NOT_FOUND` when nothing matches, 422 for criteria that are not an MLModel) |
 | PATCH | `/models/{id}/phase-info` | AIMgF's write-back of `phaseInfo` (merged; the first write needs a `phase`) |
 | POST / GET / PUT / PATCH / DELETE | `/storages`, `/storages/{id}` | TS 29.482 `MLModelsStorage` with its `mlModels` profiles; GET filters `storage-ids`, `profile-ids`. 404 `NRM_OBJECT_NOT_FOUND` / `MODEL_NOT_FOUND`, 422 on a bad body |
@@ -193,7 +193,7 @@ cd smo/mlmr && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | Test file | Covers | Count |
 |---|---|---|
 | `tests/test_mlr_conformance.py` | `usageReqs` and `phaseInfo` validation, the phase-info patch, `storeDiscReqs` (validation, owner / restricted / public access, duration expiry, access period), whole-object discovery (subset rules, access filtering, model files), storages and profiles (create, validation, filters, replace, patch, delete, cascade) | 20 |
-| `tests/test_main.py` | register / get / update / delete, metadata and domain / vendors round-trip, duplicate and per-type versioning, identity immutability, artifact upload (`.zip` only, size, version increments, location), download round-trip, cascade of own artifacts, coordination groups (list, too small), TS 28.105 attributes and validation, NRM view with AIMgF stubbed and unreachable, repository delete un-containing, health | 34 |
+| `tests/test_main.py` | register / get / update / delete, metadata and domain / vendors round-trip, duplicate and per-type versioning, identity immutability, artifact upload (`.zip` only, size, version increments, location), download round-trip, cascade of own artifacts, coordination groups (list, too small), TS 28.105 attributes and validation, NRM view with AIMgF stubbed and unreachable, repository delete un-containing, health, and the owner stamp of `SEC-15.3b` (an rApp is stamped, a named owner is kept, an SMO module's registration stays unowned) | 37 |
 
 ### 3.3 What is not covered here
 
