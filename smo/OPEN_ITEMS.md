@@ -78,12 +78,6 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
 - **OI-7-nfo-scale-size** — Runtime scaling takes no target size: `POST /nfo/deployments/{id}/scale` has no
   replica or resource argument, so AIMgF `runtime/scale` cannot ask for one. Approach: add `replicas` /
   `resources` to the NFO scale call and the AIMgF scale request, and pass the manifest's runtime profile bounds.
-- **OI-7-rapp-data-jobs-teardown** — Terminating (or deleting) an rApp instance leaves the DME data jobs it opened as a consumer
-  (`consumerId` `<rapp>:<instanceId>`, one per lifecycle stage): rApp Management's teardown stops the package usage, the NFO deployment and the
-  credentials, not the data jobs, and the rApp is not told. They stay open and keep receiving every record of their type, so each
-  terminate-and-redeploy makes the PM fan-out of RAN NF OAM slower (it delivers each measurement to every open job, one DME record at a time;
-  seen as the demo's **2 · Load history PM** taking twice as long after one redeploy). Approach: a teardown step that asks the rApp to close
-  its jobs (its operator API, as the credentials push does) or DME deleting the jobs of a consumer id on rApp Management's word.
 
 ## 3. Spec conformance still open
 

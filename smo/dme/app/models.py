@@ -134,6 +134,9 @@ class DataJob(Base):
     data_delivery_method: Mapped[str] = mapped_column(String, nullable=False)
     delivery_details: Mapped[dict | None] = mapped_column(JSON)
     consumer_id: Mapped[str] = mapped_column(String, nullable=False)  # rAppId, or 'DME_FRAMEWORK' (section 3.7)
+    # OI-7-rapp-data-jobs-teardown (revision 0045): the invoker id the gateway vouched for when the job was created (for an rApp acting as an instance, the
+    # instance's own), so rApp Management can close an instance's jobs when it is torn down; NULL for a job created before the revision or not through it.
+    created_by: Mapped[str | None] = mapped_column(String)
     status: Mapped[str] = mapped_column(String, nullable=False, default="PENDING")
     # Wave 3: which AI/ML lifecycle stage this job's data is for — drives
     # the Digital-Twin-excluded-from-inference eligibility check in main.py.
