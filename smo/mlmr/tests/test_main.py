@@ -111,9 +111,73 @@ def test_a_model_an_rapp_registers_is_owned_by_that_rapp(client):
 
 
 def test_an_owner_the_request_names_is_kept(client):
-    """An internal caller registering for an rApp names the owner itself and it is kept; so is an owner an rApp names (not overridden by the stamp)."""
+    """An internal caller registering for an rApp names the owner itself and it is kept; so is the owner an rApp names when it is its own id (SEC-15.3c)."""
     assert _registered_owner(client, _INTERNAL, owner="mobility-client") == "mobility-client"
-    assert _registered_owner(client, _RAPP, owner="team-ran-oncall") == "team-ran-oncall"
+    assert _registered_owner(client, _RAPP, owner="es-client") == "es-client"
+
+
+def test_an_rapp_cannot_register_a_model_for_another_owner(client):
+    """SEC-15.3c: an rApp naming an owner other than its own invoker id is refused 403 MODEL_OWNER_IMMUTABLE and nothing is stored; an internal caller and a call with no role may name anyone."""
+    resp = client.post("/models", json={"modelType": "forged", "version": "1", "owner": "mobility-client"}, headers=_RAPP)
+    assert resp.status_code == 403 and "MODEL_OWNER_IMMUTABLE" in resp.text
+    assert client.get("/models", params={"model_type": "forged"}, headers=_INTERNAL).json()["items"] == []
+    assert _registered_owner(client, {}, owner="mobility-client") == "mobility-client"
+
+
+def _register_for(client, headers, **body) -> str:
+    """Registers a model of a random type with the given gateway headers and returns its id."""
+    resp = client.post("/models", json={"modelType": "t-" + str(uuid.uuid4())[:8], "version": "1", **body}, headers=headers)
+    assert resp.status_code == 201, resp.text
+    return resp.json()["modelId"]
+
+
+def _put_body(client, model_id, **fields) -> dict:
+    """The PUT body that repeats the stored identity, plus the given fields."""
+    stored = client.get(f"/models/{model_id}").json()
+    return {"modelType": stored["modelType"], "version": stored["version"], **fields}
+
+
+def test_the_owning_rapp_may_update_its_model_but_not_its_owner(client):
+    """SEC-15.3c: the owner rApp updates the other fields; an `owner` equal to the stored one or omitted keeps it, and any other value, including an empty one, is 403 MODEL_OWNER_IMMUTABLE."""
+    model_id = _register_for(client, _RAPP)
+    for owner in ("es-client", None):
+        body = _put_body(client, model_id, description=f"d-{owner}", **({} if owner is None else {"owner": owner}))
+        resp = client.put(f"/models/{model_id}", json=body, headers=_RAPP)
+        assert resp.status_code == 200 and resp.json()["owner"] == "es-client" and resp.json()["description"] == f"d-{owner}"
+    for owner in ("other-client", ""):
+        resp = client.put(f"/models/{model_id}", json=_put_body(client, model_id, description="x", owner=owner), headers=_RAPP)
+        assert resp.status_code == 403 and "MODEL_OWNER_IMMUTABLE" in resp.text
+    stored = client.get(f"/models/{model_id}").json()
+    assert stored["owner"] == "es-client" and stored["description"] == "d-None"
+
+
+def test_an_rapp_cannot_update_a_model_another_rapp_owns(client):
+    """SEC-15.3c: another rApp's PUT on an owned model is 403 MODEL_ACCESS_DENIED, even when it repeats the stored owner, and changes nothing."""
+    model_id = _register_for(client, {"X-R1-Role": "rapp", "X-R1-Invoker-Id": "other-client"}, description="mine")
+    for extra in ({}, {"owner": "other-client"}, {"owner": "es-client"}):
+        resp = client.put(f"/models/{model_id}", json=_put_body(client, model_id, description="hijacked", **extra), headers=_RAPP)
+        assert resp.status_code == 403 and "MODEL_ACCESS_DENIED" in resp.text
+    assert client.get(f"/models/{model_id}").json()["description"] == "mine"
+
+
+def test_internal_and_roleless_callers_keep_full_control_of_the_owner(client):
+    """SEC-15.3c: an internal caller (an SMO module, the console) and a call with no role set, change and clear `owner` through PUT as before."""
+    model_id = _register_for(client, _RAPP)
+    resp = client.put(f"/models/{model_id}", json=_put_body(client, model_id, owner="mobility-client"), headers=_INTERNAL)
+    assert resp.status_code == 200 and resp.json()["owner"] == "mobility-client"
+    assert client.put(f"/models/{model_id}", json=_put_body(client, model_id, owner="x"), headers={}).json()["owner"] == "x"
+    assert client.put(f"/models/{model_id}", json=_put_body(client, model_id), headers=_INTERNAL).json()["owner"] is None
+
+
+def test_a_model_without_an_owner_stays_open_to_any_rapp_but_cannot_be_claimed(client):
+    """SEC-15.3c: any rApp may update the other fields of an owner-less model; an empty or omitted `owner` leaves it unowned, and naming one (claiming it) is 403 MODEL_OWNER_IMMUTABLE."""
+    model_id = _register_for(client, _INTERNAL)
+    for extra in ({}, {"owner": ""}):
+        resp = client.put(f"/models/{model_id}", json=_put_body(client, model_id, description="open", **extra), headers=_RAPP)
+        assert resp.status_code == 200 and resp.json()["owner"] is None and resp.json()["description"] == "open"
+    resp = client.put(f"/models/{model_id}", json=_put_body(client, model_id, owner="es-client"), headers=_RAPP)
+    assert resp.status_code == 403 and "MODEL_OWNER_IMMUTABLE" in resp.text
+    assert client.get(f"/models/{model_id}").json()["owner"] is None
 
 
 def test_a_model_an_smo_module_registers_without_an_owner_stays_unowned(client):
