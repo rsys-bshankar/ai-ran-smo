@@ -103,6 +103,7 @@ RULES: list[Rule] = [
 
     # --- Onboarding
     _rule("POST", "/onboarding/packages", O),
+    _rule("POST", "/onboarding/packages/upload", O),       # call flow 01a: the same onboarding with the CSAR sent from the browser (multipart)
     _rule("POST", "/onboarding/packages/{id}/(prime|deprime|deprecate|cancel-delete)", O),
     _rule("DELETE", "/onboarding/packages/{id}", A),
     # usage registrations are rApp Management's to open and close (call flow 06): the GUI cannot start or stop one. An admin may only release an

@@ -14,6 +14,7 @@ not repeated here.
 """
 
 import datetime
+import os
 import uuid
 from contextlib import suppress
 
@@ -23,6 +24,7 @@ from sqlalchemy.orm import Session
 from smo_shared import credential_delivery
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
+from smo_shared.webhook import normalise_base_url
 
 from .models import RAppInstance
 from .statemachine import InstanceState
@@ -63,9 +65,13 @@ def provision_instance(db: Session, package_id: uuid.UUID, configuration: dict |
         # normal refusal.
         raise framework_error(FrameworkError.PACKAGE_NOT_DEPLOYABLE, detail="package has no nfDeploymentDescriptorId")
 
+    # call flow 01b: where the package says its rApp's operator API is (`operatorApi.baseUrl` in its manifest, checked at onboarding); kept on the object, not
+    # stored, for CreateInstance to use when the operator gave no `operatorApiBase`
+    declared_base = ((pkg_resp.json().get("aiCapabilities") or {}).get("operatorApi") or {}).get("baseUrl")
     inst = RAppInstance(package_id=package_id, configuration=configuration, state=InstanceState.DEPLOYING,
                         oauth_client_id=str(uuid.uuid4()), autonomy_mode=autonomy_mode, region_scope=region_scope, approval_policy=approval_policy,
                         authz_scope=authz_scope)
+    inst.declared_operator_api_base = normalise_base_url(declared_base) if isinstance(declared_base, str) else None
     db.add(inst)
     db.flush()
     inst.package_usage_registration_id = _start_usage(r1, package_id, inst.instance_id)
@@ -318,23 +324,37 @@ def register_sme_declarations(inst: RAppInstance, status: dict | None = None) ->
     Uses this instance's own oauth_client_id as its SME apfId, the same
     "one instance, one identity" convention already used for its DME
     producer_id (statemachine.py's _reconsider_dme_registration).
-    Best-effort: an unreachable SME must never block bootstrap from
-    completing, the same "unreachable callback never fails the primary
-    operation" precedent used throughout this build.
+    Best-effort by default: an unreachable SME does not block bootstrap from
+    completing. With `RAPP_MGMT_REQUIRE_SME_REGISTRATION` on (the production
+    sample turns it on; call flow 01d), every declaration must be registered:
+    no answer is 503 ENDPOINT_UNREACHABLE, a refusal 502 UPSTREAM_FAILED, and
+    the bootstrap is refused (the instance stays DEPLOYING).
     """
     r1 = R1Client()
     declarations = (onboarding_status(inst) if status is None else status).get("smeDeclarations")
     apf_id = inst.oauth_client_id
     if not declarations or not apf_id:          # no identity yet: nothing to register under
         return
+    required = sme_registration_required()
     try:
         for provider in declarations.get("providers", []):
-            r1.post("/sme/provider-registrations", json=_sme_provider_registration_body(provider, apf_id))
+            resp = r1.post("/sme/provider-registrations", json=_sme_provider_registration_body(provider, apf_id))
+            if required and resp.status_code not in (200, 201):
+                raise framework_error(FrameworkError.UPSTREAM_FAILED, detail=f"SME refused the provider registration ({resp.status_code})")
         service_ids = []
         for service_api in declarations.get("serviceApis", []):
             resp = r1.post(f"/sme/published-apis/v1/{apf_id}/service-apis", json=_sme_service_registration_body(service_api, apf_id))
             if resp.status_code == 201:
                 service_ids.append(resp.json()["serviceId"])
+            elif required:
+                raise framework_error(FrameworkError.UPSTREAM_FAILED, detail=f"SME refused a service API registration ({resp.status_code})")
         inst.sme_service_ids = service_ids or None
-    except httpx.HTTPError:
-        pass
+    except httpx.HTTPError as exc:
+        if required:
+            raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"SME could not register the declarations: {type(exc).__name__}") from exc
+
+
+def sme_registration_required() -> bool:
+    """`RAPP_MGMT_REQUIRE_SME_REGISTRATION`: `true`, `1`, `yes` or `on` makes a failed SME declaration registration refuse the bootstrap (default `false`: best-effort).
+    Read on every bootstrap, so a change applies without a restart."""
+    return os.environ.get("RAPP_MGMT_REQUIRE_SME_REGISTRATION", "false").strip().lower() in ("1", "true", "yes", "on")

@@ -9,7 +9,7 @@
 | Depends on (over R1) | NFO (`POST /nfo/descriptors`, `DELETE /nfo/descriptors/{id}` on delete); rApp Management (`GET /rapp-mgmt/instances/{id}`, only to release an orphaned usage registration); the package location itself (plain HTTP GET, not over R1) |
 | Called by | rApp Management (`onboarding-status`, `usage/start`, `usage/stop`: the only writer of usage registrations); AIMgF (`onboarding-status`, for `aiCapabilities.runtimeProfiles`); GUI BFF (operator and admin actions, `usage/{id}/release` for an admin); operators |
 | Database tables | `application_package` (versioned), `artifact`, `package_usage_registration` |
-| Unit tests | 202 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 212 passed (`tests/`, SQLite, standalone) |
 | Status | Done. Package signatures are verified against an operator-held trust store when one is configured (`PR-RAPP-1`; off by default, see 1.5, 2.6, 2.8) |
 
 ## 1. High-level design (HLD)
@@ -159,6 +159,7 @@ Event routes and refusals: an event with no edge from the current state gives `4
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
 | POST | `/packages` (202) | `{location, applicationType="rApp"}` → `{packageId, trackingId}`, plus `failureReason` when the package ended `FAILED` (the message of a validation failure; the exception name for any other). Runs the validation pipeline. | none for a validation failure (the package is `FAILED`) |
+| POST | `/packages/upload` (202) | Multipart `file` (a `.csar`, up to 50 MiB through R1 Termination) and `applicationType="rApp"`: the same pipeline on the uploaded bytes, nothing fetched (call flow 01a). The location is recorded as `upload:<file name>`. Same answer as `/packages` | as `/packages`; a file name not ending in `.csar` ends `FAILED` |
 | GET | `/packages?state=&include_deleted=` | Paged list of package views; `include_deleted=false` (default `true`) leaves out `DELETING` packages, ignored with a `state` (the console's package list asks for it) | |
 | GET | `/packages/{id}/onboarding-status` | `{packageId, state, nfDeploymentDescriptorId, smeDeclarations, aiCapabilities}`; the read rApp Management and AIMgF depend on | 404 `PACKAGE_NOT_FOUND` |
 | GET | `/packages/{id}/artifacts` | Paged `{artifactId, path, accessUrl}` | 404 |
@@ -243,6 +244,7 @@ cd smo/onboarding && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | Test file | Covers | Count |
 |---|---|---|
 | `tests/test_main.py` | Onboarding success (descriptor created via NFO, no ACM file needed, identity and ASD descriptor fields resolved, placeholder kept when absent) | 6 |
+| | Call flow 01a/01b (DOC-CF-1.1 review): an uploaded `.csar` onboards with nothing fetched, a file not named `.csar` and a broken zip end `FAILED`, `operatorApi.baseUrl` kept normalised, six bad `operatorApi` declarations fail the package | 10 |
 | | `operatorUi` (GUI-8.2): the ADR's Energy Saving example onboards and is stored, accepted under `rappManifest` too, absent leaves the package unchanged, `x-` keys dropped, 14 refusals each with the place and rule in `failureReason` (unknown kind, a POST source, a GET action, `..` in a route, `%2e%2e`, `..` in a field path, too many panels, duplicate panel and action ids, version 2, unknown key, over the size limit, `readOnly` with actions, not a mapping), 6 `rowDetail` refusals (unknown block kind, too many blocks, a non-GET per-row source, `..`, a `{row.x}` that names no column, nesting), the stored drawer and its per-row read, the refusal logged, a non-declaration failure reporting only its kind | 27 |
 | | Onboarding failures to `FAILED` (NFO refuses, malformed zip, not `.csar`, malformed capabilities YAML, malformed SME JSON, byte-identical duplicate) | 6 |
 | | `manifest.yaml` / `capabilities.yaml`: null when absent, parsed when present, capabilities alone, execution modes and runtime profiles, four invalid-profile cases | 8 |

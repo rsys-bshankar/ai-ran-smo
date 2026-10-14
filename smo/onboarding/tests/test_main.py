@@ -1327,3 +1327,66 @@ def test_a_primed_package_with_a_running_instance_can_be_deprecated(client, monk
     assert client.get(f"/packages/{package_id}/usage").json()["items"][0]["active"] is True
     assert client.post(f"/packages/{package_id}/usage/start", params={"consumer_id": "instance-2"}).json()["detail"]["title"] == "PACKAGE_NOT_DEPLOYABLE"
     assert client.post(f"/packages/{package_id}/cancel-delete").json()["state"] == "AVAILABLE"
+
+
+# ---- call flow 01a/01b (DOC-CF-1.1 review): a package uploaded from the browser, and the operator API address its manifest declares
+
+def _nfo_201(monkeypatch):
+    """NFO CreateDescriptor answers 201 with a fresh descriptor id."""
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())}))
+
+
+def test_an_uploaded_csar_onboards_like_a_fetched_one(client, monkeypatch):
+    """`POST /packages/upload` runs the same pipeline on the uploaded bytes: AVAILABLE, the location recorded as `upload:<file name>`, nothing fetched."""
+    _nfo_201(monkeypatch)
+    monkeypatch.setattr("app.main.httpx.get", lambda *a, **kw: pytest.fail("an uploaded package was fetched"))
+
+    resp = client.post("/packages/upload", files={"file": ("my-rapp.csar", _real_package_bytes(), "application/zip")}, data={"applicationType": "rApp"})
+
+    assert resp.status_code == 202 and "failureReason" not in resp.json()
+    package_id = resp.json()["packageId"]
+    assert client.get(f"/packages/{package_id}/onboarding-status").json()["state"] == "AVAILABLE"
+
+
+def test_an_uploaded_file_not_named_csar_ends_failed(client, monkeypatch):
+    """The .csar name rule applies to an upload as to a location: the package ends FAILED with the reason, still a 202."""
+    _nfo_201(monkeypatch)
+
+    resp = client.post("/packages/upload", files={"file": ("my-rapp.zip", _real_package_bytes(), "application/zip")})
+
+    assert resp.status_code == 202 and "does not end with .csar" in resp.json()["failureReason"]
+    assert client.get(f"/packages/{resp.json()['packageId']}/onboarding-status").json()["state"] == "FAILED"
+
+
+def test_an_uploaded_broken_zip_ends_failed(client, monkeypatch):
+    """Bytes that are not a zip end FAILED like a fetched broken package."""
+    _nfo_201(monkeypatch)
+    resp = client.post("/packages/upload", files={"file": ("broken.csar", b"not a zip", "application/zip")})
+    assert client.get(f"/packages/{resp.json()['packageId']}/onboarding-status").json()["state"] == "FAILED"
+
+
+def test_the_manifest_operator_api_address_is_kept(client, monkeypatch):
+    """`operatorApi.baseUrl` in the manifest is kept, normalised (no trailing slash), in aiCapabilities.operatorApi."""
+    _nfo_201(monkeypatch)
+    manifest = "operatorApi:\n  baseUrl: http://my-rapp:8000/\n"
+    resp = client.post("/packages/upload", files={"file": ("a.csar", _real_package_bytes(manifest_yaml=manifest), "application/zip")})
+
+    status = client.get(f"/packages/{resp.json()['packageId']}/onboarding-status").json()
+    assert status["state"] == "AVAILABLE"
+    assert status["aiCapabilities"]["operatorApi"] == {"baseUrl": "http://my-rapp:8000"}
+
+
+@pytest.mark.parametrize("operator_api", [
+    "baseUrl: ftp://my-rapp:8000",                   # not http(s)
+    "baseUrl: http://127.0.0.1:8000",                # loopback
+    "baseUrl: http://169.254.169.254",               # metadata address
+    "baseUrl: http://user:pw@my-rapp:8000",          # credentials
+    "baseUrl: http://my-rapp:8000\n  other: x",      # an unknown key
+    "baseUrl: 8000",                                 # not a string
+])
+def test_a_bad_manifest_operator_api_address_fails_the_package(client, monkeypatch, operator_api):
+    """An `operatorApi` that breaks the operatorApiBase rule ends the package FAILED and the reason names `operatorApi`."""
+    _nfo_201(monkeypatch)
+    manifest = f"operatorApi:\n  {operator_api}\n"
+    resp = client.post("/packages/upload", files={"file": ("a.csar", _real_package_bytes(manifest_yaml=manifest), "application/zip")})
+    assert "operatorApi" in resp.json()["failureReason"]

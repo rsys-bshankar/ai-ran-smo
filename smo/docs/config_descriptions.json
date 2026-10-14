@@ -114,7 +114,7 @@
   "R1_KILL_SWITCH": "`on` (default): R1 Termination refuses every change by a stopped rApp with 403 `RAPP_KILLED`. `off`, `false`, `0` or `no` turns the gateway's enforcement off (RAN NF OAM's own check stays).",
   "R1_KILL_SWITCH_SCHEMA": "Database schema of RAN NF OAM's `rapp_kill` table that the gateway reads. Compose and the chart set `ran_nf_oam`; unset resolves through the search path (SQLite tests, unmigrated databases).",
   "R1_MAX_BODY_BYTES": "Largest request body R1 Termination accepts, in bytes (default 1 MiB), else 413 `PAYLOAD_TOO_LARGE`. Applies to every route except the overrides below.",
-  "R1_MAX_BODY_OVERRIDES": "Per-path body limits as `<path-pattern>=<bytes>,...` (default: model artifact upload `/mlmr/models/*/artifact` at 50 MiB). Setting it replaces the default, so repeat that entry if you still need it.",
+  "R1_MAX_BODY_OVERRIDES": "Per-path body limits as `<path-pattern>=<bytes>,...` (default: the model artifact upload `/mlmr/models/*/artifact` and the rApp package upload `/onboarding/packages/upload`, each at 50 MiB). Setting it replaces the defaults, so repeat those entries if you still need them.",
   "R1_OPERATOR_API_CACHE_SECONDS": "Seconds R1 Termination caches the operator API base a rApp instance registered at rApp Management (default 5), for the `/rapps/{instanceId}/operator/...` prefix. A registration, a change or a terminated instance bites within this time. `0` asks rApp Management on every call.",
   "R1_PUBLIC_BASE_URL": "Origin (no path) consumers outside the compose network use for R1 Termination, such as `https://localhost:8443`. `/bootstrap` advertises SME's token endpoint under it; empty names SME on the internal network. Set it behind a TLS edge.",
   "R1_RATE_BURST": "Size of each invoker's token bucket at R1 Termination: how many requests it may make in a burst (default 200). Per replica of the gateway.",
@@ -229,5 +229,6 @@
   "SMO_WORKER_HEARTBEAT_FILE": "File a worker touches on every tick (default `/tmp/worker-heartbeat`); the container health check reports unhealthy when it is a minute old. Change it only with the health check.",
   "SMO_WORKER_METRICS_PORT": "Port on which a module's worker process serves its own /metrics (task runs and last success per task). Unset by default: the worker serves no metrics port.",
   "SMO_WORKER_TICK_SECONDS": "Seconds between a worker's checks for due tasks (default 5). A task's own interval cannot be shorter than this.",
-  "SO_SMOS_URL": "Base URL R1 Termination forwards `/so-smos/...` to (service orchestration)."
+  "SO_SMOS_URL": "Base URL R1 Termination forwards `/so-smos/...` to (service orchestration).",
+  "RAPP_MGMT_REQUIRE_SME_REGISTRATION": "`true`, `1`, `yes` or `on`: rApp Management refuses an instance's bootstrap (it stays DEPLOYING; 503 when SME does not answer, 502 when it refuses) unless every SME declaration of its package (`Files/Sme/providers`, `serviceapis`) is registered. Default `false`: the registration is best-effort and a failure is ignored. `deploy/helm/smo/values-production.yaml` turns it on. Call flow 01d."
 }

@@ -1,4 +1,4 @@
-# Production sample: the retention periods proposed in docs/RETENTION.md (DB-3.10). The chart's own defaults keep every row (0), so an upgrade deletes
+# Production sample: the retention periods proposed in docs/RETENTION.md (DB-3.10), and the production safeguards at the end and under rapp-mgmt (signed packages, SME registration; call flow 01). The chart's own defaults keep every row (0), so an upgrade deletes
 # nothing; this file is what an operator who has confirmed the periods layers on top:
 #   helm upgrade --install smo deploy/helm/smo -f deploy/helm/smo/values-production.yaml -f my-values.yaml
 # The numbers are proposals, not legal advice: the retention a law or a contract requires is yours to decide (docs/PRIVACY.md). Change a number here
@@ -6,6 +6,10 @@
 # Sizing the disk: docs/SIZING.md. A table whose retention is left at 0 is reported by the metric smo_retention_off_rows{table} and a daily
 # warning once it is large (SMO_RETENTION_WARN_ROWS, default 1000000).
 modules:
+  # Call flow 01d (DOC-CF-1.1 review): an instance runs only once every SME declaration of its package is registered (default: best-effort).
+  rapp-mgmt:
+    env:
+      RAPP_MGMT_REQUIRE_SME_REGISTRATION: "true"
   ran-nf-oam:
     env:
       SAFEGUARD_REFUSAL_RETENTION_DAYS: "90"       # safeguard refusals; also what POST /safeguard-refusals/purge uses
@@ -46,3 +50,10 @@ gui:
 #   jwtKeySecretRef: { name: gui-jwt-key, key: private-key.pem }
 #   env:
 #     GUI_JWT_ALGORITHM: ES256
+
+# Signed rApp packages (PR-RAPP-1; call flow 01a, DOC-CF-1.1 review): production accepts only packages signed by a publisher you trust. The chart refuses to
+# render this file until you name the ConfigMap of the publishers' public keys (values.yaml, rappSigning), for example in my-values.yaml:
+#   rappSigning: { trustStoreConfigMap: rapp-publishers }
+# made with `kubectl -n smo create configmap rapp-publishers --from-file=acme.pub`. Never put the samples' DEMO key (samples/demo-signing) in it.
+rappSigning:
+  requireSigned: true

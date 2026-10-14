@@ -84,7 +84,7 @@ def client(db_session_factory):
     app.dependency_overrides.clear()
 
 
-def _route_r1_get_post(*, onboarding_status="AVAILABLE", registration_id=None, sme_declarations=None, sme_service_id=None):
+def _route_r1_get_post(*, onboarding_status="AVAILABLE", registration_id=None, sme_declarations=None, sme_service_id=None, ai_capabilities=None, sme_status=201):
     """Builds a fake R1Client.get/post pair that answers each of
     CreateInstance's three downstream calls (onboarding-status, NFO
     deploy, usage/start) based on the path, since they all go through
@@ -104,7 +104,7 @@ def _route_r1_get_post(*, onboarding_status="AVAILABLE", registration_id=None, s
         assert "/onboarding-status" in path
         return FakeR1Response(200, {
             "state": onboarding_status, "nfDeploymentDescriptorId": str(uuid.uuid4()),
-            "smeDeclarations": sme_declarations,
+            "smeDeclarations": sme_declarations, "aiCapabilities": ai_capabilities,
         })
 
     def fake_post(self, path, json=None, **kw):
@@ -119,7 +119,7 @@ def _route_r1_get_post(*, onboarding_status="AVAILABLE", registration_id=None, s
         if "/sme/provider-registrations" in path:
             return FakeR1Response(201, {"apfId": json["apfId"]})
         if "/sme/published-apis/" in path and "/service-apis" in path:
-            return FakeR1Response(201, {"serviceId": str(service_id)})
+            return FakeR1Response(sme_status, {"serviceId": str(service_id)})
         if path.startswith("/rapps/") and path.endswith("/credentials"):   # call flow 01b: the push to the instance's rApp
             fake_post.pushed.append((path, json))
             return FakeR1Response(fake_post.push_status, {})
@@ -1227,6 +1227,59 @@ def test_create_instance_with_an_idempotency_key_creates_one_instance(client, db
 
     other = client.post("/instances", json={**body, "packageId": str(uuid.uuid4())}, headers={"Idempotency-Key": "create-1"})
     assert other.status_code == 422 and other.json()["detail"]["title"] == "IDEMPOTENCY_KEY_REUSED"
+
+
+# ---- call flow 01d (DOC-CF-1.1 review): RAPP_MGMT_REQUIRE_SME_REGISTRATION makes the SME declarations a condition of the bootstrap
+
+_DECLARATIONS = {"providers": [{"apiProvDomInfo": "Provider domain"}], "serviceApis": [{"apiName": "API", "aefProfiles": [{"aefId": "aef-1"}]}]}
+
+
+def _created_with_declarations(client, monkeypatch, **route):
+    """An instance of a package that declares one SME provider and one service API, with R1 stubbed by `_route_r1_get_post(**route)`."""
+    fake_get, fake_post = _route_r1_get_post(sme_declarations=_DECLARATIONS, **route)
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+    return client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}}).json()
+
+
+def test_a_refused_sme_registration_is_ignored_by_default(client, monkeypatch):
+    """Best-effort by default: SME refusing the service API leaves the bootstrap accepted, the instance RUNNING."""
+    created = _created_with_declarations(client, monkeypatch, sme_status=409)
+    resp = client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
+    assert resp.status_code == 200 and resp.json()["state"] == "RUNNING"
+
+
+def test_with_registration_required_a_refused_sme_registration_refuses_the_bootstrap(client, monkeypatch):
+    """With RAPP_MGMT_REQUIRE_SME_REGISTRATION on, SME refusing a service API is 502 UPSTREAM_FAILED and the instance stays DEPLOYING."""
+    monkeypatch.setenv("RAPP_MGMT_REQUIRE_SME_REGISTRATION", "true")
+    created = _created_with_declarations(client, monkeypatch, sme_status=409)
+
+    resp = client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
+
+    assert resp.status_code == 502 and resp.json()["detail"]["title"] == "UPSTREAM_FAILED"
+    assert client.get(f"/instances/{created['instanceId']}").json()["state"] == "DEPLOYING"
+
+
+def test_with_registration_required_an_unreachable_sme_refuses_the_bootstrap(client, monkeypatch):
+    """With RAPP_MGMT_REQUIRE_SME_REGISTRATION on, SME not answering is 503 ENDPOINT_UNREACHABLE and the instance stays DEPLOYING; registered, it runs."""
+    import httpx
+
+    monkeypatch.setenv("RAPP_MGMT_REQUIRE_SME_REGISTRATION", "on")
+    created = _created_with_declarations(client, monkeypatch)
+    real_post = __import__("app.main", fromlist=["R1Client"]).R1Client.post
+
+    def sme_down(self, path, json=None, **kw):
+        if path == "/sme/provider-registrations":
+            raise httpx.ConnectError("sme down")
+        return real_post(self, path, json=json, **kw)
+
+    monkeypatch.setattr("app.main.R1Client.post", sme_down)
+    resp = client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
+    assert resp.status_code == 503 and resp.json()["detail"]["title"] == "ENDPOINT_UNREACHABLE"
+    assert client.get(f"/instances/{created['instanceId']}").json()["state"] == "DEPLOYING"
+
+    monkeypatch.setattr("app.main.R1Client.post", real_post)
+    assert client.post(f"/instances/{created['instanceId']}/bootstrap-complete").json()["state"] == "RUNNING"
 
 
 def test_terminate_closes_the_instances_dme_data_jobs_and_a_crash_does_not(client, monkeypatch):

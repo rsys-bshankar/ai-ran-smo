@@ -147,3 +147,30 @@ def test_renew_is_an_error_without_the_secret_when_the_rapp_does_not_take_it(cli
     main_module.R1Client.post.push_status = 503
     resp = client.post(f"/instances/{created['instanceId']}/credentials/renew")
     assert resp.status_code == 503 and "renewed" not in resp.text
+
+
+def test_without_a_base_the_address_the_package_declares_is_used(client, monkeypatch):
+    """Call flow 01b: no `operatorApiBase` at create, and the package declares `operatorApi.baseUrl`: that address is stored and the credentials go there."""
+    fake_get, fake_post = _route_r1_get_post(ai_capabilities={"operatorApi": {"baseUrl": "http://energy-saving-rapp:8000"}})
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+
+    created = client.post("/instances", json={"packageId": str(uuid.uuid4())}).json()
+
+    assert created["credentialsDelivered"] is True
+    assert client.get(f"/instances/{created['instanceId']}").json()["operatorApiBase"] == "http://energy-saving-rapp:8000"
+
+
+def test_the_operators_base_wins_over_the_declared_one_and_a_bad_declared_one_is_ignored(client, monkeypatch):
+    """An `operatorApiBase` given at create wins over the package's address; a declared address that fails the rule (here loopback) is not used."""
+    fake_get, fake_post = _route_r1_get_post(ai_capabilities={"operatorApi": {"baseUrl": "http://energy-saving-rapp:8000"}})
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+    given = client.post("/instances", json={"packageId": str(uuid.uuid4()), "operatorApiBase": "http://other-rapp:9000"}).json()
+    assert client.get(f"/instances/{given['instanceId']}").json()["operatorApiBase"] == "http://other-rapp:9000"
+
+    fake_get, fake_post = _route_r1_get_post(ai_capabilities={"operatorApi": {"baseUrl": "http://127.0.0.1:8000"}})
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+    bad = client.post("/instances", json={"packageId": str(uuid.uuid4())}).json()
+    assert client.get(f"/instances/{bad['instanceId']}").json()["operatorApiBase"] is None
