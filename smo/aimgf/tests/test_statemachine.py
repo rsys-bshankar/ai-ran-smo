@@ -141,10 +141,10 @@ def test_termination_is_legal_from_every_pre_active_deployed_state():
         assert RUNTIME_LIFECYCLE_FSM.fire(state, RuntimeLifecycleEvent.REQUEST_TERMINATION) == RuntimeLifecycleState.TERMINATING
 
 
-def test_terminated_is_terminal():
-    """A TERMINATED runtime cannot be redeployed: no event has an edge out of it."""
-    with pytest.raises(IllegalTransition):
-        RUNTIME_LIFECYCLE_FSM.fire(RuntimeLifecycleState.TERMINATED, RuntimeLifecycleEvent.REQUEST_DEPLOYMENT)
+def test_a_terminated_runtime_is_deployed_again_and_nothing_else():
+    """Call flow 17d: REQUEST_DEPLOYMENT takes TERMINATED back to DEPLOYMENT_REQUESTED; no other event has an edge out of TERMINATED."""
+    assert RUNTIME_LIFECYCLE_FSM.fire(RuntimeLifecycleState.TERMINATED, RuntimeLifecycleEvent.REQUEST_DEPLOYMENT) == RuntimeLifecycleState.DEPLOYMENT_REQUESTED
+    assert RUNTIME_LIFECYCLE_FSM.legal_events(RuntimeLifecycleState.TERMINATED) == [RuntimeLifecycleEvent.REQUEST_DEPLOYMENT]
 
 
 def test_cannot_scale_before_active():

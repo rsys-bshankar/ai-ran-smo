@@ -115,7 +115,7 @@ export const flows: Partial<Record<MessageKey, string>> = {
   "flows.f02.rollback": "Zurücksetzen",
   "flows.f02.retire": "Stilllegen",
   "flows.f02.terminate": "Laufzeit beenden",
-  "flows.f02.terminate.confirm": "Die Laufzeit dieses Modells beenden? NFO löscht ihre Bereitstellung; sie kann nicht erneut bereitgestellt werden.",
+  "flows.f02.terminate.confirm": "Die Laufzeit dieses Modells beenden? NFO löscht ihre Bereitstellung; zum Bedienen erneut bereitstellen.",
   "flows.f02.terminating": "Laufzeit wird beendet",
 
   "flows.f03.empty": "Noch keine Konfigurationsjobs.",

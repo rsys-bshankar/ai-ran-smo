@@ -433,46 +433,99 @@ class TrainingProgressRequest(BaseModel):
 
 # ---------------------------------------------------------------- Execution runtimes (jointly with NFO)
 
-def _nfo_create_execution_descriptor(job_kind: str, job_id: uuid.UUID, runtime_profile: dict | None = None) -> uuid.UUID:
-    """Creates the NFO descriptor for a transient execution runtime (a training, validation or emulation run) and returns its id.
+def _nfo_call(method: str, path: str, ok: tuple[int, ...], what: str, json: dict | None = None):
+    """One NFO call through `_r1` whose answer is checked (call flow 17, DOC-CF-1.5): returns the response when its status is in `ok`; raises 502
+    `UPSTREAM_FAILED` (NFO's problem title in the detail) for any other answer and 503 `ENDPOINT_UNREACHABLE` when NFO does not answer."""
+    try:
+        resp = _r1.post(path, json=json) if method == "POST" else _r1.delete(path)
+    except httpx.HTTPError as exc:
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"NFO {what}: {type(exc).__name__}") from exc
+    if resp.status_code not in ok:
+        raise framework_error(FrameworkError.UPSTREAM_FAILED, detail=f"NFO {what} answered {resp.status_code} {_problem_title(resp)}".rstrip())
+    return resp
 
-    `job_kind` is TRAINING, VALIDATION or EMULATION; an inference job creates no runtime of its own. The workload template carries `jobKind` and `jobId` and, when a
-    runtime profile is given, `resources` (the profile as written) and `containerResources` (the same as Kubernetes requests and limits, PR-RAPP-2.1; absent when the
-    profile sets no CPU or memory). `packageId` is None because an execution job has no onboarded ApplicationPackage (NFO's column is nullable). Calls
-    `POST /nfo/descriptors` through R1 and reads `nfDeploymentDescriptorId` without checking the status code, so an NFO error surfaces as an unhandled exception (500)
-    and the caller's transaction is not committed. HISTORY.md OI-6.2.
-    """
+
+def _problem_title(resp) -> str:
+    """The problem title of an error answer (`detail.title`, or `title`), or an empty string."""
+    try:
+        body = resp.json()
+    except ValueError:
+        return ""
+    if not isinstance(body, dict):
+        return ""
+    detail = body.get("detail")
+    return str((detail if isinstance(detail, dict) else body).get("title") or "")
+
+
+def _nfo_workload(descriptor_name: str, workload: dict, deployment_name: str) -> tuple[uuid.UUID, uuid.UUID]:
+    """Creates an NFO descriptor (`POST /nfo/descriptors`, `packageId` None: neither a model runtime nor a job has an onboarded package) and instantiates it
+    (`POST /nfo/deployments`); returns (descriptor id, deployment id). Every answer is checked (`_nfo_call`); when the instantiate fails, the descriptor
+    just made is deleted again (best-effort) before the error is raised, so a refused deploy leaves nothing at NFO."""
+    resp = _nfo_call("POST", "/nfo/descriptors", (200, 201), "CreateDescriptor",
+                     json={"packageId": None, "name": descriptor_name, "workloadTemplate": workload})
+    descriptor_id = uuid.UUID(resp.json()["nfDeploymentDescriptorId"])
+    try:
+        resp = _nfo_call("POST", "/nfo/deployments", (200, 202), "Instantiate",
+                         json={"nfDeploymentDescriptorId": str(descriptor_id), "name": deployment_name})
+    except HTTPException:
+        _nfo_drop_descriptor(descriptor_id)
+        raise
+    return descriptor_id, uuid.UUID(resp.json()["nfDeploymentId"])
+
+
+def _nfo_drop_descriptor(descriptor_id: uuid.UUID | None) -> None:
+    """Deletes a descriptor this module made (`DELETE /nfo/descriptors/{id}`), best-effort: NFO keeps a descriptor only as long as something uses it, and
+    a delete that fails leaves one row behind, never a workload."""
+    if descriptor_id is None:
+        return
+    try:
+        _r1.delete(f"/nfo/descriptors/{descriptor_id}")
+    except httpx.HTTPError:
+        pass
+
+
+def _nfo_release(deployment_id: uuid.UUID | None, descriptor_id: uuid.UUID | None) -> None:
+    """Terminates a deployment (`DELETE /nfo/deployments/{id}`; 204, or 404 when it is already gone) and then deletes its descriptor. Raises like
+    `_nfo_call` when NFO does not terminate it, so the caller records nothing as torn down that still runs."""
+    if deployment_id is not None:
+        _nfo_call("DELETE", f"/nfo/deployments/{deployment_id}", (200, 202, 204, 404), "Terminate")
+    _nfo_drop_descriptor(descriptor_id)
+
+
+def _execution_workload(job_kind: str, job_id: uuid.UUID, runtime_profile: dict | None) -> dict:
+    """The workload template of a transient execution runtime (a training, validation or emulation run): `jobKind` and `jobId`, plus `resources` (the
+    runtime profile as written) and `containerResources` (the same as Kubernetes requests and limits, PR-RAPP-2.1; absent when the profile sets no CPU or
+    memory) when a profile is given. An inference job creates no runtime of its own."""
     workload: dict[str, Any] = {"jobKind": job_kind, "jobId": str(job_id)}
     if runtime_profile:
         workload["resources"] = runtime_profile  # Wave 7 (W7-03): the mode's runtime profile
         if container := container_resources(runtime_profile):
             workload["containerResources"] = container  # PR-RAPP-2.1: the same as Kubernetes requests and limits
-    resp = _r1.post("/nfo/descriptors", json={
-        "packageId": None, "name": f"aimgf-{job_kind.lower()}-{job_id}", "workloadTemplate": workload,
-    })
-    return uuid.UUID(resp.json()["nfDeploymentDescriptorId"])
+    return workload
 
 
-def _nfo_instantiate_execution(descriptor_id: uuid.UUID, job_kind: str, job_id: uuid.UUID) -> uuid.UUID:
-    """Instantiates the execution runtime for a descriptor (`POST /nfo/deployments`) and returns the deployment id.
+def _nfo_start_execution(job, job_kind: str, job_id: uuid.UUID, runtime_profile: dict | None = None) -> None:
+    """Makes the execution runtime of a job at NFO and stores its descriptor and deployment ids on the job (HISTORY.md OI-6.2). Raises 502/503 when NFO
+    refuses or does not answer (`_nfo_workload`), so the caller's transaction is not committed and nothing is left at NFO."""
+    name = f"aimgf-{job_kind.lower()}-{job_id}"
+    job.nf_deployment_descriptor_id, job.nf_deployment_id = _nfo_workload(name, _execution_workload(job_kind, job_id, runtime_profile), name)
 
-    The status code is not checked; an NFO error surfaces as an unhandled exception and nothing is committed. NFO reports the deployment RUNNING when this returns.
+
+def _nfo_terminate_execution(job) -> None:
+    """Tears down a job's execution runtime and its descriptor, and clears both ids on the job; a job with none is skipped.
+
+    An execution runtime is transient: it goes as soon as its job ends (complete, cancel, supersede, timeout), unlike a model's long-lived serving deployment. The job's end is
+    recorded whatever NFO answers: when NFO does not terminate the deployment, its ids stay on the job (`nfDeploymentId` is still shown) instead of being cleared, so a
+    deployment left behind stays visible rather than forgotten.
     """
-    resp = _r1.post("/nfo/deployments", json={
-        "nfDeploymentDescriptorId": str(descriptor_id), "name": f"aimgf-{job_kind.lower()}-{job_id}",
-    })
-    return uuid.UUID(resp.json()["nfDeploymentId"])
-
-
-def _nfo_terminate_execution(nf_deployment_id: uuid.UUID | None) -> None:
-    """Tears down an execution runtime (`DELETE /nfo/deployments/{id}`); a None id is a no-op.
-
-    An execution runtime is transient: it is deleted as soon as its job ends (complete, cancel, supersede, timeout), unlike a model's long-lived serving deployment. A job
-    whose id is already None (torn down earlier, or never created) is skipped. NFO's answer is not checked, so a failed delete is ignored and the NFO deployment can remain.
-    Callers set the job's `nf_deployment_id` to None afterwards.
-    """
-    if nf_deployment_id is not None:
-        _r1.delete(f"/nfo/deployments/{nf_deployment_id}")
+    if job.nf_deployment_id is None and job.nf_deployment_descriptor_id is None:
+        return
+    try:
+        _nfo_release(job.nf_deployment_id, job.nf_deployment_descriptor_id)
+    except HTTPException:
+        return
+    job.nf_deployment_id = None
+    job.nf_deployment_descriptor_id = None
 
 
 # ---------------------------------------------------------------- Wave 7: runtime profiles and execution timeouts
@@ -557,8 +610,7 @@ def _expire_overdue_jobs(db: Session) -> list[dict]:
         if not _overdue(job.started_at, job.timeout_seconds, now):
             continue
         job.status = "FAILED"
-        _nfo_terminate_execution(job.nf_deployment_id)
-        job.nf_deployment_id = None
+        _nfo_terminate_execution(job)
         _fire_if_legal(db, job.model_id, ModelLifecycleEvent.TRAINING_FAILED)
         _sync_training_process(db, job)
         process = db.scalar(select(MLTrainingProcess).where(MLTrainingProcess.training_job_id == job.training_job_id))
@@ -576,8 +628,7 @@ def _expire_overdue_jobs(db: Session) -> list[dict]:
                 continue
             job.status = "FAILED"
             job.metrics = {**(job.metrics or {}), "failureReason": "TIMEOUT"}
-            _nfo_terminate_execution(job.nf_deployment_id)
-            job.nf_deployment_id = None
+            _nfo_terminate_execution(job)
             _fire_if_legal(db, job.model_id, event)
             job_id = job.validation_job_id if kind == "VALIDATION" else job.emulation_job_id
             if kind == "VALIDATION":
@@ -722,9 +773,7 @@ def _start_training(db: Session, *, model_id: uuid.UUID | None, group_id: uuid.U
     # always created either way.
     # Order: the lifecycle gate and the job row come first, so a refused request never reaches NFO; the NFO runtime exists before CREATE_TRAINING fires, so an
     # NFO error leaves the lifecycle unchanged.
-    descriptor_id = _nfo_create_execution_descriptor("TRAINING", job.training_job_id, job.runtime_profile)
-    job.nf_deployment_descriptor_id = descriptor_id
-    job.nf_deployment_id = _nfo_instantiate_execution(descriptor_id, "TRAINING", job.training_job_id)
+    _nfo_start_execution(job, "TRAINING", job.training_job_id, job.runtime_profile)
 
     if lifecycle is not None and model_id is not None:      # a lifecycle exists only for a named model
         # A model that is already TRAINING has no CREATE_TRAINING edge to fire, so the in-flight run is superseded instead (the approval flags were reset when
@@ -737,8 +786,7 @@ def _start_training(db: Session, *, model_id: uuid.UUID | None, group_id: uuid.U
                     orphaned.status = "CANCELLED"
                     # the orphaned job's own execution runtime is abandoned
                     # right alongside it — left running otherwise.
-                    _nfo_terminate_execution(orphaned.nf_deployment_id)
-                    orphaned.nf_deployment_id = None
+                    _nfo_terminate_execution(orphaned)
                     _sync_training_process(db, orphaned)
         else:
             _fire_model_event(db, model_id, ModelLifecycleEvent.CREATE_TRAINING)
@@ -845,8 +893,7 @@ def complete_training(training_job_id: uuid.UUID, body: CompleteJobRequest, db: 
     job.outcome_artifact_dme_type_id = body.outcomeArtifactDmeTypeId
     # HISTORY.md OI-6.2: the run is done — its execution runtime
     # is torn down right alongside it, not left running indefinitely.
-    _nfo_terminate_execution(job.nf_deployment_id)
-    job.nf_deployment_id = None
+    _nfo_terminate_execution(job)
     if job.model_id is not None:
         event = ModelLifecycleEvent.TRAINING_COMPLETE if body.succeeded else ModelLifecycleEvent.TRAINING_FAILED
         _fire_model_event(db, job.model_id, event)
@@ -910,8 +957,7 @@ def _cancel_training_job(db: Session, job: TrainingJob, *, advance_update: bool 
     MLUpdateProcess) kept in step."""
     job.status = "CANCELLED"
     job.cancel_request = True
-    _nfo_terminate_execution(job.nf_deployment_id)
-    job.nf_deployment_id = None
+    _nfo_terminate_execution(job)
     _release_training_model(db, job)
     _sync_training_process(db, job)
     if advance_update and job.ml_update_process_id is not None:
@@ -1121,9 +1167,7 @@ def _start_validation(db: Session, *, model_id: uuid.UUID | None, group_id: uuid
     db.flush()
     # HISTORY.md OI-6.2: MLVF's own real execution runtime.
     # As in `_start_training`: all gates have passed before NFO is called, and the runtime exists before CREATE_VALIDATION fires.
-    descriptor_id = _nfo_create_execution_descriptor("VALIDATION", job.validation_job_id, job.runtime_profile)
-    job.nf_deployment_descriptor_id = descriptor_id
-    job.nf_deployment_id = _nfo_instantiate_execution(descriptor_id, "VALIDATION", job.validation_job_id)
+    _nfo_start_execution(job, "VALIDATION", job.validation_job_id, job.runtime_profile)
     if model_id is not None:
         _fire_model_event(db, model_id, ModelLifecycleEvent.CREATE_VALIDATION)
     db.flush()
@@ -1174,8 +1218,7 @@ def complete_validation(validation_job_id: uuid.UUID, body: CompleteJobRequest, 
     job.metrics = body.metrics
     job.outcome_artifact_dme_type_id = body.outcomeArtifactDmeTypeId
     # HISTORY.md OI-6.2: the run is done — tear down its runtime.
-    _nfo_terminate_execution(job.nf_deployment_id)
-    job.nf_deployment_id = None
+    _nfo_terminate_execution(job)
     if job.model_id is not None:
         event = ModelLifecycleEvent.VALIDATION_COMPLETE if body.succeeded else ModelLifecycleEvent.VALIDATION_FAILED
         _fire_model_event(db, job.model_id, event)
@@ -1237,9 +1280,7 @@ def request_emulation(body: RequestEmulationRequest, request: Request, db: Sessi
     db.add(job)
     db.flush()
     # HISTORY.md OI-6.2: MLEF's own real execution runtime.
-    descriptor_id = _nfo_create_execution_descriptor("EMULATION", job.emulation_job_id, job.runtime_profile)
-    job.nf_deployment_descriptor_id = descriptor_id
-    job.nf_deployment_id = _nfo_instantiate_execution(descriptor_id, "EMULATION", job.emulation_job_id)
+    _nfo_start_execution(job, "EMULATION", job.emulation_job_id, job.runtime_profile)
     _fire_model_event(db, body.modelId, ModelLifecycleEvent.CREATE_EMULATION)
     db.commit()
     return {"emulationJobId": str(job.emulation_job_id)}
@@ -1273,8 +1314,7 @@ def complete_emulation(emulation_job_id: uuid.UUID, body: CompleteJobRequest, db
     job.metrics = body.metrics
     job.outcome_artifact_dme_type_id = body.outcomeArtifactDmeTypeId
     # HISTORY.md OI-6.2: the run is done — tear down its runtime.
-    _nfo_terminate_execution(job.nf_deployment_id)
-    job.nf_deployment_id = None
+    _nfo_terminate_execution(job)
     event = ModelLifecycleEvent.EMULATION_COMPLETE if body.succeeded else ModelLifecycleEvent.EMULATION_FAILED
     _fire_model_event(db, job.model_id, event)
     # Wave 4 — TS 28.105: an emulation run's result is an
@@ -1373,10 +1413,11 @@ def advance_model_lifecycle(model_id: uuid.UUID, event: str, request: Request, d
 def get_model_lifecycle(request: Request, model_id: uuid.UUID, db: Session = Depends(get_session)):
     # Route notes: 404 `MODEL_NOT_FOUND` when MLMR does not know the model; 403 `MODEL_ACCESS_DENIED` for an rApp that is not the model's owner (SEC-15.3c; the console, an SMO
     # module such as MLLF and a call with no role are not asked). Creates the lifecycle row on first use and commits, so this GET writes (the row starts REGISTERED / NOT_DEPLOYED).
+    # Adds `workload`, the serving deployment as NFO sees it now (call flow 17e).
     _owned_model(request, model_id, "read the lifecycle of")
     lifecycle = _get_or_create_lifecycle(db, model_id)
     db.commit()
-    return _lifecycle_view(lifecycle)
+    return _lifecycle_view_with_workload(lifecycle)
 
 
 # GUI-7.3: the states whose next step is an operator's governance decision. TRAINED and VALIDATED wait for one only until their gate flag is set
@@ -1451,29 +1492,15 @@ def list_lifecycle_history(request: Request, model_id: uuid.UUID, fsm: str | Non
 
 # ---------------------------------------------------------------- RuntimeLifecycle (jointly with NFO)
 
-def _nfo_create_descriptor(model_id: uuid.UUID, runtime_profile: dict | None = None) -> uuid.UUID:
-    """Creates the NFO descriptor for a model's long-lived serving runtime and returns its id (`POST /nfo/descriptors`).
-
-    The template is `{modelId, jobKind: INFERENCE}` plus `resources` / `containerResources` when a runtime profile is given, as for execution runtimes. `packageId` is None: a model
-    runtime has no onboarded ApplicationPackage behind it. The answer's status is not checked.
-    """
+def _serving_workload(model_id: uuid.UUID, runtime_profile: dict | None = None) -> dict:
+    """The workload template of a model's long-lived serving runtime: `{modelId, jobKind: INFERENCE}` plus `resources` / `containerResources` when a runtime
+    profile is given, as for execution runtimes."""
     workload: dict[str, Any] = {"modelId": str(model_id), "jobKind": "INFERENCE"}
     if runtime_profile:
         workload["resources"] = runtime_profile  # Wave 7 (W7-03): the INFERENCE runtime profile
         if container := container_resources(runtime_profile):
             workload["containerResources"] = container  # PR-RAPP-2.1: the same as Kubernetes requests and limits
-    resp = _r1.post("/nfo/descriptors", json={
-        "packageId": None, "name": f"aimgf-model-{model_id}-runtime", "workloadTemplate": workload,
-    })
-    return uuid.UUID(resp.json()["nfDeploymentDescriptorId"])
-
-
-def _nfo_instantiate(descriptor_id: uuid.UUID, model_id: uuid.UUID) -> uuid.UUID:
-    """Instantiates the serving runtime for a descriptor (`POST /nfo/deployments`) and returns the deployment id. The status code is not checked."""
-    resp = _r1.post("/nfo/deployments", json={
-        "nfDeploymentDescriptorId": str(descriptor_id), "name": f"aimgf-model-{model_id}-runtime",
-    })
-    return uuid.UUID(resp.json()["nfDeploymentId"])
+    return workload
 
 
 @app.post("/models/{model_id}/runtime/deploy", status_code=201)
@@ -1499,9 +1526,10 @@ def deploy_model_runtime(request: Request, model_id: uuid.UUID, package_id: uuid
 def _deploy_runtime(db: Session, model_id: uuid.UUID, runtime_profile: dict | None = None) -> ModelLifecycle:
     """Brings a model's serving runtime from NOT_DEPLOYED to DEPLOYED and returns the lifecycle row. Flushes, does not commit.
 
-    Raises 409 `MODEL_NOT_CERTIFIED` unless the model is CERTIFIED or PROMOTED, and 409 `LIFECYCLE_ILLEGAL_TRANSITION` for a runtime that is not NOT_DEPLOYED (a terminated runtime cannot
-    be redeployed). The REQUEST_DEPLOYMENT event fires before any NFO call, so a duplicate deploy is refused without touching NFO. Then an NFO descriptor and deployment are created (status
-    not checked) and their ids and the profile are stored on the row, followed by DEPLOYMENT_COMPLETE: NFO's instantiate is synchronous, so there is no waiting state. Also used by MLModelLoadingRequest.
+    Raises 409 `MODEL_NOT_CERTIFIED` unless the model is CERTIFIED or PROMOTED, and 409 `LIFECYCLE_ILLEGAL_TRANSITION` for a runtime that is not NOT_DEPLOYED or TERMINATED (a terminated
+    runtime is deployed again, call flow 17d). The REQUEST_DEPLOYMENT event fires before any NFO call, so a duplicate deploy is refused without touching NFO. Then an NFO descriptor and
+    deployment are created (502/503 when NFO refuses or does not answer, nothing kept) and their ids and the profile are stored on the row, followed by DEPLOYMENT_COMPLETE: NFO's
+    instantiate is synchronous, so there is no waiting state. Also used by MLModelLoadingRequest.
     """
     lifecycle = _get_or_create_lifecycle(db, model_id)
     if lifecycle.model_lifecycle_state not in (ModelLifecycleState.CERTIFIED, ModelLifecycleState.PROMOTED):
@@ -1509,8 +1537,9 @@ def _deploy_runtime(db: Session, model_id: uuid.UUID, runtime_profile: dict | No
                                detail=f"cannot deploy a runtime for a model in state {lifecycle.model_lifecycle_state}")
     _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.REQUEST_DEPLOYMENT)
 
-    descriptor_id = _nfo_create_descriptor(model_id, runtime_profile)
-    deployment_id = _nfo_instantiate(descriptor_id, model_id)
+    # call flow 17a: a fresh descriptor and deployment each time (a redeploy after TERMINATED too); a refusal raises 502/503 and nothing is kept
+    name = f"aimgf-model-{model_id}-runtime-{uuid.uuid4().hex[:8]}"
+    descriptor_id, deployment_id = _nfo_workload(name, _serving_workload(model_id, runtime_profile), name)
     lifecycle.runtime_profile = runtime_profile
     lifecycle.nf_deployment_descriptor_id = descriptor_id
     lifecycle.nf_deployment_id = deployment_id
@@ -1560,14 +1589,14 @@ def activate_model_runtime(request: Request, model_id: uuid.UUID, db: Session = 
 def scale_model_runtime(request: Request, model_id: uuid.UUID, db: Session = Depends(get_session)):
     """Refused (409) for a DEPRECATED/RETIRED model."""
     # Route notes: `_owned_model` first (404 `MODEL_NOT_FOUND`, 403 `MODEL_ACCESS_DENIED` for an rApp that is not the owner; SEC-15.3b). Order then: end-of-life check (409), REQUEST_SCALE (409 unless the runtime is ACTIVE), `POST
-    # /nfo/deployments/{id}/scale` when the row has a deployment id (no body: NFO's scale takes no target size), SCALE_COMPLETE, one commit. NFO's answer is not
-    # checked.
+    # /nfo/deployments/{id}/scale` when the row has a deployment id (no body: NFO's scale takes no target size; 502 when NFO refuses, 503 when it does not
+    # answer, and then the runtime stays ACTIVE), SCALE_COMPLETE, one commit. An rApp may call it for a model it owns (call flow 17c).
     _owned_model(request, model_id, "scale")
     lifecycle = _get_or_create_lifecycle(db, model_id)
     _refuse_end_of_life(lifecycle, "scale")
     _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.REQUEST_SCALE)
     if lifecycle.nf_deployment_id is not None:
-        _r1.post(f"/nfo/deployments/{lifecycle.nf_deployment_id}/scale")
+        _nfo_call("POST", f"/nfo/deployments/{lifecycle.nf_deployment_id}/scale", (200,), "Scale")   # 502/503: nothing committed, still ACTIVE
     _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.SCALE_COMPLETE)
     db.commit()
     return _lifecycle_view(lifecycle)
@@ -1584,19 +1613,20 @@ def _terminate_runtime(db: Session, model_id: uuid.UUID) -> ModelLifecycle:
     """Tears down a model's serving runtime (REQUEST_TERMINATION, NFO delete, TERMINATION_COMPLETE) and returns the lifecycle row. Flushes, does not commit.
 
     The one teardown path: `POST /models/{id}/runtime/terminate` and RETIRE both use it. Raises 409 `LIFECYCLE_ILLEGAL_TRANSITION` from the FSM for a runtime that is not DEPLOYMENT_REQUESTED,
-    DEPLOYED or ACTIVE. The NFO delete is skipped when the row has no deployment id, and its answer is not checked. The row keeps its `nf_deployment_*` ids afterwards.
+    DEPLOYED or ACTIVE. The NFO deployment is terminated and its descriptor deleted (`_nfo_release`); when NFO does not terminate it, 502/503 is raised and the
+    caller's transaction is not committed, so the runtime stays as it was. The row keeps its `nf_deployment_*` ids afterwards, as the record of what ran.
     """
     lifecycle = _get_or_create_lifecycle(db, model_id)
     _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.REQUEST_TERMINATION)
-    if lifecycle.nf_deployment_id is not None:
-        _r1.delete(f"/nfo/deployments/{lifecycle.nf_deployment_id}")
+    _nfo_release(lifecycle.nf_deployment_id, lifecycle.nf_deployment_descriptor_id)   # 502/503: nothing committed, the runtime is as it was
     return _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.TERMINATION_COMPLETE)
 
 
 @app.post("/models/{model_id}/runtime/terminate")
 def terminate_model_runtime(request: Request, model_id: uuid.UUID, db: Session = Depends(get_session)):
     # Route notes: `_owned_model` first (404 `MODEL_NOT_FOUND`, 403 `MODEL_ACCESS_DENIED` for an rApp that is not the owner; SEC-15.3b). Then 409 `LIFECYCLE_ILLEGAL_TRANSITION` unless the runtime is DEPLOYMENT_REQUESTED, DEPLOYED or ACTIVE; one
-    # commit after the NFO delete. TERMINATED is final.
+    # commit after the NFO delete and the descriptor's (502/503 when NFO does not terminate it, and the runtime stays as it was). A TERMINATED runtime is deployed
+    # again through `runtime/deploy` (call flow 17d). An rApp may call it for a model it owns.
     _owned_model(request, model_id, "terminate")
     lifecycle = _terminate_runtime(db, model_id)
     db.commit()
@@ -1638,7 +1668,7 @@ def request_inference(request: Request, model_id: uuid.UUID, notification_destin
     """
     # Route notes. 201 `{"inferenceJobId"}`. Order: `_serving_model` (404 `MODEL_NOT_FOUND`; 403 `MODEL_ACCESS_DENIED` for an rApp that neither owns the model nor is let use it by its
     # `accessReqs`; 409 `INFERENCE_MODEL_NOT_ACTIVE` for a model MLMR shows as NOT_TRAINED or IN_TRAINING; SEC-15.3); RETIRED (409 `INFERENCE_MODEL_NOT_ACTIVE`, detail "model is RETIRED");
-    # runtime not ACTIVE (409, same code); when `aiml_inference_function_id` is given, the function exists (404 `NRM_OBJECT_NOT_FOUND`), is ACTIVATED (409
+    # runtime not ACTIVE, or its NFO deployment ABNORMAL or gone (409, same code; call flow 17e); when `aiml_inference_function_id` is given, the function exists (404 `NRM_OBJECT_NOT_FOUND`), is ACTIVATED (409
     # `INFERENCE_FUNCTION_NOT_ACTIVATED`) and has the model loaded (409 `MODEL_NOT_LOADED`). No NFO call: the job copies the model's live serving deployment id.
     # `timeout_seconds` is a plain query parameter with no lower bound, unlike the request bodies; a value of 0 or less makes the job overdue at the next sweep.
     # `@idempotent("aimgf")` replays by `Idempotency-Key`; `request` is placed first for that decorator.
@@ -1648,6 +1678,11 @@ def request_inference(request: Request, model_id: uuid.UUID, notification_destin
         raise framework_error(FrameworkError.INFERENCE_MODEL_NOT_ACTIVE, detail="model is RETIRED")
     if lifecycle.runtime_lifecycle_state != RuntimeLifecycleState.ACTIVE:
         raise framework_error(FrameworkError.INFERENCE_MODEL_NOT_ACTIVE)
+    workload = _workload(lifecycle)
+    if workload is not None and workload["state"] not in ("RUNNING", "UNKNOWN"):
+        # call flow 17e: NFO says the serving deployment is broken (ABNORMAL) or gone; UNKNOWN (NFO did not answer) is let through, so inference does not
+        # depend on NFO being up
+        raise framework_error(FrameworkError.INFERENCE_MODEL_NOT_ACTIVE, detail=f"the model's serving deployment is {workload['state']} at NFO")
     # Wave 4 — TS 28.105 AIMLInferenceFunction: when named, it must be
     # ACTIVATED and actually have this model loaded (MLModelLoadingProcess).
     if aiml_inference_function_id is not None:
@@ -2022,6 +2057,28 @@ def _lifecycle_view(l: ModelLifecycle) -> dict:
         "trainingApproved": l.training_approved, "validationApproved": l.validation_approved,
         "runtimeProfile": l.runtime_profile,
     }
+
+
+def _workload(l: ModelLifecycle) -> dict | None:
+    """Call flow 17e: the serving runtime's NFO deployment as NFO sees it now (`GET /nfo/deployments/{id}`): `{state, abnormalReason}`, `GONE` when NFO no longer
+    has it, `UNKNOWN` when NFO does not answer. None when the runtime has no live deployment (not deployed yet, or TERMINATED)."""
+    if l.nf_deployment_id is None or l.runtime_lifecycle_state in (RuntimeLifecycleState.NOT_DEPLOYED, RuntimeLifecycleState.TERMINATED):
+        return None
+    try:
+        resp = _r1.get(f"/nfo/deployments/{l.nf_deployment_id}")
+    except httpx.HTTPError:
+        return {"state": "UNKNOWN", "abnormalReason": None}
+    if resp.status_code == 404:
+        return {"state": "GONE", "abnormalReason": None}
+    body = resp.json() if resp.status_code == 200 else None
+    if not isinstance(body, dict) or not body.get("state"):
+        return {"state": "UNKNOWN", "abnormalReason": None}
+    return {"state": body["state"], "abnormalReason": body.get("abnormalReason")}
+
+
+def _lifecycle_view_with_workload(l: ModelLifecycle) -> dict:
+    """The lifecycle view of the single-model read, plus `workload` (`_workload`); the runtime routes and lists answer without it, so they cost no NFO read."""
+    return {**_lifecycle_view(l), "workload": _workload(l)}
 
 
 # ---------------------------------------------------------------- Feature groups

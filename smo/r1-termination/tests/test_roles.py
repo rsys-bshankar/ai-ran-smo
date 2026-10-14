@@ -180,10 +180,11 @@ def test_a_module_that_names_nobody_forwards_nothing(gateway):
     ("POST", "/nfo/deployments"), ("POST", "/focom/provisioning-requests"), ("POST", "/so-smos/anything"), ("POST", "/rapps/00000000-0000-0000-0000-000000000000/operator/instances/i/start"),
     ("PUT", "/sme/invoker-registrations/x"), ("DELETE", "/sme/invoker-registrations/x"), ("POST", "/sme/invoker-registrations/purge-stale"),
     ("PUT", "/sme/trusted-invokers/x"), ("POST", "/aimgf/ml-training-functions"), ("POST", "/aimgf/execution-timeouts/sweep"),
-    ("POST", "/aimgf/models/m/runtime/terminate"),
+    ("POST", "/aimgf/models/m/runtime/rollback"),
     # SEC-15.1b: the governance and end-of-life decisions of a model are the operator's; the route is refused to an rApp at the gateway (and by AIMgF), with the near misses of its neighbours
     ("POST", "/aimgf/models/m/advance"), ("POST", "/aimgf/models/m/advance/x"), ("PUT", "/aimgf/models/m/advance"), ("POST", "/aimgf/models/advance"),
     ("POST", "/aimgf/models/m/inference-jobs/x"), ("POST", "/aimgf/models/m/runtime/deploy/x"), ("DELETE", "/aimgf/models/m/runtime/activate"),
+    ("POST", "/aimgf/models/m/runtime/terminate/x"), ("PATCH", "/aimgf/models/m/runtime/node-groups"),
     ("POST", "/mlmr/storages"), ("POST", "/mdaf/mda-functions"), ("PUT", "/ran-nf-oam/rapp-limits/x"),
     ("POST", "/ran-nf-oam/config-jobs/j/abort"), ("PUT", "/ran-nf-oam/kpi-schedules/s"), ("POST", "/ran-nf-oam/managed-elements"),
     # GUI-8.3: an rApp registers (and forgets) the operator API of an instance, with those two methods and that one path
@@ -206,6 +207,7 @@ def test_an_rapp_may_not_change_what_it_does_not_use(gateway, method, path):
 @pytest.mark.parametrize("method, path", [
     ("POST", "/ran-nf-oam/config-jobs"), ("POST", "/dme/actions"), ("PUT", "/dme/data-jobs/j"),
     ("POST", "/aimgf/models/m/inference-jobs"), ("POST", "/aimgf/models/m/runtime/deploy"), ("POST", "/aimgf/models/m/runtime/activate"),
+    ("POST", "/aimgf/models/m/runtime/scale"), ("POST", "/aimgf/models/m/runtime/terminate"),
     ("POST", "/aimgf/ml-training-requests"), ("PATCH", "/intent-service/intents/i/admin-state"), ("POST", "/sme/oauth2/token"),
     ("POST", "/mlmr/models/m/artifact"), ("DELETE", "/mdaf/subscriptions/s"), ("PUT", "/rapp-mgmt/instances/i/operator-api"), ("DELETE", "/rapp-mgmt/instances/i/operator-api"),
     ("POST", "/rapp-mgmt/instances/i/bootstrap-complete"), ("POST", "/rapp-mgmt/instances/i/performance"),

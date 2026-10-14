@@ -2775,6 +2775,33 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.5 — call flow 17 rewritten from the code: the model runtime records only what NFO did, and can be deployed again
+
+The fifth flow of the call-flow audit, decided with the product owner (the recommendations of the audit, all taken):
+
+- **NFO's answers are checked.** AIMgF read every NFO answer without its status: a refused descriptor or instantiate was a 500 (a descriptor
+  made before a refused instantiate stayed at NFO), and a refused terminate was ignored, so a runtime read TERMINATED while its deployment ran.
+  `_nfo_call` now raises 502 `UPSTREAM_FAILED` (NFO's title in the detail) or 503, and nothing is committed; `_nfo_workload` deletes the
+  descriptor it just made when the instantiate fails. The job runtimes (training, validation, emulation) start the same way
+  (`_nfo_start_execution`); they end whatever NFO answers (a job's end is not NFO's to refuse), but a deployment NFO did not remove keeps its
+  ids on the job (`_nfo_terminate_execution`) instead of being forgotten.
+- **Descriptors go with their deployment.** One descriptor per runtime deploy and per job was made and never deleted. `_nfo_release`
+  terminates the deployment, then deletes its descriptor (best-effort).
+- **A terminated runtime is deployed again.** `TERMINATED --REQUEST_DEPLOYMENT--> DEPLOYMENT_REQUESTED`, with a fresh descriptor and deployment
+  (the name carries a suffix, NFO's names being unique) under the same certification guard; a model-loading request now deploys a TERMINATED
+  runtime again instead of refusing it (409).
+- **The serving workload is seen.** `GET /models/{id}/lifecycle` adds `workload` (`_workload`: NFO's state and reason, `GONE`, `UNKNOWN`), and
+  `POST /models/{id}/inference-jobs` is refused (409 `INFERENCE_MODEL_NOT_ACTIVE`) when NFO says the deployment is ABNORMAL or gone; no answer
+  does not stop inference. Moving the runtime's state on NFO's events stays `OPEN_ITEMS.md` OI-7-workload-failure.
+- **The owner drives its runtime.** The doc said every step was the producer's, but R1 Termination let an rApp only deploy and activate.
+  `runtime/scale` and `runtime/terminate` are now in `RAPP_MAY_CHANGE` (AIMgF already refused another rApp's model, SEC-15.3b), and the SDK
+  has `lifecycle.scale_runtime` / `terminate_runtime`.
+- **Corrected in the audit:** a loading request for a TERMINATED runtime was refused (409), not reported loaded as the audit first said.
+- **Not built:** an approval gate for runtime transitions (`OPEN_ITEMS.md` OI-6.1-runtime-gate, left open as a governance choice).
+
+The document is five diagrams (deploy; activate and node groups; scale; terminate and deploy again; model loading and a workload that breaks)
+in the flow 01 format, with PNG images and the runtime state table.
+
 ### DOC-CF-1.4 — call flow 15 rewritten from the code: several instances of a package, no instance without a workload, a broken workload seen
 
 The fourth flow of the call-flow audit, decided with the product owner (the recommendations of the audit, all taken):
