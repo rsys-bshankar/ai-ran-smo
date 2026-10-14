@@ -19,6 +19,9 @@ from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from .source import ACCOUNT_PREFIX
+from .throttle import AccountPolicy
+
 
 def _now() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC)
@@ -372,6 +375,58 @@ class Database:
                 except IntegrityError:   # another instance added the first row at the same moment: count into it
                     s.rollback()
         raise RuntimeError(f"could not record the failed login for {username!r}")
+
+    def account_cooling(self, key: str, policy: AccountPolicy, now: float) -> bool:
+        """True when the per-account counter `key` (`source.account_key`) is in a cool-down at `now` (SEC-15.11b). Read only; a name with no row, or a policy that is off, is never cooling."""
+        if not policy.enabled:
+            return False
+        with self.session() as s:
+            row = s.get(LoginFailure, key)
+            return row is not None and policy.cooling(row.count, row.first_failed_at, now)
+
+    def record_account_failure(self, key: str, policy: AccountPolicy, now: float) -> None:
+        """Count one failure of an account in the per-account counter (`AccountPolicy.after_failure` decides the new state). Compare-and-swap on the stored values, so two instances
+        counting at once never lose a failure or start the cool-down twice; a lost race re-reads and tries again."""
+        if not policy.enabled:
+            return
+        for _ in range(5):
+            with self.session() as s:
+                row = s.get(LoginFailure, key)
+                new = policy.after_failure((row.count, row.first_failed_at) if row else None, now)
+                if new is None:
+                    return
+                if row is None:
+                    s.add(LoginFailure(username=key, count=new[0], first_failed_at=new[1]))
+                    done = True
+                    try:
+                        s.commit()
+                    except IntegrityError:    # another instance added the first row at the same moment: read it and count again
+                        s.rollback()
+                        done = False
+                else:
+                    changed = cast(CursorResult, s.execute(update(LoginFailure).where(
+                        LoginFailure.username == key, LoginFailure.count == row.count, LoginFailure.first_failed_at == row.first_failed_at)
+                        .values(count=new[0], first_failed_at=new[1])))
+                    s.commit()
+                    done = changed.rowcount == 1
+                if done:
+                    return
+        raise RuntimeError(f"could not record the failed login for {key!r}")
+
+    def purge_login_failures(self, policy: AccountPolicy, lockout_seconds: float, now: float) -> int:
+        """Delete the failed-login counters that no longer have any effect, of every kind (SEC-15.11b): a pair, a source or an old name-only row after `lockout_seconds` from its first
+        failure, an account counter after its own horizon (`AccountPolicy.stale`). A row that still locks or still counts is kept. Returns how many rows went."""
+        account = LoginFailure.username.startswith(ACCOUNT_PREFIX, autoescape=True)
+        horizon = policy.window + policy.cooldown_max
+        total = 0
+        with self.session() as s:
+            total += cast(CursorResult, s.execute(delete(LoginFailure).where(~account, LoginFailure.first_failed_at <= now - lockout_seconds))).rowcount
+            total += cast(CursorResult, s.execute(delete(LoginFailure).where(
+                account, LoginFailure.count < policy.max_failures, LoginFailure.first_failed_at <= now - policy.window))).rowcount
+            total += cast(CursorResult, s.execute(delete(LoginFailure).where(
+                account, LoginFailure.count >= policy.max_failures, LoginFailure.first_failed_at <= now - horizon))).rowcount
+            s.commit()
+        return total
 
     def revoke_session(self, jti: str, expires_at: float, now: float) -> None:
         """Record the end of one session (idempotent), and forget the ones whose tokens have expired by themselves."""

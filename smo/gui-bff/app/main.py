@@ -62,7 +62,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 
 from .config import Settings, settings as default_settings
-from . import events, exports, kpi_layouts, preferences, rapps, scoping, search, source, summary, totp
+from . import events, exports, kpi_layouts, preferences, rapps, scoping, search, source, summary, throttle, totp
 from .db import AuditEntry, Database, GuiUser, LoginFailure
 from .oidc import LOGIN_TTL_SECONDS, MAX_PENDING_LOGINS, OidcClient, OidcConfig, OidcError
 from .rbac import MODULES, RULES, Role, Rule, User, decide
@@ -80,9 +80,10 @@ UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 # SEC-15.11: failures are counted twice. MAX_LOGIN_FAILURES in LOCKOUT_SECONDS locks one user name for the source that failed (a lock that follows the pair, so an attacker cannot
 # lock the real user out from elsewhere); MAX_SOURCE_FAILURES in the same window throttles a source whatever names it tries (the pair counters alone would not slow one source
 # that tries many names). The source throttle is deliberately wider than the pair lock: an office behind one address must not be shut out by a few typing mistakes.
+# SEC-15.11b adds a third, mild counter by name alone (app/throttle.py, GUI_ACCOUNT_*): one name guessed from many addresses gets a short cool-down, never a long lock.
 MAX_LOGIN_FAILURES = 5
 MAX_SOURCE_FAILURES = 30
-LOCKOUT_SECONDS = 300
+LOCKOUT_SECONDS = throttle.LOCKOUT_SECONDS
 MIN_PASSWORD_LENGTH = 8
 USERNAME_RE = re.compile(r"^[a-z][a-z0-9_.-]{1,31}$")
 
@@ -297,6 +298,7 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
     if cfg.admin_mfa_required and not cfg.totp_key:
         raise ValueError("GUI_ADMIN_MFA_REQUIRED=true needs GUI_TOTP_KEY or GUI_TOTP_KEY_FILE: without a key no admin could enrol")
 
+    account_policy = cfg.account_policy()   # SEC-15.11b: a nonsense GUI_ACCOUNT_* combination stops the start
     signer = build_signer(cfg)           # PR-SEC-5: HS256 with GUI_JWT_SECRET (default) or RS256 / ES256 with a key file; a bad combination or key stops the start
 
     @asynccontextmanager
@@ -343,21 +345,23 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         return source.client_source(request.client.host if request.client else None, request.headers.get("x-forwarded-for"), cfg.trusted_proxy_hops)
 
     def login_blocked(username: str, origin: str) -> bool:
-        """True when `username` is locked for `origin` (MAX_LOGIN_FAILURES in LOCKOUT_SECONDS from that source) or `origin` is throttled (MAX_SOURCE_FAILURES, any names).
+        """True when `username` is locked for `origin` (MAX_LOGIN_FAILURES in LOCKOUT_SECONDS from that source) or `origin` is throttled (MAX_SOURCE_FAILURES, any names) or the name is in its per-account cool-down (any source, SEC-15.11b).
         Unknown names count like real ones, so the answer never says whether the account exists."""
         now = time.time()
         return (app.state.db.login_locked(source.pair_key(origin, username), MAX_LOGIN_FAILURES, LOCKOUT_SECONDS, now)
-                or app.state.db.login_locked(source.source_key(origin), MAX_SOURCE_FAILURES, LOCKOUT_SECONDS, now))
+                or app.state.db.login_locked(source.source_key(origin), MAX_SOURCE_FAILURES, LOCKOUT_SECONDS, now)
+                or app.state.db.account_cooling(source.account_key(username), account_policy, now))
 
     def count_login_failure(username: str, origin: str) -> None:
-        """Counts one failed attempt under both keys: the (source, user name) pair and the source."""
+        """Counts one failed attempt under three keys: the (source, user name) pair, the source, and the user name alone (the per-account cool-down)."""
         now = time.time()
         app.state.db.record_login_failure(source.pair_key(origin, username), LOCKOUT_SECONDS, now)
         app.state.db.record_login_failure(source.source_key(origin), LOCKOUT_SECONDS, now)
+        app.state.db.record_account_failure(source.account_key(username), account_policy, now)
 
     def clear_login_failures(username: str, origin: str) -> None:
         """Forgets the pair counter of a user from the source that has just signed in. The source counter stays: a sign-in to an account of one's own must not reset the budget
-        of guesses against others."""
+        of guesses against others. The per-account counter stays too (it only decays with time): a sign-in must not let a guesser reset the count of the account being guessed."""
         app.state.db.clear_login_failures(source.pair_key(origin, username))
 
     def issue_session(user: GuiUser) -> tuple[str, str]:
@@ -1159,7 +1163,7 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
             # One transaction: the account and the failed-login counter kept under its name go together (STD-4.3). There is no
             # session row to remove: a session is a signed token, and with its user gone every token naming it is refused.
             # The audit rows that name the user stay (docs/PRIVACY.md), and so do the module tables that record `smo-gui:<name>`.
-            s.execute(delete(LoginFailure).where(LoginFailure.username == username))                                  # the counter of before SEC-15.11, keyed by the name alone
+            s.execute(delete(LoginFailure).where(LoginFailure.username.in_([username, source.account_key(username)])))   # the counter of before SEC-15.11 (the name alone) and the account's cool-down
             s.execute(delete(LoginFailure).where(LoginFailure.username.startswith(source.PAIR_PREFIX, autoescape=True),      # and the pair counters of the name, whatever the source
                                                  LoginFailure.username.endswith(source.pair_key_suffix(username), autoescape=True)))
             s.delete(user)
