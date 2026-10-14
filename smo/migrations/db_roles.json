@@ -115,7 +115,8 @@
   "shared": [
    "module_identity",
    "notification_outbox",
-   "idempotency_key"
+   "idempotency_key",
+   "smo_event"
   ]
  },
  "ran-nf-oam": {

@@ -743,3 +743,37 @@ def test_a_put_that_changes_the_owner_is_audited_and_one_that_keeps_it_is_not(cl
     first, second = _audit_rows(db_session_factory)
     assert (first.actor, first.detail["previousOwner"], first.detail["newOwner"]) == ("alice", "es-client", "mobility-client")
     assert (second.detail["previousOwner"], second.detail["newOwner"]) == ("mobility-client", None)
+
+
+# ---------------------------------------------------------------- call flow 26e (DOC-CF-1.7): a model that still serves is not deleted
+
+# Each row is AIMgF's runtime state for the model and whether the delete goes through.
+@pytest.mark.parametrize("state,deleted", [(None, True), ("NOT_DEPLOYED", True), ("TERMINATED", True),
+                                           ("DEPLOYED", False), ("ACTIVE", False), ("SCALING", False)])
+def test_a_model_with_a_live_runtime_is_not_deleted(client, aimgf_runtimes, state, deleted):
+    """A model whose serving runtime AIMgF has deployed is 409 `MODEL_IN_USE` and kept; one AIMgF does not know, never deployed or terminated is deleted."""
+    model_id = client.post("/models", json={"modelType": "energy-saving", "version": "1.0"}).json()["modelId"]
+    if state is not None:
+        aimgf_runtimes[model_id] = state
+    resp = client.delete(f"/models/{model_id}")
+    assert resp.status_code == (204 if deleted else 409)
+    assert (client.get(f"/models/{model_id}").status_code == 404) is deleted
+    if not deleted:
+        assert resp.json()["detail"]["title"] == "MODEL_IN_USE" and state in resp.json()["detail"]["detail"]
+
+
+# Each row is how AIMgF fails to answer: a transport error, or a status that is neither 200 nor 404.
+@pytest.mark.parametrize("failure", ["transport", 500])
+def test_a_model_is_not_deleted_when_aimgf_cannot_say(client, monkeypatch, failure):
+    """No answer from AIMgF, or a 5xx, is 503 `ENDPOINT_UNREACHABLE` and nothing is deleted: a delete on a guess could orphan a running workload."""
+    model_id = client.post("/models", json={"modelType": "energy-saving", "version": "1.0"}).json()["modelId"]
+
+    def failing_get(self, path, **kw):
+        """AIMgF fails as the row says."""
+        if failure == "transport":
+            raise ConnectionError("down")
+        return type("A", (), {"status_code": failure, "json": lambda self: {}})()
+    monkeypatch.setattr("app.main.R1Client.get", failing_get)
+
+    assert client.delete(f"/models/{model_id}").status_code == 503
+    assert client.get(f"/models/{model_id}").status_code == 200

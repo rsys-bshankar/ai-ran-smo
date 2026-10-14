@@ -29,5 +29,10 @@
   "17-model-runtime-lifecycle/17b-activate-and-node-groups.png": "9c2ad16ca31e60948c61a106463b26ffa8ab2036dd27e3f89560c8a00272d154",
   "17-model-runtime-lifecycle/17c-scale.png": "fadf769033bce5c4ee19dfcda9ac10db0cb81d70f84b9b7f7de5bc650ee84237",
   "17-model-runtime-lifecycle/17d-terminate-and-deploy-again.png": "9839e67b8a2133cec15bec4e08ad4e0ad90197d7c7f5ce4400c76ae07676d4d5",
-  "17-model-runtime-lifecycle/17e-model-loading-and-a-workload-that-breaks.png": "1e2bcc689f649cd0393ecbac215df3694783eac600333235417ef78795f508b8"
+  "17-model-runtime-lifecycle/17e-model-loading-and-a-workload-that-breaks.png": "1e2bcc689f649cd0393ecbac215df3694783eac600333235417ef78795f508b8",
+  "26-model-governance-and-end-of-life/26a-submit-approve-certify-promote.png": "2f1cfe17f16740cd7d47d5c1e564ec63260c94836cb445dc808356ee5deff8ea",
+  "26-model-governance-and-end-of-life/26b-reject-then-retry-or-retire.png": "1c778965396f27cf99daae529fd3ab5f546c8cdf7060dcb6a430099250afe93a",
+  "26-model-governance-and-end-of-life/26c-roll-back.png": "e12cc8277ee28ff4cade5831065856278b8c742e79308a88d6d75d0824c94a47",
+  "26-model-governance-and-end-of-life/26d-deprecate.png": "36c46dde05f9a7ee0460be765b7f8a76158652875681f06c91b8ee8891c2468f",
+  "26-model-governance-and-end-of-life/26e-retire-and-deleting-the-model.png": "7f6485f12d7a5f54c92332c62adf43efa24ffb40427ea094bb66f800b5d21c34"
 }

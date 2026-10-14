@@ -271,7 +271,8 @@ def _fire_model_event(db: Session, model_id: uuid.UUID, event: ModelLifecycleEve
     `decided_by` and `rationale` come from the caller of `POST /models/{id}/advance` and are untrusted text. Raises 422 `GOVERNANCE_DECIDER_REQUIRED` for a
     governance event with `decided_by` None (an empty string passes), and 409 `LIFECYCLE_ILLEGAL_TRANSITION` when the event has no edge from the current state.
     Side effects in the caller's transaction: a `LifecycleTransition` row for every event; a `CertificationRecord` for the events in `GOVERNANCE_EVENTS`; the
-    `training_approved` / `validation_approved` flags set by their approval events and both cleared by CREATE_TRAINING.
+    `training_approved` / `validation_approved` flags set by their approval events and both cleared by CREATE_TRAINING; the transition published on the event bus as
+    `org.oran.smo.model-lifecycle.state-changed` (`machine` ModelLifecycleState, subject the model id) when the caller commits.
     """
     # Checked before any row is read or created, so a refused governance call leaves nothing behind.
     if event in GOVERNANCE_EVENTS and decided_by is None:
@@ -279,7 +280,8 @@ def _fire_model_event(db: Session, model_id: uuid.UUID, event: ModelLifecycleEve
     lifecycle = _get_or_create_lifecycle(db, model_id)
     from_state = ModelLifecycleState(lifecycle.model_lifecycle_state)
     try:
-        new_state = MODEL_LIFECYCLE_FSM.fire(from_state, event)
+        # Call flow 26 (DOC-CF-1.7): given the row, the transition is published as org.oran.smo.model-lifecycle.state-changed (subject: the model id) when it commits.
+        new_state = MODEL_LIFECYCLE_FSM.fire(from_state, event, lifecycle=lifecycle)
     except IllegalTransition as exc:
         raise framework_error(FrameworkError.LIFECYCLE_ILLEGAL_TRANSITION,
                                detail=f"cannot fire {event} from model lifecycle state {from_state}") from exc
@@ -306,12 +308,13 @@ def _fire_runtime_event(db: Session, model_id: uuid.UUID, event: RuntimeLifecycl
     """Fires a RuntimeLifecycle event for the model and returns the updated lifecycle row. Flushes, does not commit.
 
     Raises 409 `LIFECYCLE_ILLEGAL_TRANSITION` when the event has no edge from the runtime state. Adds a `LifecycleTransition` row (fsm RUNTIME) in the caller's
-    transaction. The runtime events carry no decider and write no CertificationRecord.
+    transaction, and publishes the transition as `org.oran.smo.model-lifecycle.state-changed` (`machine` RuntimeLifecycleState) when the caller commits. The runtime
+    events carry no decider and write no CertificationRecord.
     """
     lifecycle = _get_or_create_lifecycle(db, model_id)
     from_state = RuntimeLifecycleState(lifecycle.runtime_lifecycle_state)
     try:
-        new_state = RUNTIME_LIFECYCLE_FSM.fire(from_state, event)
+        new_state = RUNTIME_LIFECYCLE_FSM.fire(from_state, event, lifecycle=lifecycle)   # published like the model's (call flow 26)
     except IllegalTransition as exc:
         raise framework_error(FrameworkError.LIFECYCLE_ILLEGAL_TRANSITION,
                                detail=f"cannot fire {event} from runtime lifecycle state {from_state}") from exc
@@ -1823,6 +1826,13 @@ def list_inference_jobs(model_id: uuid.UUID | None = None, status: str | None = 
 
 # ---------------------------------------------------------------- MLMF performance monitoring
 
+def _refuse_if_retired(db: Session, model_id: uuid.UUID, action: str) -> None:
+    """Call flow 26e (DOC-CF-1.7): raises 409 `LIFECYCLE_ILLEGAL_TRANSITION` when AIMgF has the model RETIRED. A model with no lifecycle row is not retired. Reads only."""
+    lifecycle = db.get(ModelLifecycle, model_id)
+    if lifecycle is not None and lifecycle.model_lifecycle_state == ModelLifecycleState.RETIRED:
+        raise framework_error(FrameworkError.LIFECYCLE_ILLEGAL_TRANSITION, detail=f"the model is RETIRED: cannot {action}")
+
+
 @app.post("/mlmf/subscriptions", status_code=201)
 def subscribe_performance_monitoring(request: Request, model_id: uuid.UUID, metric_types: list[str], dme_type_id: uuid.UUID, guard_kpi_floor: dict | None = None,
                                       notification_destination: str | None = None, db: Session = Depends(get_session)):
@@ -1836,8 +1846,9 @@ def subscribe_performance_monitoring(request: Request, model_id: uuid.UUID, metr
     # Route notes: 201 `{"subscriptionId"}`. `model_id`, `dme_type_id` and `notification_destination` are query parameters; `metric_types` and `guard_kpi_floor`
     # are read from the JSON body. The DME type is not looked up. For a caller with the rApp role the model is looked up first (404 `MODEL_NOT_FOUND`, 403 `MODEL_ACCESS_DENIED`
     # unless it owns the model or the model has no owner; SEC-15.3c); the console, an SMO module and a call with no role are not asked and the model is not looked up for them.
-    # `notification_destination` is stored as given and screened by the outbox's SSRF guard when a report is queued, not here. One commit.
+    # `notification_destination` is stored as given and screened by the outbox's SSRF guard when a report is queued, not here. A RETIRED model is 409 `LIFECYCLE_ILLEGAL_TRANSITION` (call flow 26e). One commit.
     _check_rapp_owns(request, model_id, "subscribe to the performance of")
+    _refuse_if_retired(db, model_id, "subscribe to its performance")   # call flow 26e: a retired model serves nothing to monitor
     sub = MLMFSubscription(model_id=model_id, metric_types=metric_types, dme_type_id=dme_type_id, guard_kpi_floor=guard_kpi_floor,
                             notification_destination=notification_destination)
     db.add(sub)
@@ -1881,7 +1892,7 @@ def report_performance(request: Request, subscription_id: uuid.UUID, metrics: di
     404, matching every comparable cross-reference elsewhere in this
     build.
     """
-    # Route notes. 404 `MLMF_SUBSCRIPTION_NOT_FOUND`; 403 `MODEL_ACCESS_DENIED` for an rApp that does not own the subscribed model (SEC-15.3c; a report can start a group retrain, so it is
+    # Route notes. 404 `MLMF_SUBSCRIPTION_NOT_FOUND`; 409 `LIFECYCLE_ILLEGAL_TRANSITION` for a RETIRED model (call flow 26e); 403 `MODEL_ACCESS_DENIED` for an rApp that does not own the subscribed model (SEC-15.3c; a report can start a group retrain, so it is
     # the owner's to file; MDAF files drift reports as an SMO module and is not asked). The body is the metrics object (metric name to number). A report breaches when the subscription has a
     # floor and any guarded metric is below it; a guarded metric missing from the report counts as 0, and a non-numeric value raises a TypeError (500). The
     # report and its subscriber notification (`{reportId, modelId, metrics, breachedFloor}`) are committed first. Only then, for a breach, is the model's
@@ -1893,6 +1904,7 @@ def report_performance(request: Request, subscription_id: uuid.UUID, metrics: di
     if sub is None:
         raise framework_error(FrameworkError.MLMF_SUBSCRIPTION_NOT_FOUND, detail="no such MLMF subscription")
     _check_rapp_owns_if_known(request, sub.model_id, "report the performance of")
+    _refuse_if_retired(db, sub.model_id, "report its performance")   # call flow 26e
     # A guarded metric absent from the report is read as 0, so it breaches any floor above 0; a subscription with no floor never breaches.
     breached = bool(sub.guard_kpi_floor) and any(metrics.get(k, 0) < v for k, v in (sub.guard_kpi_floor or {}).items())
     report = PerformanceReport(subscription_id=subscription_id, metrics=metrics, breached_floor=breached)
