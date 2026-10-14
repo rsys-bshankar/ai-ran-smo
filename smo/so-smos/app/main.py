@@ -89,7 +89,7 @@ def _view(order: ServiceOrder) -> dict:
 
 def _locked(db: Session, order_id: uuid.UUID) -> ServiceOrder:
     """The order re-read from the database under a row lock (`SELECT ... FOR UPDATE` on Postgres), so its `steps` are the latest and no other request changes them until commit."""
-    return db.get(ServiceOrder, order_id, with_for_update=True, populate_existing=True)
+    return db.get_one(ServiceOrder, order_id, with_for_update=True, populate_existing=True)
 
 
 def _set_step(db: Session, order_id: uuid.UUID, index: int, step: dict) -> None:
@@ -122,7 +122,7 @@ def submit_service_order(body: SubmitOrderRequest, db: Session = Depends(get_ses
         _set_step(db, order_id, index, outcome)
         if outcome["status"] == "FAILED":
             break
-    return _view(db.get(ServiceOrder, order_id, populate_existing=True))
+    return _view(db.get_one(ServiceOrder, order_id, populate_existing=True))
 
 
 def _order_or_404(db: Session, order_id: uuid.UUID) -> ServiceOrder:
