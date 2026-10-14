@@ -82,6 +82,7 @@ def _derive(raw: str) -> _Key:
 
 
 def _read(name: str, environ: Mapping[str, str]) -> str | None:
+    """The key named `name` (or `name_FILE`) in `environ`, or None when neither is set; IdentityKeyError, naming the variable, for both set, an unreadable file or a key under 32 characters."""
     try:
         value = read_secret(name, environ)
     except (SecretConflict, SecretFileError) as exc:
