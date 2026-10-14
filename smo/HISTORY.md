@@ -2780,6 +2780,32 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.8 flow 10 — SO SMOS orders rewritten from the code: the submitter's identity, saved step by step, cancel while running
+
+The third flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken):
+
+- **A. A CONFIG step writes as the order's submitter.** `dispatch_config` forwarded a step's own `requestedBy` and `msacRole` to RAN NF OAM, and the
+  GUI BFF overrode neither on `POST /so-smos/orders`. So an operator could write configuration through an order with `msacRole=admin` (RAN NF OAM adds a
+  named role to the caller's roles) or as any `requestedBy` (a name that is no MSAC identity is not checked at all), where RAN NF OAM's own config route
+  forces both. `requestedBy` and `msacRole` are now order fields: the BFF forces them as on the config route (`smo-gui:<user>`, `admin` only for an
+  admin), SO SMOS stores the submitter (`service_order.submitted_by`, revision 0049, nullable) and `run_step` puts both on every step it dispatches
+  (`Submitter`); a step carrying either is 422. A caller naming no submitter writes as `so-smos` with no role, as before.
+- **B. The order is saved before its first step and around each one.** The steps ran inside the request and the row was committed once at the end, so
+  a crash mid-order lost the record of what the completed steps made (a FOCOM resource, an AIMgF job, an NFO deployment), and the order was 404 while
+  it ran. `submit_service_order` now commits the order with every step PENDING, then each step RUNNING before its call and with its outcome after it,
+  re-reading the row under a lock (`SELECT ... FOR UPDATE`) each time. A crash leaves the step in flight RUNNING (its outcome unknown) and the earlier
+  results kept; a cancel landing while the order runs makes the later steps CANCELLED and the running submit starts none of them. Orders gain a computed
+  `status` (FAILED, CANCELLED, COMPLETED or IN_PROGRESS) and `submittedBy`; read and cancel answer 404 `SERVICE_ORDER_NOT_FOUND` (the README said 500).
+- **C. COMPLETED means accepted, documented, not built.** An AI/ML step is COMPLETED once AIMgF created its job, so the doc's one-order pipeline
+  (VALIDATION → EMULATION → DEPLOY → INFERENCE ending all COMPLETED) could not happen: emulation needs the model VALIDATED and its gate approved,
+  inference an ACTIVE runtime. The doc now says so (10d); waiting is `OPEN_ITEMS.md` SO-WAIT.
+- **D. Not built:** passing an earlier step's result into a later step (SO-CHAIN) and retrying or resuming an order (SO-RESUME).
+- **GUI:** a RUNNING step shows as the current one, the order's state comes from SO SMOS (IN_PROGRESS while it runs), and the order's details name its
+  submitter.
+
+The document is four diagrams (submit and dispatch; a step fails or SO SMOS stops; read and cancel; what COMPLETED means for AI/ML steps) in the flow 01
+format, with PNG images and the dispatch table. Tests: `so-smos/tests/test_order_execution.py`, `gui-bff/tests/test_rbac.py`.
+
 ### DOC-CF-1.8 flow 27 — TS 28.105 provisioning rewritten from the code: timeouts enforced by a worker, loading leaves nothing behind
 
 The second flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken):

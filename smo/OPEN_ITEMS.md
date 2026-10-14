@@ -68,6 +68,16 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
 - **OI-1-alarm-storm** — No alarm-storm correlation algorithm in `ran-nf-oam/`;
   `correlation_group` is a coarse string. No audited O-RAN-SC repo implements one either.
   Approach: wait for real alarm traces; start with time-window + topology (`neighbourRefs`) grouping.
+- **SO-WAIT** — An order's step is COMPLETED once the module accepted it, not when its work finished: SO SMOS does not wait for the AIMgF job a
+  step started, so an order whose later step needs that job finished (emulation after validation, inference after an ACTIVE runtime) fails there (call
+  flow 10d). Approach: an optional `waitFor` on a step (a job state, a model lifecycle state) and asynchronous execution in a worker that polls it with a
+  deadline, the order answering 202 at once.
+- **SO-CHAIN** — A step cannot take an input from an earlier step's result: a DEPLOY step needs an `nfDeploymentDescriptorId` the operator already has,
+  not the resource INFRA provisioned, nor the training job a later VALIDATION step names (call flow 10a). Approach: references in a step's fields to an
+  earlier step's result (`{"$from": 0, "path": "trainingJobId"}`), resolved just before the step is dispatched; an unresolved one fails the step.
+- **SO-RESUME** — A failed or interrupted order cannot be retried or resumed: its PENDING steps are only cancellable, and a step left RUNNING by a crash
+  stays so (call flow 10b). Approach: `POST /orders/{id}/resume` that, for an order with no RUNNING step, runs its PENDING steps (a FAILED step again
+  only when asked), and a worker that marks a step RUNNING for longer than a deadline as UNKNOWN for an operator to settle.
 - **AIML-UNLOAD** — A model loaded onto an inference function cannot be unloaded: there is no unload operation, and cancelling a loading request does not
   remove what it loaded (call flow 27d). Taking a model off a function today means terminating its runtime (call flow 17d) and editing the function's
   `mLModelRefList`. Approach: an unload request (TS 28.105 has none, so a vendor extension of `MLModelLoadingRequest`) that removes the model from the
@@ -1337,7 +1347,7 @@ there, what is right, what is wrong), agree the corrections, then build what the
 | DOC-CF-1.5 | 17 model runtime lifecycle (17a-17e; NFO's answers checked, descriptors deleted with their deployment, redeploy after terminate, the serving workload on the lifecycle and gating inference, the owner rApp's scale and terminate) | done: `HISTORY.md` DOC-CF-1.5 |
 | DOC-CF-1.6 | 02 AI/ML model train → inference (02a-02e; the owner rule on every route that acts on a running job, the inference requester recorded and the only rApp besides the owner that may resolve, a best-effort group retrain) | done: `HISTORY.md` DOC-CF-1.6 |
 | DOC-CF-1.7 | 26 model governance and end of life (26a-26e; the console's decider recorded, every model and runtime change published on the event bus, a model that still serves not deletable from MLMR, a retired model no longer monitored) | done: `HISTORY.md` DOC-CF-1.7 |
-| DOC-CF-1.8 | the rest, one flow at a time: 13 done (MLMF: a missing guarded metric no longer breaches, ceilings, checked inputs; `HISTORY.md` DOC-CF-1.8 flow 13); 27 done (an AIMgF worker enforces timeouts, loading leaves nothing behind on failure, ownership on loading requests and inference reports; `HISTORY.md` DOC-CF-1.8 flow 27); 10 next, then 22-25, 03, 04, 08, 09, 11, 12, 14, 16, 18-21 | in progress |
+| DOC-CF-1.8 | the rest, one flow at a time: 13 done (MLMF: a missing guarded metric no longer breaches, ceilings, checked inputs; `HISTORY.md` DOC-CF-1.8 flow 13); 27 done (an AIMgF worker enforces timeouts, loading leaves nothing behind on failure, ownership on loading requests and inference reports; `HISTORY.md` DOC-CF-1.8 flow 27); 10 done (an order writes configuration as its submitter, is saved step by step, can be cancelled while it runs; `HISTORY.md` DOC-CF-1.8 flow 10); 22-25 next, then 03, 04, 08, 09, 11, 12, 14, 16, 18-21 | in progress |
 
 ### DOC-CF-2 — Each module's own lifecycle, from that module's point of view
 

@@ -271,7 +271,7 @@ export interface OCloudAlarm { alarmId: string; resourceRef: string; severity: s
 export interface OCloudMetric { resourceRef: string; metricName: string; value: number }
 export interface Topology { entities: Record<string, { id: string; attributes: Record<string, unknown> }[]>[]; relationships: Record<string, { id: string; aSide: string; bSide: string }[]>[] }
 export interface OrderStep { stepType: string; targetModule: string; status: string; error?: string; result?: Record<string, unknown>; [k: string]: unknown }
-export interface ServiceOrder { orderId: string; scope: string; steps: OrderStep[]; homingDecision: Record<string, unknown> | null; rmihRegistration: string }
+export interface ServiceOrder { orderId: string; scope: string; status?: string; submittedBy?: string | null; steps: OrderStep[]; homingDecision: Record<string, unknown> | null; rmihRegistration: string }
 export interface Monitor { monitorId: string; targetOrderId: string | null; targetCoordinationGroupId: string | null; targetRappInstanceId: string | null; analyticsSubscriptionId: string | null; thresholds: Record<string, number> }
 export interface RemedialAction { actionId: string; monitorId: string; actionType: string; autoExecuted: boolean; outcome: string | null }
 export interface AnalyticsReport { reportId: string; analyticsType: string; output: Record<string, unknown> }

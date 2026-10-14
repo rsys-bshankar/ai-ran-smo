@@ -7,10 +7,24 @@ Where it sits: called by `app/main.py` (`submit_service_order`); calls RAN NF OA
 
 What it owns: the mapping and the execution semantics (sequential, first failure halts, no rollback of completed steps). Each downstream module owns the validation of its own request.
 
-Before editing: a new step type is one dispatcher plus one table entry; a downstream error response must go through `_ensure_ok` or the step would be recorded COMPLETED.
+Before editing: a new step type is one dispatcher plus one table entry; a downstream error response must go through `_ensure_ok` or the step would be recorded COMPLETED. A step's
+COMPLETED means the downstream module accepted the request (a job created, a deployment started), not that the work finished (call flow 10d).
 """
 
+from dataclasses import dataclass
+
 from smo_shared.r1_client import R1Client
+
+
+@dataclass(frozen=True)
+class Submitter:
+    """Who submitted the order, as RAN NF OAM is told on a CONFIG step (DOC-CF-1.8 flow 10).
+
+    `requested_by` is the order's `requestedBy` (the BFF sets it to `smo-gui:<user>`); `msac_role` is the order's `msacRole` (the BFF sends `admin` for an admin and nothing
+    otherwise). A step cannot carry either: the request model refuses it, so a caller cannot pick the identity or the role a step writes with.
+    """
+    requested_by: str = "so-smos"
+    msac_role: str | None = None
 
 
 class DownstreamError(Exception):
@@ -34,7 +48,7 @@ def _ensure_ok(resp) -> dict:
 def dispatch_config(r1: R1Client, step: dict) -> dict:
     """CONFIG on RAN_NF_OAM: creates a configuration job (`POST /ran-nf-oam/config-jobs`) and returns its JSON.
 
-    Step fields: `scope` and `changes` (required, a KeyError fails the step), `requestedBy` (default `so-smos`), `msacRole` (optional).
+    Step fields: `scope` and `changes` (required, a KeyError fails the step). `requestedBy` and `msacRole` are the order's submitter, put on the step by `run_step`.
     """
     resp = r1.post("/ran-nf-oam/config-jobs", json={
         "requestedBy": step.get("requestedBy", "so-smos"),
@@ -142,12 +156,30 @@ DISPATCH_TABLE = {
 }
 
 
-def execute_order(r1: R1Client, steps: list[dict]) -> list[dict]:
+def run_step(r1: R1Client, step: dict, submitter: Submitter = Submitter()) -> dict:
+    """Dispatches one step and returns it with a `status`: COMPLETED (with `result`) or FAILED (with `error`). Never raises for a step failure.
+
+    The dispatcher sees the step with the submitter's `requestedBy` and `msacRole` put on it; the returned step is the caller's own dict plus the outcome, so the role is never stored.
+    A (stepType, targetModule) pair with no dispatcher fails the step.
+    """
+    key = (step["stepType"], step["targetModule"])
+    dispatcher = DISPATCH_TABLE.get(key)
+    if dispatcher is None:
+        return {**step, "status": "FAILED", "error": f"no dispatcher for {key}"}
+    try:
+        outcome = dispatcher(r1, {**step, "requestedBy": submitter.requested_by, "msacRole": submitter.msac_role})
+        return {**step, "status": "COMPLETED", "result": outcome}
+    # Deliberately broad: a transport error, a downstream error response (DownstreamError), a missing step field (KeyError) or anything else a dispatcher raises must fail that step and halt the order, not become an HTTP error for the whole submit.
+    except Exception as exc:  # noqa: BLE001 — Phase 1: any downstream failure halts the order
+        return {**step, "status": "FAILED", "error": str(exc)}
+
+
+def execute_order(r1: R1Client, steps: list[dict], submitter: Submitter = Submitter()) -> list[dict]:
     """Runs `steps` in order and returns them with a `status` each: COMPLETED (with `result`), FAILED (with `error`) or PENDING.
 
-    SO SMOS LLD section 1.1: sequential and fail-fast. The first FAILED step (an unknown pair, or any exception from its dispatcher) halts the order; later steps are returned PENDING and are
-    never attempted. Completed steps are not rolled back: Phase 1 has no compensation. It never raises for a step failure. The input dicts are copied, not changed. Each step must have
-    `stepType` and `targetModule` (the request model checks this).
+    SO SMOS LLD section 1.1: sequential and fail-fast. The first FAILED step halts the order; later steps are returned PENDING and are never attempted. Completed steps are not rolled
+    back: Phase 1 has no compensation. It never raises for a step failure. The input dicts are copied, not changed. `app/main.py` runs the same rule step by step with `run_step`,
+    saving the order between steps; this function is the rule without the database.
     """
     results = []
     halted = False
@@ -155,17 +187,6 @@ def execute_order(r1: R1Client, steps: list[dict]) -> list[dict]:
         if halted:
             results.append({**step, "status": "PENDING"})
             continue
-        key = (step["stepType"], step["targetModule"])
-        dispatcher = DISPATCH_TABLE.get(key)
-        if dispatcher is None:
-            results.append({**step, "status": "FAILED", "error": f"no dispatcher for {key}"})
-            halted = True
-            continue
-        try:
-            outcome = dispatcher(r1, step)
-            results.append({**step, "status": "COMPLETED", "result": outcome})
-        # Deliberately broad: a transport error, a downstream error response (DownstreamError), a missing step field (KeyError) or anything else a dispatcher raises must fail that step and halt the order, not become an HTTP error for the whole submit.
-        except Exception as exc:  # noqa: BLE001 — Phase 1: any downstream failure halts the order
-            results.append({**step, "status": "FAILED", "error": str(exc)})
-            halted = True
+        results.append(run_step(r1, step, submitter))
+        halted = results[-1]["status"] == "FAILED"
     return results

@@ -319,7 +319,7 @@ export function flow10(order: ServiceOrder | undefined, t: Translator = ENGLISH)
   if (!order) return settle([step("submit", "SubmitServiceOrder(scope, steps[])", "Operator → SO SMOS", false)]);
   const steps: FlowStep[] = [step("submit", "SubmitServiceOrder(scope, steps[])", "Operator → SO SMOS", true, order.scope)];
   order.steps.forEach((s, i) => {
-    const status: FlowStep["status"] = s.status === "COMPLETED" ? "done" : s.status === "FAILED" ? "failed" : s.status === "CANCELLED" ? "warn" : "todo";
+    const status: FlowStep["status"] = s.status === "COMPLETED" ? "done" : s.status === "FAILED" ? "failed" : s.status === "CANCELLED" || s.status === "RUNNING" ? "warn" : "todo";
     steps.push({ id: `step-${i}`, title: `${s.stepType} → ${s.targetModule}`, actor: "SO SMOS dispatch", status,
       detail: s.status === "FAILED" ? t("flows.lib.f10.failed", { error: s.error ? `: ${s.error}` : "" }) : s.status });
   });
