@@ -2777,6 +2777,39 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.6 — call flow 02 rewritten from the code: only the owner acts on a model's running jobs, and a group retrain is best effort
+
+The sixth flow of the call-flow audit, decided with the product owner (the recommendations of the audit, all taken). A and B are a security fix.
+
+- **A. The owner rule on every route that acts on a running job.** SEC-15.3c checked the owner where work starts, but the routes that act on
+  a run did not: R1 Termination lets an rApp reach them (`RAPP_MAY_CHANGE`), so any rApp could complete, fail, cancel, suspend or resume
+  another rApp's training, validation or emulation run, or write its progress and metrics. `_check_job_owner` now runs after the not-found
+  check of `POST /training-jobs/{id}/complete`, `/progress`, `/model-metrics`, `/suspend`, `/resume`, `DELETE /training-jobs/{id}`,
+  `POST /validation-jobs/{id}/complete`, `POST /emulation-jobs/{id}/complete`, `PATCH` and `DELETE /ml-training-requests/{id}`, `PATCH
+  /ml-testing-requests/{id}`, `PATCH /ml-training-processes/{id}` and `POST /ml-training-processes/{id}/progress`; `PATCH
+  /ml-update-requests/{id}` checks every model of the request (`_check_rapp_owns_models`). Another rApp is 403 `MODEL_ACCESS_DENIED`. A
+  coordination-group job needs every member MLMR knows to be the caller's (`_group_member_ids` reads MLMR's group list). A model MLMR no
+  longer knows, or one with no owner, passes, so a run of a deleted model can still be ended. The console, SMO modules and a call with no
+  role are not asked, as everywhere in SEC-15.3.
+- **B. Who may resolve an inference job.** `POST /inference-jobs/{id}/resolve` had no check, so any rApp could write any job's result. An
+  `InferenceJob` now records `requested_by` (the invoker id of an rApp that requested it; revision 0046, additive), and resolve lets an rApp
+  through only when it is that requester or the model's owner (`_check_inference_resolver`). A job requested from the console, or before
+  the column, has no requester: among rApps only the owner may resolve it.
+- **C. A group retrain is best effort per member.** `_trigger_group_retrain` started every PROMOTED member in one transaction, so one member
+  NFO refused (502/503 since DOC-CF-1.5) made the report answer an error after the report was stored, with no member retrained. Each member
+  is now started and committed on its own; a refused one is rolled back alone, stays PROMOTED, is logged and is listed in the report's
+  answer as `retrainSkipped` (`[{modelId, reason}]`).
+- **D. Not built: model versions.** A retrain trains the same model id; while it trains, the runtime keeps serving the certified artifact.
+  Recorded as a Phase 1 note in 02e and as `OPEN_ITEMS.md` AIML-VER.
+- **E. Corrected in the doc, not built: inference results through DME.** The doc said the consumer pulls the result through DME and that
+  AIMgF resolves the job. Neither is so: the rApp that ran the inference resolves it and the outputs it sends are the report. Phase 1 note
+  in 02d, `OPEN_ITEMS.md` AIML-INF-DME. The doc also said NFO reports a run's progress: the owner rApp does (the job workload is a
+  placeholder, Phase 1 note in 02a).
+
+The document is seven diagrams in five steps (register and train, and the run's progress, completion, cancel and timeout; the two gates,
+validation and emulation; governance; deploy and infer; monitor and retrain) in the flow 01 format, with PNG images and the model state
+table. `aimgf/tests/test_job_ownership.py` holds A, B and C.
+
 ### DOC-CF-1.5 — call flow 17 rewritten from the code: the model runtime records only what NFO did, and can be deployed again
 
 The fifth flow of the call-flow audit, decided with the product owner (the recommendations of the audit, all taken):

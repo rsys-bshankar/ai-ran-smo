@@ -356,6 +356,9 @@ class InferenceJob(Base):
     aiml_inference_function_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("aiml_inference_function.aiml_inference_function_id", ondelete="SET NULL"))
     consumer_ref: Mapped[str | None] = mapped_column(String)
+    # Call flow 02 (DOC-CF-1.6, revision 0046): the invoker id the gateway vouched for when an rApp requested the job; only that rApp, or the model's owner, may resolve it.
+    # NULL for a job the console or an SMO module requested, and for every job requested before the revision.
+    requested_by: Mapped[str | None] = mapped_column(String)
     # Wave 7 (W7-04): inference deadline (default 5 s).
     started_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False,
                                                            default=lambda: datetime.datetime.now(datetime.UTC))
