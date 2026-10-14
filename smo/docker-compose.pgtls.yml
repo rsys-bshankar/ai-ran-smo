@@ -58,6 +58,7 @@ services:
   dme: *pgtls_client
   onboarding: *pgtls_client
   rapp-mgmt: *pgtls_client
+  rapp-mgmt-worker: *pgtls_client
   ran-nf-oam: *pgtls_client
   ran-nf-oam-worker: *pgtls_client
   energy-saving-rapp: *pgtls_client

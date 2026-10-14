@@ -82,6 +82,9 @@ class RAppInstance(Versioned, Base):
     # where this instance's operator API is reached. Registered by the instance itself (its own authenticated call) or set by an operator; R1 Termination
     # resolves /rapps/{instanceId}/operator/... to it. None: nothing registered, the instance has no declared operator page working.
     operator_api_base: Mapped[str | None] = mapped_column(String)
+    # SEC-15.19: when the instance's current secret was issued (at create, by /credentials, by a renewal by hand, by the automatic rotation). NULL (a row from before the
+    # column): read as `created_at`. The rotation worker rotates the running instances whose secret is older than RAPP_MGMT_SECRET_ROTATION_DAYS.
+    credentials_issued_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class RAppInstanceVersion(Base):

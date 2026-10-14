@@ -231,7 +231,19 @@
   "SMO_WORKER_TICK_SECONDS": "Seconds between a worker's checks for due tasks (default 5). A task's own interval cannot be shorter than this.",
   "SO_SMOS_URL": "Base URL R1 Termination forwards `/so-smos/...` to (service orchestration).",
   "RAPP_MGMT_REQUIRE_SME_REGISTRATION": "`true`, `1`, `yes` or `on`: rApp Management refuses an instance's bootstrap (it stays DEPLOYING; 503 when SME does not answer, 502 when it refuses) unless every SME declaration of its package (`Files/Sme/providers`, `serviceapis`) is registered. Default `false`: the registration is best-effort and a failure is ignored. `deploy/helm/smo/values-production.yaml` turns it on. Call flow 01d.",
-  "GUI_ACCOUNT_MAX_FAILURES": "Per-account sign-in cool-down (`SEC-15.11b`): how many failed sign-ins of one user name, from any addresses together, inside `GUI_ACCOUNT_WINDOW_SECONDS` start a cool-down for that name (default 20). `0` switches the cool-down off. The older per-address counters are not affected. Unknown names count like real ones.",
+  "RAPP_MGMT_SECRET_ROTATION_DAYS": {
+    "description": "Read by the rApp Management worker (`rapp-mgmt-worker`, `SEC-15.19`): rotate the secret of a RUNNING rApp instance (with a registered operator API) once it is older than this many days, the same renewal as Re-send credentials. Default `0` (also unset, negative or not a number): no automatic rotation, nothing is read or written. An instance whose workload cannot be reached is not rotated and is tried again at the next run; with `RAPP_CREDENTIAL_DELIVERY=kubernetes` nothing is rotated. A number of days, not a secret. `docs/SECRETS.md`.",
+    "secret": false
+  },
+  "RAPP_MGMT_SECRET_ROTATION_MAX_PER_RUN": {
+    "description": "The most instances one run of the automatic secret rotation rotates, oldest secret first (default `10`, at least `1`), so instances that fall due together are rotated over several runs. Only used while `RAPP_MGMT_SECRET_ROTATION_DAYS` is above 0. A count, not a secret.",
+    "secret": false
+  },
+  "RAPP_MGMT_SECRET_ROTATION_SWEEP_SECONDS": {
+    "description": "How often the rApp Management worker looks for instances whose secret is due (default `900`, at least `1`), across all worker replicas. Read once at the worker's start. Only used while `RAPP_MGMT_SECRET_ROTATION_DAYS` is above 0. Seconds, not a secret.",
+    "secret": false
+  },
+  "GUI_ACCOUNT_MAX_FAILURES":"Per-account sign-in cool-down (`SEC-15.11b`): how many failed sign-ins of one user name, from any addresses together, inside `GUI_ACCOUNT_WINDOW_SECONDS` start a cool-down for that name (default 20). `0` switches the cool-down off. The older per-address counters are not affected. Unknown names count like real ones.",
   "GUI_ACCOUNT_WINDOW_SECONDS": "Seconds in which `GUI_ACCOUNT_MAX_FAILURES` failures of one user name must fall to start a cool-down (default 600); also how long a quiet name's counter takes to forget, with no sign-in able to reset it. Must be 1 or more while the cool-down is on.",
   "GUI_ACCOUNT_COOLDOWN_SECONDS": "Seconds a user name is refused (429, a right password included) after it trips the per-account counter (default 60). Each repeat, after another `GUI_ACCOUNT_MAX_FAILURES` failures, is twice as long up to `GUI_ACCOUNT_COOLDOWN_MAX_SECONDS`. Kept short on purpose: anyone can make a name fail, so a long value would let an attacker keep a real person out. Must be 1 or more while the cool-down is on.",
   "GUI_ACCOUNT_COOLDOWN_MAX_SECONDS": "The longest a per-account cool-down grows to (default 300). Must not be less than `GUI_ACCOUNT_COOLDOWN_SECONDS`, or the backend does not start.",

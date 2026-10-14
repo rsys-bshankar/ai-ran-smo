@@ -310,6 +310,8 @@ modules:
   dme: { image: dme, databaseRole: dme }
   onboarding: { image: onboarding, databaseRole: onboarding, persistence: { mountPath: /srv/packages, size: 5Gi } }
   rapp-mgmt: { image: rapp-mgmt, databaseRole: rapp-mgmt, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
+  # the same image as a worker: rotates the secret of running rApp instances older than RAPP_MGMT_SECRET_ROTATION_DAYS (SEC-15.19; 0 = never, the default: the worker then does nothing)
+  rapp-mgmt-worker: { image: rapp-mgmt, databaseRole: rapp-mgmt, kind: worker, env: { R1_GATEWAY_URL: "http://r1-termination:8000", RAPP_MGMT_SECRET_ROTATION_DAYS: "0", RAPP_MGMT_SECRET_ROTATION_MAX_PER_RUN: "10", RAPP_MGMT_SECRET_ROTATION_SWEEP_SECONDS: "900" } }
   ran-nf-oam: { image: ran-nf-oam, databaseRole: ran-nf-oam, env: { R1_GATEWAY_URL: "http://r1-termination:8000", SAFEGUARD_REFUSAL_RETENTION_DAYS: "0" } }
   # the same image as a worker: the periodic work of RAN NF OAM (PR-MSG-4). Run more than one if you like.
   ran-nf-oam-worker: { image: ran-nf-oam, databaseRole: ran-nf-oam, kind: worker, env: { R1_GATEWAY_URL: "http://r1-termination:8000", SAFEGUARD_REFUSAL_RETENTION_DAYS: "0", SMO_RETENTION_ALARMS_DAYS: "0", SMO_RETENTION_PM_FILES_DAYS: "0", SMO_RETENTION_APPROVALS_DAYS: "0", SMO_RETENTION_DECISION_RECORDS_DAYS: "0" } }   # retention: days to keep, 0 = forever; the periods proposed for production are in values-production.yaml (docs/RETENTION.md)

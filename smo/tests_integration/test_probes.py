@@ -78,7 +78,7 @@ def test_the_gateway_probes_need_no_token(loaded_apps):
 
 
 def test_compose_probes_ready_on_every_service_built_from_the_shared_dockerfile():
-    """Every service built from the shared Dockerfile is health-checked on /ready, except the two workers, which have no port and are healthy while
+    """Every service built from the shared Dockerfile is health-checked on /ready, except the workers, which have no port and are healthy while
     they keep touching their heartbeat file.
     """
     services = yaml.safe_load((SMO_ROOT / "docker-compose.yml").read_text())["services"]
@@ -87,7 +87,7 @@ def test_compose_probes_ready_on_every_service_built_from_the_shared_dockerfile(
              and name not in ("gui-bff", "migrate")}      # the BFF is not on smo_shared; migrate is a one-shot, not a server
     assert len(built) >= 20
     workers = {name for name in built if "smo_shared.worker" in " ".join(services[name].get("command") or [])}
-    assert workers == {"ran-nf-oam-worker", "mdaf-worker"}                  # PR-MSG-4: a worker has no port, so no /ready
+    assert workers == {"ran-nf-oam-worker", "mdaf-worker", "rapp-mgmt-worker"}                  # PR-MSG-4: a worker has no port, so no /ready
     for name in built - workers:
         probe = services[name]["healthcheck"]["test"]
         assert "/ready" in " ".join(probe), name
