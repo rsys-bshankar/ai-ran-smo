@@ -20,6 +20,12 @@ rollback (`start_rollback`) is an upgrade back to the newest version not
 already rolled back — the same two-row choreography, timeout and
 auto-rollback, so a failed rollback leaves the current version running.
 
+Call flow 07b: the replacement is given an operator API address (the new
+package's declared one, else the old row's), so the route can push it its
+credentials and it can report itself up; and a stop the operator put on the
+old row (the kill switch) is put on the replacement before the upgrade
+starts, so an upgrade never releases a stopped rApp.
+
 upgradeTimeoutSeconds is enforced lazily: no scheduler exists in this
 build, so an unresolved upgrade whose replacement was created more than
 `old.upgrade_timeout_seconds` ago is rolled back the next time either row
@@ -32,9 +38,13 @@ import datetime
 import uuid
 from typing import Callable
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from smo_shared.errors import FrameworkError, framework_error
+from smo_shared.invoker import on_own_account
+from smo_shared.r1_client import R1Client
 from smo_shared.statemachine import IllegalTransition
 from smo_shared.timeutil import as_utc
 
@@ -52,10 +62,15 @@ def start_upgrade(db: Session, old: RAppInstance, new_package_id: uuid.UUID,
 
     The replacement inherits the old row's configuration, autonomy mode,
     region scope and authorization scope claim (PR-SEC-10.3) — or, for a rollback (`restore`), the snapshot that version
-    recorded for the instance it retired."""
+    recorded for the instance it retired.
+
+    Call flow 07b: the replacement's operator API address is the new package's declared one, else the old row's. When the old row is stopped (its
+    kill switch), the replacement is stopped too before anything else happens to it; 503 `ENDPOINT_UNREACHABLE` when RAN NF OAM cannot say whether
+    the old row is stopped, or does not take the replacement's stop (the replacement is then torn down again)."""
     old_state = InstanceState(old.state)
     if InstanceEvent.START_UPGRADE not in RAPP_INSTANCE_FSM.legal_events(old_state):
         raise IllegalTransition(old_state, InstanceEvent.START_UPGRADE)
+    stop = _stop_of(old)
     if restore is None:
         configuration, autonomy_mode, region_scope = old.configuration, old.autonomy_mode, old.region_scope
         approval_policy, authz_scope = old.approval_policy, old.authz_scope
@@ -67,10 +82,45 @@ def start_upgrade(db: Session, old: RAppInstance, new_package_id: uuid.UUID,
                              autonomy_mode=autonomy_mode, region_scope=copy.deepcopy(region_scope), approval_policy=copy.deepcopy(approval_policy),
                              authz_scope=copy.deepcopy(authz_scope))
     new.upgrade_timeout_seconds = old.upgrade_timeout_seconds
+    new.operator_api_base = new.declared_operator_api_base or old.operator_api_base
+    if stop is not None:
+        _carry_stop(new, old, stop)
     new.rollback_of_version_id = restore.version_id if restore is not None else None
     old.state = RAPP_INSTANCE_FSM.fire(old_state, InstanceEvent.START_UPGRADE, instance=old)
     old.pending_upgrade_instance_id = new.instance_id
     return new
+
+
+def _stop_of(old: RAppInstance) -> dict | None:
+    """The kill switch RAN NF OAM holds for `old` (`GET /ran-nf-oam/rapp-kill/{oauthClientId}`), or None when it is not stopped. Raises 503
+    `ENDPOINT_UNREACHABLE` when RAN NF OAM cannot answer: an upgrade must not start on a guess that the rApp was not stopped."""
+    if old.oauth_client_id is None:
+        return None
+    try:
+        with on_own_account():
+            resp = R1Client().get(f"/ran-nf-oam/rapp-kill/{old.oauth_client_id}")
+    except httpx.HTTPError:
+        resp = None
+    if resp is None or resp.status_code not in (200, 404):
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail="RAN NF OAM did not say whether the instance is stopped; the upgrade was not started")
+    return resp.json() if resp.status_code == 200 else None
+
+
+def _carry_stop(new: RAppInstance, old: RAppInstance, stop: dict) -> None:
+    """Stops the replacement as the old row is stopped (`PUT /ran-nf-oam/rapp-kill/{new oauthClientId}`, same author, the reason naming the old row).
+    When RAN NF OAM does not take it, the replacement is torn down again (its identity, workload and usage registration; the row goes with the
+    request's rollback) and 503 `ENDPOINT_UNREACHABLE` is raised."""
+    body = {"requestedBy": stop.get("killedBy") or "rapp-mgmt",
+            "reason": f"carried over from instance {old.instance_id} by its upgrade" + (f": {stop['reason']}" if stop.get("reason") else "")}
+    try:
+        with on_own_account():
+            resp = R1Client().put(f"/ran-nf-oam/rapp-kill/{new.oauth_client_id}", json=body)
+    except httpx.HTTPError:
+        resp = None
+    if resp is None or resp.status_code not in (200, 204):
+        _terminate_side_effects(new)
+        release_instance_resources(new, "UPGRADE_NOT_STARTED")
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail="RAN NF OAM did not stop the replacement as the instance is stopped; the upgrade was not started")
 
 
 def upgrade_deadline(old: RAppInstance, new: RAppInstance) -> datetime.datetime:

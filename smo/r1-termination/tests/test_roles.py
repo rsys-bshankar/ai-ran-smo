@@ -189,11 +189,11 @@ def test_a_module_that_names_nobody_forwards_nothing(gateway):
     # GUI-8.3: an rApp registers (and forgets) the operator API of an instance, with those two methods and that one path
     ("POST", "/rapp-mgmt/instances/i/operator-api"), ("PATCH", "/rapp-mgmt/instances/i/operator-api"), ("PUT", "/rapp-mgmt/instances/i/operator-api/x"),
     ("PUT", "/rapp-mgmt/instances/i/j/operator-api"), ("DELETE", "/rapp-mgmt/instances/operator-api"),
-    # an rApp reports its own bootstrap and performance, and nothing else of its instance's life cycle: not those routes with another method, path or id shape
+    # an rApp reports its own bootstrap, performance and faults, and nothing else of its instance's life cycle: not those routes with another method, path or id shape
     ("PUT", "/rapp-mgmt/instances/i/bootstrap-complete"), ("DELETE", "/rapp-mgmt/instances/i/performance"), ("PATCH", "/rapp-mgmt/instances/i/performance"),
     ("POST", "/rapp-mgmt/instances/i/bootstrap-complete/x"), ("POST", "/rapp-mgmt/instances/i/j/performance"), ("POST", "/rapp-mgmt/instances/bootstrap-complete"),
     ("POST", "/rapp-mgmt/x/i/performance"),
-    ("POST", "/rapp-mgmt/instances/i/fault"), ("POST", "/rapp-mgmt/instances/i/recover"), ("POST", "/rapp-mgmt/instances/i/credentials"),
+    ("PUT", "/rapp-mgmt/instances/i/fault"), ("POST", "/rapp-mgmt/instances/i/fault/x"), ("POST", "/rapp-mgmt/instances/i/recover"), ("POST", "/rapp-mgmt/instances/i/credentials"),
     ("POST", "/rapp-mgmt/instances/i/upgrade"), ("PUT", "/rapp-mgmt/instances/i/config"), ("POST", "/rapp-mgmt/instances/i/performance-x"),
 ])
 def test_an_rapp_may_not_change_what_it_does_not_use(gateway, method, path):

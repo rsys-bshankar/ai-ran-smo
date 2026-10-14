@@ -587,8 +587,9 @@ def test_sa_smos_rollback_returns_a_rapp_to_its_previous_version(mesh, loaded_ap
 
     v2_instance = rapp.post(f"/instances/{v1_instance}/upgrade", json={"newPackageId": v2}).json()["newInstanceId"]
     rapp.put(f"/instances/{v2_instance}/config", json={"threshold": 9})
-    rapp.post(f"/instances/{v2_instance}/bootstrap-complete")
-    assert rapp.post(f"/instances/{v1_instance}/upgrade/resolve", params={"succeeded": True}).json()["instanceId"] == v2_instance
+    # call flow 07b: the replacement reporting itself up commits the upgrade
+    assert rapp.post(f"/instances/{v2_instance}/bootstrap-complete").json()["upgradeCommitted"] is True
+    assert rapp.get(f"/instances/{v1_instance}").status_code == 404
     v2_workload = rapp.get(f"/instances/{v2_instance}").json()["workloadRef"]
 
     rollback = mesh["sa-smos"].post(f"/monitors/{monitor['monitorId']}/remedial-actions", params={"action_type": "ROLLBACK"})
@@ -598,8 +599,7 @@ def test_sa_smos_rollback_returns_a_rapp_to_its_previous_version(mesh, loaded_ap
     assert (started["instanceId"], started["fromPackageId"], started["toPackageId"]) == (v2_instance, v2, v1)
     v1_again = started["newInstanceId"]
     assert rapp.get(f"/instances/{v1_again}").json()["configuration"] == {"threshold": 1}
-    rapp.post(f"/instances/{v1_again}/bootstrap-complete")
-    assert rapp.post(f"/instances/{v2_instance}/upgrade/resolve", params={"succeeded": True}).json()["state"] == "RUNNING"
+    assert rapp.post(f"/instances/{v1_again}/bootstrap-complete").json() == {"instanceId": v1_again, "state": "RUNNING", "upgradeCommitted": True}
 
     history = rapp.get(f"/instances/{v1_instance}/versions").json()
     assert (history["instanceId"], history["packageId"], history["rollbackTarget"]) == (v1_again, v1, None)

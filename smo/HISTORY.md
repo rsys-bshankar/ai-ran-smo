@@ -2775,6 +2775,33 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.3 — call flow 07 rewritten from the code: a faulted or upgraded rApp stays held in check, and the replacement brings itself up
+
+The third flow of the call-flow audit, decided with the product owner (the six recommendations of the audit, all taken). The old flow 07 drew
+the state machine and four diagrams but left out the kill switch, the global stop and the safeguards read, and the code had two safety gaps:
+
+- **A crash freed the rApp.** CRASH ran every deregistration, including the rate limit and the approval policy at RAN NF OAM, while the
+  instance kept its credential for a recover; RAN NF OAM does not limit a caller it holds no limit for, so a faulted rApp could write unthrottled
+  and unapproved. CRASH now runs `_reconsider_discovery` (DME and SME only); the limit and policy go at terminate, and bootstrap puts them again
+  (idempotent) after a recover.
+- **An upgrade escaped the kill switch.** The replacement has its own identity and the stop is keyed on the old one. `start_upgrade` now reads the
+  old instance's stop first (`GET /ran-nf-oam/rapp-kill/{id}`; no answer is 503 and nothing is made) and puts it on the replacement with the
+  same author and a reason naming the old instance; a refused stop tears the replacement down again (503). A rollback goes through the same code.
+- **The terminate left the stop behind.** `_terminate_side_effects` drops the kill switch after revoking the identity (best-effort), so nothing is
+  left for a revoked id and the instance is never free in between.
+- **The replacement could not bring itself up.** It gets the new package's declared operator API address, else the old instance's, and the
+  upgrade and rollback routes push its credentials (`credentialsDelivered`). Its own `bootstrap-complete` now commits the upgrade
+  (`upgradeCommitted`); a critical fault from it before then rolls the upgrade back (`upgradeRolledBack`, the report kept on the old instance).
+  `upgrade/resolve` stays for the operator, and the lazy timeout for an rApp that says nothing.
+- **A failed bootstrap had no caller.** `BOOTSTRAP_FAILED` was in the table but nothing fired it, and R1 Termination did not let an rApp report a
+  fault at all. A critical fault while DEPLOYING now fires it; `POST /rapp-mgmt/instances/{id}/fault` is in `RAPP_MAY_CHANGE` (rApp Management
+  already refused another instance's), and the SDK has `platform.report_fault`.
+- **Not built, tracked:** pushing a configuration change to the rApp (`OPEN_ITEMS.md` OI-7-config-push); NFO's one deployment per descriptor
+  moves to DOC-CF-1.4 (flow 15).
+
+The document is five diagrams (come up, report, fault and recover; upgrade; rollback; stop, global stop and safeguards; reconfigure, terminate and
+delete) in the flow 01 format, with PNG images. rApp Management's coverage floor goes to 97.
+
 ### DOC-CF-1.1 review — call flow 01 walked through with the product owner: package upload, the address from the manifest, production settings
 
 Flow 01 was rewritten (DOC-CF-1.1) before it was walked through; the walk-through raised seven questions, decided as recommended, with the browser

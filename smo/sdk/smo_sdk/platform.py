@@ -19,6 +19,12 @@ class PlatformClient(BaseClient):
         with `smo_sdk.instances`); rApp Management refuses another caller's (403 NOT_THIS_INSTANCE) and an instance not DEPLOYING (409)."""
         return ensure_ok(self._r1.post(f"/rapp-mgmt/instances/{instance_id}/bootstrap-complete"))
 
+    def report_fault(self, instance_id: str, severity: str, description: str = "") -> dict:
+        """Reports a fault of the instance (`POST /rapp-mgmt/instances/{id}/fault`), as the instance. `severity="critical"` moves a RUNNING instance to
+        FAULTED and one that is not up yet (DEPLOYING) to FAULTED as a failed bootstrap; the pending replacement of an upgrade rolls the upgrade back
+        instead (call flow 07a, 07b). Any other severity is only recorded. rApp Management refuses another caller's instance (403 NOT_THIS_INSTANCE)."""
+        return ensure_ok(self._r1.post(f"/rapp-mgmt/instances/{instance_id}/fault", params={"severity": severity, "description": description}))
+
     def register_provider(self, apf_id: str, provider_domain_info: str | None = None) -> dict:
         return ensure_ok(self._r1.post("/sme/provider-registrations", json={
             "apfId": apf_id, "providerDomainInfo": provider_domain_info,

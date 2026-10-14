@@ -1,234 +1,311 @@
-# Call Flow: rApp Instance Lifecycle — Run → Report → Fault → Recover → Upgrade → Roll back → Reconfigure → Terminate → Delete
+# Call Flow 07: rApp instance lifecycle — run, fault, upgrade, roll back, stop, terminate
 
-A `RAppInstance` moves through rApp Management's instance FSM
-(`rapp-mgmt/app/statemachine.py`, Onboarding/rApp Mgmt LLD sections 5-6) once
-`CreateInstance` and `bootstrap-complete` have brought it to `RUNNING` (call flow 01). A
-running instance reports performance and faults. A critical fault drives `CRASH` to
-`FAULTED`, and `POST /instances/{id}/recover` sends it back through bootstrap. An upgrade
-runs a replacement instance next to the old one and resolves to commit or rollback.
-`PUT /instances/{id}/config` replaces the stored configuration. `terminate` tears the instance
-down to `UNDEPLOYED`, and `DELETE` removes the row. Performance reporting is a pure record with
-no FSM transition (contrast AI/ML Workflow's `ReportPerformance`, call flow 02, which drives
-a retrain decision).
+What happens to an rApp instance after it is created (call flow 01b), until its row is deleted. Five diagrams, each one thing that happens to
+an instance:
 
-## RAppInstance FSM
+| | Step | Who starts it | Ends with |
+|---|---|---|---|
+| 07a | Come up, report, fault and recover | the rApp (SDK), the operator | instance RUNNING; FAULTED after a critical fault, and RUNNING again after a recover |
+| 07b | Upgrade: commit, roll back, time out | Operator | the replacement RUNNING and the old instance gone, or the old one RUNNING and the replacement gone |
+| 07c | Roll back to the previous version | Operator or SA SMOS | the version before the last upgrade RUNNING again (as 07b) |
+| 07d | Stop an rApp, the global stop, safeguards | Operator (stop), admin (resume) | the instance's config writes refused at RAN NF OAM, or allowed again |
+| 07e | Reconfigure, terminate, delete | Operator (config), admin (terminate, delete) | instance UNDEPLOYED, then its row deleted |
 
-| State | Events out (→ target) | Action on the transition |
+**As images:** [07a](images/07-rapp-instance-lifecycle/07a-come-up-report-fault-and-recover.png) ·
+[07b](images/07-rapp-instance-lifecycle/07b-upgrade-commit-roll-back-time-out.png) ·
+[07c](images/07-rapp-instance-lifecycle/07c-roll-back-to-the-previous-version.png) ·
+[07d](images/07-rapp-instance-lifecycle/07d-stop-an-rapp-the-global-stop-safeguards.png) ·
+[07e](images/07-rapp-instance-lifecycle/07e-reconfigure-terminate-delete.png)
+(PNG, drawn from the diagrams below by `scripts/render_call_flows.py`).
+
+**How to read the diagrams.** As in call flow 01: an arrow is one call with the inputs that matter, a box on the receiver says what it does
+with them, an `alt` block is the outcome (success first, then each failure and what the caller gets). *Operator (GUI)* stands for the console's
+path (GUI → GUI backend, which checks the role → R1 Termination → the module). Upgrade, rollback, recover, reconfigure and stop need the
+**operator** role; resume, terminate and delete need **admin**.
+
+**Who takes part.** rApp Management owns the instance and its state. *rApp (SDK)* is the rApp process that serves the instance, acting as the
+instance with the credentials rApp Management pushed to it (call flow 01c): through R1 Termination it may report its own instance up
+(`bootstrap-complete`), its performance and its faults, and register its operator API, and nothing else of its life cycle (R1 Termination
+refuses the rest; rApp Management refuses another instance's, 403 `NOT_THIS_INSTANCE`). RAN NF OAM holds what keeps an rApp in check, keyed on
+the instance's identity (its `oauthClientId`): the rate limit, the approval policy and the kill switch. NFO holds the workload, Onboarding the
+package usage registration (call flow 06), SME and DME the instance's registrations.
+
+## Instance states
+
+| State | Events out (→ target) | What the transition does |
 |---|---|---|
-| `DEPLOYING` | `BOOTSTRAP_OK` → `RUNNING`, `BOOTSTRAP_FAILED` → `FAULTED`, `TERMINATE` → `UNDEPLOYED` | `TERMINATE`: deregister DME and SME, close its DME data jobs, then revoke the credential |
-| `RUNNING` | `START_UPGRADE` → `UPGRADING`, `TERMINATE` → `UNDEPLOYED`, `CRASH` → `FAULTED` | `TERMINATE`: deregister DME and SME, close its DME data jobs, then revoke the credential. `CRASH`: deregister DME and SME |
-| `UPGRADING` | `UPGRADE_COMMIT` → `UNDEPLOYED`, `UPGRADE_ROLLBACK` → `RUNNING` | `UPGRADE_COMMIT`: deregister DME and SME, then revoke the credential |
-| `FAULTED` | `RECOVER` → `DEPLOYING`, `TERMINATE` → `UNDEPLOYED` | `TERMINATE`: deregister DME and SME, close its DME data jobs, then revoke the credential |
-| `UNDEPLOYED` | none (terminal). `DELETE /instances/{id}` removes the row | — |
+| `DEPLOYING` | `BOOTSTRAP_OK` → `RUNNING`, `BOOTSTRAP_FAILED` → `FAULTED`, `TERMINATE` → `UNDEPLOYED` | `BOOTSTRAP_OK`: rate limit, approval policy, SME declarations. `TERMINATE`: the teardown below |
+| `RUNNING` | `START_UPGRADE` → `UPGRADING`, `CRASH` → `FAULTED`, `TERMINATE` → `UNDEPLOYED` | `CRASH`: DME and SME deregistration only. `TERMINATE`: the teardown |
+| `UPGRADING` | `UPGRADE_COMMIT` → `UNDEPLOYED`, `UPGRADE_ROLLBACK` → `RUNNING` | `UPGRADE_COMMIT`: the teardown |
+| `FAULTED` | `RECOVER` → `DEPLOYING`, `TERMINATE` → `UNDEPLOYED` | `TERMINATE`: the teardown |
+| `UNDEPLOYED` | none: terminal. `DELETE /instances/{id}` removes the row | — |
 
-No transition has a guard. Every route that leaves the FSM's own action out of a teardown —
-`terminate`, an upgrade commit and an upgrade rollback or timeout — also releases the workload
-(`release_instance_resources`, `rapp-mgmt/app/provisioning.py`): NFO
-`DELETE /nfo/deployments/{workloadRef}` and Onboarding `usage/{registrationId}/stop`. Both are
-best-effort, and their outcome (`DONE`, `SKIPPED…` or `FAILED: …`) is recorded in the row's
-`lastTeardown`.
+**The teardown** (every move into `UNDEPLOYED`, `rapp-mgmt/app/statemachine.py`): deregister at DME (production capabilities) and SME (service
+APIs, provider), drop the rate limit and the approval policy at RAN NF OAM, close the DME data jobs the instance opened, revoke its identity at
+SME, then drop its kill switch. Then the route releases the workload: NFO terminate and Onboarding usage/stop (`release_instance_resources`).
+Every step is best-effort and the outcome is recorded in `lastTeardown`.
 
-**Errors.** An event with no edge from the instance's current state answers 409
-`LIFECYCLE_ILLEGAL_TRANSITION`, whose detail names the state and the event: `recover` from
-anything but `FAULTED`, `bootstrap-complete` from anything but `DEPLOYING`, `terminate` from
-`UPGRADING` or `UNDEPLOYED`, `upgrade` from anything but `RUNNING`, and a critical fault on an
-instance that is not `RUNNING` (refused, not recorded). `terminate` on an upgrade's pending
-replacement is refused the same way: the upgrade is resolved instead. Every lifecycle route
-answers 404 `RAPP_INSTANCE_NOT_FOUND` for an unknown id, and `upgrade/resolve` does so too for
-an instance with no pending upgrade.
+An event with no edge from the current state is **409 `LIFECYCLE_ILLEGAL_TRANSITION`** (the detail names the state and the event); an unknown
+instance is **404 `RAPP_INSTANCE_NOT_FOUND`**. An upgrade's pending replacement cannot be terminated (409): the upgrade is resolved instead.
 
-`TERMINATE` is legal from `FAULTED`, so a crashed instance is retired without recovering it
-first, and from `DEPLOYING`, because an instance whose container never calls
-`bootstrap-complete` has no other exit and already holds an NFO deployment and a usage
-registration from `CreateInstance`. It stays illegal from `UPGRADING`: an upgrade in flight is
-committed or rolled back first.
-
-## Report, fault, recover
+## 07a — Come up, report, fault and recover
 
 ```mermaid
 sequenceDiagram
-    participant Container as rApp container
-    participant R1 as R1 Termination
-    participant Rapp as rApp Management SMOS
-    participant DME as DME
-    participant SME as SME
-    participant Onb as Onboarding SMOS
+    actor Op as Operator (GUI)
+    participant App as rApp (SDK)
+    participant RM as rApp Management
+    participant Onb as Onboarding
+    participant OAM as RAN NF OAM
+    participant Reg as SME and DME
 
-    Note over Container,Rapp: instance RUNNING (call flow 01)
-
-    loop periodic
-        Container->>R1: POST /rapp-mgmt/instances/{id}/performance (metrics)
-        R1->>Rapp: (proxied) ReportPerformance
-        Rapp->>Rapp: record RAppPerformanceReport — no state transition
-        Rapp-->>Container: status=recorded
+    Note over App,RM: instance DEPLOYING, its credentials pushed to the rApp (call flow 01b, 01c)
+    App->>RM: POST /rapp-mgmt/instances/{id}/bootstrap-complete (as the instance)
+    Note over RM: caller is this instance (else 403 NOT_THIS_INSTANCE)<br/>state DEPLOYING (else 409)
+    RM->>Onb: GET /onboarding/packages/{packageId}/onboarding-status
+    Onb-->>RM: {aiCapabilities.limits, smeDeclarations}
+    RM->>OAM: PUT /ran-nf-oam/rapp-limits/{oauthClientId} (from the manifest)
+    RM->>OAM: PUT /ran-nf-oam/rapp-approval-policy/{oauthClientId} (ASSIST with a policy)
+    RM->>Reg: register the provider and service APIs (apfId = oauthClientId)
+    alt all in force
+        Note over RM: DEPLOYING → RUNNING (BOOTSTRAP_OK)
+        RM-->>App: 200 {state RUNNING}
+    else RAN NF OAM does not take the limit or policy
+        RM-->>App: 503 ENDPOINT_UNREACHABLE, still DEPLOYING (fail-closed, retry)
     end
 
-    alt non-critical fault
-        Container->>R1: POST /rapp-mgmt/instances/{id}/fault (severity=minor, description)
-        R1->>Rapp: (proxied) ReportFault
-        Rapp->>Rapp: record RAppFaultReport — no state transition
-        Rapp-->>Container: status=recorded, instanceState=RUNNING
-    else critical fault
-        Container->>R1: POST /rapp-mgmt/instances/{id}/fault (severity=critical, description)
-        R1->>Rapp: (proxied) ReportFault
-        Rapp->>Rapp: record RAppFaultReport
-        Rapp->>Rapp: state: RUNNING -> FAULTED (CRASH)
-        Rapp->>DME: DELETE /dme/production-capabilities (producer_id=oauthClientId)
-        Rapp->>SME: DELETE each published service API, then the provider registration
-        Note over Rapp,SME: best-effort — an unreachable DME or SME never blocks CRASH.<br/>The credential is kept, the instance can still recover.
-        Rapp-->>Container: status=recorded, instanceState=FAULTED
+    loop while RUNNING
+        App->>RM: POST /rapp-mgmt/instances/{id}/performance {metrics}
+        Note over RM: recorded, no state change
+        RM-->>App: 200 {status recorded}
+    end
 
-        Container->>R1: POST /rapp-mgmt/instances/{id}/recover
-        R1->>Rapp: (proxied) Recover
-        Rapp->>Rapp: state: FAULTED -> DEPLOYING (RECOVER)
-        Rapp-->>Container: state=DEPLOYING
-        Container->>R1: GET /bootstrap, re-register DME types if a producer
-        Container->>Rapp: POST /instances/{id}/bootstrap-complete
-        Rapp->>Onb: GET /packages/{packageId}/onboarding-status
-        Onb-->>Rapp: smeDeclarations
-        Rapp->>SME: register providers and service APIs (apfId=oauthClientId)
-        Rapp->>Rapp: state: DEPLOYING -> RUNNING (BOOTSTRAP_OK)
+    App->>RM: POST /rapp-mgmt/instances/{id}/fault?severity&description
+    alt severity not critical
+        Note over RM: recorded, no state change
+        RM-->>App: 200 {instanceState RUNNING}
+    else critical, instance RUNNING
+        Note over RM: recorded, RUNNING → FAULTED (CRASH)
+        RM->>Reg: deregister DME capabilities, SME service APIs and provider
+        Note over RM,OAM: the identity, rate limit and approval policy stay:<br/>a faulted rApp that still writes is still held in check
+        RM-->>App: 200 {instanceState FAULTED}
+    else critical, instance DEPLOYING (it cannot start)
+        Note over RM: recorded, DEPLOYING → FAULTED (BOOTSTRAP_FAILED)<br/>(an upgrade's replacement: the upgrade rolls back, 07b)
+        RM-->>App: 200 {instanceState FAULTED}
+    else critical, any other state
+        RM-->>App: 409 LIFECYCLE_ILLEGAL_TRANSITION (not recorded)
+    end
+
+    Op->>RM: POST /rapp-mgmt/instances/{id}/recover
+    alt instance FAULTED
+        Note over RM: FAULTED → DEPLOYING (RECOVER), same identity
+        RM-->>Op: 200 {state DEPLOYING}
+        Note over Op,App: the rApp reports it up again (its start, or Mark bootstrapped):<br/>bootstrap-complete as above, the limits put again (idempotent)
+    else any other state
+        RM-->>Op: 409 LIFECYCLE_ILLEGAL_TRANSITION
     end
 ```
 
-## Upgrade: commit or rollback
+The console reads the history at `GET /rapp-mgmt/instances/{id}/faults` and `/performance` (newest first). Its *Mark bootstrapped* button is
+the same `bootstrap-complete`, for an rApp that cannot call it.
+
+## 07b — Upgrade: commit, roll back, time out
 
 ```mermaid
 sequenceDiagram
-    actor Operator
-    participant Rapp as rApp Management SMOS
-    participant Onb as Onboarding SMOS
-    participant NFO as NFO SMOS
-    participant Reg as DME and SME
+    actor Op as Operator (GUI)
+    participant RM as rApp Management
+    participant OAM as RAN NF OAM
+    participant Onb as Onboarding
+    participant NFO as NFO
+    participant App as rApp (SDK)
 
-    Note over Operator,Rapp: old instance RUNNING on package P1, P2 is the target package
-    Operator->>Rapp: POST /instances/{oldId}/upgrade (newPackageId=P2)
-    Rapp->>Rapp: old must be RUNNING, else 409 LIFECYCLE_ILLEGAL_TRANSITION
-    Rapp->>Onb: GET /packages/P2/onboarding-status
-    Onb-->>Rapp: state=AVAILABLE or PRIMED, nfDeploymentDescriptorId
-    Note over Rapp: any other state is 409 PACKAGE_NOT_DEPLOYABLE, unknown P2 is 404,<br/>and the old instance stays RUNNING
-    Rapp->>Rapp: insert replacement, packageId=P2, state=DEPLOYING, own oauth_client_id,<br/>configuration, autonomyMode and regionScope copied from old
-    Rapp->>Onb: POST /packages/P2/usage/start (consumer_id=replacement id)
-    Onb-->>Rapp: registrationId (a refusal fails the upgrade, call flow 06)
-    Rapp->>NFO: POST /nfo/deployments (descriptor of P2)
-    NFO-->>Rapp: 202 nfDeploymentId, stored as the replacement's workloadRef
-    Rapp->>Rapp: old: RUNNING -> UPGRADING (START_UPGRADE),<br/>old.pending_upgrade_instance_id = replacement id
-    Rapp-->>Operator: newInstanceId, oldInstanceState=UPGRADING, oauthClientId
+    Note over Op,RM: old instance RUNNING on package P1, package P2 AVAILABLE or PRIMED
+    Op->>RM: POST /rapp-mgmt/instances/{oldId}/upgrade {newPackageId: P2}
+    Note over RM: old must be RUNNING (else 409)
+    RM->>OAM: GET /ran-nf-oam/rapp-kill/{old oauthClientId}
+    OAM-->>RM: 200 {killedBy, reason} (stopped) or 404 (not stopped)
+    Note over RM: no answer: 503 ENDPOINT_UNREACHABLE, nothing made
+    RM->>Onb: GET onboarding-status of P2, then usage/start (as CreateInstance, 01b)
+    RM->>NFO: POST /nfo/deployments (descriptor of P2)
+    Note over RM: replacement DEPLOYING: its own identity, the old one's config,<br/>autonomy mode, region and authz scope, approval policy,<br/>operator API = P2's declared address, else the old one's
+    opt old instance stopped
+        RM->>OAM: PUT /ran-nf-oam/rapp-kill/{new oauthClientId} {killedBy, reason}
+        Note over RM: refused: the replacement is torn down again, 503
+    end
+    Note over RM: old: RUNNING → UPGRADING (START_UPGRADE), committed
+    RM->>App: POST /rapps/{newId}/operator/instances/{newId}/credentials
+    RM-->>Op: 200 {newInstanceId, oldInstanceState UPGRADING, credentialsDelivered}
 
-    Note over Rapp: the replacement's container may call POST /instances/{newId}/bootstrap-complete<br/>itself — SME registration under its own identity, DEPLOYING -> RUNNING
-
-    alt replacement bootstrapped (succeeded=true)
-        Operator->>Rapp: POST /instances/{oldId}/upgrade/resolve?succeeded=true
-        Rapp->>Rapp: replacement: DEPLOYING -> RUNNING (BOOTSTRAP_OK) and SME registration,<br/>unless it already called bootstrap-complete
-        Rapp->>Rapp: old: UPGRADING -> UNDEPLOYED (UPGRADE_COMMIT)
-        Rapp->>Reg: deregister old DME capabilities, SME service APIs and provider
-        Rapp->>Rapp: revoke the old credential
-        Rapp->>NFO: DELETE /nfo/deployments/{old workloadRef}
-        Rapp->>Onb: POST /packages/P1/usage/{old registrationId}/stop
-        Rapp->>Rapp: record version UPGRADE: replacement retired old,<br/>snapshot of old package P1, configuration, autonomyMode, regionScope
-        Rapp->>Rapp: replacement.lastTeardown = outcome, old row deleted
-        Rapp-->>Operator: instanceId=replacement, state=RUNNING, packageId=P2
-    else replacement failed (succeeded=false)
-        Operator->>Rapp: POST /instances/{oldId}/upgrade/resolve?succeeded=false
-        Rapp->>Reg: deregister the replacement's DME and SME registrations, if any
-        Rapp->>NFO: DELETE /nfo/deployments/{replacement workloadRef}
-        Rapp->>Onb: POST /packages/P2/usage/{replacement registrationId}/stop
-        Rapp->>Rapp: old.lastTeardown = outcome, replacement row deleted
-        Rapp->>Rapp: old: UPGRADING -> RUNNING (UPGRADE_ROLLBACK), pending id cleared
-        Rapp-->>Operator: instanceId=old, state=RUNNING, packageId=P1
-    else upgradeTimeoutSeconds passed unresolved
-        Operator->>Rapp: GET /instances/{oldId} (or the list, or any lifecycle route)
-        Rapp->>Rapp: deadline = replacement created_at + upgradeTimeoutSeconds has passed
-        Rapp->>Rapp: same teardown as succeeded=false, reason UPGRADE_TIMEOUT, committed
-        Rapp-->>Operator: old instance, state=RUNNING
-        Operator->>Rapp: POST /instances/{oldId}/upgrade/resolve?succeeded=true
-        Rapp-->>Operator: 409 RAPP_UPGRADE_TIMED_OUT — already rolled back
+    alt the replacement reports itself up
+        App->>RM: POST /rapp-mgmt/instances/{newId}/bootstrap-complete
+        Note over RM: replacement: limits, policy, SME (07a), DEPLOYING → RUNNING<br/>old: UPGRADING → UNDEPLOYED (UPGRADE_COMMIT), the teardown<br/>NFO terminate and usage/stop of P1, version UPGRADE recorded,<br/>old row deleted
+        RM-->>App: 200 {state RUNNING, upgradeCommitted true}
+    else the replacement cannot start
+        App->>RM: POST /rapp-mgmt/instances/{newId}/fault?severity=critical
+        Note over RM: replacement torn down and deleted (NFO, usage/stop of P2)<br/>old: UPGRADING → RUNNING (UPGRADE_ROLLBACK), the fault kept on it
+        RM-->>App: 200 {upgradeRolledBack true}
+    else the operator decides
+        Op->>RM: POST /rapp-mgmt/instances/{oldId}/upgrade/resolve?succeeded=true|false
+        Note over RM: true: as "reports itself up" (409 if the replacement crashed)<br/>false: as "cannot start"
+        RM-->>Op: 200 {the surviving instance}
+    else upgradeTimeoutSeconds pass unresolved
+        Op->>RM: any read or lifecycle call on either instance
+        Note over RM: rolled back as "cannot start", reason UPGRADE_TIMEOUT
+        RM-->>Op: the old instance RUNNING (resolve?succeeded=true: 409 RAPP_UPGRADE_TIMED_OUT)
     end
 ```
 
-## Roll back to the previous version
+The replacement's stop keeps who stopped the old instance and says it was carried over; the operator resumes it like any stop (07d). A refused
+package is answered as in CreateInstance: 404 `PACKAGE_NOT_FOUND`, 409 `PACKAGE_NOT_DEPLOYABLE`, and the old instance stays RUNNING.
 
-Every committed upgrade is recorded in `rapp_instance_version` with what the retired instance
-ran. A rollback is an upgrade back to the newest version not already rolled back. SA SMOS issues
-it for a rApp-instance-scoped monitor (call flow 04), and an operator can issue it from the GUI.
+## 07c — Roll back to the previous version
+
+Every committed upgrade is recorded in `rapp_instance_version` with what the retired instance ran. A rollback is an upgrade back to the newest
+version not already rolled back. SA SMOS issues it for a monitor on the instance (call flow 04), an operator from the console.
 
 ```mermaid
 sequenceDiagram
-    actor Caller as Operator or SA SMOS
-    participant Rapp as rApp Management SMOS
-    participant Onb as Onboarding SMOS
-    participant NFO as NFO SMOS
+    actor Caller as Operator (GUI) or SA SMOS
+    participant RM as rApp Management
+    participant OAM as RAN NF OAM
+    participant Onb as Onboarding
+    participant NFO as NFO
 
-    Note over Caller,Rapp: instance v2 RUNNING on P2, the upgrade from v1 on P1 is in the version history
-    Caller->>Rapp: POST /instances/{id}/rollback (id may be v1, superseded)
-    Rapp->>Rapp: follow the version lineage from id to the current instance v2
-    Rapp->>Rapp: target = newest UPGRADE version not rolled back, here v1 -> v2
+    Note over Caller,RM: v2 RUNNING on P2, the upgrade from v1 (on P1) is in the history
+    Caller->>RM: POST /rapp-mgmt/instances/{id}/rollback (id may be v1, superseded)
+    Note over RM: follow the lineage from id to the current instance v2<br/>target = newest UPGRADE not rolled back (v1 → v2)
     alt no such version
-        Rapp-->>Caller: 409 ROLLBACK_HISTORY_UNAVAILABLE
-    else v2 is not RUNNING
-        Rapp-->>Caller: 409 LIFECYCLE_ILLEGAL_TRANSITION
+        RM-->>Caller: 409 ROLLBACK_HISTORY_UNAVAILABLE
+    else v2 not RUNNING
+        RM-->>Caller: 409 LIFECYCLE_ILLEGAL_TRANSITION
     else
-        Rapp->>Onb: GET /packages/P1/onboarding-status
-        Onb-->>Rapp: AVAILABLE or PRIMED, else 409 and v2 stays RUNNING
-        Rapp->>Rapp: replacement on P1, DEPLOYING, rollback_of_version_id = target,<br/>configuration, autonomyMode and regionScope from the target's snapshot
-        Rapp->>NFO: POST /nfo/deployments (descriptor of P1, released when v1 was retired)
-        Rapp->>Onb: POST /packages/P1/usage/start
-        Rapp->>Rapp: v2: RUNNING -> UPGRADING (START_UPGRADE)
-        Rapp-->>Caller: instanceId=v2, newInstanceId, fromPackageId=P2, toPackageId=P1
+        RM->>OAM: GET /ran-nf-oam/rapp-kill/{v2 oauthClientId} (as 07b)
+        RM->>Onb: GET onboarding-status of P1, usage/start
+        RM->>NFO: POST /nfo/deployments (descriptor of P1)
+        Note over RM: replacement on P1 with the target's snapshot<br/>(config, autonomy mode, region, authz scope, approval policy),<br/>stopped if v2 is stopped, v2: RUNNING → UPGRADING
+        RM-->>Caller: 200 {instanceId v2, newInstanceId, fromPackageId P2, toPackageId P1, credentialsDelivered}
     end
-    Note over Caller,Rapp: resolved like any upgrade, upgrade/resolve or the timeout.<br/>A commit records version ROLLBACK and marks the target rolled back,<br/>a failure or timeout leaves v2 RUNNING and its history unchanged
+    Note over Caller,RM: resolved as any upgrade (07b). A commit records version ROLLBACK<br/>and marks the target rolled back, a failure leaves v2 RUNNING, history unchanged
 ```
 
-## Reconfigure, terminate, delete
+Repeated rollbacks walk further back (v3 → v2 → v1) instead of switching between two versions; `GET /rapp-mgmt/instances/{id}/versions` lists
+the history newest first and names the version a rollback would undo now.
+
+## 07d — Stop an rApp, the global stop, safeguards
 
 ```mermaid
 sequenceDiagram
-    actor Operator
-    participant Rapp as rApp Management SMOS
-    participant DME as DME
-    participant SME as SME
-    participant NFO as NFO SMOS
-    participant Onb as Onboarding SMOS
+    actor Op as Operator (GUI)
+    actor Adm as Admin (GUI)
+    participant RM as rApp Management
+    participant OAM as RAN NF OAM
+    participant App as rApp (SDK)
 
-    Operator->>Rapp: PUT /instances/{id}/config (JSON body)
-    Rapp->>Rapp: configuration = body, whole object replaced, any state
-    Rapp-->>Operator: status=updated
-    Note over Rapp: no state transition and nothing pushed to the container.<br/>The rApp reads it with GET /instances/{id}/config.
+    Op->>RM: PUT /rapp-mgmt/instances/{id}/kill {reason} (requestedBy = the user)
+    RM->>OAM: PUT /ran-nf-oam/rapp-kill/{oauthClientId} {requestedBy, reason}
+    alt RAN NF OAM takes it
+        Note over OAM: the invoker is stopped (time of the first stop kept)
+        RM-->>Op: 200 {killed true, killedBy, reason, killedAt}
+    else no credential (terminated)
+        RM-->>Op: 404 RAPP_INSTANCE_NOT_FOUND
+    else no answer or refused
+        RM-->>Op: 503 ENDPOINT_UNREACHABLE (nothing changed)
+    end
+    App->>OAM: POST /ran-nf-oam/config-jobs (as the instance)
+    OAM-->>App: 403 RAPP_KILLED (undoing changes is still allowed)
 
-    Operator->>Rapp: DELETE /instances/{id}
-    Rapp-->>Operator: 409 RAPP_INSTANCE_NOT_UNDEPLOYED — state=RUNNING
+    Op->>RM: PUT /rapp-mgmt/kill-all {reason}
+    RM->>OAM: GET /ran-nf-oam/rapp-kill (all pages)
+    Note over RM: every instance not UNDEPLOYED with a credential:<br/>already stopped → counted, kept as it is<br/>else PUT /ran-nf-oam/rapp-kill/{oauthClientId}
+    RM-->>Op: 200 {stopped, alreadyStopped, failed: [{instanceId, error}]}
+    Note over RM: the list unreadable: 503, nothing changed
 
-    Operator->>Rapp: POST /instances/{id}/terminate
-    Rapp->>Rapp: state: RUNNING, FAULTED or DEPLOYING -> UNDEPLOYED (TERMINATE)
-    Rapp->>DME: DELETE /dme/production-capabilities (producer_id=oauthClientId)
-    Rapp->>SME: DELETE each published service API, then the provider registration
-    Rapp->>DME: DELETE /dme/data-jobs (created_by=oauthClientId)
-    DME->>DME: delete every data job the instance created, tell their producers
-    Rapp->>Rapp: revoke credential — oauth_client_id = NULL
-    Rapp->>NFO: DELETE /nfo/deployments/{workloadRef}
-    NFO-->>Rapp: 204, the NF deployment is terminated
-    Rapp->>Onb: POST /packages/{packageId}/usage/{registrationId}/stop
-    Onb->>Onb: stopped_at = now()
-    Rapp->>Rapp: lastTeardown = reason TERMINATE, nfoTerminate, usageStop, commit
-    Rapp-->>Operator: state=UNDEPLOYED, lastTeardown
-    Note over Rapp,NFO: best-effort — an unreachable NFO or Onboarding never blocks TERMINATE,<br/>the failure is recorded in lastTeardown instead
+    Op->>RM: GET /rapp-mgmt/instances/{id}/safeguards
+    RM->>OAM: GET rapp-kill, rapp-limits, rapp-approval-policy of {oauthClientId}
+    RM-->>Op: 200 {killed, kill, limits (with jobs this hour), approvalPolicy}<br/>(503 when any cannot be read: never "not stopped" on a guess)
 
-    Operator->>Rapp: DELETE /instances/{id}
-    Rapp->>Rapp: state is UNDEPLOYED — delete fault reports,<br/>performance reports, then the instance row
-    Rapp-->>Operator: 204
+    Adm->>RM: DELETE /rapp-mgmt/instances/{id}/kill (or DELETE /rapp-mgmt/kill-all)
+    RM->>OAM: DELETE /ran-nf-oam/rapp-kill/{oauthClientId}
+    Note over OAM: 204, or 404 if it was not stopped: both done
+    RM-->>Adm: 200 {killed false} (kill-all: {resumed, failed})
 ```
 
-**Key decisions this flow depends on:**
-- Only `severity == "critical"` drives a state transition. `report_fault` records every report regardless of severity, and the history is readable at `GET /instances/{id}/faults` (and `/performance` for metrics, newest first). A critical fault on an instance that is not `RUNNING` is refused with 409 and not recorded.
-- `CRASH`, `TERMINATE` and `UPGRADE_COMMIT` deregister the instance's DME production capabilities and SME service APIs keyed by its `oauth_client_id` (HISTORY.md OI-1-producer-reconsideration). These calls are best-effort. `TERMINATE` and `UPGRADE_COMMIT` run them before revoking the credential, because revocation clears the id they key on. `CRASH` keeps the credential so `RECOVER` can reuse the same identity.
-- `TERMINATE` and `UPGRADE_COMMIT` also close the DME data jobs the instance opened as a consumer (`DELETE /dme/data-jobs?created_by=<oauthClientId>`, HISTORY.md OI-7-rapp-data-jobs-teardown). The rApp acts as the instance, so DME recorded the instance's invoker id as each job's `created_by`. `CRASH` keeps them, with the identity. Best-effort, like the deregistrations. Jobs an rApp opened under its own identity, without the instance's credentials, are not closed.
-- `TERMINATE` also terminates the NFO deployment behind `workloadRef` (the `nfDeploymentId` NFO Instantiate returned to `CreateInstance`) and stops the package usage registration. Both are best-effort and recorded in `lastTeardown` (`rapp_instance.last_teardown`). `workloadRef` is kept after teardown as the record of which deployment ran. A successfully stopped usage registration is cleared from the row.
-- `TERMINATE` is legal from `RUNNING`, `FAULTED` and `DEPLOYING`. A crashed instance is retired without recovering first. `UPGRADING` must be resolved first.
-- `RECOVER` (`FAULTED -> DEPLOYING`) is fired by `POST /instances/{id}/recover` (HISTORY.md OI-2-recover). It re-enters where `CreateInstance` does: the container re-bootstraps and calls `bootstrap-complete`, which re-registers the package's SME declarations. There is no lightweight path straight back to `RUNNING`, matching AI/ML Workflow's retraining re-entry (call flow 02).
-- An upgrade is two rows in choreography (`rapp-mgmt/app/upgrade.py`, LLD section 6), not one row changing package in place. The replacement goes through `CreateInstance`'s own `provision_instance`: the target package must be `AVAILABLE` or `PRIMED`, and the replacement gets its own `oauth_client_id`, NFO deployment and usage registration, plus the old instance's configuration, `autonomyMode` and `regionScope`. Auto-rollback needs no manual intervention, and the old instance keeps its package, credential and identity throughout a failed attempt.
-- Whichever row loses an upgrade is torn down like a `TERMINATE` before its row is deleted. On commit that is the old instance, which releases the old package's usage registration, so its deprime and delete guards (call flow 06) pass. On rollback it is the replacement. The outcome is recorded in the survivor's `lastTeardown`.
-- `upgradeTimeoutSeconds` (default 300 s, HISTORY.md OI-1-upgrade-timeout) is copied to the replacement and enforced lazily, since this build has no scheduler. An unresolved upgrade whose replacement is older than the timeout is rolled back (reason `UPGRADE_TIMEOUT`) the next time either row is read or acted on, and `resolve?succeeded=true` then answers 409 `RAPP_UPGRADE_TIMED_OUT`.
-- On commit, the old row passes through `UNDEPLOYED` with its credential revoked and is then deleted. What it ran (package, configuration, `autonomyMode`, `regionScope`) is kept in a `rapp_instance_version` row (HISTORY.md OI-1-sa-rollback), which also links the old instance id to its successor. `GET /instances/{id}/versions` lists the history newest first, and resolves a superseded id to the current instance.
-- A rollback is an upgrade back to the newest `UPGRADE` version that has not been rolled back, so it has the same safety: the current instance keeps running until the replacement is committed, and a failed or timed-out rollback leaves it running with its history unchanged. Repeated rollbacks walk further back (v3 → v2 → v1) rather than flip-flopping between two versions, and an upgrade made after a rollback can itself be rolled back.
-- `PUT /instances/{id}/config` replaces `configuration` wholesale in any state, with no schema check and no FSM event. `autonomyMode` and `regionScope` are not part of it: they are fixed at `CreateInstance` (HISTORY.md OI-6.3) and carried over by an upgrade.
-- Undeploy and delete are separate operations: `terminate` keeps the row in `UNDEPLOYED`, and `DELETE /instances/{id}` is legal only from `UNDEPLOYED` (409 `RAPP_INSTANCE_NOT_UNDEPLOYED` otherwise, 404 `RAPP_INSTANCE_NOT_FOUND` for an unknown id). Delete removes the instance's fault and performance reports explicitly, in addition to their `ON DELETE CASCADE` foreign keys.
+The stop is RAN NF OAM's (call flow 03 shows where a config write meets it); rApp Management translates the operator's instance into the
+invoker id it keys on. `GET /rapp-mgmt/kill-all` counts the stopped instances for the console's banner. An rApp cannot stop, resume or list
+stops (R1 Termination refuses it), and a stop follows the instance through an upgrade or rollback (07b, 07c).
+
+## 07e — Reconfigure, terminate, delete
+
+```mermaid
+sequenceDiagram
+    actor Op as Operator (GUI)
+    actor Adm as Admin (GUI)
+    participant RM as rApp Management
+    participant Reg as SME and DME
+    participant OAM as RAN NF OAM
+    participant NFO as NFO
+    participant Onb as Onboarding
+    participant App as rApp (SDK)
+
+    Op->>RM: PUT /rapp-mgmt/instances/{id}/config {the whole configuration}
+    Note over RM: stored as it is (no merge, no schema check), any state
+    RM-->>Op: 200 {status updated}
+    App->>RM: GET /rapp-mgmt/instances/{id} (when it starts the instance)
+    Note over RM,App: Phase 1: the rApp is not told, it reads the configuration when it starts
+
+    Adm->>RM: POST /rapp-mgmt/instances/{id}/terminate
+    alt RUNNING, FAULTED or DEPLOYING (not an upgrade's replacement)
+        Note over RM: → UNDEPLOYED (TERMINATE)
+        RM->>Reg: deregister DME capabilities, SME service APIs and provider
+        RM->>OAM: DELETE rapp-limits and rapp-approval-policy of {oauthClientId}
+        RM->>Reg: DELETE /dme/data-jobs?created_by={oauthClientId}
+        RM->>Reg: DELETE /sme/invoker-registrations/{oauthClientId} (identity revoked)
+        RM->>OAM: DELETE /ran-nf-oam/rapp-kill/{oauthClientId} (no stop left behind)
+        RM->>NFO: DELETE /nfo/deployments/{workloadRef}
+        RM->>Onb: POST /onboarding/packages/{packageId}/usage/{registrationId}/stop
+        Note over RM: lastTeardown = {nfoTerminate, usageStop, ...}<br/>a failed step is recorded, never blocks
+        RM-->>Adm: 200 {state UNDEPLOYED, lastTeardown}
+    else UPGRADING, UNDEPLOYED, or the pending replacement
+        RM-->>Adm: 409 LIFECYCLE_ILLEGAL_TRANSITION
+    end
+
+    Adm->>RM: DELETE /rapp-mgmt/instances/{id}
+    alt UNDEPLOYED
+        Note over RM: delete its fault and performance reports, then the row
+        RM-->>Adm: 204
+    else any other state
+        RM-->>Adm: 409 RAPP_INSTANCE_NOT_UNDEPLOYED
+    end
+```
+
+## What this build does not do yet (Phase 1)
+
+- **A configuration change is not pushed to the rApp.** `PUT /config` only stores it; the rApp reads it when it starts the instance. A
+  running rApp sees a change after the operator restarts it there (OPEN_ITEMS OI-7-config-push).
+- **No scheduler.** `upgradeTimeoutSeconds` (default 300 s) is enforced when either instance of the upgrade is next read or acted on, not at
+  the deadline itself.
+- **One deployment per NFO descriptor.** NFO lets a package's descriptor be deployed once, so a second instance of the same package gets no
+  `workloadRef` (the instance is created; its teardown skips NFO). An upgrade or rollback goes to another package and is not affected.
+
+## Key decisions this flow depends on
+
+- **A faulted rApp stays held in check** (DOC-CF-1.3). A crash removes the instance only from discovery (DME, SME). Its identity stays for a
+  recover, so its rate limit and approval policy stay with it: RAN NF OAM does not limit a caller it holds no limit for. They go at terminate.
+- **An upgrade never releases a stopped rApp** (DOC-CF-1.3). The replacement has a new identity, so the old one's stop is put on it before the
+  upgrade starts; when RAN NF OAM cannot say whether the old one is stopped, the upgrade does not start. A terminate drops the stop after the
+  identity is revoked, so nothing is left behind and nothing is free in between.
+- **The replacement brings itself up** (DOC-CF-1.3). It gets an operator API address and its credentials as a new instance does (01b), and
+  its own `bootstrap-complete` commits the upgrade; a critical fault from it before then rolls it back. The operator's resolve stays for
+  either outcome, and the timeout for an rApp that says nothing.
+- **An upgrade is two instances**, not one changing package in place (`rapp-mgmt/app/upgrade.py`). The replacement goes through
+  CreateInstance's own provisioning and the old instance keeps its package, identity and workload until the commit; whichever loses is torn
+  down like a terminate and its row deleted, with the outcome in the survivor's `lastTeardown`.
+- **History is kept outside the instance row.** Each commit records what the retired instance ran (`rapp_instance_version`) and links its id
+  to its successor, so a rollback, the version list and an SA SMOS monitor registered before an upgrade all find the current instance.
+- **Recover re-enters bootstrap**, with no shortcut back to RUNNING (HISTORY.md OI-2-recover): the rApp reports the instance up again, and its
+  limits and SME declarations are put again.
+- **Terminate and delete are separate** (HISTORY.md §5): terminate keeps the row UNDEPLOYED as the record; delete is legal only then.
+- **Terminate is legal from FAULTED and DEPLOYING**, so a crashed instance or one that never came up is retired without recovering first
+  (OI-2-lcm-error-mapping); UPGRADING is resolved first.
+- **Only a critical fault changes state**; every report is recorded and readable.
