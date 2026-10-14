@@ -2780,6 +2780,29 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.8 flow 27 — TS 28.105 provisioning rewritten from the code: timeouts enforced by a worker, loading leaves nothing behind
+
+The second flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken):
+
+- **A. A worker enforces the timeouts.** `_expire_overdue_jobs` ran only at the start of job reads (and on `POST /execution-timeouts/sweep`, which nothing
+  called), so a run nobody read never timed out: its NFO workload ran on and its model stayed TRAINING, VALIDATING or EMULATING. AIMgF gains
+  `app/tasks.py` (task `expire-overdue-runs`, every `AIMGF_TIMEOUT_SWEEP_SECONDS`, default 60) and the compose service and chart module `aimgf-worker`
+  (the AIMgF image, `python -m smo_shared.worker`, the same database role, which now lists `periodic_run`, and the same SME identity), with its mTLS,
+  Postgres-TLS and replica overrides, its certificate (`scripts/mtls_certs.py`) and the tests that pin the set of workers. The reads still sweep.
+- **B. Loading leaves nothing at NFO when it fails part-way.** `_run_loading` deploys model by model; a refusal on a later model rolled the request back
+  but left the earlier models' NFO deployments and descriptors running, recorded nowhere. It now keeps what it deployed and releases it
+  (`_release_deployed`, best effort, each failure logged) before raising.
+- **C. Ownership on cancelling and suspending a loading request.** `PATCH /ml-model-loading-requests/{id}` checked ownership only on resume; an rApp
+  could cancel or suspend another rApp's request. Every PATCH now checks it (`_check_rapp_owns_models`).
+- **D. Ownership on inference reports.** `POST /aiml-inference-reports` stored a report about any model; an rApp may now report only on models it owns,
+  as on inference resolve (call flow 02).
+- **E. Not built: unload** (`OPEN_ITEMS.md` AIML-UNLOAD).
+- **Corrected in the doc:** progress is reported by the owner rApp, not an "MLTF runtime" (the workload is a placeholder); the requester is told through the
+  outbox; nothing evaluates a loading policy, and rApps cannot reach the policies, functions or processes.
+
+The document is five diagrams (training request, process and report; suspend, resume, cancel; ML update; model loading; execution timeouts) in the flow 01
+format, with PNG images and the status table. Tests: `aimgf/tests/test_provisioning_guards.py`.
+
 ### DOC-CF-1.8 flow 13 — MLMF rewritten from the code: a missing metric does not breach, ceilings, checked inputs
 
 The first flow of DOC-CF-1.8 (the remaining flows, one at a time), decided with the product owner (the recommendations of the audit, all taken):

@@ -152,6 +152,11 @@ services:
       SMO_MTLS: "on"
     volumes:
       - ./certs/mtls/ran-nf-oam-worker:/run/mtls:ro
+  aimgf-worker:            # no port: a client of the others, with a certificate
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/aimgf-worker:/run/mtls:ro
   rapp-mgmt-worker:        # no port: a client of the others, with a certificate
     environment:
       SMO_MTLS: "on"

@@ -513,6 +513,27 @@ services:
       R1_GATEWAY_URL: http://r1-termination:8000
       SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
+  # Call flow 27e: the same image, run as a worker. It fails every training, validation, emulation and inference run past its deadline (aimgf/app/tasks.py),
+  # so a run nobody reads still times out and its NFO workload is removed. Run as many as you like: the task runs once per interval across all of them.
+  aimgf-worker:
+    build: { context: ., args: { <<: *build_info, MODULE: aimgf, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    command: ["python", "-m", "smo_shared.worker"]
+    stop_grace_period: 30s
+    secrets: [db_password_aimgf, enrollment_secret]
+    <<: *hardening
+    healthcheck: *worker_probe
+    depends_on: *wait_for_schema
+    environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}
+      SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # the worker is the same SMO module as aimgf (one identity, ST-4): it calls NFO to remove an expired run's runtime
+      <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_aimgf@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_aimgf
+      R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}
+      AIMGF_TIMEOUT_SWEEP_SECONDS: ${AIMGF_TIMEOUT_SWEEP_SECONDS:-60}
+
   mllf:
     build: { context: ., args: { <<: *build_info, MODULE: mllf, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
