@@ -13,7 +13,12 @@ abstract class NamespaceClient {
     }
 
     final JsonNode call(Route route, Map<String, ?> query, Object body, Object... pathArgs) {
-        return r1.request(route.method(), route.path(pathArgs), query, body, Map.of()).ok();
+        return callWith(route, query, body, Map.of(), pathArgs);
+    }
+
+    /** As {@link #call}, with extra request headers. */
+    final JsonNode callWith(Route route, Map<String, ?> query, Object body, Map<String, String> headers, Object... pathArgs) {
+        return r1.request(route.method(), route.path(pathArgs), query, body, headers).ok();
     }
 
     /** A map of the given key/value pairs without the entries whose value is null. */

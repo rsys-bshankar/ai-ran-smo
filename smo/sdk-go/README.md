@@ -10,7 +10,7 @@
 | Called by | Any rApp written in Go; the example `examples/hello-rapp`. No SMO module imports it |
 | Database tables | None |
 | Retries and idempotency | 4 attempts, 200 ms base doubling to a 5 s cap, equal jitter, `Retry-After` honoured, context-aware; every POST carries a generated `Idempotency-Key` reused by every repeat; a `409 CONCURRENT_MODIFICATION` is repeated once (as `../sdk/smo_sdk/_common.py` does) |
-| Unit tests | 60 passed (`go test -race`: 57 in the library, 3 in the example; 92 % of the library's statements), no network beyond `httptest` |
+| Unit tests | 66 passed (`go test -race`: 63 in the library, 3 in the example; 92 % of the library's statements), no network beyond `httptest` |
 | Status | Done for RAPP-4.2 to 4.5 (Go); not run against a live compose stack (see 3.3). The Java SDK is a separate change |
 
 ## 1. High-level design (HLD)
@@ -84,7 +84,7 @@ Chosen deliberately, and written here because the OPEN_ITEMS step said "generate
 | `errors.go` | `Error`, the four answer shapes, `StatusOf`, `IsNotFound`, `IsConflict`, `IsForbidden` |
 | `config.go` | `Config`, `ConfigFromEnv` (the Python client's variables), `MutualTLSClient` |
 | `routes.go` | The route table: spec, prefix, method, template; `route.path` fills and escapes placeholders |
-| `namespaces.go` | `Object`, `Page[T]`, and the helpers `Data()`, `Models()`, `Platform()`, `RApp()` |
+| `namespaces.go` | `Object`, `Page[T]`, and the helpers `Data()` (the DME reads and `MediateAction`, with the `WithMSACCredential` option), `Models()`, `Platform()`, `RApp()` |
 | `examples/hello-rapp/` | The example rApp (`main.go`), its package (`package/`), `build_csar.py`, `Dockerfile`, `docker-compose.hello-go.yml` |
 
 ### 2.2 The token flow (RAPP-4.3)
@@ -125,6 +125,8 @@ An rApp token is held to `smo_shared/roles.py`: reads are open, **changes** only
 | `GET /rapp-mgmt/instances/{id}`, `.../operator-api` | `Instance`, `OperatorAPI` | open (reads) |
 | `POST .../bootstrap-complete`, `POST .../performance` | `BootstrapComplete`, `ReportPerformance` | allowed (the caller's own instance; rApp Management answers 403 `NOT_THIS_INSTANCE` for another's). Before `PR-SEC-10` they were 403 `ROLE_NOT_PERMITTED` and the runbook called them from inside the compose network, directly at `rapp-mgmt:8000` |
 
+`POST /dme/actions` (`Data().MediateAction`, `SEC-15.6b`) is an rApp write too: DME mediates it to RAN NF OAM, which asks for the credential of the MSAC Identity named by `RequestedBy` when it has one. Pass it per call with `WithMSACCredential` (section 4); it is sent in the `X-MSAC-Credential` header only, never in the body, an `*Error`, a `String`/`%v` of any SDK type, or a log, and the SDK reads no environment variable for it.
+
 `tests_integration/test_sdk_go_example.py` checks that no route the SDK calls is refused to an rApp. (The finding that the policy lacked these two, which this SDK's author raised, is closed by `PR-SEC-10`: `HISTORY.md`.)
 
 ## 3. Tests
@@ -133,7 +135,7 @@ An rApp token is held to `smo_shared/roles.py`: reads are open, **changes** only
 cd smo/sdk-go && gofmt -l . && go vet ./... && go test -race -count=1 -cover ./...
 ```
 
-### 3.1 What is tested (60 tests)
+### 3.1 What is tested (66 tests)
 
 | File | Tests |
 |---|---|
@@ -142,6 +144,7 @@ cd smo/sdk-go && gofmt -l . && go vet ./... && go test -race -count=1 -cover ./.
 | `errors_test.go` | The four answer shapes, a non-JSON body, an empty body, the 4 KiB cut, the status helpers through wrapping |
 | `namespaces_test.go` | `Page` (envelope, `?total=false` envelope, bare array), `ObjectAs`, every helper's method, path, query and body (the metrics body is unwrapped; a null operator API base), a 403 `ROLE_NOT_PERMITTED` |
 | `routes_test.go` | **Every route the SDK calls is in `../docs/openapi/<module>.json` with that method** (the drift check that stands in for generated clients); path filling, escaping and the two programming-error panics |
+| `msac_credential_test.go` | `SEC-15.6b` (6): `WithMSACCredential` sends `X-MSAC-Credential` on `POST /dme/actions` only when used; the header is declared by `docs/openapi/dme.json`; not in the body (unset optional fields left out); not in an `*Error` or any `%v`/`%+v`/`%#v`/`%s` of the error, client, option or request; the same credential and `Idempotency-Key` on the repeat after a 503 and after `CONCURRENT_MODIFICATION`; no environment variable read |
 | `config_test.go` | Defaults, the Python client's variables, `_FILE` secrets, value-and-file conflict, unreadable file, mTLS files |
 | `examples/hello-rapp/main_test.go` | The operator routes serve the fields the manifest's page reads; a failed heartbeat is recorded not fatal; the container probe |
 | `../tests_integration/test_sdk_go_example.py` | The example package passes Onboarding's checks and rebuilds byte-identically; its declared page is valid and every route it names is served by `main.go`; the SDK's routes against `roles.py`; no third-party Go module, no `go.sum`; the Dockerfile pinned and non-root; the CI job present and the action pinned by SHA |
@@ -169,6 +172,11 @@ for _, t := range types.Items { _ = t["typeName"] }
 var out smosdk.Object                         // any route, with the same auth, retry and error mapping
 err = c.Do(ctx, smosdk.Request{Method: "POST", Path: "/mlmr/models", Body: myModel}, &out)
 if smosdk.IsConflict(err) { ... }
+
+// an O1 configuration action through DME; the credential of the MSAC Identity named by RequestedBy, only if it has one
+act, err := c.Data().MediateAction(ctx,
+	smosdk.ActionRequest{RequestedBy: "my-identity", Changes: changes},
+	smosdk.WithMSACCredential(secret)) // secret: from wherever the rApp keeps secrets; leave the option out for no header
 ```
 
 Go 1.22 or later at run time (the example uses the method-and-wildcard `ServeMux` patterns); `go.mod` says 1.27 (1.24 is out of security support; the CI job and the example image build with the same release).
