@@ -29,7 +29,7 @@ def test_every_smo_module_mounts_the_secret_and_names_its_file():
     """Every SMO module (not an rApp or an exempt service) mounts the enrollment secret and names its file, so it registers at SME as a module."""
     missing = []
     for name, service in _services().items():
-        if name in NO_IDENTITY or name.endswith("-rapp"):
+        if name in NO_IDENTITY or name.endswith(("-rapp", "-rapp-worker")):      # an rApp's worker is the rApp (call flow 22e)
             continue
         mounted = "enrollment_secret" in (service.get("secrets") or [])
         named = _env(service).get("SMO_ENROLLMENT_SECRET_FILE") == SECRET_FILE
@@ -39,10 +39,10 @@ def test_every_smo_module_mounts_the_secret_and_names_its_file():
 
 
 def test_no_rapp_holds_the_secret_and_each_declares_itself_one():
-    """No rApp holds the enrollment secret or names its file, and each sets `SMO_IDENTITY_KIND=rapp`."""
+    """No rApp (nor an rApp's worker) holds the enrollment secret or names its file, and each sets `SMO_IDENTITY_KIND=rapp`."""
     wrong = []
     for name, service in _services().items():
-        if not name.endswith("-rapp"):
+        if not name.endswith(("-rapp", "-rapp-worker")):
             continue
         env = _env(service)
         if "enrollment_secret" in (service.get("secrets") or []) or "SMO_ENROLLMENT_SECRET_FILE" in env:
