@@ -133,6 +133,26 @@ class TypeSubscriptionRequest(BaseModel):
 
 DME_TYPE_NOT_OWNER = ("DME_TYPE_NOT_OWNER", 403)       # kept here, not in smo_shared.errors, as ran-nf-oam keeps its approval codes
 DATA_JOBS_NOT_OWNER = ("DATA_JOBS_NOT_OWNER", 403)     # an rApp naming another invoker in DELETE /data-jobs?created_by=
+DME_PRODUCER_NOT_OWNER = ("DME_PRODUCER_NOT_OWNER", 403)   # an rApp naming a producerId other than its own invoker id (SEC-15.10b)
+
+
+def _owner_may_act(request: Request, producer_id: str) -> bool:
+    """Whether the caller may register, replace or delete the producer `producer_id` (SEC-15.10b).
+
+    True for every caller but one with the rApp role: an SMO module (role `internal`, RAN NF OAM registers under its own name `ran-nf-oam`, the operator's console under its own) and a call that
+    did not come through the gateway (no role) are not asked. An rApp may act only for the producer id equal to the invoker id the gateway vouched for; an rApp call with no invoker id has no
+    identity to compare and is refused. The one place the rule is written.
+    """
+    if role_of(request) != ROLE_RAPP:
+        return True
+    caller = invoker_id(request)
+    return caller is not None and caller == producer_id
+
+
+def _refuse_unless_producer_owner(request: Request, producer_id: str, action: str) -> None:
+    """Raises 403 `DME_PRODUCER_NOT_OWNER` unless `_owner_may_act`; `action` completes the message ("an rApp may {action} only under its own invoker id")."""
+    if not _owner_may_act(request, producer_id):
+        raise framework_error(DME_PRODUCER_NOT_OWNER, detail=f"the producerId {producer_id!r} is not this caller's invoker id: an rApp may {action} only under its own invoker id")
 
 
 def _redefines(t: DMEType, body: DMETypeRegistration) -> bool:
@@ -172,12 +192,17 @@ def register_dme_type(body: DMETypeRegistration, request: Request, db: Session =
     and links them — so a second producer registering an already-known
     type identity, or the same producer re-registering after a restart,
     both succeed instead of the old global `DME_TYPE_VERSION_CONFLICT`.
+
+    A caller with the rApp role may register only under a `producerId` equal to its own invoker id (403 `DME_PRODUCER_NOT_OWNER`, SEC-15.10b); an SMO module
+    and a call with no role name any producer.
     """
-    # Route notes. 422 for an unknown `sourceDomain`; then, for a type that is already registered (SEC-15.10), 403 `DME_TYPE_NOT_OWNER` when the request would change its
+    # Route notes. 403 `DME_PRODUCER_NOT_OWNER` first when a caller with the rApp role names a `producerId` other than its own invoker id (SEC-15.10b; `_owner_may_act`), before anything is read or
+    # written, so the callbacks of the producer it named are never replaced. Then 422 for an unknown `sourceDomain`; then, for a type that is already registered (SEC-15.10), 403 `DME_TYPE_NOT_OWNER` when the request would change its
     # definition (`typeName`, `dataProductionSchema`, `collectionSpec`, `sourceDomain`, `sourceContext`) and the caller is not allowed to (`_may_redefine_type`); the same
     # definition by a second producer, or by the first one again, is the join / idempotent re-registration it always was. The check comes before the producer row is touched, so a
     # refusal changes nothing. A new type records its first caller in `registered_by`. Order after that, as before: producer upsert, type upsert, link, `REGISTERED` notice (new
     # type only), one commit.
+    _refuse_unless_producer_owner(request, body.producerId, "register a producer")
     if body.sourceDomain is not None and body.sourceDomain not in SOURCE_DOMAINS:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"unknown sourceDomain {body.sourceDomain!r}")
 
@@ -255,7 +280,7 @@ def get_producer(producer_id: str, db: Session = Depends(get_session)):
 
 
 @app.delete("/production-capabilities", status_code=204)
-def deregister_producer(producer_id: str, db: Session = Depends(get_session)):
+def deregister_producer(producer_id: str, request: Request, db: Session = Depends(get_session)):
     """The DME half of rApp Management's producer-reconsideration trigger
     (HISTORY.md §1): when a RAppInstance crashes or terminates,
     its own DME registration is no longer trustworthy and is torn down
@@ -273,7 +298,11 @@ def deregister_producer(producer_id: str, db: Session = Depends(get_session)):
     producer still supports keeps serving, and a type this was the last
     producer for simply goes DISABLED until deleted or re-registered —
     the real fix for the conflation, not a cosmetic rename.
+
+    A caller with the rApp role may deregister only the producer whose id is its own invoker id (403 `DME_PRODUCER_NOT_OWNER`, SEC-15.10b), whether or not that
+    producer exists; rApp Management, which tears an instance's registration down, is an SMO module and is not asked.
     """
+    _refuse_unless_producer_owner(request, producer_id, "deregister a producer")
     p = db.get(DMEProducer, producer_id)
     if p is None:
         return

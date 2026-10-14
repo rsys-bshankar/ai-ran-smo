@@ -40,6 +40,7 @@ import os
 import uuid
 
 from contextlib import contextmanager
+from types import SimpleNamespace
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
@@ -116,3 +117,62 @@ def concurrent_commit_on(table: str):
         yield fired
     finally:
         event.remove(Session, "before_flush", before_flush)
+
+
+class FakeDmeR1:
+    """A stand-in for the `R1Client` of an rApp, answering the DME producer routes the way DME does (`dme/app/main.py`), for tests that drive the real SDK against it.
+
+    It keeps the registered producers by id and applies the rule of SEC-15.10b: a producer is taken, replaced or deregistered only under the invoker id of the caller, which
+    is `process-id` for the process and `instance-<id>` for the instance the current context acts for (`smo_shared.r1_client.acting_for`). `producers` is what DME would hold;
+    `callbacks()` groups the ids by job callback URL, the shape in which two producers for one callback show up.
+    """
+    process_id = "process-id"
+
+    def __init__(self):
+        self.producers: dict[str, dict] = {}
+
+    def acting_invoker_id(self) -> str:
+        """The invoker id the current context's calls carry."""
+        from .r1_client import acting_instance
+        acting = acting_instance()
+        return self.process_id if acting is None else f"instance-{acting}"
+
+    def callbacks(self) -> dict[str, list[str]]:
+        """The producer ids registered for each job callback URL."""
+        grouped: dict[str, list[str]] = {}
+        for pid, producer in self.producers.items():
+            grouped.setdefault(producer["jobCallbackUrl"], []).append(pid)
+        return grouped
+
+    @staticmethod
+    def _response(status_code, payload=None):
+        """A response with the attributes the SDK's `ensure_ok` reads."""
+        return SimpleNamespace(status_code=status_code, json=lambda: payload, content=b"" if payload is None else b"{}", text="")
+
+    def _refused(self, producer_id):
+        """The 403 DME answers when `producer_id` is not the caller's invoker id, else None."""
+        if producer_id != self.acting_invoker_id():
+            return self._response(403, {"code": "DME_PRODUCER_NOT_OWNER"})
+        return None
+
+    def post(self, path, json=None, **kwargs):
+        """`POST /dme/production-capabilities`: registers or replaces the producer named in the body."""
+        refused = self._refused(json["producerId"])
+        if refused is not None:
+            return refused
+        self.producers[json["producerId"]] = {
+            "producerId": json["producerId"], "producerHealthCallbackUrl": json["producerHealthCallbackUrl"], "jobCallbackUrl": json["jobCallbackUrl"],
+            "supportedTypeIds": ["t-1"]}
+        return self._response(201, {"dmeTypeId": "t-1"})
+
+    def get(self, path, params=None, **kwargs):
+        """`GET /dme/production-capabilities`: every registered producer."""
+        return self._response(200, list(self.producers.values()))
+
+    def delete(self, path, params=None, **kwargs):
+        """`DELETE /dme/production-capabilities?producer_id=`: removes the producer (204, also when there is none)."""
+        refused = self._refused(params["producer_id"])
+        if refused is not None:
+            return refused
+        self.producers.pop(params["producer_id"], None)
+        return self._response(204)

@@ -40,7 +40,7 @@ from .model.series import CIO, HO_ATT, HO_FAIL, PRB, PRIO, SAMPLES, THP, UE_CAPA
 
 router = APIRouter()
 
-SIM_PRODUCER_ID = "steering-dt-producer"
+SIM_PRODUCER_ID = "steering-dt-producer"   # only when the caller's own invoker id cannot be told: DME takes an rApp's registration under that id alone (SEC-15.10b)
 SIM_TYPE = {"namespace": "RAN", "name": "LOAD_PERFORMANCE_SIM", "version": "1.0.0", "typeName": "RAN.LOAD_PERFORMANCE_SIM"}
 SELF_URL = mtls.http_url("http://traffic-steering-rapp:8000")   # https:// with SMO_MTLS=on (PR-SEC-2): the address DME calls back
 
@@ -178,9 +178,9 @@ def sim_cluster(cluster: str) -> tuple[dict[str, list[str]], dict[str, str]]:
 
 
 def register_sim_type(sdk) -> dict:
-    """Registers the sim data type at DME as source domain DIGITAL_TWIN, with this rApp's health and job callback URLs."""
+    """Registers the sim data type at DME as source domain DIGITAL_TWIN, with this rApp's health and job callback URLs, under the invoker id of the caller (the instance's when acting for one): DME takes an rApp's producer only under its own id."""
     return sdk.data.register_type(
-        SIM_TYPE["namespace"], SIM_TYPE["name"], SIM_TYPE["version"], SIM_TYPE["typeName"], SIM_PRODUCER_ID,
+        SIM_TYPE["namespace"], SIM_TYPE["name"], SIM_TYPE["version"], SIM_TYPE["typeName"], sdk.data.own_invoker_id() or SIM_PRODUCER_ID,
         data_production_schema={}, producer_health_callback_url=f"{SELF_URL}/sim-producer/health",
         job_callback_url=f"{SELF_URL}/sim-producer/jobs", source_domain="DIGITAL_TWIN",
         source_context={"producer": "traffic-steering-rapp digital twin", "pattern": "injected hotspots"})

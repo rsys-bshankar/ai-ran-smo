@@ -124,7 +124,8 @@ Usage: `sdk = AiRuntimeSdk()` (or `AiRuntimeSdk(r1=R1Client(base_url, bearer_tok
 
 | Method | Route | Notes |
 |---|---|---|
-| `register_type(namespace, name, version, type_name, producer_id, data_production_schema, producer_health_callback_url, job_callback_url, collection_spec=None, source_domain=None, source_context=None)` | `POST /dme/production-capabilities` | `source_domain` is `LIVE_RAN` or `DIGITAL_TWIN` (drives the Digital-Twin-excluded-from-inference rule) |
+| `register_type(namespace, name, version, type_name, producer_id, data_production_schema, producer_health_callback_url, job_callback_url, collection_spec=None, source_domain=None, source_context=None)` | `POST /dme/production-capabilities` | `producer_id` must be the caller's own invoker id (`own_invoker_id()`): DME refuses an rApp that names another, 403 `DME_PRODUCER_NOT_OWNER` (SEC-15.10b). Leaves one producer per `job_callback_url`: the other producers this process registered for it under another identity (the process's, or an instance's) are deregistered after this registration. `source_domain` is `LIVE_RAN` or `DIGITAL_TWIN` (drives the Digital-Twin-excluded-from-inference rule) |
+| `own_invoker_id()` -> str or None | none (asks the R1 client) | the invoker id the calls carry: the instance's while acting for a bound instance, else the process's |
 | `discover_types(data_category=None)` | `GET /dme/dme-types` | filter `data_category` |
 | `list_producers()` | `GET /dme/production-capabilities` | |
 | `get_producer(producer_id)` | `GET /dme/production-capabilities/{producer_id}` | |
@@ -304,7 +305,7 @@ Each test asserts the verb, path, params and body the client sends against a scr
 
 | Test file | Covers | Passed |
 |---|---|---|
-| `tests/test_data.py` | Producer/type registration (with and without provenance), discovery, deregistration, `delete_type`, status; data jobs (create, get, update, status, terminate, terminate-for-consumer, list); offers and notify (raw body); type subscriptions; record ingest/fetch; `mediate_action`, `get_action`/`list_actions`; RAN inventory reads; 4xx -> `SdkError` | 26 |
+| `tests/test_data.py` | Producer/type registration (with and without provenance; one producer left per callback when the process and instances register),  discovery, deregistration, `delete_type`, status; data jobs (create, get, update, status, terminate, terminate-for-consumer, list); offers and notify (raw body); type subscriptions; record ingest/fetch; `mediate_action`, `get_action`/`list_actions`; RAN inventory reads; 4xx -> `SdkError` | 26 |
 | `tests/test_lifecycle.py` | Training (request, status, cancel, suspend/resume, model-metrics raw body); `advance_model_lifecycle` is deprecated and raises 403 with no call, and the gateway policy refuses the advance path while it allows the model routes a rApp uses; inference (request, status, resolve, list); MLMF subscriptions/reports (query plus body split); feature groups (with a DME type, delete); training progress; `deploy_model` raw list body; 4xx | 27 |
 | `tests/test_analytics.py` | Producer registration (with explicit `mda_type`), reports, subscriptions with scope and `thresholdInfo` body, `create_mda_request` dropping unset fields, `publish_mda_report`, `get_prediction` (named PM prediction, none without reports); 4xx | 13 |
 | `tests/test_intent.py` | `create_intent`, `energy_saving_expectation`, get/list/admin-state/delete, reports, RMIH register/deregister/list; 4xx | 12 |

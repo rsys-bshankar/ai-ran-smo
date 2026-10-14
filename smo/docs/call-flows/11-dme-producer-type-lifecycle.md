@@ -7,6 +7,8 @@ DME section of `docs/ARCHITECTURE.md`). This flow walks what a single-producer m
 express: one type served by two producers, one producer serving two types, and what
 happens to each when health and deletion cross those links.
 
+**An rApp registers under its own invoker id** (SEC-15.10b): DME answers 403 `DME_PRODUCER_NOT_OWNER` to an rApp whose `producerId` is another name. P1 and P2 below stand for those ids when rApps register; an SMO module (`ran-nf-oam`) is not asked.
+
 **P1/P2 are generic on purpose** — this flow is about the many-to-many mechanism itself,
 not any one producer's domain. A working instance of "Producer 1" is `ran-nf-oam`'s
 `subscribe_pm` route, which calls this same `RegisterDMEType` (namespace=RAN,

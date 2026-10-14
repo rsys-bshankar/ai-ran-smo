@@ -46,7 +46,7 @@ from .model.series import OVERLAP, OVERSHOOT, POLLUTION, POWER, TILT, TOTAL, WEA
 
 router = APIRouter()
 
-SIM_PRODUCER_ID = "coverage-dt-producer"
+SIM_PRODUCER_ID = "coverage-dt-producer"   # only when the caller's own invoker id cannot be told: DME takes an rApp's registration under that id alone (SEC-15.10b)
 SIM_TYPE = {"namespace": "RAN", "name": "COVERAGE_PERFORMANCE_SIM", "version": "1.0.0",
             "typeName": "RAN.COVERAGE_PERFORMANCE_SIM"}
 SELF_URL = mtls.http_url("http://coverage-optimization-rapp:8000")   # https:// with SMO_MTLS=on (PR-SEC-2): the address DME calls back
@@ -184,9 +184,9 @@ def sim_cluster(cluster: str) -> dict[str, list[str]]:
 
 
 def register_sim_type(sdk) -> dict:
-    """Registers the sim data type at DME as source domain DIGITAL_TWIN, with this rApp's health and job callback URLs."""
+    """Registers the sim data type at DME as source domain DIGITAL_TWIN, with this rApp's health and job callback URLs, under the invoker id of the caller (the instance's when acting for one): DME takes an rApp's producer only under its own id."""
     return sdk.data.register_type(
-        SIM_TYPE["namespace"], SIM_TYPE["name"], SIM_TYPE["version"], SIM_TYPE["typeName"], SIM_PRODUCER_ID,
+        SIM_TYPE["namespace"], SIM_TYPE["name"], SIM_TYPE["version"], SIM_TYPE["typeName"], sdk.data.own_invoker_id() or SIM_PRODUCER_ID,
         data_production_schema={}, producer_health_callback_url=f"{SELF_URL}/sim-producer/health",
         job_callback_url=f"{SELF_URL}/sim-producer/jobs", source_domain="DIGITAL_TWIN",
         source_context={"producer": "coverage-optimization-rapp digital twin", "pattern": "injected CCO faults"})

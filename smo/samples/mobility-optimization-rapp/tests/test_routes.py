@@ -14,11 +14,15 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
 from smo_sdk import SdkError
+from smo_sdk import data as smo_data
+from smo_sdk.data import DataClient
 from smo_shared.db import Base, get_session
-from smo_shared.testing import make_test_engine
+from smo_shared.r1_client import acting_for
+from smo_shared.testing import FakeDmeR1, make_test_engine
 
 from app import main
 from app.main import app
+from app.producer import register_sim_type
 from app.model.series import ATTEMPTS, PING_PONG, TOO_EARLY, TOO_LATE, WRONG_CELL
 from app.producer import windows
 
@@ -77,7 +81,7 @@ class FakePlatform:
         self.artifact = b""
         self.data = types.SimpleNamespace(
             get_dataset=self.get_dataset, read_config=self.read_config,
-            query_cell_guards=lambda managed_element_ref: self.guards, register_type=lambda *a, **k: {"dmeTypeId": "t-1"},
+            query_cell_guards=lambda managed_element_ref: self.guards, register_type=lambda *a, **k: {"dmeTypeId": "t-1"}, own_invoker_id=lambda: "invoker-1",
             discover_types=lambda ns: [{"dmeTypeId": "t-sim", "dmeTypeIdStruct": {"name": "HO_PERFORMANCE_SIM"}}],
             list_data_jobs=lambda dme_type_id: [{"dataJobId": "j-1"}], ingest_data_record=lambda job, record: None)
         self.models = types.SimpleNamespace(
@@ -547,3 +551,28 @@ def test_the_wait_for_a_fulfilment_report_is_bounded(client, platform, r1, monke
     d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
     assert platform.report_reads >= 2
     assert (d["outcome"], d["action"]["status"]) == ("ACTION_FAILED_ROLLED_BACK", "NOT_ENACTED")
+
+
+# ---------------------------------------------------------------- one producer for the callbacks
+
+def test_the_process_and_an_instance_registering_leave_dme_one_producer_for_the_callback():
+    """The rApp registers its Digital Twin producer as the process (`POST /sim-producer/register`) and as an instance (`demo/prepare`); DME must end with one producer for
+    the callback URL, not two (it would post each job start twice), whichever registers first and whatever the order repeats in. Runs the real SDK against a DME that holds SEC-15.10b.
+    """
+    smo_data._registered_as.clear()
+    fake = FakeDmeR1()
+    sdk = types.SimpleNamespace(data=DataClient(fake))
+    try:
+        register_sim_type(sdk)
+        with acting_for("a"):
+            register_sim_type(sdk)
+        assert [ids for ids in fake.callbacks().values()] == [["instance-a"]]
+        register_sim_type(sdk)
+        with acting_for("b"):
+            register_sim_type(sdk)
+        with acting_for("b"):
+            register_sim_type(sdk)
+        callbacks = fake.callbacks()
+        assert len(callbacks) == 1 and list(callbacks.values()) == [["instance-b"]], callbacks
+    finally:
+        smo_data._registered_as.clear()
