@@ -78,6 +78,7 @@ class FakeNfo:
     def __init__(self):
         self.descriptors: dict[str, dict] = {}
         self.deployments: dict[str, dict] = {}
+        self.deleted_descriptors: list[str] = []
 
     def post(self, path, json=None, **kw):
         if path == "/nfo/descriptors":
@@ -94,7 +95,16 @@ class FakeNfo:
             return FakeResponse(200, {"nfDeploymentId": deployment_id, "state": "RUNNING"})
         raise AssertionError(f"unexpected NFO POST {path}")
 
+    def get(self, path, **kw):
+        """`GET /nfo/deployments/{id}`: the deployment's state (call flow 17e reads it), 404 once it is gone."""
+        deployment = self.deployments.get(path.rsplit("/", 1)[-1])
+        return FakeResponse(200, {"state": deployment["state"], "abnormalReason": deployment.get("abnormalReason")}) if deployment else FakeResponse(404, {})
+
     def delete(self, path, **kw):
+        """`DELETE /nfo/deployments/{id}` removes the deployment, `DELETE /nfo/descriptors/{id}` the descriptor (call flow 17d); both 204, also for an unknown id."""
+        if path.startswith("/nfo/descriptors/"):
+            self.deleted_descriptors.append(path.rsplit("/", 1)[-1])      # kept in `descriptors`, so a test can still read what was made
+            return FakeResponse(204, None)
         deployment_id = path.rsplit("/", 1)[-1]
         self.deployments.pop(deployment_id, None)
         return FakeResponse(204, None)
@@ -142,6 +152,8 @@ def mlmr(monkeypatch):
     fake_nfo = FakeNfo()
 
     def fake_get(self, path, **kw):
+        if path.startswith("/nfo/"):
+            return fake_nfo.get(path, **kw)
         return fake_mlmr.get(path, **kw)
 
     def fake_post(self, path, json=None, **kw):
@@ -1142,15 +1154,14 @@ def test_request_inference_references_the_models_already_live_serving_deployment
         lifecycle = session.get(ModelLifecycle, model_id)
         lifecycle.nf_deployment_id = serving_deployment_id
         session.commit()
+    mlmr.nfo.deployments[str(serving_deployment_id)] = {"state": "RUNNING", "scaled": 0}     # the serving deployment, RUNNING at NFO
 
     job_id = client.post(f"/models/{model_id}/inference-jobs").json()["inferenceJobId"]
 
     status = client.get(f"/inference-jobs/{job_id}/status").json()
     assert status["nfDeploymentId"] == str(serving_deployment_id)
-    # no new deployment was created — the only one NFO ever saw is the
-    # pre-existing serving one, stamped directly, not round-tripped
-    # through a POST /nfo/deployments call.
-    assert serving_deployment_id not in {uuid.UUID(d) for d in mlmr.nfo.deployments}
+    # no new deployment was created: the only one NFO holds is the pre-existing serving one, stamped directly, not round-tripped through a POST /nfo/deployments call
+    assert list(mlmr.nfo.deployments) == [str(serving_deployment_id)]
 
 
 def test_health_check_answers_the_gui_bff_liveness_probe(client):

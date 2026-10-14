@@ -79,7 +79,7 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
   replica or resource argument, so AIMgF `runtime/scale` cannot ask for one. Approach: add `replicas` /
   `resources` to the NFO scale call and the AIMgF scale request, and pass the manifest's runtime profile bounds.
 
-- **OI-7-workload-failure** — A broken workload does not fault its rApp instance: NFO publishes `org.oran.smo.nf-deployment.state-changed`
+- **OI-7-workload-failure** — A broken workload does not fault its rApp instance, nor move a model's serving runtime (AIMgF shows it as `workload` and refuses inference, call flow 17e): NFO publishes `org.oran.smo.nf-deployment.state-changed`
   (`to: ABNORMAL`) and the instance detail shows it (`workload`, call flow 15e), but rApp Management does not follow the event bus, so the
   instance stays RUNNING until an operator heals the workload or reports the fault. Approach: a worker in rApp Management reads the feed
   (`GET /dme/smo-events`) and fires CRASH on the instance whose `workloadRef` went ABNORMAL (and nothing on a heal; a recover is still the
@@ -1317,8 +1317,8 @@ there, what is right, what is wrong), agree the corrections, then build what the
 | DOC-CF-1.2 | 06 package lifecycle (06a-06d; the usage-registration contract, package error codes and NFO descriptor delete built for it) | done: `HISTORY.md` DOC-CF-1.2 |
 | DOC-CF-1.3 | 07 rApp instance lifecycle (07a-07e; crash safeguards, the kill switch across an upgrade, the replacement's address and its own commit, a failed bootstrap built for it) | done: `HISTORY.md` DOC-CF-1.3 |
 | DOC-CF-1.4 | 15 NFO workload lifecycle (15a-15e; a descriptor backing several deployments, no instance without its workload, placement only where FOCOM says, NFO's state changes on the event bus and on the rApp instance) | done: `HISTORY.md` DOC-CF-1.4 |
-| DOC-CF-1.5 | 17 model runtime lifecycle | next. Seen while doing 1.4: AIMgF makes an NFO descriptor for every model runtime and every training, validation and emulation job and never deletes one (NFO has `DELETE /descriptors/{id}` since DOC-CF-1.2), and it does not check NFO's answers (an NFO error is a 500 there) |
-| DOC-CF-1.6 | 02 AI/ML model train → inference | open |
+| DOC-CF-1.5 | 17 model runtime lifecycle (17a-17e; NFO's answers checked, descriptors deleted with their deployment, redeploy after terminate, the serving workload on the lifecycle and gating inference, the owner rApp's scale and terminate) | done: `HISTORY.md` DOC-CF-1.5 |
+| DOC-CF-1.6 | 02 AI/ML model train → inference | next. The job runtimes (training, validation, emulation) were fixed in 1.5 (checked NFO answers, descriptors deleted) and are drawn there |
 | DOC-CF-1.7 | 26 model governance and end of life | open |
 | DOC-CF-1.8 | the rest: 03, 04, 08-14, 16, 18-25, 27 | open |
 

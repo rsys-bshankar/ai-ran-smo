@@ -239,6 +239,16 @@ class LifecycleClient(BaseClient):
     def activate_runtime(self, model_id: uuid.UUID | str) -> dict:
         return ensure_ok(self._r1.post(f"/aimgf/models/{model_id}/runtime/activate"))
 
+    def scale_runtime(self, model_id: uuid.UUID | str) -> dict:
+        """Scales the serving runtime of a model this rApp owns (`POST /aimgf/models/{id}/runtime/scale`, call flow 17c): ACTIVE -> SCALING -> ACTIVE.
+        Phase 1: NFO's scale takes no target size. 403 for another rApp's model, 409 unless ACTIVE, 502/503 when NFO refuses or does not answer."""
+        return ensure_ok(self._r1.post(f"/aimgf/models/{model_id}/runtime/scale"))
+
+    def terminate_runtime(self, model_id: uuid.UUID | str) -> dict:
+        """Terminates the serving runtime of a model this rApp owns (`POST /aimgf/models/{id}/runtime/terminate`, call flow 17d): its NFO deployment and
+        descriptor go, the runtime is TERMINATED and can be deployed again. 403 for another rApp's model, 502/503 when NFO does not terminate it."""
+        return ensure_ok(self._r1.post(f"/aimgf/models/{model_id}/runtime/terminate"))
+
 
 def _str(value) -> str | None:
     """`str(value)`, or None for None, so an optional id is sent as a JSON string or null."""

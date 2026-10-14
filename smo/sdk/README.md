@@ -215,6 +215,8 @@ Usage: `sdk = AiRuntimeSdk()` (or `AiRuntimeSdk(r1=R1Client(base_url, bearer_tok
 | `get_model_lifecycle(model_id)` | `GET /aimgf/models/{id}/lifecycle` | |
 | `deploy_runtime(model_id, package_id=None, runtime_profile=None)` | `POST /aimgf/models/{id}/runtime/deploy` (query `package_id`, body `runtime_profile`) | instantiates the inference runtime through NFO; needs CERTIFIED / PROMOTED |
 | `activate_runtime(model_id)` | `POST /aimgf/models/{id}/runtime/activate` | |
+| `scale_runtime(model_id)` | `POST /aimgf/models/{id}/runtime/scale` | call flow 17c: a model this rApp owns; no target size (Phase 1); 502/503 when NFO refuses or does not answer |
+| `terminate_runtime(model_id)` | `POST /aimgf/models/{id}/runtime/terminate` | call flow 17d: its NFO deployment and descriptor go; the runtime can be deployed again |
 | `request_inference(model_id, notification_destination=None)` | `POST /aimgf/models/{id}/inference-jobs` | |
 | `get_inference_job_status(id)` | `GET /aimgf/inference-jobs/{id}/status` | |
 | `list_inference_jobs(model_id=None, status=None)` | `GET /aimgf/inference-jobs` | |

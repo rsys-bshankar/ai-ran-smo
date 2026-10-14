@@ -114,7 +114,7 @@ export const flows = {
   "flows.f02.rollback": "Roll back",
   "flows.f02.retire": "Retire",
   "flows.f02.terminate": "Terminate runtime",
-  "flows.f02.terminate.confirm": "Terminate this model's runtime? NFO deletes its deployment; it cannot be redeployed.",
+  "flows.f02.terminate.confirm": "Terminate this model's runtime? NFO deletes its deployment; deploy it again to serve.",
   "flows.f02.terminating": "Runtime terminating",
 
   "flows.f03.empty": "No config jobs yet.",
