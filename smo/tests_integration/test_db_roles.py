@@ -62,6 +62,16 @@ def test_the_role_of_every_module_that_runs_a_worker_may_use_what_every_worker_u
         assert {"periodic_run", "notification_outbox", "smo_event"} <= set(ROLES[module]["shared"]), module
 
 
+def test_the_role_of_every_module_that_publishes_events_may_write_the_event_table():
+    """A module whose code uses the event bus (`smo_shared.events`) writes `smo_event` in the transaction of its change; its role must list the table, or the
+    change itself fails with "permission denied" (NFO's did, once its deployments' state changes were published: call flow 15e)."""
+    publishers = {m for m in ROLES if any("smo_shared import events" in f.read_text() or "smo_shared.events" in f.read_text()
+                                          for f in (SMO_ROOT / m / "app").glob("*.py"))}
+    assert {"nfo", "dme", "ran-nf-oam"} <= publishers
+    for module in publishers:
+        assert "smo_event" in ROLES[module]["shared"], module
+
+
 def test_a_role_name_is_derived_from_the_module_and_statements_quote_what_they_are_given():
     """Role names derive from the module name, the password is a quoted literal that cannot break out of the statement, the search path and revokes
     are the module's own, and a module that reads another's table gets SELECT only.

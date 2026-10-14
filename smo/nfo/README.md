@@ -150,7 +150,7 @@ All routes are under `/nfo` through R1. Lists return `{items, total, limit, offs
 ### 2.5 Interactions
 
 - **Outbound:** `GET /focom/inventory?resource_type=<requiredResourceTypeId or "">` over R1 at Instantiate. Reads `oCloudId` from a 200; anything else (an error status, no `oCloudId`, no answer) is 503 `ENDPOINT_UNREACHABLE` and nothing is created.
-- **Event bus:** `org.oran.smo.nf-deployment.state-changed` in the transaction of each state change (`smo_shared.events`, the default table publisher).
+- **Event bus:** `org.oran.smo.nf-deployment.state-changed` in the transaction of each state change (`smo_shared.events`, the default table publisher); NFO's database role (`migrations/db_roles.json`) lists the shared `smo_event` table for it.
 - **Inbound:** AIMgF creates one descriptor per runtime and calls deploy / scale / terminate; rApp Management and SO SMOS instantiate; SA SMOS calls heal ([call flow 15](../docs/call-flows/15-nfo-workload-lifecycle.md)).
 - **Background tasks:** none. No callbacks or webhooks.
 

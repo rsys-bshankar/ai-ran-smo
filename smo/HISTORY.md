@@ -2793,6 +2793,9 @@ The fourth flow of the call-flow audit, decided with the product owner (the reco
   `org.oran.smo.nf-deployment.state-changed`, and `_remove_deployment` publishes the end (`to: DELETED`); the GUI backend's feed follower
   recomputes the console's counts on them. rApp Management's instance detail adds `workload` (`{state, abnormalReason}` read from NFO; `GONE`,
   `UNKNOWN`), on the detail only so a list costs no NFO calls.
+  NFO's database role is given the shared `smo_event` table (`migrations/db_roles.json`): without it every state change failed with "permission
+  denied" on a stack with per-module roles (CI's PgBouncer job caught it); `tests_integration/test_db_roles.py` now holds every module that
+  uses `smo_shared.events` to that grant.
 - **Not built, tracked:** faulting the instance by itself when its workload breaks (`OPEN_ITEMS.md` OI-7-workload-failure); AIMgF's descriptor
   leak and unchecked NFO answers move to DOC-CF-1.5 (flow 17).
 

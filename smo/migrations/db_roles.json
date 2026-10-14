@@ -92,7 +92,8 @@
   "schema": "nfo",
   "shared": [
    "module_identity",
-   "idempotency_key"
+   "idempotency_key",
+   "smo_event"
   ]
  },
  "rapp-mgmt": {
