@@ -55,6 +55,7 @@ var (
 	dmeTypesRoute          = gw("dme", "GET", "/dme-types")
 	dmeProducersRoute      = gw("dme", "GET", "/production-capabilities")
 	dmeProducerStatusRoute = gw("dme", "GET", "/production-capabilities/{producer_id}/status")
+	dmeActionsRoute        = gw("dme", "POST", "/actions")
 
 	// models (MLMR)
 	mlmrModelsRoute = gw("mlmr", "GET", "/models")
@@ -76,7 +77,7 @@ var (
 // allRoutes lists every route above, for the check against docs/openapi.
 var allRoutes = []route{
 	bootstrapRoute, invokerRegistrationRoute, tokenRoute,
-	dmeTypesRoute, dmeProducersRoute, dmeProducerStatusRoute,
+	dmeTypesRoute, dmeProducersRoute, dmeProducerStatusRoute, dmeActionsRoute,
 	mlmrModelsRoute,
 	smeRegisterProviderRoute, smeDeregisterProviderRoute, smeDiscoverRoute,
 	instanceRoute, operatorAPIGetRoute, operatorAPIPutRoute, operatorAPIDeleteRoute, bootstrapCompleteRoute, performanceRoute,

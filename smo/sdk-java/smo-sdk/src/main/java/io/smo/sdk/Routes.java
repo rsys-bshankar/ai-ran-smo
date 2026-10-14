@@ -17,6 +17,7 @@ public final class Routes {
     public static final Route DME_JOB_STATUS = Route.get("/dme/data-jobs/{}/status");
     public static final Route DME_JOB_DELETE = Route.delete("/dme/data-jobs/{}");
     public static final Route DME_RECORDS = Route.get("/dme/data-jobs/{}/records", "limit");
+    public static final Route DME_ACTIONS = Route.post("/dme/actions", Set.of("requestedBy", "changes"));
 
     // MLMR (AI models)
     public static final Route MLMR_MODELS = Route.get("/mlmr/models", "limit", "offset");
@@ -37,7 +38,7 @@ public final class Routes {
     public static final Route INSTANCE_TERMINATE = Route.post("/rapp-mgmt/instances/{}/terminate", Set.of());
 
     public static final List<Route> ALL = List.of(
-            DME_TYPES, DME_JOBS_LIST, DME_JOB_CREATE, DME_JOB_GET, DME_JOB_STATUS, DME_JOB_DELETE, DME_RECORDS,
+            DME_TYPES, DME_JOBS_LIST, DME_JOB_CREATE, DME_JOB_GET, DME_JOB_STATUS, DME_JOB_DELETE, DME_RECORDS, DME_ACTIONS,
             MLMR_MODELS, MLMR_MODEL_GET, SME_DISCOVER,
             INSTANCE_GET, INSTANCE_CONFIG, INSTANCE_PERFORMANCE, INSTANCE_FAULT, INSTANCE_OPERATOR_API_PUT,
             INSTANCE_OPERATOR_API_DELETE, INSTANCE_BOOTSTRAP_COMPLETE, INSTANCE_TERMINATE);

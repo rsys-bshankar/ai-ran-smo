@@ -10,7 +10,7 @@
 | Called by | Any Java rApp; the example `examples/hello-rapp`. No SMO module uses it |
 | Database tables | None |
 | Retries and idempotency | 4 attempts with exponential backoff on 429/502/503/504 and transport errors; every POST carries an `Idempotency-Key` its repeats reuse; the invoker registration is repeated only on 429/503; one repeat on `409 CONCURRENT_MODIFICATION` |
-| Unit tests | 52 (`smo-sdk` 46, `hello-rapp` 6), JUnit 6, no network beyond loopback; CI job `sdk-java` |
+| Unit tests | 58 (`smo-sdk` 52, `hello-rapp` 6), JUnit 6, no network beyond loopback; CI job `sdk-java` |
 | Status | RAPP-4.2 to 4.5 done for Java. Open: a run against the live compose stack, mTLS from the environment, the analytics / lifecycle / intent namespaces (`OPEN_ITEMS.md`, PR-RAPP-4) |
 
 ## 1. High-level design (HLD)
@@ -77,8 +77,9 @@ rApp code --> SmoSdk --> R1Client --(Bearer)--> R1 Termination --> module
 | `HttpCaller` | The one place that touches `HttpClient`; retry loop and `Retry-After` |
 | `RetryPolicy` | Attempts, backoff, jitter, retryable statuses |
 | `R1Response`, `SdkException` | The answer; the failure |
+| `MsacCredential` | The credential of an MSAC Identity, for `DataClient.mediateAction` (`SEC-15.6b`); its `toString` never shows it |
 | `Route`, `Routes` | The routes called, as data (checked against `docs/openapi`) |
-| `DataClient` | `listTypes`, `listDataJobs`, `createDataJob`, `getDataJob`, `queryDataJobStatus`, `terminateDataJob`, `fetchDataRecords` (DME) |
+| `DataClient` | `listTypes`, `listDataJobs`, `createDataJob`, `getDataJob`, `queryDataJobStatus`, `terminateDataJob`, `fetchDataRecords`, `mediateAction` (DME; the last takes an optional `MsacCredential`, see below) |
 | `ModelsClient` | `listModels`, `getModel` (MLMR) |
 | `PlatformClient` | `discoverServices` (SME CAPIF discovery) |
 | `InstancesClient` | `get`, `config`, `reportPerformance`, `reportFault`, `registerOperatorApi`, `clearOperatorApi`, `bootstrapComplete`, `terminate` (rApp Management, the instance's own routes) |
@@ -113,6 +114,16 @@ try (SmoSdk sdk = new SmoSdk(config)) {
 ```
 
 Build and test: `cd smo/sdk-java && ./mvnw -B -ntp -C verify` (JDK 21). Add it to a project: `io.smo:smo-sdk:0.1.0`; it is not published to a registry, install it with `./mvnw install`.
+
+#### MSAC credential (`SEC-15.6b`)
+
+An O1 configuration action goes through DME (`POST /dme/actions`) and RAN NF OAM asks an rApp for the credential of the MSAC Identity named by `requestedBy` when that Identity has one (`SEC-15.6b`). Pass it per call:
+
+```java
+JsonNode action = sdk.data().mediateAction("my-identity", changes, null, null, null, null, MsacCredential.of(secret));
+```
+
+The header `X-MSAC-Credential` is sent only when a credential is given; the overload without the last argument sends none. The value is in that header and nowhere else: not in the body, an `SdkException`, a `toString` (`MsacCredential` prints `MsacCredential[redacted]`) or a log, and the SDK reads no environment variable for it, so the rApp passes in what it holds from wherever it keeps secrets. A repeat of the call (a 503, a lost write race) sends the same credential and the same `Idempotency-Key`.
 
 ## 3. The example rApp (`examples/hello-rapp/`)
 
@@ -183,6 +194,7 @@ The CSAR is the same as any other (`../docs/RAPP_PACKAGING.md`, §7.2 for the Ja
 | `R1ClientTest` (15) | bearer and `Accept`, `{items}` unwrapping, 401 refresh once and a second 401 final, retry with backoff and `Retry-After`, attempts exhausted, a 4xx not retried and mapped with its body, an unreachable gateway (status 0), `Idempotency-Key` on POST reused by repeats and a caller's own wins, repeat on `CONCURRENT_MODIFICATION` only, reads not repeated, 204, query encoding, `close()` offboards |
 | `RetryPolicyTest` (5) | backoff doubling and cap, jitter bound, `Retry-After` cap, retryable statuses |
 | `SmoConfigTest` (6) | defaults equal the Python client's, variable names, `_FILE` secrets, module vs rApp, id and secret together, `toString` hides secrets |
+| `MsacCredentialTest` (6) | `SEC-15.6b`: `mediateAction` sends `X-MSAC-Credential` on `POST /dme/actions` only when given a credential; not in the body (unset optional fields left out); not in an `SdkException` or a `toString`; the same credential and `Idempotency-Key` on the repeat after a 503 and after `CONCURRENT_MODIFICATION`; a null value refused; the header name is declared by `docs/openapi/dme.json` |
 | `RoutesContractTest` (5) | every route exists in `docs/openapi`, query parameters declared, required body properties sent and none invented, a missing route is caught, path expansion and encoding |
 | `HelloRappTest` (6, example) | start registers the operator API and heartbeats, a run reads DME and MLMR and the page sees it, other instances and wrong methods refused, platform failure is a 502, close clears the operator API and deregisters, settings |
 | `../sdk/tests/test_java_example_package.py` (3) | the package builds byte-identically, its manifest and `operatorUi` pass Onboarding's check and name exactly the routes the Java server serves, the sample CSARs are unchanged by the new build option |

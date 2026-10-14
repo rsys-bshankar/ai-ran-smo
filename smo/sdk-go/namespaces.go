@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/url"
 )
 
@@ -59,7 +60,12 @@ func (p *Page[T]) UnmarshalJSON(b []byte) error {
 
 // call sends one route of routes.go with its path arguments, query and JSON body, and decodes the answer into out.
 func (c *Client) call(ctx context.Context, rt route, args []string, q url.Values, body, out any) error {
-	return c.Do(ctx, Request{Method: rt.method, Path: rt.path(args...), Query: q, Body: body}, out)
+	return c.callWith(ctx, rt, args, q, body, nil, out)
+}
+
+// callWith is call with extra request headers (nil: none).
+func (c *Client) callWith(ctx context.Context, rt route, args []string, q url.Values, body any, hdr http.Header, out any) error {
+	return c.Do(ctx, Request{Method: rt.method, Path: rt.path(args...), Query: q, Body: body, Header: hdr}, out)
 }
 
 // setIf sets a query parameter only when its value is not empty, so an unset filter is not sent.
@@ -71,7 +77,7 @@ func setIf(q url.Values, key, value string) {
 
 // ---------------------------------------------------------------- data (DME)
 
-// DataClient is sdk.data: DME, R1AP clause 7. Only the reads an rApp starts with; use Client.Do for the rest.
+// DataClient is sdk.data: DME, R1AP clause 7. The reads an rApp starts with and MediateAction; use Client.Do for the rest.
 type DataClient struct{ c *Client }
 
 // Data returns the data namespace.
@@ -95,6 +101,65 @@ func (d DataClient) ListProducers(ctx context.Context) (Page[Object], error) {
 func (d DataClient) QueryProducerStatus(ctx context.Context, producerID string) (Object, error) {
 	var o Object
 	return o, d.c.call(ctx, dmeProducerStatusRoute, []string{producerID}, nil, nil, &o)
+}
+
+// MSACCredentialHeader is the header that carries the credential of an MSAC Identity (RAN NF OAM reads the same name, SEC-15.6).
+const MSACCredentialHeader = "X-MSAC-Credential"
+
+// ActionRequest is the body of MediateAction (DME's ActionRequest). RequestedBy and Changes are required; Scope defaults
+// to "single-ME" at the platform when empty, and the other fields are left out of the body when empty.
+type ActionRequest struct {
+	RequestedBy   string           // the MSAC Identity (or Role) the action is made for
+	Changes       []map[string]any // each: managedElementRef, managedFunctionRef, attributeChanges, operation, ...
+	Scope         string
+	MSACRole      string
+	SourceContext map[string]any
+	Decision      map[string]any // why the rApp acts (PR-AI-13): inputsRef, modelVersion, rationale
+}
+
+// ActionOption changes one MediateAction call.
+type ActionOption func(*actionCall)
+
+type actionCall struct{ credential *string }
+
+// WithMSACCredential presents the credential of the MSAC Identity named by ActionRequest.RequestedBy (SEC-15.6b). RAN NF OAM
+// asks an rApp for it when that Identity has one, and answers 403 MSAC_ACCESS_DENIED without it. The SDK sends it in the
+// X-MSAC-Credential header of this call and nowhere else: not in the body, not in an error, not in a log (the SDK logs nothing)
+// and not in any String of the SDK's types; it reads no environment variable for it. A call without this option sends no such
+// header. Pass the secret in from wherever the rApp keeps secrets.
+func WithMSACCredential(credential string) ActionOption {
+	return func(a *actionCall) { a.credential = &credential }
+}
+
+// MediateAction submits an O1 configuration action to DME, which mediates it to RAN NF OAM (POST /dme/actions). It returns the
+// action record. Like every POST it carries an Idempotency-Key, and a repeat carries the same one and the same options.
+func (d DataClient) MediateAction(ctx context.Context, req ActionRequest, opts ...ActionOption) (Object, error) {
+	var call actionCall
+	for _, o := range opts {
+		o(&call)
+	}
+	body := map[string]any{"requestedBy": req.RequestedBy, "changes": req.Changes}
+	if req.Changes == nil {
+		body["changes"] = []map[string]any{}
+	}
+	if req.Scope != "" {
+		body["scope"] = req.Scope
+	}
+	if req.MSACRole != "" {
+		body["msacRole"] = req.MSACRole
+	}
+	if req.SourceContext != nil {
+		body["sourceContext"] = req.SourceContext
+	}
+	if req.Decision != nil {
+		body["decision"] = req.Decision
+	}
+	var hdr http.Header
+	if call.credential != nil {
+		hdr = http.Header{MSACCredentialHeader: {*call.credential}}
+	}
+	var o Object
+	return o, d.c.callWith(ctx, dmeActionsRoute, nil, nil, body, hdr, &o)
 }
 
 // ---------------------------------------------------------------- models (MLMR)
