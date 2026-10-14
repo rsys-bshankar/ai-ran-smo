@@ -373,39 +373,49 @@ def set_model_owner(request: Request, model_id: uuid.UUID, body: SetModelOwnerRe
     return {"modelId": str(model_id), "owner": body.owner, "previousOwner": previous, "changed": True}
 
 
+# The runtime states in which AIMgF has an NFO workload for a model (call flow 17): every state but NOT_DEPLOYED and TERMINATED.
+_LIVE_RUNTIME_STATES = frozenset({"DEPLOYMENT_REQUESTED", "DEPLOYED", "ACTIVATING", "ACTIVE", "SCALING", "TERMINATING"})
+
+
+def _check_no_live_runtime(model_id: uuid.UUID) -> None:
+    """Raises 409 `MODEL_IN_USE` when AIMgF reports the model's serving runtime in a live state, and 503 `ENDPOINT_UNREACHABLE` when AIMgF gives no answer.
+
+    Asks `GET /aimgf/models/{id}/lifecycle` over R1 as an SMO module (not held to the ownership rule). A 404 from AIMgF (it does not know the model) passes;
+    any other answer than 200 or 404, or a transport error, refuses the delete, since deleting on a guess could leave a workload nobody can stop (call flow 26e).
+    """
+    try:
+        resp = _r1.get(f"/aimgf/models/{model_id}/lifecycle")
+    except Exception as exc:  # noqa: BLE001 — any transport failure: AIMgF cannot say, so nothing is deleted
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail="AIMgF did not answer: cannot tell whether the model still serves") from exc
+    if resp.status_code == 404:
+        return
+    if resp.status_code != 200:
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"AIMgF answered {resp.status_code}: cannot tell whether the model still serves")
+    state = resp.json().get("runtimeLifecycleState")
+    if state in _LIVE_RUNTIME_STATES:
+        raise framework_error(FrameworkError.MODEL_IN_USE,
+                               detail=f"the model's serving runtime is {state}: retire the model or terminate its runtime first")
+
+
 @app.delete("/models/{model_id}", status_code=204)
 def deregister_model(request: Request, model_id: uuid.UUID, db: Session = Depends(get_session)):
-    """DeleteModel (mmes_apis.go). Only cleans up MLMR's own dependent
-    table (ModelArtifact) directly — before Wave 1's split, this route
-    also explicitly cleaned up TrainingJob/InferenceJob/
-    ModelChangeSubscription/MLMFSubscription/PerformanceReport, all of
-    which now live in AIMgF's own process and are no longer importable
-    here. Those rows are still cleaned up: `migrations/001_init.sql`'s
-    own `ON DELETE CASCADE` on every one of those FKs (added as
-    defense-in-depth alongside the original application-level cleanup,
-    per HISTORY.md §5) already does this at the database level,
-    which is authoritative here since every module shares one physical
-    Postgres instance in this build's topology. That cascade is real
-    against Postgres but NOT exercised by this module's own SQLite-backed
-    unit tests (SQLite doesn't enforce FK constraints by default, and this
-    module's own isolated test schema doesn't even declare AIMgF's tables)
-    — verified separately against a live Postgres instance instead,
-    the same honest carve-out this codebase already uses elsewhere for a
-    SQLite-only enforcement gap (e.g. the coordination group's own
-    `member_model_ids` array-length CHECK constraint). Idempotent:
-    deleting an unknown id is a silent no-op, matching this module's
-    other DELETE routes.
+    """DeleteModel (mmes_apis.go). Deletes the model with its artifacts and profiles.
+
+    Refused with 409 `MODEL_IN_USE` while AIMgF has the model's serving runtime deployed (call flow 26e): the NFO workload would keep
+    running, and AIMgF, which no longer finds the model, could not terminate it. Retire the model (which terminates the runtime) or
+    terminate the runtime first.
     """
-    # Deletes a model, its artifacts and its profiles. Idempotent: an unknown id is 204 too. The artifact and profile rows are
-    # removed here explicitly; rows other modules hold against the model (AIMgF jobs, subscriptions) go through the
-    # `ON DELETE CASCADE` foreign keys in the schema, which the SQLite unit tests do not enforce.
-    # SEC-15.3d: a caller with role `rapp` may delete only a model it owns (403 `MODEL_ACCESS_DENIED` for another rApp's model, nothing deleted); a model with no owner, the console,
-    # an SMO module and a call with no role are not refused. The unknown id stays a silent 204 for every caller (the route is idempotent, so a retried retire does not fail, and
-    # the answer tells an rApp nothing about other rApps' models).
+    # Route notes. Idempotent: an unknown id is 204 too, for every caller (a retried delete does not fail, and the answer tells an rApp nothing about other
+    # rApps' models). SEC-15.3d: a caller with role `rapp` may delete only a model it owns (403 `MODEL_ACCESS_DENIED` for another rApp's model, nothing
+    # deleted); a model with no owner, the console, an SMO module and a call with no role are not refused. Then AIMgF is asked for the model's lifecycle
+    # (`_check_no_live_runtime`): a runtime in a live state is 409 `MODEL_IN_USE`, no answer from AIMgF 503 `ENDPOINT_UNREACHABLE` (nothing deleted on a
+    # guess). The rows AIMgF holds against the model (its lifecycle, jobs, subscriptions) are AIMgF's and are not deleted: the cross-module foreign keys
+    # that cascaded them were dropped (revision 0022), so they stay as history.
     model = db.get(MLModel, model_id)
     if model is None:
         return
     mlr.refuse_unless_owner(request, model, "delete it")
+    _check_no_live_runtime(model_id)
     db.query(ModelArtifact).filter(ModelArtifact.model_id == model_id).delete()
     db.query(MLModelProfile).filter(MLModelProfile.model_id == model_id).delete()
     db.delete(model)

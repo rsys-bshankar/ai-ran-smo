@@ -2779,6 +2779,35 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.7 — call flow 26 rewritten from the code: decisions name who took them, model changes are published, a serving model is not deleted
+
+The seventh flow of the call-flow audit, decided with the product owner (the recommendations of the audit, all taken). A is a security fix.
+
+- **A. The console records who decided.** The console sent `decided_by=smo-gui` for every governance decision and the GUI backend passed it
+  through, so the governance history could not say which admin approved, certified or promoted a model. Every `POST
+  /aimgf/models/{id}/advance` rule of the backend's RBAC table now forces `decided_by` to `smo-gui:<username>` (`_decider`, a `query_overrides`
+  as for the alarm acknowledgement), whatever the browser sent; the generic advance rule was split from the inference-jobs one so the override
+  applies only to decisions. The SPA's permission fixture is regenerated.
+- **B. Not built: a second person for approve and promote.** It would stop a one-admin stack; recorded as `OPEN_ITEMS.md` AIML-GOV-2P.
+- **C. Model lifecycle changes are published.** `_fire_model_event` and `_fire_runtime_event` give the state machine the `ModelLifecycle` row, so
+  every transition is `org.oran.smo.model-lifecycle.state-changed` about the model (`docs/EVENTS.md`; `data.machine` names which machine) in the
+  transaction of the change. AIMgF's database role is given `smo_event` (`migrations/db_roles.json`); `tests_integration/test_db_roles.py` now
+  also finds a module that publishes through `fire(..., entity=)` without importing the bus, so a module like AIMgF cannot miss the grant again.
+  The console's feed follower recomputes on any event, so it needed no change.
+- **D. A model that still serves is not deleted.** Deleting a model in MLMR left AIMgF's lifecycle and the NFO workload running, and every
+  AIMgF route then answered 404 for the model, so the workload could not be terminated through the platform. `DELETE /mlmr/models/{id}` now
+  asks AIMgF for the model's lifecycle first (`_check_no_live_runtime`): a live runtime is 409 `MODEL_IN_USE` (new error code), no answer from
+  AIMgF 503 `ENDPOINT_UNREACHABLE`; a model AIMgF does not know, never deployed or terminated is deleted. MLMR's route description also stops
+  claiming that AIMgF's rows cascade: the cross-module foreign keys were dropped in revision 0022, and those rows stay as history.
+- **E. A retired model is no longer monitored.** A new MLMF subscription or report on a RETIRED model is 409 `LIFECYCLE_ILLEGAL_TRANSITION`
+  (`_refuse_if_retired`). Inference functions and loading policies keep the model in their lists, as history (a doc note).
+- **Corrected in the doc:** RETIRE's teardown deletes the descriptor too, and when NFO refuses it RETIRE answers 502 with the model still
+  DEPRECATED (DOC-CF-1.5 behaviour, not drawn before); a rollback moves the certification back, not the artifact (no model versions, AIML-VER).
+
+The document is five diagrams (submit to promote; reject, then retry or retire; roll back; deprecate; retire and deleting the model) in the
+flow 01 format, with PNG images and the table of what each state allows. Tests: `aimgf/tests/test_governance_end_of_life.py`, the MLMR delete
+tests, and the GUI backend's decider test.
+
 ### DOC-CF-1.6 — call flow 02 rewritten from the code: only the owner acts on a model's running jobs, and a group retrain is best effort
 
 The sixth flow of the call-flow audit, decided with the product owner (the recommendations of the audit, all taken). A and B are a security fix.
