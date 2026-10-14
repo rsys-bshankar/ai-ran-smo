@@ -4,6 +4,7 @@ secrets:
   existingSecret: smo-secrets            # keys db-password, enrollment-secret
 databaseRoles:
   existingSecret: smo-role-secrets       # keys db-password-<role>, one per role
+identityKeySecretRef: { name: smo-identity-key, key: identity-key }   # SEC-15.18: encrypts the module identities in the database; every module gets the same key
 gui:
   oidcClientSecretRef: { name: smo-gui-oidc, key: client-secret }   # only with gui.env GUI_OIDC_ENABLED=true
   totpKeySecretRef: { name: smo-gui-totp, key: totp-key }           # only to let local accounts enrol a one-time code

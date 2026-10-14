@@ -100,6 +100,14 @@ def test_the_gui_secret_references_name_a_secret_and_key_the_example_creates_and
         assert ref in CHART_VALUES["gui"]
 
 
+def test_the_identity_key_reference_names_a_secret_and_key_the_example_creates_and_the_chart_reads():
+    """SEC-15.18: `identityKeySecretRef` names the Secret and key the example creates, and the chart passes it as SMO_IDENTITY_KEY with the same default key."""
+    value = VALUES["identityKeySecretRef"]
+    assert value["key"] in _targets()[value["name"]]
+    assert "name: SMO_IDENTITY_KEY" in TEMPLATES["modules.yaml"] and 'default "identity-key"' in TEMPLATES["modules.yaml"]
+    assert "identityKeySecretRef" in CHART_VALUES
+
+
 def test_the_mtls_secret_is_named_and_keyed_as_the_chart_reads_it():
     """The per-module mTLS Secrets use the chart's suffix, belong to a chart module and carry exactly `tls.crt`, `tls.key` and `ca.crt`."""
     suffix = CHART_VALUES["mtls"]["secretSuffix"]
@@ -117,7 +125,7 @@ def test_every_secret_the_example_creates_is_read_by_the_chart_through_the_value
     uses.
     """
     referenced = {VALUES["secrets"]["existingSecret"], VALUES["databaseRoles"]["existingSecret"],
-                  VALUES["gui"]["oidcClientSecretRef"]["name"], VALUES["gui"]["totpKeySecretRef"]["name"]}
+                  VALUES["gui"]["oidcClientSecretRef"]["name"], VALUES["gui"]["totpKeySecretRef"]["name"], VALUES["identityKeySecretRef"]["name"]}
     suffix = CHART_VALUES["mtls"]["secretSuffix"]
     for name in _targets():
         assert name in referenced or name.endswith(suffix), f"{name} is created but nothing in the chart reads it"

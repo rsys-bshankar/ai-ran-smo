@@ -41,6 +41,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from .identity_secrets import check_configuration
 from .metrics import record_worker_task
 from .single_runner import run_once_per_interval
 
@@ -150,6 +151,7 @@ def main(tasks: list[Task] | None = None, *, module: str | None = None, stop: th
     from .logconfig import configure_logging
     module = module or os.environ.get("MODULE", "")
     configure_logging(f"{module}-worker")
+    check_configuration()                      # a wrongly set identity key stops the worker at start (SEC-15.18)
     tasks = load_tasks() if tasks is None else tasks
     # The shared tasks are added to every worker unless the module already declared a task of that name.
     for shared_task in (outbox_sweep_task(), event_purge_task()):

@@ -31,6 +31,8 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from .identity_secrets import check_configuration
+
 log = logging.getLogger(__name__)
 
 Check = Callable[[], None]
@@ -106,7 +108,9 @@ class ReadinessReport(BaseModel):
 
 
 def install_health(app: FastAPI, checks: Sequence[Check] = ()) -> None:
-    """Adds `/live`, `/ready`, `/version` and the `/health` alias to `app`."""
+    """Adds `/live`, `/ready`, `/version` and the `/health` alias to `app`. Raises IdentityKeyError, so the process does not start, when the identity key
+    variables are set wrongly (SEC-15.18: both `SMO_IDENTITY_KEY` and `_FILE`, an unreadable file, a key shorter than 32 characters)."""
+    check_configuration()
     checks = tuple(checks)
     default_module = app.title.lower().replace(" ", "-")
 

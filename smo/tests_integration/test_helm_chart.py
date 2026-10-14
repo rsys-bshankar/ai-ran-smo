@@ -496,6 +496,60 @@ def test_the_gui_key_secret_is_mounted_and_named_only_when_set():
     assert next(v for v in on["volumes"] if v["name"] == "gui-jwt")["secret"]["secretName"] == "gui-jwt-key"
 
 
+# ---------------------------------------------------------------- SEC-15.18: the key that encrypts the module identities
+
+def _secret_key_refs(pod: dict) -> dict:
+    return {e["name"]: e["valueFrom"]["secretKeyRef"] for e in pod["containers"][0].get("env") or [] if "valueFrom" in e}
+
+
+def test_the_identity_key_reference_is_off_by_default_and_documented():
+    """`identityKeySecretRef` is empty by default, the template turns it into SMO_IDENTITY_KEY, and the chart README documents it and the command."""
+    assert VALUES["identityKeySecretRef"] == {}
+    template = (CHART / "templates" / "modules.yaml").read_text()
+    assert "name: SMO_IDENTITY_KEY" in template and 'default "identity-key"' in template and "SMO_IDENTITY_PREVIOUS_KEY" in template
+    readme = (CHART / "README.md").read_text()
+    assert "identityKeySecretRef" in readme and "encrypt-existing" in readme
+
+
+@helm
+def test_no_pod_gets_an_identity_key_unless_a_secret_is_named():
+    """A default render has no SMO_IDENTITY_KEY variable anywhere."""
+    for deployment in (d for d in _render() if d["kind"] == "Deployment"):
+        env = deployment["spec"]["template"]["spec"]["containers"][0].get("env") or []
+        assert not [e for e in env if e["name"] in ("SMO_IDENTITY_KEY", "SMO_IDENTITY_PREVIOUS_KEY")], deployment["metadata"]["name"]
+
+
+@helm
+def test_a_named_secret_gives_every_module_with_a_database_the_same_key_reference():
+    """With a Secret named, every module that has a database reads SMO_IDENTITY_KEY from that Secret's key (default `identity-key`), as a Secret
+    reference and never as a literal value; a module without a database (it never reads the table) does not get it. The previous key only when named."""
+    docs = _render("--set", "identityKeySecretRef.name=smo-identity-key")
+    for deployment in (d for d in docs if d["kind"] == "Deployment"):
+        name, pod = deployment["metadata"]["name"], deployment["spec"]["template"]["spec"]
+        refs = _secret_key_refs(pod)
+        if _modules()[name]["database"]:
+            assert refs["SMO_IDENTITY_KEY"] == {"name": "smo-identity-key", "key": "identity-key"}, name
+            assert "SMO_IDENTITY_PREVIOUS_KEY" not in refs, name
+        else:
+            assert "SMO_IDENTITY_KEY" not in refs, name
+    rotating = _render("--set", "identityKeySecretRef.name=smo-identity-key", "--set", "identityKeySecretRef.key=new", "--set", "identityKeySecretRef.previousKey=old")
+    refs = _secret_key_refs(_deployment(rotating, "rapp-mgmt")["spec"]["template"]["spec"])
+    assert refs["SMO_IDENTITY_KEY"]["key"] == "new" and refs["SMO_IDENTITY_PREVIOUS_KEY"] == {"name": "smo-identity-key", "key": "old"}
+
+
+def test_compose_passes_the_identity_key_to_every_database_service_and_nothing_else():
+    """docker-compose.yml gives every service that takes the shared database settings the key and previous key as operator settings (empty by default), through
+    the one anchor, so no service is missed."""
+    with_key = set()
+    for name, service in COMPOSE["services"].items():
+        env = service.get("environment") or {}
+        if "SMO_IDENTITY_KEY" in env:
+            with_key.add(name)
+            assert env["SMO_IDENTITY_KEY"] == "${SMO_IDENTITY_KEY:-}" and env["SMO_IDENTITY_PREVIOUS_KEY"] == "${SMO_IDENTITY_PREVIOUS_KEY:-}", name
+    wants = {n for n, svc in COMPOSE["services"].items() if "MODULE" in ((svc.get("build") or {}).get("args") or {}) and "SMO_DATABASE_URL" in (svc.get("environment") or {}) and n != "migrate"}
+    assert with_key == wants and "rapp-mgmt" in with_key
+
+
 # ---------------------------------------------------------------- SB-7.8: the VES listener's password from a Secret
 
 def test_the_chart_has_a_ves_password_secret_reference_off_by_default_and_documents_it():
