@@ -280,6 +280,29 @@ services:
       R1_GATEWAY_URL: http://r1-termination:8000
       SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
+  # SEC-15.19: the same image, run as a worker. It rotates the secret of running rApp instances that are older than RAPP_MGMT_SECRET_ROTATION_DAYS (rapp-mgmt/app/tasks.py).
+  # With the default 0 it rotates nothing. Run as many as you like: the task runs once per interval across all of them.
+  rapp-mgmt-worker:
+    build: { context: ., args: { <<: *build_info, MODULE: rapp-mgmt, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    command: ["python", "-m", "smo_shared.worker"]
+    stop_grace_period: 30s
+    secrets: [db_password_rapp-mgmt, enrollment_secret]
+    <<: *hardening
+    healthcheck: *worker_probe
+    depends_on: *wait_for_schema
+    environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}
+      SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # the worker is the same SMO module as rapp-mgmt (one identity, ST-4)
+      <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_rapp_mgmt@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_rapp-mgmt
+      R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}
+      RAPP_MGMT_SECRET_ROTATION_DAYS: ${RAPP_MGMT_SECRET_ROTATION_DAYS:-0}                     # 0: no automatic rotation
+      RAPP_MGMT_SECRET_ROTATION_MAX_PER_RUN: ${RAPP_MGMT_SECRET_ROTATION_MAX_PER_RUN:-10}
+      RAPP_MGMT_SECRET_ROTATION_SWEEP_SECONDS: ${RAPP_MGMT_SECRET_ROTATION_SWEEP_SECONDS:-900}
+
   ran-nf-oam:
     build: { context: ., args: { <<: *build_info, MODULE: ran-nf-oam, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s

@@ -5,6 +5,7 @@ SMO Design v1.3 section 3.5, extended by Onboarding/rApp Mgmt LLD sections
 and UpgradeInstance's auto-rollback made precise (upgrade.py).
 """
 
+import datetime
 import logging
 import uuid
 from contextlib import suppress
@@ -38,7 +39,7 @@ from smo_shared.timeutil import as_utc
 
 from .models import RAppFaultReport, RAppInstance, RAppPerformanceReport
 from .provisioning import (DEPLOYABLE_PACKAGE_STATES, apply_approval_policy, apply_rapp_limits, onboarding_status, provision_instance, register_instance_invoker, register_sme_declarations,  # noqa: F401
-                           release_instance_resources, deliver_credentials, push_credentials)
+                           release_instance_resources, deliver_credentials, issue_secret, push_credentials)
 from .statemachine import RAPP_INSTANCE_FSM, InstanceEvent, InstanceState
 from .upgrade import (current_instance_id, expire_overdue_upgrade, resolve_upgrade, rollback_target, start_rollback,
                       start_upgrade, version_history)
@@ -253,16 +254,14 @@ def renew_instance_credentials(instance_id: uuid.UUID, response: Response, db: S
         raise illegal_transition_error(IllegalTransition(InstanceState(inst.state), InstanceEvent.BOOTSTRAP_OK),
                                        f"RAppInstance {instance_id}: a terminated instance has no credentials to renew")
     with on_own_account():
-        try:
-            resp = R1Client().post(f"/sme/invoker-registrations/{inst.oauth_client_id}/secret")
-        except httpx.HTTPError:
-            resp = None
-        if resp is None or resp.status_code != 200:
+        secret = issue_secret(inst)
+        if secret is None:
             raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail="SME did not issue a new secret for the instance's identity")
-        secret = resp.json()["onboardingSecret"]
         pushed = push_credentials(inst, secret)
     if inst.operator_api_base and not pushed:
         raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail="the rApp serving the instance did not take its new credentials; retry")
+    inst.credentials_issued_at = datetime.datetime.now(datetime.UTC)      # SEC-15.19: a renewal by hand restarts the age the automatic rotation counts
+    db.commit()
     response.headers["Cache-Control"] = "no-store"
     body = {"instanceId": str(inst.instance_id), "oauthClientId": inst.oauth_client_id, "credentialsDelivered": pushed}
     return body if pushed else {**body, "oauthClientSecret": secret}
@@ -866,6 +865,7 @@ def get_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
         "smeServiceIds": inst.sme_service_ids,
         "autonomyMode": inst.autonomy_mode, "regionScope": inst.region_scope, "approvalPolicy": inst.approval_policy,
         "authzScope": inst.authz_scope, "lastTeardown": inst.last_teardown, "operatorApiBase": inst.operator_api_base,
+        "credentialsIssuedAt": as_utc(inst.credentials_issued_at).isoformat() if inst.credentials_issued_at else None,    # SEC-15.19: when the current secret was issued
         "workload": _workload_view(inst),
     }
 

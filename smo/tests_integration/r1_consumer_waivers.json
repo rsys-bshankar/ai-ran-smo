@@ -1,3 +1,4 @@
 {
-  "rapp-mgmt/app/provisioning.py POST /rapps/{}/operator/instances/{}/credentials": "call flow 01c: the gateway's dynamic prefix /rapps/{instanceId}/operator/<route> (GUI-8.3, resolved per instance, not in ROUTES); the route is the rApp's own credentials route from smo_sdk.instances, which has no producer spec"
+  "rapp-mgmt/app/provisioning.py POST /rapps/{}/operator/instances/{}/credentials": "call flow 01c: the gateway's dynamic prefix /rapps/{instanceId}/operator/<route> (GUI-8.3, resolved per instance, not in ROUTES); the route is the rApp's own credentials route from smo_sdk.instances, which has no producer spec",
+  "rapp-mgmt/app/rotation.py GET /rapps/{}/operator/instances/{}/credentials": "SEC-15.19: the reachability probe of the automatic rotation, a GET of the same dynamic gateway prefix /rapps/{instanceId}/operator/<route> as the push above (not in ROUTES); the route is POST-only at the rApp, so any answer of the rApp (405) shows it is up, and the gateway's 502, 503, 504 or OPERATOR_API_NOT_REGISTERED show it is not"
 }

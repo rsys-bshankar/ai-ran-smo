@@ -388,6 +388,19 @@ def test_credential_delivery_gives_only_rapp_mgmt_a_token_and_a_role_that_cannot
     assert verbs == {"create", "update", "delete"} and role["rules"][0]["resources"] == ["secrets"]
 
 
+@helm
+def test_the_rotation_worker_is_off_by_default_and_only_learns_of_kubernetes_delivery():
+    """SEC-15.19: `rapp-mgmt-worker` is rendered with the rotation at 0 days (it rotates nothing). With Kubernetes credential delivery it is told so (it then rotates
+    nothing either), but it gets no service account and no token, only the service does. Needs helm."""
+    default = _env_of(_deployment(_render(), "rapp-mgmt-worker"))
+    assert default["RAPP_MGMT_SECRET_ROTATION_DAYS"] == "0" and "RAPP_CREDENTIAL_DELIVERY" not in default
+    docs = _render("--set", "rappCredentials.delivery=kubernetes")
+    worker = _deployment(docs, "rapp-mgmt-worker")
+    env = _env_of(worker)
+    assert env["RAPP_CREDENTIAL_DELIVERY"] == "kubernetes" and "RAPP_K8S_TOKEN_FILE" not in env
+    assert "serviceAccountName" not in worker["spec"]["template"]["spec"]
+
+
 def _env_of(doc: dict) -> dict:
     return {e["name"]: e.get("value") for e in doc["spec"]["template"]["spec"]["containers"][0].get("env") or []}
 

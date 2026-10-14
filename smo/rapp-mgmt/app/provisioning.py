@@ -259,8 +259,21 @@ def register_instance_invoker(inst: RAppInstance) -> str:
             R1Client().delete(f"/sme/invoker-registrations/{body['apiInvokerId']}")
         raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail="SME did not record the scope claim of the rApp instance; no identity was kept")
     inst.oauth_client_id = body["apiInvokerId"]
+    inst.credentials_issued_at = datetime.datetime.now(datetime.UTC)      # SEC-15.19: the age of the secret the automatic rotation counts from
     inst.invoker_registered = True        # kept on the object, not stored: a create that fails later takes this identity away again (provision_instance)
     return body["onboardingSecret"]
+
+
+def issue_secret(inst: RAppInstance) -> str | None:
+    """A new secret for the instance's existing identity (call flow 01e: `POST /sme/invoker-registrations/{id}/secret`), or None when SME did not issue one.
+    SME stores only its hash and, from that moment, accepts the new secret only: the old one stops working and the identity's tokens are revoked. The caller must
+    hand the new secret to the workload (`push_credentials`) or give it to an operator; this function stores and logs nothing. Used by the renewal by hand and
+    by the automatic rotation (`rotation.py`)."""
+    try:
+        resp = R1Client().post(f"/sme/invoker-registrations/{inst.oauth_client_id}/secret")
+    except httpx.HTTPError:
+        return None
+    return resp.json()["onboardingSecret"] if resp.status_code == 200 else None
 
 
 def deliver_credentials(inst: RAppInstance, secret: str) -> dict | None:
