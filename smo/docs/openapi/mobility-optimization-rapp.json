@@ -541,9 +541,48 @@
         "summary": "Demo Prepare"
       }
     },
+    "/instances/{instance_id}/dmro": {
+      "post": {
+        "description": "Call flow 23e, \"Apply DMRO bounds\": writes the bounds again and records the outcome, or, while an earlier write waits for a person, follows that\napproval instead of asking again. 409 MODEL_NOT_DEPLOYED before deploy, 409 EVALUATION_IN_PROGRESS while a pass or reconcile runs.",
+        "operationId": "apply_dmro_instances__instance_id__dmro_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Dmro"
+      }
+    },
     "/instances/{instance_id}/evaluate": {
       "post": {
-        "description": "One pass of the closed loop over the instance's relations. Its\nX-Correlation-ID is the execution id in the audit trail.",
+        "description": "One pass of the closed loop over the instance's relations (\"Evaluate now\"). Its\nX-Correlation-ID is the execution id in the audit trail. 409 EVALUATION_IN_PROGRESS while another pass or reconcile of the instance runs.",
         "operationId": "evaluate_instances__instance_id__evaluate_post",
         "parameters": [
           {

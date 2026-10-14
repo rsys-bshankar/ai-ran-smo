@@ -8,8 +8,9 @@ fixtures and render helpers come from `test_helm_chart.py`. Run with: PYTHONPATH
 
 from test_helm_chart import CHART, COMPOSE, SMO_ROOT, VALUES, _deployment, _env_of, _modules, _pod_templates, _render, helm
 
-# The chart's rApp modules: the four reference rApps and the workers that run their scheduled passes (call flow 22e), which are the same rApp identity.
-RAPPS = {"energy-saving-rapp", "mobility-optimization-rapp", "coverage-optimization-rapp", "traffic-steering-rapp", "energy-saving-rapp-worker"}
+# The chart's rApp modules: the four reference rApps and the workers that run their scheduled passes (call flows 22e, 23f), which are the same rApp identity.
+RAPPS = {"energy-saving-rapp", "mobility-optimization-rapp", "coverage-optimization-rapp", "traffic-steering-rapp", "energy-saving-rapp-worker",
+         "mobility-optimization-rapp-worker"}
 
 
 def test_signing_and_the_egress_policy_are_off_by_default_in_the_chart_and_in_compose():

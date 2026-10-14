@@ -428,6 +428,27 @@ services:
       R1_GATEWAY_URL: http://r1-termination:8000
       SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
+  # Call flow 23f: the same image, run as a worker. Every 15 s it runs a pass of each instance whose `evaluateEverySeconds` has passed
+  # (samples/mobility-optimization-rapp/app/tasks.py), so a CIO change is confirmed or reverted an hour later without anyone pressing "Evaluate now".
+  mobility-optimization-rapp-worker:
+    build: { context: ., args: { <<: *build_info, MODULE: samples/mobility-optimization-rapp, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    command: ["python", "-m", "smo_shared.worker"]
+    stop_grace_period: 30s
+    secrets: [db_password_mobility-optimization-rapp]
+    <<: *hardening
+    healthcheck: *worker_probe
+    depends_on: *wait_for_schema
+    environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}
+      SMO_IDENTITY_KIND: rapp        # the same rApp as mobility-optimization-rapp: each pass acts as its instance
+      <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_mobility_optimization_rapp@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_mobility-optimization-rapp
+      R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}
+      MOBILITY_SCHEDULE_TICK_SECONDS: ${MOBILITY_SCHEDULE_TICK_SECONDS:-15}
+
   # Wave 10.3: the Coverage Optimization reference rApp
   # (samples/coverage-optimization-rapp) — R1-only, like energy-saving-rapp.
   coverage-optimization-rapp:

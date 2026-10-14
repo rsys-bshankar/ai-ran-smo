@@ -65,6 +65,7 @@ services:
   energy-saving-rapp: *pgtls_client
   energy-saving-rapp-worker: *pgtls_client
   mobility-optimization-rapp: *pgtls_client
+  mobility-optimization-rapp-worker: *pgtls_client
   coverage-optimization-rapp: *pgtls_client
   traffic-steering-rapp: *pgtls_client
   nfo: *pgtls_client

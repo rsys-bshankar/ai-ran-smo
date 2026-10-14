@@ -60,7 +60,10 @@
  "samples/mobility-optimization-rapp": {
   "schema": "mobility_optimization_rapp",
   "shared": [
-   "module_identity"
+   "module_identity",
+   "notification_outbox",
+   "periodic_run",
+   "smo_event"
   ]
  },
  "samples/coverage-optimization-rapp": {

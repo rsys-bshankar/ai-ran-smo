@@ -38,6 +38,13 @@ class MobilityInstance(Base):
     artifact_version: Mapped[int | None] = mapped_column(Integer)
     model_params: Mapped[dict | None] = mapped_column(JSON)
     lifecycle_jobs: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    # call flow 23e: how the DMRO bounds went at deploy or on "Apply DMRO bounds" ({status VERIFIED | VERIFY_FAILED | AWAITING_APPROVAL | REJECTED |
+    # APPROVAL_<status>, at, actionId?, approvalId?, observed?, error?}); a CIO change is held until it is VERIFIED
+    dmro_status: Mapped[dict | None] = mapped_column(JSON)
+    # call flow 23f: how often the worker runs a pass (`evaluateEverySeconds`; null: only "Evaluate now"), when the last one began, and how it went
+    evaluate_every_seconds: Mapped[int | None] = mapped_column(Integer)
+    last_evaluated_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    last_evaluation: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
@@ -54,6 +61,7 @@ class MobilityRelation(Base):
     last_changed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     pending_dispatch_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     pending_decision_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    pending_approval_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # call flow 23d: a revert or rollback RAN NF OAM holds for a person (PR-AI-11)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

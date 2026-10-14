@@ -2780,6 +2780,31 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.8 flow 23 — the Mobility Optimization closed loop rewritten from the code: on a schedule, one pass at a time, held writes, DMRO bounds first
+
+The fifth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken):
+
+- **A-C. As flow 22, for this rApp.** A pass ran only on "Evaluate now", so the KPI check that confirms or reverts a CIO change an hour later waited for
+  someone to look: a change that made handovers worse stayed. `evaluateEverySeconds` (60 to 86400) and the worker `mobility-optimization-rapp-worker`
+  (`app/tasks.py`, task `evaluate-due`, `MOBILITY_SCHEDULE_TICK_SECONDS`, default 15; `run_due_passes`, each pass as its instance under its own execution
+  id, a failure recorded on the instance) close the loop; wired like `energy-saving-rapp-worker`, and the rApp's role gains `notification_outbox`,
+  `periodic_run` and `smo_event`. A pass, a reconcile and "Apply DMRO bounds" lock the instance (`_lock_instance`, NOWAIT, 409 `EVALUATION_IN_PROGRESS`).
+  A revert or rollback RAN NF OAM holds for a person (`PR-AI-11`) is no longer sent twice and reported failed: `REVERT_AWAITING_APPROVAL` /
+  `<trigger>_ROLLBACK_AWAITING_APPROVAL`, `pending_approval_id` on the relation, settled by reconcile from the approval and a read-back
+  (`_settle_approvals`).
+- **D. The DMRO bounds come first.** Deploy wrote `DMROFunction` after activating the runtime with nothing committed: a refused write lost the deployed
+  model (every later pass MODEL_NOT_DEPLOYED, the runtime up), and a held or unverified one let the loop run without the bounds that keep the gNB's own MRO in
+  the same envelope (D10.2-1). Deploy now saves the model first, then records the outcome as `dmro_status` (`_apply_dmro`: VERIFIED, VERIFY_FAILED,
+  AWAITING_APPROVAL, REJECTED with the error; `_settle_dmro` adds `APPROVAL_<status>`). Until it is VERIFIED a RAISE or LOWER is held (`DMRO_NOT_APPLIED`); a
+  KPI revert still runs. `POST /instances/{id}/dmro` ("Apply DMRO bounds", a new button) writes them again, or follows a held write's approval instead of
+  asking twice; reconcile settles a held one. An instance deployed before revision 0051 has no status and holds its changes until the bounds are applied
+  again. The deploy answer keeps `dmro.verification`.
+- **E. A peer that does not answer** publishes nothing, as before; the O1 read of the target cell still guards (a Phase 1 note).
+- **Corrected in the doc:** the rApp's own model computes the prediction; AIMgF records the inference job and report.
+
+Revision 0051 adds five nullable columns (expand only). The document is six diagrams (one pass; a CIO step through the autonomy dispatch; the KPI check;
+ASSIST and held writes; the DMRO bounds; the scheduled pass) with PNG images. Tests: `samples/mobility-optimization-rapp/tests/test_schedule_dmro_and_approvals.py`.
+
 ### DOC-CF-1.8 flow 22 — the EnergySaving closed loop rewritten from the code: it runs on a schedule, one pass at a time, and waits for a held write
 
 The fourth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken):
