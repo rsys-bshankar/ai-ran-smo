@@ -51,6 +51,8 @@ export const INFERENCE_STATUSES = ["RUNNING", "COMPLETED", "FAILED"] as const;
 export const aimgfModel = (id: string) => `/aimgf/models/${id}`;
 /** MLMR path of one model. */
 export const mlmrModel = (id: string) => `${MODELS}/${id}`;
+/** MLMR `PUT /models/{id}/owner` (SEC-15.3c): gives a model an owner, or another; an admin's call. */
+export const mlmrModelOwner = (id: string) => `${mlmrModel(id)}/owner`;
 /** MLLF path of one model. */
 export const mllfModel = (id: string) => `/mllf/models/${id}`;
 /** Where the browser downloads one artifact version of a model (the BFF proxies `/api/smo/<module>/...`). */

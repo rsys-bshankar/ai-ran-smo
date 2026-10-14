@@ -139,6 +139,7 @@ RULES: list[Rule] = [
     _rule("POST", "/mlmr/models", O),
     _rule("PUT", "/mlmr/models/{id}", O),
     _rule("DELETE", "/mlmr/models/{id}", A),
+    _rule("PUT", "/mlmr/models/{id}/owner", A),   # SEC-15.3c: giving a model an owner (or another) decides which rApp may act on it, so it is an admin's, like deleting it
     _rule("POST", "/mlmr/models/{id}/artifact", O),
     _rule("POST", "/mlmr/coordination-groups", O),
     # Wave 2: the six governance decisions (Approval/Certification/

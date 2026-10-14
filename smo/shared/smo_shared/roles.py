@@ -66,6 +66,8 @@ INTERNAL_ONLY: tuple[tuple[str, frozenset[str], re.Pattern], ...] = tuple(
         # call flow 01d: a new secret for an existing invoker is rApp Management's act for a RUNNING instance, never an rApp's (it would take the identity over)
         ("/sme", ("POST",), r"^/invoker-registrations/[^/]+/secret$"),
         ("/ran-nf-oam", ("PUT",), r"^/managed-entities/[^/]+/scope$"),
+        # SEC-15.3c part 3: who owns a model is set by the operator or an SMO module, never by an rApp (`PUT /models/{id}` is on the allow-list and does not match this path)
+        ("/mlmr", ("PUT",), r"^/models/[^/]+/owner$"),
         # MSG-3.2: the SMO's event feed names every module's entities; the platform and its console follow it, an rApp subscribes through DME's data jobs
         ("/dme", ("GET",), r"^/smo-events$"),
     ))
