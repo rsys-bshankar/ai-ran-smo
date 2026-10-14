@@ -60,7 +60,7 @@ that realises a standard and adds its own behaviour on top says so.
 
 **Workers.** A module's periodic work runs in its own process of the same image, never inside a request process: `ran-nf-oam-worker`
 (`python -m smo_shared.worker`, tasks in `ran-nf-oam/app/tasks.py`) advances staged CM jobs and software campaigns, publishes scheduled KPIs, checks (and, if asked, reverts) KPI guards and purges old refusal
-records. It has no port; run more than one if you like, a task still runs once per interval (`smo_shared/worker.py`).
+records. It has no port; run more than one if you like, a task still runs once per interval (`smo_shared/worker.py`). `rapp-mgmt-worker` (`rapp-mgmt/app/tasks.py`) rotates the secret of running rApp instances on a schedule, when `RAPP_MGMT_SECRET_ROTATION_DAYS` is set (default `0`: it does nothing; `SEC-15.19`).
 
 ### Test doubles, SDK, GUI
 

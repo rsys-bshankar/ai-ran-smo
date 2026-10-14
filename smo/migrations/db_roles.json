@@ -100,7 +100,11 @@
   "schema": "rapp_mgmt",
   "shared": [
    "module_identity",
+   "notification_outbox",
    "idempotency_key",
+   "periodic_run",
+   "audit_log",
+   "audit_head",
    "smo_event"
   ]
  },

@@ -16,6 +16,8 @@ services:
     deploy: { replicas: 2 }
   rapp-mgmt:
     deploy: { replicas: 2 }
+  rapp-mgmt-worker:
+    deploy: { replicas: 2 }
   ran-nf-oam:
     deploy: { replicas: 2 }
   ran-nf-oam-worker:

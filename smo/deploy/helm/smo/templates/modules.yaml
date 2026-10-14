@@ -149,6 +149,9 @@ spec:
             - { name: R1_PUBLIC_BASE_URL, value: {{ . | quote }} }
             {{- end }}
             {{- end }}
+            {{- if and (eq $name "rapp-mgmt-worker") (eq $.Values.rappCredentials.delivery "kubernetes") }}
+            - { name: RAPP_CREDENTIAL_DELIVERY, value: kubernetes }       # only so the worker knows the credentials travel in a Secret, and leaves the rotation to a person (SEC-15.19); it has no Kubernetes access
+            {{- end }}
             {{- if and (eq $name "rapp-mgmt") (eq $.Values.rappCredentials.delivery "kubernetes") }}
             - { name: RAPP_CREDENTIAL_DELIVERY, value: kubernetes }
             - { name: RAPP_K8S_TOKEN_FILE, value: /var/run/smo-k8s/token }
