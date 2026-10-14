@@ -956,16 +956,39 @@
     },
     "/data-jobs": {
       "delete": {
-        "description": "HISTORY.md \u00a77's DME vs. real ICS finding: the real\n`DELETE /data-consumer/v1/info-jobs?owner=X` (ics-api.yaml's own\n`deleteJobsForOwner`) \u2014 every job one consumer owns, torn down in\none call, not one `terminate_data_job` at a time. Same per-job\nteardown as that route (producer notification included), just\nfanned out across every matching job.",
+        "description": "HISTORY.md \u00a77's DME vs. real ICS finding: the real\n`DELETE /data-consumer/v1/info-jobs?owner=X` (ics-api.yaml's own\n`deleteJobsForOwner`) \u2014 every job one consumer owns, torn down in\none call, not one `terminate_data_job` at a time. Same per-job\nteardown as that route (producer notification included), just\nfanned out across every matching job.\n\nExactly one of `consumer_id` (the consumer the job names) and `created_by` (the invoker that created it, OI-7-rapp-data-jobs-teardown: what rApp\nManagement closes an instance's jobs by) is given, else 422. A caller with the rApp role may name only its own invoker id in `created_by` (403\nDATA_JOBS_NOT_OWNER).",
         "operationId": "terminate_data_jobs_for_consumer_data_jobs_delete",
         "parameters": [
           {
             "in": "query",
             "name": "consumer_id",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Consumer Id",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Consumer Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created By"
             }
           }
         ],

@@ -23,7 +23,7 @@ rApp Management owns the life of an rApp instance after its package has been onb
 1. **Create.** Check the package is deployable, mint the instance's identity, ask NFO to place the workload, open a package usage registration.
 2. **Run.** Track `DEPLOYING → RUNNING` when the container reports `bootstrap-complete`; accept configuration, performance and fault reports; register the package's declared SME providers and services for the instance.
 3. **Upgrade and roll back.** Replace an instance with one from another package, with automatic rollback on failure or timeout; keep a version history so a rollback can return to any earlier version.
-4. **Retire.** Terminate (deregister from DME and SME, revoke the credential, release the workload and the usage registration), then delete the row as a separate step.
+4. **Retire.** Terminate (deregister from DME and SME, close the DME data jobs the instance opened, revoke the credential, release the workload and the usage registration), then delete the row as a separate step.
 5. **Autonomy.** Hold the instance's `autonomyMode` and `regionScope`, which decide how its inference outcomes are enforced (see 1.5).
 
 It does not validate packages (Onboarding), place or run workloads (NFO), decide what an rApp does, or enforce autonomy (Intent Service).
@@ -70,6 +70,7 @@ Cross-module references (`package_id`, `package_usage_registration_id`, `workloa
 | Identity: the DME producer id and SME `apfId` are the instance's `oauth_client_id`, not its `instance_id`; the usage registration's consumer is the `instance_id`. The credential is cleared (`null`) at terminate. | Two instances of one package, and an old and a new instance during an upgrade, must never collide on one identity. |
 | Terminate order: DME and SME deregistration first (they read `oauth_client_id`), then credential revocation, then NFO terminate and usage stop. | Revocation clears the identity the deregistrations need. |
 | Deregistration, NFO terminate and usage stop are best effort; outcomes recorded in `lastTeardown` (`DONE`, `SKIPPED`, `FAILED: ...`; a 404 counts as done). | An unreachable NFO, DME, SME or Onboarding must never block retiring an instance. |
+| `TERMINATE` and `UPGRADE_COMMIT` close the DME data jobs the instance created (`DELETE /dme/data-jobs?created_by=<oauthClientId>`, before the credential is revoked); `CRASH` does not. | The rApp acts as the instance, so DME knows the instance's jobs by its invoker id; left open they kept receiving every record and slowed every PM fan-out (OI-7-rapp-data-jobs-teardown). A crashed instance keeps its identity for a recover, and its jobs with it. |
 | CreateInstance requires the package to be `AVAILABLE` or `PRIMED`. | An unvalidated or deprecated package must not run. |
 | An upgrade is two rows (old kept `UPGRADING`, replacement `DEPLOYING`), not an in-place state. The replacement is a complete instance (own identity, NFO deployment, usage registration) and inherits configuration, autonomy mode and region scope. | A failed upgrade leaves the old instance untouched. |
 | `upgradeTimeoutSeconds` is enforced lazily: when either row is read, listed, or an `upgrade/resolve` arrives, an overdue upgrade is rolled back first. | No scheduler exists in this build. |
@@ -152,7 +153,7 @@ Every mode notifies the operator, best effort.
 | `DEPLOYING` | `BOOTSTRAP_OK` | `RUNNING` | route first registers SME declarations |
 | `DEPLOYING` | `BOOTSTRAP_FAILED` | `FAULTED` | defined, but no route fires it |
 | `RUNNING` | `START_UPGRADE` | `UPGRADING` | |
-| `UPGRADING` | `UPGRADE_COMMIT` | `UNDEPLOYED` | terminate side effects (deregister, revoke); the row is then deleted by the upgrade code |
+| `UPGRADING` | `UPGRADE_COMMIT` | `UNDEPLOYED` | terminate side effects (deregister, close the DME data jobs, revoke); the row is then deleted by the upgrade code |
 | `UPGRADING` | `UPGRADE_ROLLBACK` | `RUNNING` | |
 | `RUNNING`, `FAULTED`, `DEPLOYING` | `TERMINATE` | `UNDEPLOYED` | terminate side effects; the route then releases NFO and usage |
 | `RUNNING` | `CRASH` | `FAULTED` | DME and SME deregistration |
