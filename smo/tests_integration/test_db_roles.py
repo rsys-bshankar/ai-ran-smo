@@ -60,7 +60,8 @@ def test_the_role_of_every_module_that_runs_a_worker_may_use_what_every_worker_u
     modules = {name.removesuffix("-worker") for name, svc in services.items() if "smo_shared.worker" in " ".join(svc.get("command", []))}
     assert {"mdaf", "ran-nf-oam"} <= modules
     for module in modules:
-        assert {"periodic_run", "notification_outbox", "smo_event"} <= set(ROLES[module]["shared"]), module
+        role = ROLES.get(module) or ROLES[f"samples/{module}"]          # a sample rApp's role is keyed by its directory
+        assert {"periodic_run", "notification_outbox", "smo_event"} <= set(role["shared"]), module
 
 
 def test_the_role_of_every_module_that_publishes_events_may_write_the_event_table():

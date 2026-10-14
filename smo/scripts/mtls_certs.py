@@ -53,7 +53,7 @@ DEFAULT_DIR = SMO_ROOT / "certs" / "mtls"
 # outside the SMO, plain HTTP), gui-bff and gui (the browser's side; the BFF is a client only, and has a certificate), the databases, the edge.
 SERVERS = ("r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam", "nfo", "focom", "mlmr", "aimgf", "mllf", "ran-analytics", "mdaf",
            "intent-service", "so-smos", "sa-smos", "energy-saving-rapp", "mobility-optimization-rapp", "coverage-optimization-rapp", "traffic-steering-rapp")
-CLIENT_ONLY = ("ran-nf-oam-worker", "mdaf-worker", "rapp-mgmt-worker", "aimgf-worker", "gui-bff", "runbook")   # no server port (a worker), a plain server (the BFF), or a test driver
+CLIENT_ONLY = ("ran-nf-oam-worker", "mdaf-worker", "rapp-mgmt-worker", "aimgf-worker", "energy-saving-rapp-worker", "gui-bff", "runbook")   # no server port (a worker), a plain server (the BFF), or a test driver
 SERVICES = SERVERS + CLIENT_ONLY
 # A server certificate for the database (PR-SEC-2.4): docker-compose.pgtls.yml mounts DIR/postgres. It is not a service of the mTLS overlay (it is not in SERVERS or
 # SERVICES, which the overlay and its tests enumerate): Postgres is verified by the clients (sslmode=verify-full against ca.crt), it does not ask them for a certificate.

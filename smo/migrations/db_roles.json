@@ -51,7 +51,10 @@
   "schema": "energy_saving_rapp",
   "shared": [
    "module_identity",
-   "idempotency_key"
+   "idempotency_key",
+   "notification_outbox",
+   "periodic_run",
+   "smo_event"
   ]
  },
  "samples/mobility-optimization-rapp": {

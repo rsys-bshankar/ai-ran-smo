@@ -150,6 +150,12 @@ compose and the chart use the file form (`docs/SECRETS.md` lists each secret, it
 | `AIMGF_TIMEOUT_TRAINING_SECONDS` | `1800` |  | `aimgf/app/main.py` | Seconds a training run may take before AIMgF fails it as `TIMEOUT` and notifies the caller (default 30 minutes). A request's own `timeoutSeconds` wins. |
 | `AIMGF_TIMEOUT_VALIDATION_SECONDS` | `900` |  | `aimgf/app/main.py` | Seconds a validation run may take before AIMgF fails it as `TIMEOUT` (default 15 minutes). A request's own `timeoutSeconds` wins. |
 
+### `energy-saving-rapp`
+
+| Variable | Default | Secret | Read in | What it does |
+|---|---|---|---|---|
+| `ENERGY_SAVING_SCHEDULE_TICK_SECONDS` | `15` |  | `docker-compose.yml`, `samples/energy-saving-rapp/app/tasks.py` | How often the EnergySaving rApp's worker (`energy-saving-rapp-worker`) looks for instances due a scheduled pass (default 15, at least 1), across all worker replicas (call flow 22e). An instance is due when its `evaluateEverySeconds` (instance configuration, 60 to 86400; absent: manual only) has passed since its last pass. Read once at the worker's start. Seconds, not a secret. |
+
 ### `focom`
 
 | Variable | Default | Secret | Read in | What it does |

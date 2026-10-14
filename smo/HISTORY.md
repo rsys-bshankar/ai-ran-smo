@@ -2780,6 +2780,36 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.8 flow 22 — the EnergySaving closed loop rewritten from the code: it runs on a schedule, one pass at a time, and waits for a held write
+
+The fourth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken):
+
+- **A. The loop closes by itself.** Nothing ran `POST /instances/{id}/evaluate` but a person pressing "Evaluate now" (or `demo.py`), so a cell slept or
+  woke only when someone looked. An instance's configuration may now carry `evaluateEverySeconds` (60 to 86400; 422 `INSTANCE_CONFIG_INVALID` otherwise;
+  absent keeps it manual), and the rApp's worker `energy-saving-rapp-worker` (the rApp's image, `python -m smo_shared.worker`, task `evaluate-due` in
+  `app/tasks.py`, every `ENERGY_SAVING_SCHEDULE_TICK_SECONDS`, default 15) runs a pass of each instance whose interval has passed since its last pass
+  (`run_due_passes`). Each scheduled pass acts as its instance (`set_acting_instance`) under a new execution id (`smo_shared.correlation.correlation_scope`,
+  new), and is recorded on the instance (`last_evaluated_at`, `last_evaluation` {at, executionId, trigger MANUAL | SCHEDULED, result OK | ERROR, error}). A
+  pass that fails is rolled back, recorded ERROR and retried after the interval, not every tick; the other instances still run. Wired like `aimgf-worker`:
+  compose with its mTLS, Postgres-TLS and replica overrides, the chart (`ci/ha-values.yaml`: two), `scripts/mtls_certs.py`, the tests that pin the set of
+  workers, the configuration reference; the rApp's database role gains `periodic_run`, `notification_outbox` and `smo_event` (every worker sweeps the
+  outbox and purges events). The operator page shows the schedule in a panel of its own (the first three panels stay the ADR's worked example).
+- **B. One pass at a time per instance.** `evaluate` took no lock, so two clicks (or two replicas) could both decide LOCK and dispatch twice. A pass, a
+  reconcile and an override now lock the instance row (`_lock_instance`, `SELECT ... FOR UPDATE NOWAIT`): a second is 409 `EVALUATION_IN_PROGRESS` at
+  once, and the worker skips the instance for a tick (BUSY). `_reconcile` no longer commits on its own, so the lock is held for the whole pass.
+- **C. A write held for a person is waited for.** With an approval policy on the rApp (`PR-AI-11`) RAN NF OAM holds a direct write and DME answers
+  `PENDING_APPROVAL` with an `approvalId`. The rApp read the cell back at once, found it still locked, and sent the write again, which asked a second time,
+  then recorded the wake VERIFY_FAILED. `_restore` now stops at PENDING_APPROVAL: the decision is AWAITING_APPROVAL (a rollback
+  `<trigger>_ROLLBACK_AWAITING_APPROVAL`), the cell stays asleep with `pending_approval_id` (new column), passes leave it alone, and `reconcile` (or the next
+  pass) settles it once decided (`_settle_approvals`: read back; EXECUTED / ROLLED_BACK when unlocked, VERIFY_FAILED / ROLLBACK_FAILED when approved but
+  still locked, `APPROVAL_<status>` when rejected, expired or refused).
+- **D. The wait for the AUTONOMOUS report** (at most 30 s) stays, as a Phase 1 note.
+- **Corrected in the doc:** the rApp's own model computes the prediction; AIMgF records the inference job and report.
+
+Revision 0050 adds the four nullable columns (expand only). The document is five diagrams (one pass; LOCK through the autonomy dispatch; ASSIST reconcile;
+wake and override straight to DME, held for approval; the scheduled pass) with PNG images. Tests: `samples/energy-saving-rapp/tests/test_schedule_and_approvals.py`,
+`shared/tests/test_correlation.py`.
+
 ### DOC-CF-1.8 flow 10 — SO SMOS orders rewritten from the code: the submitter's identity, saved step by step, cancel while running
 
 The third flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken):

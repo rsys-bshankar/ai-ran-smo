@@ -14,7 +14,8 @@ R1 only, never another module's database:
   * intent — AutonomyDispatch for a LOCK (AUTONOMOUS/ASSIST/SHADOW)
   * platform — direct DME O1 actions for service-restoring writes
 
-The loop (POST /instances/{id}/evaluate):
+The loop (POST /instances/{id}/evaluate, or the worker's `evaluate-due` task every `evaluateEverySeconds` of the instance, call flow 22e; one pass at a
+time per instance):
 
     Input → Prediction (model via an AIMgF inference job, plus MDAF)
           → Safety evaluation → Decision (engine.py)
@@ -38,6 +39,7 @@ same DME path.
 
 import datetime
 import json
+import logging
 import time
 import uuid
 from typing import cast
@@ -46,6 +48,7 @@ from fastapi import Depends, FastAPI, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from smo_sdk import AiRuntimeSdk, SdkError, instances
@@ -53,9 +56,9 @@ from smo_sdk.data import AlarmScope
 from smo_shared.logconfig import install_logging
 from smo_shared.metrics import install_metrics
 from smo_shared.health import install_health
-from smo_shared.correlation import apply_correlation_id, get_correlation_id
+from smo_shared.correlation import apply_correlation_id, correlation_scope, get_correlation_id
 from smo_shared.db import get_session
-from smo_shared.r1_client import R1Client
+from smo_shared.r1_client import R1Client, reset_acting_instance, set_acting_instance
 from smo_shared.timeutil import as_utc
 
 from . import engine
@@ -75,6 +78,10 @@ _r1 = R1Client()
 sdk = AiRuntimeSdk(_r1)
 
 RAPP_ID = "energy-saving-rapp"
+logger = logging.getLogger(__name__)
+
+# Call flow 22e: the bounds of an instance's `evaluateEverySeconds` (a pass reads PM, asks AIMgF and may write O1, so not more often than a minute).
+EVALUATE_EVERY_MIN_SECONDS, EVALUATE_EVERY_MAX_SECONDS = 60, 86400
 
 # The fulfilment report of a dispatched Intent is not there when the dispatch answers: Intent Service queues the push to the handler (an outbox row, sent
 # right after the commit with a 2 s timeout, then retried by the delivery sweep every few seconds), and the handler enacts the change and publishes the
@@ -122,6 +129,21 @@ def _sdk_error(_, exc: SdkError):
 
 def _instance(db: Session, instance_id: uuid.UUID) -> EnergySavingInstance:
     inst = db.get(EnergySavingInstance, instance_id)
+    if inst is None:
+        raise RappError(404, "INSTANCE_NOT_STARTED", f"instance {instance_id} is not started on this rApp")
+    return inst
+
+
+def _lock_instance(db: Session, instance_id: uuid.UUID) -> EnergySavingInstance:
+    """The instance, locked for this transaction (`SELECT ... FOR UPDATE NOWAIT` on Postgres): a pass, a reconcile and an override of one instance run one
+    at a time (call flow 22a). 409 EVALUATION_IN_PROGRESS when another holds it, at once rather than after it; 404 as `_instance`. SQLite has no row locks."""
+    try:
+        inst = db.get(EnergySavingInstance, instance_id, with_for_update={"nowait": True}, populate_existing=True)
+    except OperationalError as exc:
+        if getattr(exc.orig, "sqlstate", None) != "55P03":       # lock_not_available; anything else is not ours to answer
+            raise
+        db.rollback()
+        raise RappError(409, "EVALUATION_IN_PROGRESS", f"instance {instance_id} is being evaluated, reconciled or overridden; try again") from exc
     if inst is None:
         raise RappError(404, "INSTANCE_NOT_STARTED", f"instance {instance_id} is not started on this rApp")
     return inst
@@ -193,27 +215,36 @@ def _execute_direct(inst: EnergySavingInstance, cells: list[str], lock: bool, ex
             f"{RAPP_ID}:{inst.instance_id}", [_change(inst, c, act["lock"] if lock else act["unlock"]) for c in cells],
             action_id=action_id, source_context={"rApp": RAPP_ID, "correlationId": execution_id, "reason": reason},
             decision=_decision(inst, execution_id, reason))
-        return {"path": "DME_DIRECT", "actionId": result["actionId"], "forwardedJobId": result.get("forwardedJobId"),
-                "status": result["status"]}
+        done = {"path": "DME_DIRECT", "actionId": result["actionId"], "forwardedJobId": result.get("forwardedJobId"), "status": result["status"]}
+        return {**done, "approvalId": result["approvalId"]} if result.get("approvalId") else done
     except SdkError as e:
         return {"path": "DME_DIRECT", "actionId": action_id, "status": "REJECTED", "error": e.body}
 
 
 def _restore(inst: EnergySavingInstance, cells: list[str], execution_id: str, reason: str) -> dict:
     """Rollback / wake: UNLOCK the cells that aren't already UNLOCKED,
-    verify, and re-send once if the read-back still disagrees (W10-21)."""
+    verify, and re-send once if the read-back still disagrees (W10-21).
+
+    Call flow 22d: when RAN NF OAM holds the write for a person (an approval policy on this rApp, PR-AI-11; DME answers PENDING_APPROVAL with an
+    `approvalId` and no job), nothing has changed yet, so the cells are neither read back nor sent again (that would ask a second time): the result is
+    AWAITING_APPROVAL with the `approvalId` and the `cells` it covers, which `_settle_approvals` follows up."""
     act = ACTUATORS[inst.actuator]
     pending = [c for c in cells if _read(inst, c) != act["unlocked"]]
     if not pending:
         return {"performed": False, "result": "ALREADY_UNLOCKED", "verification": _verify(inst, cells, False)}
-    attempts = []
+    attempts: list[dict] = []
+    result = "VERIFY_FAILED"
     for _ in range(2):
         action = _execute_direct(inst, pending, False, execution_id, reason)
+        if action["status"] == "PENDING_APPROVAL":
+            attempts.append({"action": action, "verification": None})
+            return {"performed": True, "result": "AWAITING_APPROVAL", "approvalId": action.get("approvalId"), "cells": pending, "attempts": attempts}
         verification = _verify(inst, pending, False)
         attempts.append({"action": action, "verification": verification})
-        if verification["result"] == "VERIFIED":
+        result = verification["result"]
+        if result == "VERIFIED":
             break
-    return {"performed": True, "result": attempts[-1]["verification"]["result"], "attempts": attempts}
+    return {"performed": True, "result": result, "attempts": attempts}
 
 
 def _intent_actions(intent_id: str) -> list[dict]:
@@ -256,13 +287,64 @@ def _finish_lock(db: Session, inst: EnergySavingInstance, rows: dict, decisions:
             row.state, row.o1_value = engine.SLEEP, act["locked"]
         else:
             undone = cast(dict, rollback)      # not ok, so the rollback was made above
-            d.outcome = f"{undone['trigger']}_ROLLED_BACK" if undone["result"] in ("VERIFIED", "ALREADY_UNLOCKED") \
+            if undone["result"] == "AWAITING_APPROVAL" and cell in undone["cells"]:
+                # call flow 22d: the cell may be locked and its rollback waits for a person; `_settle_approvals` reads it back once decided
+                d.outcome = f"{undone['trigger']}_ROLLBACK_AWAITING_APPROVAL"
+                row.state = engine.SLEEP
+                row.pending_approval_id, row.pending_decision_id = _uuid_or_none(undone.get("approvalId")), d.decision_id
+                d.final_state = {"state": row.state, "o1": row.o1_value}
+                d.updated_at = datetime.datetime.now(datetime.UTC)
+                continue
+            d.outcome = f"{undone['trigger']}_ROLLED_BACK" if undone["result"] in ("VERIFIED", "ALREADY_UNLOCKED", "AWAITING_APPROVAL") \
                 else f"{undone['trigger']}_ROLLBACK_FAILED"
             row.state, row.o1_value = engine.SERVING, act["unlocked"]
-            if undone["performed"]:
+            if undone["performed"] and undone["result"] != "AWAITING_APPROVAL":
                 row.last_unlocked_at = now or d.observed_at or row.last_unlocked_at
         d.final_state = {"state": row.state, "o1": row.o1_value}
         d.updated_at = datetime.datetime.now(datetime.UTC)
+
+
+def _uuid_or_none(value: str | None) -> uuid.UUID | None:
+    """`value` as a UUID, or None when there is none."""
+    return uuid.UUID(str(value)) if value else None
+
+
+def _settle_approvals(db: Session, inst: EnergySavingInstance, rows: dict[str, EnergySavingCell]) -> list[dict]:
+    """Call flow 22d: follows up the service-restoring writes RAN NF OAM held for a person (PR-AI-11). A request still PENDING is left; a decided one
+    (APPROVED, REJECTED, EXPIRED or REFUSED) is settled by reading the cell back: UNLOCKED makes it SERVING, anything else SLEEP. The audit row of the write
+    gets the read-back and its outcome: EXECUTED (approved and verified), VERIFY_FAILED (approved, not unlocked) or APPROVAL_<status>; a rollback's row
+    becomes `<trigger>_ROLLED_BACK` or `<trigger>_ROLLBACK_<FAILED | status>`. A rejected wake is asked again by the next pass that decides it."""
+    act = ACTUATORS[inst.actuator]
+    settled = []
+    for cell, row in rows.items():
+        if row.pending_approval_id is None:
+            continue
+        approval = sdk.platform.get_approval(row.pending_approval_id)
+        status = approval["status"]
+        if status == "PENDING":
+            continue
+        verification = _verify(inst, [cell], False)
+        unlocked = verification["result"] == "VERIFIED"
+        d = db.get(EnergySavingDecision, row.pending_decision_id) if row.pending_decision_id else None
+        approval_id = row.pending_approval_id
+        row.pending_approval_id = row.pending_decision_id = None
+        row.state = engine.SERVING if unlocked else engine.SLEEP
+        if unlocked:
+            row.o1_value, row.last_unlocked_at = act["unlocked"], datetime.datetime.now(datetime.UTC)
+        if d is not None:
+            settled_as = "FAILED" if status == "APPROVED" else status      # how a rollback that did not unlock the cell ended
+            if d.outcome.endswith("_ROLLBACK_AWAITING_APPROVAL"):
+                trigger = d.outcome.removesuffix("_ROLLBACK_AWAITING_APPROVAL")
+                d.outcome = f"{trigger}_ROLLED_BACK" if unlocked else f"{trigger}_ROLLBACK_{settled_as}"
+            else:
+                d.outcome = "EXECUTED" if unlocked and status == "APPROVED" else "VERIFY_FAILED" if status == "APPROVED" else f"APPROVAL_{status}"
+            d.action = {**(d.action or {}), "approval": {"status": status, "jobId": approval.get("jobId")}}
+            d.verification = verification
+            d.final_state = {"state": row.state, "o1": row.o1_value}
+            d.updated_at = datetime.datetime.now(datetime.UTC)
+        settled.append({"approvalId": str(approval_id), "status": status, "cells": [cell],
+                        "outcomes": {cell: d.outcome if d is not None else row.state}})
+    return settled
 
 
 def _lock_expectation(inst: EnergySavingInstance, cells: list[str], execution_id: str) -> dict:
@@ -310,7 +392,8 @@ def _follow_dispatch(db, inst, rows, decisions, cells, dispatch: dict, execution
 
 
 def _reconcile(db: Session, inst: EnergySavingInstance) -> list[dict]:
-    """ASSIST: follow up dispatches an operator has since resolved or rejected."""
+    """ASSIST: follow up dispatches an operator has since resolved or rejected (call flow 22c), and the writes held for approval that were decided
+    (call flow 22d). The caller holds the instance's lock and commits."""
     rows = _cells(db, inst)
     pending: dict[uuid.UUID, list[str]] = {}
     for cell, row in rows.items():
@@ -328,8 +411,7 @@ def _reconcile(db: Session, inst: EnergySavingInstance) -> list[dict]:
         _follow_dispatch(db, inst, rows, decisions, cells, dispatch, execution_id, None)
         settled.append({"dispatchId": str(dispatch_id), "status": dispatch["status"], "cells": cells,
                         "outcomes": {c: decisions[c].outcome for c in cells}})
-    db.commit()
-    return settled
+    return settled + _settle_approvals(db, inst, rows)
 
 
 # ---------------------------------------------------------------- instance + datasets (W10-04/05)
@@ -352,12 +434,18 @@ def start_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     actuator = config.get("actuator", "ADMINISTRATIVE_STATE")
     if actuator not in ACTUATORS:
         raise RappError(422, "INSTANCE_CONFIG_INVALID", f"actuator must be one of {sorted(ACTUATORS)}")
+    every = config.get("evaluateEverySeconds")
+    if every is not None and (isinstance(every, bool) or not isinstance(every, int)
+                              or not EVALUATE_EVERY_MIN_SECONDS <= every <= EVALUATE_EVERY_MAX_SECONDS):
+        raise RappError(422, "INSTANCE_CONFIG_INVALID",
+                        f"evaluateEverySeconds must be a whole number from {EVALUATE_EVERY_MIN_SECONDS} to {EVALUATE_EVERY_MAX_SECONDS}, or absent")
     inst = db.get(EnergySavingInstance, instance_id) or EnergySavingInstance(instance_id=instance_id)
     inst.package_id = uuid.UUID(info["packageId"]) if info.get("packageId") else None
     inst.managed_element_ref, inst.cells = config["managedElementRef"], [str(c) for c in config["cells"]]
     inst.actuator, inst.autonomy_mode = actuator, info.get("autonomyMode", "SHADOW")
     inst.rmih_id = config.get("rmihId", "sa-smos")
     inst.operator_notification_uri = config.get("operatorNotificationUri")
+    inst.evaluate_every_seconds = every
     datasets = {}
     for stage, name in (("TRAINING", DATASET), ("INFERENCE", DATASET), ("EMULATION", SIM_DATASET)):
         found = sdk.data.get_dataset(name, _consumer(inst), lifecycle_stage=stage, max_records=1)
@@ -389,7 +477,8 @@ def _instance_view(i: EnergySavingInstance) -> dict:
             "managedElementRef": i.managed_element_ref, "cells": i.cells, "actuator": i.actuator,
             "autonomyMode": i.autonomy_mode, "rmihId": i.rmih_id, "datasets": i.data_jobs,
             "modelId": str(i.model_id) if i.model_id else None, "modelVersion": i.model_version,
-            "artifactVersion": i.artifact_version, "model": i.model_params, "lifecycleJobs": i.lifecycle_jobs}
+            "artifactVersion": i.artifact_version, "model": i.model_params, "lifecycleJobs": i.lifecycle_jobs,
+            "evaluateEverySeconds": i.evaluate_every_seconds, "lastEvaluation": i.last_evaluation}
 
 
 def _dataset(inst: EnergySavingInstance, stage: str) -> list[dict]:
@@ -525,13 +614,21 @@ def _mdaf_prediction(key: str) -> float | None:
 
 @app.post("/instances/{instance_id}/evaluate")
 def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
-    """One pass of the closed loop over the instance's cells. The pass's
-    X-Correlation-ID is its execution id in the audit trail."""
-    inst = _instance(db, instance_id)
+    """One pass of the closed loop over the instance's cells ("Evaluate now"). The pass's
+    X-Correlation-ID is its execution id in the audit trail. 409 EVALUATION_IN_PROGRESS while another pass, reconcile or override of the instance runs."""
+    inst = _lock_instance(db, instance_id)
+    return run_pass(db, inst, get_correlation_id() or str(uuid.uuid4()), "MANUAL")
+
+
+def run_pass(db: Session, inst: EnergySavingInstance, execution_id: str, trigger: str,
+             started_at: datetime.datetime | None = None) -> dict:
+    """One pass over the instance's cells (call flow 22a-22d), for `evaluate` (trigger MANUAL) and the worker (SCHEDULED, `run_due_passes`). The caller
+    holds the instance's lock (`_lock_instance`); the pass commits once at its end, with `last_evaluated_at` and `last_evaluation`. 409 MODEL_NOT_DEPLOYED
+    before the model is deployed."""
     if not inst.model_id or not inst.model_params:
         raise RappError(409, "MODEL_NOT_DEPLOYED", "train, certify and deploy the model first")
+    started_at = started_at or datetime.datetime.now(datetime.UTC)
     reconciled = _reconcile(db, inst)
-    execution_id = get_correlation_id() or str(uuid.uuid4())
     rows = _cells(db, inst)
     inputs = _inputs(inst, rows)
     model = EnergyModel.from_dict(inst.model_params)
@@ -547,8 +644,8 @@ def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     results: dict[str, engine.Decision] = {}
     for cell in inst.cells:
         row, key = rows[cell], keys[cell]
-        if row.pending_dispatch_id:
-            continue  # ASSIST: still waiting for the operator
+        if row.pending_dispatch_id or row.pending_approval_id:
+            continue  # ASSIST, or a write held for approval (22d): still waiting for a person
         mdaf = _mdaf_prediction(key)
         g = inputs["guards"].get(key, {})
         neighbours = {n: inputs["series"][n][-1][1] for n in g.get("neighbourRefs") or [] if inputs["series"].get(n)}
@@ -608,6 +705,12 @@ def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
             restore = _restore(inst, unlocks, execution_id, "WAKE:" + ",".join(sorted({results[c].reason for c in unlocks})))
             for cell in unlocks:
                 d, row = decisions[cell], rows[cell]
+                if restore["result"] == "AWAITING_APPROVAL" and cell in restore["cells"]:
+                    # call flow 22d: the wake waits for a person; the cell stays asleep until `_settle_approvals` reads it back
+                    d.action, d.outcome = restore["attempts"][0]["action"], "AWAITING_APPROVAL"
+                    row.pending_approval_id, row.pending_decision_id = _uuid_or_none(restore.get("approvalId")), d.decision_id
+                    d.final_state = {"state": row.state, "o1": row.o1_value}
+                    continue
                 d.action = restore["attempts"][0]["action"] if restore["performed"] else None
                 d.verification = restore["attempts"][-1]["verification"] if restore["performed"] else restore["verification"]
                 d.rollback = {"trigger": "VERIFY_FAILED", **restore} if restore["performed"] and len(restore["attempts"]) > 1 else None
@@ -620,6 +723,8 @@ def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
                 d.final_state = {"state": row.state, "o1": row.o1_value}
     for row in rows.values():
         row.updated_at = datetime.datetime.now(datetime.UTC)
+    inst.last_evaluated_at = started_at
+    inst.last_evaluation = {"at": started_at.isoformat(), "executionId": execution_id, "trigger": trigger, "result": "OK"}
     db.commit()
     return {"executionId": execution_id, "instanceId": str(inst.instance_id), "autonomyMode": inst.autonomy_mode,
             "inferenceJobId": job["inferenceJobId"], "reconciled": reconciled,
@@ -628,8 +733,50 @@ def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
 
 @app.post("/instances/{instance_id}/reconcile")
 def reconcile(instance_id: uuid.UUID, db: Session = Depends(get_session)):
-    """Follows up ASSIST dispatches the operator has resolved or rejected."""
-    return {"settled": _reconcile(db, _instance(db, instance_id))}
+    """Follows up ASSIST dispatches the operator has resolved or rejected, and writes held for approval that were decided (call flows 22c, 22d)."""
+    settled = _reconcile(db, _lock_instance(db, instance_id))
+    db.commit()
+    return {"settled": settled}
+
+
+def run_due_passes(db: Session, now: datetime.datetime | None = None) -> list[dict]:
+    """Call flow 22e, the worker's `evaluate-due` task: a pass (trigger SCHEDULED) of every instance with an `evaluateEverySeconds` whose last pass began
+    at least that long ago, each acting as its instance and under its own execution id. An instance whose lock another holds is skipped (BUSY, the next
+    tick tries again); a pass that fails is rolled back and recorded on the instance (`lastEvaluation` result ERROR, with the error), so it is retried
+    after the interval, not on every tick, and the other instances still run. Returns one entry per instance it looked at."""
+    now = now or datetime.datetime.now(datetime.UTC)
+    scheduled = list(db.scalars(select(EnergySavingInstance.instance_id).where(EnergySavingInstance.evaluate_every_seconds.is_not(None))))
+    db.rollback()
+    results = []
+    for instance_id in scheduled:
+        try:
+            inst = _lock_instance(db, instance_id)
+        except RappError as exc:
+            results.append({"instanceId": str(instance_id), "result": "BUSY" if exc.status == 409 else "GONE"})
+            continue
+        last = as_utc(inst.last_evaluated_at) if inst.last_evaluated_at else None
+        if inst.evaluate_every_seconds is None or (last is not None and (now - last).total_seconds() < inst.evaluate_every_seconds):
+            db.rollback()
+            continue
+        execution_id = str(uuid.uuid4())
+        token = set_acting_instance(str(instance_id))
+        try:
+            with correlation_scope(execution_id):
+                run_pass(db, inst, execution_id, "SCHEDULED", started_at=now)
+            results.append({"instanceId": str(instance_id), "executionId": execution_id, "result": "OK"})
+        except Exception as exc:  # noqa: BLE001 — one instance's failure is recorded on it and never stops the others
+            db.rollback()
+            error = f"{exc.status} {exc.title}" if isinstance(exc, RappError) else \
+                f"{exc.status_code} {exc.body}" if isinstance(exc, SdkError) else f"{type(exc).__name__}: {exc}"
+            logger.warning("scheduled pass of instance %s failed: %s", instance_id, error)
+            failed = db.get_one(EnergySavingInstance, instance_id)
+            failed.last_evaluated_at = now
+            failed.last_evaluation = {"at": now.isoformat(), "executionId": execution_id, "trigger": "SCHEDULED", "result": "ERROR", "error": error[:500]}
+            db.commit()
+            results.append({"instanceId": str(instance_id), "executionId": execution_id, "result": "ERROR", "error": error[:500]})
+        finally:
+            reset_acting_instance(token)
+    return results
 
 
 # ---------------------------------------------------------------- operator override (W10-15)
@@ -644,8 +791,8 @@ class OverrideRequest(BaseModel):
 def override(instance_id: uuid.UUID, cell_id: str, body: OverrideRequest, db: Session = Depends(get_session)):
     """Manual UNLOCK: the cell is woken now (if it isn't already UNLOCKED)
     and AI recommendations for it are suppressed until the override is
-    cleared."""
-    inst = _instance(db, instance_id)
+    cleared. When RAN NF OAM holds the write for a person, the outcome is AWAITING_APPROVAL and `reconcile` settles it (call flow 22d)."""
+    inst = _lock_instance(db, instance_id)
     rows = _cells(db, inst)
     if cell_id not in rows:
         raise RappError(404, "CELL_NOT_MANAGED", f"cell {cell_id} is not managed by instance {instance_id}")
@@ -654,6 +801,7 @@ def override(instance_id: uuid.UUID, cell_id: str, body: OverrideRequest, db: Se
     series = by_cell(_dataset(inst, "INFERENCE")).get(cell_key(inst.managed_element_ref, cell_id), [])
     now = series[-1][0] if series else datetime.datetime.now(datetime.UTC)
     restore = _restore(inst, [cell_id], execution_id, "OPERATOR_OVERRIDE")
+    awaiting = restore["result"] == "AWAITING_APPROVAL"
     ok = restore["result"] in ("VERIFIED", "ALREADY_UNLOCKED")
     row.override_by, row.override_at = body.operator, datetime.datetime.now(datetime.UTC)
     if ok:
@@ -663,12 +811,15 @@ def override(instance_id: uuid.UUID, cell_id: str, body: OverrideRequest, db: Se
     d = EnergySavingDecision(
         execution_id=execution_id, instance_id=inst.instance_id, cell_id=cell_id, observed_at=now,
         prb=series[-1][1] if series else None, decision=engine.UNLOCK, reason=f"OPERATOR_OVERRIDE:{body.operator}",
-        outcome=("EXECUTED" if restore["performed"] else "NO_ACTION_ALREADY_IN_STATE") if ok else "VERIFY_FAILED",
+        outcome="AWAITING_APPROVAL" if awaiting else ("EXECUTED" if restore["performed"] else "NO_ACTION_ALREADY_IN_STATE") if ok else "VERIFY_FAILED",
         safety={"passed": True, "blocks": [], "note": body.reason},
         action=restore["attempts"][0]["action"] if restore["performed"] else None,
         verification=restore["attempts"][-1]["verification"] if restore["performed"] else restore["verification"],
         final_state={"state": row.state, "o1": row.o1_value})
     db.add(d)
+    if awaiting:
+        db.flush()
+        row.pending_approval_id, row.pending_decision_id = _uuid_or_none(restore.get("approvalId")), d.decision_id
     db.commit()
     return _decision_view(d)
 

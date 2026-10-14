@@ -9,6 +9,7 @@ modules:
   rapp-mgmt: { replicas: 2 }
   rapp-mgmt-worker: { replicas: 2 }
   aimgf-worker: { replicas: 2 }
+  energy-saving-rapp-worker: { replicas: 2 }
   ran-nf-oam: { replicas: 2 }
   ran-nf-oam-worker: { replicas: 2 }
   nfo: { replicas: 2 }

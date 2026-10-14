@@ -52,3 +52,12 @@ def test_two_requests_get_two_different_generated_ids():
     first = client.get("/echo").json()["correlationId"]
     second = client.get("/echo").json()["correlationId"]
     assert first != second
+
+
+def test_correlation_scope_sets_the_id_outside_a_request_and_restores_it():
+    """Call flow 22e: inside `correlation_scope` the id is the current one (a worker's task has no request), and the previous value is back after it."""
+    from smo_shared.correlation import correlation_scope, get_correlation_id
+    assert get_correlation_id() is None
+    with correlation_scope("pass-1") as cid:
+        assert cid == get_correlation_id() == "pass-1"
+    assert get_correlation_id() is None

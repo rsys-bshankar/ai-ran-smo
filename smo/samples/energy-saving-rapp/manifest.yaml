@@ -187,6 +187,17 @@ operatorUi:
         - {path: executionId, label: Execution, format: id}
     # The demo's steps (demo.py, docs/GUI_DEMO_GUIDE.md) as buttons only an admin sees: the rApp plays the network and the Digital Twin. The
     # governance decisions between them (approve training and validation, certify, promote) stay on the AI/ML page, where a person makes them.
+    - id: schedule
+      title: Scheduled passes
+      kind: keyValues
+      source:
+        path: "/instances/{instanceId}"
+        refreshSeconds: 30
+      items:
+        - {label: Evaluated every (s), path: evaluateEverySeconds, format: number}
+        - {label: Last pass, path: lastEvaluation.at}
+        - {label: Last pass trigger, path: lastEvaluation.trigger, format: badge}
+        - {label: Last pass result, path: lastEvaluation.result, format: badge}
     - id: demo
       title: Demo / simulation (admin)
       kind: actions
