@@ -285,8 +285,6 @@ sequenceDiagram
   running rApp sees a change after the operator restarts it there (OPEN_ITEMS OI-7-config-push).
 - **No scheduler.** `upgradeTimeoutSeconds` (default 300 s) is enforced when either instance of the upgrade is next read or acted on, not at
   the deadline itself.
-- **One deployment per NFO descriptor.** NFO lets a package's descriptor be deployed once, so a second instance of the same package gets no
-  `workloadRef` (the instance is created; its teardown skips NFO). An upgrade or rollback goes to another package and is not affected.
 
 ## Key decisions this flow depends on
 

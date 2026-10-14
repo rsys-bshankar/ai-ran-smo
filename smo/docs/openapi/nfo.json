@@ -462,7 +462,7 @@
         "summary": "List Deployments"
       },
       "post": {
-        "description": "Instantiate \u2014 NFO+FOCOM LLD section 4: FOCOM's inventory is queried\nto resolve clusterId before the workload is placed, rather than the\nPhase 1 degenerate cluster being assumed implicitly. HISTORY.md \u00a75: now also enforces the reference's own real guards before\ncreating anything \u2014 _check_dependencies (the descriptor must exist)\nand _check_duplication (no two deployments may share a name, and a\ndescriptor may only be deployed once).",
+        "description": "Instantiate \u2014 NFO+FOCOM LLD section 4: FOCOM's inventory is queried\nto resolve clusterId before the workload is placed, rather than the\nPhase 1 degenerate cluster being assumed implicitly. HISTORY.md \u00a75: now also enforces the reference's own real guards before\ncreating anything \u2014 _check_dependencies (the descriptor must exist)\nand _check_duplication (no two deployments may share a name). A\ndescriptor may back any number of deployments (call flow 15b). 503\nwhen FOCOM does not name the O-Cloud to place it on.",
         "operationId": "instantiate_deployments_post",
         "requestBody": {
           "content": {

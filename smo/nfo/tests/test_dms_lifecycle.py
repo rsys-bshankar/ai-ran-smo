@@ -47,14 +47,14 @@ def test_an_async_terminate_waits_for_the_dms_and_passes_through_deleting(client
 
 
 def test_the_descriptor_is_held_until_the_deployment_is_really_gone(client, monkeypatch):
-    """The descriptor cannot be deployed again while its deployment is still being removed, and can once the deletion completes."""
+    """The descriptor cannot be deleted while its deployment is still being removed (409), and can once the deletion completes."""
     descriptor = _create_descriptor(client)
     dep = _instantiate(client, monkeypatch, descriptor_id=descriptor).json()["nfDeploymentId"]
     client.delete(f"/deployments/{dep}", params={"async_uninstall": True})
-    assert _instantiate(client, monkeypatch, name="nf-2", descriptor_id=descriptor).status_code == 409
+    assert client.delete(f"/descriptors/{descriptor}").status_code == 409
     _notify(client, dep, "UNINSTALL_COMPLETE")
     _notify(client, dep, "DELETE_COMPLETE")
-    assert _instantiate(client, monkeypatch, name="nf-2", descriptor_id=descriptor).status_code == 202
+    assert client.delete(f"/descriptors/{descriptor}").status_code == 204
 
 
 @pytest.mark.parametrize("fail_at", ["UNINSTALL_FAILED", "DELETE_FAILED"])

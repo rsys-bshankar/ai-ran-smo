@@ -128,12 +128,22 @@ def test_instantiate_resolves_cluster_via_focom(client, monkeypatch):
     assert resp.json()["state"] == "RUNNING"
 
 
-def test_instantiate_falls_back_to_degenerate_cluster_if_focom_unreachable(client, monkeypatch):
-    """A non-200 answer from FOCOM does not fail Instantiate; the single-cluster default is used."""
-    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeR1Response(503, {}))
+# Each row is a FOCOM answer that names no O-Cloud: an error status, a 200 without `oCloudId`, no answer at all.
+@pytest.mark.parametrize("answer", [FakeR1Response(503, {}), FakeR1Response(200, {}), None])
+def test_instantiate_is_refused_when_focom_names_no_o_cloud(client, monkeypatch, db_session_factory, answer):
+    """Call flow 15b: a workload is never placed on a cluster nobody named. 503 ENDPOINT_UNREACHABLE and no deployment is created."""
+    import httpx
+
+    def get(self, path, **kw):
+        if answer is None:
+            raise httpx.ConnectError("down")
+        return answer
     descriptor_id = _create_descriptor(client)
+    monkeypatch.setattr("app.main.R1Client.get", get)
     resp = client.post("/deployments", json={"nfDeploymentDescriptorId": descriptor_id, "name": "nf-1"})
-    assert resp.json()["clusterId"] == "phase1-degenerate-cluster"
+    assert resp.status_code == 503 and resp.json()["detail"]["title"] == "ENDPOINT_UNREACHABLE"
+    with db_session_factory() as session:
+        assert session.query(NFDeployment).count() == 0
 
 
 def test_instantiate_creates_a_resource_link(client, monkeypatch):
@@ -163,15 +173,31 @@ def test_instantiate_rejects_duplicate_name(client, monkeypatch):
     assert resp.json()["detail"]["title"] == "NFDEPLOYMENT_NAME_CONFLICT"
 
 
-def test_instantiate_rejects_descriptor_already_deployed(client, monkeypatch):
-    """A descriptor can be deployed once; a second Instantiate with a new name is a 409 NFDEPLOYMENT_DESCRIPTOR_ALREADY_DEPLOYED."""
-    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeR1Response(200, {"oCloudId": "c1"}))
+def test_a_descriptor_backs_several_deployments(client, monkeypatch):
+    """Call flow 15b (DOC-CF-1.4): a descriptor is a template, so a second Instantiate under another name is a second deployment (one per rApp
+    instance of a package); the name stays unique."""
     descriptor_id = _create_descriptor(client)
-    client.post("/deployments", json={"nfDeploymentDescriptorId": descriptor_id, "name": "nf-1"})
+    first = _instantiate(client, monkeypatch, name="nf-1", descriptor_id=descriptor_id)
+    second = _instantiate(client, monkeypatch, name="nf-2", descriptor_id=descriptor_id)
+    assert first.status_code == second.status_code == 202
+    assert first.json()["nfDeploymentId"] != second.json()["nfDeploymentId"]
 
-    resp = client.post("/deployments", json={"nfDeploymentDescriptorId": descriptor_id, "name": "nf-2"})
-    assert resp.status_code == 409
-    assert resp.json()["detail"]["title"] == "NFDEPLOYMENT_DESCRIPTOR_ALREADY_DEPLOYED"
+
+def test_deployment_state_changes_are_published_on_the_event_bus(client, monkeypatch):
+    """Call flow 15e: every state change of a deployment is `org.oran.smo.nf-deployment.state-changed` about it, the end of a terminate included."""
+    from smo_shared import events
+    monkeypatch.setenv("SMO_EVENT_BUS", "memory")
+    monkeypatch.setattr(events.MEMORY, "events", [])
+    dep_id = _instantiate(client, monkeypatch).json()["nfDeploymentId"]
+    client.post(f"/deployments/{dep_id}/dms-notifications", json={"event": "RUNTIME_FAILURE", "detail": "oom"})
+    client.post(f"/deployments/{dep_id}/heal")
+    client.delete(f"/deployments/{dep_id}")
+
+    mine = [e for e in events.MEMORY.events if e["subject"] == dep_id]
+    assert {e["type"] for e in mine} == {"org.oran.smo.nf-deployment.state-changed"}
+    assert [(e["data"]["event"], e["data"]["to"]) for e in mine] == [
+        ("INSTANTIATE", "INSTANTIATING"), ("INSTANTIATE_COMPLETE", "RUNNING"), ("RUNTIME_FAILURE", "ABNORMAL"), ("HEAL", "RUNNING"),
+        ("TERMINATE", "TERMINATING"), ("UNINSTALL_COMPLETE", "DELETING"), ("DELETE_COMPLETE", "DELETED")]
 
 
 def test_terminate_removes_deployment(client, monkeypatch):

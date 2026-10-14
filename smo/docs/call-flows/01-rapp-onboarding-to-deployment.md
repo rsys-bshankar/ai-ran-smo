@@ -116,12 +116,16 @@ sequenceDiagram
         RM-->>Op: 503 ENDPOINT_UNREACHABLE (invoker removed, registration stopped, nothing created)
     end
     RM->>NFO: POST /nfo/deployments<br/>{nfDeploymentDescriptorId, name: rapp-instance-{id}, requiredResourceTypeId}
-    Note over NFO: descriptor exists (else 422) · name unused,<br/>descriptor not yet deployed (else 409)
+    Note over NFO: descriptor exists (else 422) · name unused (else 409)<br/>(a descriptor backs one deployment per instance)
     NFO->>FOCOM: GET /focom/inventory?resource_type
-    FOCOM-->>NFO: {oCloudId} (any failure → phase1-degenerate-cluster)
+    FOCOM-->>NFO: {oCloudId} (none, or no answer: NFO 503, call flow 15b)
     Note over NFO: deployment INITIAL → RUNNING in this request<br/>Phase 1: records it, starts no workload
-    NFO-->>RM: 202 {nfDeploymentId, state RUNNING, clusterId}
-    Note over RM: workloadRef = nfDeploymentId (null if NFO refused)
+    alt NFO instantiates
+        NFO-->>RM: 202 {nfDeploymentId, state RUNNING, clusterId}
+        Note over RM: workloadRef = nfDeploymentId
+    else NFO refuses or does not answer
+        RM-->>Op: 502 UPSTREAM_FAILED / 503 (registration stopped,<br/>invoker removed, nothing created)
+    end
     Note over RM: operator API base = the operator's operatorApiBase,<br/>else the package's operatorApi.baseUrl, else none<br/>commit the instance (DEPLOYING)
     opt a base is known (01c)
         RM->>App: POST /rapps/{id}/operator/instances/{id}/credentials (via R1)<br/>{oauthClientId, oauthClientSecret}

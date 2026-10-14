@@ -101,6 +101,8 @@ def _route_r1_get_post(*, onboarding_status="AVAILABLE", registration_id=None, s
     service_id = sme_service_id or uuid.uuid4()
 
     def fake_get(self, path, **kw):
+        if path.startswith("/nfo/deployments/"):              # call flow 15e: the detail reads the workload's state
+            return FakeR1Response(200, {"state": "RUNNING", "abnormalReason": None})
         if path.startswith("/ran-nf-oam/rapp-kill/"):          # call flow 07b: an upgrade asks whether the old instance is stopped
             stop = fake_get.stopped.get(path.rsplit("/", 1)[1])
             return FakeR1Response(200, stop) if stop is not None else FakeR1Response(404, {})
@@ -1365,3 +1367,71 @@ def test_terminate_closes_the_instances_dme_data_jobs_and_a_crash_does_not(clien
     resp = client.post(f"/instances/{created['instanceId']}/terminate")
     assert resp.status_code == 200 and resp.json()["state"] == "UNDEPLOYED"
     assert ("/dme/data-jobs", {"created_by": created["oauthClientId"]}) in calls
+
+
+# ---------------------------------------------------------------- call flow 15: the instance's workload at NFO
+
+# Each row is an NFO answer to Instantiate that leaves no workload: a refusal (502 UPSTREAM_FAILED) or no answer (503 ENDPOINT_UNREACHABLE).
+class _NotJson(FakeR1Response):
+    """An answer whose body is not JSON (a proxy's HTML error page)."""
+    def json(self):
+        raise ValueError("not JSON")
+
+
+@pytest.mark.parametrize("outcome,status,title", [(FakeR1Response(409, {"detail": {"title": "NFDEPLOYMENT_NAME_CONFLICT"}}), 502, "UPSTREAM_FAILED"),
+                                                  (_NotJson(500, None), 502, "UPSTREAM_FAILED"),
+                                                  (None, 503, "ENDPOINT_UNREACHABLE")])
+def test_create_fails_without_a_workload_and_leaves_nothing_behind(client, db_session_factory, monkeypatch, fake_r1_delete, outcome, status, title):
+    """Call flow 15b: an instance is not created without its NFO deployment. The usage registration is stopped and the identity made at SME removed."""
+    import httpx
+    fake_get, fake_post = _route_r1_get_post()
+    posts = []
+
+    def post(self, path, json=None, **kw):
+        posts.append(path)
+        if path == "/nfo/deployments":
+            if outcome is None:
+                raise httpx.ConnectError("down")
+            return outcome
+        return fake_post(self, path, json=json, **kw)
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", post)
+
+    resp = client.post("/instances", json={"packageId": str(uuid.uuid4())})
+
+    assert resp.status_code == status and resp.json()["detail"]["title"] == title
+    assert any(p.endswith("/stop") for p in posts)
+    assert any(p.startswith("/sme/invoker-registrations/api-invoker-") for p, _ in fake_r1_delete)
+    with db_session_factory() as session:
+        assert session.query(RAppInstance).count() == 0
+
+
+# Each row is what NFO says about the workload and what the instance detail shows: its state and reason, GONE for a 404, UNKNOWN for no answer.
+@pytest.mark.parametrize("answer,expected", [
+    (FakeR1Response(200, {"state": "ABNORMAL", "abnormalReason": "RUNTIME_FAILURE: oom"}), {"state": "ABNORMAL", "abnormalReason": "RUNTIME_FAILURE: oom"}),
+    (FakeR1Response(404, {}), {"state": "GONE", "abnormalReason": None}),
+    (FakeR1Response(200, {}), {"state": "UNKNOWN", "abnormalReason": None}),
+    (None, {"state": "UNKNOWN", "abnormalReason": None}),
+])
+def test_the_instance_detail_shows_its_workload_as_nfo_sees_it(client, monkeypatch, answer, expected):
+    """Call flow 15e: a broken workload is visible on the instance (its own state is unchanged)."""
+    import httpx
+    created = _running_instance(client, monkeypatch)
+    original = __import__("app.main", fromlist=["R1Client"]).R1Client.get
+
+    def get(self, path, **kw):
+        if path.startswith("/nfo/deployments/"):
+            if answer is None:
+                raise httpx.ConnectError("down")
+            return answer
+        return original(self, path, **kw)
+    monkeypatch.setattr("app.main.R1Client.get", get)
+
+    body = client.get(f"/instances/{created['instanceId']}").json()
+    assert body["workload"] == expected and body["state"] == "RUNNING"
+
+
+def test_an_instance_without_a_workload_shows_none(client, db_session_factory):
+    """An instance with no workloadRef (made before DOC-CF-1.4) shows no workload and NFO is not asked."""
+    instance_id = _make_instance(db_session_factory)
+    assert client.get(f"/instances/{instance_id}").json()["workload"] is None
