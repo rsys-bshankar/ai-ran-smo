@@ -590,8 +590,7 @@ def modify_ml_testing_request(request_id: uuid.UUID, body: RequestFlagsBody, db:
                                    detail=f"cannot cancel a testing request in status {job.status}")
         job.status, job.cancel_request = "CANCELLED", True
         # Order matters: the runtime is torn down before the lifecycle event, and the event can still refuse (409) and abort the request. See the route notes.
-        _nfo_terminate_execution(job.nf_deployment_id)
-        job.nf_deployment_id = None
+        _nfo_terminate_execution(job)
         if job.model_id is not None:
             _fire_model_event(db, job.model_id, ModelLifecycleEvent.VALIDATION_FAILED)
     elif body.suspendRequest is True:
@@ -879,7 +878,7 @@ def _check_loadable(request: Request, db: Session, model_ids: list[uuid.UUID]) -
 
     Per model: 404 `MODEL_NOT_FOUND` (asked of MLMR), 403 `MODEL_ACCESS_DENIED` for an rApp caller that is not the model's owner (`_owned_model`, SEC-15.3b: loading deploys and activates the
     model's runtime, which only its owner may do), 409 `MODEL_NOT_CERTIFIED` unless the model is CERTIFIED or PROMOTED, 409
-    `LIFECYCLE_ILLEGAL_TRANSITION` if its runtime is TERMINATING or TERMINATED. Run before anything is deployed so a request loads every named model or none.
+    `LIFECYCLE_ILLEGAL_TRANSITION` if its runtime is TERMINATING (a TERMINATED one is deployed again, call flow 17e). Run before anything is deployed so a request loads every named model or none.
     """
     for model_id in model_ids:
         _owned_model(request, model_id, "load")
@@ -887,7 +886,7 @@ def _check_loadable(request: Request, db: Session, model_ids: list[uuid.UUID]) -
         if lifecycle.model_lifecycle_state not in (ModelLifecycleState.CERTIFIED, ModelLifecycleState.PROMOTED):
             raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED,
                                    detail=f"cannot load model {model_id} in state {lifecycle.model_lifecycle_state}")
-        if lifecycle.runtime_lifecycle_state in (RuntimeLifecycleState.TERMINATING, RuntimeLifecycleState.TERMINATED):
+        if lifecycle.runtime_lifecycle_state == RuntimeLifecycleState.TERMINATING:     # a TERMINATED one is deployed again (call flow 17e)
             raise framework_error(FrameworkError.LIFECYCLE_ILLEGAL_TRANSITION,
                                    detail=f"model {model_id}'s runtime is {lifecycle.runtime_lifecycle_state}")
 
@@ -914,7 +913,7 @@ def _run_loading(db: Session, function: AIMLInferenceFunction, model_ids: list[u
     loaded = list(function.ml_model_refs or [])
     for i, model_id in enumerate(model_ids, start=1):
         lifecycle = _get_or_create_lifecycle(db, model_id)
-        if lifecycle.runtime_lifecycle_state == RuntimeLifecycleState.NOT_DEPLOYED:
+        if lifecycle.runtime_lifecycle_state in (RuntimeLifecycleState.NOT_DEPLOYED, RuntimeLifecycleState.TERMINATED):   # call flow 17e: a terminated one is deployed again
             _deploy_runtime(db, model_id)
         if lifecycle.runtime_lifecycle_state == RuntimeLifecycleState.DEPLOYED:
             _activate_runtime(db, model_id)

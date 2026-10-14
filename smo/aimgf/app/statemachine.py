@@ -164,7 +164,7 @@ MODEL_LIFECYCLE_FSM = build_model_lifecycle_fsm()
 # ---------------------------------------------------------------- RuntimeLifecycle
 
 class RuntimeLifecycleState(StrEnum):
-    """The 8 states of a model's serving runtime: NOT_DEPLOYED through DEPLOYED, ACTIVE and SCALING to TERMINATED (terminal)."""
+    """The 8 states of a model's serving runtime: NOT_DEPLOYED through DEPLOYED, ACTIVE and SCALING to TERMINATED, from where it is deployed again."""
     NOT_DEPLOYED = "NOT_DEPLOYED"
     DEPLOYMENT_REQUESTED = "DEPLOYMENT_REQUESTED"
     DEPLOYED = "DEPLOYED"
@@ -190,8 +190,8 @@ class RuntimeLifecycleEvent(StrEnum):
 def build_runtime_lifecycle_fsm() -> StateMachine[RuntimeLifecycleState, RuntimeLifecycleEvent]:
     """Returns the transition table of `RuntimeLifecycleState` (README 2.3, second table).
 
-    REQUEST_TERMINATION is legal from DEPLOYMENT_REQUESTED, DEPLOYED and ACTIVE only; there is no edge out of SCALING or TERMINATED, so a terminated runtime
-    cannot be redeployed. ACTIVATE and ACTIVATION_COMPLETE are AIMgF's own decision (no NFO call), unlike REQUEST_SCALE and REQUEST_TERMINATION.
+    REQUEST_TERMINATION is legal from DEPLOYMENT_REQUESTED, DEPLOYED and ACTIVE only; there is none out of SCALING. REQUEST_DEPLOYMENT is legal from
+    NOT_DEPLOYED and from TERMINATED, so a terminated runtime is deployed again (call flow 17d). ACTIVATE and ACTIVATION_COMPLETE are AIMgF's own decision (no NFO call), unlike REQUEST_SCALE and REQUEST_TERMINATION.
     """
     fsm: StateMachine[RuntimeLifecycleState, RuntimeLifecycleEvent] = StateMachine()
     S, E = RuntimeLifecycleState, RuntimeLifecycleEvent
@@ -205,6 +205,8 @@ def build_runtime_lifecycle_fsm() -> StateMachine[RuntimeLifecycleState, Runtime
     fsm.add(S.DEPLOYED, E.REQUEST_TERMINATION, S.TERMINATING)
     fsm.add(S.ACTIVE, E.REQUEST_TERMINATION, S.TERMINATING)
     fsm.add(S.TERMINATING, E.TERMINATION_COMPLETE, S.TERMINATED)
+    # Call flow 17d (DOC-CF-1.5): a terminated runtime is deployed again (a fresh NFO descriptor and deployment), under the same certification check
+    fsm.add(S.TERMINATED, E.REQUEST_DEPLOYMENT, S.DEPLOYMENT_REQUESTED)
     return fsm
 
 

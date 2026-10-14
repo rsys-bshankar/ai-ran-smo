@@ -17,6 +17,8 @@ import os
 import secrets
 from dataclasses import dataclass, field
 
+from .throttle import AccountPolicy
+
 
 def mtls_on() -> bool:
     """PR-SEC-2: this backend's calls to R1 present its client certificate (the same `SMO_MTLS` switch as smo_shared/mtls.py, which this image does not install)."""
@@ -147,6 +149,12 @@ class Settings:
     # SEC-15.11: how many reverse proxies stand between a browser and this backend (the console's nginx is one). The sign-in lockout and throttle read the client's address from
     # the entry that many places from the right of X-Forwarded-For; 0 ignores the header (clients reach the backend directly). Negative values stop the start.
     trusted_proxy_hops: int = field(default_factory=lambda: _non_negative_int("GUI_TRUSTED_PROXY_HOPS", 1))
+    # SEC-15.11b: the per-account cool-down (app/throttle.py). GUI_ACCOUNT_MAX_FAILURES failures of one user name from anywhere inside GUI_ACCOUNT_WINDOW_SECONDS refuse that name for
+    # GUI_ACCOUNT_COOLDOWN_SECONDS (doubling per repeat up to GUI_ACCOUNT_COOLDOWN_MAX_SECONDS). 0 failures switches it off. A value that is not a whole number stops the start.
+    account_max_failures: int = field(default_factory=lambda: _non_negative_int("GUI_ACCOUNT_MAX_FAILURES", 20))
+    account_window_seconds: int = field(default_factory=lambda: _non_negative_int("GUI_ACCOUNT_WINDOW_SECONDS", 600))
+    account_cooldown_seconds: int = field(default_factory=lambda: _non_negative_int("GUI_ACCOUNT_COOLDOWN_SECONDS", 60))
+    account_cooldown_max_seconds: int = field(default_factory=lambda: _non_negative_int("GUI_ACCOUNT_COOLDOWN_MAX_SECONDS", 300))
     health_timeout_seconds: float = field(default_factory=lambda: float(os.environ.get("GUI_HEALTH_TIMEOUT_SECONDS", "3")))
     upstream_timeout_seconds: float = field(default_factory=lambda: float(os.environ.get("GUI_UPSTREAM_TIMEOUT_SECONDS", "30")))
     # ---- PR-SEC-6: OIDC login (off by default). Local username/password login stays unless GUI_LOCAL_LOGIN_ENABLED=false.
@@ -179,6 +187,10 @@ class Settings:
         if not self.jwt_secret:
             self.jwt_secret = secrets.token_urlsafe(48)
             self.jwt_secret_generated = True
+
+    def account_policy(self) -> AccountPolicy:
+        """The per-account cool-down's settings (`GUI_ACCOUNT_*`, SEC-15.11b); ValueError for a combination that makes no sense (a ceiling under the cool-down, a zero window)."""
+        return AccountPolicy(self.account_max_failures, self.account_window_seconds, self.account_cooldown_seconds, self.account_cooldown_max_seconds)
 
 
 settings = Settings()

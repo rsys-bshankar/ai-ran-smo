@@ -2,7 +2,7 @@
 
 The lockout of `main.py` counts failed sign-ins in `LoginFailure` rows (`db.py`). A counter keyed by the user name alone lets anyone lock any user out from anywhere, and
 does not slow one source that tries many names. This file gives the two keys that replace it: the pair (source, user name), which is what locks an account for the source that
-failed, and the source alone, which throttles a source whatever names it tries. It owns the reading of the address (`client_source`); it does not count or lock anything.
+failed, and the source alone, which throttles a source whatever names it tries; `account_key` (SEC-15.11b) is the name alone, whatever the source. It owns the reading of the address (`client_source`); it does not count or lock anything.
 
 The address is the TCP peer, or, when this backend sits behind `GUI_TRUSTED_PROXY_HOPS` reverse proxies (the console's nginx is one: it appends the peer it saw to
 `X-Forwarded-For`), the entry that many places from the right of that header, which the nearest trusted proxy wrote. Entries further left are the client's own words and are never
@@ -46,6 +46,9 @@ def _normalise(text: str | None) -> str | None:
 
 # The start of every pair key. With `pair_key_suffix` it selects the pair keys of one user name from every source.
 PAIR_PREFIX = f"p{_SEP}"
+# The start of every account key (SEC-15.11b); the source keys start with `s` and the same separator.
+ACCOUNT_PREFIX = f"a{_SEP}"
+SOURCE_PREFIX = f"s{_SEP}"
 
 
 def pair_key(source: str, username: str) -> str:
@@ -55,7 +58,12 @@ def pair_key(source: str, username: str) -> str:
 
 def source_key(source: str) -> str:
     """The key of the counter for everything one source has failed, whatever names it tried: the per-source throttle."""
-    return f"s{_SEP}{source}"
+    return f"{SOURCE_PREFIX}{source}"
+
+
+def account_key(username: str) -> str:
+    """The key of the counter for one user name tried from anywhere (SEC-15.11b): the per-account cool-down, which no source and no sign-in can reset."""
+    return f"{ACCOUNT_PREFIX}{username}"
 
 
 def pair_key_suffix(username: str) -> str:

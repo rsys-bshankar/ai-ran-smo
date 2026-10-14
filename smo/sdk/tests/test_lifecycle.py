@@ -92,7 +92,7 @@ def test_the_gateway_policy_no_longer_lets_an_rapp_advance_a_model():
     """The path the deprecated method used is off the rApp allow-list, while the AIMgF model routes a rApp does use stay on it (a loosened or over-tightened pattern shows here)."""
     from smo_shared import roles
     assert not roles.rapp_may_change("/aimgf", "POST", "/models/m/advance")
-    for tail in ("inference-jobs", "runtime/deploy", "runtime/activate"):
+    for tail in ("inference-jobs", "runtime/deploy", "runtime/activate", "runtime/scale", "runtime/terminate"):
         assert roles.rapp_may_change("/aimgf", "POST", f"/models/m/{tail}")
 
 
@@ -266,3 +266,12 @@ def test_raises_sdk_error_on_a_4xx_response(client, r1):
         client.suspend_training(uuid.uuid4())
     assert exc_info.value.status_code == 409
     assert exc_info.value.body == {"detail": "invalid transition"}
+
+
+def test_scale_and_terminate_runtime_post_to_the_models_runtime(client, r1):
+    """Call flow 17c/17d: `scale_runtime` and `terminate_runtime` are one POST each to the model's runtime routes, which the gateway lets an rApp make."""
+    model_id = uuid.uuid4()
+    client.scale_runtime(model_id)
+    client.terminate_runtime(model_id)
+    assert [(c["verb"], c["path"]) for c in r1.calls[-2:]] == [("post", f"/aimgf/models/{model_id}/runtime/scale"),
+                                                              ("post", f"/aimgf/models/{model_id}/runtime/terminate")]
