@@ -38,5 +38,10 @@
   "26-model-governance-and-end-of-life/26b-reject-then-retry-or-retire.png": "1c778965396f27cf99daae529fd3ab5f546c8cdf7060dcb6a430099250afe93a",
   "26-model-governance-and-end-of-life/26c-roll-back.png": "e12cc8277ee28ff4cade5831065856278b8c742e79308a88d6d75d0824c94a47",
   "26-model-governance-and-end-of-life/26d-deprecate.png": "36c46dde05f9a7ee0460be765b7f8a76158652875681f06c91b8ee8891c2468f",
-  "26-model-governance-and-end-of-life/26e-retire-and-deleting-the-model.png": "7f6485f12d7a5f54c92332c62adf43efa24ffb40427ea094bb66f800b5d21c34"
+  "26-model-governance-and-end-of-life/26e-retire-and-deleting-the-model.png": "7f6485f12d7a5f54c92332c62adf43efa24ffb40427ea094bb66f800b5d21c34",
+  "27-ts28105-provisioning-resources/27a-training-request-process-and-report.png": "9c0785e2c3203aff3bd0add2b08a397cbd9f06124bfe5678a6445d6bb9d3ef09",
+  "27-ts28105-provisioning-resources/27b-suspend-resume-cancel.png": "c64d356df9825cae11f89cb4d0a1ca2f128b16205894d6c4ca7c428761eb11e2",
+  "27-ts28105-provisioning-resources/27c-ml-update-fine-tuning-several-models.png": "c3ee408e91431654d0fa63bf5624674f39a3d1706b6369c894c3a86545bfb17b",
+  "27-ts28105-provisioning-resources/27d-model-loading-by-request-or-policy.png": "3d0b3579427612cbc8f83fa5f0b3dc0bb856865f2f1b122f16ea53637449c794",
+  "27-ts28105-provisioning-resources/27e-execution-timeouts.png": "71cacd3ff7fed47205d6212aefe0fad1619bdb33d50f37605b7b4d3625011f47"
 }

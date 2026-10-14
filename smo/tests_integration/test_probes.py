@@ -87,7 +87,7 @@ def test_compose_probes_ready_on_every_service_built_from_the_shared_dockerfile(
              and name not in ("gui-bff", "migrate")}      # the BFF is not on smo_shared; migrate is a one-shot, not a server
     assert len(built) >= 20
     workers = {name for name in built if "smo_shared.worker" in " ".join(services[name].get("command") or [])}
-    assert workers == {"ran-nf-oam-worker", "mdaf-worker", "rapp-mgmt-worker"}                  # PR-MSG-4: a worker has no port, so no /ready
+    assert workers == {"ran-nf-oam-worker", "mdaf-worker", "rapp-mgmt-worker", "aimgf-worker"}                  # PR-MSG-4: a worker has no port, so no /ready
     for name in built - workers:
         probe = services[name]["healthcheck"]["test"]
         assert "/ready" in " ".join(probe), name

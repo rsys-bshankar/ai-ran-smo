@@ -103,6 +103,13 @@ Every module answers `GET /version` (`{module, version, buildSha, builtAt}`, PR-
 
 `values.yaml` is commented. The modules are one map (`modules`) and one template; a module is described by `image`, `kind` (`service` with `/live` and `/ready`, `worker` with a heartbeat file, `static` with a TCP probe), `database`, `enrollment`, `env`, `persistence`, `resources`; `moduleDefaults` is what each starts from. Every pod runs as the unprivileged user, with no capability, no privilege escalation and a read-only root filesystem (PR-SEC-13).
 
+## AI/ML run timeouts (call flow 27e)
+
+`modules.aimgf-worker` (the AIMgF image run as a worker) fails every training, validation, emulation and inference run past its deadline, removes its NFO
+runtime and tells the requester `TIMEOUT`, every `AIMGF_TIMEOUT_SWEEP_SECONDS` (default `"60"`). Before it, only a read of a job swept, so a run nobody read
+never timed out. It uses AIMgF's database role (which now lists `periodic_run`; the migrate Job re-runs the grants) and its SME identity. More than one
+replica is fine (one runs the task per interval; `ci/ha-values.yaml` has two). Leave it enabled: without it, timeouts again depend on someone reading the jobs.
+
 ## Scheduled rotation of rApp instance secrets (SEC-15.19)
 
 `modules.rapp-mgmt-worker` (the rApp Management image run as a worker, like `ran-nf-oam-worker`) rotates the secret of running rApp instances on a schedule. **Off by default:** `RAPP_MGMT_SECRET_ROTATION_DAYS` is `"0"`, and the worker then does nothing (it is still one small pod; set `modules.rapp-mgmt-worker.enabled=false` to leave it out). To switch it on set the number of days:

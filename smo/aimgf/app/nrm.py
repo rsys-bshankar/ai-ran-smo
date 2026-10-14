@@ -23,9 +23,10 @@ the timeout sweep first.
 """
 
 import datetime
+import logging
 import uuid
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -37,7 +38,7 @@ from smo_shared.pagination import PageLimit, PageOffset, paginate, paginate_list
 from . import ts28105
 from .main import (
     ACTIVE_TRAINING_STATUSES, RuntimeProfile, _activate_runtime, _cancel_training_job, _check_job_owner, _check_rapp_owns_models, _deploy_runtime, _expire_overdue_jobs,
-    _fire_model_event, _get_or_create_lifecycle, _nfo_terminate_execution, _owned_model, _resolve_runtime_profile,
+    _fire_model_event, _get_or_create_lifecycle, _nfo_release, _nfo_terminate_execution, _owned_model, _resolve_runtime_profile,
     _resume_training_job, _start_training, _start_validation, _sync_training_process, _validate_dme_data_job_ids,
 )
 from .models import (
@@ -47,6 +48,8 @@ from .models import (
     MLUpdateRequest, TrainingJob, ValidationJob,
 )
 from .statemachine import TRAINABLE_STATES, ModelLifecycleEvent, ModelLifecycleState, RuntimeLifecycleState
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -787,10 +790,11 @@ def _inference_report_view(r: AIMLInferenceReport) -> dict:
 
 
 @router.post("/aiml-inference-reports", status_code=201)
-def create_aiml_inference_report(body: AIMLInferenceReportBody, db: Session = Depends(get_session)):
+def create_aiml_inference_report(body: AIMLInferenceReportBody, request: Request, db: Session = Depends(get_session)):
     # Route notes: a report posted directly by a runtime that reports outside resolve and complete. 422 `SCHEMA_VALIDATION_FAILED` unless exactly one function
-    # reference is given; 404 `NRM_OBJECT_NOT_FOUND` if that function does not exist. The model ids are stored as strings and are not looked up in MLMR. One
-    # commit.
+    # reference is given; 404 `NRM_OBJECT_NOT_FOUND` if that function does not exist. Call flow 27d: an rApp may report only on models it owns (403
+    # `MODEL_ACCESS_DENIED`, `_check_rapp_owns_models`; a model MLMR no longer knows passes), as on inference resolve (call flow 02); the console and SMO modules are
+    # not asked, and for them the model ids are stored as strings without a lookup. One commit.
     if (body.aIMLInferenceFunctionRef is None) == (body.aIMLInferenceEmulationFunctionRef is None):
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
                                detail="exactly one of aIMLInferenceFunctionRef/aIMLInferenceEmulationFunctionRef")
@@ -798,6 +802,7 @@ def create_aiml_inference_report(body: AIMLInferenceReportBody, db: Session = De
         _get(db, AIMLInferenceFunction, body.aIMLInferenceFunctionRef, "AIMLInferenceFunction")
     elif body.aIMLInferenceEmulationFunctionRef is not None:       # exactly one is set (checked above)
         _get(db, AIMLInferenceEmulationFunction, body.aIMLInferenceEmulationFunctionRef, "AIMLInferenceEmulationFunction")
+    _check_rapp_owns_models(request, [uuid.UUID(str(m)) for m in body.mLModelRefList], "report on its inference")
     r = AIMLInferenceReport(aiml_inference_function_id=body.aIMLInferenceFunctionRef,
                             aiml_inference_emulation_function_id=body.aIMLInferenceEmulationFunctionRef,
                             inference_outputs=ts28105.dump(body.inferenceOutputs) or [],
@@ -904,8 +909,8 @@ def _run_loading(db: Session, function: AIMLInferenceFunction, model_ids: list[u
     For each model it brings the serving runtime up through the real RuntimeLifecycle, doing only the steps the runtime still needs: `_deploy_runtime` (an NFO descriptor
     and deployment) when NOT_DEPLOYED, then `_activate_runtime` when DEPLOYED. A runtime that is already ACTIVE, or in another state, is left as it is. The model is added
     to the function's `mLModelRefList` once. Synchronous, like every NFO call here. `request` or `policy` says what started the run and sets the request's status to
-    IN_PROGRESS and then FINISHED. A failure part-way (an NFO error) aborts the request before the commit:
-    models already deployed have an NFO runtime but no committed AIMgF state.
+    IN_PROGRESS and then FINISHED. A failure part-way (an NFO error, or a later model's refusal) aborts the request before the commit, and the runtimes this run
+    already deployed at NFO are released first (`_nfo_release`, best effort), so nothing runs at NFO that AIMgF does not record (call flow 27d).
     """
     process = MLModelLoadingProcess(aiml_inference_function_id=function.aiml_inference_function_id, status="RUNNING",
                                     loading_request_refs=[str(request.ml_model_loading_request_id)] if request else [],
@@ -917,23 +922,39 @@ def _run_loading(db: Session, function: AIMLInferenceFunction, model_ids: list[u
     # Flushed so the process has an id and exists in the transaction before the NFO calls start.
     db.flush()
     loaded = list(function.ml_model_refs or [])
-    for i, model_id in enumerate(model_ids, start=1):
-        lifecycle = _get_or_create_lifecycle(db, model_id)
-        if lifecycle.runtime_lifecycle_state in (RuntimeLifecycleState.NOT_DEPLOYED, RuntimeLifecycleState.TERMINATED):   # call flow 17e: a terminated one is deployed again
-            _deploy_runtime(db, model_id)
-        if lifecycle.runtime_lifecycle_state == RuntimeLifecycleState.DEPLOYED:
-            _activate_runtime(db, model_id)
-        if str(model_id) not in loaded:
-            loaded.append(str(model_id))
-        # The list is rebuilt, not appended to: a JSON column does not track in-place mutation, so only an assignment is written.
-        process.loaded_ml_model_refs = [*process.loaded_ml_model_refs, str(model_id)]
-        process.progress_percentage = int(100 * i / len(model_ids))
+    deployed: list[tuple] = []   # (deployment id, descriptor id) of every runtime this run deployed at NFO, released if a later step fails
+    try:
+        for i, model_id in enumerate(model_ids, start=1):
+            lifecycle = _get_or_create_lifecycle(db, model_id)
+            if lifecycle.runtime_lifecycle_state in (RuntimeLifecycleState.NOT_DEPLOYED, RuntimeLifecycleState.TERMINATED):   # call flow 17e: a terminated one is deployed again
+                _deploy_runtime(db, model_id)
+                deployed.append((lifecycle.nf_deployment_id, lifecycle.nf_deployment_descriptor_id))
+            if lifecycle.runtime_lifecycle_state == RuntimeLifecycleState.DEPLOYED:
+                _activate_runtime(db, model_id)
+            if str(model_id) not in loaded:
+                loaded.append(str(model_id))
+            # The list is rebuilt, not appended to: a JSON column does not track in-place mutation, so only an assignment is written.
+            process.loaded_ml_model_refs = [*process.loaded_ml_model_refs, str(model_id)]
+            process.progress_percentage = int(100 * i / len(model_ids))
+    except HTTPException:
+        _release_deployed(deployed)
+        raise
     # Assigned as a new list for the same reason as `loaded_ml_model_refs` above.
     function.ml_model_refs = loaded
     process.status, process.progress_percentage, process.result_state_info = "FINISHED", 100, "SUCCEEDED"
     if request is not None:
         request.request_status = "FINISHED"
     return process
+
+
+def _release_deployed(deployed: list[tuple]) -> None:
+    """Releases (terminates, then deletes the descriptor of) each NFO runtime a failed loading run deployed, best effort: one NFO does not release is logged and
+    the others are still tried; the caller's transaction is rolled back, so AIMgF records none of them (call flow 27d)."""
+    for deployment_id, descriptor_id in deployed:
+        try:
+            _nfo_release(deployment_id, descriptor_id)
+        except HTTPException:
+            logger.warning("loading failed part-way: NFO deployment %s was not released and runs on unrecorded", deployment_id)
 
 
 @router.post("/ml-model-loading-policies", status_code=201)
@@ -1030,8 +1051,10 @@ def modify_ml_model_loading_request(request: Request, request_id: uuid.UUID, bod
     # Route notes: 409 `TRAINING_JOB_ILLEGAL_TRANSITION` for a request that is already FINISHED or CANCELLED. Otherwise, in this order: `cancelRequest` records
     # CANCELLED; `suspendRequest` false on a SUSPENDED request re-checks `_check_loadable` and runs the loading; `suspendRequest` true records SUSPENDED;
     # anything else (including `suspendRequest` false on a request that is not SUSPENDED) changes nothing. The 409 code is the one this module uses for every
-    # request that is in the wrong status.
+    # request that is in the wrong status. Call flow 27d: an rApp may change only a request whose models it owns (403 `MODEL_ACCESS_DENIED`, `_check_rapp_owns_models`;
+    # a model MLMR no longer knows passes); the resume also re-checks through `_check_loadable`.
     r = _get(db, MLModelLoadingRequest, request_id, "MLModelLoadingRequest")
+    _check_rapp_owns_models(request, [uuid.UUID(m) for m in r.ml_model_to_load_refs or []], "cancel or suspend its loading")
     if r.request_status in ("FINISHED", "CANCELLED"):
         raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
                                detail=f"loading request already {r.request_status}")
