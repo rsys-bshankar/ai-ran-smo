@@ -116,6 +116,19 @@ spec:
             {{- if $m.enrollment }}
             - { name: SMO_ENROLLMENT_SECRET_FILE, value: /run/secrets/enrollment_secret }
             {{- end }}
+            {{- if $m.database }}
+            {{- with $.Values.identityKeySecretRef }}
+            {{- if .name }}
+            # SEC-15.18: the key that encrypts the module identities in the shared module_identity table, from a Secret of your own; every replica of every module gets the same
+            - name: SMO_IDENTITY_KEY
+              valueFrom: { secretKeyRef: { name: {{ .name | quote }}, key: {{ .key | default "identity-key" | quote }} } }
+            {{- if .previousKey }}
+            - name: SMO_IDENTITY_PREVIOUS_KEY
+              valueFrom: { secretKeyRef: { name: {{ .name | quote }}, key: {{ .previousKey | quote }} } }
+            {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
             {{- if ne $mtls "off" }}
             # PR-SEC-2: the certificate, key and CA are mounted at /run/mtls (the default of SMO_MTLS_*_FILE)
             - { name: SMO_MTLS, value: "on" }

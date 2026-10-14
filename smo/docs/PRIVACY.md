@@ -51,7 +51,7 @@ Retention "none" means there is no deletion in the code at all.
 | 22 | Sign-in challenge | `gui_login_challenge`: `jti` (random), `username`, `expires_at` (five minutes). The browser holds the signed token for it between the password and the code | GUI BFF | The second step of a sign-in (PR-SEC-7.2) | Deleted by the correct code; expired rows removed whenever another challenge is written; deleted with the user or at a reset | The volume's owner. No route reads it | The volume |
 | 23 | Pinned rApps of a user | `gui_rapp_pin`: `username`, `instance_id` (a rApp instance of rApp Management), `pinned_at`; at most five rows a user | GUI BFF | The rApps the user pinned to the sidebar (`PR-GUI-8`) | Until the user unpins the rApp or is deleted; a pin of an instance that no longer exists is dropped the next time the pins are read | Admins with access to the BFF's database volume (the BFF has no route that lists another user's pins) | The user's deletion removes the rows; the volume's backup (`dr_backup.sh`) |
 
-Not personal data, listed so nobody searches for it: `gui_setting` (session signing key), `gui_smo_credential` and `module_identity` (service credentials, `docs/SECRETS.md`), invoker
+Not personal data, listed so nobody searches for it: `gui_setting` (session signing key), `gui_smo_credential` and `module_identity` (service credentials, encrypted at rest with `SMO_IDENTITY_KEY` when it is set, `docs/SECRETS.md`), invoker
 registrations at SME (names of rApps and modules), and `jti` values.
 
 ## 3. Findings the inventory turned up

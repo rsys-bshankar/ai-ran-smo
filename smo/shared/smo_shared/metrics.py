@@ -129,6 +129,14 @@ def record_rate_store_fallback() -> None:
     RATE_STORE_FALLBACKS.inc()
 
 
+IDENTITY_UNENCRYPTED_READS = Counter("smo_identity_unencrypted_reads_total", "Stored module identities read while an identity key is configured but the row is not sealed with the current key (SEC-15.18), by kind: plaintext or previous-key. Run `python -m smo_shared.module_identity encrypt-existing`.", ["kind"])
+
+
+def record_identity_unencrypted_read(kind: str = "plaintext") -> None:
+    """Counts a stored identity read that was plaintext or sealed with the previous key although a current key is configured (`encrypt-existing` clears it)."""
+    IDENTITY_UNENCRYPTED_READS.labels(kind).inc()
+
+
 AUDIT_WRITES = Counter("smo_audit_writes_total", "Rows the gateway tried to add to the audit chain (PR-SEC-11), by outcome (ok or failed).", ["outcome"])
 
 

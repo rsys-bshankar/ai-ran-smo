@@ -62,6 +62,6 @@ SQLite unit tests) the table publisher keeps the event in memory, so a test of a
 
 ## Not built
 
-- **Kafka** (`MSG-3.4`, `OPEN_ITEMS.md`): the publisher is an interface (`EventPublisher`) so a Kafka one can sit beside the table one; nothing needs it yet.
+- **Kafka** (`MSG-3.4`, `OPEN_ITEMS.md`): the publisher is an interface (`EventPublisher`) so a Kafka one can sit beside the table one; nothing needs it yet. Designed and decided (October 2026), not built: a relay that follows `smo_event`, not a Kafka `EventPublisher` ([adr/0006-msg-3-4-kafka-event-sink.md](adr/0006-msg-3-4-kafka-event-sink.md)).
 - **Subscriptions with callbacks.** A reader follows the feed; nothing is pushed to a URL. A module that wants to tell an outside party uses the outbox
   (`docs/NOTIFICATIONS.md`).

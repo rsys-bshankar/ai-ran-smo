@@ -319,7 +319,7 @@ Postgres table with `NOTIFY` at commit, the feed on DME, the state-machine hook 
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| MSG-3.4 | Kafka implementation behind an optional extra | Round trip against a Kafka container in a compose profile | MSG-3.2 |
+| MSG-3.4 | Kafka implementation behind an optional extra. Designed and decided (October 2026), not built: [docs/adr/0006-msg-3-4-kafka-event-sink.md](docs/adr/0006-msg-3-4-kafka-event-sink.md); slices: 1 packaging, 2 relay+migration+metrics, 3 compose profile+round trip+CI job, 4 SB-7.6 consumer, 5 chart+ops docs | Round trip against a Kafka container in a compose profile | MSG-3.2 |
 
 #### PR-MSG-4 — Durable job runner (the periodic part is done: `HISTORY.md` PR-MSG-4, the worker; open: the generic `job` table and its queue-shaped users)
 
@@ -469,7 +469,6 @@ of what the routes accept, PR 4 = clients, tooling and migrations; "none yet" me
 | SEC-15.3c | Refusing a model that has no `owner` outright, the last step of the model ownership checks (`SEC-15.3` .. `SEC-15.3d`, `HISTORY.md`). A model registered before `SEC-15.3b` has no `owner` and stays open to any rApp; an rApp cannot claim it through `PUT` (403 `MODEL_OWNER_IMMUTABLE`); an admin gives it one with the console's **Set owner** (`PUT /mlmr/models/{id}/owner`, audited; the table and detail mark such models "No owner (open to any rApp)"), done in `HISTORY.md` `SEC-15.3c`. What is left: once no flow produces an owner-less model and none is left in a deployment, make `owner_may_act` (MLMR) and `_owner_may_act` (AIMgF) refuse them for role `rapp`, and make `POST /models` from an SMO module name an owner. | `aimgf/app/main.py`, `mlmr/app/mlr.py` | The deployment's models all have an owner (no flow registers one without; models of a deployment older than `SEC-15.3b` set through the console) |
 | SEC-15.6b | What remains of the MSAC credential (`SEC-15.6`; the SDK's `msac_credential`, DME passing the header on and RAN NF OAM asking an SMO module that carries `X-R1-On-Behalf-Of` for it are done, `HISTORY.md` `SEC-15.6b`): the `MGT-2` reach checks on reads and subscriptions use the gateway's invoker id as the Identity name, so there is no credential to present (needs a decision on how an rApp's Identity is named); the console cannot send the header; a credential is optional on an Identity (an Identity without one is trusted on the caller's word, as before); the Go and Java SDKs have no parameter for it | `ran-nf-oam/app/msac.py`, `gui`, `sdk-go`, `sdk-java` | A decision on how an rApp's Identity is named |
 | SEC-15.13b | SME's `POST /invoker-registrations` does not honour an `Idempotency-Key` (it would have to store the answer, which holds the onboarding secret in clear), so an SDK is kept from registering twice only by not repeating the call after a lost answer; the Java SDK now does that (`HISTORY.md` "PR-SEC-15 (part 4)"). A registration a lost answer left behind is an orphan invoker that SME's stale-invoker purge removes | `sme/app`, `sdk-java/` | none yet |
-| SEC-15.18 | The secrets of the rApp instances' identities (and of the modules' own) are stored unencrypted in the shared `module_identity` table: whoever reads the database can act as an instance. Decided in the review of call flow 01: encrypt them with a key from the environment (a mounted secret), as `GUI_TOTP_KEY` does for the sign-in secrets | `shared/smo_shared/module_identity.py`, `smo_shared/r1_client.py` | none yet |
 | SEC-15.19 | An instance's secret is rotated only by hand (**Re-send credentials**, `POST /rapp-mgmt/instances/{id}/credentials/renew`). Decided in the review of call flow 01: later, an automatic rotation on a schedule | `rapp-mgmt/app/main.py` | none yet |
 
 Closed by this change (details in `CHANGELOG.md` and the `shared` README): the webhook SSRF guard accepted spellings of loopback, unspecified and link-local addresses
@@ -735,7 +734,7 @@ A CM write's values are checked against the leaf's YANG type, range, length, pat
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SB-7.6 | Kafka consumer variant | Same events via a topic | SB-7.1, MSG-3.4 |
+| SB-7.6 | Kafka consumer variant. Designed and decided (October 2026), not built: [docs/adr/0006-msg-3-4-kafka-event-sink.md](docs/adr/0006-msg-3-4-kafka-event-sink.md); slice 4 (SB-7.6 consumer) of its five | Same events via a topic | SB-7.1, MSG-3.4 |
 | SB-7.7 | Try the receiver against a real VES sender (an ONAP-style one, `NB-6.2`'s other half) and fix the mapping where it differs from what was written from the schema | Events of a real sender become alarms, heartbeats and PM reports | – |
 
 #### PR-SB-8 — Streaming PM (`SA-RANOAM-8`)
@@ -984,7 +983,7 @@ FM subscriptions with callbacks exist; the steps below add destinations a NOC us
 |---|---|---|---|
 | NB-1.1 | Destination model: type, address, filter | Migration | – |
 | NB-1.2 | REST destination through the outbox | Receiver gets a new alarm | NB-1.1, MSG-1.4 |
-| NB-1.3 | Kafka destination | Message on a topic | NB-1.1, MSG-3.4 |
+| NB-1.3 | Kafka destination. Designed and decided (October 2026), not built: [docs/adr/0006-msg-3-4-kafka-event-sink.md](docs/adr/0006-msg-3-4-kafka-event-sink.md); it reuses the producer and settings of slices 1 and 2, and its own design follows NB-1.1 | Message on a topic | NB-1.1, MSG-3.4 |
 | NB-1.4 | SNMP v2c trap | Trap seen by a test listener | NB-1.1 |
 | NB-1.5 | SNMP v3 | Same with auth and privacy | NB-1.4 |
 | NB-1.6 | Syslog destination | Message seen | NB-1.1 |
