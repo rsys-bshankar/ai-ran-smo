@@ -53,6 +53,7 @@ import httpx
 
 from .correlation import HEADER_NAME as CORRELATION_ID_HEADER
 from .correlation import get_correlation_id
+from .identity_secrets import IdentityKeyError
 from .invoker import ON_BEHALF_OF_HEADER, get_originator
 from .scope import ON_BEHALF_SCOPE_HEADER, encode as encode_scope, get_originator_scope
 from . import metrics, mtls, tracing
@@ -161,6 +162,8 @@ class _ModuleIdentity:
                 if stored is not None and stored[0] != stale_invoker_id:
                     self.invoker_id, self.invoker_secret = stored
                     return
+            except IdentityKeyError:
+                raise                   # a key problem is not a store outage: another registration would not help and would only pile up at SME
             except Exception as exc:  # the store is an optimisation: without it, register per process as before
                 log.warning("module identity store unavailable, registering this process on its own: %r", exc)
                 store = None
@@ -175,6 +178,8 @@ class _ModuleIdentity:
                     if winner is not None:
                         self.invoker_id, self.invoker_secret = winner
                         return
+            except IdentityKeyError:
+                raise
             except Exception as exc:
                 log.warning("could not store the module identity, using this process's own: %r", exc)
         self.invoker_id, self.invoker_secret = invoker_id, secret
@@ -225,7 +230,7 @@ class _ModuleIdentity:
                         self.invoker_id, self.invoker_secret = fresh
                         resp = self._grant(token_endpoint)
                 resp.raise_for_status()
-            except (httpx.HTTPError, StopIteration, KeyError, ValueError) as exc:
+            except (httpx.HTTPError, StopIteration, KeyError, ValueError, IdentityKeyError) as exc:
                 # No token: the call still goes out and R1 answers 401, which
                 # every caller already handles as an ordinary failed call.
                 log.warning("could not obtain an SMO access token from SME: %r", exc)

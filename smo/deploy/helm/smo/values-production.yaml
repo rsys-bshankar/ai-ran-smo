@@ -43,6 +43,11 @@ gui:
 #     GUI_LOGIN_MODE: oidc          # only with the OIDC settings in gui.env; "both" (the default) keeps the password form
 # gui-bff/README.md, "Multi-factor sign-in".
 
+# Encryption of the SME identities kept in the database (SEC-15.18), NOT switched on here because it needs a Secret that only you can create. Create it, uncomment, upgrade,
+# then run the one-shot command in a pod (deploy/helm/smo/README.md, "Encrypting the module identities"):
+#   kubectl -n smo create secret generic smo-identity-key --from-literal=identity-key="$(openssl rand -base64 32)"
+# identityKeySecretRef: { name: smo-identity-key, key: identity-key }
+
 # A key pair for the session token instead of the shared GUI_JWT_SECRET (PR-SEC-5; gui-bff/README.md, "Signing keys"):
 #   openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out private-key.pem
 #   kubectl -n smo create secret generic gui-jwt-key --from-file=private-key.pem

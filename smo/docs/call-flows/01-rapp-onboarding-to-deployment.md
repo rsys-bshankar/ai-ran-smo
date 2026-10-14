@@ -278,5 +278,6 @@ instance runs, because its registrations at SME and DME are under the old id.
   - `SHADOW` stays the default autonomy mode: a new instance writes nothing until someone raises it.
   - Production (`deploy/helm/smo/values-production.yaml`) requires signed packages (the chart refuses to render without a trust store) and makes the
     SME registration of a package's declarations a condition of the bootstrap. The defaults keep both off, for a lab.
-  - Not done yet, tracked in `OPEN_ITEMS.md`: the instance secrets are stored unencrypted in the identity table (as the modules' own identities
-    are), and secrets are rotated only by hand (**Re-send credentials**).
+  - The instance secrets in the identity table (as the modules' own identities) are encrypted at rest when `SMO_IDENTITY_KEY` is configured (`SEC-15.18`: AES-256-GCM,
+    one key for every replica, `python -m smo_shared.module_identity encrypt-existing` for the rows that predate it); without a key they are stored as before.
+  - Not done yet, tracked in `OPEN_ITEMS.md`: secrets are rotated only by hand (**Re-send credentials**).

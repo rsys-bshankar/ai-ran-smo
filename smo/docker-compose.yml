@@ -54,6 +54,10 @@ x-db-env: &db_env
   SMO_DATABASE_URL: postgresql+psycopg://smo@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo   # no password here: smo_shared/db.py adds it from the file below
   SMO_DB_POOLER: ${SMO_DB_POOLER:-}
   SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password
+  # SEC-15.18: the key that encrypts the module identities (invoker secrets) in the shared module_identity table. Empty: stored as before. Every service must get the same
+  # key; prefer a file (mount it with an override and set SMO_IDENTITY_KEY_FILE there, like GUI_TOTP_KEY_FILE). docs/SECRETS.md.
+  SMO_IDENTITY_KEY: ${SMO_IDENTITY_KEY:-}
+  SMO_IDENTITY_PREVIOUS_KEY: ${SMO_IDENTITY_PREVIOUS_KEY:-}
 
 services:
   postgres:
