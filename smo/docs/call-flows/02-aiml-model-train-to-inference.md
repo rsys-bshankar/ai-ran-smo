@@ -1,153 +1,307 @@
-# Call Flow: AI/ML Model — Register → Train → Validate → Emulate → Certify → Deploy → Infer → Monitor
+# Call Flow 02: AI/ML model — register, train, validate, emulate, certify, deploy, infer, monitor
 
-The full lifecycle of an AI/ML model (AI/ML Workflow LLD sections 1-8): the certification
-pipeline, the R1-facing inference API (LLD section 3), and MLMF performance monitoring
-(LLD section 2) feeding back into a retrain trigger.
+The whole life of an AI/ML model, from the rApp that registers it to the retrain a performance breach starts (AI/ML Workflow LLD sections 1-8).
+AIMgF keeps two state machines on its own `model_lifecycle` row: `ModelLifecycle` (14 states, the model's certification path) and
+`RuntimeLifecycle` (the serving runtime, call flow 17). Five diagrams:
 
-Three services share the flow: MLMR (model repository), AIMgF (lifecycle orchestration)
-and MLLF (loading and deployment). AIMgF owns two independent state machines on its own
-`model_lifecycle` row: `ModelLifecycle` (14 states — the model's identity and
-certification path) and `RuntimeLifecycle` (8 states — the model's serving existence once
-PROMOTED), which AIMgF drives jointly with NFO by creating, scaling and terminating the
-model's runtime. Validation and emulation are request/tracking aggregates
-(`ValidationJob`/`EmulationJob`), and every governance decision
-(Approval/Certification/Promotion/Rollback) is a queryable `CertificationRecord`. See the
-service ownership section of `docs/ARCHITECTURE.md` (AIMgF, MLMR, MLLF) for each
-service's detail.
+| | Step | Who starts it | Ends with |
+|---|---|---|---|
+| 02a | Register and train | the owner rApp (SDK), Operator (GUI) | model TRAINED (or FAILED), the run's NFO runtime gone |
+| 02b | The gates, then validate and emulate | Operator (GUI) approves, the owner rApp runs | model EMULATED |
+| 02c | Governance | Admin (GUI) | model CERTIFIED and PROMOTED (or FAILED on reject) |
+| 02d | Deploy and infer | the owner rApp, Operator (GUI), a consumer rApp | an inference job COMPLETED with its report |
+| 02e | Monitor and retrain | a monitoring subscriber, the owner rApp, MDAF | a performance report, and a breach retrains the group |
+
+**As images:** [02a](images/02-aiml-model-train-to-inference/02a-register-and-train.png),
+[continued](images/02-aiml-model-train-to-inference/02a-continued-progress-complete-cancel-timeout.png) ·
+[02b](images/02-aiml-model-train-to-inference/02b-the-gates-then-validate-and-emulate.png),
+[continued](images/02-aiml-model-train-to-inference/02b-continued-approve-validation-then-emulate.png) ·
+[02c](images/02-aiml-model-train-to-inference/02c-governance.png) ·
+[02d](images/02-aiml-model-train-to-inference/02d-deploy-and-infer.png) ·
+[02e](images/02-aiml-model-train-to-inference/02e-monitor-and-retrain.png)
+(PNG, drawn from the diagrams below by `scripts/render_call_flows.py`).
+
+**How to read the diagrams.** As in call flow 01: an arrow is one call with the inputs that matter, a box on the receiver says what it does
+with them, an `alt` block is the outcome (success first, then each failure and what the caller gets). *Owner rApp (SDK)* is the rApp that
+registered the model (`sdk.models.register_model`, `sdk.lifecycle.start_training`, `report_training_progress`, `complete_training`, …);
+*Operator (GUI)* and *Admin (GUI)* stand for the console's path. In the console, the job routes and the two training gates need the
+**operator** role, the governance decisions (submit, approve, reject, certify, promote, rollback) **admin**.
+
+**Who may act on what.** MLMR records the model's `owner`: the rApp that registered it. A caller with the rApp role may start a run on, act
+on a running job of (complete, report progress or metrics, suspend, resume, cancel, and the same through the TS 28.105 request and process
+resources), or file a performance report for, only a model it owns; another rApp is **403 `MODEL_ACCESS_DENIED`** and nothing changes. A
+coordination-group job needs every member MLMR knows to be the caller's. A model with no owner, or one MLMR no longer knows, is open to any
+rApp. The console, the SMO modules and a call with no role are not asked. An rApp never fires a governance decision (403 `ROLE_NOT_PERMITTED`).
+
+## Model states
+
+| State | Left by (→ target) | Through |
+|---|---|---|
+| `REGISTERED` | `CREATE_TRAINING` → `TRAINING` | a training request (02a) |
+| `TRAINING` | `TRAINING_COMPLETE` → `TRAINED`, `TRAINING_FAILED` → `FAILED` | complete, cancel, timeout (02a) |
+| `TRAINED` | `APPROVE_TRAINING` (self-loop, sets the gate), `CREATE_VALIDATION` → `VALIDATING` | 02b |
+| `VALIDATING` | `VALIDATION_COMPLETE` → `VALIDATED`, `VALIDATION_FAILED` → `FAILED` | 02b |
+| `VALIDATED` | `APPROVE_VALIDATION` (self-loop, sets the gate), `CREATE_EMULATION` → `EMULATING` | 02b |
+| `EMULATING` | `EMULATION_COMPLETE` → `EMULATED`, `EMULATION_FAILED` → `FAILED` | 02b |
+| `EMULATED` | `SUBMIT_FOR_APPROVAL` → `PENDING_APPROVAL` | 02c |
+| `PENDING_APPROVAL` | `APPROVE` → `APPROVED`, `REJECT` → `FAILED` | 02c |
+| `APPROVED` | `CERTIFY` → `CERTIFIED` | 02c |
+| `CERTIFIED` | `PROMOTE` → `PROMOTED`, `CREATE_TRAINING` → `TRAINING`, `DEPRECATE` → `DEPRECATED` | 02c, 02a, call flow 26 |
+| `PROMOTED` | `CREATE_TRAINING` → `TRAINING`, `ROLLBACK` → `CERTIFIED`, `DEPRECATE` → `DEPRECATED` | 02e, call flow 26 |
+| `FAILED` | `CREATE_TRAINING` → `TRAINING`, `RETIRE` → `RETIRED` | 02a, call flow 26 |
+| `DEPRECATED` | `RETIRE` → `RETIRED` | call flow 26 |
+| `RETIRED` | (none) | |
+
+There is no shortcut: a retrain always re-enters at `TRAINING` and goes through every gate again. An event the state cannot take is **409
+`LIFECYCLE_ILLEGAL_TRANSITION`**. The job-driven events fire only from their job routes: `advance` refuses them with 422 (call flow 26).
+
+## 02a — Register and train
 
 ```mermaid
 sequenceDiagram
-    actor Producer as Model Producer rApp
+    participant R as Owner rApp (SDK) / Operator (GUI)
     participant MLMR as MLMR
-    participant AIMgF as AIMgF
-    participant NFO as NFO
-    participant MLLF as MLLF
+    participant AIM as AIMgF
     participant DME as DME
-    actor Operator as Operator (governance)
-    actor Consumer as Inference Consumer rApp
-    actor SA as SA SMOS (MLMF subscriber)
+    participant NFO as NFO
 
-    Producer->>MLMR: RegisterModel(modelType, version)
-    MLMR-->>Producer: modelId
+    R->>MLMR: POST /mlmr/models {modelType, version, inputDataType, outputDataType}
+    Note over MLMR: owner = the caller's invoker id (an rApp)
+    MLMR-->>R: 201 {modelId}
 
-    Producer->>AIMgF: RequestTraining(modelId, requiredData, dmeDataJobIds?, validationCriteria)
-    opt dmeDataJobIds declared
-        AIMgF->>DME: GET /dme/data-jobs/{id} per dmeDataJobIds entry
-        DME-->>AIMgF: 200 (real DataJob) or 404
-        Note over AIMgF,DME: HISTORY.md OI-6.4, closed — mirrors MDAF's own<br/>publish_report cross-check (call flow 08) exactly — DME_ARTIFACT_NOT_FOUND<br/>otherwise. Optional and additive — requiredData itself stays opaque,<br/>and an omitted list skips the check entirely
+    R->>AIM: POST /aimgf/training-jobs {modelId, producerId, dmeDataJobIds?, runtimeProfile? or packageId?, notificationUri?, timeoutSeconds?}
+    opt dmeDataJobIds
+        AIM->>DME: GET /dme/data-jobs/{id} (each)
+        Note over AIM: one unknown is 422 DME_ARTIFACT_NOT_FOUND
     end
-    Note over AIMgF: own ModelLifecycle row, lazily created — REGISTERED -> TRAINING
-    AIMgF->>NFO: CreateDescriptor(packageId=null, workloadTemplate={jobKind=TRAINING, jobId})
-    NFO-->>AIMgF: nfDeploymentDescriptorId
-    AIMgF->>NFO: Instantiate(nfDeploymentDescriptorId)
-    NFO-->>AIMgF: nfDeploymentId
-    Note over AIMgF,NFO: HISTORY.md OI-6.2, closed — MLTF's own real execution runtime<br/>(stored on TrainingJob, exposed as nfDeploymentId) — same shape as<br/>RuntimeLifecycle's own Deploy calls further below, parameterized by<br/>job kind/id rather than model id. A coordination-group-targeted job<br/>gets one too — it still needs somewhere to actually execute
-    NFO->>AIMgF: POST /training-jobs/{id}/progress (step=TRAINING, then TRAINED_MODEL)
-    Note over AIMgF: the runtime's step report, forward only — currentStep and each<br/>step's status show on the job (HISTORY.md OI-5-aiml-trainingjob-steps)
-    Producer->>AIMgF: POST /training-jobs/{id}/complete<br/>(succeeded=true, metrics, outcomeArtifactDmeTypeId?) -> TRAINED
-    AIMgF->>NFO: DELETE /nfo/deployments/{nfDeploymentId}
-    Note over AIMgF,NFO: the run is done — its transient execution runtime is torn<br/>down right alongside it, not left running indefinitely
-    Note over AIMgF: HISTORY.md OI-6.5, closed — a real, dedicated job-completion route<br/>(previously only the generic advance(TRAINING_COMPLETE) existed, with<br/>nowhere to record what the run produced). outcomeArtifactDmeTypeId<br/>is a DME DmeTypeId reference, the same "route it through DME" shape<br/>MLModel's own outputDataType already uses — set here, not at request time
-    opt notificationUri registered at RequestTraining
-        AIMgF->>Producer: best-effort POST notificationUri<br/>(jobKind, jobId, succeeded, outcomeArtifactDmeTypeId, metrics)
-        Note over AIMgF,Producer: same best-effort-push pattern as every other<br/>subscription-shaped notification in this build — unreachable<br/>never fails the completion call itself
+    AIM->>MLMR: GET /mlmr/models/{id}
+    alt unknown, another rApp's, or not REGISTERED, CERTIFIED, PROMOTED, FAILED or TRAINING
+        AIM-->>R: 404 MODEL_NOT_FOUND · 403 MODEL_ACCESS_DENIED · 409 LIFECYCLE_ILLEGAL_TRANSITION
+    else
+        Note over AIM: job IN_PROGRESS, MLTrainingProcess RUNNING<br/>CREATE_TRAINING → TRAINING (a run already in TRAINING is cancelled, superseded)<br/>mLTrainingType INITIAL_TRAINING for a REGISTERED model, else RE_TRAINING
+        AIM->>NFO: POST /nfo/descriptors {workloadTemplate {jobKind TRAINING, jobId, resources}}
+        AIM->>NFO: POST /nfo/deployments {descriptor}
+        alt NFO instantiates
+            AIM->>MLMR: PATCH /mlmr/models/{id}/phase-info IN_TRAINING or IN_RETRAINING (best effort)
+            AIM-->>R: 201 {trainingJobId}
+        else NFO refuses or does not answer
+            AIM-->>R: 502 UPSTREAM_FAILED / 503 (no job kept, model as it was)
+        end
     end
-    Note over Producer,AIMgF: this route is the only way a run completes — /models/{id}/advance<br/>refuses job-driven events such as TRAINING_COMPLETE with 422 (call flow 26)
-
-    rect rgb(255, 240, 240)
-    Note over Operator,AIMgF: operator gate (HISTORY.md OI-6.1, closed) — mirrors the<br/>CERTIFY/PROMOTE governance shape — TRAINED/VALIDATED don't change,<br/>only ModelLifecycle.trainingApproved/validationApproved
-    Producer->>AIMgF: RequestValidation(modelId, trainingJobId, notificationUri?)
-    AIMgF-->>Producer: 409 TRAINING_NOT_APPROVED
-    Operator->>AIMgF: advance(APPROVE_TRAINING, decidedBy) -> TRAINED (self-loop)
-    Note over AIMgF: writes a real CertificationRecord, same as CERTIFY/PROMOTE —<br/>sets trainingApproved=true, the actual gate request_validation checks
-    end
-
-    Producer->>AIMgF: RequestValidation(modelId, trainingJobId, notificationUri?) -> VALIDATING
-    AIMgF->>NFO: CreateDescriptor + Instantiate (jobKind=VALIDATION, jobId) -> nfDeploymentId
-    Note over AIMgF,NFO: HISTORY.md OI-6.2, closed — MLVF's own real execution runtime, same shape as Training above
-    Producer->>AIMgF: complete(validationJobId, succeeded=true, outcomeArtifactDmeTypeId?) -> VALIDATED
-    AIMgF->>NFO: DELETE /nfo/deployments/{nfDeploymentId}
-    Note over AIMgF: same outcome-artifact + best-effort notification shape as Training above
-
-    rect rgb(255, 240, 240)
-    Note over Operator,AIMgF: same operator gate, for Validation -> Emulation
-    Operator->>AIMgF: advance(APPROVE_VALIDATION, decidedBy) -> VALIDATED (self-loop)
-    Note over AIMgF: sets validationApproved=true — RequestEmulation would<br/>otherwise 409 VALIDATION_NOT_APPROVED, same shape as above
-    end
-
-    Producer->>AIMgF: RequestEmulation(modelId, notificationUri?) -> EMULATING
-    AIMgF->>NFO: CreateDescriptor + Instantiate (jobKind=EMULATION, jobId) -> nfDeploymentId
-    Note over AIMgF,NFO: HISTORY.md OI-6.2, closed — MLEF's own real execution runtime, same shape as Training above
-    Producer->>AIMgF: complete(emulationJobId, succeeded=true, outcomeArtifactDmeTypeId?) -> EMULATED
-    AIMgF->>NFO: DELETE /nfo/deployments/{nfDeploymentId}
-    Note over AIMgF: same outcome-artifact + best-effort notification shape as Training above
-    Note over Producer,AIMgF: Training->Validation and Validation->Emulation are now both<br/>operator-gated (above, HISTORY.md OI-6.1, closed) — Emulation->SUBMIT_FOR_APPROVAL<br/>itself needs no separate gate, since the governance sequence right below<br/>already starts with an explicit operator action
-
-    Note over Operator,AIMgF: governance — the certification gate, still the<br/>framework's own contribution, no O-RAN equivalent
-    Operator->>AIMgF: advance(SUBMIT_FOR_APPROVAL, decidedBy) -> PENDING_APPROVAL
-    Operator->>AIMgF: advance(APPROVE, decidedBy) -> APPROVED
-    Operator->>AIMgF: advance(CERTIFY, decidedBy) -> CERTIFIED
-    Operator->>AIMgF: advance(PROMOTE, decidedBy) -> PROMOTED
-    Note over AIMgF: each decision writes a real CertificationRecord —<br/>GET /models/{id}/governance-history is a real audit trail
-
-    Producer->>AIMgF: RequestModelRuntimeDeploy(modelId)
-    Note over AIMgF: caller is the Producer, not the Operator — but the operator has<br/>already gated this model upstream via the CERTIFY/PROMOTE governance<br/>steps above — Deploy is unreachable for anything less than<br/>ModelLifecycleState CERTIFIED/PROMOTED (see call flow 17 for the full<br/>Runtime side, including this same guard)
-    Note over AIMgF: requires ModelLifecycleState in {CERTIFIED, PROMOTED}
-    AIMgF->>NFO: CreateDescriptor(packageId=null, workloadTemplate={modelId})
-    NFO-->>AIMgF: nfDeploymentDescriptorId
-    AIMgF->>NFO: Instantiate(nfDeploymentDescriptorId)
-    NFO-->>AIMgF: nfDeploymentId
-    Note over AIMgF: RuntimeLifecycle: NOT_DEPLOYED -> DEPLOYMENT_REQUESTED -> DEPLOYED
-    Producer->>MLLF: RequestModelDeployment(modelId, nodeGroups)
-    MLLF->>AIMgF: GET /models/{id}/lifecycle (read ModelLifecycleState)
-    AIMgF-->>MLLF: modelLifecycleState=CERTIFIED|PROMOTED
-    Note over MLLF: MODEL_NOT_CERTIFIED otherwise
-    MLLF->>AIMgF: PATCH /models/{id}/runtime/node-groups (clearedNodeGroups) — MultiNode Q2 gap closure, LLD section 5
-    Producer->>AIMgF: RequestModelRuntimeActivate(modelId)
-    Note over AIMgF: RuntimeLifecycle: DEPLOYED -> ACTIVATING -> ACTIVE
-
-    Consumer->>AIMgF: RequestInference(modelId)
-    Note over AIMgF: check RuntimeLifecycleState == ACTIVE — INFERENCE_MODEL_NOT_ACTIVE otherwise
-    AIMgF->>AIMgF: stamp InferenceJob.nfDeploymentId = ModelLifecycle.nfDeploymentId
-    Note over AIMgF,NFO: HISTORY.md OI-6.2, closed — MLIF doesn't create a new NFO<br/>deployment per inference call: RuntimeLifecycleState ACTIVE already means<br/>Deploy (above) made a real, live serving deployment — this references it,<br/>never duplicates it. No new NFO call here, unlike Training/Validation/Emulation
-    AIMgF-->>Consumer: inferenceJobId, status=RUNNING
-    Note over AIMgF,DME: input features pulled via DME against the model's<br/>registered inputDataType — never inline in the request (LLD section 3)
-    AIMgF->>AIMgF: resolve(succeeded=true) -> status=COMPLETED
-    Consumer->>DME: pull result via the model's outputDataType DmeTypeId
-    DME-->>Consumer: prediction payload
-    Note over Consumer: HISTORY.md OI-6.3, closed — what the Consumer rApp does next<br/>with this prediction is its own onboarding-time autonomyMode's decision<br/>(AUTONOMOUS/ASSIST/SHADOW, call flow 09): RequestAutonomyDispatch, not a<br/>bare DME /actions (call flow 03 Path B) or ran-nf-oam write (Path A) —<br/>those two paths stay the manual, non-autonomous route. See call flow 09<br/>for the real dispatch mechanics this note used to say weren't built yet
-
-    SA->>AIMgF: SubscribePerformanceMonitoring(modelId, metricTypes, dmeTypeId, guardKpiFloor?, notificationDestination?)
-    Note over AIMgF: MLMF — new sub-function, distinct from RAN Analytics' MDAF (LLD section 2)
-    AIMgF-->>SA: subscriptionId
-    Producer->>AIMgF: ReportPerformance(subscriptionId, metrics)
-    AIMgF->>AIMgF: breachedFloor = metrics violate guardKpiFloor
-    AIMgF->>SA: best-effort POST notificationDestination (reportId, modelId, metrics, breachedFloor)
-    Note over AIMgF,SA: same unreachable-subscriber-never-fails-the-publish pattern<br/>as MDAF's own subscriber push (call flow 08) — a subscription<br/>with no notificationDestination stays query-only
-    alt breached and model belongs to a MLModelCoordinationGroup
-        AIMgF->>MLMR: GET /coordination-groups (find this model's group)
-        MLMR-->>AIMgF: group + memberModelIds
-        AIMgF->>AIMgF: should_trigger_group_retrain(retrainPropagation, ...)
-        Note over AIMgF: ANY_MEMBER_TRIGGERS (checked-in default) fires on ONE breach —<br/>all group members retrain together (LLD section 4.3-4.4)
-        AIMgF->>AIMgF: CreateTraining(memberId) per PROMOTED member -> TRAINING
-    end
-
-    SA->>AIMgF: DELETE /mlmf/subscriptions/{subscriptionId}
-    Note over AIMgF: idempotent — a second DELETE of the same (or unknown) id<br/>still returns 204, matching every other subscription-shaped<br/>resource's own unsubscribe route in this build
-    AIMgF-->>SA: 204
 ```
 
-**Key decisions this flow depends on:**
-- No lightweight update path — retraining always re-enters at `TRAINING`, never skips to `PROMOTED` (a project-wide design principle).
-- The inference result is pulled via DME, never returned inline from the R1-facing inference API — symmetric with training never carrying the trained artifact inline either.
-- `ANY_MEMBER_TRIGGERS` means a coordination group's retrain trigger is genuinely group-scoped — one member's breach retrains the shared model all members depend on, not just that member's own pipeline.
-- ModelLifecycle and RuntimeLifecycle are deliberately independent FSMs: retraining a PROMOTED model doesn't force its runtime down, and a runtime can be scaled/terminated (jointly with NFO) without touching the model's own certification state.
-- AIMgF's `model_lifecycle` row is the single source of truth for lifecycle/runtime state and `clearedNodeGroups`; MLMR carries none of it. MLLF owns the *decision* of which node groups a model is placed on and writes that decision onto AIMgF's row.
-- A model runtime has no onboarded `ApplicationPackage` behind it, unlike an rApp's `NfDeploymentDescriptor`, so NFO's `packageId` is optional for this caller.
-- Training→Validation and Validation→Emulation are operator-gated: `APPROVE_TRAINING`/`APPROVE_VALIDATION` are governance self-loop events through `advance()` that require `decidedBy` and write a `CertificationRecord`; without them `RequestValidation`/`RequestEmulation` return 409 `TRAINING_NOT_APPROVED`/`VALIDATION_NOT_APPROVED` (HISTORY.md OI-6.1).
-- `RequestTraining` accepts an optional `dmeDataJobIds` list; each id is checked against a real DME `DataJob` (`DME_ARTIFACT_NOT_FOUND` otherwise), the same check MDAF's `publish_report` applies (call flow 08). `requiredData` stays an opaque blob, and an omitted list skips the check (HISTORY.md OI-6.4).
-- A training run reports its steps (`DATA_EXTRACTION`, `TRAINING`, `TRAINED_MODEL`) through `POST /training-jobs/{id}/progress`, forward only and only while `IN_PROGRESS`. Each step's status is derived from the furthest step reached and the job's own status, so how the run ended stays recorded in one place (HISTORY.md OI-5-aiml-trainingjob-steps).
-- Training, Validation and Emulation each have a dedicated completion route (`POST /training-jobs/{id}/complete` and its validation/emulation counterparts) that records an `outcomeArtifactDmeTypeId` (a DME reference, the same shape `MLModel.outputDataType` uses) and sends a best-effort TS 28.105-style completion notification. These routes are the only way a stage completes: `advance()` accepts only the governance and end-of-life events and refuses job-driven ones with 422 (HISTORY.md OI-6.5, call flow 26).
-- Training, Validation and Emulation each run in a transient NFO execution runtime: `CreateDescriptor`/`Instantiate` on request and `DELETE /nfo/deployments/{id}` on completion — the same shape as RuntimeLifecycle's Deploy call, parameterized by job kind/id instead of model id. Inference does not: `RequestInference` is gated on `RuntimeLifecycleState.ACTIVE`, so a serving deployment already exists (via `RequestModelRuntimeDeploy`), and `InferenceJob.nfDeploymentId` is a read-only reference to it rather than a new deployment per call (HISTORY.md OI-6.2). Runtime sizing and stage timeouts are described in call flow 17.
-- What an rApp does with an inference result is governed by its onboarding-time `autonomyMode`; `RequestAutonomyDispatch` (call flow 09) implements the AUTONOMOUS/ASSIST/SHADOW mechanics (HISTORY.md OI-6.3).
-- `MLMFSubscription` carries an optional `notificationDestination` (the same best-effort push as MDAF's subscriber notification, call flow 08) and has an idempotent `DELETE /mlmf/subscriptions/{id}`. Call flow 13 walks subscribe→notify→unsubscribe, including the pull-only case where no destination is registered.
+## 02a (continued) — Progress, complete, cancel, timeout
+
+```mermaid
+sequenceDiagram
+    participant R as Owner rApp (SDK) / Operator (GUI)
+    participant AIM as AIMgF
+    participant NFO as NFO
+    participant MLMR as MLMR
+
+    R->>AIM: POST /aimgf/training-jobs/{id}/progress {step?, epoch?, totalEpochs?}
+    Note over AIM: steps DATA_EXTRACTION, TRAINING, TRAINED_MODEL, forward only<br/>etaSeconds from the pace of the epochs, only while IN_PROGRESS
+    AIM-->>R: 200 {currentStep, steps, epoch, etaSeconds}
+
+    R->>AIM: POST /aimgf/training-jobs/{id}/complete {succeeded, metrics, outcomeArtifactDmeTypeId?}
+    alt another rApp's job
+        AIM-->>R: 403 MODEL_ACCESS_DENIED
+    else job not IN_PROGRESS or SUSPENDED (already ended, timed out)
+        AIM-->>R: 409 TRAINING_JOB_ILLEGAL_TRANSITION
+    else
+        AIM->>NFO: DELETE /nfo/deployments/{id} and /nfo/descriptors/{id}
+        Note over AIM: succeeded → TRAINING_COMPLETE → TRAINED<br/>failed → TRAINING_FAILED → FAILED<br/>MLTrainingReport written, the requester's notificationUri queued (outbox)
+        AIM->>MLMR: PATCH phase TRAINED (best effort, success only)
+        AIM-->>R: 200 {status FINISHED or FAILED}
+    end
+
+    Note over R,AIM: cancel: DELETE /aimgf/training-jobs/{id} → CANCELLED, runtime gone, model → FAILED<br/>suspend / resume: the clock stops while SUSPENDED<br/>timeout: the run is FAILED on the next read or POST /execution-timeouts/sweep, model → FAILED, requester told TIMEOUT
+```
+
+**Phase 1:** the NFO workload of a run is a placeholder: no training code runs in it and it calls nothing back. The owner rApp trains
+itself and reports progress and the result through the SDK. The TS 28.105 `MLTrainingRequest` / `MLTrainingProcess` resources (call flow
+27) are a second way to start, suspend and cancel the same runs.
+
+## 02b — The gates, then validate and emulate
+
+```mermaid
+sequenceDiagram
+    participant R as Owner rApp (SDK)
+    actor Op as Operator (GUI)
+    participant AIM as AIMgF
+    participant NFO as NFO
+
+    R->>AIM: POST /aimgf/validation-jobs {modelId, producerId, trainingJobId?}
+    AIM-->>R: 409 TRAINING_NOT_APPROVED (the model is TRAINED, the gate is not set)
+
+    Op->>AIM: POST /aimgf/models/{id}/advance?event=APPROVE_TRAINING&decided_by
+    alt model TRAINED
+        Note over AIM: self-loop: trainingApproved = true<br/>CertificationRecord {event, decidedBy, rationale}
+        AIM-->>Op: 200 {modelLifecycleState TRAINED}
+    else no decided_by, or another state
+        AIM-->>Op: 422 GOVERNANCE_DECIDER_REQUIRED · 409 LIFECYCLE_ILLEGAL_TRANSITION
+    end
+
+    R->>AIM: POST /aimgf/validation-jobs {modelId, producerId, validationCriteria?}
+    Note over AIM: CREATE_VALIDATION → VALIDATING, job and NFO runtime as in 02a (jobKind VALIDATION)
+    AIM-->>R: 201 {validationJobId}
+    R->>AIM: POST /aimgf/validation-jobs/{id}/complete {succeeded, metrics, outcomeArtifactDmeTypeId?}
+    alt
+        Note over AIM: runtime deleted, MLTestingReport written<br/>VALIDATED, or FAILED
+        AIM-->>R: 200
+    else another rApp's job, or the run already ended
+        AIM-->>R: 403 MODEL_ACCESS_DENIED · 409 TRAINING_JOB_ILLEGAL_TRANSITION
+    end
+```
+
+## 02b (continued) — Approve validation, then emulate
+
+```mermaid
+sequenceDiagram
+    participant R as Owner rApp (SDK)
+    actor Op as Operator (GUI)
+    participant AIM as AIMgF
+
+    Op->>AIM: POST /aimgf/models/{id}/advance?event=APPROVE_VALIDATION&decided_by
+    Note over AIM: self-loop on VALIDATED: validationApproved = true, CertificationRecord
+    AIM-->>Op: 200
+    R->>AIM: POST /aimgf/emulation-jobs {modelId, producerId, aIMLInferenceEmulationFunctionRef?}
+    alt VALIDATED and approved
+        Note over AIM: CREATE_EMULATION → EMULATING, NFO runtime (jobKind EMULATION)
+        AIM-->>R: 201 {emulationJobId}
+        R->>AIM: POST /aimgf/emulation-jobs/{id}/complete {succeeded, metrics}
+        Note over AIM: runtime deleted, EMULATED or FAILED
+        AIM-->>R: 200
+    else not approved, or not VALIDATED
+        AIM-->>R: 409 VALIDATION_NOT_APPROVED · 409 LIFECYCLE_ILLEGAL_TRANSITION
+    end
+```
+
+A run of a later stage that is cancelled or times out fails its model's stage the same way as in 02a. The console lists the models that wait
+for a gate in its inbox (GUI-7.3).
+
+## 02c — Governance
+
+```mermaid
+sequenceDiagram
+    actor Ad as Admin (GUI)
+    participant R as Owner rApp (SDK)
+    participant AIM as AIMgF
+
+    R->>AIM: POST /aimgf/models/{id}/advance?event=SUBMIT_FOR_APPROVAL
+    AIM-->>R: 403 ROLE_NOT_PERMITTED (an rApp never decides for its own model)
+
+    Ad->>AIM: POST /aimgf/models/{id}/advance?event=SUBMIT_FOR_APPROVAL&decided_by&rationale?
+    Note over AIM: EMULATED → PENDING_APPROVAL, CertificationRecord
+    alt approve
+        Ad->>AIM: advance?event=APPROVE&decided_by
+        Note over AIM: → APPROVED
+        Ad->>AIM: advance?event=CERTIFY&decided_by
+        Note over AIM: → CERTIFIED: the runtime may now be deployed (02d)
+        Ad->>AIM: advance?event=PROMOTE&decided_by
+        Note over AIM: → PROMOTED: the model in service, retrained from here (02e)
+        AIM-->>Ad: 200 {modelLifecycleState}
+    else reject
+        Ad->>AIM: advance?event=REJECT&decided_by&rationale
+        Note over AIM: → FAILED: retrain it (02a) or retire it (call flow 26)
+        AIM-->>Ad: 200 {modelLifecycleState FAILED}
+    end
+    Note over Ad,AIM: every decision is one CertificationRecord: GET /aimgf/models/{id}/governance-history<br/>no decided_by is 422 GOVERNANCE_DECIDER_REQUIRED, an event the state cannot take 409
+```
+
+Rollback, deprecation and retirement, and the event published on every change, are in call flow 26.
+
+## 02d — Deploy and infer
+
+```mermaid
+sequenceDiagram
+    participant R as Owner rApp (SDK) / Operator (GUI)
+    participant C as Consumer rApp (SDK)
+    participant AIM as AIMgF
+    participant NFO as NFO
+
+    R->>AIM: POST /aimgf/models/{id}/runtime/deploy, then /runtime/activate
+    Note over AIM: CERTIFIED or PROMOTED only, NFO workload created (call flow 17a, 17b)<br/>runtime ACTIVE: inference is accepted
+
+    C->>AIM: POST /aimgf/models/{id}/inference-jobs?notification_destination&timeout_seconds
+    AIM->>NFO: GET /nfo/deployments/{nfDeploymentId}
+    alt runtime ACTIVE, deployment not ABNORMAL or gone, model not RETIRED
+        Note over AIM: InferenceJob RUNNING, nfDeploymentId = the serving deployment (no new one)<br/>requestedBy = the caller's invoker id (an rApp)
+        AIM-->>C: 201 {inferenceJobId, status RUNNING}
+    else not the owner and the model's accessReqs do not name the caller
+        AIM-->>C: 403 MODEL_ACCESS_DENIED
+    else not serving
+        AIM-->>C: 409 INFERENCE_MODEL_NOT_ACTIVE
+    end
+
+    Note over C: Phase 1: the consumer rApp runs the model itself on its own input
+    C->>AIM: POST /aimgf/inference-jobs/{id}/resolve?succeeded {inferenceOutputs, potentialImpactInfo?}
+    alt the requester, or the model's owner
+        Note over AIM: RUNNING → COMPLETED (or FAILED)<br/>success writes an AIMLInferenceReport with the outputs sent
+        AIM-->>C: 200 {status, inferenceReportId}
+    else another rApp
+        AIM-->>C: 403 MODEL_ACCESS_DENIED
+    else no longer RUNNING (timed out)
+        AIM-->>C: 409 TRAINING_JOB_ILLEGAL_TRANSITION
+    end
+```
+
+**Phase 1:** the result is what the resolver sends: the `AIMLInferenceReport` holds it, and nothing is published through DME against the
+model's `outputDataType`. The serving workload at NFO is a placeholder, so the consumer rApp runs the model itself. What the rApp then does
+with the result is set by its `autonomyMode` (call flow 09). A job requested from the console records no requester, so among the rApps only
+the owner may resolve it.
+
+## 02e — Monitor and retrain
+
+```mermaid
+sequenceDiagram
+    participant S as Subscriber (SA SMOS, Operator (GUI), owner rApp)
+    participant P as Owner rApp (SDK) / MDAF
+    participant AIM as AIMgF
+    participant MLMR as MLMR
+    participant NFO as NFO
+
+    S->>AIM: POST /aimgf/mlmf/subscriptions {modelId, metricTypes, dmeTypeId, guardKpiFloor?, notificationDestination?}
+    AIM-->>S: 201 {subscriptionId}
+
+    P->>AIM: POST /aimgf/mlmf/subscriptions/{id}/reports {metric: value}
+    alt unknown subscription, or another rApp's model
+        AIM-->>P: 404 MLMF_SUBSCRIPTION_NOT_FOUND · 403 MODEL_ACCESS_DENIED
+    else
+        Note over AIM: breachedFloor = a guarded metric under its floor (missing counts as 0)<br/>report and the subscriber's push committed first (outbox)
+        AIM-)S: POST notificationDestination {reportId, modelId, metrics, breachedFloor}
+        opt breached and the model is in a coordination group
+            AIM->>MLMR: GET /mlmr/coordination-groups
+            Note over AIM: retrainPropagation decides: ANY_MEMBER_TRIGGERS fires on one breach<br/>MAJORITY_TRIGGERS counts this one report, so fires only for a group of one<br/>WEIGHTED_TRIGGERS is reserved and answers 500 (report kept)
+            loop each PROMOTED member MLMR knows
+                AIM->>NFO: training runtime, as in 02a (producer aimgf:group-retrain)
+                alt started
+                    Note over AIM: member → TRAINING, committed on its own
+                else NFO refuses or does not answer
+                    Note over AIM: that member rolled back, still PROMOTED, listed in retrainSkipped
+                end
+            end
+        end
+        AIM-->>P: 200 {reportId, breachedFloor, groupRetrainTriggered?, retrainedModelIds?, retrainSkipped?}
+    end
+```
+
+A member that is not PROMOTED (already training, mid-certification) is passed over. A model in no group is not retrained by a breach: the
+subscriber decides. Subscribe, notify and unsubscribe, and the pull-only subscription, are in call flow 13.
+
+**Phase 1:** a retrained model is the same model: while it trains, its serving runtime keeps the version that was certified, and the new one
+replaces it at the next deploy. There are no model versions side by side (OPEN_ITEMS.md AIML-VER).
+
+## Decisions this flow depends on
+
+- No lightweight update path: retraining re-enters at `TRAINING` and goes through both gates and governance again.
+- `ModelLifecycle` and `RuntimeLifecycle` are independent: retraining a PROMOTED model does not take its runtime down, and the runtime is
+  scaled or terminated without touching certification (call flow 17).
+- AIMgF's `model_lifecycle` row is the one record of both states and of `clearedNodeGroups`; MLMR keeps none of it, only the model and its owner.
+- Every run (training, validation, emulation) gets its own NFO runtime, removed when the run ends. Inference does not: it uses the serving
+  deployment made at deploy.
+- The completion routes are the only way a stage ends; `advance` takes only governance and end-of-life events (call flow 26).
+- `APPROVE_TRAINING` and `APPROVE_VALIDATION` are governance self-loops with a decider and a `CertificationRecord` (HISTORY.md OI-6.1).
+- `dmeDataJobIds` are checked against DME, `requiredData` stays opaque (HISTORY.md OI-6.4).
+- A group retrain is best effort per member: one member NFO refuses does not stop the others, and the report is kept (DOC-CF-1.6).
+- Who may act on a running job, and who may resolve an inference job, is decided by the model's owner (DOC-CF-1.6, SEC-15.3c).

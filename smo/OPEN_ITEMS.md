@@ -84,6 +84,15 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
   instance stays RUNNING until an operator heals the workload or reports the fault. Approach: a worker in rApp Management reads the feed
   (`GET /dme/smo-events`) and fires CRASH on the instance whose `workloadRef` went ABNORMAL (and nothing on a heal; a recover is still the
   operator's).
+- **AIML-VER** — A model has no versions side by side: a retrain (a requested one, or a group retrain on an MLMF breach, call flow 02e)
+  trains the same model id, so while it is TRAINING its serving runtime keeps serving what was certified, and the retrained artifact
+  replaces it at the next deploy. There is no way to serve version N while N+1 goes through the gates, nor to roll back to N after N+1 is
+  promoted (ROLLBACK only moves PROMOTED back to CERTIFIED). Approach: a model version in MLMR (`MLModel.version` plus the artifact version
+  it already stores), the lifecycle row keyed by model and version, and deploy naming a version.
+- **AIML-INF-DME** — An inference result is not published through DME: `POST /aimgf/inference-jobs/{id}/resolve` stores the outputs the
+  resolver sends in an `AIMLInferenceReport`, and nothing is produced against the model's `outputDataType` (call flow 02d). The serving
+  workload at NFO is a placeholder, so the consumer rApp runs the model and resolves the job itself. Approach: once a real serving runtime
+  exists, it produces its outputs as a DME data type the consumer subscribes to, and resolve keeps only the report.
 - **OI-7-config-push** — An instance's configuration change does not reach its rApp: `PUT /rapp-mgmt/instances/{id}/config` only stores
   it, and the rApp reads it when it starts the instance (call flow 07e). Approach: push it to the rApp's operator API as the credentials are
   (`POST /rapps/{id}/operator/instances/{id}/config`, through R1 Termination), with a declared schema checked first; the SDK applies it.
@@ -1317,8 +1326,8 @@ there, what is right, what is wrong), agree the corrections, then build what the
 | DOC-CF-1.3 | 07 rApp instance lifecycle (07a-07e; crash safeguards, the kill switch across an upgrade, the replacement's address and its own commit, a failed bootstrap built for it) | done: `HISTORY.md` DOC-CF-1.3 |
 | DOC-CF-1.4 | 15 NFO workload lifecycle (15a-15e; a descriptor backing several deployments, no instance without its workload, placement only where FOCOM says, NFO's state changes on the event bus and on the rApp instance) | done: `HISTORY.md` DOC-CF-1.4 |
 | DOC-CF-1.5 | 17 model runtime lifecycle (17a-17e; NFO's answers checked, descriptors deleted with their deployment, redeploy after terminate, the serving workload on the lifecycle and gating inference, the owner rApp's scale and terminate) | done: `HISTORY.md` DOC-CF-1.5 |
-| DOC-CF-1.6 | 02 AI/ML model train → inference | next. The job runtimes (training, validation, emulation) were fixed in 1.5 (checked NFO answers, descriptors deleted) and are drawn there |
-| DOC-CF-1.7 | 26 model governance and end of life | open |
+| DOC-CF-1.6 | 02 AI/ML model train → inference (02a-02e; the owner rule on every route that acts on a running job, the inference requester recorded and the only rApp besides the owner that may resolve, a best-effort group retrain) | done: `HISTORY.md` DOC-CF-1.6 |
+| DOC-CF-1.7 | 26 model governance and end of life | next |
 | DOC-CF-1.8 | the rest: 03, 04, 08-14, 16, 18-25, 27 | open |
 
 ### DOC-CF-2 — Each module's own lifecycle, from that module's point of view
