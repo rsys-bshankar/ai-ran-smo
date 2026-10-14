@@ -1826,6 +1826,35 @@ def list_inference_jobs(model_id: uuid.UUID | None = None, status: str | None = 
 
 # ---------------------------------------------------------------- MLMF performance monitoring
 
+def _is_number(value) -> bool:
+    """True for an int or a float (a bool is not a number here)."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _check_numeric(values: dict | None, what: str) -> None:
+    """Raises 422 `SCHEMA_VALIDATION_FAILED` naming the first entry of `values` (metric name to value) that is not a number; None or {} passes (call flow 13)."""
+    for name, value in (values or {}).items():
+        if not _is_number(value):
+            raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"{what} {name!r} must be a number, not {value!r}")
+
+
+def _check_dme_type(dme_type_id: uuid.UUID) -> None:
+    """Raises 422 `DME_ARTIFACT_NOT_FOUND` unless DME knows the type (`GET /dme/dme-types/{id}` answers 200), as `_validate_dme_data_job_ids` does for data jobs.
+
+    Proves only that the reference is real: AIMgF does not read the type's data, MDAF and the owner rApp report the metrics (call flow 13a).
+    """
+    if _r1.get(f"/dme/dme-types/{dme_type_id}").status_code != 200:
+        raise framework_error(FrameworkError.DME_ARTIFACT_NOT_FOUND, detail=f"no such DME type {dme_type_id}")
+
+
+def _evaluate_report(sub: MLMFSubscription, metrics: dict) -> tuple[bool, list[str]]:
+    """Returns (breached, missing) for a report against the subscription: breached when a guarded metric the report carries is below its floor or above its
+    ceiling; missing, the sorted guarded metrics it does not carry, which do not breach (call flow 13b). The values are numbers (`_check_numeric` ran first)."""
+    floor, ceiling = sub.guard_kpi_floor or {}, sub.guard_kpi_ceiling or {}
+    breached = any(k in metrics and metrics[k] < v for k, v in floor.items()) or any(k in metrics and metrics[k] > v for k, v in ceiling.items())
+    return breached, sorted((set(floor) | set(ceiling)) - set(metrics))
+
+
 def _refuse_if_retired(db: Session, model_id: uuid.UUID, action: str) -> None:
     """Call flow 26e (DOC-CF-1.7): raises 409 `LIFECYCLE_ILLEGAL_TRANSITION` when AIMgF has the model RETIRED. A model with no lifecycle row is not retired. Reads only."""
     lifecycle = db.get(ModelLifecycle, model_id)
@@ -1835,7 +1864,7 @@ def _refuse_if_retired(db: Session, model_id: uuid.UUID, action: str) -> None:
 
 @app.post("/mlmf/subscriptions", status_code=201)
 def subscribe_performance_monitoring(request: Request, model_id: uuid.UUID, metric_types: list[str], dme_type_id: uuid.UUID, guard_kpi_floor: dict | None = None,
-                                      notification_destination: str | None = None, db: Session = Depends(get_session)):
+                                      notification_destination: str | None = None, guard_kpi_ceiling: dict | None = None, db: Session = Depends(get_session)):
     """MLMF — new sub-function, AI/ML Workflow LLD section 2. Distinct
     domain from RAN Analytics' MDAF (model performance, not RAN behavior).
 
@@ -1843,14 +1872,18 @@ def subscribe_performance_monitoring(request: Request, model_id: uuid.UUID, metr
     (optional, matching every other subscription-shaped resource's own
     permissive shape — a purely poll-based consumer may still omit it).
     """
-    # Route notes: 201 `{"subscriptionId"}`. `model_id`, `dme_type_id` and `notification_destination` are query parameters; `metric_types` and `guard_kpi_floor`
-    # are read from the JSON body. The DME type is not looked up. For a caller with the rApp role the model is looked up first (404 `MODEL_NOT_FOUND`, 403 `MODEL_ACCESS_DENIED`
-    # unless it owns the model or the model has no owner; SEC-15.3c); the console, an SMO module and a call with no role are not asked and the model is not looked up for them.
+    # Route notes: 201 `{"subscriptionId"}`. `model_id`, `dme_type_id` and `notification_destination` are query parameters; `metric_types`, `guard_kpi_floor` and
+    # `guard_kpi_ceiling` are read from the JSON body. Checks in order (call flow 13a): every floor and ceiling a number (422 `SCHEMA_VALIDATION_FAILED`); the model
+    # in MLMR for every caller (404 `MODEL_NOT_FOUND`), and for a caller with the rApp role its owner (403 `MODEL_ACCESS_DENIED` unless it owns the model or the
+    # model has no owner; SEC-15.3c); the DME type known to DME (422 `DME_ARTIFACT_NOT_FOUND`).
     # `notification_destination` is stored as given and screened by the outbox's SSRF guard when a report is queued, not here. A RETIRED model is 409 `LIFECYCLE_ILLEGAL_TRANSITION` (call flow 26e). One commit.
-    _check_rapp_owns(request, model_id, "subscribe to the performance of")
+    _check_numeric(guard_kpi_floor, "the floor of")
+    _check_numeric(guard_kpi_ceiling, "the ceiling of")
+    _owned_model(request, model_id, "subscribe to the performance of")   # call flow 13a: every caller's model is looked up, an rApp's ownership checked
     _refuse_if_retired(db, model_id, "subscribe to its performance")   # call flow 26e: a retired model serves nothing to monitor
+    _check_dme_type(dme_type_id)
     sub = MLMFSubscription(model_id=model_id, metric_types=metric_types, dme_type_id=dme_type_id, guard_kpi_floor=guard_kpi_floor,
-                            notification_destination=notification_destination)
+                            guard_kpi_ceiling=guard_kpi_ceiling, notification_destination=notification_destination)
     db.add(sub)
     db.commit()
     return {"subscriptionId": str(sub.subscription_id)}
@@ -1893,21 +1926,22 @@ def report_performance(request: Request, subscription_id: uuid.UUID, metrics: di
     build.
     """
     # Route notes. 404 `MLMF_SUBSCRIPTION_NOT_FOUND`; 409 `LIFECYCLE_ILLEGAL_TRANSITION` for a RETIRED model (call flow 26e); 403 `MODEL_ACCESS_DENIED` for an rApp that does not own the subscribed model (SEC-15.3c; a report can start a group retrain, so it is
-    # the owner's to file; MDAF files drift reports as an SMO module and is not asked). The body is the metrics object (metric name to number). A report breaches when the subscription has a
-    # floor and any guarded metric is below it; a guarded metric missing from the report counts as 0, and a non-numeric value raises a TypeError (500). The
-    # report and its subscriber notification (`{reportId, modelId, metrics, breachedFloor}`) are committed first. Only then, for a breach, is the model's
+    # the owner's to file; MDAF files drift reports as an SMO module and is not asked). The body is the metrics object (metric name to number); a value that is not a
+    # number is 422 `SCHEMA_VALIDATION_FAILED` with nothing stored. A report breaches when a guarded metric it carries is below its floor or above its ceiling; a
+    # guarded metric it does not carry is listed in `missingMetrics` and does not breach (call flow 13b: MDAF's drift reports carry only their own outputs). The
+    # report and its subscriber notification (`{reportId, modelId, metrics, breachedFloor, missingMetrics}`) are committed first. Only then, for a breach, is the model's
     # coordination group fetched from MLMR and `should_trigger_group_retrain` asked with `breached_count=1`; a raise from it (WEIGHTED_TRIGGERS or an unknown
     # value) is not caught and answers 500 after the report is already stored. When it fires, `_trigger_group_retrain` starts a run for each PROMOTED member,
     # committing each on its own; a member NFO refuses is skipped, not fatal (call flow 02e). Answers `reportId`, `breachedFloor` and, for a group member,
-    # `groupRetrainTriggered` and, when it fired, `retrainedModelIds` and `retrainSkipped` (`[{modelId, reason}]`).
+    # `groupRetrainTriggered` and, when it fired, `retrainedModelIds` and `retrainSkipped` (`[{modelId, reason}]`); `missingMetrics` always.
     sub = db.get(MLMFSubscription, subscription_id)
     if sub is None:
         raise framework_error(FrameworkError.MLMF_SUBSCRIPTION_NOT_FOUND, detail="no such MLMF subscription")
     _check_rapp_owns_if_known(request, sub.model_id, "report the performance of")
     _refuse_if_retired(db, sub.model_id, "report its performance")   # call flow 26e
-    # A guarded metric absent from the report is read as 0, so it breaches any floor above 0; a subscription with no floor never breaches.
-    breached = bool(sub.guard_kpi_floor) and any(metrics.get(k, 0) < v for k, v in (sub.guard_kpi_floor or {}).items())
-    report = PerformanceReport(subscription_id=subscription_id, metrics=metrics, breached_floor=breached)
+    _check_numeric(metrics, "the metric")
+    breached, missing = _evaluate_report(sub, metrics)
+    report = PerformanceReport(subscription_id=subscription_id, metrics=metrics, breached_floor=breached, missing_metrics=missing)
     db.add(report)
     db.flush()  # the report's id, for the notification
 
@@ -1916,13 +1950,13 @@ def report_performance(request: Request, subscription_id: uuid.UUID, metrics: di
     # commits — an unreachable subscriber never fails the report call that
     # triggered it, and a crash after the commit no longer loses the push.
     enqueue(db, sub.notification_destination, {
-        "reportId": str(report.id), "modelId": str(sub.model_id), "metrics": metrics, "breachedFloor": breached,
+        "reportId": str(report.id), "modelId": str(sub.model_id), "metrics": metrics, "breachedFloor": breached, "missingMetrics": missing,
     })
     # Committed before the group step: the report and its notification are kept even if the retrain propagation fails, and `_trigger_group_retrain` commits on
     # its own.
     db.commit()
 
-    result = {"reportId": str(report.id), "breachedFloor": breached}
+    result = {"reportId": str(report.id), "breachedFloor": breached, "missingMetrics": missing}
     if breached:
         # if this model belongs to a coordination group, decide group-scoped
         # propagation per LLD section 4.3-4.4; otherwise it's a standalone retrain trigger.
@@ -1955,7 +1989,7 @@ def list_performance_subscriptions(request: Request, model_id: uuid.UUID | None 
             stmt = stmt.where(MLMFSubscription.model_id.in_(visible))
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"subscriptionId": str(sub.subscription_id), "modelId": str(sub.model_id), "metricTypes": sub.metric_types,
-             "dmeTypeId": str(sub.dme_type_id), "guardKpiFloor": sub.guard_kpi_floor,
+             "dmeTypeId": str(sub.dme_type_id), "guardKpiFloor": sub.guard_kpi_floor, "guardKpiCeiling": sub.guard_kpi_ceiling,
              "notificationDestination": sub.notification_destination} for sub in page["items"]]}
 
 
@@ -2116,7 +2150,7 @@ def _certification_record_view(r: CertificationRecord) -> dict:
 def _performance_report_view(r: PerformanceReport) -> dict:
     """Returns a PerformanceReport as the dict the MLMF report routes answer."""
     return {"reportId": str(r.id), "subscriptionId": str(r.subscription_id), "metrics": r.metrics,
-            "breachedFloor": r.breached_floor, "reportedAt": r.reported_at.isoformat()}
+            "breachedFloor": r.breached_floor, "missingMetrics": r.missing_metrics or [], "reportedAt": r.reported_at.isoformat()}
 
 
 def _lifecycle_view(l: ModelLifecycle) -> dict:

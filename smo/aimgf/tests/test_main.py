@@ -52,6 +52,7 @@ class FakeMlmr:
         self.models: dict[str, dict] = {}
         self.groups: list[dict] = []
         self.phase_writes: list[tuple] = []
+        self.unknown_dme_types: set[str] = set()   # DME type ids the fake DME does not know (call flow 13a)
 
     def add_model(self, model_id=None, **attributes) -> uuid.UUID:
         """Registers a model; `attributes` are extra fields of MLMR's answer (`owner`, `phaseInfo`, `storeDiscReqs`)."""
@@ -145,7 +146,7 @@ def db_session_factory():
 def mlmr(monkeypatch):
     """Fixture: installs the MLMR and NFO doubles over `app.main.R1Client.get/post/delete/patch` and returns the `FakeMlmr` (its `.nfo` attribute is the `FakeNfo`).
 
-    `get` answers MLMR's model and group routes, `post` and `delete` answer NFO, `patch` records the phase write-back in `phase_writes` and answers 200. The patch is on the class, so it also
+    `get` answers MLMR's model and group routes and DME's type read (every type is known but those in `unknown_dme_types`, call flow 13a), `post` and `delete` answer NFO, `patch` records the phase write-back in `phase_writes` and answers 200. The patch is on the class, so it also
     serves `app/nrm.py`, which calls through the same client.
     """
     fake_mlmr = FakeMlmr()
@@ -154,6 +155,8 @@ def mlmr(monkeypatch):
     def fake_get(self, path, **kw):
         if path.startswith("/nfo/"):
             return fake_nfo.get(path, **kw)
+        if path.startswith("/dme/dme-types/"):
+            return FakeResponse(404 if path.rsplit("/", 1)[-1] in fake_mlmr.unknown_dme_types else 200, {})
         return fake_mlmr.get(path, **kw)
 
     def fake_post(self, path, json=None, **kw):

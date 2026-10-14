@@ -2779,6 +2779,32 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.8 flow 13 — MLMF rewritten from the code: a missing metric does not breach, ceilings, checked inputs
+
+The first flow of DOC-CF-1.8 (the remaining flows, one at a time), decided with the product owner (the recommendations of the audit, all taken):
+
+- **A. A guarded metric a report does not carry is not a breach.** It counted as 0, so it breached every floor above 0. MDAF forwards each drift report's
+  numeric outputs to every subscription of the model (`_forward_drift_to_mlmf`), so a drift report that did not carry a subscription's guarded metric
+  breached it and retrained the model's whole coordination group. `_evaluate_report` judges only the metrics the report carries and lists the others in
+  `missingMetrics` (on the report, revision 0047, in the route's answer and in the subscriber's push).
+- **B. Ceilings.** A subscription may set `guard_kpi_ceiling` (metric name to maximum, revision 0047), for a metric where lower is better (MAE, latency):
+  a report above it breaches. `breachedFloor` keeps its name. The SDK's `subscribe_performance_monitoring` takes `guard_kpi_ceiling`, the console's form a
+  ceiling field, its table both guards and the report table the missing metrics.
+- **C. Values are numbers.** A non-numeric reported value raised a TypeError after the floor check (500); now 422 `SCHEMA_VALIDATION_FAILED` with nothing
+  stored. Floors and ceilings are checked the same way at subscribe.
+- **D. The DME type is checked.** `dmeTypeId` was stored unchecked; DME gains `GET /dme/dme-types/{id}` (listing every type would call every producer's
+  health callback) and AIMgF refuses a type DME does not know (422 `DME_ARTIFACT_NOT_FOUND`, as for training's `dmeDataJobIds`). AIMgF still does not read
+  that data itself (a Phase 1 note in 13a).
+- **E. The model is looked up for every caller.** Only an rApp's subscription was checked against MLMR; the console could subscribe to a model MLMR
+  does not know. Now 404 `MODEL_NOT_FOUND` for every caller (`_owned_model`).
+- **F. Not built: report retention** (`OPEN_ITEMS.md` AIML-MLMF-RET).
+- **Corrected in the doc:** the subscribers are the console and rApps through the SDK (SA SMOS never subscribed), the reporters MDAF, the owner rApp
+  and an admin; the push goes through the transactional outbox and the worker's database-wide sweep retries it, it is not a best-effort post that
+  swallows its error.
+
+The document is four diagrams (subscribe; report, breach, group retrain; MDAF forwards a drift report; delivery, a pull subscriber, unsubscribe) in the
+flow 01 format, with PNG images. Tests: `aimgf/tests/test_mlmf_guard.py`, the DME type read, and two integration tests that now register a real DME type.
+
 ### DOC-CF-1.7 — call flow 26 rewritten from the code: decisions name who took them, model changes are published, a serving model is not deleted
 
 The seventh flow of the call-flow audit, decided with the product owner (the recommendations of the audit, all taken). A is a security fix.

@@ -139,6 +139,13 @@ def test_subscribe_performance_monitoring_embeds_body_under_two_params(client, r
     assert call["json"] == {"metric_types": ["latency"], "guard_kpi_floor": {"latency": 100}}
 
 
+def test_subscribe_performance_monitoring_sends_a_ceiling_only_when_given(client, r1):
+    """Call flow 13a: `guard_kpi_ceiling` goes in the body beside the floor when given; without it the body is as before (an older AIMgF keeps working)."""
+    model_id, dme_type_id = uuid.uuid4(), uuid.uuid4()
+    client.subscribe_performance_monitoring(model_id, ["mae"], dme_type_id, guard_kpi_ceiling={"mae": 2.0})
+    assert r1.calls[0]["json"] == {"metric_types": ["mae"], "guard_kpi_floor": None, "guard_kpi_ceiling": {"mae": 2.0}}
+
+
 def test_subscribe_performance_monitoring_with_notification_destination(client, r1):
     """The optional notification destination reaches the query."""
     model_id, dme_type_id = uuid.uuid4(), uuid.uuid4()

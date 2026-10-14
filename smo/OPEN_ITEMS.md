@@ -68,6 +68,9 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
 - **OI-1-alarm-storm** — No alarm-storm correlation algorithm in `ran-nf-oam/`;
   `correlation_group` is a coarse string. No audited O-RAN-SC repo implements one either.
   Approach: wait for real alarm traces; start with time-window + topology (`neighbourRefs`) grouping.
+- **AIML-MLMF-RET** — MLMF performance reports are kept until their subscription is deleted: nothing purges old ones, so a model reported
+  on every few minutes grows `performance_report` without bound (call flow 13d). Approach: a retention setting (`AIMGF_MLMF_REPORT_RETENTION_DAYS`) and a
+  purge task in a worker, as MDAF purges its reports; keep the newest report of each subscription so its sparkline always has a point.
 - **AIML-GOV-2P** — One admin may take every governance decision on a model (submit, approve, certify, promote): no second person is
   asked. Approach: as the change-window approvals (MGT-4.3), AIMgF refuses `APPROVE` and `PROMOTE` from the decider who submitted the model
   (`CertificationRecord.decided_by`), with a setting to switch it off for a one-admin stack (call flow 26a).
@@ -1331,7 +1334,7 @@ there, what is right, what is wrong), agree the corrections, then build what the
 | DOC-CF-1.5 | 17 model runtime lifecycle (17a-17e; NFO's answers checked, descriptors deleted with their deployment, redeploy after terminate, the serving workload on the lifecycle and gating inference, the owner rApp's scale and terminate) | done: `HISTORY.md` DOC-CF-1.5 |
 | DOC-CF-1.6 | 02 AI/ML model train → inference (02a-02e; the owner rule on every route that acts on a running job, the inference requester recorded and the only rApp besides the owner that may resolve, a best-effort group retrain) | done: `HISTORY.md` DOC-CF-1.6 |
 | DOC-CF-1.7 | 26 model governance and end of life (26a-26e; the console's decider recorded, every model and runtime change published on the event bus, a model that still serves not deletable from MLMR, a retired model no longer monitored) | done: `HISTORY.md` DOC-CF-1.7 |
-| DOC-CF-1.8 | the rest: 03, 04, 08-14, 16, 18-25, 27 | next |
+| DOC-CF-1.8 | the rest, one flow at a time: 13 done (MLMF: a missing guarded metric no longer breaches, ceilings, checked inputs; `HISTORY.md` DOC-CF-1.8 flow 13); 27 next, then 10, 22-25, 03, 04, 08, 09, 11, 12, 14, 16, 18-21 | in progress |
 
 ### DOC-CF-2 — Each module's own lifecycle, from that module's point of view
 

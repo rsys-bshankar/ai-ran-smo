@@ -98,11 +98,14 @@ class LifecycleClient(BaseClient):
 
     def subscribe_performance_monitoring(self, model_id: uuid.UUID | str, metric_types: list[str],
                                           dme_type_id: uuid.UUID | str, guard_kpi_floor: dict | None = None,
-                                          notification_destination: str | None = None) -> dict:
-        """Subscribe to a model's performance monitoring (`POST /aimgf/mlmf/subscriptions`); the ids go in the query and the two body fields under their own keys. `notification_destination` is optional, as for every subscription-shaped resource."""
+                                          notification_destination: str | None = None, guard_kpi_ceiling: dict | None = None) -> dict:
+        """Subscribe to a model's performance monitoring (`POST /aimgf/mlmf/subscriptions`); the ids go in the query and the body fields under their own keys. `notification_destination` is optional, as for every subscription-shaped resource. `guard_kpi_ceiling` (metric name to maximum) guards a metric where lower is better (call flow 13a)."""
+        body = {"metric_types": metric_types, "guard_kpi_floor": guard_kpi_floor}
+        if guard_kpi_ceiling is not None:
+            body["guard_kpi_ceiling"] = guard_kpi_ceiling
         return ensure_ok(self._r1.post("/aimgf/mlmf/subscriptions", params={
             "model_id": str(model_id), "dme_type_id": str(dme_type_id), "notification_destination": notification_destination,
-        }, json={"metric_types": metric_types, "guard_kpi_floor": guard_kpi_floor}))
+        }, json=body))
 
     def unsubscribe_performance_monitoring(self, subscription_id: uuid.UUID | str) -> None:
         ensure_ok(self._r1.delete(f"/aimgf/mlmf/subscriptions/{subscription_id}"))
