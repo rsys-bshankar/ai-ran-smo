@@ -254,6 +254,13 @@ sequenceDiagram
     end
 ```
 
+The same renewal can run by itself (`SEC-15.19`). With `RAPP_MGMT_SECRET_ROTATION_DAYS` above 0 (default 0: off) the rApp Management worker renews the secret
+of every RUNNING instance with an operator API whose secret is older than that, a few per run, oldest first. It first checks that the rApp answers through the
+gateway and, if it does not, changes nothing at SME and tries again at the next run; it then asks SME for the new secret and pushes it, and writes an audit row
+(actor `system:secret-rotation`) and an event (`org.oran.smo.rapp-instance.credentials-rotated`, or `...credentials-rotation-failed`) that hold no secret. SME keeps
+one secret per identity, so there is no overlap: the old secret stops working when SME issues the new one, and the short window until the push lands is the cost
+of a rotation. If the push fails, the old secret is already dead; the failure is recorded and the next run rotates again, or the operator presses Re-send now.
+
 For a DEPLOYING instance `POST /rapp-mgmt/instances/{id}/credentials` makes a **new** identity instead (and pushes it); it is refused once the
 instance runs, because its registrations at SME and DME are under the old id.
 
@@ -280,4 +287,5 @@ instance runs, because its registrations at SME and DME are under the old id.
     SME registration of a package's declarations a condition of the bootstrap. The defaults keep both off, for a lab.
   - The instance secrets in the identity table (as the modules' own identities) are encrypted at rest when `SMO_IDENTITY_KEY` is configured (`SEC-15.18`: AES-256-GCM,
     one key for every replica, `python -m smo_shared.module_identity encrypt-existing` for the rows that predate it); without a key they are stored as before.
-  - Not done yet, tracked in `OPEN_ITEMS.md`: secrets are rotated only by hand (**Re-send credentials**).
+  - Secrets can be rotated on a schedule (`SEC-15.19`): `RAPP_MGMT_SECRET_ROTATION_DAYS`, default 0 (off), run by the `rapp-mgmt-worker`; an instance whose rApp cannot be
+    reached is not rotated and is tried again at the next run (01e). Re-send credentials by hand stays.

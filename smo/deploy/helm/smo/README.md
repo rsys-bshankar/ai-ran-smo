@@ -103,6 +103,21 @@ Every module answers `GET /version` (`{module, version, buildSha, builtAt}`, PR-
 
 `values.yaml` is commented. The modules are one map (`modules`) and one template; a module is described by `image`, `kind` (`service` with `/live` and `/ready`, `worker` with a heartbeat file, `static` with a TCP probe), `database`, `enrollment`, `env`, `persistence`, `resources`; `moduleDefaults` is what each starts from. Every pod runs as the unprivileged user, with no capability, no privilege escalation and a read-only root filesystem (PR-SEC-13).
 
+## Scheduled rotation of rApp instance secrets (SEC-15.19)
+
+`modules.rapp-mgmt-worker` (the rApp Management image run as a worker, like `ran-nf-oam-worker`) rotates the secret of running rApp instances on a schedule. **Off by default:** `RAPP_MGMT_SECRET_ROTATION_DAYS` is `"0"`, and the worker then does nothing (it is still one small pod; set `modules.rapp-mgmt-worker.enabled=false` to leave it out). To switch it on set the number of days:
+
+```yaml
+modules:
+  rapp-mgmt-worker:
+    env:
+      RAPP_MGMT_SECRET_ROTATION_DAYS: "90"          # an instance's secret older than this is rotated; 0 = never
+      RAPP_MGMT_SECRET_ROTATION_MAX_PER_RUN: "10"    # at most this many per run, oldest first
+      RAPP_MGMT_SECRET_ROTATION_SWEEP_SECONDS: "900" # how often the worker looks
+```
+
+An rApp that cannot be reached is not rotated and is tried again at the next run; SME keeps one secret per identity, so there is a short window between the new secret being issued and reaching the rApp (`docs/SECRETS.md`). With `rappCredentials.delivery=kubernetes` the worker is told so and rotates nothing. More than one replica is fine (one runs a task per interval; `ci/ha-values.yaml` has two). The migration adds a nullable column (`0047`); the migrate Job also re-runs the role grants, so the worker's role may write the audit chain.
+
 ## Retention (DB-3.10)
 
 Every retention setting defaults to `0`: nothing is deleted. `values-production.yaml` carries the periods proposed in `docs/RETENTION.md` (alarms cleared 90 days, PM files 14, safeguard refusals 90, MDAF reports 30, GUI audit log 365): `helm upgrade --install smo deploy/helm/smo -f values-production.yaml -f my-values.yaml`, after you have confirmed them for your obligations (they are proposals, not advice). The workers purge hourly (`ran-nf-oam-worker`, `mdaf-worker`). The GUI audit log has no worker and the chart has no CronJob for it: gui-bff's SQLite file is on a volume one pod may hold, so the purge runs inside that pod, from your scheduler: `kubectl -n smo exec deploy/gui-bff -- python -m app.retention` (`gui.env` carries `GUI_AUDIT_RETENTION_DAYS` and `GUI_AUDIT_EXPORT_DIR=/data/audit-export`; move the exported files off the volume). A table whose retention is still `0` is reported by the worker: the gauge `smo_retention_off_rows{table}` (set `SMO_WORKER_METRICS_PORT` to scrape it) and one log WARNING a day above `SMO_RETENTION_WARN_ROWS` (default 1000000, `0` never warns).
