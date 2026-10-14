@@ -23,6 +23,28 @@ Onboarding turns a package location into a deployable, governed package:
 3. **Govern the lifecycle.** `AVAILABLE`, `PRIMED`, `DEPRECATED`, `DELETING`, `FAILED`, with a delete guard that protects anything still in use.
 4. **Track usage.** rApp Management registers one usage per instance; open usages block depriming and deletion.
 
+```mermaid
+flowchart TD
+    A[Operator or GUI] -->|POST /packages with location| B[Commit package row as ONBOARDING]
+    B --> C{Location ends in .csar and passes destination checks?}
+    C -- No --> F[Set state to FAILED]
+    C -- Yes --> D[Fetch CSAR; verify signature when policy requires]
+    D --> E[Open zip; read TOSCA metadata and ASD identity]
+    E --> G[Parse optional manifest, capabilities and SME declarations; collect artifacts]
+    G --> H{Package content hash already onboarded?}
+    H -- Yes --> F
+    H -- No --> I[POST /nfo/descriptors]
+    I --> J{NFO returns 201 with descriptor ID?}
+    J -- No --> F
+    J -- Yes --> K[Set state to AVAILABLE and commit]
+    F --> L[Return HTTP 202 with packageId and trackingId]
+    K --> L
+    L --> M[GET /packages/{id}/onboarding-status]
+    M --> N[Read final state and descriptor ID when available]
+```
+
+Validation and descriptor creation happen within the `POST /packages` request; `202` is returned for either outcome. The caller reads the final state from `onboarding-status`. `AVAILABLE` means the package is ready for rApp Management to create an instance; Onboarding itself does not deploy or start it.
+
 It does not deploy anything (rApp Management and NFO do), does not validate that an rApp works, and does not store the package bytes: the artifacts table records where each file inside the package can be read.
 
 ### 1.2 Standards basis
