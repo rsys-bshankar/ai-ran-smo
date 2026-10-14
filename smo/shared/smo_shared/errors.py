@@ -207,6 +207,9 @@ class FrameworkError:
     # a registration whose instance still exists are refused; and a package no instance may be created from (not AVAILABLE or PRIMED).
     PACKAGE_IN_USE = ("PACKAGE_IN_USE", 409)
     PACKAGE_NOT_DEPLOYABLE = ("PACKAGE_NOT_DEPLOYABLE", 409)
+    # DOC-CF-1.7 (call flow 26) — MLMR refuses to delete a model whose serving runtime AIMgF still has deployed (it would leave the NFO workload running with
+    # nothing able to terminate it); retire the model, or terminate its runtime, first.
+    MODEL_IN_USE = ("MODEL_IN_USE", 409)
     # PR-ST-2 — a row's version changed between load and write (another request
     # committed first); smo_shared/versioning.py. The caller repeats the request.
     CONCURRENT_MODIFICATION = ("CONCURRENT_MODIFICATION", 409)

@@ -1,304 +1,247 @@
-# Call Flow: AI/ML Model Governance and End of Life — Approve → Certify → Promote → Rollback → Deprecate → Retire (and Retrain)
+# Call Flow 26: Model governance and end of life — submit, approve, certify, promote, roll back, deprecate, retire
 
-The governance half of AIMgF's 14-state `ModelLifecycle` FSM (`aimgf/app/statemachine.py`):
-the operator decisions that take an emulated model to `PROMOTED`, the paths back out of
-it (`ROLLBACK`, retrain, `REJECT`), and end of life (`DEPRECATE` → `RETIRE`). Call flow 02
-shows the whole pipeline at a high level and call flow 17 the serving runtime; this flow
-covers what each governance event does, what it writes, and what it leaves unchanged.
+The decisions people take about an AI/ML model once its runs are done (call flow 02): the governance path to `PROMOTED`, the ways back out of
+it, and the end of the model's life. Five diagrams:
 
-Every governance and end-of-life event goes through one route, `POST
-/aimgf/models/{id}/advance?event=…&decided_by=…&rationale=…`. An SMO module or a tool with an internal token calls it directly, and the GUI calls it
-through the BFF. A caller with the rApp role is refused with 403
-`ROLE_NOT_PERMITTED` (SEC-15.1; the gateway's rApp allow-list does not name the route, SEC-15.1b): the decisions are the operator's. The SDK's
-`sdk.lifecycle.LifecycleClient.advance_model_lifecycle` is deprecated for that reason and raises the same 403 without sending anything. `advance` accepts only
-`ADVANCEABLE_EVENTS` (`aimgf/app/statemachine.py`): the eight `GOVERNANCE_EVENTS` plus
-`DEPRECATE` and `RETIRE`. A job-driven event (`CREATE_TRAINING`, `TRAINING_COMPLETE`,
-`CREATE_VALIDATION`, …) is refused with 422 `SCHEMA_VALIDATION_FAILED` whose detail names the
-job route that fires it, and an unknown event gets the same 422. So the operator gates on
-`CREATE_VALIDATION`/`CREATE_EMULATION` (HISTORY.md OI-6.1) cannot be skipped, and no stage
-moves without the job row behind it. `_fire_model_event` (`aimgf/app/main.py`) fires the FSM
-and writes a `LifecycleTransition` row (`fsm=MODEL`) for every event. For the eight
-`GOVERNANCE_EVENTS` it also requires `decidedBy` (422 `GOVERNANCE_DECIDER_REQUIRED`
-otherwise) and writes a `CertificationRecord`. `DEPRECATE` and `RETIRE` are not governance
-events: they need no `decidedBy` and leave no `CertificationRecord`. No event sends a
-notification (no webhook and no MLMF push). `RETIRE` is the only event that touches the
-`RuntimeLifecycle` columns on the same row: it terminates a deployed runtime (see (e)).
+| | Step | Who decides | Ends with |
+|---|---|---|---|
+| 26a | Submit, approve, certify, promote | Admin (GUI) | model PROMOTED, each decision recorded under the admin who took it |
+| 26b | Reject, then retry or retire | Admin (GUI) | model FAILED, then TRAINING again or RETIRED |
+| 26c | Roll back | Admin (GUI) | model CERTIFIED again, its runtime still serving |
+| 26d | Deprecate | Admin (GUI) | model DEPRECATED: still serving, nothing new allowed |
+| 26e | Retire, and deleting the model | Admin (GUI); the owner rApp or an admin deletes | model RETIRED, its runtime gone, the model deletable |
 
-**ModelLifecycle transitions (from `build_model_lifecycle_fsm`):**
+**As images:** [26a](images/26-model-governance-and-end-of-life/26a-submit-approve-certify-promote.png) ·
+[26b](images/26-model-governance-and-end-of-life/26b-reject-then-retry-or-retire.png) ·
+[26c](images/26-model-governance-and-end-of-life/26c-roll-back.png) ·
+[26d](images/26-model-governance-and-end-of-life/26d-deprecate.png) ·
+[26e](images/26-model-governance-and-end-of-life/26e-retire-and-deleting-the-model.png)
+(PNG, drawn from the diagrams below by `scripts/render_call_flows.py`).
 
-| From | Event | To | `decidedBy` + `CertificationRecord` | Fired by |
-|---|---|---|---|---|
-| `REGISTERED` | `CREATE_TRAINING` | `TRAINING` | — | `POST /training-jobs`, `/ml-training-requests`, `/ml-update-requests` |
-| `TRAINING` | `TRAINING_COMPLETE` / `TRAINING_FAILED` | `TRAINED` / `FAILED` | — | `POST /training-jobs/{id}/complete`; cancel and timeout sweep (failure only) |
-| `TRAINED` | `APPROVE_TRAINING` | `TRAINED` (self-loop, sets `trainingApproved`) | yes | `advance` |
-| `TRAINED` | `CREATE_VALIDATION` | `VALIDATING` | — | `POST /validation-jobs`, `/ml-testing-requests` |
-| `VALIDATING` | `VALIDATION_COMPLETE` / `VALIDATION_FAILED` | `VALIDATED` / `FAILED` | — | `.../complete`, testing-request cancel, timeout sweep |
-| `VALIDATED` | `APPROVE_VALIDATION` | `VALIDATED` (self-loop, sets `validationApproved`) | yes | `advance` |
-| `VALIDATED` | `CREATE_EMULATION` | `EMULATING` | — | `POST /emulation-jobs` |
-| `EMULATING` | `EMULATION_COMPLETE` / `EMULATION_FAILED` | `EMULATED` / `FAILED` | — | `.../complete`, timeout sweep |
-| `EMULATED` | `SUBMIT_FOR_APPROVAL` | `PENDING_APPROVAL` | yes | `advance` |
-| `PENDING_APPROVAL` | `APPROVE` | `APPROVED` | yes | `advance` |
-| `PENDING_APPROVAL` | `REJECT` | `FAILED` | yes | `advance` |
-| `APPROVED` | `CERTIFY` | `CERTIFIED` | yes | `advance` |
-| `CERTIFIED` | `PROMOTE` | `PROMOTED` | yes | `advance` |
-| `CERTIFIED` | `DEPRECATE` | `DEPRECATED` | — | `advance` |
-| `CERTIFIED` | `CREATE_TRAINING` | `TRAINING` (retrain, e.g. after `ROLLBACK`) | — | training routes |
-| `PROMOTED` | `ROLLBACK` | `CERTIFIED` | yes | `advance` |
-| `PROMOTED` | `DEPRECATE` | `DEPRECATED` | — | `advance` |
-| `PROMOTED` | `CREATE_TRAINING` | `TRAINING` (retrain) | — | training routes, MLMF group retrain |
-| `FAILED` | `CREATE_TRAINING` | `TRAINING` (retry) | — | training routes |
-| `FAILED` | `RETIRE` | `RETIRED` (and runtime terminated) | — | `advance` |
-| `DEPRECATED` | `RETIRE` | `RETIRED` (and runtime terminated) | — | `advance` |
-| `RETIRED` | (none) | terminal | — | — |
+**How to read the diagrams.** As in call flow 01: an arrow is one call with the inputs that matter, a box on the receiver says what it does
+with them, an `alt` block is the outcome (success first, then each failure and what the caller gets). *Admin (GUI)* is the console's path
+through its backend (the GUI BFF); *Owner rApp (SDK)* is the rApp that registered the model.
 
-Rows fired by `advance` are the only ones `advance` accepts. Every other row is fired only by
-its job route. Any other (state, event) pair returns 409 `LIFECYCLE_ILLEGAL_TRANSITION`. The GUI BFF
-(`gui-bff/app/rbac.py`) restricts `SUBMIT_FOR_APPROVAL`, `APPROVE`, `REJECT`, `CERTIFY`,
-`PROMOTE`, `ROLLBACK`, `DEPRECATE` and `RETIRE` to the admin role. Every other `advance` event,
-including `APPROVE_TRAINING`/`APPROVE_VALIDATION`, is allowed for the operator role.
+**One route for every decision.** `POST /aimgf/models/{id}/advance?event&decided_by&rationale` fires the governance events (`SUBMIT_FOR_APPROVAL`,
+`APPROVE`, `REJECT`, `CERTIFY`, `PROMOTE`, `ROLLBACK`, and the two training gates of call flow 02b) and the end-of-life events (`DEPRECATE`,
+`RETIRE`), and nothing else:
 
-**What each state allows elsewhere:**
+- An rApp is refused, 403 `ROLE_NOT_PERMITTED`: the decisions are people's. The gateway does not let an rApp reach the route either.
+- A job-driven event (`CREATE_TRAINING`, `TRAINING_COMPLETE`, …) or an unknown one is 422 `SCHEMA_VALIDATION_FAILED`, naming the job route that fires it.
+- A governance event needs `decided_by` (422 `GOVERNANCE_DECIDER_REQUIRED`). **In the console the GUI backend sets it to `smo-gui:<username>` of the
+  signed-in user**, whatever the browser sent, so the record names who decided. `DEPRECATE` and `RETIRE` need none.
+- An event the model's state cannot take is 409 `LIFECYCLE_ILLEGAL_TRANSITION`.
 
-| Model state | Training start | Runtime deploy (AIMgF) / MLLF deploy / NRM loading | Runtime activate / scale | Inference (runtime `ACTIVE`) |
-|---|---|---|---|---|
-| `REGISTERED`, `FAILED` | allowed | 409 `MODEL_NOT_CERTIFIED` | allowed | allowed |
-| `CERTIFIED`, `PROMOTED` | allowed | allowed | allowed | allowed |
-| `TRAINING` | allowed (supersedes the open job) | 409 `MODEL_NOT_CERTIFIED` | allowed | allowed |
-| `TRAINED` … `APPROVED` (mid-pipeline) | 409 `LIFECYCLE_ILLEGAL_TRANSITION` | 409 `MODEL_NOT_CERTIFIED` | allowed | allowed |
-| `DEPRECATED` | 409 `LIFECYCLE_ILLEGAL_TRANSITION` | 409 `MODEL_NOT_CERTIFIED` | 409 `LIFECYCLE_ILLEGAL_TRANSITION` | allowed (grace period) |
-| `RETIRED` | 409 `LIFECYCLE_ILLEGAL_TRANSITION` | 409 `MODEL_NOT_CERTIFIED` | 409 `LIFECYCLE_ILLEGAL_TRANSITION` | 409 `INFERENCE_MODEL_NOT_ACTIVE` |
+The console lets only an **admin** fire the governance and end-of-life events; the two training gates are the **operator**'s.
 
-Each 409 detail names the model state. A model that was serving before a retrain keeps its
-runtime through the retrain and through any failure of it, because the two FSMs are
-independent, so `TRAINING`, mid-pipeline and `FAILED` rows can still have an `ACTIVE` runtime. `request_inference`
-refuses a `RETIRED` model even if its runtime row still says `ACTIVE`.
+**What each decision leaves behind.** Every transition writes a `LifecycleTransition` (`GET /aimgf/models/{id}/lifecycle-history?fsm=MODEL`). A
+governance decision also writes a `CertificationRecord` with the decider and rationale (`GET /aimgf/models/{id}/governance-history`). Every change of
+the model's state and of its runtime's is published on the event bus as `org.oran.smo.model-lifecycle.state-changed` (subject: the model id; `data.machine`
+says which, `ModelLifecycleState` or `RuntimeLifecycleState`; `docs/EVENTS.md`), so the console's counts follow it and an rApp can watch its models.
 
-## (a) Governed path to PROMOTED
+## What each model state allows
+
+| Model state | Start training | Deploy (AIMgF, MLLF, model loading) | Activate, scale | Inference on an ACTIVE runtime | MLMF subscribe, report |
+|---|---|---|---|---|---|
+| `REGISTERED`, `FAILED` | yes | 409 `MODEL_NOT_CERTIFIED` | yes | yes | yes |
+| `TRAINING` | yes (supersedes the run) | 409 `MODEL_NOT_CERTIFIED` | yes | yes | yes |
+| `TRAINED` … `APPROVED` | 409 | 409 `MODEL_NOT_CERTIFIED` | yes | yes | yes |
+| `CERTIFIED`, `PROMOTED` | yes | yes | yes | yes | yes |
+| `DEPRECATED` | 409 | 409 `MODEL_NOT_CERTIFIED` | 409 | yes (grace period) | yes |
+| `RETIRED` | 409 | 409 `MODEL_NOT_CERTIFIED` | 409 | 409 `INFERENCE_MODEL_NOT_ACTIVE` | 409 |
+
+A model that served before a retrain keeps its runtime through the retrain and through its failure: the two state machines are independent, so a
+`TRAINING`, mid-pipeline or `FAILED` model can have an ACTIVE runtime. A runtime can be terminated in any model state (call flow 17d).
+
+## 26a — Submit, approve, certify, promote
 
 ```mermaid
 sequenceDiagram
-    actor Producer as Model Producer rApp (smo_sdk.lifecycle)
-    actor Operator as Operator (GUI, operator role)
-    actor Admin as Governance admin (GUI, admin role)
-    participant BFF as GUI BFF (rbac.py)
-    participant AIMgF as AIMgF
-    participant MLLF as MLLF
-    participant NFO as NFO
+    actor Ad as Admin (GUI)
+    participant BFF as GUI BFF
+    participant AIM as AIMgF
+    participant Bus as Event bus
 
-    Note over Producer,AIMgF: Training completed — model is TRAINED, trainingApproved=false (call flow 02)
-    Operator->>BFF: POST /api/smo/aimgf/models/{id}/advance?event=APPROVE_TRAINING&decided_by=op-1
-    BFF->>AIMgF: forwarded (operator tier is enough for APPROVE_TRAINING)
-    AIMgF->>AIMgF: TRAINED -> TRAINED, trainingApproved=true<br/>LifecycleTransition + CertificationRecord(APPROVE_TRAINING)
-    AIMgF-->>Operator: 200 lifecycle view
-    Note over Producer,AIMgF: validation runs, then APPROVE_VALIDATION the same way,<br/>then emulation runs — model is EMULATED (HISTORY.md OI-6.1)
+    Note over Ad,AIM: the model is EMULATED (call flow 02b)
+    Ad->>BFF: POST /api/smo/aimgf/models/{id}/advance?event=SUBMIT_FOR_APPROVAL&rationale
+    Note over BFF: admin role checked (403 FORBIDDEN otherwise)<br/>decided_by = smo-gui:<username>, replacing the browser's
+    BFF->>AIM: POST /aimgf/models/{id}/advance?event=SUBMIT_FOR_APPROVAL&decided_by=smo-gui:alice&rationale
+    alt model EMULATED
+        Note over AIM: EMULATED → PENDING_APPROVAL<br/>LifecycleTransition, CertificationRecord {decision, decidedBy, rationale}
+        AIM-)Bus: model-lifecycle.state-changed {event SUBMIT_FOR_APPROVAL, to PENDING_APPROVAL}
+        AIM-->>Ad: 200 {modelLifecycleState PENDING_APPROVAL}
+    else another state
+        AIM-->>Ad: 409 LIFECYCLE_ILLEGAL_TRANSITION (nothing written)
+    end
 
-    Admin->>BFF: advance(SUBMIT_FOR_APPROVAL) without decided_by
-    BFF->>AIMgF: forwarded (admin tier)
-    AIMgF-->>Admin: 422 GOVERNANCE_DECIDER_REQUIRED — nothing written
+    Ad->>BFF: advance?event=APPROVE
+    BFF->>AIM: … &decided_by=smo-gui:alice
+    Note over AIM: PENDING_APPROVAL → APPROVED, CertificationRecord, published
+    Ad->>BFF: advance?event=CERTIFY
+    BFF->>AIM: … &decided_by=smo-gui:alice
+    Note over AIM: APPROVED → CERTIFIED: the runtime may now be deployed (call flow 17a)
+    Ad->>BFF: advance?event=PROMOTE
+    BFF->>AIM: … &decided_by=smo-gui:alice
+    Note over AIM: CERTIFIED → PROMOTED: in service, retrained from here on a breach (call flow 02e)
+    AIM-->>Ad: 200 {modelLifecycleState PROMOTED}
 
-    Admin->>BFF: advance(SUBMIT_FOR_APPROVAL, decided_by=admin-1, rationale)
-    BFF->>AIMgF: forwarded
-    AIMgF->>AIMgF: EMULATED -> PENDING_APPROVAL + CertificationRecord
-    AIMgF-->>Admin: 200 modelLifecycleState=PENDING_APPROVAL
-    Admin->>AIMgF: advance(APPROVE, decided_by) via BFF
-    AIMgF->>AIMgF: PENDING_APPROVAL -> APPROVED + CertificationRecord
-    Admin->>AIMgF: advance(CERTIFY, decided_by) via BFF
-    AIMgF->>AIMgF: APPROVED -> CERTIFIED + CertificationRecord
-    Note over AIMgF,MLLF: from here on, deploy is allowed — CERTIFIED and PROMOTED both pass<br/>the AIMgF runtime guard, MLLF's gate and NRM loading
-    Admin->>AIMgF: advance(PROMOTE, decided_by) via BFF
-    AIMgF->>AIMgF: CERTIFIED -> PROMOTED + CertificationRecord
-
-    Producer->>AIMgF: LifecycleClient.deploy_runtime(modelId) -> POST /aimgf/models/{id}/runtime/deploy
-    AIMgF->>NFO: CreateDescriptor + Instantiate (jobKind INFERENCE)
-    AIMgF-->>Producer: runtimeLifecycleState=DEPLOYED (call flow 17)
-    Producer->>MLLF: LifecycleClient.deploy_model(modelId, nodeGroups) -> POST /mllf/models/{id}/deploy
-    MLLF->>AIMgF: GET /aimgf/models/{id}/lifecycle
-    AIMgF-->>MLLF: modelLifecycleState=PROMOTED
-    MLLF->>AIMgF: PATCH /aimgf/models/{id}/runtime/node-groups
-    MLLF-->>Producer: clearedNodeGroups
-    Producer->>AIMgF: LifecycleClient.activate_runtime(modelId)
-    AIMgF-->>Producer: runtimeLifecycleState=ACTIVE
-
-    Admin->>AIMgF: GET /aimgf/models/{id}/governance-history
-    AIMgF-->>Admin: CertificationRecords in decidedAt order —<br/>APPROVE_TRAINING, APPROVE_VALIDATION, SUBMIT_FOR_APPROVAL, APPROVE, CERTIFY, PROMOTE
-    Admin->>AIMgF: GET /aimgf/models/{id}/lifecycle-history?fsm=MODEL
-    AIMgF-->>Admin: every LifecycleTransition (fromState, toState, event, occurredAt)
+    Ad->>AIM: GET /aimgf/models/{id}/governance-history
+    AIM-->>Ad: [{decision, decidedBy smo-gui:alice, rationale, decidedAt}, …] oldest first
 ```
 
-## (b) REJECT, then retry or retire
+One admin may take every step. A second person for approve and promote is not built (`OPEN_ITEMS.md` AIML-GOV-2P).
+
+## 26b — Reject, then retry or retire
 
 ```mermaid
 sequenceDiagram
-    actor Admin as Governance admin
-    actor Producer as Model Producer rApp
-    participant AIMgF as AIMgF
-    participant NFO as NFO
+    actor Ad as Admin (GUI)
+    participant R as Owner rApp (SDK)
+    participant AIM as AIMgF
 
-    Note over Admin,AIMgF: model is PENDING_APPROVAL
-    Admin->>AIMgF: advance(REJECT, decided_by=admin-1, rationale=KPI regression in emulation)
-    AIMgF->>AIMgF: PENDING_APPROVAL -> FAILED + CertificationRecord(REJECT)
-    AIMgF-->>Admin: 200 modelLifecycleState=FAILED
+    Note over Ad,AIM: the model is PENDING_APPROVAL
+    Ad->>AIM: advance?event=REJECT&rationale (decided_by from the BFF)
+    Note over AIM: PENDING_APPROVAL → FAILED, CertificationRecord REJECT, published<br/>FAILED is the shared failure state (a failed, cancelled or timed-out run lands there too)
+    AIM-->>Ad: 200 {modelLifecycleState FAILED}
 
-    Producer->>AIMgF: LifecycleClient.deploy_runtime(modelId)
-    AIMgF-->>Producer: 409 MODEL_NOT_CERTIFIED — guard fires before any NFO call
+    R->>AIM: POST /aimgf/models/{id}/runtime/deploy
+    AIM-->>R: 409 MODEL_NOT_CERTIFIED (NFO never called)
 
-    alt retry — FAILED is a re-entry point
-        Producer->>AIMgF: POST /aimgf/training-jobs (modelId)
-        AIMgF->>NFO: CreateDescriptor + Instantiate (jobKind TRAINING)
-        AIMgF->>AIMgF: FAILED -> TRAINING (CREATE_TRAINING, mLTrainingType=RE_TRAINING)<br/>trainingApproved and validationApproved reset to false
-        AIMgF-->>Producer: 201 trainingJobId
+    alt retry
+        R->>AIM: POST /aimgf/training-jobs {modelId, producerId}
+        Note over AIM: FAILED → TRAINING (RE_TRAINING), both approval gates cleared<br/>the pipeline starts again (call flow 02a)
+        AIM-->>R: 201 {trainingJobId}
     else give up
-        Admin->>AIMgF: advance(RETIRE)
-        AIMgF->>AIMgF: FAILED -> RETIRED (no decidedBy, no CertificationRecord)
-        AIMgF-->>Admin: 200 modelLifecycleState=RETIRED
+        Ad->>AIM: advance?event=RETIRE
+        Note over AIM: FAILED → RETIRED, no decider, no CertificationRecord (26e)
+        AIM-->>Ad: 200 {modelLifecycleState RETIRED}
     end
 ```
 
-## (c) ROLLBACK PROMOTED → CERTIFIED
+## 26c — Roll back
 
 ```mermaid
 sequenceDiagram
-    actor Admin as Governance admin
-    actor Producer as Model Producer rApp
-    actor Consumer as Inference Consumer rApp
-    participant AIMgF as AIMgF
-    participant MLLF as MLLF
-    participant NFO as NFO
+    actor Ad as Admin (GUI)
+    participant R as Owner rApp (SDK) / Consumer rApp
+    participant AIM as AIMgF
 
-    Note over Admin,AIMgF: model is PROMOTED, runtime is ACTIVE
-    Admin->>AIMgF: advance(ROLLBACK, decided_by=admin-1, rationale=regression found)
-    AIMgF->>AIMgF: PROMOTED -> CERTIFIED + CertificationRecord(ROLLBACK)
-    AIMgF-->>Admin: modelLifecycleState=CERTIFIED, runtimeLifecycleState=ACTIVE
-    Note over AIMgF,NFO: no NFO call, no runtime transition, no notification —<br/>ROLLBACK changes the certification state only
+    Note over Ad,AIM: the model is PROMOTED, its runtime ACTIVE
+    Ad->>AIM: advance?event=ROLLBACK&rationale (decided_by from the BFF)
+    alt model PROMOTED
+        Note over AIM: PROMOTED → CERTIFIED, CertificationRecord ROLLBACK, published<br/>no NFO call: the runtime stays ACTIVE and keeps serving
+        AIM-->>Ad: 200 {modelLifecycleState CERTIFIED, runtimeLifecycleState ACTIVE}
+    else another state
+        AIM-->>Ad: 409 LIFECYCLE_ILLEGAL_TRANSITION
+    end
 
-    Consumer->>AIMgF: POST /aimgf/models/{id}/inference-jobs
-    AIMgF-->>Consumer: 201 — still served, the gate is runtime ACTIVE only
-    Producer->>MLLF: POST /mllf/models/{id}/deploy
-    MLLF-->>Producer: 200 — CERTIFIED still passes MLLF's gate
+    R->>AIM: POST /aimgf/models/{id}/inference-jobs
+    AIM-->>R: 201 (served: the gate is the runtime, call flow 02d)
 
-    alt retrain the rolled-back model
-        Producer->>AIMgF: POST /aimgf/training-jobs (modelId)
-        AIMgF->>NFO: CreateDescriptor + Instantiate (jobKind TRAINING)
-        AIMgF->>AIMgF: CERTIFIED -> TRAINING (CREATE_TRAINING), mLTrainingType=RE_TRAINING<br/>trainingApproved and validationApproved reset to false
-        AIMgF-->>Producer: 201 trainingJobId — the ACTIVE runtime keeps serving meanwhile
-    else re-promote
-        Admin->>AIMgF: advance(PROMOTE, decided_by)
-        AIMgF->>AIMgF: CERTIFIED -> PROMOTED + CertificationRecord
+    alt promote again
+        Ad->>AIM: advance?event=PROMOTE
+        Note over AIM: CERTIFIED → PROMOTED
+    else retrain
+        R->>AIM: POST /aimgf/training-jobs {modelId}
+        Note over AIM: CERTIFIED → TRAINING, the runtime keeps serving meanwhile
     else take it out of service
-        Admin->>AIMgF: advance(DEPRECATE) — see (e)
+        Ad->>AIM: advance?event=DEPRECATE (26d)
     end
 ```
 
-## (d) Retrain from PROMOTED (direct or MLMF-triggered) and from FAILED
+**Phase 1:** a rollback moves the model's certification back, not its artifact. There are no model versions, so there is no earlier version to
+serve again: the runtime keeps what it serves (`OPEN_ITEMS.md` AIML-VER). A group retrain on a breach (call flow 02e) passes over a
+rolled-back model, as it retrains only PROMOTED members.
+
+## 26d — Deprecate
 
 ```mermaid
 sequenceDiagram
-    actor Producer as Model Producer rApp
-    actor SA as SA SMOS (MLMF subscriber)
-    participant AIMgF as AIMgF
-    participant MLMR as MLMR
-    participant NFO as NFO
-
-    Note over Producer,AIMgF: model is PROMOTED with an ACTIVE runtime
-    Producer->>AIMgF: LifecycleClient.start_training(modelId, producerId)
-    AIMgF->>AIMgF: _start_training gate (TRAINABLE_STATES) — REGISTERED, CERTIFIED, PROMOTED, FAILED or TRAINING
-    AIMgF->>NFO: CreateDescriptor + Instantiate (jobKind TRAINING, TRAINING runtime profile)
-    AIMgF->>AIMgF: PROMOTED -> TRAINING (CREATE_TRAINING), mLTrainingType=RE_TRAINING<br/>trainingApproved/validationApproved reset to false
-    AIMgF-->>Producer: 201 trainingJobId
-    Note over AIMgF: runtimeLifecycleState stays ACTIVE — the previous version keeps serving<br/>while the model re-runs Training, Validation, Emulation and governance
-
-    Producer->>AIMgF: LifecycleClient.start_training(modelId) again, while still TRAINING
-    AIMgF->>AIMgF: open TrainingJob -> CANCELLED, its NFO runtime deleted<br/>(no FSM event — model is already TRAINING, and the new job is now its current run)
-    AIMgF-->>Producer: 201 new trainingJobId
-
-    rect rgb(240, 248, 255)
-    Note over SA,MLMR: MLMF-triggered retrain of a coordination group (call flow 02)
-    Producer->>AIMgF: ReportPerformance(subscriptionId, metrics below guardKpiFloor)
-    AIMgF->>SA: best-effort POST notificationDestination (breachedFloor=true)
-    AIMgF->>MLMR: GET /mlmr/coordination-groups
-    MLMR-->>AIMgF: group containing this model
-    AIMgF->>AIMgF: should_trigger_group_retrain(ANY_MEMBER_TRIGGERS) = true
-    AIMgF->>AIMgF: _start_training(member, RE_TRAINING) for every PROMOTED member —<br/>members in any other state (CERTIFIED after ROLLBACK, DEPRECATED, ...) are skipped
-    AIMgF-->>Producer: reportId, groupRetrainTriggered, retrainedModelIds
-    end
-
-    Note over Producer,AIMgF: FAILED model (training, validation or emulation failure, REJECT or timeout)
-    Producer->>AIMgF: POST /aimgf/training-jobs (modelId)
-    AIMgF->>AIMgF: FAILED -> TRAINING (CREATE_TRAINING), RE_TRAINING
-    AIMgF-->>Producer: 201 trainingJobId
-```
-
-## (e) DEPRECATE → RETIRE, and what is refused afterwards
-
-`DEPRECATE` means "on its way out": the model's already-`ACTIVE` runtime keeps serving
-inference so its consumers have a grace period to move to a replacement, but nothing adds
-serving capacity for it any more. No deploy, MLLF placement, NRM loading, runtime activate or
-runtime scale is allowed, and no retraining. `RETIRE` is the end of service: it terminates
-the runtime and refuses inference.
-
-TS 28.105 does not settle this. It has no deprecated or retired model state: the only serving
-control in its NRM (`TS28105_AiMlNrm.yaml`) is `AIMLInferenceFunction.activationStatus`
-(`ACTIVATED`/`DEACTIVATED`) together with loading, and stopping inference is an explicit
-deactivate or unload. This build models that explicit stop as `RETIRE`. The split follows the
-usual meaning of deprecation (still works, no new use) and keeps `RETIRE` the single point
-where serving stops.
-
-```mermaid
-sequenceDiagram
-    actor Admin as Governance admin
-    actor Producer as Model Producer rApp
-    actor Consumer as Inference Consumer rApp
-    participant AIMgF as AIMgF
+    actor Ad as Admin (GUI)
+    participant R as Owner rApp (SDK) / Consumer rApp
+    participant AIM as AIMgF
     participant MLLF as MLLF
-    participant NFO as NFO
 
-    Note over Admin,AIMgF: model is PROMOTED (or CERTIFIED), runtime is ACTIVE
-    Admin->>AIMgF: advance(DEPRECATE) — admin role in the BFF, no decidedBy needed
-    AIMgF->>AIMgF: PROMOTED -> DEPRECATED, LifecycleTransition only, no CertificationRecord
-    AIMgF-->>Admin: modelLifecycleState=DEPRECATED, runtimeLifecycleState=ACTIVE
-
-    rect rgb(255, 250, 230)
-    Note over Consumer,NFO: DEPRECATED — existing consumers are still served
-    Consumer->>AIMgF: POST /aimgf/models/{id}/inference-jobs
-    AIMgF-->>Consumer: 201 inferenceJobId — runtime ACTIVE and model not RETIRED
+    Ad->>AIM: advance?event=DEPRECATE
+    alt model CERTIFIED or PROMOTED
+        Note over AIM: → DEPRECATED, LifecycleTransition only (no decider, no CertificationRecord), published<br/>no NFO call: an ACTIVE runtime keeps serving (the consumers' grace period)
+        AIM-->>Ad: 200 {modelLifecycleState DEPRECATED}
+    else another state
+        AIM-->>Ad: 409 LIFECYCLE_ILLEGAL_TRANSITION
     end
 
-    rect rgb(255, 240, 240)
-    Note over Producer,MLLF: refused once DEPRECATED (and once RETIRED)
-    Producer->>AIMgF: POST /aimgf/models/{id}/runtime/activate or /runtime/scale
-    AIMgF-->>Producer: 409 LIFECYCLE_ILLEGAL_TRANSITION — cannot activate/scale the runtime of a DEPRECATED model
-    Producer->>AIMgF: POST /aimgf/models/{id}/runtime/deploy
-    AIMgF-->>Producer: 409 MODEL_NOT_CERTIFIED
-    Producer->>MLLF: POST /mllf/models/{id}/deploy
-    MLLF-->>Producer: 409 MODEL_NOT_CERTIFIED — cannot place a model in state DEPRECATED
-    Producer->>AIMgF: POST /aimgf/ml-model-loading-requests (this model)
-    AIMgF-->>Producer: 409 MODEL_NOT_CERTIFIED
-    Producer->>AIMgF: POST /aimgf/training-jobs, /ml-training-requests or /ml-update-requests
-    AIMgF-->>Producer: 409 LIFECYCLE_ILLEGAL_TRANSITION — cannot (re)train a model in state DEPRECATED
-    Producer->>AIMgF: advance(CREATE_TRAINING)
-    AIMgF-->>Producer: 422 SCHEMA_VALIDATION_FAILED — job-driven, use POST /training-jobs
-    end
-
-    Admin->>AIMgF: advance(RETIRE)
-    AIMgF->>AIMgF: DEPRECATED -> RETIRED (terminal), LifecycleTransition fsm=MODEL
-    AIMgF->>AIMgF: _terminate_runtime — ACTIVE -> TERMINATING (REQUEST_TERMINATION)
-    AIMgF->>NFO: DELETE /nfo/deployments/{nfDeploymentId}
-    AIMgF->>AIMgF: TERMINATING -> TERMINATED (TERMINATION_COMPLETE), LifecycleTransition fsm=RUNTIME
-    AIMgF-->>Admin: modelLifecycleState=RETIRED, runtimeLifecycleState=TERMINATED
-    Note over AIMgF: same path as POST /models/{id}/runtime/terminate. A model with no<br/>deployed runtime (NOT_DEPLOYED or TERMINATED) retires without any NFO call.<br/>A FAILED model that still has its pre-retrain runtime is torn down the same way.
-
-    Consumer->>AIMgF: POST /aimgf/models/{id}/inference-jobs
-    AIMgF-->>Consumer: 409 INFERENCE_MODEL_NOT_ACTIVE — model is RETIRED
-    Admin->>AIMgF: advance(PROMOTE or ROLLBACK, decided_by)
-    AIMgF-->>Admin: 409 LIFECYCLE_ILLEGAL_TRANSITION — RETIRED has no outgoing edges
-    Note over AIMgF: an AIMLInferenceFunction that lists the model keeps it in mLModelRefList,<br/>and MLMF subscriptions on the model keep accepting reports
+    R->>AIM: POST /aimgf/models/{id}/inference-jobs
+    AIM-->>R: 201 (still served)
+    R->>AIM: POST /aimgf/models/{id}/runtime/activate or /scale
+    AIM-->>R: 409 LIFECYCLE_ILLEGAL_TRANSITION (no new serving capacity)
+    R->>AIM: POST /aimgf/models/{id}/runtime/deploy, or a model-loading request
+    AIM-->>R: 409 MODEL_NOT_CERTIFIED
+    R->>MLLF: POST /mllf/models/{id}/deploy
+    MLLF-->>R: 409 MODEL_NOT_CERTIFIED
+    R->>AIM: POST /aimgf/training-jobs {modelId}
+    AIM-->>R: 409 LIFECYCLE_ILLEGAL_TRANSITION (a deprecated model is not retrained)
 ```
 
-**Key decisions this flow depends on:**
-- One route, `POST /models/{id}/advance`, carries every governance and end-of-life event, and only those (`ADVANCEABLE_EVENTS`). Job-driven events are fired only by their job routes. `advance` refuses them, and unknown events, with 422, so it cannot bypass the OI-6.1 approval gates. The SDK's `advance_model_lifecycle` is a thin pass-through (AIMgF refuses it for an rApp token, 403, SEC-15.1), and the GUI BFF's RBAC is the only place that separates admin-only events from operator-tier ones. The GUI completes a running stage through its job's `/complete` route.
-- The eight `GOVERNANCE_EVENTS` (`SUBMIT_FOR_APPROVAL`, `APPROVE`, `REJECT`, `CERTIFY`, `PROMOTE`, `ROLLBACK`, `APPROVE_TRAINING`, `APPROVE_VALIDATION`) require `decidedBy` and each writes a `CertificationRecord` (`GET /models/{id}/governance-history`). Every transition, governance or not, writes a `LifecycleTransition` (`GET /models/{id}/lifecycle-history?fsm=MODEL`). `DEPRECATE` and `RETIRE` appear only in the latter (HISTORY.md OI-6.1).
-- `ModelLifecycle` and `RuntimeLifecycle` are independent FSMs on one row. `ROLLBACK`, `DEPRECATE` and retraining never change `runtimeLifecycleState`, never call NFO and never notify anyone. `RETIRE` is the one exception: it terminates a deployed runtime through the same `_terminate_runtime` path as `runtime/terminate` (NFO teardown plus `REQUEST_TERMINATION`/`TERMINATION_COMPLETE`). The model state does gate the runtime: a `DEPRECATED` or `RETIRED` model's runtime cannot be activated or scaled, and a `RETIRED` model serves no inference. A `DEPRECATED` model keeps serving from an already-`ACTIVE` runtime until it is retired (or its runtime is terminated explicitly). OPEN_ITEMS.md OI-6.1-runtime-gate covers the related open question of operator gates on runtime transitions.
-- The deploy gate is `CERTIFIED` or `PROMOTED`, applied in three places: AIMgF `runtime/deploy` (before any NFO call), MLLF `POST /models/{id}/deploy`, and NRM loading (`_check_loadable`). A rolled-back (`CERTIFIED`) model therefore stays deployable.
-- Retraining re-enters at `TRAINING` from `REGISTERED`, `CERTIFIED` (for example after a `ROLLBACK`), `PROMOTED` or `FAILED`, never from a mid-pipeline state, `DEPRECATED` or `RETIRED` (409 `LIFECYCLE_ILLEGAL_TRANSITION` naming the state). Retraining has no lightweight update path. A fresh `CREATE_TRAINING` resets `trainingApproved`/`validationApproved`, so a new cycle needs new operator approvals. MLMF group retrain only picks up members that are `PROMOTED` at the time of the breach.
-- `REJECT` sends the model to `FAILED`, which is the shared failure and retry state, the same one a failed, cancelled or timed-out Training/Validation/Emulation run lands in (call flow 27). From `FAILED`, the model can be retrained or retired.
-- `RETIRED` is terminal: it has no outgoing FSM edge, and AIMgF refuses every route that would start new work on the model with 409.
+TS 28.105 has no deprecated or retired model state: its only serving control is the inference function's `activationStatus` and loading. This
+build reads deprecation as "still works, no new use" and keeps RETIRE the one point where serving stops. A deprecated model cannot be
+un-deprecated: it is retired, and a replacement is registered.
+
+## 26e — Retire, and deleting the model
+
+```mermaid
+sequenceDiagram
+    actor Ad as Admin (GUI)
+    participant R as Owner rApp (SDK)
+    participant MLMR as MLMR
+    participant AIM as AIMgF
+    participant NFO as NFO
+
+    R->>MLMR: DELETE /mlmr/models/{id}
+    MLMR->>AIM: GET /aimgf/models/{id}/lifecycle
+    AIM-->>MLMR: {runtimeLifecycleState ACTIVE}
+    MLMR-->>R: 409 MODEL_IN_USE (retire it, or terminate its runtime, first)
+
+    Ad->>AIM: advance?event=RETIRE
+    alt model DEPRECATED or FAILED
+        Note over AIM: → RETIRED, LifecycleTransition
+        opt runtime DEPLOYMENT_REQUESTED, DEPLOYED or ACTIVE
+            Note over AIM: runtime → TERMINATING
+            AIM->>NFO: DELETE /nfo/deployments/{id}, then DELETE /nfo/descriptors/{id}
+        end
+        alt NFO terminates it (or there was no runtime)
+            Note over AIM: runtime → TERMINATED, one commit, every change published
+            AIM-->>Ad: 200 {modelLifecycleState RETIRED, runtimeLifecycleState TERMINATED}
+        else NFO refuses or does not answer
+            AIM-->>Ad: 502 UPSTREAM_FAILED / 503 (nothing committed: the model stays DEPRECATED, its runtime as it was)
+        end
+    else another state
+        AIM-->>Ad: 409 LIFECYCLE_ILLEGAL_TRANSITION
+    end
+
+    Note over AIM: RETIRED has no way out. Refused from now on: inference (409 INFERENCE_MODEL_NOT_ACTIVE),<br/>training, deploy, activate, scale, and a new MLMF subscription or report (409)
+
+    R->>MLMR: DELETE /mlmr/models/{id}
+    MLMR->>AIM: GET /aimgf/models/{id}/lifecycle
+    alt runtime NOT_DEPLOYED or TERMINATED, or AIMgF does not know the model (404)
+        Note over MLMR: the model, its artifacts and profiles deleted
+        MLMR-->>R: 204
+    else AIMgF does not answer
+        MLMR-->>R: 503 ENDPOINT_UNREACHABLE (nothing deleted on a guess)
+    end
+```
+
+What a retired or deleted model leaves: AIMgF keeps the model's lifecycle row, its jobs, reports, certification records and MLMF subscriptions as
+history (MLMR no longer deletes them: the cross-module foreign keys were dropped). An inference function or a loading policy that lists the
+model keeps it in its list. Deleting a model is not a lifecycle event: MLMR publishes nothing for it.
+
+## Decisions this flow depends on
+
+- One route carries every governance and end-of-life decision, and only those; job-driven events fire only from their job routes, so no
+  approval gate can be skipped and no stage moves without the job behind it (HISTORY.md OI-6.1, OI-2-governance-bypass).
+- People decide, not rApps (SEC-15.1). The console records the signed-in user as the decider (DOC-CF-1.7); a call from an SMO module names its own.
+- `ModelLifecycle` and `RuntimeLifecycle` are independent: `ROLLBACK`, `DEPRECATE` and a retrain leave the runtime alone. `RETIRE` is the one decision
+  that stops serving, through the same teardown as `runtime/terminate` (call flow 17d).
+- The deploy gate is CERTIFIED or PROMOTED, in AIMgF, MLLF and model loading alike, so a rolled-back model stays deployable.
+- A retrain re-enters at TRAINING from REGISTERED, CERTIFIED, PROMOTED or FAILED and clears both training gates (call flow 02).
+- Every change of either state machine is published on the event bus (DOC-CF-1.7).
+- A model whose runtime is deployed cannot be deleted from MLMR: deleting it would leave an NFO workload nobody could terminate (DOC-CF-1.7).

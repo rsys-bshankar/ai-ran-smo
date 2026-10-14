@@ -68,6 +68,9 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
 - **OI-1-alarm-storm** — No alarm-storm correlation algorithm in `ran-nf-oam/`;
   `correlation_group` is a coarse string. No audited O-RAN-SC repo implements one either.
   Approach: wait for real alarm traces; start with time-window + topology (`neighbourRefs`) grouping.
+- **AIML-GOV-2P** — One admin may take every governance decision on a model (submit, approve, certify, promote): no second person is
+  asked. Approach: as the change-window approvals (MGT-4.3), AIMgF refuses `APPROVE` and `PROMOTE` from the decider who submitted the model
+  (`CertificationRecord.decided_by`), with a setting to switch it off for a one-admin stack (call flow 26a).
 - **OI-6.1-runtime-gate** — `RuntimeLifecycle` transitions (Deploy/Activate/Scale/Terminate, call
   flow 17) have no operator approval beyond the `MODEL_NOT_CERTIFIED` guard. Whether the OI-6.1
   gate should extend to them is undecided. Approach: if yes, reuse the self-loop governance-event
@@ -1328,8 +1331,8 @@ there, what is right, what is wrong), agree the corrections, then build what the
 | DOC-CF-1.4 | 15 NFO workload lifecycle (15a-15e; a descriptor backing several deployments, no instance without its workload, placement only where FOCOM says, NFO's state changes on the event bus and on the rApp instance) | done: `HISTORY.md` DOC-CF-1.4 |
 | DOC-CF-1.5 | 17 model runtime lifecycle (17a-17e; NFO's answers checked, descriptors deleted with their deployment, redeploy after terminate, the serving workload on the lifecycle and gating inference, the owner rApp's scale and terminate) | done: `HISTORY.md` DOC-CF-1.5 |
 | DOC-CF-1.6 | 02 AI/ML model train → inference (02a-02e; the owner rule on every route that acts on a running job, the inference requester recorded and the only rApp besides the owner that may resolve, a best-effort group retrain) | done: `HISTORY.md` DOC-CF-1.6 |
-| DOC-CF-1.7 | 26 model governance and end of life | next |
-| DOC-CF-1.8 | the rest: 03, 04, 08-14, 16, 18-25, 27 | open |
+| DOC-CF-1.7 | 26 model governance and end of life (26a-26e; the console's decider recorded, every model and runtime change published on the event bus, a model that still serves not deletable from MLMR, a retired model no longer monitored) | done: `HISTORY.md` DOC-CF-1.7 |
+| DOC-CF-1.8 | the rest: 03, 04, 08-14, 16, 18-25, 27 | next |
 
 ### DOC-CF-2 — Each module's own lifecycle, from that module's point of view
 

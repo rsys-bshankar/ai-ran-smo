@@ -92,6 +92,11 @@ def _rule(method: str, path: str, role: Role, **kw) -> Rule:
     return Rule(method, re.compile("^" + path.replace("{id}", _ID) + "$"), role, **kw)
 
 
+def _decider(user) -> dict:
+    """The `decided_by` of a model lifecycle decision made in the console: the signed-in user, as `smo-gui:<username>` (call flow 26)."""
+    return {"decided_by": f"smo-gui:{user.username}"}
+
+
 V, O, A = Role.VIEWER, Role.OPERATOR, Role.ADMIN
 
 RULES: list[Rule] = [
@@ -149,15 +154,18 @@ RULES: list[Rule] = [
     # VALIDATION_COMPLETE/EMULATION_COMPLETE-style transitions) is operator.
     # The first match wins, so these admin-only events must stay above the generic advance rule that follows them: that rule would match the same request at
     # operator level. `decide` looks for any value of `event` among all the values sent, and tests/test_rbac_matrix.py fails for a rule that another rule shadows.
-    _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "DEPRECATE"}),
-    _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "RETIRE"}),
-    _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "SUBMIT_FOR_APPROVAL"}),
-    _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "APPROVE"}),
-    _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "REJECT"}),
-    _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "CERTIFY"}),
-    _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "PROMOTE"}),
-    _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "ROLLBACK"}),
-    _rule("POST", "/aimgf/models/{id}/(advance|inference-jobs)", O),
+    # Call flow 26 (DOC-CF-1.7): every decision is recorded under the signed-in user. `decided_by` is forced to `smo-gui:<username>` whatever the browser sent,
+    # so the governance history names the admin or operator who decided (it read `smo-gui` for every decision before).
+    _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "DEPRECATE"}, query_overrides=_decider),
+    _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "RETIRE"}, query_overrides=_decider),
+    _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "SUBMIT_FOR_APPROVAL"}, query_overrides=_decider),
+    _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "APPROVE"}, query_overrides=_decider),
+    _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "REJECT"}, query_overrides=_decider),
+    _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "CERTIFY"}, query_overrides=_decider),
+    _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "PROMOTE"}, query_overrides=_decider),
+    _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "ROLLBACK"}, query_overrides=_decider),
+    _rule("POST", "/aimgf/models/{id}/advance", O, query_overrides=_decider),
+    _rule("POST", "/aimgf/models/{id}/inference-jobs", O),
     _rule("POST", "/aimgf/models/{id}/runtime/terminate", A),  # tearing down a runtime is destructive, like the DELETEs above
     _rule("POST", "/aimgf/models/{id}/runtime/(deploy|activate|scale)", O),
     _rule("POST", "/mllf/models/{id}/deploy", O),

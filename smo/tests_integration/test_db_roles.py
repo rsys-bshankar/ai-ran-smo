@@ -5,6 +5,7 @@ fresh database to head, run scripts/db_roles.py with a password file, and connec
 """
 
 import json
+import re
 import os
 import subprocess
 import sys
@@ -65,9 +66,12 @@ def test_the_role_of_every_module_that_runs_a_worker_may_use_what_every_worker_u
 def test_the_role_of_every_module_that_publishes_events_may_write_the_event_table():
     """A module whose code uses the event bus (`smo_shared.events`) writes `smo_event` in the transaction of its change; its role must list the table, or the
     change itself fails with "permission denied" (NFO's did, once its deployments' state changes were published: call flow 15e)."""
+    # A state machine's `fire` given the entity (`fire(state, event, deployment=d)`) publishes too (MSG-3.5), without importing the bus: AIMgF's model lifecycle (call flow 26).
+    fires_with_entity = re.compile(r"_FSM\.fire\([^)]*\b\w+=\w")
     publishers = {m for m in ROLES if any("smo_shared import events" in f.read_text() or "smo_shared.events" in f.read_text()
+                                          or fires_with_entity.search(f.read_text())
                                           for f in (SMO_ROOT / m / "app").glob("*.py"))}
-    assert {"nfo", "dme", "ran-nf-oam"} <= publishers
+    assert {"nfo", "dme", "ran-nf-oam", "aimgf"} <= publishers
     for module in publishers:
         assert "smo_event" in ROLES[module]["shared"], module
 

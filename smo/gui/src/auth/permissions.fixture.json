@@ -221,7 +221,13 @@
   },
   {
     "method": "POST",
-    "pattern": "^/aimgf/models/[^/]+/(advance|inference-jobs)$",
+    "pattern": "^/aimgf/models/[^/]+/advance$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/aimgf/models/[^/]+/inference-jobs$",
     "role": "operator",
     "queryMatch": {}
   },

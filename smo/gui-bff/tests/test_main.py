@@ -292,6 +292,15 @@ def test_alarm_ack_user_is_the_gui_user_not_whatever_the_browser_sent(app, smo):
     assert params["new_state"] == "ACKNOWLEDGED"
 
 
+@pytest.mark.parametrize("user,event", [("admin", "PROMOTE"), ("admin", "RETIRE"), ("operator", "APPROVE_TRAINING")])
+def test_a_model_decision_is_recorded_under_the_gui_user(app, smo, user, event):
+    """Call flow 26: `decided_by` of a model lifecycle decision is the signed-in user (`smo-gui:<username>`), replacing what the browser sent."""
+    login(app, user).post("/api/smo/aimgf/models/m-1/advance", params={"event": event, "decided_by": "smo-gui", "rationale": "ok"})
+    params = smo.proxied[0].url.params
+    assert params.get_list("decided_by") == [f"smo-gui:{user}"]
+    assert params["event"] == event and params["rationale"] == "ok"
+
+
 def test_operator_cannot_terminate_but_admin_can(app, smo):
     """Terminating an rApp instance is admin only: the operator's attempt is 403 and never forwarded."""
     assert login(app, "operator").post("/api/smo/rapp-mgmt/instances/i-1/terminate").status_code == 403

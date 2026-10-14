@@ -13,7 +13,7 @@ The envelope (docs/EVENTS.md, docs/schemas/event-envelope.schema.json, MSG-3.1) 
 (a module's SQLite unit tests that do not create it) the table publisher keeps the event in memory instead, so a test of the change is not a test of the bus.
 Events are kept `SMO_EVENT_RETENTION_HOURS` (default 24) and purged by the shared worker task `event-purge`: the feed is a recent history to follow, not an archive.
 
-Published today: the state changes of every state machine whose `fire` is given the entity (MSG-3.5, `on_transition`; rApp instances and onboarded packages) and
+Published today: the state changes of every state machine whose `fire` is given the entity (MSG-3.5, `on_transition`; rApp instances, onboarded packages, NF deployments and AI/ML model lifecycles) and
 alarms raised and cleared (MSG-3.6, ran-nf-oam/app/alarm_history.py).
 """
 

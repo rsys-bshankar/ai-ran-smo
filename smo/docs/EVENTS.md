@@ -29,6 +29,7 @@ A CloudEvents 1.0 event in its JSON form, plus three extension attributes. Schem
 | `org.oran.smo.alarm.cleared` | RAN NF OAM, when an alarm's severity becomes `cleared` (the clear route, a VES clear, any ORM change) | the alarm id | as above |
 | `org.oran.smo.rapp-instance.state-changed` | rApp Management, at every transition of an instance's state machine | the instance id | `machine`, `from`, `event`, `to` |
 | `org.oran.smo.nf-deployment.state-changed` | NFO, at every transition of a deployment's state machine (call flow 15e: a workload that breaks is `to: ABNORMAL`), and when a deployment is removed (`event: DELETE_COMPLETE`, `to: DELETED`) | the deployment id (an rApp instance's `workloadRef`) | as above |
+| `org.oran.smo.model-lifecycle.state-changed` | AIMgF, at every transition of a model's lifecycle and of its serving runtime (call flow 26: a decision, a run starting or ending, deploy, terminate, retire; `machine` is `ModelLifecycleState` or `RuntimeLifecycleState`) | the model id | as above |
 | `org.oran.smo.write-config-job.state-changed` | RAN NF OAM, at every transition of a CM job (held for approval, approved, scheduled, started, done, halted, rejected) | the job id | as above |
 
 The state-change events come from one hook (`StateMachine.fire` in `smo_shared/statemachine.py` calls `events.on_transition`): a machine whose `fire` is given
