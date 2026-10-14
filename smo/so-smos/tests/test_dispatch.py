@@ -11,7 +11,7 @@ from app.dispatch import (
     DownstreamError, _ensure_ok, dispatch_config, dispatch_deploy,
     dispatch_emulation, dispatch_inference, dispatch_infra,
     dispatch_model_runtime_deploy, dispatch_training,
-    dispatch_validation, execute_order,
+    dispatch_validation, execute_order, run_step, Submitter,
 )
 
 
@@ -116,8 +116,9 @@ def test_dispatch_inference_without_notification_destination_sends_no_params():
     assert r1.post.call_args.kwargs["params"] is None
 
 
-def test_full_ai_ml_pipeline_can_now_be_composed_in_one_order():
-    """Training, validation, emulation, model-runtime deploy and inference can be composed in one order (HISTORY.md OI-6.6), and each posts to its own AIMgF path in order.
+def test_every_ai_ml_step_dispatches_to_its_own_aimgf_path():
+    """Training, validation, emulation, model-runtime deploy and inference each post to their own AIMgF path, in order (HISTORY.md OI-6.6). With AIMgF stubbed
+    they all complete; against AIMgF one order cannot run them all, since each only starts its job (call flow 10d).
     """
     r1 = MagicMock()
     r1.post.return_value = _ok_response({"ok": True})
@@ -152,3 +153,16 @@ def test_model_runtime_deploy_and_workload_deploy_are_distinct_dispatch_entries(
 
     assert [s["status"] for s in results] == ["COMPLETED", "COMPLETED"]
     assert [c.args[0] for c in r1.post.call_args_list] == ["/nfo/deployments", "/aimgf/models/m1/runtime/deploy"]
+
+
+def test_run_step_sends_the_submitter_whatever_the_step_says():
+    """Call flow 10a: `run_step` puts the order's submitter on the request a CONFIG step sends, over anything the step carries, and returns the step without the role."""
+    r1 = MagicMock()
+    r1.post.return_value = _ok_response({"jobId": "j"})
+    step = {"stepType": "CONFIG", "targetModule": "RAN_NF_OAM", "scope": "cell", "changes": [], "requestedBy": "someone-else", "msacRole": "admin"}
+
+    result = run_step(r1, step, Submitter(requested_by="smo-gui:bob"))
+
+    sent = r1.post.call_args.kwargs["json"]
+    assert (sent["requestedBy"], sent["msacRole"]) == ("smo-gui:bob", None)
+    assert result["status"] == "COMPLETED" and result["requestedBy"] == "someone-else"

@@ -163,9 +163,11 @@ describe("service orders", () => {
 
   // An order's state and each step's stepper state follow the step statuses.
   it("maps step statuses onto stepper and order states", () => {
-    expect(["COMPLETED", "FAILED", "PENDING", "CANCELLED"].map(stepState)).toEqual(["done", "fail", "todo", "block"]);
+    expect(["COMPLETED", "FAILED", "PENDING", "CANCELLED", "RUNNING"].map(stepState)).toEqual(["done", "fail", "todo", "block", "now"]);
     expect(orderState([{ stepType: "A", targetModule: "X", status: "COMPLETED" }])).toBe("COMPLETED");
-    expect(orderState([{ stepType: "A", targetModule: "X", status: "COMPLETED" }, { stepType: "B", targetModule: "X", status: "PENDING" }])).toBe("PENDING");
+    expect(orderState([{ stepType: "A", targetModule: "X", status: "COMPLETED" }, { stepType: "B", targetModule: "X", status: "PENDING" }])).toBe("IN_PROGRESS");
+    expect(orderState([{ stepType: "A", targetModule: "X", status: "COMPLETED" }, { stepType: "B", targetModule: "X", status: "CANCELLED" }])).toBe("CANCELLED");
+    expect(orderState([{ stepType: "A", targetModule: "X", status: "RUNNING" }], "IN_PROGRESS")).toBe("IN_PROGRESS");
   });
 });
 

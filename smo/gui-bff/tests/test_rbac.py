@@ -243,6 +243,15 @@ def test_a_job_action_is_always_attributed_to_the_gui_user_and_an_admin_holds_th
         assert rule.json_overrides(user(Role.OPERATOR))["msacRole"] is None and rule.json_overrides(user(Role.ADMIN))["msacRole"] == "admin"
 
 
+def test_a_service_order_is_submitted_as_the_gui_user_with_the_msac_tier_of_their_role():
+    """Call flow 10a: `POST /so-smos/orders` is forced to carry the signed-in user as `requestedBy`, and `msacRole` is `admin` for an admin and empty otherwise,
+    so an operator cannot write configuration through an order in someone else's name or with a wider MSAC role."""
+    rule = decide("POST", "/so-smos/orders", {}, Role.OPERATOR).rule
+    user = lambda role: type("U", (), {"username": "alice", "role": role})()  # noqa: E731
+    assert rule.json_overrides(user(Role.OPERATOR)) == {"requestedBy": "smo-gui:alice", "msacRole": None}
+    assert rule.json_overrides(user(Role.ADMIN)) == {"requestedBy": "smo-gui:alice", "msacRole": "admin"}
+
+
 def test_kpi_publish_and_the_sweep_are_not_exposed_to_the_gui():
     """Publishing a KPI and the staged-job sweep are the worker's; only the KPI check of one job is a GUI action (GUI-9.7)."""
     for path in ("/ran-nf-oam/kpis/k/publish", "/ran-nf-oam/config-jobs/advance-due"):

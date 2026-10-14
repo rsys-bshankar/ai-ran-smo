@@ -361,7 +361,9 @@ RULES: list[Rule] = [
     _rule("POST", "/mdaf/reports", A),
 
     # --- SO / SA SMOS
-    _rule("POST", "/so-smos/orders", O),
+    # DOC-CF-1.8 flow 10: the order's submitter and MSAC role come from the console user, as on RAN NF OAM's own config route; SO SMOS sends them with every CONFIG step
+    _rule("POST", "/so-smos/orders", O,
+          json_overrides=lambda u: {"requestedBy": f"smo-gui:{u.username}", "msacRole": "admin" if u.role == Role.ADMIN else None}),
     _rule("POST", "/so-smos/orders/{id}/cancel", O),
     _rule("POST", "/sa-smos/monitors", O),
     _rule("POST", "/sa-smos/monitors/{id}/(evaluate|escalate)", O),

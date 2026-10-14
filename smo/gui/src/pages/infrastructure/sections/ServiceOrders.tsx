@@ -17,15 +17,18 @@ export function stepState(status: string): StepState {
   if (status === "COMPLETED") return "done";
   if (status === "FAILED") return "fail";
   if (status === "CANCELLED") return "block";
+  if (status === "RUNNING") return "now";
   return "todo";
 }
 
-/** The order's overall state from its steps: FAILED if any failed, COMPLETED if all did, CANCELLED if any was cancelled, else PENDING. */
-export function orderState(steps: OrderStep[]): string {
+/** The order's overall state: SO SMOS's own `status` when it sends one, else from the steps as SO SMOS computes it (FAILED, then CANCELLED, then COMPLETED
+ * when every step completed, else IN_PROGRESS). An IN_PROGRESS order with a RUNNING step that never moves was cut short by a crash (call flow 10b). */
+export function orderState(steps: OrderStep[], status?: string): string {
+  if (status) return status;
   if (steps.some((s) => s.status === "FAILED")) return "FAILED";
-  if (steps.length && steps.every((s) => s.status === "COMPLETED")) return "COMPLETED";
   if (steps.some((s) => s.status === "CANCELLED")) return "CANCELLED";
-  return "PENDING";
+  if (steps.length && steps.every((s) => s.status === "COMPLETED")) return "COMPLETED";
+  return "IN_PROGRESS";
 }
 
 /** The orders box. */
@@ -41,7 +44,7 @@ export function ServiceOrders() {
       <QueryState q={{ ...page, data: page.data?.items }} empty={t("infrastructure.orders.empty")}>
         <div className="stack" style={{ gap: 10 }}>
           {page.data?.items.map((o) => {
-            const state = orderState(o.steps);
+            const state = orderState(o.steps, o.status);
             return (
               <article key={o.orderId} className="inset order-card">
                 <div className="row between wrap">
@@ -59,7 +62,7 @@ export function ServiceOrders() {
         </div>
       </QueryState>
       {page.data && <Pager offset={offset} limit={limit} shown={page.data.items.length} total={page.data.total} hasMore={page.data.hasMore} onOffset={setOffset} onLimit={(l) => { setLimit(l); setOffset(0); }} />}
-      {selected && <Drawer title={<>{t("infrastructure.orders.order")} <Id value={selected.orderId} /></>} onClose={() => setSelected(null)}><KeyValue items={[[t("infrastructure.col.scope"), selected.scope], ["RMIH", selected.rmihRegistration]]} /><h3>{t("infrastructure.orders.steps")}</h3><Json value={selected.steps} /></Drawer>}
+      {selected && <Drawer title={<>{t("infrastructure.orders.order")} <Id value={selected.orderId} /></>} onClose={() => setSelected(null)}><KeyValue items={[[t("infrastructure.col.scope"), selected.scope], [t("infrastructure.col.requestedBy"), selected.submittedBy ?? "—"], ["RMIH", selected.rmihRegistration]]} /><h3>{t("infrastructure.orders.steps")}</h3><Json value={selected.steps} /></Drawer>}
     </Card>
   );
 }

@@ -102,6 +102,24 @@
       },
       "SubmitOrderRequest": {
         "properties": {
+          "msacRole": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Msacrole"
+          },
+          "requestedBy": {
+            "default": "so-smos",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Requestedby",
+            "type": "string"
+          },
           "rmihRegistration": {
             "default": "so-smos",
             "title": "Rmihregistration",
@@ -863,7 +881,7 @@
     },
     "/orders/{order_id}/cancel": {
       "post": {
-        "description": "Reassigns order.steps to a NEW list rather than mutating the\nexisting one's dicts in place \u2014 a plain JSON column's list is never\ntracked by SQLAlchemy's change detection on in-place mutation\n(that needs sqlalchemy.ext.mutable), so the old in-place version of\nthis route silently never persisted the CANCELLED status at all:\ncommit()'s default expire-on-commit re-fetched the unchanged row\nright back, discarding the edit.",
+        "description": "Makes every PENDING step of the order CANCELLED; a COMPLETED, FAILED or RUNNING step keeps its status.\n\nThe order may still be running in another request: the row is read under a lock, and the running submit re-reads it before each step, so no step after a cancel starts. The step\nthat is RUNNING finishes. `steps` is assigned a new list: an in-place change to a plain JSON column is not persisted.",
         "operationId": "cancel_order_orders__order_id__cancel_post",
         "parameters": [
           {
