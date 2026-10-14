@@ -307,7 +307,7 @@ Postgres table with `NOTIFY` at commit, the feed on DME, the state-machine hook 
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| MSG-3.4 | Kafka implementation behind an optional extra | Round trip against a Kafka container in a compose profile | MSG-3.2 |
+| MSG-3.4 | Kafka implementation behind an optional extra. Designed and decided (October 2026), not built: [docs/adr/0006-msg-3-4-kafka-event-sink.md](docs/adr/0006-msg-3-4-kafka-event-sink.md); slices: 1 packaging, 2 relay+migration+metrics, 3 compose profile+round trip+CI job, 4 SB-7.6 consumer, 5 chart+ops docs | Round trip against a Kafka container in a compose profile | MSG-3.2 |
 
 #### PR-MSG-4 — Durable job runner (the periodic part is done: `HISTORY.md` PR-MSG-4, the worker; open: the generic `job` table and its queue-shaped users)
 
@@ -723,7 +723,7 @@ A CM write's values are checked against the leaf's YANG type, range, length, pat
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SB-7.6 | Kafka consumer variant | Same events via a topic | SB-7.1, MSG-3.4 |
+| SB-7.6 | Kafka consumer variant. Designed and decided (October 2026), not built: [docs/adr/0006-msg-3-4-kafka-event-sink.md](docs/adr/0006-msg-3-4-kafka-event-sink.md); slice 4 (SB-7.6 consumer) of its five | Same events via a topic | SB-7.1, MSG-3.4 |
 | SB-7.7 | Try the receiver against a real VES sender (an ONAP-style one, `NB-6.2`'s other half) and fix the mapping where it differs from what was written from the schema | Events of a real sender become alarms, heartbeats and PM reports | – |
 
 #### PR-SB-8 — Streaming PM (`SA-RANOAM-8`)
@@ -972,7 +972,7 @@ FM subscriptions with callbacks exist; the steps below add destinations a NOC us
 |---|---|---|---|
 | NB-1.1 | Destination model: type, address, filter | Migration | – |
 | NB-1.2 | REST destination through the outbox | Receiver gets a new alarm | NB-1.1, MSG-1.4 |
-| NB-1.3 | Kafka destination | Message on a topic | NB-1.1, MSG-3.4 |
+| NB-1.3 | Kafka destination. Designed and decided (October 2026), not built: [docs/adr/0006-msg-3-4-kafka-event-sink.md](docs/adr/0006-msg-3-4-kafka-event-sink.md); it reuses the producer and settings of slices 1 and 2, and its own design follows NB-1.1 | Message on a topic | NB-1.1, MSG-3.4 |
 | NB-1.4 | SNMP v2c trap | Trap seen by a test listener | NB-1.1 |
 | NB-1.5 | SNMP v3 | Same with auth and privacy | NB-1.4 |
 | NB-1.6 | Syslog destination | Message seen | NB-1.1 |
