@@ -92,3 +92,10 @@ def test_bootstrap_complete_posts_to_rapp_management(r1):
     """`sdk.platform.bootstrap_complete` is one POST to rApp Management's bootstrap-complete of the instance."""
     AiRuntimeSdk(r1).platform.bootstrap_complete(IID)
     assert (r1.calls[-1]["verb"], r1.calls[-1]["path"]) == ("post", f"/rapp-mgmt/instances/{IID}/bootstrap-complete")
+
+
+def test_report_fault_posts_to_rapp_management(r1):
+    """`sdk.platform.report_fault` is one POST to rApp Management's fault route of the instance, with the severity and description as parameters."""
+    AiRuntimeSdk(r1).platform.report_fault(IID, "critical", "no cells")
+    assert (r1.calls[-1]["verb"], r1.calls[-1]["path"]) == ("post", f"/rapp-mgmt/instances/{IID}/fault")
+    assert r1.calls[-1]["params"] == {"severity": "critical", "description": "no cells"}

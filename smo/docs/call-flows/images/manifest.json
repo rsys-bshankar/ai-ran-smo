@@ -7,5 +7,10 @@
   "06-package-lifecycle/06a-prime-and-deprime.png": "36cb2924c25aed493398999a90dd32f4802abf1f9076888ab2cd8bd926a41740",
   "06-package-lifecycle/06b-deprecate-and-cancel-the-deprecation.png": "bea0ac023d5003b1e737182ca190170ab880720eaf5a28e7eb4597fb7cf697bf",
   "06-package-lifecycle/06c-delete-a-package-and-release-an-orphaned-registration.png": "dca92ce8d214bf7e554f1234c1424a59a866234356c47a526c979f37f55daf9b",
-  "06-package-lifecycle/06d-a-package-that-failed-to-onboard.png": "aa6ddf96e77a519c694e8658f9139fab195639b336a7635cd48a271d032eaeb1"
+  "06-package-lifecycle/06d-a-package-that-failed-to-onboard.png": "aa6ddf96e77a519c694e8658f9139fab195639b336a7635cd48a271d032eaeb1",
+  "07-rapp-instance-lifecycle/07a-come-up-report-fault-and-recover.png": "8715f572fd912b8f794cc4563971c900ca6ff1371ddbd3561a1d8acb392458bf",
+  "07-rapp-instance-lifecycle/07b-upgrade-commit-roll-back-time-out.png": "0ddabf9620fb1dde6ee76407ef7839552ce897644360a74ba0b6c97f0c1167b4",
+  "07-rapp-instance-lifecycle/07c-roll-back-to-the-previous-version.png": "479a85cba6fb3e86e1ee7281bd197776624595f38d7a659cc0363fdbb174f452",
+  "07-rapp-instance-lifecycle/07d-stop-an-rapp-the-global-stop-safeguards.png": "0bcb1cdf8b0fe0ae6972e327d1e7a0a64c55c326ca8d672fb619c9c16be04579",
+  "07-rapp-instance-lifecycle/07e-reconfigure-terminate-delete.png": "b3ff848d14872f76dbc1a0a6cb7c37e310636e7686749e6dc9679c250021ee24"
 }

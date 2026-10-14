@@ -101,6 +101,9 @@ def _route_r1_get_post(*, onboarding_status="AVAILABLE", registration_id=None, s
     service_id = sme_service_id or uuid.uuid4()
 
     def fake_get(self, path, **kw):
+        if path.startswith("/ran-nf-oam/rapp-kill/"):          # call flow 07b: an upgrade asks whether the old instance is stopped
+            stop = fake_get.stopped.get(path.rsplit("/", 1)[1])
+            return FakeR1Response(200, stop) if stop is not None else FakeR1Response(404, {})
         assert "/onboarding-status" in path
         return FakeR1Response(200, {
             "state": onboarding_status, "nfDeploymentDescriptorId": str(uuid.uuid4()),
@@ -128,6 +131,7 @@ def _route_r1_get_post(*, onboarding_status="AVAILABLE", registration_id=None, s
         raise AssertionError(f"unexpected R1 POST to {path}")
 
     fake_post.pushed, fake_post.push_status = [], 204
+    fake_get.stopped = {}
     return fake_get, fake_post
 
 
@@ -318,12 +322,13 @@ def test_terminate_instance_deregisters_dme_producer(client, monkeypatch):
     resp = client.post(f"/instances/{created['instanceId']}/terminate")
     assert resp.status_code == 200
     workload_ref = client.get(f"/instances/{created['instanceId']}").json()["workloadRef"]
-    assert len(calls) == 5
+    assert len(calls) == 6
     assert calls[0] == ("/dme/production-capabilities", {"producer_id": created["oauthClientId"]})
     assert calls[1] == (f"/sme/provider-registrations/{created['oauthClientId']}", None)
     assert calls[2] == ("/dme/data-jobs", {"created_by": created["oauthClientId"]})       # OI-7-rapp-data-jobs-teardown: the jobs it opened as a consumer
     assert calls[3] == (f"/sme/invoker-registrations/{created['oauthClientId']}", None)   # PR-SEC-14: the instance's invoker goes with its credential
-    assert calls[4] == (f"/nfo/deployments/{workload_ref}", None)  # OI-2-terminate-workload, after DME/SME
+    assert calls[4] == (f"/ran-nf-oam/rapp-kill/{created['oauthClientId']}", None)       # call flow 07e: no stop left for a revoked identity
+    assert calls[5] == (f"/nfo/deployments/{workload_ref}", None)  # OI-2-terminate-workload, after DME/SME
 
 
 def test_crash_via_critical_fault_deregisters_dme_producer(client, monkeypatch):
@@ -504,6 +509,7 @@ def test_terminate_instance_deregisters_sme_service_apis_too(client, monkeypatch
         f"/sme/provider-registrations/{created['oauthClientId']}",
         "/dme/data-jobs",                                               # OI-7-rapp-data-jobs-teardown
         f"/sme/invoker-registrations/{created['oauthClientId']}",      # PR-SEC-14
+        f"/ran-nf-oam/rapp-kill/{created['oauthClientId']}",           # call flow 07e
         f"/nfo/deployments/{workload_ref}",
     ]
 
@@ -923,6 +929,7 @@ def test_upgrade_commit_via_route_releases_the_old_instance(client, monkeypatch,
         "/dme/production-capabilities", f"/sme/provider-registrations/{created['oauthClientId']}",
         "/dme/data-jobs",                                               # OI-7-rapp-data-jobs-teardown: the retired instance's consumer jobs
         f"/sme/invoker-registrations/{created['oauthClientId']}",
+        f"/ran-nf-oam/rapp-kill/{created['oauthClientId']}",           # call flow 07e: no stop left for the retired identity
         f"/nfo/deployments/{old_workload}",
     ]
     assert f"/onboarding/packages/{package_id}/usage/{reg_id}/stop" in posts
@@ -954,6 +961,58 @@ def test_terminating_a_pending_upgrade_replacement_is_409(client, monkeypatch):
     resp = client.post(f"/instances/{upgrade['newInstanceId']}/terminate")
     assert resp.status_code == 409
     assert "resolve that upgrade" in resp.json()["detail"]["detail"]
+
+
+def test_the_replacement_reporting_itself_up_commits_the_upgrade(client, monkeypatch, fake_r1_delete):
+    """Call flow 07b: bootstrap-complete for the pending replacement commits the upgrade; the old instance is retired and gone."""
+    created = _running_instance(client, monkeypatch)
+    upgrade = client.post(f"/instances/{created['instanceId']}/upgrade", json={"newPackageId": str(uuid.uuid4())}).json()
+
+    resp = client.post(f"/instances/{upgrade['newInstanceId']}/bootstrap-complete")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"instanceId": upgrade["newInstanceId"], "state": "RUNNING", "upgradeCommitted": True}
+    assert client.get(f"/instances/{created['instanceId']}").status_code == 404
+    assert client.get(f"/instances/{upgrade['newInstanceId']}/versions").json()["versions"][0]["previousInstanceId"] == created["instanceId"]
+
+
+def test_the_replacement_gets_its_credentials_pushed(client, monkeypatch):
+    """Call flow 07b: the upgrade pushes the replacement's credentials to its rApp (here at the old instance's address), so it can report itself up."""
+    fake_get, fake_post = _route_r1_get_post()
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+    created = client.post("/instances", json={"packageId": str(uuid.uuid4()), "operatorApiBase": "http://rapp.example:8000"}).json()
+    client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
+    fake_post.pushed.clear()
+
+    upgrade = client.post(f"/instances/{created['instanceId']}/upgrade", json={"newPackageId": str(uuid.uuid4())}).json()
+
+    assert upgrade["credentialsDelivered"] is True
+    [(path, body)] = fake_post.pushed
+    assert path == f"/rapps/{upgrade['newInstanceId']}/operator/instances/{upgrade['newInstanceId']}/credentials"
+    assert body["oauthClientId"] == upgrade["oauthClientId"]
+
+
+def test_the_replacement_failing_to_start_rolls_the_upgrade_back(client, monkeypatch, fake_r1_delete):
+    """Call flow 07b: a critical fault from the pending replacement rolls the upgrade back; the report is kept on the old instance, which runs on."""
+    created = _running_instance(client, monkeypatch)
+    upgrade = client.post(f"/instances/{created['instanceId']}/upgrade", json={"newPackageId": str(uuid.uuid4())}).json()
+
+    resp = client.post(f"/instances/{upgrade['newInstanceId']}/fault", params={"severity": "critical", "description": "no cells"})
+
+    assert resp.json() == {"status": "recorded", "instanceState": None, "upgradeRolledBack": True}
+    assert client.get(f"/instances/{upgrade['newInstanceId']}").status_code == 404
+    assert client.get(f"/instances/{created['instanceId']}").json()["state"] == "RUNNING"
+    [fault] = client.get(f"/instances/{created['instanceId']}/faults").json()["items"]
+    assert upgrade["newInstanceId"] in fault["description"] and "no cells" in fault["description"]
+
+
+def test_a_critical_fault_before_bootstrap_faults_the_instance(client, db_session_factory):
+    """Call flow 07a: an instance that cannot start reports a critical fault while DEPLOYING; it goes FAULTED (BOOTSTRAP_FAILED), from where it is recovered or terminated."""
+    instance_id = _make_instance(db_session_factory, state=InstanceState.DEPLOYING)
+    resp = client.post(f"/instances/{instance_id}/fault", params={"severity": "critical"})
+    assert resp.json() == {"status": "recorded", "instanceState": "FAULTED"}
+    assert len(client.get(f"/instances/{instance_id}/faults").json()["items"]) == 1
 
 
 def _expire_upgrade(db_session_factory, instance_id):
@@ -1036,19 +1095,17 @@ def test_losing_the_lazy_sweep_while_resolving_an_overdue_upgrade_is_still_409_t
 def _commit_upgrade(client, instance_id, new_package):
     """Upgrade `instance_id` to `new_package` and commit it; returns the replacement's id."""
     new_id = client.post(f"/instances/{instance_id}/upgrade", json={"newPackageId": new_package}).json()["newInstanceId"]
-    client.post(f"/instances/{new_id}/bootstrap-complete")
-    assert client.post(f"/instances/{instance_id}/upgrade/resolve", params={"succeeded": True}).status_code == 200
+    assert client.post(f"/instances/{new_id}/bootstrap-complete").json()["upgradeCommitted"] is True   # call flow 07b: the replacement up commits the upgrade
     return new_id
 
 
 def _commit_rollback(client, instance_id):
-    """Starts a rollback of `instance_id`, bootstraps the replacement and resolves the upgrade as succeeded; returns the rollback answer.
+    """Starts a rollback of `instance_id` and bootstraps the replacement, which commits it; returns the rollback answer.
     """
     started = client.post(f"/instances/{instance_id}/rollback")
     assert started.status_code == 200, started.json()
     body = started.json()
-    client.post(f"/instances/{body['newInstanceId']}/bootstrap-complete")
-    assert client.post(f"/instances/{body['instanceId']}/upgrade/resolve", params={"succeeded": True}).status_code == 200
+    assert client.post(f"/instances/{body['newInstanceId']}/bootstrap-complete").json()["upgradeCommitted"] is True
     return body
 
 

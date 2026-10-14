@@ -39,9 +39,14 @@ class FakeR1:
         self.calls: list[tuple[str, str]] = []
         self.package_states: dict[str, str] = {}
         self.nfo_delete_status = 204
+        self.stopped: dict[str, dict] = {}     # call flow 07b: the kill switches RAN NF OAM holds, by invoker id
+        self.kill_put_status = 200
 
     def get(self, _self, path, **kw):
         self.calls.append(("GET", path))
+        if path.startswith("/ran-nf-oam/rapp-kill/"):
+            stop = self.stopped.get(path.rsplit("/", 1)[1])
+            return FakeResponse(200, stop) if stop is not None else FakeResponse(404, {})
         package_id = path.split("/")[3]
         state = self.package_states.get(package_id, "AVAILABLE")
         if state == "UNKNOWN":
@@ -58,6 +63,10 @@ class FakeR1:
             return FakeResponse(201, {"apiInvokerId": f"api-invoker-{uuid.uuid4()}", "onboardingSecret": "s", "role": "rapp"})
         return FakeResponse(200, {})
 
+    def put(self, _self, path, json=None, **kw):
+        self.calls.append(("PUT", path))
+        return FakeResponse(self.kill_put_status, {})
+
     def delete(self, _self, path, **kw):
         self.calls.append(("DELETE", path))
         if path.startswith("/nfo/deployments/"):
@@ -72,6 +81,7 @@ def r1(monkeypatch):
     fake = FakeR1()
     monkeypatch.setattr(R1Client, "get", lambda self, path, **kw: fake.get(self, path, **kw))
     monkeypatch.setattr(R1Client, "post", lambda self, path, json=None, **kw: fake.post(self, path, json=json, **kw))
+    monkeypatch.setattr(R1Client, "put", lambda self, path, json=None, **kw: fake.put(self, path, json=json, **kw))
     monkeypatch.setattr(R1Client, "delete", lambda self, path, **kw: fake.delete(self, path, **kw))
     return fake
 
@@ -215,6 +225,7 @@ def test_upgrade_success_commits_and_retires_old_row_like_terminate(db, r1):
         ("DELETE", "/sme/provider-registrations/cred-123"),
         ("DELETE", "/dme/data-jobs"),                                  # OI-7-rapp-data-jobs-teardown
         ("DELETE", "/sme/invoker-registrations/cred-123"),            # PR-SEC-14: the retired instance's own invoker
+        ("DELETE", "/ran-nf-oam/rapp-kill/cred-123"),                 # call flow 07e: no stop left for the retired identity
         ("DELETE", "/nfo/deployments/nf-old"),
         ("POST", f"/onboarding/packages/{old_package}/usage/{old_registration}/stop"),
     ]
@@ -318,3 +329,149 @@ def test_crash_and_manual_recovery(db, r1):
     assert s == InstanceState.FAULTED
     s = RAPP_INSTANCE_FSM.fire(s, InstanceEvent.RECOVER, instance=inst)
     assert s == InstanceState.DEPLOYING
+
+
+# ---------------------------------------------------------------- call flow 07: crash safeguards, the kill switch across an upgrade, the replacement's address
+
+def test_a_crash_keeps_the_rate_limit_and_approval_policy_and_terminate_drops_them(db, r1):
+    """Call flow 07a: a crashed instance keeps its credential (for a recover), so its rate limit and approval policy stay at RAN NF OAM; only its DME and
+    SME registrations go. Terminating it then drops them, and its kill switch, after the credential is revoked."""
+    inst = running_instance(db, approval_policy={"timeoutSeconds": 60, "onTimeout": "EXPIRE"})
+    inst.rapp_limits_set = True
+
+    RAPP_INSTANCE_FSM.fire(InstanceState.RUNNING, InstanceEvent.CRASH, instance=inst)
+
+    paths = [path for _, path in r1.calls]
+    assert "/ran-nf-oam/rapp-limits/cred-123" not in paths and "/ran-nf-oam/rapp-approval-policy/cred-123" not in paths
+    assert "/dme/production-capabilities" in paths and "/sme/provider-registrations/cred-123" in paths
+    r1.calls.clear()
+
+    RAPP_INSTANCE_FSM.fire(InstanceState.FAULTED, InstanceEvent.TERMINATE, instance=inst)
+
+    paths = [path for _, path in r1.calls]
+    assert paths.index("/ran-nf-oam/rapp-limits/cred-123") < paths.index("/sme/invoker-registrations/cred-123") < paths.index("/ran-nf-oam/rapp-kill/cred-123")
+    assert "/ran-nf-oam/rapp-approval-policy/cred-123" in paths
+
+
+def test_a_failed_bootstrap_takes_a_deploying_instance_to_faulted(db):
+    """Call flow 07a: BOOTSTRAP_FAILED takes DEPLOYING to FAULTED, from where the instance is recovered or terminated."""
+    inst = running_instance(db)
+    assert RAPP_INSTANCE_FSM.fire(InstanceState.DEPLOYING, InstanceEvent.BOOTSTRAP_FAILED, instance=inst) == InstanceState.FAULTED
+
+
+def test_the_replacement_of_a_stopped_instance_is_stopped_too(db, r1):
+    """Call flow 07b: an upgrade never releases a stopped rApp. The replacement gets the same stop (same author, the reason naming the old instance)."""
+    r1.stopped["cred-123"] = {"invokerId": "cred-123", "killedBy": "alice", "reason": "storm"}
+    old = running_instance(db)
+
+    new = start_upgrade(db, old, uuid.uuid4())
+
+    assert ("PUT", f"/ran-nf-oam/rapp-kill/{new.oauth_client_id}") in r1.calls
+    assert old.state == InstanceState.UPGRADING
+
+
+def test_an_unstopped_instance_upgrades_without_a_stop(db, r1):
+    """Call flow 07b: when the old instance is not stopped, nothing is put on the replacement."""
+    start_upgrade(db, running_instance(db), uuid.uuid4())
+    assert not any(method == "PUT" for method, _ in r1.calls)
+
+
+def test_an_upgrade_is_not_started_when_ran_nf_oam_cannot_say_whether_the_instance_is_stopped(db, r1, monkeypatch):
+    """Call flow 07b: 503 before anything is provisioned when the stop cannot be read, so an upgrade never starts on a guess."""
+    original = r1.get
+    monkeypatch.setattr(r1, "get", lambda _self, path, **kw: FakeResponse(503) if "rapp-kill" in path else original(_self, path, **kw))
+    old = running_instance(db)
+
+    with pytest.raises(HTTPException) as exc:
+        start_upgrade(db, old, uuid.uuid4())
+
+    assert exc.value.status_code == 503
+    assert old.state == InstanceState.RUNNING and old.pending_upgrade_instance_id is None
+    assert not any(path == "/nfo/deployments" for _, path in r1.calls)
+
+
+def test_a_replacement_ran_nf_oam_does_not_stop_is_torn_down_again(db, r1):
+    """Call flow 07b: when the replacement's stop is refused, its identity, workload and usage registration are released and the upgrade is refused (503)."""
+    r1.stopped["cred-123"] = {"invokerId": "cred-123", "killedBy": "alice"}
+    r1.kill_put_status = 500
+    old = running_instance(db)
+
+    with pytest.raises(HTTPException) as exc:
+        start_upgrade(db, old, uuid.uuid4())
+
+    assert exc.value.status_code == 503
+    assert old.state == InstanceState.RUNNING
+    paths = [path for _, path in r1.calls]
+    assert any(p.startswith("/sme/invoker-registrations/api-invoker-") for p in paths)
+    assert any(p.startswith("/nfo/deployments/") for p in paths)
+    assert any(p.endswith("/stop") for p in paths)
+
+
+def test_the_replacement_is_reached_at_the_new_package_address_else_the_old_instances(db, r1, monkeypatch):
+    """Call flow 07b: the replacement's operator API address is the one the new package declares; without one, the old instance's."""
+    old = running_instance(db, operator_api_base="http://old-rapp:8000")
+    assert start_upgrade(db, old, uuid.uuid4()).operator_api_base == "http://old-rapp:8000"
+
+    original = r1.get
+    def declaring(_self, path, **kw):
+        resp = original(_self, path, **kw)
+        if path.endswith("/onboarding-status"):
+            resp._payload["aiCapabilities"] = {"operatorApi": {"baseUrl": "http://new-rapp:8000"}}
+        return resp
+    monkeypatch.setattr(r1, "get", declaring)
+    other = running_instance(db, operator_api_base="http://old-rapp:8000")
+    other.oauth_client_id = "cred-456"
+    assert start_upgrade(db, other, uuid.uuid4()).operator_api_base == "http://new-rapp:8000"
+
+
+def test_an_unreachable_ran_nf_oam_refuses_the_upgrade_and_tears_the_stopped_replacement_down(db, r1, monkeypatch):
+    """Call flow 07b: no answer from RAN NF OAM is treated like a refusal, whether reading the old instance's stop (nothing provisioned) or putting it on
+    the replacement (the replacement released again); both are 503."""
+    import httpx
+
+    def unreachable(*_a, **_kw):
+        raise httpx.ConnectError("down")
+
+    original_get = r1.get
+    monkeypatch.setattr(r1, "get", lambda _self, path, **kw: unreachable() if "rapp-kill" in path else original_get(_self, path, **kw))
+    old = running_instance(db)
+    with pytest.raises(HTTPException) as exc:
+        start_upgrade(db, old, uuid.uuid4())
+    assert exc.value.status_code == 503 and not any(p == "/nfo/deployments" for _, p in r1.calls)
+
+    monkeypatch.setattr(r1, "get", original_get)
+    monkeypatch.setattr(r1, "put", unreachable)
+    r1.stopped["cred-123"] = {"invokerId": "cred-123", "killedBy": "alice"}
+    with pytest.raises(HTTPException) as exc:
+        start_upgrade(db, old, uuid.uuid4())
+    assert exc.value.status_code == 503 and old.state == InstanceState.RUNNING
+    assert any(p.startswith("/nfo/deployments/") for m, p in r1.calls if m == "DELETE")
+
+
+def test_an_instance_without_a_credential_has_no_stop_to_read_or_drop(db, r1):
+    """Call flow 07b/07e: with no credential there is no invoker id, so the upgrade reads no stop and a terminate drops none."""
+    old = running_instance(db)
+    old.oauth_client_id = None
+    start_upgrade(db, old, uuid.uuid4())
+    assert not any("rapp-kill" in p for _, p in r1.calls)
+
+    other = running_instance(db)
+    other.oauth_client_id = None
+    r1.calls.clear()
+    RAPP_INSTANCE_FSM.fire(InstanceState.RUNNING, InstanceEvent.TERMINATE, instance=other)
+    assert not any("rapp-kill" in p for _, p in r1.calls)
+
+
+def test_an_unreachable_ran_nf_oam_does_not_stop_a_terminate(db, r1, monkeypatch):
+    """Call flow 07e: dropping the kill switch is best-effort, after the credential is revoked; a terminate goes through without RAN NF OAM."""
+    import httpx
+    original = r1.delete
+
+    def delete(_self, path, **kw):
+        if "rapp-kill" in path:
+            raise httpx.ConnectError("down")
+        return original(_self, path, **kw)
+    monkeypatch.setattr(r1, "delete", delete)
+    inst = running_instance(db)
+    assert RAPP_INSTANCE_FSM.fire(InstanceState.RUNNING, InstanceEvent.TERMINATE, instance=inst) == InstanceState.UNDEPLOYED
+    assert inst.oauth_client_id is None

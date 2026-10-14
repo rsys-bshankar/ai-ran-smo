@@ -78,8 +78,10 @@ Cross-module references (`package_id`, `package_usage_registration_id`, `workloa
 | `SHADOW` is the default autonomy mode. | The safest mode: nothing is ever enforced. |
 | `operatorApiBase` is optional and registered by the instance (a caller with the rApp role may set it only for the instance whose `oauthClientId` is its invoker id: 403 `NOT_THIS_INSTANCE`) or by an operator; a terminated instance refuses and reports none. | The base is a URL a workload supplied and the platform calls later, so it is checked as every such destination is (`is_safe_webhook_destination`, plus no credentials, query, fragment, `..`, `%` or `//`) and the gateway checks it again; a workload that cannot speak for the instance (the sample rApps in compose serve many instances under one identity) is given the address by the operator. |
 | `autonomyMode`, `regionScope` and `authzScope` are fixed at create (and inherited by upgrades, restored by a rollback); there is no route to change them here (an operator edits a scope claim on the invoker at SME, `PUT /sme/invoker-registrations/{id}/authz-scope`). | A per-instance property chosen at onboarding, not per inference call. |
-| A critical fault fires `CRASH`; a non-critical fault is only recorded. | Only a critical fault takes an instance out of `RUNNING`. |
-| No authorization beyond R1's token check and role policy; the GUI BFF limits create, config, upgrade, rollback, recover and bootstrap-complete to operators, terminate, delete, performance and fault to admins. An rApp may call `bootstrap-complete`, `performance`, `fault` and `config` (PUT) for its own instance only (403 `NOT_THIS_INSTANCE` for another's), the same rule as `operator-api` (`SEC-15.9`; the gateway's change allow-list does not let an rApp reach `fault` and `config` at all, so the check there is the second line). | The rApp itself calls some of these through R1; it must not act for another instance. |
+| A critical fault fires `CRASH` (from `RUNNING`) or `BOOTSTRAP_FAILED` (from `DEPLOYING`); from an upgrade's pending replacement it rolls the upgrade back. A non-critical fault is only recorded. `CRASH` deregisters at DME and SME only: the rate limit and approval policy stay with the identity until terminate. | Only a critical fault takes an instance out of `RUNNING`. A faulted instance keeps its credential for a recover, and RAN NF OAM limits no caller it holds no limit for (call flow 07a, DOC-CF-1.3). |
+| An upgrade or rollback of a stopped instance stops the replacement too (the old one's `killedBy`, a reason naming it), read and put before the upgrade starts (503 when RAN NF OAM cannot answer); terminate drops the stop after the identity is revoked. | An upgrade must not release a stopped rApp, and no stop is left behind for a revoked identity (call flow 07b, 07e). |
+| The replacement gets the new package's declared operator API address, else the old instance's, and its credentials are pushed; its own `bootstrap-complete` commits the upgrade. | It brings itself up as a new instance does (01b); `upgrade/resolve` stays for the operator and the timeout for an rApp that says nothing (call flow 07b). |
+| No authorization beyond R1's token check and role policy; the GUI BFF limits create, config, upgrade, rollback, recover and bootstrap-complete to operators, terminate, delete, performance and fault to admins. An rApp may call `bootstrap-complete`, `performance`, `fault` and `config` (PUT) for its own instance only (403 `NOT_THIS_INSTANCE` for another's), the same rule as `operator-api` (`SEC-15.9`; the gateway's change allow-list lets an rApp reach `bootstrap-complete`, `performance` and `fault`, not `config`, so the check there is the second line). | The rApp itself calls some of these through R1; it must not act for another instance. |
 
 **Autonomy modes.** An inference outcome is handed to Intent Service's `POST /intent-service/autonomy-dispatches`, which reads the instance from here and acts on its mode (behaviour is Intent Service's; summarised because the mode is set here):
 
@@ -151,21 +153,22 @@ Every mode notifies the operator, best effort.
 | From | Event | To | Action |
 |---|---|---|---|
 | `DEPLOYING` | `BOOTSTRAP_OK` | `RUNNING` | route first registers SME declarations |
-| `DEPLOYING` | `BOOTSTRAP_FAILED` | `FAULTED` | defined, but no route fires it |
+| `DEPLOYING` | `BOOTSTRAP_FAILED` | `FAULTED` | none (nothing is registered before bootstrap); fired by a critical fault while `DEPLOYING` |
 | `RUNNING` | `START_UPGRADE` | `UPGRADING` | |
-| `UPGRADING` | `UPGRADE_COMMIT` | `UNDEPLOYED` | terminate side effects (deregister, close the DME data jobs, revoke); the row is then deleted by the upgrade code |
+| `UPGRADING` | `UPGRADE_COMMIT` | `UNDEPLOYED` | terminate side effects (deregister at DME, SME and RAN NF OAM, close the DME data jobs, revoke, drop the kill switch); the row is then deleted by the upgrade code |
 | `UPGRADING` | `UPGRADE_ROLLBACK` | `RUNNING` | |
 | `RUNNING`, `FAULTED`, `DEPLOYING` | `TERMINATE` | `UNDEPLOYED` | terminate side effects; the route then releases NFO and usage |
-| `RUNNING` | `CRASH` | `FAULTED` | DME and SME deregistration |
+| `RUNNING` | `CRASH` | `FAULTED` | DME and SME deregistration only (`_reconsider_discovery`) |
 | `FAULTED` | `RECOVER` | `DEPLOYING` | the container must bootstrap again |
 
-`UNDEPLOYED` is terminal. Forbidden (409 `LIFECYCLE_ILLEGAL_TRANSITION`, naming state and event): terminate from `UPGRADING` or `UNDEPLOYED`; terminate of an upgrade's pending replacement (resolve the upgrade instead); upgrade or rollback from a state other than `RUNNING`; recover from anything but `FAULTED`; bootstrap-complete from anything but `DEPLOYING`; a critical fault on a non-`RUNNING` instance (and then the fault is not recorded); delete from anything but `UNDEPLOYED` (`RAPP_INSTANCE_NOT_UNDEPLOYED`).
+`UNDEPLOYED` is terminal. Forbidden (409 `LIFECYCLE_ILLEGAL_TRANSITION`, naming state and event): terminate from `UPGRADING` or `UNDEPLOYED`; terminate of an upgrade's pending replacement (resolve the upgrade instead); upgrade or rollback from a state other than `RUNNING`; recover from anything but `FAULTED`; bootstrap-complete from anything but `DEPLOYING`; a critical fault on an instance neither `RUNNING` nor `DEPLOYING` (and then the fault is not recorded); delete from anything but `UNDEPLOYED` (`RAPP_INSTANCE_NOT_UNDEPLOYED`).
 
 Upgrade choreography (`upgrade.py`):
 
-1. `upgrade` / `rollback`: old must be `RUNNING`. The replacement is provisioned (a non-deployable package is refused before any state change). Old goes `UPGRADING`, `pending_upgrade_instance_id` points to the replacement.
-2. `upgrade/resolve?succeeded=true`: the replacement must be `DEPLOYING` (it is bootstrapped and its SME declarations registered) or already `RUNNING`; the old row is retired like a terminate, a `RAppInstanceVersion` is recorded, the old row is deleted, and the teardown outcome is stored on the replacement. A replacement that crashed gives 409 `LIFECYCLE_ILLEGAL_TRANSITION`.
-3. `upgrade/resolve?succeeded=false`, or the deadline (`created_at` of the replacement plus `upgrade_timeout_seconds`) passing: the replacement is torn down like a terminate and deleted, the old row returns to `RUNNING`, the outcome is stored on the old row. Resolving `succeeded=true` after the deadline gives 409 `RAPP_UPGRADE_TIMED_OUT` (already rolled back); `succeeded=false` after the deadline returns the rolled-back survivor.
+1. `upgrade` / `rollback`: old must be `RUNNING`. Its stop at RAN NF OAM is read (503 when it cannot be). The replacement is provisioned (a non-deployable package is refused before any state change), given an operator API address and, when the old one is stopped, stopped too. Old goes `UPGRADING`, `pending_upgrade_instance_id` points to the replacement. After the commit the route pushes the replacement's credentials.
+2. The replacement's `bootstrap-complete` resolves the upgrade as `succeeded=true` (step 3); its critical fault while `DEPLOYING` as `succeeded=false` (step 4).
+3. `upgrade/resolve?succeeded=true`: the replacement must be `DEPLOYING` (it is bootstrapped and its SME declarations registered) or already `RUNNING`; the old row is retired like a terminate, a `RAppInstanceVersion` is recorded, the old row is deleted, and the teardown outcome is stored on the replacement. A replacement that crashed gives 409 `LIFECYCLE_ILLEGAL_TRANSITION`.
+4. `upgrade/resolve?succeeded=false`, or the deadline (`created_at` of the replacement plus `upgrade_timeout_seconds`) passing: the replacement is torn down like a terminate and deleted, the old row returns to `RUNNING`, the outcome is stored on the old row. Resolving `succeeded=true` after the deadline gives 409 `RAPP_UPGRADE_TIMED_OUT` (already rolled back); `succeeded=false` after the deadline returns the rolled-back survivor.
 
 ### 2.4 API
 
@@ -186,7 +189,7 @@ Upgrade choreography (`upgrade.py`):
 | GET | `/kill-all` | `{stopped, instances}`: how many instances that are not `UNDEPLOYED` are stopped now, out of how many. Internal-only at R1 | 503 (never reported as 0) |
 | POST | `/instances/{id}/credentials/renew` | Call flow 01e: a new secret for the instance's **same** identity (SME `POST /invoker-registrations/{id}/secret`; the old secret and its tokens stop working), pushed to the rApp that serves it, for an rApp that was unreachable when the instance was created, or to rotate the secret → `{instanceId, oauthClientId, credentialsDelivered: true}`; without an operator API base `{…, credentialsDelivered: false, oauthClientSecret}` once (`Cache-Control: no-store`). The GUI's **Re-send credentials** (admin) | 404; 409 (terminated); 503 (SME did not issue it, or the rApp did not take it: the secret is not shown) |
 | POST | `/instances/{id}/credentials` | `{instanceId, oauthClientId, oauthClientSecret}`, issued once (`Cache-Control: no-store`, not an idempotent command, the secret is not stored); a new call rotates. DEPLOYING only. With an operator API base it is pushed to the rApp as at create and the answer is `{instanceId, oauthClientId, credentialsDelivered: true}`. With `RAPP_CREDENTIAL_DELIVERY=kubernetes` the secret goes to the instance's Kubernetes Secret instead and the answer is `{instanceId, oauthClientId, credentialSecret: <name>}` | 404; 409; 503 (SME) |
-| POST | `/instances/{id}/upgrade` | `{newPackageId}` → `{newInstanceId, oldInstanceState, oauthClientId}` | 409; 404/409 from provisioning |
+| POST | `/instances/{id}/upgrade` | `{newPackageId}` → `{newInstanceId, oldInstanceState, oauthClientId, credentialsDelivered}` | 409; 404/409 from provisioning; 503 (RAN NF OAM cannot say whether the instance is stopped, or does not stop the replacement) |
 | POST | `/instances/{id}/upgrade/resolve?succeeded=` | Commit or roll back; answers `{instanceId, state, packageId}` of the survivor | 404 (none pending); 409 `LIFECYCLE_ILLEGAL_TRANSITION`; 409 `RAPP_UPGRADE_TIMED_OUT` |
 | POST | `/instances/{id}/rollback` | Upgrade back to the newest version not rolled back; `id` may be a superseded instance id. Answers `{instanceId, newInstanceId, oldInstanceState, fromPackageId, toPackageId, rollbackOfVersionId, oauthClientId}` | 404; 409 `ROLLBACK_HISTORY_UNAVAILABLE`; 409 (not `RUNNING`); 404/409 from provisioning |
 | GET | `/instances/{id}/versions` | Current instance, `rollbackTarget`, and the version list newest first; resolves a superseded id | 404 |
@@ -197,7 +200,7 @@ Upgrade choreography (`upgrade.py`):
 | GET | `/instances/{id}/performance` | Paged, newest first | 404 |
 | GET | `/instances/{id}/performance/latest` | `GUI-9.8`, the rApp's headline KPI: `{instanceId, at, metrics: {name: number}}`, the numeric top-level values of its newest report. Never 404: `at` null and `metrics` `{}` when there is no report or no such instance | |
 | GET | `/instances/performance/latest?ids=a,b,c` | The same for up to 50 instances in one query: `{items: [...]}` one per id, in the order given, duplicates once | 422 `SCHEMA_VALIDATION_FAILED` (more than 50 ids, or one that is not a UUID) |
-| POST | `/instances/{id}/fault?severity=&description=` | Record; `severity=critical` fires `CRASH`. Own instance only for an rApp (checked before the crash is fired) | 403 `NOT_THIS_INSTANCE`; 409 (critical on a non-`RUNNING` instance) |
+| POST | `/instances/{id}/fault?severity=&description=` | Record; `severity=critical` fires `CRASH`, or `BOOTSTRAP_FAILED` while `DEPLOYING`; for an upgrade's pending replacement it rolls the upgrade back (`{upgradeRolledBack: true}`, the report kept on the old instance). Own instance only for an rApp (checked before the crash is fired) | 403 `NOT_THIS_INSTANCE`; 409 (critical on a non-`RUNNING` instance) |
 | GET | `/instances/{id}/faults` | Paged, newest first | 404 |
 
 `GET /health` is liveness. Config, performance and fault routes use a plain 404 lookup and do not apply the lazy upgrade timeout.
@@ -212,6 +215,8 @@ Upgrade choreography (`upgrade.py`):
 | out, R1 | `POST /sme/provider-registrations`, `POST /sme/published-apis/v1/{apfId}/service-apis` | bootstrap-complete; or committed upgrade whose replacement had not bootstrapped | Best effort; an unreachable SME does not block. The service name is suffixed with the `apfId` so two instances never collide. `apfId` and `producerId` are always the instance's `oauth_client_id`, whatever the CSAR JSON says |
 | out, R1 | `DELETE /dme/production-capabilities?producer_id=`, `DELETE /sme/published-apis/v1/{apfId}/service-apis/{id}`, `DELETE /sme/provider-registrations/{apfId}` | terminate, crash, upgrade commit (old), rollback (replacement) | Best effort (`httpx` errors swallowed) |
 | out, R1 | `DELETE /nfo/deployments/{workload_ref}`, `POST /onboarding/packages/{id}/usage/{reg}/stop` | terminate, upgrade commit (old), rollback or timeout (replacement) | Recorded in `last_teardown`; never blocks |
+| out, R1 | `GET /ran-nf-oam/rapp-kill/{oauthClientId}` (old), `PUT /ran-nf-oam/rapp-kill/{oauthClientId}` (replacement) | upgrade, rollback | 503 when unanswered or refused (call flow 07b) |
+| out, R1 | `DELETE /ran-nf-oam/rapp-kill/{oauthClientId}` | terminate, upgrade commit (old), rollback (replacement), after the credential is revoked | Best effort |
 
 No inbound callbacks and no background tasks.
 
@@ -241,7 +246,8 @@ rApp Management reads one environment variable of its own: `RAPP_CREDENTIAL_DELI
 
 - No real ACM / Helm / Kubernetes deployment: the NFO handoff is the extent of it.
 - `upgradeTimeoutSeconds` is enforced lazily and cannot be set through the API; an unread upgrade stays `UPGRADING`.
-- `BOOTSTRAP_FAILED` has no route; a container that never bootstraps stays `DEPLOYING` until terminated.
+- A container that never bootstraps and never reports a critical fault stays `DEPLOYING` until terminated.
+- A configuration change is stored only; the rApp reads it when it starts the instance (`OPEN_ITEMS.md` OI-7-config-push).
 - A refused NFO deployment during create is silent (`workload_ref` null). Transport errors during provisioning surface as 500.
 - No lock around concurrent upgrade / resolve calls on one instance.
 - Performance and fault reports are records only and drive no decision (contrast AIMgF's performance reports).
@@ -277,7 +283,8 @@ cd smo/rapp-mgmt && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | `tests/test_global_stop_and_latest_kpi.py` | `GUI-9.6` global stop: every live instance stopped through the per-instance call, an already stopped one keeps its first stop, a terminated one is left out, a refusal is listed while the others stay stopped, an unreadable stop list (500, unreachable) changes nothing on stop, resume and count, the list is read page by page, resume lifts only this module's stopped instances and lists a refusal, the count. `GUI-9.8` latest KPI: the newest report's numbers only, no report and no instance are an empty answer (never 404), the batched read in the given order, more than 50 or malformed ids are 422 | 15 |
 | `tests/test_scope.py` | `SEC-10.3`: the claim at create (put on the invoker, shown on the instance, refused when not valid or not recorded by SME), kept by an upgrade and restored by a rollback, own-instance-only `bootstrap-complete` and performance; `GUI-9.3`: `GET /instances?region=` with and without the unscoped instances (a claim of tenants only counts as unscoped), `total`, `include_unscoped` alone filters nothing, an empty `region` 422 | 21 |
 | `tests/test_main.py` (event bus) | `MSG-3.5`: an instance's RECOVER is published as `org.oran.smo.rapp-instance.state-changed` about the instance, from the state machine's one hook | 1 |
-| | Total (the whole suite, `PYTHONPATH=.:../shared python -m pytest tests/ -q`; some files predate this table and have no row) | 214 |
+| `tests/test_main.py`, `tests/test_upgrade.py` (call flow 07) | DOC-CF-1.3: a crash keeps the limit and policy and terminate drops them and the stop; a failed bootstrap; a stopped instance's replacement is stopped, an unstopped one is not, an unreadable or refused stop refuses the upgrade (the replacement torn down); the replacement's address; its credentials pushed; its bootstrap commits, its critical fault rolls back; a critical fault before bootstrap | 14 |
+| | Total (the whole suite, `PYTHONPATH=.:../shared python -m pytest tests/ -q`; some files predate this table and have no row) | 240 |
 
 ### 3.3 What is not covered here
 

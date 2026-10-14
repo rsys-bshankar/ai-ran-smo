@@ -79,6 +79,10 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
   replica or resource argument, so AIMgF `runtime/scale` cannot ask for one. Approach: add `replicas` /
   `resources` to the NFO scale call and the AIMgF scale request, and pass the manifest's runtime profile bounds.
 
+- **OI-7-config-push** — An instance's configuration change does not reach its rApp: `PUT /rapp-mgmt/instances/{id}/config` only stores
+  it, and the rApp reads it when it starts the instance (call flow 07e). Approach: push it to the rApp's operator API as the credentials are
+  (`POST /rapps/{id}/operator/instances/{id}/config`, through R1 Termination), with a declared schema checked first; the SDK applies it.
+
 ## 3. Spec conformance still open
 
 ### RAN NF OAM
@@ -1308,8 +1312,8 @@ there, what is right, what is wrong), agree the corrections, then build what the
 |---|---|---|
 | DOC-CF-1.1 | 01 rApp onboarding → running instance (01a-01e; the instance identity and the rApp's own bootstrap built for it; then, after the review with the product owner, package upload, the operator API address from the manifest and the production settings) | done: `HISTORY.md` DOC-CF-1.1 and DOC-CF-1.1 review |
 | DOC-CF-1.2 | 06 package lifecycle (06a-06d; the usage-registration contract, package error codes and NFO descriptor delete built for it) | done: `HISTORY.md` DOC-CF-1.2 |
-| DOC-CF-1.3 | 07 rApp instance lifecycle (upgrade, rollback, terminate, faults, kill switch) | next. Seen while doing 1.1's review: an upgrade's replacement instance does not get the old instance's operator API base (nor the new package's declared one), so its credentials are never pushed. Seen while doing 1.2: NFO lets a descriptor be deployed once, so a second instance of one package gets no NFO deployment (its `workloadRef` is null) and rApp Management creates it anyway |
-| DOC-CF-1.4 | 15 NFO workload lifecycle | open |
+| DOC-CF-1.3 | 07 rApp instance lifecycle (07a-07e; crash safeguards, the kill switch across an upgrade, the replacement's address and its own commit, a failed bootstrap built for it) | done: `HISTORY.md` DOC-CF-1.3 |
+| DOC-CF-1.4 | 15 NFO workload lifecycle | next. Seen while doing 1.2 and 1.3: NFO lets a descriptor be deployed once, so a second instance of one package gets no NFO deployment (its `workloadRef` is null) and rApp Management creates it anyway |
 | DOC-CF-1.5 | 17 model runtime lifecycle | open |
 | DOC-CF-1.6 | 02 AI/ML model train → inference | open |
 | DOC-CF-1.7 | 26 model governance and end of life | open |

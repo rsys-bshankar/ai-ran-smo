@@ -117,8 +117,9 @@ RAPP_MAY_CHANGE: dict[str, tuple[tuple[frozenset[str], re.Pattern], ...] | None]
         # GUI-8.3: a rApp registers (or withdraws) the operator API of its own instance; rApp Management checks that the instance is the caller's
         "/rapp-mgmt": (
             (("PUT", "DELETE"), r"^/instances/[^/]+/operator-api$"),
-            # the container reports that it is up and how it performs; rApp Management checks that the instance is the caller's own (it is refused for another)
-            (("POST",), r"^/instances/[^/]+/(bootstrap-complete|performance)$"),
+            # the container reports that it is up, how it performs and its faults (call flow 07a: a critical one before it is up is a failed bootstrap); rApp
+            # Management checks that the instance is the caller's own (it is refused for another)
+            (("POST",), r"^/instances/[^/]+/(bootstrap-complete|performance|fault)$"),
         ),
         "/mdaf": (
             (("POST",), r"^/(subscriptions|mda-requests|mda-reports|reports)$"),

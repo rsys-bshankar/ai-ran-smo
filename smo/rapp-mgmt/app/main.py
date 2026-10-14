@@ -441,7 +441,9 @@ def instance_safeguards(instance_id: uuid.UUID, db: Session = Depends(get_sessio
 def bootstrap_complete(instance_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
     """Called once the rApp container has bootstrapped via R1 Termination
     and registered with SME/DME — closes DEPLOYING -> RUNNING. 409 if the
-    instance is not DEPLOYING. The rApp may call it for its own instance only
+    instance is not DEPLOYING. For the pending replacement of an upgrade it
+    commits the upgrade (call flow 07b): the old instance is retired, and the
+    answer says `upgradeCommitted`. The rApp may call it for its own instance only
     (403 `NOT_THIS_INSTANCE` for another rApp's); an operator may call it for any.
     """
     inst = _load_instance(db, instance_id)
@@ -449,6 +451,12 @@ def bootstrap_complete(instance_id: uuid.UUID, request: Request, db: Session = D
     if InstanceState(inst.state) != InstanceState.DEPLOYING:
         raise illegal_transition_error(IllegalTransition(InstanceState(inst.state), InstanceEvent.BOOTSTRAP_OK),
                                        f"RAppInstance {instance_id}")
+    owner = _upgrade_owner(db, inst)
+    if owner is not None and owner.instance_id != inst.instance_id:
+        # call flow 07b: the replacement of an upgrade is up, so the upgrade commits (the old instance is retired); upgrade/resolve stays for an operator's own call
+        resolve_upgrade(db, owner, inst, new_bootstrap_succeeded=True, register_identity=_on_bootstrap)   # legal: inst is DEPLOYING, owner UPGRADING
+        db.commit()
+        return {"instanceId": str(inst.instance_id), "state": inst.state, "upgradeCommitted": True}
     _on_bootstrap(inst)
     inst.state = _fire(inst, InstanceEvent.BOOTSTRAP_OK)
     db.commit()
@@ -480,9 +488,14 @@ def upgrade_instance(instance_id: uuid.UUID, body: UpgradeRequest, db: Session =
     does (newPackageId must be AVAILABLE or PRIMED — 404 unknown, 409
     otherwise; its own oauthClientId, NFO deployment and usage
     registration), inheriting the old instance's configuration,
-    autonomyMode and regionScope. The outcome is reported through
-    upgrade/resolve, or the upgrade rolls back on its own once
-    upgradeTimeoutSeconds have passed unresolved.
+    autonomyMode and regionScope, and stopped when the old instance is
+    stopped. Its credentials are pushed to its rApp (`credentialsDelivered`).
+    The upgrade commits when the replacement reports itself up
+    (bootstrap-complete), rolls back when it reports a critical fault before
+    that, and either way can be resolved by an operator through
+    upgrade/resolve; it rolls back on its own once upgradeTimeoutSeconds have
+    passed unresolved. 503 when RAN NF OAM cannot say whether the old
+    instance is stopped.
     """
     old = _load_instance(db, instance_id)
     try:
@@ -491,7 +504,14 @@ def upgrade_instance(instance_id: uuid.UUID, body: UpgradeRequest, db: Session =
         raise illegal_transition_error(exc, f"RAppInstance {instance_id}") from exc
     db.commit()
     return {"newInstanceId": str(new.instance_id), "oldInstanceState": old.state,
-            "oauthClientId": new.oauth_client_id}
+            "oauthClientId": new.oauth_client_id, "credentialsDelivered": _push_replacement_credentials(new)}
+
+
+def _push_replacement_credentials(new: RAppInstance) -> bool:
+    """Call flow 07b: the replacement's credentials go to the rApp that serves it, as CreateInstance's do (01b), so it can report itself up and the
+    upgrade commits. Needs the replacement committed (the gateway looks its operator API address up here). False when they could not be pushed."""
+    with on_own_account():
+        return push_credentials(new, new.issued_secret)
 
 
 @app.post("/instances/{instance_id}/upgrade/resolve")
@@ -584,7 +604,7 @@ def rollback_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)
     return {"instanceId": str(current.instance_id), "newInstanceId": str(new.instance_id),
             "oldInstanceState": current.state, "fromPackageId": str(current.package_id),
             "toPackageId": str(new.package_id), "rollbackOfVersionId": str(target.version_id),
-            "oauthClientId": new.oauth_client_id}
+            "oauthClientId": new.oauth_client_id, "credentialsDelivered": _push_replacement_credentials(new)}
 
 
 @app.get("/instances/{instance_id}/versions")
@@ -697,13 +717,27 @@ def report_performance(instance_id: uuid.UUID, metrics: dict, request: Request, 
 @app.post("/instances/{instance_id}/fault")
 def report_fault(instance_id: uuid.UUID, request: Request, severity: str, description: str = "", db: Session = Depends(get_session)):
     """Records every fault report; severity=critical additionally fires
-    CRASH (RUNNING -> FAULTED). A critical fault on an instance that is not
-    RUNNING is refused with 409 and not recorded. A rApp may report for its
+    CRASH (RUNNING -> FAULTED) or, for an instance that has not come up yet,
+    BOOTSTRAP_FAILED (DEPLOYING -> FAULTED; call flow 07a). For the pending
+    replacement of an upgrade it rolls the upgrade back instead (07b): the
+    replacement is gone, the report is kept on the old instance and the answer
+    says `upgradeRolledBack`. A critical fault on an instance in any other
+    state is refused with 409 and not recorded. A rApp may report for its
     own instance only (403 `NOT_THIS_INSTANCE` for another rApp's); an operator may for any.
     """
     inst = _load_instance(db, instance_id)
     _own_instance_or_operator(request, inst)      # before the CRASH below: another instance's token must not be able to fault this one
-    if severity == "critical":
+    if severity == "critical" and InstanceState(inst.state) == InstanceState.DEPLOYING:
+        owner = _upgrade_owner(db, inst)
+        if owner is not None and owner.instance_id != inst.instance_id:
+            # call flow 07b: the replacement of an upgrade could not start, so the upgrade rolls back (the replacement is torn down and deleted; the
+            # report is kept on the old instance, which is the one left)
+            resolve_upgrade(db, owner, inst, new_bootstrap_succeeded=False)
+            db.add(RAppFaultReport(instance_id=owner.instance_id, severity=severity, description=f"upgrade replacement {instance_id}: {description}"))
+            db.commit()
+            return {"status": "recorded", "instanceState": None, "upgradeRolledBack": True}
+        inst.state = _fire(inst, InstanceEvent.BOOTSTRAP_FAILED)
+    elif severity == "critical":
         inst.state = _fire(inst, InstanceEvent.CRASH)
     db.add(RAppFaultReport(instance_id=instance_id, severity=severity, description=description))
     db.commit()

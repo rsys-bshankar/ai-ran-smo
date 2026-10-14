@@ -136,9 +136,26 @@ def _reconsider_approval_policy(instance: RAppInstance, **_) -> None:
         pass
 
 
-def _reconsider_registrations(instance: RAppInstance, **_) -> None:
+def _drop_kill_switch(oauth_client_id: str | None) -> None:
+    """Call flow 07e: remove the kill switch RAN NF OAM may hold for a revoked identity, so no stop is left behind for a client id that no longer exists.
+    Best-effort, like the deregistrations: the credential is already revoked, so a record left behind stops nothing that could still write."""
+    if oauth_client_id is None:
+        return
+    with suppress(httpx.HTTPError):
+        R1Client().delete(f"/ran-nf-oam/rapp-kill/{oauth_client_id}")
+
+
+def _reconsider_discovery(instance: RAppInstance, **_) -> None:
+    """The action of CRASH (call flow 07a): a crashed instance is no longer offered to others, so its DME and SME registrations go. Its rate limit and
+    approval policy stay at RAN NF OAM: the instance keeps its credential (for a recover), and a limit removed here would leave that credential free of
+    them, since RAN NF OAM does not limit a caller it holds no limit for. They go when the instance is terminated."""
     _reconsider_dme_registration(instance)
     _reconsider_sme_registration(instance)
+
+
+def _reconsider_registrations(instance: RAppInstance, **_) -> None:
+    """Every registration made for the instance: DME, SME, then its rate limit and approval policy at RAN NF OAM (run as the instance goes UNDEPLOYED)."""
+    _reconsider_discovery(instance)
     _reconsider_rapp_limits(instance)
     _reconsider_approval_policy(instance)
 
@@ -147,17 +164,21 @@ def _terminate_side_effects(instance: RAppInstance, **_) -> None:
     # Reconsideration must run BEFORE credential revocation — it reads
     # instance.oauth_client_id as the DME producer_id/SME apfId, which
     # _revoke_credential clears to None.
-    """The transition action of every move into UNDEPLOYED: deregister the instance at DME, SME, RAN NF OAM (limit and approval policy), close its DME data jobs, then revoke its credential.
-    The order matters: the deregistrations read `oauth_client_id` as the producer and provider id, and `_revoke_credential` sets it to None, so it must run last.
+    """The transition action of every move into UNDEPLOYED: deregister the instance at DME, SME, RAN NF OAM (limit and approval policy), close its DME data jobs, revoke its
+    credential, then drop its kill switch. The order matters: the deregistrations read `oauth_client_id` as the producer and provider id, and `_revoke_credential` sets it to
+    None; the kill switch goes only once the credential is revoked, so the instance is never free to write in between.
     """
+    oauth_client_id = instance.oauth_client_id
     _reconsider_registrations(instance)
     _close_dme_data_jobs(instance)
     _revoke_credential(instance)
+    _drop_kill_switch(oauth_client_id)
 
 
 def build_rapp_instance_fsm() -> StateMachine[InstanceState, InstanceEvent]:
     """Builds the transition table: which `InstanceEvent` is legal in which `InstanceState`, the state it leads to and the side-effect action it runs. Every move into UNDEPLOYED
-    (terminate, an upgrade commit) runs `_terminate_side_effects`; a crash runs only the deregistrations, so the credential stays for a recover. An event that is not in the table is
+    (terminate, an upgrade commit) runs `_terminate_side_effects`; a crash runs only the DME and SME deregistrations, so the credential stays for a recover and the rate
+    limit and approval policy stay with it. A failed bootstrap (a critical fault while DEPLOYING) has nothing to undo: nothing is registered before bootstrap-complete. An event that is not in the table is
     refused by the caller as an illegal transition (409). The table is built once, as `RAPP_INSTANCE_FSM`.
     """
     fsm: StateMachine[InstanceState, InstanceEvent] = StateMachine()
@@ -180,7 +201,7 @@ def build_rapp_instance_fsm() -> StateMachine[InstanceState, InstanceEvent]:
     # in flight is resolved (commit/rollback) first.
     fsm.add(InstanceState.FAULTED, InstanceEvent.TERMINATE, InstanceState.UNDEPLOYED, action=_terminate_side_effects)
     fsm.add(InstanceState.DEPLOYING, InstanceEvent.TERMINATE, InstanceState.UNDEPLOYED, action=_terminate_side_effects)
-    fsm.add(InstanceState.RUNNING, InstanceEvent.CRASH, InstanceState.FAULTED, action=_reconsider_registrations)
+    fsm.add(InstanceState.RUNNING, InstanceEvent.CRASH, InstanceState.FAULTED, action=_reconsider_discovery)
     fsm.add(InstanceState.FAULTED, InstanceEvent.RECOVER, InstanceState.DEPLOYING)
     return fsm
 

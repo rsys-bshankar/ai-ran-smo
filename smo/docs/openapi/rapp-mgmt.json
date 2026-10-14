@@ -1174,7 +1174,7 @@
     },
     "/instances/{instance_id}/bootstrap-complete": {
       "post": {
-        "description": "Called once the rApp container has bootstrapped via R1 Termination\nand registered with SME/DME \u2014 closes DEPLOYING -> RUNNING. 409 if the\ninstance is not DEPLOYING. The rApp may call it for its own instance only\n(403 `NOT_THIS_INSTANCE` for another rApp's); an operator may call it for any.",
+        "description": "Called once the rApp container has bootstrapped via R1 Termination\nand registered with SME/DME \u2014 closes DEPLOYING -> RUNNING. 409 if the\ninstance is not DEPLOYING. For the pending replacement of an upgrade it\ncommits the upgrade (call flow 07b): the old instance is retired, and the\nanswer says `upgradeCommitted`. The rApp may call it for its own instance only\n(403 `NOT_THIS_INSTANCE` for another rApp's); an operator may call it for any.",
         "operationId": "bootstrap_complete_instances__instance_id__bootstrap_complete_post",
         "parameters": [
           {
@@ -1827,7 +1827,7 @@
     },
     "/instances/{instance_id}/fault": {
       "post": {
-        "description": "Records every fault report; severity=critical additionally fires\nCRASH (RUNNING -> FAULTED). A critical fault on an instance that is not\nRUNNING is refused with 409 and not recorded. A rApp may report for its\nown instance only (403 `NOT_THIS_INSTANCE` for another rApp's); an operator may for any.",
+        "description": "Records every fault report; severity=critical additionally fires\nCRASH (RUNNING -> FAULTED) or, for an instance that has not come up yet,\nBOOTSTRAP_FAILED (DEPLOYING -> FAULTED; call flow 07a). For the pending\nreplacement of an upgrade it rolls the upgrade back instead (07b): the\nreplacement is gone, the report is kept on the old instance and the answer\nsays `upgradeRolledBack`. A critical fault on an instance in any other\nstate is refused with 409 and not recorded. A rApp may report for its\nown instance only (403 `NOT_THIS_INSTANCE` for another rApp's); an operator may for any.",
         "operationId": "report_fault_instances__instance_id__fault_post",
         "parameters": [
           {
@@ -3751,7 +3751,7 @@
     },
     "/instances/{instance_id}/upgrade": {
       "post": {
-        "description": "UpgradeInstance \u2014 Annex A.1.2.2.1. Kicks off the two-row choreography\nin upgrade.py: the old instance (must be RUNNING, else 409) goes\nUPGRADING and a replacement is provisioned exactly like CreateInstance\ndoes (newPackageId must be AVAILABLE or PRIMED \u2014 404 unknown, 409\notherwise; its own oauthClientId, NFO deployment and usage\nregistration), inheriting the old instance's configuration,\nautonomyMode and regionScope. The outcome is reported through\nupgrade/resolve, or the upgrade rolls back on its own once\nupgradeTimeoutSeconds have passed unresolved.",
+        "description": "UpgradeInstance \u2014 Annex A.1.2.2.1. Kicks off the two-row choreography\nin upgrade.py: the old instance (must be RUNNING, else 409) goes\nUPGRADING and a replacement is provisioned exactly like CreateInstance\ndoes (newPackageId must be AVAILABLE or PRIMED \u2014 404 unknown, 409\notherwise; its own oauthClientId, NFO deployment and usage\nregistration), inheriting the old instance's configuration,\nautonomyMode and regionScope, and stopped when the old instance is\nstopped. Its credentials are pushed to its rApp (`credentialsDelivered`).\nThe upgrade commits when the replacement reports itself up\n(bootstrap-complete), rolls back when it reports a critical fault before\nthat, and either way can be resolved by an operator through\nupgrade/resolve; it rolls back on its own once upgradeTimeoutSeconds have\npassed unresolved. 503 when RAN NF OAM cannot say whether the old\ninstance is stopped.",
         "operationId": "upgrade_instance_instances__instance_id__upgrade_post",
         "parameters": [
           {
