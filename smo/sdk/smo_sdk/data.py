@@ -13,11 +13,20 @@ from ._common import BaseClient, SdkError, credential_kwargs, ensure_ok
 
 class DataClient(BaseClient):
     """The `sdk.data` namespace: DME types, producers, data jobs, offers, type subscriptions and the data-plane store; O1 action mediation; and RAN NF OAM inventory reads."""
+    def own_invoker_id(self) -> str | None:
+        """The invoker id this client's calls carry (the instance's when called while acting for one, else the process's), or None when it cannot be told.
+
+        DME accepts a producer registration from an rApp only under a `producerId` equal to this id (SEC-15.10b), so an rApp that registers a type passes it as `producer_id`.
+        """
+        return self._r1.acting_invoker_id()
+
     def register_type(self, namespace: str, name: str, version: str, type_name: str, producer_id: str,
                        data_production_schema: dict, producer_health_callback_url: str, job_callback_url: str,
                        collection_spec: dict | None = None, source_domain: str | None = None,
                        source_context: dict | None = None) -> dict:
         """Register a producer and the DME type it produces (`POST /dme/production-capabilities`).
+
+        `producer_id` must be the caller's own invoker id (`own_invoker_id()`): DME refuses an rApp that names another (403 `DME_PRODUCER_NOT_OWNER`, SEC-15.10b).
 
         `source_domain` and `source_context` (optional) carry the provenance, LIVE_RAN or DIGITAL_TWIN, that drives the rule excluding Digital-Twin data from inference (`docs/ARCHITECTURE.md`, DME).
         """

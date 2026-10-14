@@ -212,6 +212,26 @@ def test_a_call_made_for_a_bound_instance_carries_that_instances_token(net, monk
     assert r1_client.instance_identity("i-1") is None
 
 
+def test_acting_invoker_id_is_the_id_the_calls_carry(net, monkeypatch):
+    """SEC-15.10b: the invoker id is the instance's while acting for a bound instance, the process's own otherwise (onboarded on first ask), and None for a client with a token of its own."""
+    monkeypatch.setattr(r1_client, "_instance_identities", {})
+    r1_client.bind_instance_identity("i-9", "api-invoker-of-i-9", "s")
+    client = R1Client(R1)
+    with r1_client.acting_for("i-9"):
+        assert client.acting_invoker_id() == "api-invoker-of-i-9"
+    with r1_client.acting_for("i-unknown"):
+        assert client.acting_invoker_id() == "api-invoker-1"
+    assert client.acting_invoker_id() == "api-invoker-1" and net.invokers == 1
+    assert R1Client(R1, bearer_token="own").acting_invoker_id() is None
+    r1_client.forget_instance_identity("i-9")
+
+
+def test_acting_invoker_id_is_none_when_no_identity_can_be_had(net):
+    """With SME unreachable there is no token, so no id to report."""
+    net.sme_up = False
+    assert R1Client(R1).acting_invoker_id() is None
+
+
 def test_an_instance_identity_sme_no_longer_knows_is_not_replaced_by_a_new_one(net, monkeypatch):
     """A 400 from the token endpoint for a bound instance identity gives no token; the process never registers a new identity in its place."""
     monkeypatch.setattr(r1_client, "_instance_identities", {})

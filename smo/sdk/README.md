@@ -124,7 +124,8 @@ Usage: `sdk = AiRuntimeSdk()` (or `AiRuntimeSdk(r1=R1Client(base_url, bearer_tok
 
 | Method | Route | Notes |
 |---|---|---|
-| `register_type(namespace, name, version, type_name, producer_id, data_production_schema, producer_health_callback_url, job_callback_url, collection_spec=None, source_domain=None, source_context=None)` | `POST /dme/production-capabilities` | `source_domain` is `LIVE_RAN` or `DIGITAL_TWIN` (drives the Digital-Twin-excluded-from-inference rule) |
+| `register_type(namespace, name, version, type_name, producer_id, data_production_schema, producer_health_callback_url, job_callback_url, collection_spec=None, source_domain=None, source_context=None)` | `POST /dme/production-capabilities` | `producer_id` must be the caller's own invoker id (`own_invoker_id()`): DME refuses an rApp that names another, 403 `DME_PRODUCER_NOT_OWNER` (SEC-15.10b). `source_domain` is `LIVE_RAN` or `DIGITAL_TWIN` (drives the Digital-Twin-excluded-from-inference rule) |
+| `own_invoker_id()` -> str or None | none (asks the R1 client) | the invoker id the calls carry: the instance's while acting for a bound instance, else the process's |
 | `discover_types(data_category=None)` | `GET /dme/dme-types` | filter `data_category` |
 | `list_producers()` | `GET /dme/production-capabilities` | |
 | `get_producer(producer_id)` | `GET /dme/production-capabilities/{producer_id}` | |

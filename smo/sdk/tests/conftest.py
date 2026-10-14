@@ -34,6 +34,10 @@ class RecordingR1Client:
         self.calls = []
         self._next_response = FakeResponse(200, {})
 
+    def acting_invoker_id(self):
+        """The invoker id the fake reports for its calls."""
+        return "invoker-1"
+
     def script(self, status_code=200, payload=None, content=b"", text=""):
         """Set the response every following call returns (until the next `script`)."""
         self._next_response = FakeResponse(status_code, payload, content, text)

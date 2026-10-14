@@ -67,7 +67,7 @@ class FakePlatform:
         self.artifact = b""
         self.data = types.SimpleNamespace(
             get_dataset=self.get_dataset, read_config=self.read_config, query_cell_guards=lambda: self.guards,
-            query_critical_alarms=lambda me: AlarmScope(self.alarms), register_type=lambda *a, **k: {"dmeTypeId": "t-1"},
+            query_critical_alarms=lambda me: AlarmScope(self.alarms), register_type=lambda *a, **k: {"dmeTypeId": "t-1"}, own_invoker_id=lambda: "invoker-1",
             discover_types=lambda ns: [{"dmeTypeId": "t-sim", "dmeTypeIdStruct": {"name": "PRB_UTILIZATION_SIM"}}],
             list_data_jobs=lambda dme_type_id: [{"dataJobId": "j-1"}, {"dataJobId": "j-2"}],
             ingest_data_record=lambda job, record: None)
@@ -590,6 +590,14 @@ def test_past_the_row_bound_the_oldest_changes_are_left_out_and_flagged(client, 
 
 
 # ---------------------------------------------------------------- the Digital Twin producer
+
+def test_the_sim_producer_registers_under_the_callers_invoker_id(client, platform):
+    """DME takes an rApp's producer only under its own invoker id (SEC-15.10b): the registration names the id the SDK reports, not a fixed name."""
+    seen = []
+    platform.data.register_type = lambda *a, **k: seen.append(a[4]) or {"dmeTypeId": "t-1"}
+    assert client.post("/sim-producer/register").status_code == 201
+    assert seen == ["invoker-1"]
+
 
 def test_the_sim_producer_registers_publishes_and_answers_dme_callbacks(client, platform):
     """The Digital Twin producer registers its type (201), publishes samples to the data jobs (a bad body is 422), and answers DME's health, job

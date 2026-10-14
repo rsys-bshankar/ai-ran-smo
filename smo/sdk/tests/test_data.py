@@ -30,6 +30,11 @@ def test_register_type(client, r1):
     }}
 
 
+def test_own_invoker_id_is_what_the_r1_client_reports(client):
+    """`own_invoker_id` asks the R1 client which invoker id its calls carry (what DME compares a producer id with, SEC-15.10b)."""
+    assert client.own_invoker_id() == "invoker-1"
+
+
 def test_register_type_with_source_provenance(client, r1):
     """A DIGITAL_TWIN source domain and its context reach the route, which drives the inference-eligibility rule."""
     client.register_type("RAN", "CoverageIssue", "1.0", "RAN.CoverageIssue", "rapp-1", {"type": "object"},

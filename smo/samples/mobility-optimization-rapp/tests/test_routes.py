@@ -77,7 +77,7 @@ class FakePlatform:
         self.artifact = b""
         self.data = types.SimpleNamespace(
             get_dataset=self.get_dataset, read_config=self.read_config,
-            query_cell_guards=lambda managed_element_ref: self.guards, register_type=lambda *a, **k: {"dmeTypeId": "t-1"},
+            query_cell_guards=lambda managed_element_ref: self.guards, register_type=lambda *a, **k: {"dmeTypeId": "t-1"}, own_invoker_id=lambda: "invoker-1",
             discover_types=lambda ns: [{"dmeTypeId": "t-sim", "dmeTypeIdStruct": {"name": "HO_PERFORMANCE_SIM"}}],
             list_data_jobs=lambda dme_type_id: [{"dataJobId": "j-1"}], ingest_data_record=lambda job, record: None)
         self.models = types.SimpleNamespace(

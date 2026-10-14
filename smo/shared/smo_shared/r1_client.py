@@ -361,6 +361,18 @@ class R1Client:
     def _url(self, path: str) -> str:
         return f"{self.base_url}{path}"
 
+    def acting_invoker_id(self) -> str | None:
+        """The invoker id the calls made now carry (SEC-15.10b): that of the instance the current context acts for when its identity is bound, else this process's own.
+
+        What a caller needs to name itself in a field the platform checks against its invoker id, such as a DME `producerId`. The identity is onboarded first if the process has none
+        yet. None for a client given a `bearer_token` of its own (whose owner this process cannot tell) or when no identity could be obtained (SME unreachable).
+        """
+        if self._bearer_token or _module_token(self.base_url) is None:
+            return None
+        acting = _acting_instance.get()
+        bound = _instance_identity_of(acting) if acting else None
+        return (bound or _identity).invoker_id
+
     def _headers(self, refresh: bool = False) -> dict:
         """The headers every call carries: `Authorization` (omitted when no token could be obtained), and, when known, the correlation id and the
         on-behalf-of originator with its scope claim.
