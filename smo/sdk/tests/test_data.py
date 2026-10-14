@@ -7,8 +7,11 @@ import uuid
 
 import pytest
 
+from smo_sdk import data as smo_data
 from smo_sdk._common import SdkError
 from smo_sdk.data import DataClient
+from smo_shared.r1_client import acting_for
+from smo_shared.testing import FakeDmeR1
 
 
 @pytest.fixture
@@ -246,3 +249,77 @@ def test_ran_inventory_reads(client, r1):
         "managed_element_ref": "me-1", "cell_class": "EMERGENCY"}}
     assert [c["path"] for c in r1.calls[1:]] == [
         "/ran-nf-oam/managed-entities/me-1", "/ran-nf-oam/vendor-capabilities/acme", "/ran-nf-oam/capabilities"]
+
+
+# ---------------------------------------------------------------- one producer per callback (SEC-15.10b)
+
+@pytest.fixture
+def dme():
+    """A `DataClient` over a fake DME that holds the SEC-15.10b rule, with the record of what this process registered emptied; yields (client, fake)."""
+    smo_data._registered_as.clear()
+    fake = FakeDmeR1()
+    yield DataClient(fake), fake
+    smo_data._registered_as.clear()
+
+
+def _register(client, producer_id, jobs="http://x/jobs"):
+    """Registers the same type under `producer_id` with the callback `jobs`."""
+    return client.register_type("RAN", "T", "1.0", "RAN.T", producer_id, {}, "http://x/health", jobs)
+
+
+def test_the_process_and_an_instance_registering_leave_one_producer(dme):
+    """The same callback registered under the process identity and then an instance's leaves DME the instance's producer only, and again in the other order."""
+    client, fake = dme
+    _register(client, client.own_invoker_id())
+    with acting_for("a"):
+        _register(client, client.own_invoker_id())
+    assert fake.callbacks() == {"http://x/jobs": ["instance-a"]}
+    _register(client, client.own_invoker_id())
+    assert fake.callbacks() == {"http://x/jobs": ["process-id"]}
+
+
+def test_several_instances_registering_leave_one_producer(dme):
+    """Instance a, instance b and the process in turn: one producer for the callback at every step, the last to register."""
+    client, fake = dme
+    for acting, expected in (("a", "instance-a"), ("b", "instance-b"), (None, "process-id")):
+        with acting_for(acting):
+            _register(client, client.own_invoker_id())
+        assert fake.callbacks() == {"http://x/jobs": [expected]}
+
+
+def test_a_registration_repeated_under_the_same_id_is_kept(dme):
+    """Registering again under the id already registered replaces it and takes nothing down."""
+    client, fake = dme
+    _register(client, "process-id")
+    _register(client, "process-id")
+    assert fake.callbacks() == {"http://x/jobs": ["process-id"]}
+
+
+def test_the_process_producer_of_an_earlier_run_is_taken_down_by_an_instance(dme):
+    """After a restart the record of what was registered is empty, yet the process's own producer left in DME is still dropped when an instance registers."""
+    client, fake = dme
+    _register(client, "process-id")
+    smo_data._registered_as.clear()
+    with acting_for("a"):
+        _register(client, client.own_invoker_id())
+    assert fake.callbacks() == {"http://x/jobs": ["instance-a"]}
+
+
+def test_a_producer_of_another_caller_or_another_callback_is_left(dme):
+    """Only this process's own producers for the same callback are deregistered: another caller's producer, even for that callback, and any producer for another callback stay."""
+    client, fake = dme
+    fake.producers["someone-else"] = {"producerId": "someone-else", "producerHealthCallbackUrl": "h", "jobCallbackUrl": "http://x/jobs", "supportedTypeIds": []}
+    _register(client, "process-id", jobs="http://x/other")
+    with acting_for("a"):
+        _register(client, client.own_invoker_id())
+    assert sorted(fake.producers) == ["instance-a", "process-id", "someone-else"]
+
+
+def test_a_producer_that_cannot_be_deregistered_does_not_fail_the_registration(dme):
+    """An instance's identity that is gone leaves its producer (rApp Management tears it down) and the new registration still succeeds."""
+    client, fake = dme
+    with acting_for("a"):
+        _register(client, client.own_invoker_id())
+    smo_data._registered_as["instance-a"] = "gone"      # the instance it was registered for is no longer one this fake can act as
+    assert _register(client, client.own_invoker_id()) == {"dmeTypeId": "t-1"}
+    assert sorted(fake.producers) == ["instance-a", "process-id"]

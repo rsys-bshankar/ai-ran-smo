@@ -102,7 +102,7 @@ Also provided, outside that table: `db` (engine and session), `statemachine` (FS
 | `smo_shared/module_identity.py` | `DbIdentityStore` (`load`, `insert`, `replace`: a compare-and-swap) and the `ModuleIdentityRow` model (table `module_identity`): one SME invoker per module, shared by its replicas |
 | `smo_shared/idempotency.py` | `idempotent(module, status_code)` route decorator, `run_idempotent()`, the `IdempotencyKey` model (table `idempotency_key`), `request_hash()` |
 | `smo_shared/versioning.py` | `Versioned` (adds `row_version`, enforces it on every ORM UPDATE), `install_concurrency_handler()` (a stale write becomes 409 `CONCURRENT_MODIFICATION`) |
-| `smo_shared/testing.py` | `make_test_engine()`, `concurrent_commit_on(table)` (simulates another replica committing first, for 409 tests) |
+| `smo_shared/testing.py` | `make_test_engine()`, `concurrent_commit_on(table)` (simulates another replica committing first, for 409 tests), `FakeDmeR1` (an rApp's R1 client answering the DME producer routes with the SEC-15.10b rule, for tests that drive the real SDK) |
 | `tests/` | See 3.2 |
 | `pyproject.toml` | Package `smo-shared` 0.1.0, Python >= 3.11; deps sqlalchemy, psycopg, fastapi, pydantic, httpx, python-multipart, jsonschema |
 

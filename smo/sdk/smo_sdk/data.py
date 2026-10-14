@@ -6,9 +6,19 @@ page the records), the O1-action mediation `mediate_action` (the same route as `
 holds (HISTORY.md W10-alarm-cellref). Part of the SDK (`sdk/README.md`).
 """
 
+import logging
+import threading
 import uuid
 
+from smo_shared.r1_client import acting_for, acting_instance
+
 from ._common import BaseClient, SdkError, credential_kwargs, ensure_ok
+
+
+log = logging.getLogger(__name__)
+
+_registered_as: dict[str, str | None] = {}   # producer id -> the instance this process registered it for (None: as the process); what `register_type` may take down again
+_registered_lock = threading.Lock()
 
 
 class DataClient(BaseClient):
@@ -30,12 +40,44 @@ class DataClient(BaseClient):
 
         `source_domain` and `source_context` (optional) carry the provenance, LIVE_RAN or DIGITAL_TWIN, that drives the rule excluding Digital-Twin data from inference (`docs/ARCHITECTURE.md`, DME).
         """
-        return ensure_ok(self._r1.post("/dme/production-capabilities", json={
+        registered = ensure_ok(self._r1.post("/dme/production-capabilities", json={
             "namespace": namespace, "name": name, "version": version, "typeName": type_name,
             "producerId": producer_id, "dataProductionSchema": data_production_schema,
             "collectionSpec": collection_spec, "producerHealthCallbackUrl": producer_health_callback_url,
             "jobCallbackUrl": job_callback_url, "sourceDomain": source_domain, "sourceContext": source_context,
         }))
+        with _registered_lock:
+            _registered_as[producer_id] = acting_instance()
+        self._drop_other_producers_of(producer_id, job_callback_url)
+        return registered
+
+    def _drop_other_producers_of(self, producer_id: str, job_callback_url: str) -> None:
+        """Leaves `job_callback_url` with one producer: deregisters the others this process registered for it under another identity (the process's own, or an instance's).
+
+        An rApp acts under its process identity and under the identity of each instance, and DME takes a producer only under the caller's own invoker id (SEC-15.10b), so the same
+        rApp registering from both would leave DME holding two producers with the same callback and posting each job start to it twice. Only a producer registered by this process
+        (or named by the process's own invoker id) is touched, each under the identity that registered it; one that cannot be deregistered (403, or its instance's identity is gone)
+        is left, since rApp Management tears an instance's registration down when it ends. Registered first, deregistered after, so the type never goes DISABLED in between.
+        """
+        with acting_for(None):
+            process_id = self._r1.acting_invoker_id()
+        for other in self.list_producers():
+            other_id = str(other.get("producerId"))
+            if other_id == producer_id or other.get("jobCallbackUrl") != job_callback_url:
+                continue
+            with _registered_lock:
+                known = other_id in _registered_as
+                instance = _registered_as.get(other_id)
+            if not known and other_id != process_id:
+                continue
+            try:
+                with acting_for(instance):
+                    self.deregister_producer(other_id)
+            except SdkError as exc:
+                log.warning("could not deregister the producer %s that shares the callback %s with %s: %s", other_id, job_callback_url, producer_id, exc)
+                continue
+            with _registered_lock:
+                _registered_as.pop(other_id, None)
 
     def discover_types(self, data_category: str | None = None) -> list[dict]:
         return ensure_ok(self._r1.get("/dme/dme-types", params={"data_category": data_category}))

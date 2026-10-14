@@ -326,6 +326,11 @@ def reset_acting_instance(token: contextvars.Token) -> None:
     _acting_instance.reset(token)
 
 
+def acting_instance() -> str | None:
+    """The id of the instance the current context acts for (`set_acting_instance`), or None when it acts as this process."""
+    return _acting_instance.get()
+
+
 @contextlib.contextmanager
 def acting_for(instance_id: str | None):
     """`with acting_for(id):` the calls inside carry that instance's token when its identity is bound."""

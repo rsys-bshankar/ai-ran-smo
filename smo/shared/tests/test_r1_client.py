@@ -295,3 +295,13 @@ def test_a_secret_renewed_through_another_replica_is_read_again_once(net, monkey
     with r1_client.acting_for("i-4"):
         assert R1Client(R1).get("/rapp-mgmt/instances/i-4").status_code == 200
     assert net.grants == ["inv-4"]
+
+
+def test_acting_instance_is_the_instance_the_context_acts_for():
+    """`acting_instance` reports the instance set by `acting_for` and None outside it or when the context acts as the process."""
+    assert r1_client.acting_instance() is None
+    with r1_client.acting_for("i-7"):
+        assert r1_client.acting_instance() == "i-7"
+        with r1_client.acting_for(None):
+            assert r1_client.acting_instance() is None
+    assert r1_client.acting_instance() is None
