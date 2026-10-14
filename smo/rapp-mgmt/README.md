@@ -210,7 +210,8 @@ Upgrade choreography (`upgrade.py`):
 | Direction | Call | When | Failure behaviour |
 |---|---|---|---|
 | out, R1 | `GET /onboarding/packages/{id}/onboarding-status` | create, upgrade replacement, bootstrap-complete | 404 gives `PACKAGE_NOT_FOUND`; any other non-200 gives `PACKAGE_NOT_DEPLOYABLE`; a transport error fails the request and nothing is saved. At bootstrap-complete a non-200 simply means no declarations to register |
-| out, R1 | `POST /nfo/deployments` `{nfDeploymentDescriptorId, name: rapp-instance-<id>, requiredResourceTypeId}` | create, upgrade replacement | Accepts 200 or 202. Any other status leaves `workload_ref` null and the instance still `DEPLOYING`, with no error. A transport error fails the request and nothing is saved |
+| out, R1 | `POST /nfo/deployments` `{nfDeploymentDescriptorId, name: rapp-instance-<id>, requiredResourceTypeId}` | create, upgrade replacement | Accepts 200 or 202 with an `nfDeploymentId` (kept as `workload_ref`). Anything else is 502 `UPSTREAM_FAILED`, no answer 503 `ENDPOINT_UNREACHABLE`: the instance is not created, its usage registration is stopped, its identity at SME removed and any credentials Secret withdrawn (call flow 15b, DOC-CF-1.4) |
+| out, R1 | `GET /nfo/deployments/{workload_ref}` | `GET /instances/{id}` only | Its `state` and `abnormalReason` as the detail's `workload`; `GONE` for a 404, `UNKNOWN` for no answer (call flow 15e) |
 | out, R1 | `POST /onboarding/packages/{id}/usage/start?consumer_id=<instance_id>` | create, upgrade replacement: the first call made for the new instance | 409 is passed on as `PACKAGE_NOT_DEPLOYABLE`, any other non-200 is 502 `UPSTREAM_FAILED`, a transport error 503: the instance is not created. When a later step of the create raises, the registration is stopped again (best-effort), so a failed create never holds the package (call flow 06) |
 | out, R1 | `POST /sme/provider-registrations`, `POST /sme/published-apis/v1/{apfId}/service-apis` | bootstrap-complete; or committed upgrade whose replacement had not bootstrapped | Best effort; an unreachable SME does not block. The service name is suffixed with the `apfId` so two instances never collide. `apfId` and `producerId` are always the instance's `oauth_client_id`, whatever the CSAR JSON says |
 | out, R1 | `DELETE /dme/production-capabilities?producer_id=`, `DELETE /sme/published-apis/v1/{apfId}/service-apis/{id}`, `DELETE /sme/provider-registrations/{apfId}` | terminate, crash, upgrade commit (old), rollback (replacement) | Best effort (`httpx` errors swallowed) |
@@ -248,7 +249,7 @@ rApp Management reads one environment variable of its own: `RAPP_CREDENTIAL_DELI
 - `upgradeTimeoutSeconds` is enforced lazily and cannot be set through the API; an unread upgrade stays `UPGRADING`.
 - A container that never bootstraps and never reports a critical fault stays `DEPLOYING` until terminated.
 - A configuration change is stored only; the rApp reads it when it starts the instance (`OPEN_ITEMS.md` OI-7-config-push).
-- A refused NFO deployment during create is silent (`workload_ref` null). Transport errors during provisioning surface as 500.
+- A broken workload (NFO `ABNORMAL`) shows on the instance (`workload`) but does not change its state (`OPEN_ITEMS.md` OI-7-workload-failure).
 - No lock around concurrent upgrade / resolve calls on one instance.
 - Performance and fault reports are records only and drive no decision (contrast AIMgF's performance reports).
 - Autonomy mode and region scope cannot be changed on a live instance.
@@ -284,7 +285,8 @@ cd smo/rapp-mgmt && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | `tests/test_scope.py` | `SEC-10.3`: the claim at create (put on the invoker, shown on the instance, refused when not valid or not recorded by SME), kept by an upgrade and restored by a rollback, own-instance-only `bootstrap-complete` and performance; `GUI-9.3`: `GET /instances?region=` with and without the unscoped instances (a claim of tenants only counts as unscoped), `total`, `include_unscoped` alone filters nothing, an empty `region` 422 | 21 |
 | `tests/test_main.py` (event bus) | `MSG-3.5`: an instance's RECOVER is published as `org.oran.smo.rapp-instance.state-changed` about the instance, from the state machine's one hook | 1 |
 | `tests/test_main.py`, `tests/test_upgrade.py` (call flow 07) | DOC-CF-1.3: a crash keeps the limit and policy and terminate drops them and the stop; a failed bootstrap; a stopped instance's replacement is stopped, an unstopped one is not, an unreadable or refused stop refuses the upgrade (the replacement torn down); the replacement's address; its credentials pushed; its bootstrap commits, its critical fault rolls back; a critical fault before bootstrap | 14 |
-| | Total (the whole suite, `PYTHONPATH=.:../shared python -m pytest tests/ -q`; some files predate this table and have no row) | 240 |
+| `tests/test_main.py` (call flow 15) | DOC-CF-1.4: a create NFO refuses or does not answer fails and leaves no usage registration or identity behind; the detail shows the workload as NFO sees it (ABNORMAL with its reason, GONE, UNKNOWN), none without a workload | 8 |
+| | Total (the whole suite, `PYTHONPATH=.:../shared python -m pytest tests/ -q`; some files predate this table and have no row) | 248 |
 
 ### 3.3 What is not covered here
 

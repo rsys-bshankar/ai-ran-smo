@@ -79,6 +79,11 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
   replica or resource argument, so AIMgF `runtime/scale` cannot ask for one. Approach: add `replicas` /
   `resources` to the NFO scale call and the AIMgF scale request, and pass the manifest's runtime profile bounds.
 
+- **OI-7-workload-failure** — A broken workload does not fault its rApp instance: NFO publishes `org.oran.smo.nf-deployment.state-changed`
+  (`to: ABNORMAL`) and the instance detail shows it (`workload`, call flow 15e), but rApp Management does not follow the event bus, so the
+  instance stays RUNNING until an operator heals the workload or reports the fault. Approach: a worker in rApp Management reads the feed
+  (`GET /dme/smo-events`) and fires CRASH on the instance whose `workloadRef` went ABNORMAL (and nothing on a heal; a recover is still the
+  operator's).
 - **OI-7-config-push** — An instance's configuration change does not reach its rApp: `PUT /rapp-mgmt/instances/{id}/config` only stores
   it, and the rApp reads it when it starts the instance (call flow 07e). Approach: push it to the rApp's operator API as the credentials are
   (`POST /rapps/{id}/operator/instances/{id}/config`, through R1 Termination), with a declared schema checked first; the SDK applies it.
@@ -1313,8 +1318,8 @@ there, what is right, what is wrong), agree the corrections, then build what the
 | DOC-CF-1.1 | 01 rApp onboarding → running instance (01a-01e; the instance identity and the rApp's own bootstrap built for it; then, after the review with the product owner, package upload, the operator API address from the manifest and the production settings) | done: `HISTORY.md` DOC-CF-1.1 and DOC-CF-1.1 review |
 | DOC-CF-1.2 | 06 package lifecycle (06a-06d; the usage-registration contract, package error codes and NFO descriptor delete built for it) | done: `HISTORY.md` DOC-CF-1.2 |
 | DOC-CF-1.3 | 07 rApp instance lifecycle (07a-07e; crash safeguards, the kill switch across an upgrade, the replacement's address and its own commit, a failed bootstrap built for it) | done: `HISTORY.md` DOC-CF-1.3 |
-| DOC-CF-1.4 | 15 NFO workload lifecycle | next. Seen while doing 1.2 and 1.3: NFO lets a descriptor be deployed once, so a second instance of one package gets no NFO deployment (its `workloadRef` is null) and rApp Management creates it anyway |
-| DOC-CF-1.5 | 17 model runtime lifecycle | open |
+| DOC-CF-1.4 | 15 NFO workload lifecycle (15a-15e; a descriptor backing several deployments, no instance without its workload, placement only where FOCOM says, NFO's state changes on the event bus and on the rApp instance) | done: `HISTORY.md` DOC-CF-1.4 |
+| DOC-CF-1.5 | 17 model runtime lifecycle | next. Seen while doing 1.4: AIMgF makes an NFO descriptor for every model runtime and every training, validation and emulation job and never deletes one (NFO has `DELETE /descriptors/{id}` since DOC-CF-1.2), and it does not check NFO's answers (an NFO error is a 500 there) |
 | DOC-CF-1.6 | 02 AI/ML model train → inference | open |
 | DOC-CF-1.7 | 26 model governance and end of life | open |
 | DOC-CF-1.8 | the rest: 03, 04, 08-14, 16, 18-25, 27 | open |

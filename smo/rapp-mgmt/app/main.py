@@ -854,7 +854,8 @@ def get_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     caller-supplied configuration, alongside the identity/state fields
     list_instances already returns. lastTeardown is the recorded outcome of
     the most recent NFO Terminate / usage/stop this row performed or
-    inherited through an upgrade. Reading an instance enforces its
+    inherited through an upgrade. `workload` is its NFO deployment's state
+    now (call flow 15e). Reading an instance enforces its
     upgrade's upgradeTimeoutSeconds (an overdue upgrade rolls back).
     """
     inst = _load_instance(db, instance_id)
@@ -865,7 +866,27 @@ def get_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
         "smeServiceIds": inst.sme_service_ids,
         "autonomyMode": inst.autonomy_mode, "regionScope": inst.region_scope, "approvalPolicy": inst.approval_policy,
         "authzScope": inst.authz_scope, "lastTeardown": inst.last_teardown, "operatorApiBase": inst.operator_api_base,
+        "workload": _workload_view(inst),
     }
+
+
+def _workload_view(inst: RAppInstance) -> dict | None:
+    """Call flow 15e: the instance's workload as NFO sees it now (`GET /nfo/deployments/{workloadRef}`): `{state, abnormalReason}`, with
+    `state` `GONE` when NFO no longer has it and `UNKNOWN` when NFO does not answer. None when the instance has no workload (terminated before
+    DOC-CF-1.4, or from a build that let NFO refuse it). Read on the detail only, never the list, so a page of instances costs no NFO calls.
+    A broken workload (ABNORMAL) does not change the instance's own state: `OPEN_ITEMS.md` OI-7-workload-failure."""
+    if not inst.workload_ref:
+        return None
+    try:
+        resp = R1Client().get(f"/nfo/deployments/{inst.workload_ref}")
+    except httpx.HTTPError:
+        return {"state": "UNKNOWN", "abnormalReason": None}
+    if resp.status_code == 404:
+        return {"state": "GONE", "abnormalReason": None}
+    body = resp.json() if resp.status_code == 200 else None
+    if not isinstance(body, dict) or not body.get("state"):
+        return {"state": "UNKNOWN", "abnormalReason": None}
+    return {"state": body["state"], "abnormalReason": body.get("abnormalReason")}
 
 
 @app.get("/instances/{instance_id}/performance")

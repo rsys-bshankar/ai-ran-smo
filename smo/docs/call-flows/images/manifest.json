@@ -1,6 +1,6 @@
 {
   "01-rapp-onboarding-to-deployment/01a-onboard-a-package.png": "e9ef2179076a86af911740fd4f15d92c66a18962bab8d6e70fc6e827a43f400c",
-  "01-rapp-onboarding-to-deployment/01b-create-an-instance.png": "75783c177bc1fab746c9ce315a3d74cda9cdd7a76075b3c11156627bc5f7e541",
+  "01-rapp-onboarding-to-deployment/01b-create-an-instance.png": "dd226a01e2883f32ee5088b3c834e5922032bead9ac7061b90c730a4ce3574e6",
   "01-rapp-onboarding-to-deployment/01c-the-rapp-receives-the-instance-s-credentials.png": "32784e9c4cabee9840e277f22e0481f02e463cfb7d29f46fce7f74394fa55c7f",
   "01-rapp-onboarding-to-deployment/01d-the-rapp-bootstraps-as-the-instance.png": "a0d4d43bc04eaa3123d40518b55bd55da9065412000035a55bec51643e46fcef",
   "01-rapp-onboarding-to-deployment/01e-re-send-the-credentials.png": "dea1710c8c6404f1247301276cc1f6361689a2181cd72e2e639f7c2e8606ccce",
@@ -12,5 +12,10 @@
   "07-rapp-instance-lifecycle/07b-upgrade-commit-roll-back-time-out.png": "0ddabf9620fb1dde6ee76407ef7839552ce897644360a74ba0b6c97f0c1167b4",
   "07-rapp-instance-lifecycle/07c-roll-back-to-the-previous-version.png": "479a85cba6fb3e86e1ee7281bd197776624595f38d7a659cc0363fdbb174f452",
   "07-rapp-instance-lifecycle/07d-stop-an-rapp-the-global-stop-safeguards.png": "0bcb1cdf8b0fe0ae6972e327d1e7a0a64c55c326ca8d672fb619c9c16be04579",
-  "07-rapp-instance-lifecycle/07e-reconfigure-terminate-delete.png": "b3ff848d14872f76dbc1a0a6cb7c37e310636e7686749e6dc9679c250021ee24"
+  "07-rapp-instance-lifecycle/07e-reconfigure-terminate-delete.png": "b3ff848d14872f76dbc1a0a6cb7c37e310636e7686749e6dc9679c250021ee24",
+  "15-nfo-workload-lifecycle/15a-descriptors.png": "1370fac87277dbb0db4dc57b89a6f7d3f89ffbe454e5540bbcb5bdd3341beb8f",
+  "15-nfo-workload-lifecycle/15b-instantiate.png": "84874f673f377d824a2aa4c18576e7aadf160ac5900c89cf0926150f23ac371a",
+  "15-nfo-workload-lifecycle/15c-scale-and-heal.png": "38e84f67032f40b5da91cc5ea1c5f4492578b0fb36c15a17e930d862be6892cf",
+  "15-nfo-workload-lifecycle/15d-terminate-and-the-deployment-manager-s-reports.png": "270edfff3a77ddd0ffc03f0e2df280ee74657b4db4e98d919355e3b78a2abcfd",
+  "15-nfo-workload-lifecycle/15e-a-workload-that-breaks.png": "eddf0988300a0a1da6893e6193994485fed73867dc8b020778b992035114e7d8"
 }

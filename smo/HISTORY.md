@@ -2775,6 +2775,30 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.4 — call flow 15 rewritten from the code: several instances of a package, no instance without a workload, a broken workload seen
+
+The fourth flow of the call-flow audit, decided with the product owner (the recommendations of the audit, all taken):
+
+- **A descriptor backs several deployments.** NFO refused a second Instantiate of a descriptor (the O2 DMS reference's `_check_duplication`),
+  and rApp Management uses its package's one descriptor for every instance, so a second instance of a package got no workload. The guard is
+  dropped: a descriptor is a template. A deployment's name stays unique, and DeleteDescriptor still refuses while any deployment uses it
+  (`NFDEPLOYMENT_DESCRIPTOR_ALREADY_DEPLOYED` now means only that).
+- **No instance without its workload.** CreateInstance ignored any NFO answer other than 200/202 (`workloadRef` null, no error) and a
+  transport error was a 500. `_instantiate_workload` now raises 502 `UPSTREAM_FAILED` (NFO's title in the detail) or 503, and the create's
+  clean-up also removes the identity just made at SME (`invoker_registered`, kept on the object) and withdraws a credentials Secret, besides
+  stopping the usage registration.
+- **No placement on a guess.** NFO placed a workload on `phase1-degenerate-cluster` when FOCOM answered anything but 200, and a FOCOM outage
+  was a 500. `_placement` takes only an `oCloudId` FOCOM names, else 503 `ENDPOINT_UNREACHABLE` with nothing created.
+- **A broken workload is seen.** NFO's state machine is now given the deployment, so every transition is published as
+  `org.oran.smo.nf-deployment.state-changed`, and `_remove_deployment` publishes the end (`to: DELETED`); the GUI backend's feed follower
+  recomputes the console's counts on them. rApp Management's instance detail adds `workload` (`{state, abnormalReason}` read from NFO; `GONE`,
+  `UNKNOWN`), on the detail only so a list costs no NFO calls.
+- **Not built, tracked:** faulting the instance by itself when its workload breaks (`OPEN_ITEMS.md` OI-7-workload-failure); AIMgF's descriptor
+  leak and unchecked NFO answers move to DOC-CF-1.5 (flow 17).
+
+The document is five diagrams (descriptors; instantiate; scale and heal; terminate and the DMS's reports; a workload that breaks) in the flow 01
+format, with PNG images and the deployment state table.
+
 ### DOC-CF-1.3 — call flow 07 rewritten from the code: a faulted or upgraded rApp stays held in check, and the replacement brings itself up
 
 The third flow of the call-flow audit, decided with the product owner (the six recommendations of the audit, all taken). The old flow 07 drew

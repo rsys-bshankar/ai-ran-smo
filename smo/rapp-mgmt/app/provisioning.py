@@ -81,21 +81,47 @@ def provision_instance(db: Session, package_id: uuid.UUID, configuration: dict |
         # the database) for the caller to push to the instance's operator API once the instance is committed (`push_credentials`)
         inst.issued_secret = None if deliver_credentials(inst, secret) else secret
 
-        nfo_resp = r1.post("/nfo/deployments", json={
-            "nfDeploymentDescriptorId": nf_deployment_descriptor_id,  # the real descriptor, per section 5
-            "name": f"rapp-instance-{inst.instance_id}",  # NFO's own duplication guard (HISTORY.md §5) needs a real name
-            "requiredResourceTypeId": (configuration or {}).get("requiredResourceTypeId"),
-        })
-        # NFO Instantiate answers 202 Accepted (nfo/app/main.py) — a 200-only check
-        # dropped every real workloadRef. workload_ref IS the NFO nfDeploymentId,
-        # which TERMINATE later hands back to NFO's DELETE /deployments/{id}.
-        inst.workload_ref = nfo_resp.json().get("nfDeploymentId") if nfo_resp.status_code in (200, 202) else None
+        inst.workload_ref = _instantiate_workload(r1, inst, nf_deployment_descriptor_id, configuration)
     except Exception:
-        # the instance is not created (the flushed row is rolled back with the request), so nothing may keep holding the package for it
+        # the instance is not created (the flushed row is rolled back with the request), so nothing made for it may stay: the usage registration
+        # that holds the package, the identity registered at SME and any Secret the credentials were written to (call flow 15b, DOC-CF-1.4)
         with suppress(httpx.HTTPError):
             r1.post(f"/onboarding/packages/{package_id}/usage/{inst.package_usage_registration_id}/stop")
+        if inst.oauth_client_id and getattr(inst, "invoker_registered", False):
+            with suppress(httpx.HTTPError):
+                r1.delete(f"/sme/invoker-registrations/{inst.oauth_client_id}")
+        with suppress(Exception):            # deliberate: a failed cleanup must not hide the error being raised
+            credential_delivery.withdraw(inst.instance_id)
         raise
     return inst
+
+
+def _instantiate_workload(r1: R1Client, inst: RAppInstance, descriptor_id: str, configuration: dict | None) -> str:
+    """NFO Instantiate for the instance (`POST /nfo/deployments`, the package's descriptor, name `rapp-instance-<id>`) and returns the
+    nfDeploymentId, kept as `workload_ref` and handed back to NFO's `DELETE /deployments/{id}` at teardown. Call flow 15b: an instance is not
+    created without its workload, so a refusal is 502 UPSTREAM_FAILED (NFO's title in the detail) and no answer 503 ENDPOINT_UNREACHABLE."""
+    try:
+        resp = r1.post("/nfo/deployments", json={
+            "nfDeploymentDescriptorId": descriptor_id,  # the real descriptor, per section 5; NFO lets it back several deployments
+            "name": f"rapp-instance-{inst.instance_id}",  # NFO's own duplication guard (HISTORY.md §5) needs a unique name
+            "requiredResourceTypeId": (configuration or {}).get("requiredResourceTypeId"),
+        })
+    except httpx.HTTPError as exc:
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"NFO Instantiate: {type(exc).__name__}") from exc
+    # NFO Instantiate answers 202 Accepted (nfo/app/main.py); 200 is accepted too
+    if resp.status_code not in (200, 202) or not resp.json().get("nfDeploymentId"):
+        raise framework_error(FrameworkError.UPSTREAM_FAILED, detail=f"NFO Instantiate answered {resp.status_code} {_title(resp)}".rstrip())
+    return resp.json()["nfDeploymentId"]
+
+
+def _title(resp) -> str:
+    """The problem title of an error answer (`detail.title`, or `title`), or an empty string."""
+    try:
+        body = resp.json()
+    except ValueError:
+        return ""
+    detail = body.get("detail") if isinstance(body, dict) else None
+    return str((detail if isinstance(detail, dict) else body if isinstance(body, dict) else {}).get("title") or "")
 
 
 def _start_usage(r1: R1Client, package_id: uuid.UUID, instance_id: uuid.UUID) -> uuid.UUID:
@@ -233,6 +259,7 @@ def register_instance_invoker(inst: RAppInstance) -> str:
             R1Client().delete(f"/sme/invoker-registrations/{body['apiInvokerId']}")
         raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail="SME did not record the scope claim of the rApp instance; no identity was kept")
     inst.oauth_client_id = body["apiInvokerId"]
+    inst.invoker_registered = True        # kept on the object, not stored: a create that fails later takes this identity away again (provision_instance)
     return body["onboardingSecret"]
 
 
