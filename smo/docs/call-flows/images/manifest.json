@@ -1,8 +1,8 @@
 {
-  "01-rapp-onboarding-to-deployment/01a-onboard-a-package.png": "a77d1e09388db0a9a48c069179f2ded3d907db2b917a6f46074907144bd4dfb9",
-  "01-rapp-onboarding-to-deployment/01b-create-an-instance.png": "e103f92342ae23ac628c4cd35ffd32150d4eb4110fb6b478ba058d5d14e4a83a",
+  "01-rapp-onboarding-to-deployment/01a-onboard-a-package.png": "e9ef2179076a86af911740fd4f15d92c66a18962bab8d6e70fc6e827a43f400c",
+  "01-rapp-onboarding-to-deployment/01b-create-an-instance.png": "75783c177bc1fab746c9ce315a3d74cda9cdd7a76075b3c11156627bc5f7e541",
   "01-rapp-onboarding-to-deployment/01c-the-rapp-receives-the-instance-s-credentials.png": "32784e9c4cabee9840e277f22e0481f02e463cfb7d29f46fce7f74394fa55c7f",
-  "01-rapp-onboarding-to-deployment/01d-the-rapp-bootstraps-as-the-instance.png": "5c616abacbe27a7c52cf73927adaf475a35080d8aca215e4826c628d6e3dd6e7",
+  "01-rapp-onboarding-to-deployment/01d-the-rapp-bootstraps-as-the-instance.png": "a0d4d43bc04eaa3123d40518b55bd55da9065412000035a55bec51643e46fcef",
   "01-rapp-onboarding-to-deployment/01e-re-send-the-credentials.png": "dea1710c8c6404f1247301276cc1f6361689a2181cd72e2e639f7c2e8606ccce",
   "06-package-lifecycle/06a-prime-and-deprime.png": "36cb2924c25aed493398999a90dd32f4802abf1f9076888ab2cd8bd926a41740",
   "06-package-lifecycle/06b-deprecate-and-cancel-the-deprecation.png": "bea0ac023d5003b1e737182ca190170ab880720eaf5a28e7eb4597fb7cf697bf",

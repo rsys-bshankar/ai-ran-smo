@@ -53,6 +53,11 @@ runtimeProfiles:
 
 # The page the operator console draws for this rApp (PR-GUI-8, docs/adr/0004-operator-ui-declaration.md): the routes below are this rApp's own API,
 # read and changed only through the GUI backend, which allows exactly these routes. The page needs no code in the console.
+# Call flow 01b: where this rApp's operator API is reached (its service in docker-compose.yml and the chart). rApp Management pushes an instance's
+# credentials there, and R1 Termination forwards the instance's operator page to it; an operator may give another address at Deploy.
+operatorApi:
+  baseUrl: http://energy-saving-rapp:8000
+
 operatorUi:
   version: 1
   panels:

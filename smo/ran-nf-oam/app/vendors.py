@@ -46,6 +46,7 @@ from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared import scope as authz_scope
 from smo_shared.pagination import PageLimit, PageOffset, paginate, paginate_list
+from smo_shared.roles import ROLE_RAPP, role_of
 from smo_shared.webhook import get_webhook
 
 from . import msac, scoping
@@ -255,9 +256,18 @@ def _declare_capability(db: Session, vendor_name: str, body: VendorCapabilityBod
     return cap
 
 
+def _require_registry_writer(request: Request) -> None:
+    """SEC-15.7b: the capability registry is global (it decides what the elements of every tenant of a vendor are checked against), so only the operator (the console) or an
+    SMO module, role `internal`, may change it. 403 `ROLE_NOT_PERMITTED` for the rApp role, whatever its scope claim. Reads are open as before. A call with no role at all (a
+    test, an in-process call, which did not come through the gateway) is taken as before, like the other role checks of this module."""
+    if role_of(request) == ROLE_RAPP:
+        raise framework_error(FrameworkError.ROLE_NOT_PERMITTED, detail="the vendor capability registry is global: only the operator or an SMO module may change it, not an rApp")
+
+
 @router.put("/vendor-capabilities/{vendor_name}")
-def declare_vendor_capability(vendor_name: str, body: VendorCapabilityBody, db: Session = Depends(get_session)):
-    # Create or replace; 200 with the entry. Errors as `_declare_capability`: 422, 404 CM_SCHEMA_NOT_FOUND, 409 PROTOCOL_NOT_SUPPORTED when a registered element of the vendor uses a mode the new declaration drops. Commits.
+def declare_vendor_capability(vendor_name: str, body: VendorCapabilityBody, request: Request, db: Session = Depends(get_session)):
+    # Create or replace; 200 with the entry. SEC-15.7b: 403 ROLE_NOT_PERMITTED for an rApp. Errors as `_declare_capability`: 422, 404 CM_SCHEMA_NOT_FOUND, 409 PROTOCOL_NOT_SUPPORTED when a registered element of the vendor uses a mode the new declaration drops. Commits.
+    _require_registry_writer(request)
     cap = _declare_capability(db, vendor_name, body)
     db.commit()
     return _capability_view(cap)
@@ -288,9 +298,10 @@ def get_vendor_capability(vendor_name: str, request: Request, db: Session = Depe
 
 @router.delete("/vendor-capabilities/{vendor_name}", status_code=204)
 def delete_vendor_capability(vendor_name: str, request: Request, db: Session = Depends(get_session)):
-    # 204 whether or not the entry existed. Elements of the vendor stay registered and are then unchecked (no entry means the permissive default).
+    # SEC-15.7b: 403 ROLE_NOT_PERMITTED for an rApp. 204 whether or not the entry existed. Elements of the vendor stay registered and are then unchecked (no entry means the permissive default).
     # SEC-15.7: filtered by scope as the get is: a caller with a scope claim can delete only the entry of a vendor one of its own elements uses; any other entry is left alone and
     # the 204 says nothing, as when a subscription outside the scope is unsubscribed (the answer must not tell it which vendors exist). An unscoped caller is not asked.
+    _require_registry_writer(request)
     cap = db.scalars(_vendor_capabilities(scoping.request_scope(request)).where(VendorCapability.vendor_name == vendor_name)).one_or_none()
     if cap is not None:
         db.delete(cap)
@@ -343,7 +354,7 @@ def _registered_discovery_uri(db: Session, managed_element_ref: str, vendor_name
 
 
 @router.post("/vendor-onboarding", status_code=201)
-def onboard_vendor(body: VendorOnboardingBody, db: Session = Depends(get_session)):
+def onboard_vendor(body: VendorOnboardingBody, request: Request, db: Session = Depends(get_session)):
     """Endpoint discovery → capability declaration → schema load, as one
     call (call flow 21). Values given in the body win over discovered ones.
 
@@ -352,7 +363,8 @@ def onboard_vendor(body: VendorOnboardingBody, db: Session = Depends(get_session
     taken from the request: its declaration is read at the fixed path
     `/capabilities` on that adaptor's registered origin.
     """
-    # Order: discover (when `discoverFrom`), load the listed schemas (an identical one already loaded is reused, a different one under the same key is 409), declare the capability, commit once. A failure at any step leaves nothing persisted. 201 with the discovered declaration, the schemas (`created` per schema) and the entry. Errors: 503 ENDPOINT_UNREACHABLE when discovery fails, 422 when the adaptor names another vendor or no services are given or discoverable.
+    # SEC-15.7b: 403 ROLE_NOT_PERMITTED for an rApp (it declares a capability entry as `PUT /vendor-capabilities/{vendor}` does). Order: discover (when `discoverFrom`), load the listed schemas (an identical one already loaded is reused, a different one under the same key is 409), declare the capability, commit once. A failure at any step leaves nothing persisted. 201 with the discovered declaration, the schemas (`created` per schema) and the entry. Errors: 503 ENDPOINT_UNREACHABLE when discovery fails, 422 when the adaptor names another vendor or no services are given or discoverable.
+    _require_registry_writer(request)
     discovered = discovery_uri = None
     if body.discoverFrom:
         discovery_uri = _registered_discovery_uri(db, body.discoverFrom, body.vendorName)

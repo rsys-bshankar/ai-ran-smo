@@ -8,7 +8,7 @@ Run with: `PYTHONPATH=.:../shared python -m pytest tests/test_scope_job_actions.
 
 import pytest
 
-from smo_shared.scope import SCOPE_HEADER
+from smo_shared.scope import ACTING_USER_HEADER, ACTING_USER_SCOPE_HEADER, SCOPE_HEADER
 
 from app.models import SoftwareManagementJob, WriteConfigJob
 
@@ -91,12 +91,53 @@ def test_a_software_job_on_an_element_outside_the_scope_cannot_be_advanced(clien
     assert client.post(f"/software-management-jobs/{job}/advance", params={"succeeded": True}).json()["phase"] == "INSTALL"
 
 
-def test_a_scoped_caller_deletes_only_the_capability_of_a_vendor_of_its_own_elements(client, vendors):
-    """A caller with a claim that none of its elements matches deletes nothing (204, as for an unknown vendor); the entry of a vendor one of its elements uses is deleted; an unscoped caller deletes any."""
-    assert client.delete("/vendor-capabilities/other-ran", headers=EU).status_code == 204               # ME-3 is us: not an eu vendor
-    assert client.delete("/vendor-capabilities/unused-ran", headers=EU).status_code == 204
+def test_a_scoped_operator_deletes_only_the_capability_of_a_vendor_of_its_own_elements(client, vendors):
+    """SEC-15.7: a console user whose scope no element of the vendor matches deletes nothing (204, as for an unknown vendor); the entry of a vendor one of the user's elements uses is deleted; an unscoped caller deletes any."""
+    operator = {**GUI, ACTING_USER_HEADER: "smo-gui:alice", ACTING_USER_SCOPE_HEADER: claim(regions=["eu"])}
+    assert client.delete("/vendor-capabilities/other-ran", headers=operator).status_code == 204         # ME-3 is us: not an eu vendor
+    assert client.delete("/vendor-capabilities/unused-ran", headers=operator).status_code == 204
     assert client.get("/vendor-capabilities/other-ran").status_code == 200 and client.get("/vendor-capabilities/unused-ran").status_code == 200
-    assert client.delete("/vendor-capabilities/acme-ran", headers=EU).status_code == 204
+    assert client.delete("/vendor-capabilities/acme-ran", headers=operator).status_code == 204
     assert client.get("/vendor-capabilities/acme-ran").status_code == 404
-    assert client.delete("/vendor-capabilities/other-ran").status_code == 204
+    assert client.delete("/vendor-capabilities/other-ran", headers=GUI).status_code == 204
     assert client.get("/vendor-capabilities/other-ran").status_code == 404
+
+
+def test_an_rapp_cannot_delete_a_vendor_capability_even_of_its_own_vendor(client, vendors):
+    """SEC-15.7b: the registry is global, so a scoped rApp that is allowed to read the entry of its vendor is 403 ROLE_NOT_PERMITTED on the delete, and nothing is removed; so is an unscoped rApp."""
+    for headers in (EU, UNSCOPED, OTHER_RAPP):
+        for vendor in ("acme-ran", "other-ran", "no-such-vendor"):
+            refused = client.delete(f"/vendor-capabilities/{vendor}", headers=headers)
+            assert refused.status_code == 403 and _title(refused) == "ROLE_NOT_PERMITTED", (vendor, refused.text)
+    assert {v["vendorName"] for v in client.get("/vendor-capabilities").json()["items"]} == {"acme-ran", "other-ran", "unused-ran"}
+
+
+def test_an_rapp_cannot_declare_or_replace_a_vendor_capability(client, vendors):
+    """SEC-15.7b: PUT /vendor-capabilities/{v} and POST /vendor-onboarding are 403 ROLE_NOT_PERMITTED for the rApp role (a new vendor, the vendor of its own element, another tenant's), and the entry is unchanged;
+    the operator console and a module (role internal) declare as before."""
+    before = client.get("/vendor-capabilities/acme-ran").json()
+    body = {"supportedServices": ["PROV"], "conformanceMode": "SPEC", "supportedVendorModes": ["O1_NETCONF"]}
+    for headers in (EU, UNSCOPED, OTHER_RAPP):
+        for vendor in ("acme-ran", "other-ran", "brand-new"):
+            refused = client.put(f"/vendor-capabilities/{vendor}", headers=headers, json=body)
+            assert refused.status_code == 403 and _title(refused) == "ROLE_NOT_PERMITTED", (vendor, refused.text)
+        onboard = client.post("/vendor-onboarding", headers=headers, json={"vendorName": "acme-ran", "supportedServices": ["PROV"]})
+        assert onboard.status_code == 403 and _title(onboard) == "ROLE_NOT_PERMITTED"
+    assert client.get("/vendor-capabilities/acme-ran").json() == before
+    assert client.get("/vendor-capabilities/brand-new").status_code == 404
+    assert client.put("/vendor-capabilities/brand-new", headers=GUI, json=body).status_code == 200
+    assert client.post("/vendor-onboarding", headers=GUI, json={"vendorName": "second-new", "supportedServices": ["PROV"]}).status_code == 201
+
+
+def test_reads_of_the_registry_stay_open_to_an_rapp(client, vendors):
+    """SEC-15.7b changes the writes only: a scoped rApp still lists and reads the entries of its own vendors (and sees none of the others)."""
+    assert [v["vendorName"] for v in client.get("/vendor-capabilities", headers=EU).json()["items"]] == ["acme-ran"]
+    assert client.get("/vendor-capabilities/acme-ran", headers=EU).status_code == 200
+    assert client.get("/vendor-capabilities/other-ran", headers=EU).status_code == 404
+
+
+def test_the_gateway_already_keeps_an_rapp_off_the_registry_writes():
+    """The module's check is the second line: R1 Termination's allow-list (`RAPP_MAY_CHANGE`) gives an rApp no change under /ran-nf-oam but config jobs."""
+    from smo_shared.roles import rapp_may_change
+    for method, path in (("PUT", "/vendor-capabilities/acme"), ("DELETE", "/vendor-capabilities/acme"), ("POST", "/vendor-onboarding")):
+        assert not rapp_may_change("/ran-nf-oam", method, path)

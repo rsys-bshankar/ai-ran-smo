@@ -5,16 +5,13 @@ rApp's "Demo / simulation (admin)" panel, and the evaluations are the Closed loo
 from test_gui_demo_buttons import Page, _deploy, _lifecycle, _set_up_ran
 
 
-def test_coverage_optimization_demo_from_the_console(mesh, loaded_apps, monkeypatch, callbacks):
+def test_coverage_optimization_demo_from_the_console(mesh, loaded_apps):
     """Coverage Optimization: after the demo buttons, Evaluate now downtilts the overshooting cell 301 to 7.0° over O1, and the next hour's PM
     confirms the change set."""
-    from coverage_env import CSAR_URL, serve_csar
-
-    serve_csar(loaded_apps, monkeypatch)
     mesh["mock-o1-adaptor"].delete("/state")
     me, cells = "gnb-cco-demo-01", ["301", "302", "303", "304"]
     _set_up_ran(mesh, me, "COVERAGE_PERFORMANCE", 3600, None)
-    instance_id = _deploy(mesh, "coverage-optimization-rapp", callbacks.csar_url(CSAR_URL),
+    instance_id = _deploy(mesh, "coverage-optimization-rapp",
                           {"managedElementRef": me, "cells": cells}, {"objectInstance": me, "cells": cells})
     page = Page(mesh, "coverage-optimization-rapp", instance_id)
     assert page.demo_buttons() == ["demo-prepare", "demo-history", "demo-train", "demo-validate", "demo-emulate", "demo-deploy", "demo-live",

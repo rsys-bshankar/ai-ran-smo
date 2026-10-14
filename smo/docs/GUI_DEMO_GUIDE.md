@@ -38,7 +38,8 @@ not an action). Energy Saving has no button 10 (its step 10 is the O1 read-back)
    The buttons that play the network (**2 · Load history PM**, **8 · Send live PM**, **10 · Send the next hour's PM**) have the rApp report PM as the
    NF would (`POST /ran-nf-oam/pm-reports`), and R1 Termination refuses that to an rApp unless `R1_DEMO_RAPP_PM_REPORTS` is on. Keep it off on any
    stack that is not a demo: with it on, an rApp can put any PM it likes into the platform.
-2. Serve the rApp packages on the compose network (repeat the `cp` line for each rApp you will show):
+2. Only if you want to onboard from a URL instead of uploading the file from your computer (step 01 uploads it): serve the rApp packages on
+   the compose network (repeat the `cp` line for each rApp you will show):
 
    ```bash
    cd smo
@@ -79,14 +80,15 @@ rApp never writes to the network itself: it states an Intent, and the platform's
 
 **Do**
 
-1. **rApps** → **Packages** → **Onboard a package**: CSAR location `http://r1-termination:8899/energy-saving-rapp.csar` → **Onboard**. The
+1. **rApps** → **Packages** → **Onboard a package**: **CSAR file** → choose `smo/samples/energy-saving-rapp.csar` from your checkout →
+   **Upload and onboard** (or leave the file empty and give the CSAR location `http://r1-termination:8899/energy-saving-rapp.csar` → **Onboard**). The
    package goes to **AVAILABLE**.
 2. On the package's row → **Deploy**. Fill in:
    - **Instance configuration (JSON)**: `{"managedElementRef": "gnb-du-demo-01", "cells": ["101", "102", "103", "104"], "actuator": "ADMINISTRATIVE_STATE"}`
    - **Autonomy mode**: **AUTONOMOUS**
    - **Region scope (JSON)**: `{"objectInstance": "gnb-du-demo-01", "cells": ["101", "102", "103", "104"]}`
-   - **Operator API base URL**: `http://energy-saving-rapp:8000` (without it the rApp's page has no panels and says "operator API is not registered",
-     and the rApp never gets the instance's credentials)
+   - **Operator API base URL**: leave it empty. The package declares where its rApp is (`http://energy-saving-rapp:8000`, `operatorApi.baseUrl`
+     in its manifest) and the instance's credentials are pushed there; type an address only to override it
 
    The instance is **DEPLOYING**: the SMO has made it its own identity at SME and handed that to the rApp (call flow 01b, 01c).
 3. Open the instance (**rApps** → its row) → **Operator page** → **Demo / simulation (admin)** → **1 · Prepare and start**: the rApp
@@ -212,8 +214,9 @@ Steps 02 to 07 and 11 are the same for every rApp; only the names differ.
 | Managed element | `gnb-du-demo-01` | `gnb-du-mro-demo-01` | `gnb-cco-demo-01` | `gnb-mlb-demo-01` |
 | PM counter, granularity | `PRB_UTILIZATION`, 300 s | `HO_PERFORMANCE`, 3600 s | `COVERAGE_PERFORMANCE`, 3600 s | `LOAD_PERFORMANCE`, 3600 s |
 | Cell guard (step 00) | cell 103 EMERGENCY | cell 204 EMERGENCY | none | none |
-| CSAR location | `http://r1-termination:8899/energy-saving-rapp.csar` | `…/mobility-optimization-rapp.csar` | `…/coverage-optimization-rapp.csar` | `…/traffic-steering-rapp.csar` |
-| Operator API base URL | `http://energy-saving-rapp:8000` | `http://mobility-optimization-rapp:8000` | `http://coverage-optimization-rapp:8000` | `http://traffic-steering-rapp:8000` |
+| CSAR file (upload) | `samples/energy-saving-rapp.csar` | `samples/mobility-optimization-rapp.csar` | `samples/coverage-optimization-rapp.csar` | `samples/traffic-steering-rapp.csar` |
+| or CSAR location | `http://r1-termination:8899/energy-saving-rapp.csar` | `…/mobility-optimization-rapp.csar` | `…/coverage-optimization-rapp.csar` | `…/traffic-steering-rapp.csar` |
+| Operator API base URL (declared by the package: leave empty) | `http://energy-saving-rapp:8000` | `http://mobility-optimization-rapp:8000` | `http://coverage-optimization-rapp:8000` | `http://traffic-steering-rapp:8000` |
 | Model | EnergySavingPredictor | MobilityRobustnessPredictor | CoverageSensitivityModel | CongestionSteeringModel |
 
 The O1 endpoint of every rApp is registered as in step 00: adaptor `http://mock-o1-adaptor:8000/edit-config`, NETCONF, O-DU, `mock-vendor`.
@@ -267,7 +270,7 @@ Autonomy mode is AUTONOMOUS.
 |---------|---------------------|
 | Onboard leaves the package not AVAILABLE ("already onboarded") | Onboarding refuses a byte-identical package. Use the package already AVAILABLE in the list and Deploy that one. |
 | Deploy says the rApp could not be reached, or a button answers `UPSTREAM_UNAVAILABLE: the rApp's operator API could not be reached` | R1 Termination could not connect to the **Operator API base URL** the instance was deployed with (shown in the instance's drawer): a different host name or port, or the rApp is not running. Its log says which (`docker compose logs r1-termination \| grep "operator API of instance"`). For the sample rApps the URL is `http://<rapp-name>:8000` (the table above); check `docker compose ps` for the rApp, then deploy a new instance with the right URL, or press **Re-send credentials** once the rApp is up. |
-| The rApp's page says "operator API is not registered" | The instance was deployed without **Operator API base URL**. Deploy a new instance with it. |
+| The rApp's page says "operator API is not registered" | The instance has no operator API base: it was deployed from a package onboarded before its manifest declared `operatorApi` (onboard the rebuilt `.csar`), or without the field and from a package that declares none. Deploy a new instance from the current package, or with the field filled in. |
 | No **Demo / simulation (admin)** buttons | Sign in as admin: the panel's buttons are admin-only. |
 | A demo button answers `INSTANCE_NOT_STARTED` | Press **1 · Prepare and start** first. |
 | **1 · Prepare and start** leaves the instance DEPLOYING (its answer's `bootstrap` says `NO_CREDENTIALS`) | The rApp does not hold the instance's credentials: it was down or unreachable at Deploy. On the instance's page press **Re-send credentials** (admin), then **1 · Prepare and start** again. |

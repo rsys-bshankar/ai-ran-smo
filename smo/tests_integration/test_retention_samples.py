@@ -72,15 +72,21 @@ def test_a_setting_with_no_proposal_is_in_the_chart_and_compose_at_zero_and_in_n
         assert re.search(rf"{variable}: \$\{{{variable}:-0\}}", COMPOSE), variable
 
 
-def test_the_production_sample_only_names_modules_the_chart_has_and_sets_nothing_but_retention():
-    """The production sample only names chart modules and sets only retention variables in their `env` (and the GUI's), so it cannot change
-    anything else.
+# The production sample's settings that are not retention (call flow 01, DOC-CF-1.1 review): an instance runs only once its package's SME declarations are
+# registered, and only signed packages are onboarded. Anything else in the file fails the test below.
+PRODUCTION_SAFEGUARDS = {"rapp-mgmt": {"RAPP_MGMT_REQUIRE_SME_REGISTRATION"}}
+
+
+def test_the_production_sample_only_names_modules_the_chart_has_and_sets_nothing_but_retention_and_the_safeguards():
+    """The production sample only names chart modules and sets, in their `env` (and the GUI's), only retention variables and the listed production
+    safeguards, plus `rappSigning.requireSigned`, so it cannot change anything else.
     """
     assert set(PRODUCTION["modules"]) <= set(DEFAULTS["modules"])
     for name, module in PRODUCTION["modules"].items():
-        assert set(module) == {"env"}, f"{name}: the retention sample sets only env"
-        assert all("RETENTION" in key for key in module["env"]), name
-    assert set(PRODUCTION) == {"modules", "gui"} and set(PRODUCTION["gui"]) == {"env"}
+        assert set(module) == {"env"}, f"{name}: the production sample sets only env"
+        assert all("RETENTION" in key or key in PRODUCTION_SAFEGUARDS.get(name, set()) for key in module["env"]), name
+    assert set(PRODUCTION) == {"modules", "gui", "rappSigning"} and set(PRODUCTION["gui"]) == {"env"}
+    assert PRODUCTION["rappSigning"] == {"requireSigned": True}
 
 
 def test_the_chart_defaults_keep_every_row():
@@ -142,7 +148,7 @@ def test_the_production_sample_renders_and_sets_the_retention_of_the_workers_and
     """Rendered with the production values, each module's Deployment (the GUI backend included) carries the proposed retention values, and no
     CronJob is added. Needs helm.
     """
-    docs = _render("-f", str(CHART / "values-production.yaml"))
+    docs = _render("-f", str(CHART / "values-production.yaml"), "--set", "rappSigning.trustStoreConfigMap=rapp-publishers")
     for variable, value in PROPOSED.items():
         for where in WHERE[variable]:
             name = "gui-bff" if where == "gui" else where

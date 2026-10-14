@@ -57,6 +57,7 @@ def test_every_module_is_readable_by_a_viewer(module):
     ("POST", "/sme/trusted-invokers/t/delete", "admin"),
     ("POST", "/sme/capif-events/v1/sub/subscriptions", "operator"),
     ("POST", "/onboarding/packages/p/usage/r/release", "admin"),
+    ("POST", "/onboarding/packages/upload", "operator"),                 # call flow 01a: the CSAR uploaded from the browser
     ("POST", "/ran-nf-oam/o1-adaptor-endpoints/e/heartbeat", "admin"),
     ("POST", "/intent-service/intent-handling-functions", "admin"),
     ("POST", "/intent-service/intent-reports", "admin"),

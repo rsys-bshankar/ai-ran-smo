@@ -66,11 +66,11 @@ apply_r1_gateway_security(app, public_paths=frozenset({"/health", "/live", "/rea
 # route below, and smo_shared/r1_client.py for the intra-mesh half).
 apply_correlation_id(app)
 
-# Request body cap (PR-SEC-8.1): 1 MiB for every route, except the one that carries a file, an AI/ML model
-# artifact upload (the GUI's nginx allows the same 50 MiB). Environment: R1_MAX_BODY_BYTES and
-# R1_MAX_BODY_OVERRIDES (`<path-pattern>=<bytes>,...`; setting it replaces the default override).
+# Request body cap (PR-SEC-8.1): 1 MiB for every route, except the two that carry a file: an AI/ML model
+# artifact upload and an rApp package (CSAR) upload (call flow 01a); the GUI's nginx allows the same 50 MiB. Environment: R1_MAX_BODY_BYTES and
+# R1_MAX_BODY_OVERRIDES (`<path-pattern>=<bytes>,...`; setting it replaces the default overrides).
 app.add_middleware(BodySizeLimit, settings=settings_from_env(
-    "R1", default_overrides=f"/mlmr/models/*/artifact={50 * MIB}"))
+    "R1", default_overrides=f"/mlmr/models/*/artifact={50 * MIB},/onboarding/packages/upload={50 * MIB}"))
 
 # Per-caller request budget (PR-SEC-8.2): a token bucket per invoker id. R1_RATE_PER_SECOND (default 100, 0 turns
 # it off) refills it, R1_RATE_BURST (default 200) is its size. R1_RATE_STORE (read once at start) says where the buckets live:

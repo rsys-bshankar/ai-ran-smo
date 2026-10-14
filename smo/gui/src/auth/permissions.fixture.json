@@ -31,6 +31,12 @@
   },
   {
     "method": "POST",
+    "pattern": "^/onboarding/packages/upload$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
     "pattern": "^/onboarding/packages/[^/]+/(prime|deprime|deprecate|cancel-delete)$",
     "role": "operator",
     "queryMatch": {}

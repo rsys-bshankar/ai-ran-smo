@@ -181,7 +181,8 @@ def create_instance(body: CreateInstanceRequest, request: Request, db: Session =
     inst = provision_instance(db, body.packageId, configuration=body.config, autonomy_mode=body.autonomyMode,
                               region_scope=body.regionScope, approval_policy=_policy_to_store(body.approvalPolicy),
                               authz_scope=claim)
-    inst.operator_api_base = base
+    # call flow 01b: the operator's `operatorApiBase` wins; without one, the address the package declares (`operatorApi.baseUrl` in its manifest)
+    inst.operator_api_base = base or inst.declared_operator_api_base
     db.commit()
     # call flow 01b: the rApp that serves the instance gets its credentials now, so it can bootstrap as the instance (01c, 01d)
     with on_own_account():
