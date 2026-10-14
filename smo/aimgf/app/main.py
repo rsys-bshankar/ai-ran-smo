@@ -26,6 +26,7 @@ request that failed after creating it (README 2.5 and 2.8). (3) Several GET rout
 """
 
 import datetime
+import logging
 import os
 import re
 import uuid
@@ -68,6 +69,8 @@ from .statemachine import (
     TRAINABLE_STATES, InferenceEvent, InferenceState, ModelLifecycleEvent, ModelLifecycleState, RuntimeLifecycleEvent,
     RuntimeLifecycleState, should_trigger_group_retrain,
 )
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="AIMgF")
 install_logging(app)  # structured JSON logs and one access-log line per request (PR-OBS-1)
@@ -160,6 +163,44 @@ def _check_rapp_owns_if_known(request: Request, model_id: uuid.UUID, action: str
         model = _get_model_or_none(model_id)
         if model is not None:
             _refuse_unless_owner(request, model, model_id, action)
+
+
+def _check_rapp_owns_models(request: Request, model_ids, action: str) -> None:
+    """For a caller with the rApp role only: raises 403 `MODEL_ACCESS_DENIED` unless it may act on every model in `model_ids` that MLMR still knows (`_owner_may_act`; a model
+    MLMR no longer knows passes, so a run of a deleted model can still be ended). Every other caller is not asked and MLMR is not called."""
+    if role_of(request) != ROLE_RAPP:
+        return
+    for model_id in model_ids:
+        model = _get_model_or_none(model_id)
+        if model is not None:
+            _refuse_unless_owner(request, model, model_id, action)
+
+
+def _group_member_ids(group_id: uuid.UUID) -> list[uuid.UUID]:
+    """The member model ids of a coordination group, read from MLMR's group list (`GET /mlmr/coordination-groups?limit=500`); an empty list when MLMR does not know it."""
+    resp = _r1.get("/mlmr/coordination-groups", params={"limit": 500})
+    groups = resp.json().get("items", []) if resp.status_code == 200 else []
+    group = next((g for g in groups if g.get("groupId") == str(group_id)), None)
+    return [uuid.UUID(m) for m in (group or {}).get("memberModelIds", [])]
+
+
+def _check_job_owner(request: Request, job, action: str) -> None:
+    """Call flow 02 (DOC-CF-1.6): an rApp may act on a running job (complete, report progress or metrics, suspend, resume, cancel) only when it owns the job's model, or, for a
+    coordination-group job, every member MLMR knows; 403 `MODEL_ACCESS_DENIED` otherwise. The console, SMO modules and a call with no role are not asked (`_check_rapp_owns_models`)."""
+    if role_of(request) != ROLE_RAPP:
+        return
+    if job.model_id is not None:
+        _check_rapp_owns_models(request, [job.model_id], action)
+    elif getattr(job, "model_coordination_group_id", None) is not None:
+        _check_rapp_owns_models(request, _group_member_ids(job.model_coordination_group_id), action)
+
+
+def _check_inference_resolver(request: Request, job) -> None:
+    """Call flow 02 (DOC-CF-1.6): an rApp may resolve an inference job only when it requested it (`requested_by`) or owns the job's model; 403 `MODEL_ACCESS_DENIED`
+    otherwise. The console, SMO modules and a call with no role are not asked. A job requested before the column existed has no `requested_by`, so only the owner may."""
+    if role_of(request) != ROLE_RAPP or (job.requested_by is not None and invoker_id(request) == job.requested_by):
+        return
+    _check_rapp_owns_models(request, [job.model_id], "resolve an inference job it did not request")
 
 
 def _visible_model_ids(request: Request, db: Session) -> list[uuid.UUID] | None:
@@ -862,7 +903,7 @@ def query_training_job_status(training_job_id: uuid.UUID, db: Session = Depends(
 
 
 @app.post("/training-jobs/{training_job_id}/complete")
-def complete_training(training_job_id: uuid.UUID, body: CompleteJobRequest, db: Session = Depends(get_session)):
+def complete_training(training_job_id: uuid.UUID, request: Request, body: CompleteJobRequest, db: Session = Depends(get_session)):
     """HISTORY.md OI-6.5: Training's own completion route, at parity with
     Validation/Emulation's — job status (TrainingJob's own FINISHED/FAILED
     vocabulary, not COMPLETED), the outcome artifact, a best-effort
@@ -883,6 +924,7 @@ def complete_training(training_job_id: uuid.UUID, body: CompleteJobRequest, db: 
     job = db.get(TrainingJob, training_job_id)
     if job is None:
         raise framework_error(FrameworkError.TRAINING_JOB_NOT_FOUND, detail="no such training job")
+    _check_job_owner(request, job, "complete its jobs")   # call flow 02: another rApp may not act on this job (403)
     if job.status not in ("IN_PROGRESS", "SUSPENDED"):
         # Wave 7: a run that already ended (timed out, cancelled, completed)
         # can't be completed again — a late result must not resurrect it.
@@ -914,7 +956,7 @@ ACTIVE_TRAINING_STATUSES = ("IN_PROGRESS", "SUSPENDED")
 
 
 @app.delete("/training-jobs/{training_job_id}", status_code=204)
-def cancel_training(training_job_id: uuid.UUID, db: Session = Depends(get_session)):
+def cancel_training(training_job_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
     """Cancels an in-flight (IN_PROGRESS/SUSPENDED) run: its execution
     runtime is torn down and its model released from TRAINING
     (`_cancel_training_job`). Idempotent for an unknown or already
@@ -928,6 +970,7 @@ def cancel_training(training_job_id: uuid.UUID, db: Session = Depends(get_sessio
     job = db.get(TrainingJob, training_job_id)
     if job is None or job.status == "CANCELLED":
         return
+    _check_job_owner(request, job, "cancel its jobs")   # call flow 02: another rApp may not cancel this job (403)
     if job.status not in ACTIVE_TRAINING_STATUSES:
         raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
                                detail=f"cannot cancel a training job in status {job.status}")
@@ -975,7 +1018,7 @@ def _resume_training_job(db: Session, job: TrainingJob) -> None:
 
 
 @app.post("/training-jobs/{training_job_id}/suspend")
-def suspend_training(training_job_id: uuid.UUID, db: Session = Depends(get_session)):
+def suspend_training(training_job_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
     """HISTORY.md §7's AI/ML Workflow section item 6: TrainingJob had no
     suspend concept at all, only a hard cancel. This is deliberately a
     plain status flip, not a third state machine — the two real FSMs
@@ -993,6 +1036,7 @@ def suspend_training(training_job_id: uuid.UUID, db: Session = Depends(get_sessi
     job = db.get(TrainingJob, training_job_id)
     if job is None:
         raise framework_error(FrameworkError.TRAINING_JOB_NOT_FOUND, detail="no such training job")
+    _check_job_owner(request, job, "suspend its jobs")   # call flow 02: another rApp may not act on this job (403)
     if job.status != "IN_PROGRESS":
         raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
                                detail=f"cannot suspend a training job in status {job.status}")
@@ -1004,12 +1048,13 @@ def suspend_training(training_job_id: uuid.UUID, db: Session = Depends(get_sessi
 
 
 @app.post("/training-jobs/{training_job_id}/resume")
-def resume_training(training_job_id: uuid.UUID, db: Session = Depends(get_session)):
+def resume_training(training_job_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
     # Route notes: no sweep. 404 `TRAINING_JOB_NOT_FOUND`; 409 `TRAINING_JOB_ILLEGAL_TRANSITION` unless SUSPENDED. `_resume_training_job` restarts the timeout
     # clock. One commit.
     job = db.get(TrainingJob, training_job_id)
     if job is None:
         raise framework_error(FrameworkError.TRAINING_JOB_NOT_FOUND, detail="no such training job")
+    _check_job_owner(request, job, "resume its jobs")   # call flow 02: another rApp may not act on this job (403)
     if job.status != "SUSPENDED":
         raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
                                detail=f"cannot resume a training job in status {job.status}")
@@ -1019,7 +1064,7 @@ def resume_training(training_job_id: uuid.UUID, db: Session = Depends(get_sessio
 
 
 @app.post("/training-jobs/{training_job_id}/progress")
-def report_training_progress(training_job_id: uuid.UUID, body: TrainingProgressRequest, db: Session = Depends(get_session)):
+def report_training_progress(training_job_id: uuid.UUID, request: Request, body: TrainingProgressRequest, db: Session = Depends(get_session)):
     """OI-5-aiml-trainingjob-steps: the run's execution runtime (the NFO
     deployment `_start_training` created) reports the step it has reached —
     DATA_EXTRACTION, then TRAINING, then TRAINED_MODEL. Forward only:
@@ -1040,6 +1085,7 @@ def report_training_progress(training_job_id: uuid.UUID, body: TrainingProgressR
     job = db.get(TrainingJob, training_job_id)
     if job is None:
         raise framework_error(FrameworkError.TRAINING_JOB_NOT_FOUND, detail="no such training job")
+    _check_job_owner(request, job, "report the progress of its jobs")   # call flow 02: another rApp may not act on this job (403)
     # GUI-9.8: `epoch`/`totalEpochs` are recorded with `_record_epoch` (422 `SCHEMA_VALIDATION_FAILED` for an epoch beyond the total, or a body with
     # none of the three fields); the step rule above is unchanged and applies only when `step` is given.
     if body.step is None and body.epoch is None and body.totalEpochs is None:
@@ -1088,7 +1134,7 @@ def _epoch_view(job: TrainingJob) -> dict:
 
 
 @app.post("/training-jobs/{training_job_id}/model-metrics")
-def update_training_job_model_metrics(training_job_id: uuid.UUID, model_metrics: dict, db: Session = Depends(get_session)):
+def update_training_job_model_metrics(training_job_id: uuid.UUID, request: Request, model_metrics: dict, db: Session = Depends(get_session)):
     """HISTORY.md §5: TrainingJob had no metrics-writeback
     endpoint at all. The reference's own
     POST /training-jobs/update-model-metrics/<id> (trainingjob_controller.py)
@@ -1100,6 +1146,7 @@ def update_training_job_model_metrics(training_job_id: uuid.UUID, model_metrics:
     job = db.get(TrainingJob, training_job_id)
     if job is None:
         raise framework_error(FrameworkError.TRAINING_JOB_NOT_FOUND, detail="no such training job")
+    _check_job_owner(request, job, "write the metrics of its jobs")   # call flow 02: another rApp may not act on this job (403)
     epoch, total = (model_metrics.get(k) for k in ("epoch", "totalEpochs"))
     epoch = epoch if isinstance(epoch, int) and not isinstance(epoch, bool) and epoch >= 0 else None
     total = total if isinstance(total, int) and not isinstance(total, bool) and total >= 1 else None
@@ -1202,7 +1249,7 @@ def query_validation_job_status(validation_job_id: uuid.UUID, db: Session = Depe
 
 
 @app.post("/validation-jobs/{validation_job_id}/complete")
-def complete_validation(validation_job_id: uuid.UUID, body: CompleteJobRequest, db: Session = Depends(get_session)):
+def complete_validation(validation_job_id: uuid.UUID, request: Request, body: CompleteJobRequest, db: Session = Depends(get_session)):
     # Route notes. After the sweep: 404 `VALIDATION_JOB_NOT_FOUND`; 409 `TRAINING_JOB_ILLEGAL_TRANSITION` (the code used for every job kind) unless RUNNING or
     # SUSPENDED. Status becomes COMPLETED or FAILED. As with training, the NFO runtime is deleted before VALIDATION_COMPLETE / VALIDATION_FAILED fires on a
     # model-targeted job, so a model that is no longer VALIDATING gives 409 `LIFECYCLE_ILLEGAL_TRANSITION` with nothing committed and the runtime already
@@ -1211,6 +1258,7 @@ def complete_validation(validation_job_id: uuid.UUID, body: CompleteJobRequest, 
     job = db.get(ValidationJob, validation_job_id)
     if job is None:
         raise framework_error(FrameworkError.VALIDATION_JOB_NOT_FOUND, detail="no such validation job")
+    _check_job_owner(request, job, "complete its jobs")   # call flow 02: another rApp may not act on this job (403)
     if job.status not in ("RUNNING", "SUSPENDED"):
         raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
                                detail=f"cannot complete a validation job in status {job.status}")
@@ -1298,7 +1346,7 @@ def query_emulation_job_status(emulation_job_id: uuid.UUID, db: Session = Depend
 
 
 @app.post("/emulation-jobs/{emulation_job_id}/complete")
-def complete_emulation(emulation_job_id: uuid.UUID, body: CompleteJobRequest, db: Session = Depends(get_session)):
+def complete_emulation(emulation_job_id: uuid.UUID, request: Request, body: CompleteJobRequest, db: Session = Depends(get_session)):
     # Route notes. After the sweep: 404 `EMULATION_JOB_NOT_FOUND`; 409 `TRAINING_JOB_ILLEGAL_TRANSITION` unless RUNNING. The NFO runtime is deleted, then
     # EMULATION_COMPLETE or EMULATION_FAILED fires (always, an emulation job always has a model): 409 `LIFECYCLE_ILLEGAL_TRANSITION` and nothing committed if
     # the model is no longer EMULATING, with the runtime already deleted. A successful run writes an AIMLInferenceReport (its emulation function reference is
@@ -1307,6 +1355,7 @@ def complete_emulation(emulation_job_id: uuid.UUID, body: CompleteJobRequest, db
     job = db.get(EmulationJob, emulation_job_id)
     if job is None:
         raise framework_error(FrameworkError.EMULATION_JOB_NOT_FOUND, detail="no such emulation job")
+    _check_job_owner(request, job, "complete its jobs")   # call flow 02: another rApp may not act on this job (403)
     if job.status != "RUNNING":
         raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
                                detail=f"cannot complete an emulation job in status {job.status}")
@@ -1701,7 +1750,8 @@ def request_inference(request: Request, model_id: uuid.UUID, notification_destin
     # for why this differs from Training/Validation/Emulation.
     job = InferenceJob(model_id=model_id, status=InferenceState.RUNNING, notification_destination=notification_destination,
                         nf_deployment_id=lifecycle.nf_deployment_id, aiml_inference_function_id=aiml_inference_function_id,
-                        consumer_ref=consumer_ref, timeout_seconds=_timeout_for("INFERENCE", timeout_seconds))
+                        consumer_ref=consumer_ref, timeout_seconds=_timeout_for("INFERENCE", timeout_seconds),
+                        requested_by=invoker_id(request) if role_of(request) == ROLE_RAPP else None)   # call flow 02: who may resolve it
     db.add(job)
     db.commit()
     return {"inferenceJobId": str(job.inference_job_id)}
@@ -1721,7 +1771,7 @@ def query_inference_status(inference_job_id: uuid.UUID, db: Session = Depends(ge
 
 
 @app.post("/inference-jobs/{inference_job_id}/resolve")
-def resolve_inference(inference_job_id: uuid.UUID, succeeded: bool, body: ResolveInferenceRequest | None = None,
+def resolve_inference(inference_job_id: uuid.UUID, succeeded: bool, request: Request, body: ResolveInferenceRequest | None = None,
                       db: Session = Depends(get_session)):
     # Route notes: `succeeded` is a required query parameter and the body is optional. After the sweep: 404 `INFERENCE_JOB_NOT_FOUND`; 409
     # `TRAINING_JOB_ILLEGAL_TRANSITION` unless RUNNING (so a job that already timed out refuses a late result). COMPLETE or FAIL fires on the job FSM; a
@@ -1731,14 +1781,14 @@ def resolve_inference(inference_job_id: uuid.UUID, succeeded: bool, body: Resolv
     job = db.get(InferenceJob, inference_job_id)
     if job is None:
         raise framework_error(FrameworkError.INFERENCE_JOB_NOT_FOUND, detail="no such inference job")
+    _check_inference_resolver(request, job)
     if job.status != InferenceState.RUNNING:
         # Wave 7: e.g. already failed on its 5 s timeout — a late result is refused.
         raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
                                detail=f"cannot resolve an inference job in status {job.status}")
     job.status = INFERENCE_JOB_FSM.fire(InferenceState(job.status), InferenceEvent.COMPLETE if succeeded else InferenceEvent.FAIL)
-    # Wave 4 — TS 28.105 AIMLInferenceReport for a successful inference.
-    # The bulk result is still pulled via DME against the model's
-    # outputDataType (section 3); this is the report the NRM exposes.
+    # Wave 4 — TS 28.105 AIMLInferenceReport for a successful inference: the outputs the resolver sent are the result. Nothing is published through DME
+    # (call flow 02d, Phase 1: the rApp that ran the inference keeps the bulk result itself).
     report_id = None
     if succeeded:
         body = body or ResolveInferenceRequest()
@@ -1836,8 +1886,9 @@ def report_performance(request: Request, subscription_id: uuid.UUID, metrics: di
     # floor and any guarded metric is below it; a guarded metric missing from the report counts as 0, and a non-numeric value raises a TypeError (500). The
     # report and its subscriber notification (`{reportId, modelId, metrics, breachedFloor}`) are committed first. Only then, for a breach, is the model's
     # coordination group fetched from MLMR and `should_trigger_group_retrain` asked with `breached_count=1`; a raise from it (WEIGHTED_TRIGGERS or an unknown
-    # value) is not caught and answers 500 after the report is already stored. When it fires, `_trigger_group_retrain` starts a run for each PROMOTED member and
-    # commits on its own. Answers `reportId`, `breachedFloor` and, for a group member, `groupRetrainTriggered` and, when it fired, `retrainedModelIds`.
+    # value) is not caught and answers 500 after the report is already stored. When it fires, `_trigger_group_retrain` starts a run for each PROMOTED member,
+    # committing each on its own; a member NFO refuses is skipped, not fatal (call flow 02e). Answers `reportId`, `breachedFloor` and, for a group member,
+    # `groupRetrainTriggered` and, when it fired, `retrainedModelIds` and `retrainSkipped` (`[{modelId, reason}]`).
     sub = db.get(MLMFSubscription, subscription_id)
     if sub is None:
         raise framework_error(FrameworkError.MLMF_SUBSCRIPTION_NOT_FOUND, detail="no such MLMF subscription")
@@ -1870,7 +1921,9 @@ def report_performance(request: Request, subscription_id: uuid.UUID, metrics: di
             )
             result["groupRetrainTriggered"] = triggered
             if triggered:
-                result["retrainedModelIds"] = [str(mid) for mid in _trigger_group_retrain(db, group)]
+                started, skipped = _trigger_group_retrain(db, group)
+                result["retrainedModelIds"] = [str(mid) for mid in started]
+                result["retrainSkipped"] = skipped
     return result
 
 
@@ -1922,14 +1975,16 @@ def list_recent_performance_reports(request: Request, breached_only: bool = Fals
     return {**page, "items": [_performance_report_view(r) for r in page["items"]]}
 
 
-def _trigger_group_retrain(db: Session, group: dict) -> list[uuid.UUID]:
-    """Starts a RE_TRAINING run for every PROMOTED member of the coordination group and returns the ids of the members it started. Commits.
+def _trigger_group_retrain(db: Session, group: dict) -> tuple[list[uuid.UUID], list[dict]]:
+    """Starts a RE_TRAINING run for every PROMOTED member of the coordination group; returns the ids of the members it started and the members it could not start.
 
     `group` is MLMR's group object (`memberModelIds`). A member MLMR no longer knows (`_get_model_or_none`) or that is not PROMOTED (already TRAINING from an earlier trigger, mid-certification, never
-    certified) is skipped, never forced: a group retrain is a PROMOTED model's retrain, not a first cycle or a recovery. Each run goes through `_start_training` (the same lifecycle gate, NFO runtime and
-    MLTrainingProcess as a requested retrain) with producer `aimgf:group-retrain`; a failure part-way raises with nothing committed for any member.
+    certified) is passed over, never forced: a group retrain is a PROMOTED model's retrain, not a first cycle or a recovery. Each run goes through `_start_training` (the same lifecycle gate, NFO runtime and
+    MLTrainingProcess as a requested retrain) with producer `aimgf:group-retrain`. Best effort per member (call flow 02e, DOC-CF-1.6): each started run is committed on its own, and a member whose start
+    is refused (NFO refuses or does not answer its runtime, 502/503) is rolled back alone and listed as `{modelId, reason}` in the second list, so one member never stops the others.
     """
     retrained_model_ids: list[uuid.UUID] = []
+    skipped: list[dict] = []
     for raw_member_id in group["memberModelIds"]:
         member_id = uuid.UUID(raw_member_id)
         if _get_model_or_none(member_id) is None:
@@ -1940,11 +1995,18 @@ def _trigger_group_retrain(db: Session, group: dict) -> list[uuid.UUID]:
         # HISTORY.md OI-6.2 / Wave 4: the same start path (NFO
         # runtime, MLTrainingProcess, CREATE_TRAINING) a directly-requested
         # retrain gets via request_training.
-        _start_training(db, model_id=member_id, group_id=None, producer_id="aimgf:group-retrain",
-                        ml_training_type="RE_TRAINING")
+        try:
+            _start_training(db, model_id=member_id, group_id=None, producer_id="aimgf:group-retrain",
+                            ml_training_type="RE_TRAINING")
+        except HTTPException as exc:
+            db.rollback()
+            reason = exc.detail.get("title") if isinstance(exc.detail, dict) else str(exc.detail)
+            logger.warning("group retrain: member %s not started (%s)", member_id, reason)
+            skipped.append({"modelId": str(member_id), "reason": reason})
+            continue
+        db.commit()
         retrained_model_ids.append(member_id)
-    db.commit()
-    return retrained_model_ids
+    return retrained_model_ids, skipped
 
 
 def _write_training_report(db: Session, job: TrainingJob, body: CompleteJobRequest) -> MLTrainingReport:

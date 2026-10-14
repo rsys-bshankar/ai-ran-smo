@@ -36,7 +36,7 @@ from smo_shared.pagination import PageLimit, PageOffset, paginate, paginate_list
 
 from . import ts28105
 from .main import (
-    ACTIVE_TRAINING_STATUSES, RuntimeProfile, _activate_runtime, _cancel_training_job, _deploy_runtime, _expire_overdue_jobs,
+    ACTIVE_TRAINING_STATUSES, RuntimeProfile, _activate_runtime, _cancel_training_job, _check_job_owner, _check_rapp_owns_models, _deploy_runtime, _expire_overdue_jobs,
     _fire_model_event, _get_or_create_lifecycle, _nfo_terminate_execution, _owned_model, _resolve_runtime_profile,
     _resume_training_job, _start_training, _start_validation, _sync_training_process, _validate_dme_data_job_ids,
 )
@@ -303,24 +303,26 @@ def _apply_training_flags(db: Session, job: TrainingJob, cancel: bool | None, su
 
 
 @router.patch("/ml-training-requests/{request_id}")
-def modify_ml_training_request(request_id: uuid.UUID, body: RequestFlagsBody, db: Session = Depends(get_session)):
+def modify_ml_training_request(request_id: uuid.UUID, body: RequestFlagsBody, request: Request, db: Session = Depends(get_session)):
     # Route notes: the read first runs `_expire_overdue_jobs`, which fails every overdue run (and commits) before the view is built. Then
     # `_apply_training_flags` (409 `TRAINING_JOB_ILLEGAL_TRANSITION` for a cancel or suspend in the wrong status), one commit.
     _expire_overdue_jobs(db)
     job = _get(db, TrainingJob, request_id, "MLTrainingRequest")
+    _check_job_owner(request, job, "cancel or suspend its training")   # call flow 02: 403 for another rApp's run
     _apply_training_flags(db, job, body.cancelRequest, body.suspendRequest)
     db.commit()
     return _training_request_view(job)
 
 
 @router.delete("/ml-training-requests/{request_id}", status_code=204)
-def delete_ml_training_request(request_id: uuid.UUID, db: Session = Depends(get_session)):
+def delete_ml_training_request(request_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
     """Deleting an in-flight request cancels it (the job row is kept as
     history, like `DELETE /training-jobs/{id}`)."""
     # Route notes: always 204. Only an IN_PROGRESS or SUSPENDED run is cancelled; an unknown id, a FINISHED, FAILED or already CANCELLED run is left alone with
     # the same 204. This differs from DELETE /training-jobs/{id}, which answers 409 for a FINISHED or FAILED run. No timeout sweep first.
     job = db.get(TrainingJob, request_id)
     if job is not None and job.status in ACTIVE_TRAINING_STATUSES:
+        _check_job_owner(request, job, "cancel its training")   # call flow 02: 403 for another rApp's run
         _cancel_training_job(db, job)
         db.commit()
 
@@ -374,7 +376,7 @@ def get_ml_training_process(process_id: uuid.UUID, db: Session = Depends(get_ses
 
 
 @router.patch("/ml-training-processes/{process_id}")
-def modify_ml_training_process(process_id: uuid.UUID, body: ProcessFlagsBody, db: Session = Depends(get_session)):
+def modify_ml_training_process(process_id: uuid.UUID, body: ProcessFlagsBody, request: Request, db: Session = Depends(get_session)):
     """priority/terminationConditions are plain writes; cancelProcess/
     suspendProcess act on the run exactly like the request's own flags."""
     # Route notes: `priority` and `terminationConditions` are written to the process row first, then `_apply_training_flags` acts on the job; a 409 from the
@@ -382,17 +384,19 @@ def modify_ml_training_process(process_id: uuid.UUID, body: ProcessFlagsBody, db
     # process exists: `ON DELETE CASCADE`).
     _expire_overdue_jobs(db)
     p = _get(db, MLTrainingProcess, process_id, "MLTrainingProcess")
+    job = db.get_one(TrainingJob, p.training_job_id)
+    _check_job_owner(request, job, "change its training")   # call flow 02: 403 for another rApp's run
     if body.priority is not None:
         p.priority = body.priority
     if body.terminationConditions is not None:
         p.termination_conditions = body.terminationConditions
-    _apply_training_flags(db, db.get_one(TrainingJob, p.training_job_id), body.cancelProcess, body.suspendProcess)
+    _apply_training_flags(db, job, body.cancelProcess, body.suspendProcess)
     db.commit()
     return _training_process_view_for(db)(p)
 
 
 @router.post("/ml-training-processes/{process_id}/progress")
-def report_ml_training_progress(process_id: uuid.UUID, body: ts28105.ProcessMonitorUpdate, db: Session = Depends(get_session)):
+def report_ml_training_progress(process_id: uuid.UUID, body: ts28105.ProcessMonitorUpdate, request: Request, db: Session = Depends(get_session)):
     """The MLTF execution runtime's own progress write-back (ProcessMonitor).
     Only meaningful while the run is RUNNING; completion itself still goes
     through `POST /training-jobs/{id}/complete`."""
@@ -401,6 +405,7 @@ def report_ml_training_progress(process_id: uuid.UUID, body: ts28105.ProcessMoni
     # not while suspended or ended). The percentage is stored as given; it is not required to increase. No timeout sweep first. Completion is still POST
     # /training-jobs/{id}/complete.
     p = _get(db, MLTrainingProcess, process_id, "MLTrainingProcess")
+    _check_job_owner(request, db.get_one(TrainingJob, p.training_job_id), "report the progress of its training")   # call flow 02: 403 for another rApp's run
     if p.status != "RUNNING":
         raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
                                detail=f"cannot report progress on a process in status {p.status}")
@@ -571,7 +576,7 @@ def get_ml_testing_request(request_id: uuid.UUID, db: Session = Depends(get_sess
 
 
 @router.patch("/ml-testing-requests/{request_id}")
-def modify_ml_testing_request(request_id: uuid.UUID, body: RequestFlagsBody, db: Session = Depends(get_session)):
+def modify_ml_testing_request(request_id: uuid.UUID, body: RequestFlagsBody, request: Request, db: Session = Depends(get_session)):
     """cancelRequest tears the run down and, for a model-targeted run,
     fails the model's VALIDATING state (VALIDATION_FAILED — FAILED is the
     lifecycle's own retry point) rather than leaving it stuck VALIDATING.
@@ -584,6 +589,7 @@ def modify_ml_testing_request(request_id: uuid.UUID, body: RequestFlagsBody, db:
     # notification (unlike a timeout).
     _expire_overdue_jobs(db)
     job = _get(db, ValidationJob, request_id, "MLTestingRequest")
+    _check_job_owner(request, job, "cancel or suspend its testing")   # call flow 02: 403 for another rApp's run
     if body.cancelRequest:
         if job.status not in ("RUNNING", "SUSPENDED"):
             raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
@@ -1208,7 +1214,7 @@ def get_ml_update_request(request_id: uuid.UUID, db: Session = Depends(get_sessi
 
 
 @router.patch("/ml-update-requests/{request_id}")
-def modify_ml_update_request(request_id: uuid.UUID, body: RequestFlagsBody, db: Session = Depends(get_session)):
+def modify_ml_update_request(request_id: uuid.UUID, body: RequestFlagsBody, request: Request, db: Session = Depends(get_session)):
     """cancelRequest cancels every still-running training run of the
     update; suspendRequest suspends/resumes them together."""
     # Route notes. After the sweep: 409 `TRAINING_JOB_ILLEGAL_TRANSITION` if the request is already FINISHED or CANCELLED. Cancel wins over suspend. Cancel
@@ -1218,6 +1224,7 @@ def modify_ml_update_request(request_id: uuid.UUID, body: RequestFlagsBody, db: 
     # each run. `.one()` assumes the process exists, which creation guarantees.
     _expire_overdue_jobs(db)
     r = _get(db, MLUpdateRequest, request_id, "MLUpdateRequest")
+    _check_rapp_owns_models(request, [uuid.UUID(str(m)) for m in r.ml_model_refs or []], "cancel or suspend its update")   # call flow 02: 403 for another rApp's models
     if r.request_status in ("FINISHED", "CANCELLED"):
         raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION, detail=f"update request already {r.request_status}")
     p = db.scalars(select(MLUpdateProcess).where(MLUpdateProcess.ml_update_request_id == r.ml_update_request_id)).one()
