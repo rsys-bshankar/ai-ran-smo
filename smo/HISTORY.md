@@ -2787,8 +2787,8 @@ The first flow of DOC-CF-1.8 (the remaining flows, one at a time), decided with 
 - **A. A guarded metric a report does not carry is not a breach.** It counted as 0, so it breached every floor above 0. MDAF forwards each drift report's
   numeric outputs to every subscription of the model (`_forward_drift_to_mlmf`), so a drift report that did not carry a subscription's guarded metric
   breached it and retrained the model's whole coordination group. `_evaluate_report` judges only the metrics the report carries and lists the others in
-  `missingMetrics` (on the report, revision 0047, in the route's answer and in the subscriber's push).
-- **B. Ceilings.** A subscription may set `guard_kpi_ceiling` (metric name to maximum, revision 0047), for a metric where lower is better (MAE, latency):
+  `missingMetrics` (on the report, revision 0048, in the route's answer and in the subscriber's push).
+- **B. Ceilings.** A subscription may set `guard_kpi_ceiling` (metric name to maximum, revision 0048), for a metric where lower is better (MAE, latency):
   a report above it breaches. `breachedFloor` keeps its name. The SDK's `subscribe_performance_monitoring` takes `guard_kpi_ceiling`, the console's form a
   ceiling field, its table both guards and the report table the missing metrics.
 - **C. Values are numbers.** A non-numeric reported value raised a TypeError after the floor check (500); now 422 `SCHEMA_VALIDATION_FAILED` with nothing

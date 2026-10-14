@@ -7,13 +7,13 @@ Expand only: two nullable JSONB columns with no default and no constraint, which
 ignore them). No existing row is rewritten: a subscription keeps no ceiling and an earlier report no list of missing metrics. Both tables are in the `aimgf` schema
 (revision 0025) and need no grant of their own.
 
-Revision ID: 0047
-Revises: 0046
+Revision ID: 0048
+Revises: 0047
 """
 from alembic import op
 
-revision = "0047"
-down_revision = "0046"
+revision = "0048"
+down_revision = "0047"
 branch_labels = None
 depends_on = None
 

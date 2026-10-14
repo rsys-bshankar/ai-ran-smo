@@ -378,7 +378,7 @@ class MLMFSubscription(Base):
     metric_types: Mapped[list[str]] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"), nullable=False)
     dme_type_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
     guard_kpi_floor: Mapped[dict | None] = mapped_column(JSON)
-    # Call flow 13 (DOC-CF-1.8): metric name to maximum, for a metric where lower is better (MAE, latency); a report above it breaches. Revision 0047.
+    # Call flow 13 (DOC-CF-1.8): metric name to maximum, for a metric where lower is better (MAE, latency); a report above it breaches. Revision 0048.
     guard_kpi_ceiling: Mapped[dict | None] = mapped_column(JSON)
     # HISTORY.md §7's `MLMFSubscription` finding, closed: every other
     # subscription-shaped resource in this build (DME/MDAF/
@@ -400,7 +400,7 @@ class PerformanceReport(Base):
     subscription_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("mlmf_subscription.subscription_id", ondelete="CASCADE"))
     metrics: Mapped[dict] = mapped_column(JSON, nullable=False)
     breached_floor: Mapped[bool] = mapped_column(default=False)
-    # Call flow 13: the guarded metrics (floor or ceiling) this report did not carry. A missing metric is not a breach. Revision 0047.
+    # Call flow 13: the guarded metrics (floor or ceiling) this report did not carry. A missing metric is not a breach. Revision 0048.
     missing_metrics: Mapped[list | None] = mapped_column(JSON)
     reported_at: Mapped[datetime.datetime] = mapped_column(default=lambda: datetime.datetime.now(datetime.UTC))
 
