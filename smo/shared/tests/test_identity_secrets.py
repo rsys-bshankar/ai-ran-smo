@@ -403,7 +403,8 @@ def test_an_instances_credentials_are_stored_encrypted_and_read_back(factory, mo
 
 # ---------------------------------------------------------------- the one door
 
-SMO = Path(__file__).resolve().parents[2]
+SMO = next(parent for parent in Path(__file__).resolve().parents if (parent / "docker-compose.yml").is_file())
+_SKIPPED_DIRECTORIES = {"mutants", "node_modules", "build", "dist", "site-packages", "__pycache__"}
 
 
 def test_nothing_but_the_store_reads_or_writes_the_secret_column():
@@ -414,7 +415,7 @@ def test_nothing_but_the_store_reads_or_writes_the_secret_column():
     offenders = []
     for path in SMO.rglob("*.py"):
         relative = path.relative_to(SMO).as_posix()
-        if "node_modules" in relative or "/tests/" in f"/{relative}" or relative.startswith("tests_integration/") or relative in allowed:
+        if _SKIPPED_DIRECTORIES.intersection(path.relative_to(SMO).parts) or any(part.startswith(".") for part in path.relative_to(SMO).parts) or "/tests/" in f"/{relative}" or relative.startswith("tests_integration/") or relative in allowed:
             continue
         if pattern.search(path.read_text(encoding="utf-8", errors="ignore")):
             offenders.append(relative)
