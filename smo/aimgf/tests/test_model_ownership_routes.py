@@ -143,14 +143,14 @@ def test_an_unknown_model_is_404_for_an_rapp(client, db_session_factory, mlmr, c
     assert resp.status_code == 404 and "MODEL_NOT_FOUND" in resp.text
 
 
-def test_the_history_and_subscriptions_of_an_unknown_model_are_still_open_to_the_console_and_the_roleless(client, mlmr):
-    """The console, an SMO module and a call with no role are not asked about the model on the history and the subscription create, as before: no 404, so the history of a model MLMR has
-    since deleted stays readable.
-    """
+def test_the_history_of_an_unknown_model_is_still_open_but_a_subscription_to_it_is_404(client, mlmr):
+    """The console, an SMO module and a call with no role are not asked about the model on the history, so the history of a model MLMR has since deleted stays
+    readable; subscribing to a model MLMR does not know is 404 `MODEL_NOT_FOUND` for every caller (call flow 13a)."""
     unknown = uuid.uuid4()
     for headers in (OPERATOR, None):
         assert _history(client, unknown, headers).json()["items"] == []
-        assert _subscribe(client, unknown, headers).status_code == 201
+        resp = _subscribe(client, unknown, headers)
+        assert resp.status_code == 404 and "MODEL_NOT_FOUND" in resp.text
 
 
 def test_a_refused_update_request_starts_no_run_for_the_models_of_the_caller(client, db_session_factory, mlmr):
@@ -205,7 +205,9 @@ def test_the_operator_and_an_unowned_model_pass_on_a_subscription_id(client, db_
     assert client.delete(f"/mlmf/subscriptions/{owned}", headers=OPERATOR).status_code == 204
     unowned = _subscription_of(client, mlmr.add_model())
     assert client.post(f"/mlmf/subscriptions/{unowned}/reports", json={"accuracy": 0.9}, headers=OTHER).status_code == 200
-    gone = _subscription_of(client, uuid.uuid4())
+    gone_model = mlmr.add_model(owner="es-client")
+    gone = _subscription_of(client, gone_model)
+    del mlmr.models[str(gone_model)]                          # MLMR has since deleted the model
     assert client.delete(f"/mlmf/subscriptions/{gone}", headers=OTHER).status_code == 204
 
 

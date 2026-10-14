@@ -9,7 +9,7 @@
 | Depends on (over R1) | RAN NF OAM (`POST /ran-nf-oam/config-jobs`, action path only); caller-registered callback URLs (producers, type subscribers, offer termination) |
 | Called by | rApps and the SDK `data` namespace; MDAF (checks `input_sources` against `GET /dme/data-jobs/{id}`); RAN NF OAM (registers PM types, ingests records into jobs); SA SMOS O1-CM handler (`POST /dme/actions`); rApp Management (producer deregistration); GUI BFF |
 | Database tables | `dme_producer`, `dme_type`, `dme_producer_type`, `dme_type_subscription`, `dme_delivery_schema`, `data_job`, `data_offer`, `data_record`, `dme_action_record` |
-| Unit tests | 136 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 137 passed (`tests/`, SQLite, standalone) |
 | Status | Done. `dme_delivery_schema` is defined but unused (see 2.8) |
 
 ## 1. High-level design (HLD)
@@ -189,6 +189,7 @@ All routes sit under `/dme`. Lists marked "paged" return `{items, total, limit, 
 | GET | `/production-capabilities/{producer_id}/status` | `{producerId, operationalState}` from a live health probe | 404 `PRODUCER_NOT_FOUND` |
 | DELETE | `/production-capabilities?producer_id=` (204) | Deregister a producer and its links; types stay. Idempotent. | 403 `DME_PRODUCER_NOT_OWNER` (an rApp naming a `producer_id` that is not its own invoker id, whether or not that producer exists) |
 | GET | `/dme-types?data_category=` | Discover types (not paged); `data_category` filters on `namespace`. Each item: `dmeTypeId, dmeTypeIdStruct, typeName, producerIds, typeStatus, sourceDomain, sourceContext` | |
+| GET | `/dme-types/{dme_type_id}` | One type, as the list shows it (its status computed from its producers' health). AIMgF checks an MLMF subscription's `dmeTypeId` with it (call flow 13a) | 404 `DME_TYPE_NOT_FOUND` |
 | DELETE | `/dme-types/{dme_type_id}` (204) | Delete a type with no producers, plus its jobs and offers; notifies subscribers `DEREGISTERED` | 404 `DME_TYPE_NOT_FOUND`; 409 `DME_TYPE_HAS_ACTIVE_PRODUCERS` |
 
 **Type subscriptions**
@@ -305,7 +306,7 @@ cd smo/dme && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | `tests/test_event_feed.py` | `PR-MSG-3.2` (9): without `after` the newest position; order, `types`, pages and `next`; the long poll answers when an event is committed; a scoped caller sees only its regions' events and `next` moves past the others; out-of-bounds parameters are 422 (parametrized) | 9 |
 | `tests/test_type_ownership.py` | `SEC-15.10` (8, two of them added by the PR-SEC-15 part 4 mutation pass: the owner is the gateway's invoker id and only without a gateway the body's `producerId`): a second rApp's different schema is 403 and the stored schema and owner are unchanged, a refused overwrite leaves the producer row alone, the same definition by another producer still joins (which then cannot change it), an `internal` caller and a call without a role overwrite, a rApp without an invoker id cannot, a type from before the owner was recorded is open to its linked producers only | 6 |
 | `tests/test_producer_health.py` | The boundary of a producer's health callback in `typeStatus`: 200, 204 and 299 are ENABLED, 300, 301, 404 and 500 DISABLED (7) |
-| `tests/test_main.py` | Producer/type registry: registration, re-registration, second producer, discovery and `data_category` filter, deregistration keeping types, type deletion guard and cascade, producer status | 22 |
+| `tests/test_main.py` | Producer/type registry: registration, re-registration, second producer, discovery and `data_category` filter, deregistration keeping types, type deletion guard and cascade, producer status, one type read by its id (404 for an unknown one) | 23 |
 | | Type status from producer health (unreachable, non-2xx, healthy, active job does not override) | 4 |
 | | Type subscriptions and notifications (CRUD, owner filter, registered / deregistered, none when no subscribers, unreachable subscriber) | 9 |
 | | Data jobs: delivery-method and offer cross-check, schema validation, CRUD, immutability, per-consumer termination, producer push / re-push / stop, push failure tolerated | 26 |

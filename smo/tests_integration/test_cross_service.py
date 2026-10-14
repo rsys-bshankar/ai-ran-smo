@@ -322,7 +322,7 @@ def test_ts28104_drift_report_reaches_aimgf_mlmf_and_request_delivery(mesh):
     assert report.json()["attributes"]["deliveredToRequestRefList"] == [request.json()["id"]]
 
     model_id = mesh["mlmr"].post("/models", json={"modelType": "drifty", "version": "1"}).json()["modelId"]
-    sub = mesh["aimgf"].post("/mlmf/subscriptions", params={"model_id": model_id, "dme_type_id": str(uuid.uuid4())},
+    sub = mesh["aimgf"].post("/mlmf/subscriptions", params={"model_id": model_id, "dme_type_id": _mlmf_dme_type(mesh, "ModelDrift")},
                              json={"metric_types": ["accuracy"], "guard_kpi_floor": {"accuracy": 0.8}})
     assert sub.status_code == 201, sub.text
     drift = mesh["mdaf"].post("/mda-reports", json={"reportKind": "DRIFT", "mDAOutputs": [{
@@ -641,3 +641,11 @@ def test_an_idempotency_key_makes_a_repeated_nfo_instantiate_one_deployment_even
         headers={"Idempotency-Key": "it-1", "X-R1-Invoker-Id": "rapp-b"})
     assert other_caller.status_code == 202 and "Idempotent-Replayed" not in other_caller.headers
     assert other_caller.json()["nfDeploymentId"] != first.json()["nfDeploymentId"]
+
+
+def _mlmf_dme_type(mesh, name: str) -> str:
+    """Registers a DME type (as RAN NF OAM, an SMO module) and returns its id: an MLMF subscription must name a type DME knows (call flow 13a)."""
+    return mesh["dme"].post("/production-capabilities", json={
+        "namespace": "RAN", "name": name, "version": "1.0.0", "typeName": f"RAN.{name}", "producerId": "ran-nf-oam",
+        "dataProductionSchema": {"type": "object"}, "producerHealthCallbackUrl": "http://ran-nf-oam:8000/health",
+        "jobCallbackUrl": "http://ran-nf-oam:8000/dme-jobs"}).json()["registrationId"]

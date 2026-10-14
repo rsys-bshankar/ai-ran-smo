@@ -241,6 +241,18 @@
       },
       "Body_subscribe_performance_monitoring_mlmf_subscriptions_post": {
         "properties": {
+          "guard_kpi_ceiling": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guard Kpi Ceiling"
+          },
           "guard_kpi_floor": {
             "anyOf": [
               {

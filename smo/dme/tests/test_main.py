@@ -1407,3 +1407,12 @@ def test_an_offer_with_no_delivery_method_is_refused(client):
     resp = client.post("/offers", json={"dmeTypeId": type_id, "dataDeliveryMode": "CONTINUOUS",
                                         "dataDeliveryMethods": [], "dataOfferTerminationNotificationUri": "http://producer/terminate"})
     assert resp.status_code == 409
+
+
+def test_one_type_is_read_by_its_id_and_an_unknown_one_is_404(client):
+    """`GET /dme-types/{id}` answers the type as the list does; an unknown id is 404 `DME_TYPE_NOT_FOUND` (call flow 13a: AIMgF checks an MLMF subscription's type with it)."""
+    type_id = client.post("/production-capabilities", json=register_type_body()).json()["registrationId"]
+    listed = next(t for t in client.get("/dme-types").json() if t["dmeTypeId"] == type_id)
+    assert client.get(f"/dme-types/{type_id}").json() == listed
+    resp = client.get(f"/dme-types/{uuid.uuid4()}")
+    assert resp.status_code == 404 and resp.json()["detail"]["title"] == "DME_TYPE_NOT_FOUND"

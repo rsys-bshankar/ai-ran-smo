@@ -261,6 +261,16 @@ def discover_dme_types(data_category: str | None = None, db: Session = Depends(g
     return [_type_view(db, r) for r in rows]
 
 
+@app.get("/dme-types/{dme_type_id}")
+def get_dme_type(dme_type_id: uuid.UUID, db: Session = Depends(get_session)):
+    """One DME type, as the list answers it (`_type_view`, its status computed from its producers' health). 404 `DME_TYPE_NOT_FOUND`. AIMgF checks an MLMF
+    subscription's `dmeTypeId` with it (call flow 13a)."""
+    t = db.get(DMEType, dme_type_id)
+    if t is None:
+        raise framework_error(FrameworkError.DME_TYPE_NOT_FOUND, detail="no such DME type")
+    return _type_view(db, t)
+
+
 @app.get("/production-capabilities")
 def list_producers(db: Session = Depends(get_session)):
     """ICS's own `GET /data-producer/v1/info-producers` — previously no

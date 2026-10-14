@@ -152,8 +152,8 @@ export interface CoordinationGroup {
   groupId: string; groupType: string; memberModelIds: string[]; memberUseCases: string[];
   sharedFeaturePipelineRef: string | null; retrainPropagation: string;
 }
-export interface MlmfSubscription { subscriptionId: string; modelId: string; metricTypes: string[]; dmeTypeId: string; guardKpiFloor: Record<string, number> | null; notificationDestination: string | null }
-export interface MlmfReport { reportId: string; subscriptionId: string; metrics: Record<string, unknown>; breachedFloor: boolean; reportedAt: string }
+export interface MlmfSubscription { subscriptionId: string; modelId: string; metricTypes: string[]; dmeTypeId: string; guardKpiFloor: Record<string, number> | null; guardKpiCeiling?: Record<string, number> | null; notificationDestination: string | null }
+export interface MlmfReport { reportId: string; subscriptionId: string; metrics: Record<string, unknown>; breachedFloor: boolean; missingMetrics?: string[]; reportedAt: string }
 
 // ---- RAN NF OAM
 /**

@@ -55,7 +55,7 @@ def test_aimgf_start_and_read_routes_apply_the_owner_rule_through_the_mesh(mesh)
     model_id = _register(mesh, ES)
     aimgf = mesh["aimgf"]
     training = {"modelId": model_id, "producerId": "other"}
-    subscription = {"model_id": model_id, "dme_type_id": str(uuid.uuid4())}
+    subscription = {"model_id": model_id, "dme_type_id": _mlmf_dme_type(mesh, "ModelPerformance")}
     refused = [
         aimgf.post("/training-jobs", headers=OTHER, json=training),
         aimgf.post("/ml-training-requests", headers=OTHER, json={"mLModelRef": model_id, "trainingRequestSource": "other"}),
@@ -138,3 +138,11 @@ def test_mlmr_delete_upload_download_phase_and_groups_apply_the_owner_rule_throu
     assert mlmr.delete(f"/models/{shared}", headers=SMO).status_code == 204
     open_model = _register(mesh, SMO)
     assert mlmr.delete(f"/models/{open_model}", headers=OTHER).status_code == 204
+
+
+def _mlmf_dme_type(mesh, name: str) -> str:
+    """Registers a DME type (as RAN NF OAM, an SMO module) and returns its id: an MLMF subscription must name a type DME knows (call flow 13a)."""
+    return mesh["dme"].post("/production-capabilities", json={
+        "namespace": "RAN", "name": name, "version": "1.0.0", "typeName": f"RAN.{name}", "producerId": "ran-nf-oam",
+        "dataProductionSchema": {"type": "object"}, "producerHealthCallbackUrl": "http://ran-nf-oam:8000/health",
+        "jobCallbackUrl": "http://ran-nf-oam:8000/dme-jobs"}).json()["registrationId"]
