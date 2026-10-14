@@ -14,10 +14,10 @@ Every word on the page comes from the catalog (`src/i18n/en/aiml.ts`, `de/aiml.t
 | --- | --- | --- | --- | --- | --- |
 | (tabs) | index.tsx | tab counts: models, training jobs, MLMF breaches | `/api/summary/aiml` | 15 s | 1 call |
 | aiml.board | sections/StageBoard.tsx | kanban by stage, server count + first 5 per column, red outline under floor | `/aimgf/model-lifecycles/counts`; `/mlmr/models?limit=500`, `/aimgf/model-lifecycles?limit=500`, `/aimgf/mlmf/subscriptions?limit=500`, `/aimgf/mlmf/reports?limit=100&total=false` | 15–60 s | 5 calls |
-| aiml.table | sections/ModelTable.tsx | all models, server-paged, `model_type` filter, lifecycle buttons | `/mlmr/models` (+ the lifecycle read above) | 15 s | 1 call/page |
+| aiml.table | sections/ModelTable.tsx | all models, server-paged, `model_type` filter, lifecycle buttons, an Owner column that marks a model with no owner with a warning badge | `/mlmr/models` (+ the lifecycle read above) | 15 s | 1 call/page |
 | aiml.trainingTop | sections/SideCards.tsx | newest 5 IN_PROGRESS training jobs + true count, epoch bar and ETA when reported | `/aimgf/training-jobs?status=IN_PROGRESS&limit=5` | 15 s | 1 call |
 | aiml.waiting | sections/SideCards.tsx | models waiting for a governance decision, with their buttons | (board's lifecycle read) | — | 0 |
-| aiml.detail | sections/ModelDetail.tsx | selected model: states, MODEL_PIPELINE steps, buttons, edit, delete, facts | `/mlmr/models/{id}`, `/aimgf/models/{id}/lifecycle` | 15 s | 2 calls |
+| aiml.detail | sections/ModelDetail.tsx | selected model: states, MODEL_PIPELINE steps, buttons, edit, **Set owner / Change owner** (admin), delete, facts including the owner or "No owner (open to any rApp)" | `/mlmr/models/{id}`, `/aimgf/models/{id}/lifecycle` | 15 s | 2 calls |
 | aiml.guard | sections/GuardKpiChart.tsx | guard KPI line with dashed floor, newest-report tiles | `/aimgf/mlmf/subscriptions?model_id=`, `/aimgf/mlmf/subscriptions/{id}/reports?limit=120` | 15 s | 2 calls |
 | aiml.governance | sections/Governance.tsx | governance history / all, model or runtime transitions; roll back, deprecate, retire with a rationale | `/aimgf/models/{id}/governance-history`, `/lifecycle-history?fsm=` | 15 s | 1 call/page |
 | aiml.artifacts | sections/ModelArtifacts.tsx | artifact downloads, upload, deploy to node groups | (detail's reads) | — | 0 |
@@ -49,6 +49,12 @@ Selecting a model adds about 7 (detail, lifecycle, guard, governance, jobs). Eve
   (`data/board.ts` `ARTIFACT_LOCATION_RE`, GUI-10.6); any other location (an external URI) lists no version.
 - **Inference card** of the mockup ("last 5 jobs") is not on the Models tab, to keep its first load within 7 calls; the Inference tab has them.
 - **Scope** (GUI-9.3): models, training and MLMF know no region; under a scope the page header says "network-wide".
+
+- **Model owner (`SEC-15.3c`)**: a model registered before owners were recorded has no owner and any rApp may still act on it; the table's Owner column and the
+  detail panel show the badge "No owner (open to any rApp)" for it. An **admin** sets the owner with **Set owner** (the invoker ID of the rApp; **Change owner**
+  once there is one) through `PUT /mlmr/models/{id}/owner`; MLMR audits every change with the old and new owner. The owner cannot be cleared from the console. The
+  Edit metadata dialog no longer has an Owner field (it sends the stored owner back unchanged), so the audited action is the one way to change it. The register dialog
+  still takes an owner for a new model. Refusing an owner-less model is not done yet (`OPEN_ITEMS.md` `SEC-15.3c`).
 
 ## Troubleshooting
 

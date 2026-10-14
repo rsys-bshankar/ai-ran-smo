@@ -9,6 +9,7 @@ import { useT } from "../../../i18n";
 import { ServerTable } from "../../../kit/ServerTable";
 import { MODELS, useLifecycleIndex } from "../data/queries";
 import { ModelActions, REGISTERED_LIFECYCLE } from "./ModelActions";
+import { OwnerCell } from "./OwnerCell";
 
 /** The table. `actions` go in the card head. */
 export function ModelTable({ selected, onSelect, actions }: { selected: string | null; onSelect: (id: string) => void; actions?: ReactNode }) {
@@ -28,7 +29,7 @@ export function ModelTable({ selected, onSelect, actions }: { selected: string |
           { header: "ID", render: (m) => <Id value={m.modelId} /> },
           { header: t("aiml.col.state"), render: (m) => <StateBadge state={lifecycleFor(m.modelId).modelLifecycleState} /> },
           { header: t("aiml.col.nodeGroups"), render: (m) => lifecycleFor(m.modelId).clearedNodeGroups.join(", ") || <span className="muted">—</span> },
-          { header: t("aiml.col.owner"), render: (m) => m.owner ?? <span className="muted">—</span> },
+          { header: t("aiml.col.owner"), render: (m) => <OwnerCell owner={m.owner} /> },
           { header: "", className: "actions", render: (m) => <ModelActions model={m} lifecycle={lifecycleFor(m.modelId)} /> },
         ]} />
     </Card>

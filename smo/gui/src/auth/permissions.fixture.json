@@ -138,6 +138,12 @@
     "queryMatch": {}
   },
   {
+    "method": "PUT",
+    "pattern": "^/mlmr/models/[^/]+/owner$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
     "method": "POST",
     "pattern": "^/mlmr/models/[^/]+/artifact$",
     "role": "operator",

@@ -19,7 +19,7 @@ const A = "aaaaaaaa-0000-4000-8000-000000000001";
 const B = "bbbbbbbb-0000-4000-8000-000000000002";
 const C = "cccccccc-0000-4000-8000-000000000003";
 const page = <T,>(items: T[]) => ({ items, total: items.length, limit: 500, offset: 0 });
-const model = (id: string, type: string) => ({ modelId: id, modelType: type, version: "1.0", artifactLocation: id === A ? `model-artifact:${A}:2` : null, description: `${type} use`, author: null, owner: "ops", inputDataType: null, outputDataType: null, targetEnvironments: [] });
+const model = (id: string, type: string) => ({ modelId: id, modelType: type, version: "1.0", artifactLocation: id === A ? `model-artifact:${A}:2` : null, description: `${type} use`, author: null, owner: id === B ? null : "ops", inputDataType: null, outputDataType: null, targetEnvironments: [] });
 const life = (id: string, state: string, runtime = "NOT_DEPLOYED") => ({ modelId: id, modelLifecycleState: state, runtimeLifecycleState: runtime, trainingJobId: null, clearedNodeGroups: [], nfDeploymentDescriptorId: null, nfDeploymentId: null, trainingApproved: false, validationApproved: false });
 const job = (id: string, status: string) => ({ epoch: id === J1 ? 7 : null, totalEpochs: id === J1 ? 20 : null, etaSeconds: id === J1 ? 252 : null, trainingJobId: id, modelId: C, modelCoordinationGroupId: null, producerId: "smo-gui", status, runId: null, trainingDataset: null, validationDataset: null, modelMetrics: null, nfDeploymentId: null, currentStep: "TRAINING", steps: { DATA_EXTRACTION: "FINISHED", TRAINING: "RUNNING", TRAINED_MODEL: "NOT_STARTED" } });
 const J1 = "11111111-1111-4111-8111-111111111111";
@@ -45,6 +45,10 @@ function bff(role: "viewer" | "operator" | "admin") {
     [`GET /smo/aimgf/models/${A}/lifecycle`]: life(A, "PROMOTED", "ACTIVE"),
     [`GET /smo/aimgf/models/${A}/governance-history`]: page([{ certificationRecordId: "g1", modelId: A, decision: "PROMOTE", decidedBy: "admin-1", rationale: "Emulation clean", decidedAt: "2026-10-09T11:02:00Z" }]),
     [`GET /smo/aimgf/models/${A}/lifecycle-history`]: page([{ fsm: "MODEL", fromState: "CERTIFIED", toState: "PROMOTED", event: "PROMOTE", occurredAt: "2026-10-09T11:02:00Z" }]),
+    [`GET /smo/mlmr/models/${B}`]: model(B, "load-model"),
+    [`GET /smo/aimgf/models/${B}/lifecycle`]: life(B, "REGISTERED"),
+    [`PUT /smo/mlmr/models/${B}/owner`]: { modelId: B, owner: "es-client", previousOwner: null, changed: true },
+    [`PUT /smo/mlmr/models/${A}/owner`]: { modelId: A, owner: "mobility-client", previousOwner: "ops", changed: true },
     [`POST /smo/aimgf/models/${A}/advance`]: { modelId: A },
     [`POST /smo/aimgf/training-jobs/${J1}/suspend`]: { trainingJobId: J1, status: "SUSPENDED" },
     [`POST /smo/aimgf/training-jobs/${J2}/resume`]: { trainingJobId: J2, status: "IN_PROGRESS" },
@@ -128,6 +132,92 @@ describe("model detail and governance (feature 7)", () => {
     expect(post.query.get("event")).toBe("ROLLBACK");
     expect(post.query.get("rationale")).toBe("accuracy under floor");
     expect(post.query.get("decided_by")).toBe("smo-gui");
+  });
+});
+
+describe("model owner (SEC-15.3c)", () => {
+  const selectB = async (container: HTMLElement) => {
+    await click(byText(container, "[role=radio]", "Table")!);
+    await settle(6);
+    await click(byText(container, "tr", /load-model/)!);
+    await settle(8);
+    return container.querySelector('[data-section="aiml.detail"]') as HTMLElement;
+  };
+
+  // A model registered before owners were recorded is found in the list by its warning badge; one with an owner shows the owner's id.
+  it("marks a model with no owner in the list", async () => {
+    bff("viewer");
+    const { container } = await open();
+    await click(byText(container, "[role=radio]", "Table")!);
+    await settle(6);
+    const rows = [...container.querySelectorAll('[data-section="aiml.table"] tbody tr')] as HTMLElement[];
+    const legacy = rows.find((r) => r.textContent!.includes("load-model"))!;
+    const owned = rows.find((r) => r.textContent!.includes("coverage-model"))!;
+    expect(legacy.querySelector(".b-warn")!.textContent).toBe("No owner (open to any rApp)");
+    expect(owned.querySelector(".b-warn")).toBeNull();
+    expect(owned.textContent).toContain("ops");
+  });
+
+  // A viewer and an operator see the owner, or that there is none, and are offered no way to set it: only an admin may (the console's rule table).
+  it("offers Set owner to an admin only", async () => {
+    for (const role of ["viewer", "operator"] as const) {
+      bff(role);
+      const { container } = await open();
+      const detail = await selectB(container);
+      expect(detail.textContent).toContain("No owner (open to any rApp)");
+      expect(byText(detail, "button", /owner/i)).toBeNull();
+      cleanup();
+    }
+  });
+
+  // An admin sets the owner of an owner-less model: the dialog says what an owner means, and the id goes to MLMR's owner route, not to PUT /models/{id}.
+  it("sets the owner of a model that has none", async () => {
+    const calls = bff("admin");
+    const { container } = await open();
+    const detail = await selectB(container);
+    await click(byText(detail, "button", "Set owner")!);
+    const dialog = document.querySelector("[role=dialog]") as HTMLElement;
+    expect(dialog.textContent).toContain("Owner of load-model v1.0");
+    const save = byText<HTMLButtonElement>(dialog, "button", "Save owner")!;
+    expect(save.disabled).toBe(true);
+    await type(field(dialog, "Owner"), "es-client");
+    expect(save.disabled).toBe(false);
+    await click(save);
+    await settle();
+    const put = calls.find((c) => c.method === "PUT")!;
+    expect(put.path).toBe(`/smo/mlmr/models/${B}/owner`);
+    expect(put.body).toEqual({ owner: "es-client" });
+  });
+
+  // An owned model reads "Change owner", starts from the current owner and cannot be saved unchanged.
+  it("changes the owner of an owned model", async () => {
+    const calls = bff("admin");
+    const { container } = await open();
+    await click(column(container, "active").querySelector(".kanban-card") as HTMLElement);
+    await settle(8);
+    const detail = container.querySelector('[data-section="aiml.detail"]') as HTMLElement;
+    await click(byText(detail, "button", "Change owner")!);
+    const dialog = document.querySelector("[role=dialog]") as HTMLElement;
+    expect(field(dialog, "Owner").value).toBe("ops");
+    expect(byText<HTMLButtonElement>(dialog, "button", "Save owner")!.disabled).toBe(true);
+    await type(field(dialog, "Owner"), "mobility-client");
+    await click(byText(dialog, "button", "Save owner")!);
+    await settle();
+    expect(calls.find((c) => c.method === "PUT")!.body).toEqual({ owner: "mobility-client" });
+  });
+
+  // The edit dialog no longer has an owner field and sends the stored owner back unchanged, so editing the description cannot change or clear it.
+  it("keeps the owner out of the edit dialog", async () => {
+    const calls = bff("operator");
+    const { container } = await open();
+    await click(column(container, "active").querySelector(".kanban-card") as HTMLElement);
+    await settle(8);
+    await click(byText(container, "button", "Edit metadata")!);
+    const dialog = document.querySelector("[role=dialog]") as HTMLElement;
+    expect(() => field(dialog, "Owner")).toThrow();
+    await click(byText(dialog, "button", "Save")!);
+    await settle();
+    expect((calls.find((c) => c.method === "PUT")!.body as Record<string, unknown>).owner).toBe("ops");
   });
 });
 

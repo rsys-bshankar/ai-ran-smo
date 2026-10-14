@@ -11,8 +11,10 @@ import uuid
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
+from smo_shared import audit
 from smo_shared.db import Base, get_session
 from smo_shared.testing import make_test_engine
 
@@ -32,7 +34,7 @@ def db_session_factory():
     engine = make_test_engine()
     Base.metadata.create_all(engine, tables=[
         MLModelRepository.__table__, MLModel.__table__, MLModelCoordinationGroup.__table__, ModelArtifact.__table__,
-        MLModelsStorage.__table__, MLModelProfile.__table__,
+        MLModelsStorage.__table__, MLModelProfile.__table__, audit.AuditEntry.__table__, audit.AuditHead.__table__,
     ])
     return sessionmaker(bind=engine)
 
@@ -650,3 +652,94 @@ def test_coordination_group_nrm_view_and_repository_delete_uncontains(client):
     assert client.get(f"/models/{a}").json()["mLModelRepositoryRef"] is None
     assert client.get(f"/ml-model-coordination-groups/{group_id}").json()["attributes"]["mLModelRepositoryRef"] is None
     assert client.get(f"/ml-model-repositories/{repo['id']}").status_code == 404
+
+
+_ACTING = {**_INTERNAL, "X-R1-Acting-User": "alice"}
+
+
+def _audit_rows(db_session_factory) -> list:
+    """Every row of the audit chain, oldest first."""
+    with db_session_factory() as db:
+        return list(db.scalars(select(audit.AuditEntry).order_by(audit.AuditEntry.seq)))
+
+
+def test_an_operator_gives_an_owner_less_model_an_owner_and_it_is_audited(client, db_session_factory):
+    """SEC-15.3c part 3: PUT /models/{id}/owner from role internal stores the owner, answers the old and new one, and writes one audit row naming the person, the model and both owners."""
+    model_id = _register_for(client, _INTERNAL)
+    resp = client.put(f"/models/{model_id}/owner", json={"owner": "es-client"}, headers=_ACTING)
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"modelId": model_id, "owner": "es-client", "previousOwner": None, "changed": True}
+    assert client.get(f"/models/{model_id}").json()["owner"] == "es-client"
+    (row,) = _audit_rows(db_session_factory)
+    assert (row.actor, row.actor_role, row.action, row.target) == ("alice", "internal", "SET_MODEL_OWNER", f"/mlmr/models/{model_id}/owner")
+    assert row.detail == {"modelId": model_id, "previousOwner": None, "newOwner": "es-client"}
+    with db_session_factory() as db:
+        assert audit.verify(db) is None
+
+
+def test_an_operator_may_change_an_existing_owner_and_the_old_one_is_audited(client, db_session_factory):
+    """A model that has an owner can be given another by the operator; the audit row keeps the old owner; without an acting user the caller's invoker id is the actor."""
+    model_id = _register_for(client, _RAPP)
+    resp = client.put(f"/models/{model_id}/owner", json={"owner": "mobility-client"}, headers=_INTERNAL)
+    assert resp.status_code == 200 and resp.json()["previousOwner"] == "es-client" and resp.json()["changed"] is True
+    (row,) = _audit_rows(db_session_factory)
+    assert row.actor == "smo-aimgf" and row.detail["previousOwner"] == "es-client" and row.detail["newOwner"] == "mobility-client"
+    assert client.put(f"/models/{model_id}/owner", json={"owner": "x"}, headers={}).status_code == 200
+    assert _audit_rows(db_session_factory)[-1].actor == "unknown"
+
+
+def test_setting_the_same_owner_again_changes_and_audits_nothing(client, db_session_factory):
+    """Idempotent: the owner already stored is 200 with changed false and no audit row is added."""
+    model_id = _register_for(client, _RAPP)
+    resp = client.put(f"/models/{model_id}/owner", json={"owner": "es-client"}, headers=_INTERNAL)
+    assert resp.status_code == 200 and resp.json()["changed"] is False
+    assert _audit_rows(db_session_factory) == []
+
+
+def test_an_rapp_cannot_set_the_owner_of_any_model_even_its_own(client, db_session_factory):
+    """An rApp is refused 403 ROLE_NOT_PERMITTED, for an owned, an owner-less and an unknown model alike, and nothing is changed or audited."""
+    open_model = _register_for(client, _INTERNAL)
+    own_model = _register_for(client, _RAPP)
+    for model_id in (open_model, own_model, str(uuid.uuid4())):
+        resp = client.put(f"/models/{model_id}/owner", json={"owner": "es-client"}, headers=_OTHER_RAPP)
+        assert resp.status_code == 403 and "ROLE_NOT_PERMITTED" in resp.text
+    assert client.get(f"/models/{open_model}").json()["owner"] is None
+    assert client.get(f"/models/{own_model}").json()["owner"] == "es-client"
+    assert _audit_rows(db_session_factory) == []
+
+
+def test_setting_the_owner_of_an_unknown_model_is_404(client):
+    """An id MLMR does not know is 404 MODEL_NOT_FOUND."""
+    resp = client.put(f"/models/{uuid.uuid4()}/owner", json={"owner": "es-client"}, headers=_INTERNAL)
+    assert resp.status_code == 404 and "MODEL_NOT_FOUND" in resp.text
+
+
+def test_the_owner_must_be_one_token_and_clearing_is_not_offered(client, db_session_factory):
+    """An empty owner, one with a space or a control character, one over 255 characters and an extra field are 422, and the stored owner is kept."""
+    model_id = _register_for(client, _RAPP)
+    for body in ({"owner": ""}, {"owner": "two words"}, {"owner": "tab\there"}, {"owner": "x" * 256}, {"owner": None}, {}, {"owner": "ok", "extra": 1}):
+        assert client.put(f"/models/{model_id}/owner", json=body, headers=_INTERNAL).status_code == 422, body
+    assert client.put(f"/models/{model_id}/owner", json={"owner": "x" * 255}, headers=_INTERNAL).status_code == 200
+    assert client.get(f"/models/{model_id}").json()["owner"] == "x" * 255
+    assert len(_audit_rows(db_session_factory)) == 1
+
+
+def test_once_an_operator_gives_the_owner_the_owner_rule_applies(client):
+    """The point of the route: after the operator names an owner for a legacy model, another rApp is refused on it and the named one is let through."""
+    model_id = _register_for(client, _INTERNAL)
+    assert client.put(f"/models/{model_id}", json=_put_body(client, model_id, description="open"), headers=_OTHER_RAPP).status_code == 200
+    client.put(f"/models/{model_id}/owner", json={"owner": "es-client"}, headers=_INTERNAL)
+    assert client.put(f"/models/{model_id}", json=_put_body(client, model_id, description="x"), headers=_OTHER_RAPP).status_code == 403
+    assert client.put(f"/models/{model_id}", json=_put_body(client, model_id, description="x"), headers=_RAPP).status_code == 200
+
+
+def test_a_put_that_changes_the_owner_is_audited_and_one_that_keeps_it_is_not(client, db_session_factory):
+    """The other way an operator can change the owner (a full PUT as role internal) writes the same audit row, including a clear; a PUT that leaves the owner as it is writes none."""
+    model_id = _register_for(client, _RAPP)
+    client.put(f"/models/{model_id}", json=_put_body(client, model_id, description="same", owner="es-client"), headers=_ACTING)
+    assert _audit_rows(db_session_factory) == []
+    client.put(f"/models/{model_id}", json=_put_body(client, model_id, owner="mobility-client"), headers=_ACTING)
+    client.put(f"/models/{model_id}", json=_put_body(client, model_id), headers=_ACTING)
+    first, second = _audit_rows(db_session_factory)
+    assert (first.actor, first.detail["previousOwner"], first.detail["newOwner"]) == ("alice", "es-client", "mobility-client")
+    assert (second.detail["previousOwner"], second.detail["newOwner"]) == ("mobility-client", None)

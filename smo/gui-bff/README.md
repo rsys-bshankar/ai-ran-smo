@@ -274,7 +274,7 @@ Override rules (`Rule.query_overrides` / `json_overrides`), applied before forwa
 | `PUT /ran-nf-oam/managed-entities/{id}/scope`, `PUT /sme/invoker-registrations/{id}/authz-scope` | nothing forced (admin only): the `region` and `tenant` of a managed element, and the scope claim of an invoker (`PR-SEC-10`). The BFF itself is an unscoped `internal` caller; scoping the console's users is `GUI-5.1` |
 | `POST /sa-smos/monitors/{id}/remedial-actions` | query `requester_is_admin` = `true` for admins else `false` |
 
-Forced values replace whatever the browser sent. The role split for `POST /aimgf/models/{id}/advance` is by `event` query value: DEPRECATE, RETIRE, SUBMIT_FOR_APPROVAL, APPROVE, REJECT, CERTIFY, PROMOTE, ROLLBACK are admin; any other event is operator.
+Forced values replace whatever the browser sent. The role split for `POST /aimgf/models/{id}/advance` is by `event` query value: DEPRECATE, RETIRE, SUBMIT_FOR_APPROVAL, APPROVE, REJECT, CERTIFY, PROMOTE, ROLLBACK are admin; any other event is operator. `PUT /mlmr/models/{id}/owner` (`SEC-15.3c`: giving a model an owner, or another, decides which rApp may act on it) is admin, like `DELETE /mlmr/models/{id}`; the proxy sends the signed-in person in `X-R1-Acting-User` (as on every call) and MLMR audits the change with that person, the old owner and the new one.
 
 **Admin** (all require role `admin`)
 

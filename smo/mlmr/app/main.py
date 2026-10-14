@@ -30,8 +30,9 @@ from smo_shared.health import database_check, install_health, sme_token_check
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.openapi_security import apply_r1_gateway_security
-from smo_shared.correlation import apply_correlation_id
-from smo_shared.invoker import invoker_id
+from smo_shared import audit
+from smo_shared.correlation import apply_correlation_id, get_correlation_id
+from smo_shared.invoker import acting_user, invoker_id
 from smo_shared.roles import ROLE_RAPP, role_of
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.r1_client import R1Client
@@ -177,6 +178,13 @@ class UpdateModelRequest(TS28105ModelAttributes, mlr.SpecAttributes):
     vendors: list[str] | None = None
 
 
+# Body of `PUT /models/{id}/owner` (SEC-15.3c part 3): the invoker id that will own the model. One token with no whitespace or control characters, 1 to 255 characters (an invoker id
+# is `api-invoker-<uuid>` or the id an SMO module names); it is not checked against SME's registrations, as `owner` is not on register.
+class SetModelOwnerRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    owner: str = Field(min_length=1, max_length=255, pattern=r"^[^\s\x00-\x1f\x7f]+$")
+
+
 def _validate_domain(domain: str | None) -> None:
     """Refuses a `domain` that is not one of `models.MODEL_DOMAINS` (422 SCHEMA_VALIDATION_FAILED); None passes."""
     if domain is not None and domain not in MODEL_DOMAINS:
@@ -299,7 +307,7 @@ def update_model(request: Request, model_id: uuid.UUID, body: UpdateModelRequest
     # SEC-15.3c, for a caller with role `rapp` (judged on the gateway's `X-R1-Invoker-Id`): 403 `MODEL_ACCESS_DENIED` when the model has an `owner` that is not the caller (a model
     # without an owner stays open to any rApp); then 403 `MODEL_OWNER_IMMUTABLE` when the body's `owner` is anything but the stored one (an omitted `owner` keeps the stored one
     # instead of clearing it, and the stored value is accepted and ignored). Both come after the 404 and before the identity check. An SMO module, the console and a call with no
-    # role may set `owner` as before.
+    # role may set `owner` as before; a change of it (a clear included) is written to the audit log like `PUT /models/{id}/owner`.
     model = db.get(MLModel, model_id)
     if model is None:
         raise framework_error(FrameworkError.MODEL_NOT_FOUND, detail="no such model")
@@ -319,6 +327,8 @@ def update_model(request: Request, model_id: uuid.UUID, body: UpdateModelRequest
     model.integrity_hash = body.integrityHash
     model.description, model.author = body.description, body.author
     if not is_rapp:
+        if (body.owner or None) != (model.owner or None):
+            _audit_owner_change(request, db, model_id, model.owner or None, body.owner or None)   # the other way to change the owner is audited too
         model.owner = body.owner
     model.input_data_type, model.output_data_type = body.inputDataType, body.outputDataType
     model.target_environments = body.targetEnvironments
@@ -327,6 +337,40 @@ def update_model(request: Request, model_id: uuid.UUID, body: UpdateModelRequest
     mlr.apply_spec_attributes(model, body)  # an omitted spec attribute is kept (AIMgF writes phaseInfo)
     db.commit()
     return _model_view(model)
+
+
+def _audit_owner_change(request: Request, db: Session, model_id: uuid.UUID, previous: str | None, new: str | None) -> None:
+    """Adds the audit row of an owner change to `db`'s transaction (action SET_MODEL_OWNER; who: the person the console acts for, else the caller's invoker id; the old and the new owner).
+    The caller commits, so the change and its row are one transaction.
+    """
+    audit.record(db, actor=acting_user(request) or invoker_id(request) or "unknown", role=role_of(request), action="SET_MODEL_OWNER",
+                 target=f"/mlmr/models/{model_id}/owner", result="200", correlation_id=get_correlation_id(),
+                 detail={"modelId": str(model_id), "previousOwner": previous, "newOwner": new})
+
+
+@app.put("/models/{model_id}/owner")
+def set_model_owner(request: Request, model_id: uuid.UUID, body: SetModelOwnerRequest, db: Session = Depends(get_session)):
+    """Gives a model an owner, or changes it: the operator's step for the models registered before the owner was stamped (SEC-15.3c). An rApp is refused (403
+    `ROLE_NOT_PERMITTED`; the gateway refuses it first). Returns `{modelId, owner, previousOwner, changed}`. 404 `MODEL_NOT_FOUND`; 422 for an empty owner or one with
+    whitespace. The same owner again is 200 with `changed` false and writes nothing. Every change is recorded in the audit log with who, the old owner and the new one.
+    """
+    # SEC-15.3c part 3. Decision: an operator (role `internal`: the console, an SMO module) may set the owner of an owner-less model AND change an existing one (re-assigning a model when
+    # an rApp is replaced); it cannot clear it (an owner-less model is open to every rApp, which is the state this route exists to end). The role check comes first, before the model is
+    # looked up, so an rApp learns nothing about a model; a call with no role (in-process) is let through like the other role checks of this module. The change and its audit row
+    # (`smo_shared.audit`, the hash chain: action SET_MODEL_OWNER, target `/mlmr/models/{id}/owner`, detail modelId, previousOwner, newOwner) are one transaction: no owner change without
+    # its row. The actor is the person the console says it acts for (`X-R1-Acting-User`), else the caller's invoker id. An unchanged owner writes no row.
+    if role_of(request) == ROLE_RAPP:
+        raise framework_error(FrameworkError.ROLE_NOT_PERMITTED, detail="the owner of a model is set by the operator or an SMO module, not by an rApp")
+    model = db.get(MLModel, model_id)
+    if model is None:
+        raise framework_error(FrameworkError.MODEL_NOT_FOUND, detail="no such model")
+    previous = model.owner or None
+    if previous == body.owner:
+        return {"modelId": str(model_id), "owner": body.owner, "previousOwner": previous, "changed": False}
+    model.owner = body.owner
+    _audit_owner_change(request, db, model_id, previous, body.owner)
+    db.commit()
+    return {"modelId": str(model_id), "owner": body.owner, "previousOwner": previous, "changed": True}
 
 
 @app.delete("/models/{model_id}", status_code=204)

@@ -38,6 +38,7 @@ def test_every_module_is_readable_by_a_viewer(module):
     ("POST", "/aimgf/models/m/advance", "operator"),
     ("POST", "/aimgf/training-jobs/j/complete", "operator"),
     ("DELETE", "/mlmr/models/m", "admin"),
+    ("PUT", "/mlmr/models/m/owner", "admin"),
     ("PATCH", "/ran-nf-oam/alarms/a/ack", "operator"),
     ("PATCH", "/ran-nf-oam/alarms/a/clear", "operator"),
     ("POST", "/ran-nf-oam/alarms/ingest", "admin"),
