@@ -80,6 +80,16 @@ def test_publish_and_query_report_by_analytics_type(client):
     assert empty.json()["items"] == []
 
 
+def test_a_report_is_read_back_by_its_id(client):
+    """GET /reports/{id} answers one report with its input sources (what SA SMOS reads back on a push, call flow 04b); an unknown id is 404 MDAF_REPORT_NOT_FOUND."""
+    source = str(uuid.uuid4())
+    report_id = client.post("/reports", params={"analytics_type": "cell-kpi"}, json={"output": {"rrc": 97}, "input_sources": [source]}).json()["reportId"]
+    report = client.get(f"/reports/{report_id}").json()
+    assert (report["analyticsType"], report["output"], report["inputSources"]) == ("cell-kpi", {"rrc": 97}, [source])
+    missing = client.get(f"/reports/{uuid.uuid4()}")
+    assert missing.status_code == 404 and missing.json()["detail"]["title"] == "MDAF_REPORT_NOT_FOUND"
+
+
 def test_subscribe_and_unsubscribe_analytics(client):
     """A subscription can be created and deleted (204)."""
     sub = client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos"}).json()

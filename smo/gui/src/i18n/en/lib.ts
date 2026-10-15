@@ -73,8 +73,11 @@ export const lib = {
   // flow 04
   "flows.lib.f04.group": "Model coordination group in service",
   "flows.lib.f04.noThresholds": "no thresholds",
-  "flows.lib.f04.input": "MDAF / MLMF reports arrive",
-  "flows.lib.f04.inputs": "{mdaf} MDAF, {mlmf} MLMF report(s)",
+  "flows.lib.f04.input": "MDAF pushes reports, SA SMOS evaluates",
+  "flows.lib.f04.notWatching": "watches no analytics type: evaluate by hand ({mdaf} MDAF, {mlmf} MLMF report(s) exist)",
+  "flows.lib.f04.waiting": "watching {type}, no report yet",
+  "flows.lib.f04.healthy": "{type}: latest report within thresholds",
+  "flows.lib.f04.breached": "{type}: latest report breaches {list}",
   "flows.lib.f04.escalate": "EscalateToOperator (when remediation can't resolve)",
   "flows.lib.f04.escalations": "{n} escalation(s)",
 

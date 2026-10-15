@@ -13,7 +13,7 @@ deliberately absent, so the GUI can't reach them at all.
 
 Some rules also pin request parameters to the caller's GUI identity rather
 than trusting what the browser sent: who acknowledged or cleared an alarm,
-SA SMOS's requester_is_admin flag, the RMIO identity on Intent Service
+who asked for an SA SMOS remedial action or escalation, the RMIO identity on Intent Service
 intents, and who rejected an ASSIST autonomy dispatch, and who approved or rejected an rApp action.
 """
 
@@ -95,6 +95,11 @@ def _rule(method: str, path: str, role: Role, **kw) -> Rule:
 def _decider(user) -> dict:
     """The `decided_by` of a model lifecycle decision made in the console: the signed-in user, as `smo-gui:<username>` (call flow 26)."""
     return {"decided_by": f"smo-gui:{user.username}"}
+
+
+def _requester(user) -> dict:
+    """The `requested_by` of an SA SMOS remedial action or escalation made in the console: the signed-in user, as `smo-gui:<username>` (call flow 04)."""
+    return {"requested_by": f"smo-gui:{user.username}"}
 
 
 V, O, A = Role.VIEWER, Role.OPERATOR, Role.ADMIN
@@ -366,9 +371,13 @@ RULES: list[Rule] = [
           json_overrides=lambda u: {"requestedBy": f"smo-gui:{u.username}", "msacRole": "admin" if u.role == Role.ADMIN else None}),
     _rule("POST", "/so-smos/orders/{id}/cancel", O),
     _rule("POST", "/sa-smos/monitors", O),
-    _rule("POST", "/sa-smos/monitors/{id}/(evaluate|escalate)", O),
-    _rule("POST", "/sa-smos/monitors/{id}/remedial-actions", O,
-          query_overrides=lambda u: {"requester_is_admin": "true" if u.role == Role.ADMIN else "false"}),
+    _rule("POST", "/sa-smos/monitors/{id}/evaluate", O),
+    # DOC-CF-1.8 flow 04: who escalated or ran a remedial action is the console user; what a breach runs by itself is an admin's to set, the remedy an operator's.
+    # POST /sa-smos/monitors/{id}/reports is MDAF's push and has no rule.
+    _rule("POST", "/sa-smos/monitors/{id}/escalate", O, query_overrides=_requester),
+    _rule("POST", "/sa-smos/monitors/{id}/remedial-actions", O, query_overrides=_requester),
+    _rule("PUT", "/sa-smos/monitors/{id}/remedy", O),
+    _rule("PUT", "/sa-smos/monitors/{id}/automation", A),
 
     # --- every other read under a known module prefix
     _rule("GET", "/(" + "|".join(re.escape(m) for m in MODULES) + ")(/.*)?", V),

@@ -947,7 +947,13 @@
   },
   {
     "method": "POST",
-    "pattern": "^/sa-smos/monitors/[^/]+/(evaluate|escalate)$",
+    "pattern": "^/sa-smos/monitors/[^/]+/evaluate$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/sa-smos/monitors/[^/]+/escalate$",
     "role": "operator",
     "queryMatch": {}
   },
@@ -955,6 +961,18 @@
     "method": "POST",
     "pattern": "^/sa-smos/monitors/[^/]+/remedial-actions$",
     "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "PUT",
+    "pattern": "^/sa-smos/monitors/[^/]+/remedy$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "PUT",
+    "pattern": "^/sa-smos/monitors/[^/]+/automation$",
+    "role": "admin",
     "queryMatch": {}
   },
   {

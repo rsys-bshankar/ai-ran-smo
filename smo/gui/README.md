@@ -110,8 +110,9 @@ registrations, heartbeats: machine-to-machine only).
 | Acting as another party, to exercise a flow: DME producer types and offers, RAN Analytics producers and reports, intent fulfilment reports, O1 heartbeats, and test alarms, rApp perf/faults and MLMF reports; GUI users and the audit log | | | ✓ |
 
 The BFF also pins identity-bearing parameters rather than trusting the
-browser: `ack_user_id` / `clear_user_id` are the GUI user; SA SMOS's
-`requester_is_admin` follows the GUI role; a CM write's `requestedBy` is the
+browser: `ack_user_id` / `clear_user_id` are the GUI user; the
+`requested_by` of an SA SMOS remedial action or escalation is the GUI user, and
+only an admin sets a monitor's automatic action (call flow 04); a CM write's `requestedBy` is the
 GUI user and its MSAC tier (which `entire-RAN` scope requires) is granted to
 admins only; the `requestedBy` of an onboarding apply, a campaign start and a campaign halt, continue, abort or roll back is the GUI user too (the pages send none); onboarding templates and lifecycle subscriptions are an admin's, applying a template and driving a campaign an operator's; Intent Service intents carry RMIO `smo-gui` (so the GUI can change
 the admin state of exactly the intents it created).

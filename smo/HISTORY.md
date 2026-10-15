@@ -2780,6 +2780,39 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.8 flow 04 — closed-loop assurance rewritten from the code: the loop closes on MDAF's reports, and an action says what happened
+
+The ninth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken):
+
+- **A. The loop closes by itself.** Before, nothing pushed reports to SA SMOS and nothing polled: `POST /monitors/{id}/evaluate` was called with the
+  metrics in its body, and an operator then chose the action. `analytics_subscription_id` was stored and never used. Now a monitor registered with
+  `analytics_type` is subscribed at MDAF (`POST /mdaf/subscriptions`, `requested_by=sa-smos:monitor/<id>`, destination
+  `<SA_SMOS_REPORTS_URL>/monitors/<id>/reports`, 502 `UPSTREAM_FAILED` and nothing stored when MDAF refuses). MDAF's outbox pushes each report of that
+  type; `receive_report` locks the monitor, reads the report back (`GET /mdaf/reports/{id}`, new), evaluates it and keeps `last_evaluation`. A breach
+  after a report without one runs the monitor's `auto_action` (`auto_executed` true, `report_id` set) or records an `ESCALATE` action; a breach that
+  persists runs nothing more, a repeated delivery is `DUPLICATE`, a busy monitor or an unreadable MDAF is 503 so the outbox sends it again. The automatic
+  action is set by `PUT /monitors/{id}/automation`, admin-only in the console, and must suit the target (RETRAIN only, for a group; ROLLBACK for a rApp
+  instance; RECONNECT for an order or instance; CONFIG_CHANGE once a remedy is set; SCALE never). One action per monitor runs at a time
+  (`_lock_monitor`, NOWAIT, 409 `REMEDIAL_ACTION_IN_PROGRESS`).
+- **B. CONFIG_CHANGE does a real write.** It sent a config job with an empty change list and recorded RESOLVED. Now it sends the monitor's remedy
+  (`PUT /monitors/{id}/remedy`) under `Idempotency-Key: sa-smos-action:<actionId>`: COMPLETED is RESOLVED with the job, held for approval, partial,
+  failed or refused is ESCALATED with the reason, and no remedy is ESCALATED with nothing written.
+- **C. Honest records.** `remedial_action` gains `created_at`, `requested_by` (the console pins `smo-gui:<user>`; the loop is `sa-smos`), `detail`,
+  `result` and `report_id`. A coordination-group monitor records `RETRAIN`, not the type asked; an escalation records `ESCALATE` with its reason
+  (before: a `CONFIG_CHANGE` row with the reason dropped, and a 500 or an orphan row for an unknown monitor, now 404). `auto_executed` means run by a
+  report (before: the caller's admin flag; `requester_is_admin` is still accepted and ignored). No answer from the module that acts is ESCALATED "its
+  outcome is unknown", recorded instead of a 500. The dashboard's escalation box shows why and who.
+- **D. Evaluation.** A missing metric is listed as `missing`, never a breach (it counted as 0, as MLMF's did before call flow 13). A threshold may be a
+  number (a minimum, as before) or `{min, max}`, checked at registration (422) instead of crashing `evaluate`.
+- **E. Not taken: SCALE stays escalated.** NFO scaling takes no target size (`OI-7-nfo-scale-size`).
+- **F. The document** is four diagrams (registration and the MDAF subscription; a report, the evaluation and the automatic action; the remedial actions by
+  type and target; escalation and the queue) with PNG images. Corrected: the service order is call flow 10's, MDAF (not RAN Analytics or AIMgF) is what
+  pushes, and a model's performance is AIMgF's own MLMF monitor's (call flows 13 and 02e).
+
+Revision 0055 adds nullable columns to `assurance_monitor` and `remedial_action` and allows `RETRAIN` and `ESCALATE` as action types (expand only).
+Tests: `sa-smos/tests/test_assurance_loop.py`, `tests_integration/test_assurance_loop.py` (a pushed report writing the remedy to the mock O1 adaptor),
+MDAF's `test_a_report_is_read_back_by_its_id`, the BFF's pinning and admin-only rules.
+
 ### DOC-CF-1.8 flow 03 — the configuration write rewritten from the code: saved before it is sent, and an outcome DME did not learn is asked again
 
 The eighth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken):

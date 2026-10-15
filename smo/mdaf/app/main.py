@@ -225,6 +225,17 @@ def query_analytics_report(analytics_type: str | None = None, limit: int = PageL
                                "reportKind": r.report_kind, "mdaType": r.mda_type} for r in page["items"]]}
 
 
+@app.get("/reports/{report_id}")
+def get_analytics_report(report_id: uuid.UUID, db: Session = Depends(get_session)):
+    """One report, as the list shows it plus its input sources. A subscriber that acts on a notification reads the report back here rather than trusting the
+    pushed copy (SA SMOS, call flow 04b). 404 MDAF_REPORT_NOT_FOUND."""
+    r = db.get(MDAFReport, report_id)
+    if r is None:
+        raise framework_error(FrameworkError.MDAF_REPORT_NOT_FOUND, detail=f"no report {report_id}")
+    return {"reportId": str(r.report_id), "analyticsType": r.analytics_type, "output": r.output, "reportKind": r.report_kind, "mdaType": r.mda_type,
+            "inputSources": [str(s) for s in r.input_sources]}
+
+
 def _subscription_view(s: MDASubscription) -> dict:
     """The JSON of a subscription, including its thresholds (not the internal threshold state)."""
     return {"subscriptionId": str(s.subscription_id), "analyticsType": s.analytics_type,

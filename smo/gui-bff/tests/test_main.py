@@ -342,12 +342,20 @@ def test_routes_not_in_the_table_are_refused_even_for_admin(app, smo):
     assert smo.proxied == []
 
 
-def test_remedial_action_admin_flag_is_derived_from_the_gui_role(app, smo):
-    """`requester_is_admin` on a remedial action is set from the signed-in role, whatever the browser claimed."""
+def test_remedial_action_requester_is_the_signed_in_user(app, smo):
+    """Call flow 04: `requested_by` on a remedial action or an escalation is the signed-in user, whatever the browser claimed."""
     login(app, "operator").post("/api/smo/sa-smos/monitors/m-1/remedial-actions",
-                                params={"action_type": "SCALE", "requester_is_admin": "true"})
-    login(app, "admin").post("/api/smo/sa-smos/monitors/m-1/remedial-actions", params={"action_type": "SCALE"})
-    assert [r.url.params.get_list("requester_is_admin") for r in smo.proxied] == [["false"], ["true"]]
+                                params={"action_type": "SCALE", "requested_by": "someone-else"})
+    login(app, "operator").post("/api/smo/sa-smos/monitors/m-1/escalate", params={"reason": "r"})
+    assert [r.url.params.get_list("requested_by") for r in smo.proxied] == [["smo-gui:operator"], ["smo-gui:operator"]]
+
+
+def test_only_an_admin_sets_what_a_breach_runs_by_itself(app, smo):
+    """Call flow 04b: an operator may set a monitor's remedy but not its automatic action; an admin may."""
+    assert login(app, "operator").put("/api/smo/sa-smos/monitors/m-1/automation", json={"autoAction": "RECONNECT"}).status_code == 403
+    login(app, "operator").put("/api/smo/sa-smos/monitors/m-1/remedy", json={"changes": []})
+    login(app, "admin").put("/api/smo/sa-smos/monitors/m-1/automation", json={"autoAction": "RECONNECT"})
+    assert [(r.method, r.url.path.rsplit("/", 1)[-1]) for r in smo.proxied] == [("PUT", "remedy"), ("PUT", "automation")]
 
 
 def test_gui_created_intents_carry_the_gui_rmio_identity(app, smo):

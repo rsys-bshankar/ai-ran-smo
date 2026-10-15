@@ -1,5 +1,6 @@
 /** Section `kpis.escalations` (Overview): "Escalated to you", the newest five remedial actions SA SMOS handed to an operator
- * (`/sa-smos/remedial-actions?outcome=ESCALATED&limit=5`) with the true count of them, each as a red callout naming its monitor and action type;
+ * (`/sa-smos/remedial-actions?outcome=ESCALATED&limit=5`) with the true count of them, each as a red callout naming its monitor and action type,
+ * why it was escalated and who asked (call flow 04d);
  * "see all" opens the Assurance tab. */
 import { Card, Id } from "../../../components/ui";
 import { useT } from "../../../i18n";
@@ -21,8 +22,9 @@ export function Escalations({ onSeeAll }: { onSeeAll: () => void }) {
           : q.data.items.length === 0 ? <Empty title={t("kpis.escalations.empty")} />
             : <div className="col">
               {q.data.items.map((a) => (
-                <Callout key={a.actionId} tone="bad" title={t("kpis.escalations.failed", { action: a.actionType })}>
-                  {t("kpis.common.monitor")} <Id value={a.monitorId} /> · {t("kpis.escalations.action")} <Id value={a.actionId} /> · {a.autoExecuted ? t("kpis.escalations.automatic") : t("kpis.escalations.requested")}
+                <Callout key={a.actionId} tone="bad" title={a.actionType === "ESCALATE" ? t("kpis.escalations.raised") : t("kpis.escalations.failed", { action: a.actionType })}>
+                  {t("kpis.common.monitor")} <Id value={a.monitorId} /> · {t("kpis.escalations.action")} <Id value={a.actionId} /> · {a.autoExecuted ? t("kpis.escalations.automatic") : t("kpis.escalations.requested")}{a.requestedBy ? ` (${a.requestedBy})` : ""}
+                  {a.detail && <div className="small">{a.detail}</div>}
                 </Callout>
               ))}
             </div>}
