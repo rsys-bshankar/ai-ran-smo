@@ -78,7 +78,10 @@
  "samples/traffic-steering-rapp": {
   "schema": "traffic_steering_rapp",
   "shared": [
-   "module_identity"
+   "module_identity",
+   "notification_outbox",
+   "periodic_run",
+   "smo_event"
   ]
  },
  "sme": {

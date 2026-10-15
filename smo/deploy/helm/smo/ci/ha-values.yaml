@@ -12,6 +12,7 @@ modules:
   energy-saving-rapp-worker: { replicas: 2 }
   mobility-optimization-rapp-worker: { replicas: 2 }
   coverage-optimization-rapp-worker: { replicas: 2 }
+  traffic-steering-rapp-worker: { replicas: 2 }
   ran-nf-oam: { replicas: 2 }
   ran-nf-oam-worker: { replicas: 2 }
   nfo: { replicas: 2 }

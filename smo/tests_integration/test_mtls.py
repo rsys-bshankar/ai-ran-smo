@@ -226,7 +226,7 @@ def test_the_override_covers_every_service_the_script_makes_a_certificate_for_an
     """
     override = set(_override_services())
     assert override == (set(certs.SERVERS) | {"ran-nf-oam-worker", "mdaf-worker", "rapp-mgmt-worker", "aimgf-worker", "energy-saving-rapp-worker", "mobility-optimization-rapp-worker",
-                                                 "coverage-optimization-rapp-worker", "gui-bff"})
+                                                 "coverage-optimization-rapp-worker", "traffic-steering-rapp-worker", "gui-bff"})
     compose = _compose_services()
     assert override <= set(compose)
     built = {name for name, spec in compose.items() if "build" in spec and "profiles" not in spec}
@@ -316,7 +316,7 @@ def test_the_chart_is_off_by_default_and_names_how_each_module_takes_part():
     assert {n for n, m in modes.items() if m == "off"} == {"mock-o1-adaptor", "gui"}
     assert {n for n, m in modes.items() if m == "client"} == {"gui-bff"}
     assert {n for n, m in modes.items() if m == "server"} == set(certs.SERVERS) | {"ran-nf-oam-worker", "mdaf-worker", "rapp-mgmt-worker", "aimgf-worker", "energy-saving-rapp-worker", "mobility-optimization-rapp-worker",
-                                                                                    "coverage-optimization-rapp-worker"}      # a worker is rendered as a client
+                                                                                    "coverage-optimization-rapp-worker", "traffic-steering-rapp-worker"}      # a worker is rendered as a client
 
 
 def test_the_chart_and_the_compose_override_agree_on_who_takes_part():

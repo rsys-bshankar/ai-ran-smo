@@ -67,6 +67,7 @@ class Neighbour:
     last_woken: datetime.datetime | None = None
     coverage_observing: bool = False
     critical_alarm: bool = False  # W10-alarm-cellref: a critical alarm raised on this cell
+    held: bool = False            # call flow 25e: its own step waits for the operator or a revert / rollback of it for a person
     # the relation source → this neighbour
     cio: int = 0
     ho_allowed: bool = True
@@ -123,13 +124,16 @@ def source_guards(s: SourceInput, now: datetime.datetime) -> dict:
 
 
 def target_exclusion(s: SourceInput, n: Neighbour, now: datetime.datetime) -> str | None:
-    """Returns the reason code (TARGET_PROTECTED, TARGET_CRITICAL_ALARM, TARGET_ASLEEP, TARGET_RECENTLY_WOKEN, TARGET_COVERAGE_OBSERVING or
-    ANTI_OSCILLATION) that rules a neighbour out as a steering target, or None when it is eligible. The first reason that applies is returned.
+    """Returns the reason code (TARGET_PROTECTED, TARGET_CRITICAL_ALARM, TARGET_AWAITING_APPROVAL, TARGET_ASLEEP, TARGET_RECENTLY_WOKEN,
+    TARGET_COVERAGE_OBSERVING or ANTI_OSCILLATION) that rules a neighbour out as a steering target, or None when it is eligible. The first reason
+    that applies is returned.
     """
     if n.protected:
         return "TARGET_PROTECTED"
     if n.critical_alarm:
         return "TARGET_CRITICAL_ALARM"
+    if n.held:
+        return "TARGET_AWAITING_APPROVAL"
     if n.asleep:
         return "TARGET_ASLEEP"
     if n.last_woken and now - n.last_woken < AFTER_WAKE:
