@@ -97,11 +97,6 @@ def _refuse_another_rapp(request: Request, producer_id: str, action: str) -> Non
                               detail=f"an rApp may {action} only itself as a producer ({invoker_id(request)}), not {producer_id}")
 
 
-def _sme_path(producer_id: str) -> str:
-    """The SME service-API collection of a producer. The id is URL-quoted with no safe characters, so an id with a slash or other reserved character stays one path segment."""
-    return "/sme/published-apis/v1/{}/service-apis".format(quote(producer_id, safe=""))
-
-
 def _publish_in_sme(producer_id: str, analytics_type: str) -> str:
     """Enrols the producer in SME (provider registration, an upsert) and publishes `mdaf.<analyticsType>.<producerId>`; returns SME's service id.
     502 UPSTREAM_FAILED when SME refuses either call or does not answer."""
@@ -111,7 +106,8 @@ def _publish_in_sme(producer_id: str, analytics_type: str) -> str:
         enrolled = R1Client().post("/sme/provider-registrations", json={"apfId": producer_id})
         if enrolled.status_code >= 300:
             raise framework_error(FrameworkError.UPSTREAM_FAILED, detail=f"SME refused to enrol {producer_id} ({enrolled.status_code})")
-        published = R1Client().post(_sme_path(producer_id), json={
+        # The producer id is URL-quoted with no safe characters, so an id with a slash or other reserved character stays one path segment.
+        published = R1Client().post(f"/sme/published-apis/v1/{quote(producer_id, safe='')}/service-apis", json={
             "serviceName": f"mdaf.{analytics_type}.{producer_id}", "producerId": producer_id, "endpoint": "internal",
             "version": "1.0", "serviceCapabilities": {"analyticsType": analytics_type}, "moduleScope": "ran-analytics",
         })
@@ -134,7 +130,7 @@ def deregister_analytics_producer(producer_id: str, analytics_type: str, request
         raise framework_error(FrameworkError.PRODUCER_NOT_FOUND, detail=f"{producer_id} is not a registered producer of {analytics_type}")
     if prod.sme_service_id:
         try:
-            withdrawn = R1Client().delete(f"{_sme_path(producer_id)}/{prod.sme_service_id}")
+            withdrawn = R1Client().delete(f"/sme/published-apis/v1/{quote(producer_id, safe='')}/service-apis/{prod.sme_service_id}")
         except httpx.HTTPError as exc:
             raise framework_error(FrameworkError.UPSTREAM_FAILED, detail=f"SME did not answer ({type(exc).__name__}); the producer is kept") from exc
         if withdrawn.status_code >= 300 and withdrawn.status_code != 404:
