@@ -816,7 +816,7 @@ def _dispatch_blocker(db: Session, change: dict):
 
 
 @app.post("/config-jobs", status_code=202, responses={200: {"description": "dryRun: the plan (waves and changes) was validated and nothing was written"}})
-@idempotent("ran-nf-oam", status_code=202)
+@idempotent("ran-nf-oam", status_code=202, exclude=("msac_credential",))
 def write_configuration_changes(body: WriteConfigRequest, request: Request, db: Session = Depends(get_session),
                                 msac_credential: str | None = Header(default=None, alias=msac.CREDENTIAL_HEADER, description=(
                                     "The credential of the MSAC Identity named in `requestedBy`, when that Identity has one. Required from an rApp for such an Identity (403 "
@@ -1109,8 +1109,21 @@ def _wave_rows(db: Session, job: WriteConfigJob, wave: int) -> list[WriteConfigS
                            .order_by(WriteConfigSubChange.position)).all())
 
 
+def _in_flight(db: Session, rows: list[WriteConfigSubChange]) -> None:
+    """Call flow 03c: marks sub-changes DISPATCHING and commits, just before their edit goes out. The job and every sub-change before them are
+    committed with it, so a crash during the edit leaves the job PROCESSING, the changes already sent with their outcomes, and this one DISPATCHING:
+    its outcome is unknown (the element may have taken it), and a rollback refuses to guess (`_rollback_plan`)."""
+    for row in rows:
+        row.status = "DISPATCHING"
+    db.commit()
+
+
 def _dispatch_wave(db: Session, job: WriteConfigJob, rows: list[WriteConfigSubChange]) -> None:
-    """Dispatch the sub-changes of one wave and record each outcome on its row (and its snapshot)."""
+    """Dispatch the sub-changes of one wave and record each outcome on its row (and its snapshot).
+
+    Call flow 03c: nothing is sent before the job and its sub-changes are committed. Each sub-change (or candidate transaction) is committed
+    DISPATCHING before its edit and committed again with its outcome, before-image and any dispatch alarm right after, so the record never lags the
+    network by more than the edit in flight."""
     changes: list[dict[str, Any]] = [{"managedElementRef": r.managed_element_ref, "managedFunctionRef": r.managed_function_ref,
                 "attributeChanges": r.attribute_changes, "operation": r.operation} for r in rows]
     # PR-SB-1.10: the sub-changes of one element behind a `?datastore=candidate` endpoint are one candidate transaction (lock once, every
@@ -1123,36 +1136,43 @@ def _dispatch_wave(db: Session, job: WriteConfigJob, rows: list[WriteConfigSubCh
             members.setdefault(key, []).append(index)
     grouped = {i: key for key, indexes in members.items() if len(indexes) > 1 for i in indexes}
     group_outcomes: dict[int, tuple] = {}
+    targets = [(me.o1_protocol, endpoint.transport, endpoint.adaptor_uri, _ssh_options(db, endpoint)) if blocker is None else None
+               for blocker, me, endpoint in checks]
+    message_id, job_id = str(job.job_id), job.job_id         # read once: after a commit, reading the job again would open a new transaction mid-edit
+    db.commit()                                # the job and its sub-changes exist before anything is sent
 
     for index, (row, change) in enumerate(zip(rows, changes)):
         attribute_changes, operation = change["attributeChanges"], change["operation"]
         blocker, me, endpoint = checks[index]
         if blocker is not None:
             row.status, row.rejection_reason = "REJECTED", blocker
+            db.commit()
             continue
-        ssh_options = _ssh_options(db, endpoint)
+        protocol, transport, adaptor_uri, ssh_options = cast(tuple, targets[index])      # set for every change without a blocker
         if index in grouped:
             if index not in group_outcomes:
                 indexes = members[grouped[index]]
                 befores = {i: (_capture_before(me, endpoint, changes[i], changes[i]["attributeChanges"], ssh_options)
                                if CM_SNAPSHOTS else (None, None)) for i in indexes}
-                outcomes = _dispatch_group_with_retries(endpoint.adaptor_uri, [changes[i] for i in indexes], str(job.job_id), ssh_options)
+                _in_flight(db, [rows[i] for i in indexes])
+                outcomes = _dispatch_group_with_retries(adaptor_uri, [changes[i] for i in indexes], message_id, ssh_options)
                 group_outcomes.update({i: (*befores[i], *outcome) for i, outcome in zip(indexes, outcomes)})
             before, before_error, applied, reason, attempts, detail = group_outcomes[index]
         else:
             before, before_error = (_capture_before(me, endpoint, change, attribute_changes, ssh_options) if CM_SNAPSHOTS else (None, None))
-            applied, reason, attempts, detail = _dispatch_with_retries(endpoint.adaptor_uri, change, attribute_changes,
-                                                               str(job.job_id), operation, me.o1_protocol, endpoint.transport,
-                                                                       ssh_options)
+            _in_flight(db, [row])
+            applied, reason, attempts, detail = _dispatch_with_retries(adaptor_uri, change, attribute_changes, message_id, operation,
+                                                                       protocol, transport, ssh_options)
         if not applied and attempts > 1:
-            _raise_dispatch_alarm(db, job.job_id, change, reason, attempts)
+            _raise_dispatch_alarm(db, job_id, change, reason, attempts)
         row.status, row.rejection_reason, row.rejection_detail, row.attempts = ("APPLIED" if applied else "REJECTED"), reason, detail, attempts
         if CM_SNAPSHOTS:
             db.flush()                         # the snapshot's foreign key needs its sub-change row to exist first (Postgres enforces it)
-            db.add(CMSnapshot(sub_change_id=row.id, job_id=job.job_id, managed_element_ref=row.managed_element_ref,
+            db.add(CMSnapshot(sub_change_id=row.id, job_id=job_id, managed_element_ref=row.managed_element_ref,
                               managed_function_ref=row.managed_function_ref, operation=operation, before=before,
                               before_error=before_error,
                               after=attribute_changes if applied and operation not in ("delete", "remove") else None))
+        db.commit()                            # the outcome is recorded as soon as it is known
     db.flush()
 
 
@@ -1387,8 +1407,12 @@ def _rollback_plan(db: Session, job: WriteConfigJob, elements: set[str] | None =
         stmt = stmt.where(CMSnapshot.managed_element_ref.in_(elements))
     rows = db.execute(stmt).scalars().all()
     problems: list[str] = []
+    # call flow 03c: a sub-change left DISPATCHING (the dispatch stopped while its edit was out) may or may not have been applied: nothing is undone by guess
+    for unknown in db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job.job_id, WriteConfigSubChange.status == "DISPATCHING")):
+        if elements is None or unknown.managed_element_ref in elements:
+            problems.append(f"{unknown.managed_function_ref or unknown.managed_element_ref}: its write was in flight when the dispatch stopped; its outcome is unknown")
     if not rows:
-        return [], {}, ["the job applied nothing that has a snapshot (nothing was applied, snapshots are off, or they were purged)"]
+        return [], {}, problems + ["the job applied nothing that has a snapshot (nothing was applied, snapshots are off, or they were purged)"]
     expected: dict[tuple, dict | None] = {}
     undo: list[dict] = []
     for row in rows:

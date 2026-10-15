@@ -15,8 +15,8 @@ from sqlalchemy import create_engine, text
 from test_db_roles import database, needs_postgres  # noqa: F401  (the `database` fixture: a migrated database)
 
 SMO_ROOT = Path(__file__).resolve().parent.parent
-# the states a sub-change is given in ran-nf-oam/app/main.py (_dispatch_wave: APPLIED / REJECTED; _auto_revert: REVERTED)
-SUB_CHANGE_STATES = {"PENDING", "APPLIED", "REJECTED", "REVERTED"}
+# the states a sub-change is given in ran-nf-oam/app/main.py (_dispatch_wave: DISPATCHING, then APPLIED / REJECTED; _auto_revert: REVERTED)
+SUB_CHANGE_STATES = {"PENDING", "DISPATCHING", "APPLIED", "REJECTED", "REVERTED"}
 
 
 def _job_states() -> set[str]:
@@ -34,7 +34,7 @@ def _allowed(connection, constraint: str) -> set[str]:
 def test_the_sub_change_states_listed_here_are_the_ones_the_code_assigns():
     """The sub-change states listed in this file include every one RAN NF OAM's code assigns, so a new state is noticed here."""
     source = (SMO_ROOT / "ran-nf-oam" / "app" / "main.py").read_text()
-    assigned = set(re.findall(r'(?:row\.status|status)\s*,?[^=\n]*=\s*"([A-Z_]+)"', source)) & {"PENDING", "APPLIED", "REJECTED", "REVERTED", "ABORTED"}
+    assigned = set(re.findall(r'(?:row\.status|status)\s*,?[^=\n]*=\s*"([A-Z_]+)"', source)) & {"PENDING", "DISPATCHING", "APPLIED", "REJECTED", "REVERTED", "ABORTED"}
     assert assigned <= SUB_CHANGE_STATES, f"main.py gives a sub-change a state this test does not know: {assigned - SUB_CHANGE_STATES}"
 
 

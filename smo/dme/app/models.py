@@ -204,4 +204,6 @@ class DmeActionRecord(Base):
     status: Mapped[str] = mapped_column(String, nullable=False, default="FORWARDED")
     # Wave 10.1 (W10-23): the X-Correlation-ID of the request that caused it
     correlation_id: Mapped[str | None] = mapped_column(String)
+    # call flow 03f: who asked, as the gateway vouched for it; only that caller's replay of an UNCONFIRMED action asks RAN NF OAM again
+    invoker_id: Mapped[str | None] = mapped_column(String)
     created_at: Mapped[datetime.datetime] = mapped_column(default=lambda: datetime.datetime.now(datetime.UTC))

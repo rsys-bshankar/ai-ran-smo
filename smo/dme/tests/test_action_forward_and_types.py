@@ -19,10 +19,10 @@ def test_an_offer_for_an_unregistered_dme_type_is_404(client):
     assert resp.status_code == 404 and resp.json()["detail"]["title"] == "DME_TYPE_NOT_FOUND"
 
 
-@pytest.mark.parametrize("failure", [httpx.ConnectError("refused"), httpx.ReadTimeout("slow")])
-def test_an_action_whose_forward_fails_is_recorded_rejected_not_forwarded(client, monkeypatch, failure):
-    """When the call to RAN NF OAM itself fails (a timeout, a refused connection) the route answers 502 UPSTREAM_FAILED and the record is REJECTED; it used to stay FORWARDED although
-    nothing was forwarded."""
+@pytest.mark.parametrize("failure", [httpx.ConnectError("refused"), httpx.ConnectTimeout("no route")])
+def test_an_action_whose_forward_could_not_be_made_is_recorded_rejected_not_forwarded(client, monkeypatch, failure):
+    """When the call to RAN NF OAM could not be made at all (a refused connection, no connection in time) the route answers 502 UPSTREAM_FAILED and the record is REJECTED: nothing
+    was sent. (A timeout after it was sent is UNCONFIRMED, call flow 03f.)"""
     def fail(self, path, json=None, **kw):
         raise failure
     monkeypatch.setattr("app.main.R1Client.post", fail)
@@ -42,12 +42,12 @@ def test_an_action_whose_forward_raises_something_else_is_still_rejected(client,
     assert client.get("/actions").json()["items"][0]["status"] == "REJECTED"
 
 
-def test_an_answer_that_is_not_a_json_object_is_502_and_rejected(client, monkeypatch):
-    """RAN NF OAM answering 202 with a JSON list (not an object) is as unusable as no body: 502 and REJECTED, where `.get` on a list was an unhandled 500 with the record left FORWARDED."""
+def test_an_answer_that_is_not_a_json_object_is_unconfirmed(client, monkeypatch):
+    """RAN NF OAM answering 202 with a JSON list (not an object) is as unusable as no body: what it did is unknown, so the action is UNCONFIRMED (202), not REJECTED (call flow 03f)."""
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeConfigJobResponse(["not", "an", "object"]))
     resp = client.post("/actions", json=ACTION)
-    assert resp.status_code == 502
-    assert client.get("/actions").json()["items"][0]["status"] == "REJECTED"
+    assert resp.status_code == 202 and resp.json()["status"] == "UNCONFIRMED"
+    assert client.get("/actions").json()["items"][0]["status"] == "UNCONFIRMED"
 
 
 def test_a_replay_of_a_rejected_action_is_ignored_with_its_status(client, monkeypatch):

@@ -2780,6 +2780,33 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.8 flow 03 — the configuration write rewritten from the code: saved before it is sent, and an outcome DME did not learn is asked again
+
+The eighth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken):
+
+- **A. Saved before it is sent.** `POST /config-jobs` dispatched every sub-change and committed the job, its sub-changes and their before-images once, at
+  the end: a crash during the dispatch left edits applied in the network with no record of them, and no before-image to roll them back. Now
+  `_dispatch_wave` commits the job and its PENDING sub-changes before the first edit; each sub-change (or a candidate-transaction group, together) is
+  committed in a new state `DISPATCHING` after its before-image is read and just before its edit (`_in_flight`), and with its outcome, attempts, alarm and
+  `CMSnapshot` right after. A change with no usable endpoint is committed REJECTED without being sent. A sub-change left DISPATCHING by a crash has an
+  unknown outcome: a rollback of its job is 422 `ROLLBACK_NOT_POSSIBLE` naming it ("its write was in flight when the dispatch stopped"), never a guess.
+- **B. Path B asks again instead of recording REJECTED.** DME's `/actions` forwarded with no idempotency key and recorded any failure, a timeout after
+  the request was sent included, as REJECTED with 502: the write may have been applied, and a replay of the `actionId` was IGNORED. Now the forward
+  carries `Idempotency-Key: dme-action:<actionId>`; a refused connection is still REJECTED (502 `UPSTREAM_FAILED`), but a timeout or other transport error
+  after sending, a 5xx, an unreadable body or 409 `IDEMPOTENCY_KEY_IN_PROGRESS` records the action `UNCONFIRMED` and answers 202 with that status. A
+  replay of the `actionId` by the caller that made it (`dme_action_record.invoker_id`, new) forwards again under the same key, so RAN NF OAM answers from
+  the first attempt and the true outcome (the job, or its refusal) is recorded; another caller's replay is IGNORED as before. The idempotency fingerprint
+  of `POST /config-jobs` leaves out the MSAC credential header (`idempotent(..., exclude=("msac_credential",))`), so a replay is the same request whether
+  it carries the credential or not.
+- **C. Not taken: an asynchronous write.** Answering `202 PROCESSING` at once and dispatching in a worker would end the long synchronous call; it changes
+  every caller (the GUI, DME, SA SMOS, the SDK and the four sample rApps poll instead), so it is open item `CM-ASYNC`.
+- **D. The document** is six diagrams (the request and its checks; an rApp's write held for approval; the dispatch per element and the aggregate; staged
+  waves, the health gate and change windows; rollback and the KPI guard; path B through DME) with PNG images.
+
+Revision 0054 adds `DISPATCHING` to `write_config_sub_change_status_check` and the nullable `dme.dme_action_record.invoker_id` (expand only; the downgrade
+records a DISPATCHING sub-change REJECTED `DISPATCH_INTERRUPTED`). Tests: `ran-nf-oam/tests/test_dispatch_persistence.py`,
+`dme/tests/test_action_unconfirmed.py`.
+
 ### DOC-CF-1.8 flow 25 — the Traffic Steering closed loop rewritten from the code: on a schedule, one pass at a time, held writes per cell, the shared CIO both ways
 
 The seventh flow of DOC-CF-1.8 and the last of the four sample rApps' loops, decided with the product owner (the recommendations of the audit, all taken):

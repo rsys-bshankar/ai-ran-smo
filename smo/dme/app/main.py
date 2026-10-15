@@ -892,21 +892,38 @@ def _record_view(r: DataRecord) -> dict:
 DME_TO_RAN_NF_OAM_TIMEOUT_SECONDS = 10.0
 
 
+# Call flow 03f: what DME records when it cannot tell what RAN NF OAM did with a forwarded write (the call timed out after it was sent, or RAN NF OAM or
+# the gateway answered a 5xx). The write may have been applied: a replay of the same `actionId` by the same caller asks RAN NF OAM again (`_forward`,
+# under the same idempotency key), instead of being IGNORED.
+UNCONFIRMED = "UNCONFIRMED"
+
+
+def _idempotency_key(action_id: uuid.UUID) -> str:
+    """The `Idempotency-Key` an action is forwarded under (call flow 03f): RAN NF OAM runs the write at most once for it and answers a repeat with the first
+    answer, so asking again about an UNCONFIRMED action never writes it twice."""
+    return f"dme-action:{action_id}"
+
+
 @app.post("/actions", status_code=202, responses={200: {"description": "the actionId was already recorded: the replay is IGNORED and nothing is forwarded again"}})
-def mediate_action(body: ActionRequest, db: Session = Depends(get_session),
+def mediate_action(body: ActionRequest, request: Request, db: Session = Depends(get_session),
                    msac_credential: str | None = Header(default=None, alias="X-MSAC-Credential", description=(
                        "The credential of the MSAC Identity named in `requestedBy`, when that Identity has one (`SEC-15.6b`). Passed on to RAN NF OAM in the same header, which asks an rApp for it; "
                        "never stored, logged or returned."))):
-    # Records an rApp's O1 change request and forwards it to RAN NF OAM as a configuration job (10 s limit). Order: empty `changes` is 422; an `actionId` already recorded is answered 200 `IGNORED` with the
-    # original status and nothing is forwarded again; otherwise the record is committed first (status FORWARDED, its default), then the job is requested. RAN NF OAM's answer decides the status: a body that is
-    # not JSON or a 5xx is 502 UPSTREAM_FAILED and the record becomes REJECTED; a 4xx is relayed as it came and the record becomes REJECTED; an answer with no job id (the change waits for human approval) is 202 with the
-    # status and `approvalId` and no forwarded job; otherwise 202 with the job id and RAN NF OAM's status. A failure of the call itself (a timeout, a refused connection, any
-    # exception) makes the record REJECTED too, and a transport error is 502 UPSTREAM_FAILED; any other exception is raised after the record is updated (SEC-15.10).
+    # Records an rApp's O1 change request and forwards it to RAN NF OAM as a configuration job (10 s limit) under the idempotency key `dme-action:<actionId>`. Order: empty `changes` is
+    # 422; an `actionId` already recorded is answered 200 `IGNORED` with the original status and nothing is forwarded again, except an UNCONFIRMED one replayed by the caller that made it,
+    # which asks RAN NF OAM again under the same key (call flow 03f); otherwise the record is committed first (status FORWARDED), then the job is requested. RAN NF OAM's answer decides
+    # the status: a 4xx is relayed as it came and the record becomes REJECTED; an answer with no job id (the change waits for human approval) is 202 with the status and `approvalId`;
+    # otherwise 202 with the job id and RAN NF OAM's status. A call that could not be made (no connection) is 502 UPSTREAM_FAILED and REJECTED: nothing was sent. A call whose outcome is
+    # unknown (a timeout after it was sent, a 5xx, an unusable body) is 202 with status UNCONFIRMED: the write may have been applied, and a replay finds out. Any other exception is
+    # raised after the record is updated (SEC-15.10).
     if not body.changes:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="changes must not be empty")
+    caller = invoker_id(request)
     if body.actionId is not None:
         existing = db.get(DmeActionRecord, body.actionId)
         if existing is not None:
+            if existing.status == UNCONFIRMED and caller is not None and existing.invoker_id == caller:
+                return _forward(db, existing, body, msac_credential)        # call flow 03f: ask RAN NF OAM again, under the same key
             # Wave 10.1 (W10-18, TC29): a replay of an action already
             # mediated — ignored, the original outcome reported back.
             return JSONResponse(status_code=200, content={
@@ -923,9 +940,15 @@ def mediate_action(body: ActionRequest, db: Session = Depends(get_session),
         # Wave 10.1 (W10-23): the inbound request's X-Correlation-ID, so an
         # action joins the audit trail of the decision that caused it.
         correlation_id=get_correlation_id(),
+        invoker_id=caller,
     )
     db.add(record)
     db.commit()    # the record is committed before RAN NF OAM is called, so it exists whatever the call does; its status is updated after the answer
+    return _forward(db, record, body, msac_credential)
+
+
+def _forward(db: Session, record: DmeActionRecord, body: ActionRequest, msac_credential: str | None):
+    """Forwards one action to RAN NF OAM's `POST /config-jobs` under its idempotency key and records the answer on `record` (see `mediate_action`)."""
     # Wave 9 (W9-02): className is forwarded too — RAN NF OAM's write
     # pre-check validates each change against its vendor's data model.
     # Wave 10.1 (W10-19): DME → RAN NF OAM is bounded at 10 s.
@@ -934,25 +957,34 @@ def mediate_action(body: ActionRequest, db: Session = Depends(get_session),
     decision = {**body.decision} if body.decision else None
     if body.actionId is not None and decision is not None:
         decision.setdefault("actionId", str(body.actionId))
+    headers = {"Idempotency-Key": _idempotency_key(record.action_id),
+               **({"X-MSAC-Credential": msac_credential} if msac_credential is not None else {})}
     try:
         resp = _r1.post("/ran-nf-oam/config-jobs", json={
             "requestedBy": body.requestedBy, "scope": body.scope, "msacRole": body.msacRole, "changes": body.changes,
             **({"decision": decision} if decision is not None else {}),
-        }, timeout=DME_TO_RAN_NF_OAM_TIMEOUT_SECONDS, **({"headers": {"X-MSAC-Credential": msac_credential}} if msac_credential is not None else {}))
-    except Exception as exc:  # noqa: BLE001 - deliberate catch-all (SEC-15.10): whatever stopped the call, the record must not stay FORWARDED when nothing was forwarded
-        record.status = "REJECTED"  # the same state as an unusable answer below; the outcome at RAN NF OAM is unknown, and a replay of this `actionId` is IGNORED like any REJECTED one
+        }, timeout=DME_TO_RAN_NF_OAM_TIMEOUT_SECONDS, headers=headers)
+    except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+        if record.status == UNCONFIRMED:       # asking again could not reach RAN NF OAM: what the first call did is still unknown
+            return _unconfirmed(db, record, f"RAN NF OAM could not be reached ({type(exc).__name__}) to confirm the action")
+        record.status = "REJECTED"             # the call was never made: nothing was sent
         db.commit()
-        if isinstance(exc, httpx.HTTPError):
-            raise framework_error(FrameworkError.UPSTREAM_FAILED, detail=f"RAN NF OAM could not be reached ({type(exc).__name__}): the action is recorded REJECTED") from exc
+        raise framework_error(FrameworkError.UPSTREAM_FAILED, detail=f"RAN NF OAM could not be reached ({type(exc).__name__}): the action is recorded REJECTED") from exc
+    except httpx.HTTPError as exc:
+        return _unconfirmed(db, record, f"the call to RAN NF OAM ended with {type(exc).__name__} after it was sent")
+    except Exception:  # noqa: BLE001 - deliberate catch-all (SEC-15.10): whatever stopped the call, the record must not stay FORWARDED when nothing was forwarded
+        if record.status != UNCONFIRMED:
+            record.status = "REJECTED"
+        db.commit()
         raise
     try:
         forwarded = resp.json()
     except ValueError:
         forwarded = None
+    if resp.status_code == 409 and isinstance(forwarded, dict) and (forwarded.get("detail") or {}).get("title") == "IDEMPOTENCY_KEY_IN_PROGRESS":
+        return _unconfirmed(db, record, "RAN NF OAM is still running the write")
     if forwarded is None or not isinstance(forwarded, dict) or resp.status_code >= 500:
-        record.status = "REJECTED"
-        db.commit()
-        raise framework_error(FrameworkError.UPSTREAM_FAILED, detail=f"RAN NF OAM answered {resp.status_code} without a usable body")
+        return _unconfirmed(db, record, f"RAN NF OAM answered {resp.status_code} without a usable body")
     if resp.status_code >= 400:
         # Refused at the pre-check (unsupported MnS service, schema
         # violation, MSAC): the rApp gets RAN NF OAM's own 4xx directly,
@@ -970,6 +1002,14 @@ def mediate_action(body: ActionRequest, db: Session = Depends(get_session),
     record.status = forwarded["status"]
     db.commit()
     return {"actionId": str(record.action_id), "forwardedJobId": forwarded["jobId"], "status": record.status}
+
+
+def _unconfirmed(db: Session, record: DmeActionRecord, why: str) -> JSONResponse:
+    """Call flow 03f: records that RAN NF OAM's outcome is unknown and answers 202 UNCONFIRMED; a replay of the `actionId` by the same caller asks again."""
+    record.status = UNCONFIRMED
+    db.commit()
+    return JSONResponse(status_code=202, content={"actionId": str(record.action_id), "forwardedJobId": None, "status": UNCONFIRMED,
+                                                  "detail": f"{why}: the write may have been applied; replay the actionId to find out"})
 
 
 def _visible_elements(scope: authz_scope.Scope) -> set[str]:
