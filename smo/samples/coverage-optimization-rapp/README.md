@@ -14,18 +14,23 @@ A Non-RT RIC rApp that learns how weak coverage, overshoot and pilot pollution r
 | Operator API | served on `:8000` as `/instances/...`; the instance's base URL is registered at rApp Management (`operatorApiBase` when the instance is created) and R1 Termination reaches it at `/rapps/<instance>/operator/...`. The page the GUI draws for it is declared in `manifest.yaml` (`operatorUi`) |
 | Call flow | [24 Coverage Optimization closed loop](../../docs/call-flows/24-coverage-optimization-closed-loop.md) |
 | Demo runbook | [DEMO_RUNBOOK.md section 26](../../DEMO_RUNBOOK.md) (Demo 00-11) |
-| Unit tests | 54 passed (`tests/test_engine.py`, `tests/test_model.py`, `tests/test_routes.py`; 98 % of `app/`) |
+| Unit tests | 80 passed (`tests/`, SQLite, standalone; 99 % of `app/`) |
 
 ## What it does
 
-One `POST /instances/{id}/evaluate` is one pass of the loop over the whole cluster:
+One `POST /instances/{id}/evaluate` ("Evaluate now") is one pass of the loop over the whole cluster. With `evaluateEverySeconds` in the instance
+configuration (60 to 86400; absent: manual only), the rApp's worker `coverage-optimization-rapp-worker` (the same image, `python -m smo_shared.worker`,
+task `evaluate-due` in `app/tasks.py`) runs a pass that often, as the instance, and records how it went (`lastEvaluation`); pick an interval well under an
+hour, so the KPI check of a change set comes soon after its 60 minutes. A pass and a reconcile lock the instance (`SELECT ... FOR UPDATE NOWAIT`): a second
+is 409 `EVALUATION_IN_PROGRESS` (call flow 24). A pass:
 
 - **Data in.** Per-cell measurement-report statistics (`MR.*` counters, neighbour overlaps, and the CM snapshot of tilt and power) are read from DME as `COVERAGE_PERFORMANCE`.
 - **KPI check first.** While a change set is OBSERVING, nothing else moves. After 60 minutes of post-change PM it is confirmed, or reverted if the cluster got worse.
 - **Model.** The sensitivities predict how each problem share responds to a cell's own step and, weighted by overlap, to its neighbours' steps. An inference job is recorded in AIMgF.
 - **Decision.** Guards and bounds decide which moves each cell may make; the joint optimiser picks the best move set (at most 2 cells).
 - **Autonomy dispatch.** The change set goes to one `AutonomyDispatch` with one expectation per cell. SHADOW only recommends, ASSIST waits for the operator (`reconcile` settles it), AUTONOMOUS goes through an Intent, the SA SMOS O1-CM handler, DME and RAN NF OAM. The handler publishes its fulfilment report after the dispatch answers (and later still when Intent Service has to retry the push), so the rApp polls for the report, every 0.5 s for at most 30 s (`INTENT_REPORT_WAIT_SECONDS`), before it counts a change as `NOT_ENACTED`.
-- **O1 write and verify.** `digitalTilt` or `configuredMaxTxPower` is written and read back. A failed or unverified write is rolled back.
+- **O1 write and verify.** `digitalTilt` or `configuredMaxTxPower` is written and read back. A failed or unverified write is rolled back. An ASSIST change set found enacted by `reconcile` is observed from the latest PM window then, not from the pass that planned it (call flow 24d).
+- **Held for a person** (call flow 24e). When an approval policy on the rApp makes RAN NF OAM hold a revert or rollback (`PR-AI-11`), DME answers `PENDING_APPROVAL` with an `approvalId`; the write is not read back or sent again. The decision is `REVERT_AWAITING_APPROVAL` (a rollback `<trigger>_ROLLBACK_AWAITING_APPROVAL`), the cell keeps the `approvalId` (`pendingApprovalId` in the cells list), and until every held cell is settled nothing in the cluster moves (`AWAITING_APPROVAL`); a held revert keeps the change set open (`observing.heldCells`). `reconcile` (or the next pass) reads the approval and, once decided, the cell's tilt and power back: `REVERTED` / `<trigger>_ROLLED_BACK`, `REVERT_FAILED` / `_ROLLBACK_FAILED`, or `APPROVAL_<status>` / `_ROLLBACK_<status>`, the cell STEADY on what was read back.
 - **Revert.** A degraded cluster restores every cell in the set straight through DME `/actions`, with a `decision` (`PR-AI-13`): a reference to the execution, the model version and the reason in words, kept by RAN NF OAM as the decision record of the job. Writes made through an Intent carry none.
 - **Audit.** One decision row per cell per pass, keyed by the request's correlation id.
 
@@ -53,7 +58,8 @@ Logic is in `app/engine.py` (guards, bounds, KPI check; no I/O) and `app/model/C
 
 | File | Role |
 |---|---|
-| `app/main.py` | FastAPI service: instance binding, lifecycle, evaluate loop, dispatch follow-up, audit, dashboard |
+| `app/main.py` | FastAPI service: instance binding, lifecycle, evaluate loop (`run_pass`, `run_due_passes`), dispatch and approval follow-up, audit, dashboard |
+| `app/tasks.py` | The worker's task `evaluate-due` (every `COVERAGE_SCHEDULE_TICK_SECONDS`, default 15) |
 | `app/engine.py` | Guards, bounds, KPI check, per-cell plan (no I/O) |
 | `app/model/CoverageModel.py` | Sensitivity model, joint optimiser, MLMR artifact (JSON in a zip) |
 | `app/model/{Training,Validation,Emulation,Inference}Logic.py` | The four execution modes |
@@ -62,7 +68,8 @@ Logic is in `app/engine.py` (guards, bounds, KPI check; no I/O) and `app/model/C
 | `app/models.py` | Instance, cell and decision tables |
 | `demo.py` | Demo 00-11 script |
 | `tests/` | Engine, model and route unit tests (routes through the TestClient on SQLite, the SDK replaced by a platform double) |
-| `tests/test_operator_page.py` | The `operatorUi` of `manifest.yaml` is valid, names only routes this rApp serves with query parameters they take, reads only fields its own answers carry, and ends with the admin-only demo panel (4 tests) |
+| `tests/test_schedule_and_approvals.py` | Call flow 24: `evaluateEverySeconds` bounds, the worker's task, due / not due / manual instances acting as themselves, a failed scheduled pass recorded, the instance lock (409, BUSY), reverts and rollbacks held for approval holding the cluster and settled on approval, rejection, expiry and refusal, and the KPI hour of an ASSIST change set starting at its enactment (19 tests) |
+| `tests/test_operator_page.py` | The `operatorUi` of `manifest.yaml` is valid, names only routes this rApp serves with query parameters they take, reads only fields its own answers carry, and ends with the scheduled-passes panel and the admin-only demo panel (4 tests) |
 | `tests/test_demo_routes.py` | The demo / simulation routes: prepare registers the twin producer and starts; history, live and the KPI hour send the PM `demo.py` sends, and a refused report is answered as refused; emulate publishes the twin's data then emulates (6 tests) |
 | `manifest.yaml`, `capabilities.yaml`, `Definitions/asd.yaml`, `TOSCA-Metadata/` | CSAR package content |
 
@@ -101,13 +108,13 @@ Paths are relative to the service root; through R1 Termination they sit under `/
 | `POST /instances/{id}/demo/kpi-hour` | Demo 10's PM: the next hour, from the settings now in force (then Evaluate now: CONFIRMED) |
 | `GET /sim-producer/health`, `POST /sim-producer/jobs`, `DELETE /sim-producer/jobs/{id}` | DME producer callbacks |
 
-`/start` needs `managedElementRef` and `cells` in the instance configuration; optional keys are `baselineTilt`, `baselinePower`, `rmihId`, `energySavingInstanceId`, `mobilityInstanceId` and `operatorNotificationUri`.
+`/start` needs `managedElementRef` and `cells` in the instance configuration; optional keys are `baselineTilt`, `baselinePower`, `rmihId`, `energySavingInstanceId`, `mobilityInstanceId`, `operatorNotificationUri` and `evaluateEverySeconds`.
 
 ## Run and test
 
 ```bash
 cd smo/samples/coverage-optimization-rapp
-PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # 54 passed
+PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # 80 passed
 ```
 
 The demo runs against a live stack, from inside the compose network (for example the `r1-termination` container). Steps are Demo 00 to 11:

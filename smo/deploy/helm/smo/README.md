@@ -121,6 +121,9 @@ replica is fine (one pass at a time per instance; `ci/ha-values.yaml` has two).
 `modules.mobility-optimization-rapp-worker` does the same for the Mobility Optimization rApp (`MOBILITY_SCHEDULE_TICK_SECONDS`, default `"15"`; call
 flow 23f), so the KPI check of a CIO change runs about an hour after it without anyone pressing "Evaluate now". Its role gains the same three tables. Both rApp workers ask for 10m of CPU (they sleep between ticks), so the defaults still fit a two-core lab node.
 
+`modules.coverage-optimization-rapp-worker` does the same for the Coverage Optimization rApp (`COVERAGE_SCHEDULE_TICK_SECONDS`, default `"15"`; call
+flow 24f), with the same 10m request and the same three tables added to its role.
+
 ## Scheduled rotation of rApp instance secrets (SEC-15.19)
 
 `modules.rapp-mgmt-worker` (the rApp Management image run as a worker, like `ran-nf-oam-worker`) rotates the secret of running rApp instances on a schedule. **Off by default:** `RAPP_MGMT_SECRET_ROTATION_DAYS` is `"0"`, and the worker then does nothing (it is still one small pod; set `modules.rapp-mgmt-worker.enabled=false` to leave it out). To switch it on set the number of days:

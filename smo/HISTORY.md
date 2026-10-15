@@ -2780,6 +2780,32 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.8 flow 24 — the Coverage Optimization closed loop rewritten from the code: on a schedule, one pass at a time, held writes keep the cluster still
+
+The sixth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken):
+
+- **A. The loop closes by itself.** As flows 22 and 23: `evaluateEverySeconds` (60 to 86400) and the worker `coverage-optimization-rapp-worker`
+  (`app/tasks.py`, task `evaluate-due`, `COVERAGE_SCHEDULE_TICK_SECONDS`, default 15; `run_due_passes`, each pass as its instance under its own execution id,
+  a failure recorded on the instance as `lastEvaluation` ERROR). Wired like the other two rApp workers (10m CPU request, the rApp's role gains
+  `notification_outbox`, `periodic_run` and `smo_event`); the "Scheduled passes" panel shows it.
+- **B. One pass at a time.** A pass and a reconcile lock the instance (`_lock_instance`, NOWAIT, 409 `EVALUATION_IN_PROGRESS`); before, two at once could
+  both open a change set or both revert one. Reconcile no longer commits on its own: the caller holds the lock and commits.
+- **C. A held revert or rollback keeps the cluster still.** A revert or rollback RAN NF OAM holds for a person (`PR-AI-11`) was read back at once, sent a
+  second time (a second request to approve) and reported failed, and the change set was closed as if reverted. Now `_restore` stops at PENDING_APPROVAL
+  (`REVERT_AWAITING_APPROVAL` / `<trigger>_ROLLBACK_AWAITING_APPROVAL`, `pending_approval_id` and `pending_decision_id` on the cell); while any cell waits
+  every pass records `AWAITING_APPROVAL` and nothing moves; a held revert keeps the change set open (`observing.heldCells`). Reconcile settles a decided
+  request from the approval and a read-back of tilt and power (`_settle_approvals`), and the last held revert settled closes the set.
+- **D. The KPI hour starts at the enactment.** An ASSIST change set found enacted by reconcile was observed from the window the pass planned it on, so
+  windows measured while it waited for the operator counted as its effect, and a set approved more than an hour late was judged at once. Reconcile now
+  starts the hour at the cluster's latest PM window (`_latest_window`), for the change set and each cell's pacing. The same fix for the Mobility rApp went
+  with flow 23 (`_latest_samples`).
+- **E. The document** is six diagrams (one pass; the guards and the joint plan; a change set through the autonomy dispatch; the KPI check; ASSIST and held
+  writes; the scheduled pass) with PNG images. Corrected: the rApp's own model computes the plan, AIMgF records the inference job and report.
+- **Not taken.** An unreadable alarm list still holds nothing (as before, a Phase 1 note in 24b); failing closed there would stop the loop whenever the
+  alarm query is down.
+
+Revision 0052 adds five nullable columns (expand only). Tests: `samples/coverage-optimization-rapp/tests/test_schedule_and_approvals.py`.
+
 ### DOC-CF-1.8 flow 23 — the Mobility Optimization closed loop rewritten from the code: on a schedule, one pass at a time, held writes, DMRO bounds first
 
 The fifth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken):

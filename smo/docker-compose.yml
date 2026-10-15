@@ -468,6 +468,27 @@ services:
       R1_GATEWAY_URL: http://r1-termination:8000
       SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
+  # Call flow 24f: the same image, run as a worker. Every 15 s it runs a pass of each instance whose `evaluateEverySeconds` has passed
+  # (samples/coverage-optimization-rapp/app/tasks.py), so a change set is confirmed or reverted an hour later without anyone pressing "Evaluate now".
+  coverage-optimization-rapp-worker:
+    build: { context: ., args: { <<: *build_info, MODULE: samples/coverage-optimization-rapp, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    command: ["python", "-m", "smo_shared.worker"]
+    stop_grace_period: 30s
+    secrets: [db_password_coverage-optimization-rapp]
+    <<: *hardening
+    healthcheck: *worker_probe
+    depends_on: *wait_for_schema
+    environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}
+      SMO_IDENTITY_KIND: rapp        # the same rApp as coverage-optimization-rapp: each pass acts as its instance
+      <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_coverage_optimization_rapp@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_coverage-optimization-rapp
+      R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}
+      COVERAGE_SCHEDULE_TICK_SECONDS: ${COVERAGE_SCHEDULE_TICK_SECONDS:-15}
+
   # Wave 10.4: the Traffic Steering reference rApp
   # (samples/traffic-steering-rapp) — R1-only, like energy-saving-rapp.
   traffic-steering-rapp:
