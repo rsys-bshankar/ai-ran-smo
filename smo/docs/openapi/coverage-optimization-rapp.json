@@ -582,7 +582,7 @@
     },
     "/instances/{instance_id}/evaluate": {
       "post": {
-        "description": "One pass of the closed loop over the cluster. Its X-Correlation-ID is\nthe execution id in the audit trail.",
+        "description": "One pass of the closed loop over the cluster (\"Evaluate now\"). Its X-Correlation-ID is the execution id in the audit trail. 409\nEVALUATION_IN_PROGRESS while another pass or reconcile of the instance runs.",
         "operationId": "evaluate_instances__instance_id__evaluate_post",
         "parameters": [
           {

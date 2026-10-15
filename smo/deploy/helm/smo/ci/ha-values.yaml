@@ -11,6 +11,7 @@ modules:
   aimgf-worker: { replicas: 2 }
   energy-saving-rapp-worker: { replicas: 2 }
   mobility-optimization-rapp-worker: { replicas: 2 }
+  coverage-optimization-rapp-worker: { replicas: 2 }
   ran-nf-oam: { replicas: 2 }
   ran-nf-oam-worker: { replicas: 2 }
   nfo: { replicas: 2 }

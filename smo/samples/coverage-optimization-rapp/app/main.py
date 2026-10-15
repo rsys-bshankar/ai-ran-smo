@@ -5,7 +5,8 @@ weak-coverage, overshoot and pilot-pollution PM, through O1. Like the
 other reference rApps it uses O1 PM data only, and the R1 interface only
 through the AI Runtime SDK; there is no A1, Near-RT RIC, xApp or E2.
 
-The loop (POST /instances/{id}/evaluate), over the whole cluster:
+The loop (POST /instances/{id}/evaluate, or the worker's `evaluate-due` task every `evaluateEverySeconds` of the instance, call flow 24f; one pass at a
+time per instance), over the whole cluster:
 
     Input (COVERAGE_PERFORMANCE per cell) → KPI check of the last change set
           → Safety per cell → Bounds → Joint plan (CoverageSensitivityModel)
@@ -24,10 +25,14 @@ How each kind of write reaches O1:
   * A **revert** (the cluster got worse) or **rollback** (a write failed or
     didn't verify) restores the previous settings, so it goes straight to
     DME `/actions`, with its own `actionId`.
+  * A revert or rollback RAN NF OAM holds for a person (PR-AI-11) waits for
+    the decision and is settled by `reconcile` (24d), never sent twice; until
+    every held cell is settled nothing else in the cluster moves.
 """
 
 import datetime
 import json
+import logging
 import time
 import uuid
 from typing import cast
@@ -35,6 +40,7 @@ from typing import cast
 from fastapi import Depends, FastAPI
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from smo_sdk import AiRuntimeSdk, SdkError, instances
@@ -42,9 +48,9 @@ from smo_sdk.data import AlarmScope
 from smo_shared.logconfig import install_logging
 from smo_shared.metrics import install_metrics
 from smo_shared.health import install_health
-from smo_shared.correlation import apply_correlation_id, get_correlation_id
+from smo_shared.correlation import apply_correlation_id, correlation_scope, get_correlation_id
 from smo_shared.db import get_session
-from smo_shared.r1_client import R1Client
+from smo_shared.r1_client import R1Client, reset_acting_instance, set_acting_instance
 from smo_shared.timeutil import as_utc
 
 from . import engine, producer  # producer: the sample data generator, also used by tests and demo.py
@@ -64,6 +70,10 @@ _r1 = R1Client()
 sdk = AiRuntimeSdk(_r1)
 
 RAPP_ID = "coverage-optimization-rapp"
+logger = logging.getLogger(__name__)
+
+# Call flow 24f: the bounds of an instance's `evaluateEverySeconds` (a pass reads PM and O1 and may write O1, so not more often than a minute).
+EVALUATE_EVERY_MIN_SECONDS, EVALUATE_EVERY_MAX_SECONDS = 60, 86400
 
 # The fulfilment report of a dispatched Intent is not there when the dispatch answers: Intent Service queues the push to the handler (an outbox row, sent
 # right after the commit with a 2 s timeout, then retried by the delivery sweep every few seconds), and the handler enacts the change and publishes the
@@ -104,6 +114,26 @@ def _instance(db: Session, instance_id: uuid.UUID) -> CoverageInstance:
     if inst is None:
         raise RappError(404, "INSTANCE_NOT_STARTED", f"instance {instance_id} is not started on this rApp")
     return inst
+
+
+def _lock_instance(db: Session, instance_id: uuid.UUID) -> CoverageInstance:
+    """The instance, locked for this transaction (`SELECT ... FOR UPDATE NOWAIT` on Postgres): a pass and a reconcile of one instance run one at a
+    time (call flow 24a). 409 EVALUATION_IN_PROGRESS when another holds it, at once; 404 as `_instance`. SQLite has no row locks."""
+    try:
+        inst = db.get(CoverageInstance, instance_id, with_for_update={"nowait": True}, populate_existing=True)
+    except OperationalError as exc:
+        if getattr(exc.orig, "sqlstate", None) != "55P03":       # lock_not_available; anything else is not ours to answer
+            raise
+        db.rollback()
+        raise RappError(409, "EVALUATION_IN_PROGRESS", f"instance {instance_id} is being evaluated or reconciled; try again") from exc
+    if inst is None:
+        raise RappError(404, "INSTANCE_NOT_STARTED", f"instance {instance_id} is not started on this rApp")
+    return inst
+
+
+def _uuid_or_none(value: str | None) -> uuid.UUID | None:
+    """`value` as a UUID, or None when there is none."""
+    return uuid.UUID(str(value)) if value else None
 
 
 def _cells(db: Session, inst: CoverageInstance) -> dict[str, CoverageCell]:
@@ -179,15 +209,19 @@ def _execute_direct(inst: CoverageInstance, settings: dict[str, dict], execution
             f"{RAPP_ID}:{inst.instance_id}", _changes(inst, settings), action_id=action_id,
             source_context={"rApp": RAPP_ID, "correlationId": execution_id, "reason": reason},
             decision=_decision(inst, execution_id, reason))
-        return {"path": "DME_DIRECT", "actionId": result["actionId"], "forwardedJobId": result.get("forwardedJobId"),
-                "status": result["status"]}
+        done = {"path": "DME_DIRECT", "actionId": result["actionId"], "forwardedJobId": result.get("forwardedJobId"), "status": result["status"]}
+        return {**done, "approvalId": result["approvalId"]} if result.get("approvalId") else done
     except SdkError as e:
         return {"path": "DME_DIRECT", "actionId": action_id, "status": "REJECTED", "error": e.body}
 
 
 def _restore(inst: CoverageInstance, settings: dict[str, dict], execution_id: str, reason: str) -> dict:
     """Write the given settings straight through DME, verify, and re-send
-    once on a mismatch (used for reverts and rollbacks)."""
+    once on a mismatch (used for reverts and rollbacks).
+
+    Call flow 24d: when RAN NF OAM holds the write for a person (PR-AI-11; DME answers PENDING_APPROVAL with an `approvalId`), nothing has changed yet, so
+    it is neither read back nor sent again (that would ask a second time): the result is AWAITING_APPROVAL with the `approvalId`, which
+    `_settle_approvals` follows up."""
     pending = {}
     for cell, s in settings.items():
         live = _read_setting(inst, cell)
@@ -196,14 +230,19 @@ def _restore(inst: CoverageInstance, settings: dict[str, dict], execution_id: st
             pending[cell] = diff
     if not pending:
         return {"performed": False, "result": "ALREADY_RESTORED", "verification": _verify(inst, settings)}
-    attempts = []
+    attempts: list[dict] = []
+    result = "VERIFY_FAILED"
     for _ in range(2):
         action = _execute_direct(inst, pending, execution_id, reason)
+        if action["status"] == "PENDING_APPROVAL":
+            attempts.append({"action": action, "verification": None})
+            return {"performed": True, "result": "AWAITING_APPROVAL", "approvalId": action.get("approvalId"), "attempts": attempts}
         verification = _verify(inst, pending)
         attempts.append({"action": action, "verification": verification})
-        if verification["result"] == "VERIFIED":
+        result = verification["result"]
+        if result == "VERIFIED":
             break
-    return {"performed": True, "result": attempts[-1]["verification"]["result"], "attempts": attempts}
+    return {"performed": True, "result": result, "attempts": attempts}
 
 
 def _intent_actions(intent_id: str) -> dict[str, dict]:
@@ -247,9 +286,13 @@ def _final(row: CoverageCell) -> dict:
 
 
 def _follow_dispatch(db: Session, inst: CoverageInstance, rows: dict[str, CoverageCell], decisions: dict[str, CoverageDecision],
-                     dispatch: dict, execution_id: str, objective: dict) -> None:
+                     dispatch: dict, execution_id: str, objective: dict, enacted_at: datetime.datetime | None = None) -> None:
     """Record what the dispatch did for each cell; verify, roll back, and
-    put the verified cells under KPI observation as one change set."""
+    put the verified cells under KPI observation as one change set.
+
+    A rollback RAN NF OAM holds for a person leaves its cell STEADY with the approval pending (24d). `enacted_at` is when `reconcile` found an
+    ASSIST change set enacted (the latest PM window then): its KPI hour starts there, not at the pass that planned it (24c). A pass that dispatches
+    straight away gives None: the hour starts at the planning window."""
     intent = {"dispatchId": dispatch["dispatchId"], "autonomyMode": dispatch["autonomyMode"], "status": dispatch["status"],
               "intentId": dispatch.get("intentId"), "rejectedBy": dispatch.get("rejectedBy")}
     for d in decisions.values():
@@ -273,42 +316,101 @@ def _follow_dispatch(db: Session, inst: CoverageInstance, rows: dict[str, Covera
         d.verification = _verify(inst, {cell: to_setting}) if status == "COMPLETED" else None
         if status == "COMPLETED" and cast(dict, d.verification)["result"] == "VERIFIED":      # verified just above
             row.state, row.tilt, row.power = engine.OBSERVING, to_setting["digitalTilt"], to_setting["configuredMaxTxPower"]
-            row.last_changed_at = d.observed_at
+            row.last_changed_at = enacted_at or d.observed_at
             d.outcome = "EXECUTED"
             executed[cell] = {"from": d.from_setting, "to": d.to_setting, "move": d.decision, "decisionId": str(d.decision_id)}
         else:
             trigger = "VERIFY_FAILED" if status == "COMPLETED" else "PARTIAL_SUCCESS" if status == "PARTIAL_SUCCESS" else "ACTION_FAILED"
             d.rollback = {"trigger": trigger, **_restore(inst, {cell: from_setting}, execution_id, f"ROLLBACK:{trigger}")}
-            row.state, row.tilt, row.power = engine.STEADY, from_setting["digitalTilt"], from_setting["configuredMaxTxPower"]
-            d.outcome = f"{trigger}_ROLLED_BACK" if d.rollback["result"] in ("VERIFIED", "ALREADY_RESTORED") \
-                else f"{trigger}_ROLLBACK_FAILED"
+            row.state = engine.STEADY
+            if d.rollback["result"] == "AWAITING_APPROVAL":
+                # call flow 24d: the rollback waits for a person; the cell is left alone until `_settle_approvals` reads it back
+                d.outcome = f"{trigger}_ROLLBACK_AWAITING_APPROVAL"
+                row.pending_approval_id, row.pending_decision_id = _uuid_or_none(d.rollback.get("approvalId")), d.decision_id
+            else:
+                row.tilt, row.power = from_setting["digitalTilt"], from_setting["configuredMaxTxPower"]
+                d.outcome = f"{trigger}_ROLLED_BACK" if d.rollback["result"] in ("VERIFIED", "ALREADY_RESTORED") \
+                    else f"{trigger}_ROLLBACK_FAILED"
         d.final_state = _final(row)
         d.updated_at = datetime.datetime.now(datetime.UTC)
     if executed:
-        at = max(d.observed_at for d in decisions.values() if d.observed_at)
+        at = enacted_at or max(d.observed_at for d in decisions.values() if d.observed_at)
         inst.observing = {"changeSetId": str(uuid.uuid4()), "executionId": execution_id, "at": at.isoformat(),
                           "cells": executed, **objective}
 
 
-def _reconcile(db: Session, inst: CoverageInstance) -> list[dict]:
-    """Settles the instance's pending ASSIST dispatch once the operator has resolved it.
+def _latest_window(inst: CoverageInstance) -> datetime.datetime | None:
+    """The time of the cluster's latest PM window in the INFERENCE dataset, or None when there is none: when `reconcile` finds an ASSIST change set
+    enacted, its KPI hour starts after what was already measured (call flow 24c)."""
+    state = snapshot(by_cell(_dataset(inst, "INFERENCE")), inst.cells)
+    return max((as_utc(s["observedAt"]) for s in state.values()), default=None)
 
-    Returns [] when nothing is pending or the dispatch is still AWAITING_SCOPE; otherwise follows the dispatch (verify, roll back, start
-    observing), commits, and returns one summary with each cell's outcome.
+
+def _settle_approvals(db: Session, inst: CoverageInstance, rows: dict[str, CoverageCell]) -> list[dict]:
+    """Call flow 24d: follows up the reverts and rollbacks RAN NF OAM held for a person (PR-AI-11). A request still PENDING is left; a decided one
+    (APPROVED, REJECTED, EXPIRED or REFUSED) is settled by reading the cell's tilt and power back against the settings the write restores (a revert's
+    `toSetting`, a rollback's `fromSetting`). The cell is STEADY on what was read back. A revert's audit row becomes REVERTED, REVERT_FAILED or
+    `APPROVAL_<status>`; a rollback's `<trigger>_ROLLED_BACK` or `<trigger>_ROLLBACK_<FAILED | status>`. Once no cell waits any more, a change set the
+    KPI check had already judged DEGRADED is closed (`observing` cleared)."""
+    settled = []
+    for cell, row in rows.items():
+        if row.pending_approval_id is None:
+            continue
+        approval = sdk.platform.get_approval(row.pending_approval_id)
+        status = approval["status"]
+        if status == "PENDING":
+            continue
+        approval_id = row.pending_approval_id
+        d = db.get(CoverageDecision, row.pending_decision_id) if row.pending_decision_id else None
+        row.pending_approval_id = row.pending_decision_id = None
+        revert = d is not None and d.decision == engine.REVERT
+        wanted = (d.to_setting if revert else d.from_setting) if d is not None else None
+        live = _read_setting(inst, cell)
+        restored = wanted is not None and all(live.get(k) == v for k, v in wanted.items())
+        row.state = engine.STEADY
+        if live["digitalTilt"] is not None:
+            row.tilt = live["digitalTilt"]
+        if live["configuredMaxTxPower"] is not None:
+            row.power = live["configuredMaxTxPower"]
+        if restored and revert and d is not None:
+            row.last_changed_at = d.observed_at
+        if d is not None:
+            settled_as = "FAILED" if status == "APPROVED" else status      # how a write that did not restore the settings ended
+            if revert:
+                d.outcome = "REVERTED" if restored else "REVERT_FAILED" if status == "APPROVED" else f"APPROVAL_{status}"
+            else:
+                trigger = d.outcome.removesuffix("_ROLLBACK_AWAITING_APPROVAL")
+                d.outcome = f"{trigger}_ROLLED_BACK" if restored else f"{trigger}_ROLLBACK_{settled_as}"
+            d.action = {**(d.action or {}), "approval": {"status": status, "jobId": approval.get("jobId")}}
+            d.verification = _verify(inst, {cell: wanted}) if wanted is not None else None
+            d.final_state = _final(row)
+            d.updated_at = datetime.datetime.now(datetime.UTC)
+        settled.append({"approvalId": str(approval_id), "status": status, "outcomes": {cell: d.outcome if d is not None else row.state}})
+    if settled and (inst.observing or {}).get("heldCells") and not any(r.pending_approval_id for r in rows.values()):
+        inst.observing = None
+    return settled
+
+
+def _reconcile(db: Session, inst: CoverageInstance) -> list[dict]:
+    """Settles the instance's pending ASSIST dispatch once the operator has resolved it, and the reverts and rollbacks held for approval that were
+    decided (call flow 24d).
+
+    A dispatch still AWAITING_SCOPE is left; otherwise it is followed (verify, roll back, start observing from the latest PM window). Returns one
+    summary per settled dispatch or approval with each cell's outcome. The caller holds the instance's lock and commits.
     """
-    pending = inst.pending_dispatch
-    if not pending:
-        return []
-    dispatch = sdk.intent.get_autonomy_dispatch(pending["dispatchId"])
-    if dispatch["status"] == "AWAITING_SCOPE":
-        return []
     rows = _cells(db, inst)
-    decisions = {c: db.get_one(CoverageDecision, uuid.UUID(i)) for c, i in pending["decisionIds"].items()}
-    inst.pending_dispatch = None
-    _follow_dispatch(db, inst, rows, decisions, dispatch, next(iter(decisions.values())).execution_id, pending["objective"])
-    db.commit()
-    return [{"dispatchId": pending["dispatchId"], "status": dispatch["status"],
-             "outcomes": {c: d.outcome for c, d in decisions.items()}}]
+    settled = []
+    pending = inst.pending_dispatch
+    if pending:
+        dispatch = sdk.intent.get_autonomy_dispatch(pending["dispatchId"])
+        if dispatch["status"] != "AWAITING_SCOPE":
+            decisions = {c: db.get_one(CoverageDecision, uuid.UUID(i)) for c, i in pending["decisionIds"].items()}
+            inst.pending_dispatch = None
+            enacted_at = _latest_window(inst) if dispatch["status"] == "DISPATCHED" else None
+            _follow_dispatch(db, inst, rows, decisions, dispatch, next(iter(decisions.values())).execution_id, pending["objective"], enacted_at)
+            settled.append({"dispatchId": pending["dispatchId"], "status": dispatch["status"],
+                            "outcomes": {c: d.outcome for c, d in decisions.items()}})
+    return settled + _settle_approvals(db, inst, rows)
 
 
 # ---------------------------------------------------------------- instance + datasets
@@ -338,6 +440,12 @@ def start_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     inst.energy_saving_instance_id = config.get("energySavingInstanceId")
     inst.mobility_instance_id = config.get("mobilityInstanceId")
     inst.operator_notification_uri = config.get("operatorNotificationUri")
+    every = config.get("evaluateEverySeconds")
+    if every is not None and (isinstance(every, bool) or not isinstance(every, int)
+                              or not EVALUATE_EVERY_MIN_SECONDS <= every <= EVALUATE_EVERY_MAX_SECONDS):
+        raise RappError(422, "INSTANCE_CONFIG_INVALID",
+                        f"evaluateEverySeconds must be a whole number from {EVALUATE_EVERY_MIN_SECONDS} to {EVALUATE_EVERY_MAX_SECONDS}, or absent")
+    inst.evaluate_every_seconds = every
     datasets = {}
     for stage, name in (("TRAINING", DATASET), ("INFERENCE", DATASET), ("EMULATION", SIM_DATASET)):
         found = sdk.data.get_dataset(name, _consumer(inst), lifecycle_stage=stage, max_records=1)
@@ -371,7 +479,8 @@ def _instance_view(i: CoverageInstance) -> dict:
             "energySavingInstanceId": i.energy_saving_instance_id, "mobilityInstanceId": i.mobility_instance_id,
             "observing": i.observing, "pendingDispatchId": (i.pending_dispatch or {}).get("dispatchId"),
             "datasets": i.data_jobs, "modelId": str(i.model_id) if i.model_id else None, "modelVersion": i.model_version,
-            "artifactVersion": i.artifact_version, "model": i.model_params, "lifecycleJobs": i.lifecycle_jobs}
+            "artifactVersion": i.artifact_version, "model": i.model_params, "lifecycleJobs": i.lifecycle_jobs,
+            "evaluateEverySeconds": i.evaluate_every_seconds, "lastEvaluation": i.last_evaluation}
 
 
 def _dataset(inst: CoverageInstance, stage: str) -> list[dict]:
@@ -516,13 +625,21 @@ def _record(db, inst, execution_id, cell, state, **kw) -> CoverageDecision:
 
 @app.post("/instances/{instance_id}/evaluate")
 def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
-    """One pass of the closed loop over the cluster. Its X-Correlation-ID is
-    the execution id in the audit trail."""
-    inst = _instance(db, instance_id)
+    """One pass of the closed loop over the cluster ("Evaluate now"). Its X-Correlation-ID is the execution id in the audit trail. 409
+    EVALUATION_IN_PROGRESS while another pass or reconcile of the instance runs."""
+    inst = _lock_instance(db, instance_id)
+    return run_pass(db, inst, get_correlation_id() or str(uuid.uuid4()), "MANUAL")
+
+
+def run_pass(db: Session, inst: CoverageInstance, execution_id: str, trigger: str,
+             started_at: datetime.datetime | None = None) -> dict:
+    """One pass over the cluster (call flows 24a-24d), for `evaluate` (trigger MANUAL) and the worker (SCHEDULED, `run_due_passes`). The caller holds
+    the instance's lock; the pass commits once at its end, with `last_evaluated_at` and `last_evaluation`. 409 MODEL_NOT_DEPLOYED before the model is
+    deployed. While a change set waits for the operator (ASSIST) or a revert or rollback waits for a person, nothing moves (`AWAITING_APPROVAL`)."""
     if not inst.model_id or not inst.model_params:
         raise RappError(409, "MODEL_NOT_DEPLOYED", "train, certify and deploy the model first")
+    started_at = started_at or datetime.datetime.now(datetime.UTC)
     reconciled = _reconcile(db, inst)
-    execution_id = get_correlation_id() or str(uuid.uuid4())
     rows = _cells(db, inst)
     state = snapshot(by_cell(_dataset(inst, "INFERENCE")), inst.cells)
     model = CoverageModel.from_dict(inst.model_params)
@@ -531,12 +648,14 @@ def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     out = {"executionId": execution_id, "instanceId": str(inst.instance_id), "autonomyMode": inst.autonomy_mode,
            "reconciled": reconciled, "plan": None, "kpi": None}
 
+    inst.last_evaluated_at = started_at
+    inst.last_evaluation = {"at": started_at.isoformat(), "executionId": execution_id, "trigger": trigger, "result": "OK"}
     if now is None:
         db.commit()
         return {**out, "decisions": []}
 
-    if inst.pending_dispatch:
-        # ASSIST: a change set is waiting for the operator — nothing else moves
+    if inst.pending_dispatch or any(r.pending_approval_id for r in rows.values()):
+        # ASSIST: a change set is waiting for the operator, or a revert / rollback for a person (24d): nothing else moves
         for cell in inst.cells:
             decisions[cell] = _record(db, inst, execution_id, cell, state, decision=engine.NO_CHANGE,
                                       reason="AWAITING_APPROVAL", final_state=_final(rows[cell]))
@@ -552,7 +671,8 @@ def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
 
 
 def _kpi_pass(db, inst, rows, state, now, execution_id, out) -> dict[str, CoverageDecision]:
-    """KPI-verified revert of the change set under observation (D10.3-4b)."""
+    """KPI-verified revert of the change set under observation (D10.3-4b, call flow 24c). A revert held for a person keeps the change set open
+    (`heldCells`) until `reconcile` settles it (24d)."""
     obs = inst.observing
     kpi = engine.kpi_check({**obs, "at": parse_time(obs["at"])}, state, now)
     out["kpi"] = kpi
@@ -562,6 +682,7 @@ def _kpi_pass(db, inst, rows, state, now, execution_id, out) -> dict[str, Covera
             decisions[cell] = _record(db, inst, execution_id, cell, state, decision=engine.NO_CHANGE, reason="OBSERVING",
                                       final_state=_final(rows[cell]))
         return decisions
+    held: list[str] = []
     for cell in inst.cells:
         change = obs["cells"].get(cell)
         if change is None:
@@ -573,6 +694,14 @@ def _kpi_pass(db, inst, rows, state, now, execution_id, out) -> dict[str, Covera
             d = decisions[cell] = _record(db, inst, execution_id, cell, state, decision=engine.REVERT, reason="KPI_DEGRADED",
                                           kpi=kpi, from_setting=change["to"], to_setting=change["from"])
             restore = _restore(inst, {cell: change["from"]}, execution_id, "REVERT:KPI_DEGRADED")
+            if restore["result"] == "AWAITING_APPROVAL":
+                db.flush()                                  # gives the audit row its id
+                # call flow 24d: the revert waits for a person; the cell stays OBSERVING and the change set open until `_settle_approvals` reads it back
+                d.action, d.outcome = restore["attempts"][0]["action"], "REVERT_AWAITING_APPROVAL"
+                row.pending_approval_id, row.pending_decision_id = _uuid_or_none(restore.get("approvalId")), d.decision_id
+                held.append(cell)
+                d.final_state = _final(row)
+                continue
             d.action = restore["attempts"][0]["action"] if restore["performed"] else None
             d.verification = restore["attempts"][-1]["verification"] if restore["performed"] else restore["verification"]
             ok = restore["result"] in ("VERIFIED", "ALREADY_RESTORED")
@@ -586,7 +715,7 @@ def _kpi_pass(db, inst, rows, state, now, execution_id, out) -> dict[str, Covera
             d.outcome = "CONFIRMED"
         row.state = engine.STEADY
         d.final_state = _final(row)
-    inst.observing = None
+    inst.observing = {**obs, "kpi": kpi, "heldCells": held} if held else None
     return decisions
 
 
@@ -654,9 +783,51 @@ def _plan_pass(db, inst, rows, state, model, now, execution_id, out) -> dict[str
 
 @app.post("/instances/{instance_id}/reconcile")
 def reconcile(instance_id: uuid.UUID, db: Session = Depends(get_session)):
-    # Settles a pending ASSIST dispatch now (the same step `evaluate` runs first); returns {settled: [...]}, empty when there is nothing to
-    # settle.
-    return {"settled": _reconcile(db, _instance(db, instance_id))}
+    # Settles a pending ASSIST dispatch and the held writes that were decided now (the same step `evaluate` runs first); returns {settled: [...]},
+    # empty when there is nothing to settle. 409 EVALUATION_IN_PROGRESS while a pass runs.
+    settled = _reconcile(db, _lock_instance(db, instance_id))
+    db.commit()
+    return {"settled": settled}
+
+
+def run_due_passes(db: Session, now: datetime.datetime | None = None) -> list[dict]:
+    """Call flow 24f, the worker's `evaluate-due` task: a pass (trigger SCHEDULED) of every instance with an `evaluateEverySeconds` whose last pass began
+    at least that long ago, each acting as its instance and under its own execution id. An instance whose lock another holds is skipped (BUSY); a pass
+    that fails is rolled back and recorded on the instance (`lastEvaluation` result ERROR), so it is retried after the interval, and the other instances
+    still run. Returns one entry per instance it looked at."""
+    now = now or datetime.datetime.now(datetime.UTC)
+    scheduled = list(db.scalars(select(CoverageInstance.instance_id).where(CoverageInstance.evaluate_every_seconds.is_not(None))))
+    db.rollback()
+    results = []
+    for instance_id in scheduled:
+        try:
+            inst = _lock_instance(db, instance_id)
+        except RappError as exc:
+            results.append({"instanceId": str(instance_id), "result": "BUSY" if exc.status == 409 else "GONE"})
+            continue
+        last = as_utc(inst.last_evaluated_at) if inst.last_evaluated_at else None
+        if inst.evaluate_every_seconds is None or (last is not None and (now - last).total_seconds() < inst.evaluate_every_seconds):
+            db.rollback()
+            continue
+        execution_id = str(uuid.uuid4())
+        token = set_acting_instance(str(instance_id))
+        try:
+            with correlation_scope(execution_id):
+                run_pass(db, inst, execution_id, "SCHEDULED", started_at=now)
+            results.append({"instanceId": str(instance_id), "executionId": execution_id, "result": "OK"})
+        except Exception as exc:  # noqa: BLE001 — one instance's failure is recorded on it and never stops the others
+            db.rollback()
+            error = f"{exc.status} {exc.title}" if isinstance(exc, RappError) else \
+                f"{exc.status_code} {exc.body}" if isinstance(exc, SdkError) else f"{type(exc).__name__}: {exc}"
+            logger.warning("scheduled pass of instance %s failed: %s", instance_id, error)
+            failed = db.get_one(CoverageInstance, instance_id)
+            failed.last_evaluated_at = now
+            failed.last_evaluation = {"at": now.isoformat(), "executionId": execution_id, "trigger": "SCHEDULED", "result": "ERROR", "error": error[:500]}
+            db.commit()
+            results.append({"instanceId": str(instance_id), "executionId": execution_id, "result": "ERROR", "error": error[:500]})
+        finally:
+            reset_acting_instance(token)
+    return results
 
 
 # ---------------------------------------------------------------- audit + dashboard
@@ -686,7 +857,8 @@ def list_decisions(instance_id: uuid.UUID, cell_id: str | None = None, execution
 
 def _cell_view(r: CoverageCell) -> dict:
     return {"cellId": r.cell_id, "state": r.state, "digitalTilt": r.tilt, "configuredMaxTxPower": r.power,
-            "lastChangedAt": r.last_changed_at.isoformat() if r.last_changed_at else None}
+            "lastChangedAt": r.last_changed_at.isoformat() if r.last_changed_at else None,
+            "pendingApprovalId": str(r.pending_approval_id) if r.pending_approval_id else None}
 
 
 @app.get("/instances/{instance_id}/cells")

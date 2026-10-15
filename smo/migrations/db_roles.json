@@ -69,7 +69,10 @@
  "samples/coverage-optimization-rapp": {
   "schema": "coverage_optimization_rapp",
   "shared": [
-   "module_identity"
+   "module_identity",
+   "notification_outbox",
+   "periodic_run",
+   "smo_event"
   ]
  },
  "samples/traffic-steering-rapp": {

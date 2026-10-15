@@ -111,7 +111,7 @@ operatorUi:
       label: Reconcile approvals
       method: POST
       path: /instances/{instanceId}/reconcile
-      success: ASSIST dispatches reconciled
+      success: ASSIST dispatches and held reverts or rollbacks reconciled
   - id: cells
     title: Cells
     kind: table
@@ -211,6 +211,18 @@ operatorUi:
       query:
         points: 48
       refreshSeconds: 15
+  # Call flow 24f: the instance's scheduled passes (`evaluateEverySeconds` in its configuration; absent: only Evaluate now).
+  - id: schedule
+    title: Scheduled passes
+    kind: keyValues
+    items:
+    - {label: Evaluated every (s), path: evaluateEverySeconds, format: number}
+    - {label: Last pass, path: lastEvaluation.at}
+    - {label: Last pass trigger, path: lastEvaluation.trigger, format: badge}
+    - {label: Last pass result, path: lastEvaluation.result, format: badge}
+    source:
+      path: /instances/{instanceId}
+      refreshSeconds: 30
   # The demo's steps (demo.py, docs/GUI_DEMO_GUIDE.md) as buttons only an admin sees: the rApp plays the network and the Digital Twin. The
   # governance decisions between them (approve training and validation, certify, promote) stay on the AI/ML page, where a person makes them, and
   # the evaluations (steps 8 and 10) are the Closed loop panel's Evaluate now.
