@@ -198,16 +198,19 @@ def run_idempotent(request: Request, db: Session, module: str, status_code: int,
     return result
 
 
-def idempotent(module: str, status_code: int = 200):
-    """Route decorator, see the module docstring. `status_code` is the route's success status, replayed as stored."""
+def idempotent(module: str, status_code: int = 200, exclude: tuple[str, ...] = ()):
+    """Route decorator, see the module docstring. `status_code` is the route's success status, replayed as stored. `exclude` names route parameters
+    left out of the request fingerprint: a credential sent in a header is checked by the route, not part of what the request asks for, so a repeat with
+    the same body is the same request (and the secret is not hashed into a stored row)."""
     def decorate(fn):
         params = inspect.signature(fn).parameters
         if "request" not in params or "db" not in params:
             raise TypeError(f"{fn.__name__}: an @idempotent route needs `request: Request` and `db: Session` parameters")
+        left_out = {"request", "db", *exclude}
 
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
-            payload = jsonable_encoder({k: v for k, v in kwargs.items() if k not in ("request", "db")})
+            payload = jsonable_encoder({k: v for k, v in kwargs.items() if k not in left_out})
             return run_idempotent(kwargs["request"], kwargs["db"], module, status_code, payload, lambda: fn(*args, **kwargs))
         return wrapper
     return decorate

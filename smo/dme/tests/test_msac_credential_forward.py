@@ -31,14 +31,15 @@ def test_the_credential_is_forwarded_in_its_header_and_not_in_the_body(client, f
     """Sent to DME, it is sent to RAN NF OAM in the same header, and nowhere in the body."""
     assert client.post("/actions", json=ACTION, headers={"X-MSAC-Credential": SECRET}).status_code == 202
     [call] = forwarded
-    assert call["path"] == "/ran-nf-oam/config-jobs" and call["headers"] == {"X-MSAC-Credential": SECRET}
+    assert call["path"] == "/ran-nf-oam/config-jobs" and call["headers"]["X-MSAC-Credential"] == SECRET
     assert SECRET not in jsonlib.dumps(call["json"])
 
 
 def test_no_header_is_forwarded_when_none_was_sent(client, forwarded):
-    """An action sent without the header is forwarded exactly as before: no `headers` at all."""
-    assert client.post("/actions", json=ACTION).status_code == 202
-    assert "headers" not in forwarded[0]
+    """An action sent without the header is forwarded without one: only its idempotency key rides along (call flow 03f)."""
+    resp = client.post("/actions", json=ACTION)
+    assert resp.status_code == 202
+    assert forwarded[0]["headers"] == {"Idempotency-Key": f"dme-action:{resp.json()['actionId']}"}
 
 
 def test_the_credential_is_not_in_an_answer_a_record_or_a_refusal(client, forwarded, monkeypatch):
