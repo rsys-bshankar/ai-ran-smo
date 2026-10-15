@@ -318,3 +318,25 @@ def test_an_assist_change_enacted_later_is_observed_from_its_enactment_not_its_p
     platform.records["INFERENCE"] += [_record(3, WORSE)]
     d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
     assert (d["decision"], d["reason"]) == ("REVERT_CIO", "KPI_DEGRADED") and d["kpi"]["windows"] == 2
+
+
+# ---------------------------------------------------------------- the shared CIO with the Traffic Steering rApp (call flow 25b)
+
+def test_a_relation_the_traffic_steering_rapp_has_a_cio_write_waiting_on_is_held(client, platform, r1):
+    """Call flow 25b: a relation the Traffic Steering rApp lists PENDING (a CIO step waiting for the operator, or a held revert / rollback) is held like an
+    OBSERVING one (MLB_OBSERVING), so the two rApps never write the same CIO over each other's waiting write."""
+    instance_id = _deployed(client, platform, r1, trafficSteeringInstanceId="ts-1")
+    platform.dispatch = _dispatched()
+    r1.paths["/rapps/ts-1/operator/instances/ts-1/relations"] = (200, {"items": [{"relation": REL, "state": "PENDING"}]})
+    d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
+    assert d["decision"] == "NO_CHANGE" and "MLB_OBSERVING" in d["reason"]
+
+
+def test_the_relations_list_names_a_write_waiting_for_a_person(client, platform, r1, monkeypatch):
+    """Call flow 25b: `/relations` carries `pendingApprovalId` (a revert or rollback held for a person) next to `pendingDispatchId`, which the Traffic
+    Steering rApp reads to hold the relation."""
+    instance_id = _observing(client, platform, r1)
+    _hold(platform, monkeypatch)
+    client.post(f"/instances/{instance_id}/evaluate")
+    rel = client.get(f"/instances/{instance_id}/relations").json()["items"][0]
+    assert rel["pendingApprovalId"] and rel["pendingDispatchId"] is None

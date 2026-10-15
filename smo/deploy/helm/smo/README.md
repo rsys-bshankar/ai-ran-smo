@@ -124,6 +124,9 @@ flow 23f), so the KPI check of a CIO change runs about an hour after it without 
 `modules.coverage-optimization-rapp-worker` does the same for the Coverage Optimization rApp (`COVERAGE_SCHEDULE_TICK_SECONDS`, default `"15"`; call
 flow 24f), with the same 10m request and the same three tables added to its role.
 
+`modules.traffic-steering-rapp-worker` does the same for the Traffic Steering rApp (`TRAFFIC_STEERING_SCHEDULE_TICK_SECONDS`, default `"15"`; call
+flow 25f), with the same 10m request and the same three tables added to its role.
+
 ## Scheduled rotation of rApp instance secrets (SEC-15.19)
 
 `modules.rapp-mgmt-worker` (the rApp Management image run as a worker, like `ran-nf-oam-worker`) rotates the secret of running rApp instances on a schedule. **Off by default:** `RAPP_MGMT_SECRET_ROTATION_DAYS` is `"0"`, and the worker then does nothing (it is still one small pod; set `modules.rapp-mgmt-worker.enabled=false` to leave it out). To switch it on set the number of days:

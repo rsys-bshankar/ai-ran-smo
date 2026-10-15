@@ -670,11 +670,13 @@ def _es_cells(inst: MobilityInstance) -> dict[str, dict]:
 
 def _mlb_observing(inst: MobilityInstance) -> set[str]:
     """Relations the Traffic Steering rApp has a CIO change on under
-    observation (the shared-CIO arbitration, Wave 10.4 D10.4-1)."""
+    observation, or a CIO write waiting on (PENDING: an ASSIST dispatch or a
+    held revert / rollback) — the shared-CIO arbitration, Wave 10.4 D10.4-1,
+    call flow 25b."""
     if not inst.traffic_steering_instance_id:
         return set()
     resp = _r1.get(_peer(inst.traffic_steering_instance_id, "relations"))
-    return {r["relation"] for r in resp.json().get("items", []) if r.get("state") == "OBSERVING"} \
+    return {r["relation"] for r in resp.json().get("items", []) if r.get("state") in ("OBSERVING", "PENDING")} \
         if resp.status_code == 200 else set()
 
 
@@ -862,10 +864,13 @@ def list_decisions(instance_id: uuid.UUID, relation: str | None = None, executio
 
 
 def _relation_view(inst: MobilityInstance, r: MobilityRelation) -> dict:
+    """The JSON shape of a relation: its state, CIO and last change, and the write waiting on it, if any (an ASSIST dispatch, or a revert or rollback
+    held for a person), which the Traffic Steering rApp reads to hold the relation (call flow 25b)."""
     rel = next(x for x in inst.relations if x["relation"] == r.relation_id)
     return {"relation": r.relation_id, "source": rel["source"], "target": rel["target"], "state": r.state,
             "cio": r.current_cio, "lastChange": r.last_change,
-            "pendingDispatchId": str(r.pending_dispatch_id) if r.pending_dispatch_id else None}
+            "pendingDispatchId": str(r.pending_dispatch_id) if r.pending_dispatch_id else None,
+            "pendingApprovalId": str(r.pending_approval_id) if r.pending_approval_id else None}
 
 
 @app.get("/instances/{instance_id}/relations")

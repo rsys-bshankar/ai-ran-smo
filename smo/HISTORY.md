@@ -2780,6 +2780,38 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.8 flow 25 — the Traffic Steering closed loop rewritten from the code: on a schedule, one pass at a time, held writes per cell, the shared CIO both ways
+
+The seventh flow of DOC-CF-1.8 and the last of the four sample rApps' loops, decided with the product owner (the recommendations of the audit, all taken):
+
+- **A. The loop closes by itself.** As flows 22–24: `evaluateEverySeconds` (60 to 86400) and the worker `traffic-steering-rapp-worker` (`app/tasks.py`,
+  task `evaluate-due`, `TRAFFIC_STEERING_SCHEDULE_TICK_SECONDS`, default 15; `run_due_passes`, each pass as its instance under its own execution id, a
+  failure recorded as `lastEvaluation` ERROR). Wired like the other rApp workers (10m CPU request; the role gains `notification_outbox`, `periodic_run` and
+  `smo_event`); a "Scheduled passes" panel on the rApp's page.
+- **B. One pass at a time.** A pass and a reconcile lock the instance (`_lock_instance`, NOWAIT, 409 `EVALUATION_IN_PROGRESS`); reconcile no longer
+  commits on its own.
+- **C. Held writes, per cell.** A revert or rollback RAN NF OAM holds for a person (`PR-AI-11`) was read back at once, sent again and reported failed, and a
+  held revert set the cell STEADY with its step still in force. Now `_restore` stops at PENDING_APPROVAL: `REVERT_AWAITING_APPROVAL` (the cell stays
+  OBSERVING with its step) or `<trigger>_ROLLBACK_AWAITING_APPROVAL`, `pending_approval_id` and `pending_decision_id` on the cell. Unlike the Coverage
+  rApp's cluster-wide change set, steps here are per cell: only that cell is left alone, and it is excluded as a target (`TARGET_AWAITING_APPROVAL`,
+  a new engine exclusion) while its own steering is unsettled. Reconcile settles it from the approval and a read-back (`_settle_approvals`); an approved
+  revert that restored the value removes the step's bias, a rejected one leaves it in force for a later release.
+- **D. The KPI hour starts at the enactment.** An ASSIST step found enacted by reconcile is observed, paced and logged for anti-oscillation from the cell's
+  latest PM window then (`_latest_windows`), not from the window the pass planned it on.
+- **E. A waiting ASSIST dispatch holds only new steps.** Every cell was recorded AWAITING_APPROVAL while a dispatch waited, so another cell's degraded
+  step could not be reverted until the operator acted. Now a step under observation is still checked and reverted; only planning is held, and the cells
+  of the waiting dispatch are no targets.
+- **F. The shared CIO, both ways.** A CIO step waiting for the operator or a person was invisible to the Mobility rApp, and the Mobility rApp's waiting
+  writes to this one: either could write a relation's CIO under the other's waiting write, which then overwrote it with a value computed from the old
+  CIO. Now this rApp's `/relations` lists such a relation `PENDING`, which the Mobility rApp holds like `OBSERVING` (`_mlb_observing`), and the Mobility
+  rApp's `/relations` carries `pendingApprovalId` beside `pendingDispatchId`, either of which holds the relation here (`MRO_OBSERVING`).
+- **G. The document** is six diagrams (one pass; the guards, options and pairwise plan with the shared CIO; a step through the autonomy dispatch; the KPI
+  check; ASSIST and held writes; the scheduled pass) with PNG images. Corrected: the rApp's own model computes the plan, AIMgF records the job and report.
+- **Not taken.** An unreadable alarm list still holds nothing (a Phase 1 note in 25b), as in flow 24.
+
+Revision 0053 adds five nullable columns (expand only). Tests: `samples/traffic-steering-rapp/tests/test_schedule_and_approvals.py`, and two in the
+Mobility rApp's `tests/test_schedule_dmro_and_approvals.py`.
+
 ### DOC-CF-1.8 flow 24 — the Coverage Optimization closed loop rewritten from the code: on a schedule, one pass at a time, held writes keep the cluster still
 
 The sixth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken):

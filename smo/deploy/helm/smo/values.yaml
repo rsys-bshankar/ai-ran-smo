@@ -342,6 +342,8 @@ modules:
   # the same image as a worker: a pass of each instance whose evaluateEverySeconds has passed, so a change set is confirmed or reverted on time (call flow 24f)
   coverage-optimization-rapp-worker: { image: coverage-optimization-rapp, databaseRole: coverage-optimization-rapp, enrollment: false, kind: worker, env: { SMO_IDENTITY_KIND: rapp, R1_GATEWAY_URL: "http://r1-termination:8000", COVERAGE_SCHEDULE_TICK_SECONDS: "15" }, resources: { requests: { cpu: 10m, memory: 128Mi }, limits: { memory: 512Mi } } }
   traffic-steering-rapp: { image: traffic-steering-rapp, databaseRole: traffic-steering-rapp, enrollment: false, env: { SMO_IDENTITY_KIND: rapp, R1_GATEWAY_URL: "http://r1-termination:8000" } }
+  # the same image as a worker: a pass of each instance whose evaluateEverySeconds has passed, so a steering step is confirmed or reverted on time (call flow 25f)
+  traffic-steering-rapp-worker: { image: traffic-steering-rapp, databaseRole: traffic-steering-rapp, enrollment: false, kind: worker, env: { SMO_IDENTITY_KIND: rapp, R1_GATEWAY_URL: "http://r1-termination:8000", TRAFFIC_STEERING_SCHEDULE_TICK_SECONDS: "15" }, resources: { requests: { cpu: 10m, memory: 128Mi }, limits: { memory: 512Mi } } }
   # the GUI: its backend (one replica: it keeps its users in a SQLite file on a volume) and the nginx that serves the SPA
   gui-bff:
     image: gui-bff

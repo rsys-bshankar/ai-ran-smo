@@ -69,6 +69,7 @@ services:
   coverage-optimization-rapp: *pgtls_client
   coverage-optimization-rapp-worker: *pgtls_client
   traffic-steering-rapp: *pgtls_client
+  traffic-steering-rapp-worker: *pgtls_client
   nfo: *pgtls_client
   focom: *pgtls_client
   mlmr: *pgtls_client

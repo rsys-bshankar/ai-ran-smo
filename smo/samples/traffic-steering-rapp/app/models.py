@@ -36,6 +36,9 @@ class TrafficInstance(Base):
     operator_notification_uri: Mapped[str | None] = mapped_column(String)
     steering_log: Mapped[list] = mapped_column(JSON, nullable=False, default=list)  # [{source, targets, at}]
     pending_dispatch: Mapped[dict | None] = mapped_column(JSON)   # {dispatchId, decisionIds: {cell: id}}
+    evaluate_every_seconds: Mapped[int | None] = mapped_column(Integer)   # the worker's scheduled passes (call flow 25f); None: manual only
+    last_evaluated_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    last_evaluation: Mapped[dict | None] = mapped_column(JSON)            # {at, executionId, trigger, result}
     data_jobs: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     model_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     model_version: Mapped[str | None] = mapped_column(String)
@@ -56,6 +59,9 @@ class TrafficCell(Base):
     steering: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)    # {"cio": {target: dB}, "prio": {layer: steps}}
     last_change: Mapped[dict | None] = mapped_column(JSON)
     last_changed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    # a revert or rollback RAN NF OAM holds for a person (PR-AI-11, call flow 25e): its approval and audit row; the cell is left alone until settled
+    pending_approval_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    pending_decision_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

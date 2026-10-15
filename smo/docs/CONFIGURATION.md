@@ -343,6 +343,12 @@ compose and the chart use the file form (`docs/SECRETS.md` lists each secret, it
 | `SME_ALLOW_OPEN_ENROLLMENT` | `"" (empty)` |  | `sme/app/main.py` | `true`, `1`, `yes` or `on`: SME accepts invoker registration with no enrollment secret (role `internal`). Only for a lab with `SMO_ENROLLMENT_SECRET` unset; never in production. |
 | `SME_TOKEN_AUDIENCE` | `computed in code` |  | `sme/app/main.py` | Audience SME requires in a client assertion for its token endpoint. Empty: `<SME_URL>/oauth2/token`. Set it when SME is published under another public URL than the one it is called by. |
 
+### `traffic-steering-rapp`
+
+| Variable | Default | Secret | Read in | What it does |
+|---|---|---|---|---|
+| `TRAFFIC_STEERING_SCHEDULE_TICK_SECONDS` | `15` |  | `docker-compose.yml`, `samples/traffic-steering-rapp/app/tasks.py` | How often the Traffic Steering rApp's worker (`traffic-steering-rapp-worker`) looks for instances due a scheduled pass (default 15, at least 1), across all worker replicas (call flow 25f). An instance is due when its `evaluateEverySeconds` (instance configuration, 60 to 86400; absent: manual only) has passed since its last pass; the KPI check of a steering step needs a pass about an hour after it. Read once at the worker's start. Seconds, not a secret. |
+
 ### Compose only (`.env`, substituted into `docker-compose.yml`)
 
 | Variable | Default | Secret | Read in | What it does |

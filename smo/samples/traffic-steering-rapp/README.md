@@ -16,11 +16,15 @@ cell individual offset.
 | Operator API | served on `:8000` as `/instances/...`; the instance's base URL is registered at rApp Management (`operatorApiBase` when the instance is created) and R1 Termination reaches it at `/rapps/<instance>/operator/...`. The page the GUI draws for it is declared in `manifest.yaml` (`operatorUi`) |
 | Call flow | [25 Traffic Steering closed loop](../../docs/call-flows/25-traffic-steering-closed-loop.md) |
 | Demo runbook | [DEMO_RUNBOOK.md section 27](../../DEMO_RUNBOOK.md) (Demo 00-11) |
-| Unit tests | 61 passed (`tests/test_engine.py`, `tests/test_model.py`, `tests/test_routes.py`; 98 % of `app/`) |
+| Unit tests | 92 passed (`tests/`, SQLite, standalone; 99 % of `app/`) |
 
 ## What it does
 
-One pass is `POST /instances/{id}/evaluate`, per source cell:
+One pass is `POST /instances/{id}/evaluate` ("Evaluate now"), per source cell. With `evaluateEverySeconds` in the instance configuration (60 to
+86400; absent: manual only), the rApp's worker `traffic-steering-rapp-worker` (the same image, `python -m smo_shared.worker`, task `evaluate-due` in
+`app/tasks.py`) runs a pass that often, as the instance, and records how it went (`lastEvaluation`); pick an interval well under an hour, so the KPI
+check of a step comes soon after its 60 minutes. A pass and a reconcile lock the instance (`SELECT ... FOR UPDATE NOWAIT`): a second is 409
+`EVALUATION_IN_PROGRESS` (call flow 25). A pass:
 
 - Data in: `LOAD_PERFORMANCE` via the SDK (PRB use, connected UEs, UE
   throughput, handover counters, CM snapshot), plus guards, alarms and O1
@@ -41,7 +45,23 @@ One pass is `POST /instances/{id}/evaluate`, per source cell:
   through an Intent carry none.
 - Verify or revert: after 60 minutes of post-change PM the change is CONFIRMED,
   or REVERTED (also direct to DME) if a target became congested, the source
-  ended worse than forecast, or a CIO change raised handover failures.
+  ended worse than forecast, or a CIO change raised handover failures. An
+  ASSIST step found enacted by `reconcile` is observed from the cell's latest
+  PM window then, not from the pass that planned it (call flow 25d); a step
+  under observation is checked even while other steps wait for the operator,
+  who holds only new steps.
+- Held for a person (call flow 25e): when an approval policy on the rApp makes
+  RAN NF OAM hold a revert or rollback (`PR-AI-11`), DME answers
+  `PENDING_APPROVAL` with an `approvalId`; the write is not read back or sent
+  again. The decision is `REVERT_AWAITING_APPROVAL` (a rollback
+  `<trigger>_ROLLBACK_AWAITING_APPROVAL`), the cell keeps the approval
+  (`pendingApprovalId` in the cells list), passes leave it alone and it is no
+  target (`TARGET_AWAITING_APPROVAL`); `reconcile` (or the next pass) settles
+  it from the approval and a read-back.
+- Shared CIO (call flow 25b): `/relations` lists a CIO step waiting for the
+  operator or for a person as `PENDING`, which the Mobility rApp holds like an
+  `OBSERVING` relation; a Mobility relation with a `pendingDispatchId` or
+  `pendingApprovalId` is held here (`MRO_OBSERVING`).
 
 ## Design
 
@@ -83,13 +103,15 @@ CIO envelope. This rApp publishes its observed relations at
 
 | File | Role |
 |---|---|
-| `app/main.py` | FastAPI service: instance start, lifecycle, evaluate loop, audit, dashboard |
+| `app/main.py` | FastAPI service: instance start, lifecycle, evaluate loop (`run_pass`, `run_due_passes`), dispatch and approval follow-up, audit, dashboard |
+| `app/tasks.py` | The worker's task `evaluate-due` (every `TRAFFIC_STEERING_SCHEDULE_TICK_SECONDS`, default 15) |
 | `app/engine.py` | Pure decision logic: guards, exclusions, knob choice, bounds, KPI check |
 | `app/models.py` | Tables `traffic_instance`, `traffic_cell`, `traffic_decision` (audit) |
 | `app/producer.py` | Sample load model and `LOAD_PERFORMANCE_SIM` producer |
 | `app/model/` | `SteeringModel.py` (forecast, planner), `series.py` (score), one logic file per execution mode |
 | `demo.py`, `tests/` | Demo 00-11 script; engine, model and route unit tests |
-| `tests/test_operator_page.py` | The `operatorUi` of `manifest.yaml` is valid, names only routes this rApp serves with query parameters they take, reads only fields its own answers carry, and ends with the admin-only demo panel (4 tests) |
+| `tests/test_schedule_and_approvals.py` | Call flow 25: `evaluateEverySeconds` bounds, the worker's task, due / not due / manual instances acting as themselves, a failed scheduled pass recorded, the instance lock (409, BUSY), reverts and rollbacks held for approval settled on approval, rejection and expiry, a held cell no target, the KPI hour of an ASSIST step starting at its enactment, a waiting dispatch holding only new steps, and pending CIO writes published to and read from the Mobility rApp (23 tests) |
+| `tests/test_operator_page.py` | The `operatorUi` of `manifest.yaml` is valid, names only routes this rApp serves with query parameters they take, reads only fields its own answers carry, and ends with the scheduled-passes panel and the admin-only demo panel (4 tests) |
 | `tests/test_demo_routes.py` | The demo / simulation routes: prepare registers the twin producer and starts; history, live and the KPI hour send the PM `demo.py` sends, and a refused report is answered as refused; emulate publishes the twin's data then emulates (7 tests) |
 | `manifest.yaml`, `capabilities.yaml`, `Definitions/`, `TOSCA-Metadata/` | Package content |
 
@@ -132,7 +154,7 @@ This package declares:
 ## Run and test
 ```bash
 cd traffic-steering-rapp
-PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # 61 passed
+PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # 92 passed
 ```
 Demo, run inside the compose network (e.g. from `r1-termination`):
 ```bash

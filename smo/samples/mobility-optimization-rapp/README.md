@@ -14,7 +14,7 @@ A Non-RT RIC rApp that classifies handover failures per neighbour relation and t
 | Operator API | served on `:8000` as `/instances/...`; the instance's base URL is registered at rApp Management (`operatorApiBase` when the instance is created) and R1 Termination reaches it at `/rapps/<instance>/operator/...`. The page the GUI draws for it is declared in `manifest.yaml` (`operatorUi`) |
 | Call flow | [23 Mobility Optimization closed loop](../../docs/call-flows/23-mobility-optimization-closed-loop.md) |
 | Demo runbook | [DEMO_RUNBOOK.md section 25](../../DEMO_RUNBOOK.md) (Demo 00-11) |
-| Unit tests | 83 passed (`tests/, SQLite, standalone) |
+| Unit tests | 85 passed (`tests/, SQLite, standalone) |
 
 ## What it does
 
@@ -49,7 +49,7 @@ Decision logic is in `app/engine.py` (pure functions) and `app/model/MobilityMod
   - `TARGET_RECENTLY_WOKEN`: target woke less than 30 minutes ago.
   - `INSUFFICIENT_SAMPLES`: fewer than 50 handover attempts in the window.
   - `PACING`: relation changed less than 60 minutes ago.
-  - `MLB_OBSERVING`: the Traffic Steering rApp has a CIO change on the relation under observation (shared CIO).
+  - `MLB_OBSERVING`: the Traffic Steering rApp has a CIO change on the relation under observation, or a CIO write waiting on it (`PENDING`: a step waiting for the operator or a held revert / rollback; call flow 25b). `/relations` carries `pendingDispatchId` and `pendingApprovalId` so the Traffic Steering rApp holds this rApp's waiting writes too.
 - **DMRO bounds** (call flow 23e). Written at deploy, after the deployed model is saved, and read back; the outcome is kept on the instance as `dmroStatus` (`VERIFIED`, `VERIFY_FAILED`, `AWAITING_APPROVAL` when RAN NF OAM holds the write, `REJECTED` with the error, or `APPROVAL_<status>`). Until it is `VERIFIED` a RAISE or LOWER is held (`DMRO_NOT_APPLIED`); a KPI revert still runs. "Apply DMRO bounds" (`POST /instances/{id}/dmro`) writes them again, or follows a held write's approval instead of asking twice; reconcile settles a held one too. An instance deployed before revision 0051 has no status and holds its changes until then. Defaults: `dmroControl` true, deviation -6 / +6, `minimumTimeBetweenHoTriggerChange` 60. The instance config key `dmroBounds` overrides them.
 - **Validation.** Held-out ACT / HOLD / HEALTHY band score of at least 0.8 and RMSE of at most 1.5 points.
 - **Emulation.** Correct CIO direction on at least 90 % of faulty windows and no action on a healthy relation.
@@ -61,7 +61,7 @@ Decision logic is in `app/engine.py` (pure functions) and `app/model/MobilityMod
 |---|---|
 | `app/main.py` | FastAPI service: instance binding, lifecycle, evaluate loop (`run_pass`, `run_due_passes`), dispatch and approval follow-up, DMRO bounds, audit, dashboard |
 | `app/tasks.py` | The worker's task `evaluate-due` (every `MOBILITY_SCHEDULE_TICK_SECONDS`, default 15) |
-| `tests/test_schedule_dmro_and_approvals.py` | Call flow 23: `evaluateEverySeconds` bounds, the worker's task, due / not due / manual instances acting as themselves, a failed scheduled pass recorded, the instance lock (409, BUSY), reverts and rollbacks held for approval settled on approval, rejection and expiry, the DMRO status (held, refused, unknown) holding changes and "Apply DMRO bounds", the KPI hour of an ASSIST change starting at its enactment (22 tests) |
+| `tests/test_schedule_dmro_and_approvals.py` | Call flow 23: `evaluateEverySeconds` bounds, the worker's task, due / not due / manual instances acting as themselves, a failed scheduled pass recorded, the instance lock (409, BUSY), reverts and rollbacks held for approval settled on approval, rejection and expiry, the DMRO status (held, refused, unknown) holding changes and "Apply DMRO bounds", the KPI hour of an ASSIST change starting at its enactment, a relation the Traffic Steering rApp has a CIO write waiting on held and this rApp's own waiting writes published (24 tests) |
 | `app/engine.py` | Guards, KPI check, bounded step (no I/O) |
 | `app/model/MobilityModel.py` | Model, thresholds, MLMR artifact (JSON in a zip) |
 | `app/model/{Training,Validation,Emulation,Inference}Logic.py` | The four execution modes |
@@ -116,7 +116,7 @@ Paths are relative to the service root; through R1 Termination they sit under `/
 
 ```bash
 cd smo/samples/mobility-optimization-rapp
-PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # 83 passed
+PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # 85 passed
 ```
 
 The demo runs against a live stack, from inside the compose network (for example the `r1-termination` container). Steps are Demo 00 to 11:

@@ -582,7 +582,7 @@
     },
     "/instances/{instance_id}/evaluate": {
       "post": {
-        "description": "One pass of the closed loop over the instance's cells. Its\nX-Correlation-ID is the execution id in the audit trail.",
+        "description": "One pass of the closed loop over the instance's cells (\"Evaluate now\"). Its X-Correlation-ID is the execution id in the audit trail. 409\nEVALUATION_IN_PROGRESS while another pass or reconcile of the instance runs.",
         "operationId": "evaluate_instances__instance_id__evaluate_post",
         "parameters": [
           {
@@ -814,7 +814,7 @@
     },
     "/instances/{instance_id}/relations": {
       "get": {
-        "description": "The neighbour relations this rApp has CIO steering on, and whether a\nchange on each is under observation. The Mobility rApp reads this for\nthe shared-CIO arbitration (D10.4-1).",
+        "description": "The neighbour relations this rApp has CIO steering on, and whether a\nchange on each is under observation, or PENDING: a CIO write on it waits\nfor the operator (ASSIST) or for a person (a held revert or rollback,\ncall flow 25e). The Mobility rApp reads this for the shared-CIO\narbitration (D10.4-1) and holds an OBSERVING or PENDING relation.",
         "operationId": "list_relations_instances__instance_id__relations_get",
         "parameters": [
           {

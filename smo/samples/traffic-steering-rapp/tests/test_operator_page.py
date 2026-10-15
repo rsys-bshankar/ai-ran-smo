@@ -41,7 +41,7 @@ def test_the_manifest_declares_a_valid_page_with_the_four_kinds_of_panel_it_need
     """The manifest's operator page validates and has its panels, the last the demo's buttons, every one of them admin-only (docs/GUI_DEMO_GUIDE.md),
     and is not read-only."""
     d = declaration()
-    assert [p["kind"] for p in d["panels"]] == ["keyValues", "actions", "table", "actions"]
+    assert [p["kind"] for p in d["panels"]] == ["keyValues", "actions", "table", "keyValues", "actions"]
     assert d["panels"][-1]["id"] == "demo" and {a.get("role") for a in d["panels"][-1]["actions"]} == {"admin"}
     assert not d.get("readOnly")
 

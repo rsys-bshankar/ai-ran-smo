@@ -6,7 +6,8 @@ cell individual offset of a neighbour relation. Like the other reference
 rApps it uses O1 PM data only, and the R1 interface only through the AI
 Runtime SDK; there is no A1, Near-RT RIC, xApp or E2.
 
-The loop (POST /instances/{id}/evaluate), per source cell:
+The loop (POST /instances/{id}/evaluate, or the worker's `evaluate-due` task every `evaluateEverySeconds` of the instance, call flow 25f; one pass at a
+time per instance), per source cell:
 
     Input (LOAD_PERFORMANCE) → Score + forecast → KPI check of the last change
           → Safety → Knob / target options → Pairwise plan
@@ -25,14 +26,19 @@ How each kind of write reaches O1:
   * A **revert** (the KPI check failed) or **rollback** (a write failed or
     didn't verify) restores the previous value, so it goes straight to DME
     `/actions`, with its own `actionId`.
+  * A revert or rollback RAN NF OAM holds for a person (PR-AI-11) waits for
+    the decision and is settled by `reconcile` (25e), never sent twice; the
+    cell is left alone, and is no steering target, until it is settled.
 
 The CIO is shared with the Mobility rApp (D10.4-1). Both keep it inside
-baseline ± 6 dB, and neither changes a relation the other is observing. This
-rApp publishes its own observed relations at GET /instances/{id}/relations.
+baseline ± 6 dB, and neither changes a relation the other is observing or has
+a write waiting on. This rApp publishes its own observed and pending relations
+at GET /instances/{id}/relations.
 """
 
 import datetime
 import json
+import logging
 import time
 import uuid
 from typing import cast
@@ -40,6 +46,7 @@ from typing import cast
 from fastapi import Depends, FastAPI
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from smo_sdk import AiRuntimeSdk, SdkError, instances
@@ -47,9 +54,9 @@ from smo_sdk.data import AlarmScope
 from smo_shared.logconfig import install_logging
 from smo_shared.metrics import install_metrics
 from smo_shared.health import install_health
-from smo_shared.correlation import apply_correlation_id, get_correlation_id
+from smo_shared.correlation import apply_correlation_id, correlation_scope, get_correlation_id
 from smo_shared.db import get_session
-from smo_shared.r1_client import R1Client
+from smo_shared.r1_client import R1Client, reset_acting_instance, set_acting_instance
 from smo_shared.timeutil import as_utc
 
 from . import engine, producer  # producer: the sample data generator, also used by tests and demo.py
@@ -69,6 +76,10 @@ _r1 = R1Client()
 sdk = AiRuntimeSdk(_r1)
 
 RAPP_ID = "traffic-steering-rapp"
+logger = logging.getLogger(__name__)
+
+# Call flow 25f: the bounds of an instance's `evaluateEverySeconds` (a pass reads PM and O1 and may write O1, so not more often than a minute).
+EVALUATE_EVERY_MIN_SECONDS, EVALUATE_EVERY_MAX_SECONDS = 60, 86400
 
 # The fulfilment report of a dispatched Intent is not there when the dispatch answers: Intent Service queues the push to the handler (an outbox row, sent
 # right after the commit with a 2 s timeout, then retried by the delivery sweep every few seconds), and the handler enacts the change and publishes the
@@ -107,6 +118,26 @@ def _instance(db: Session, instance_id: uuid.UUID) -> TrafficInstance:
     if inst is None:
         raise RappError(404, "INSTANCE_NOT_STARTED", f"instance {instance_id} is not started on this rApp")
     return inst
+
+
+def _lock_instance(db: Session, instance_id: uuid.UUID) -> TrafficInstance:
+    """The instance, locked for this transaction (`SELECT ... FOR UPDATE NOWAIT` on Postgres): a pass and a reconcile of one instance run one at a
+    time (call flow 25a). 409 EVALUATION_IN_PROGRESS when another holds it, at once; 404 as `_instance`. SQLite has no row locks."""
+    try:
+        inst = db.get(TrafficInstance, instance_id, with_for_update={"nowait": True}, populate_existing=True)
+    except OperationalError as exc:
+        if getattr(exc.orig, "sqlstate", None) != "55P03":       # lock_not_available; anything else is not ours to answer
+            raise
+        db.rollback()
+        raise RappError(409, "EVALUATION_IN_PROGRESS", f"instance {instance_id} is being evaluated or reconciled; try again") from exc
+    if inst is None:
+        raise RappError(404, "INSTANCE_NOT_STARTED", f"instance {instance_id} is not started on this rApp")
+    return inst
+
+
+def _uuid_or_none(value: str | None) -> uuid.UUID | None:
+    """`value` as a UUID, or None when there is none."""
+    return uuid.UUID(str(value)) if value else None
 
 
 def _layers(inst: TrafficInstance) -> dict[str, str]:
@@ -205,26 +236,35 @@ def _execute_direct(inst: TrafficInstance, values: dict[str, int], execution_id:
             f"{RAPP_ID}:{inst.instance_id}", [_change(inst, ref, v) for ref, v in values.items()], action_id=action_id,
             source_context={"rApp": RAPP_ID, "correlationId": execution_id, "reason": reason},
             decision=_decision(inst, execution_id, reason))
-        return {"path": "DME_DIRECT", "actionId": result["actionId"], "forwardedJobId": result.get("forwardedJobId"),
-                "status": result["status"]}
+        done = {"path": "DME_DIRECT", "actionId": result["actionId"], "forwardedJobId": result.get("forwardedJobId"), "status": result["status"]}
+        return {**done, "approvalId": result["approvalId"]} if result.get("approvalId") else done
     except SdkError as e:
         return {"path": "DME_DIRECT", "actionId": action_id, "status": "REJECTED", "error": e.body}
 
 
 def _restore(inst: TrafficInstance, values: dict[str, int], execution_id: str, reason: str) -> dict:
     """Write the given values straight through DME, verify, and re-send once
-    on a mismatch (used for reverts and rollbacks)."""
+    on a mismatch (used for reverts and rollbacks).
+
+    Call flow 25e: when RAN NF OAM holds the write for a person (PR-AI-11; DME answers PENDING_APPROVAL with an `approvalId`), nothing has changed yet, so
+    it is neither read back nor sent again (that would ask a second time): the result is AWAITING_APPROVAL with the `approvalId`, which
+    `_settle_approvals` follows up."""
     pending = {r: v for r, v in values.items() if _value(inst, r) != v}
     if not pending:
         return {"performed": False, "result": "ALREADY_RESTORED", "verification": _verify(inst, values)}
-    attempts = []
+    attempts: list[dict] = []
+    result = "VERIFY_FAILED"
     for _ in range(2):
         action = _execute_direct(inst, pending, execution_id, reason)
+        if action["status"] == "PENDING_APPROVAL":
+            attempts.append({"action": action, "verification": None})
+            return {"performed": True, "result": "AWAITING_APPROVAL", "approvalId": action.get("approvalId"), "attempts": attempts}
         verification = _verify(inst, pending)
         attempts.append({"action": action, "verification": verification})
-        if verification["result"] == "VERIFIED":
+        result = verification["result"]
+        if result == "VERIFIED":
             break
-    return {"performed": True, "result": attempts[-1]["verification"]["result"], "attempts": attempts}
+    return {"performed": True, "result": result, "attempts": attempts}
 
 
 def _intent_actions(intent_id: str) -> dict[str, dict]:
@@ -274,17 +314,19 @@ def _bias(row: TrafficCell, d: TrafficDecision, sign: int) -> None:
     row.steering = steering
 
 
-def _settle(inst: TrafficInstance, row: TrafficCell, d: TrafficDecision, ok: bool, execution_id: str) -> None:
+def _settle(inst: TrafficInstance, row: TrafficCell, d: TrafficDecision, ok: bool, execution_id: str,
+            enacted_at: datetime.datetime | None = None) -> None:
     """Records the end state of one cell's step on its row and audit row.
 
     When `ok`, the step's bias is added to (steering) or removed from (release) the steering in force, the change time is kept for pacing, and a
-    steering step puts the cell under observation and into the steering log (the anti-oscillation source). Otherwise the outcome names the
-    rollback trigger and whether the rollback was verified, and the row's steering is left as it was.
+    steering step puts the cell under observation and into the steering log (the anti-oscillation source). The change time is `enacted_at` when
+    `reconcile` found an ASSIST step enacted (call flow 25d), else the window the step was decided on. Otherwise the outcome names the rollback
+    trigger and whether the rollback was verified, and the row's steering is left as it was.
     """
     steering = d.decision.startswith("STEER_")
     if ok:
         _bias(row, d, +1 if steering else -1)
-        observed_at = cast(datetime.datetime, d.observed_at)      # a step was decided on an observation
+        observed_at = enacted_at or cast(datetime.datetime, d.observed_at)      # a step was decided on an observation
         row.last_changed_at = observed_at
         d.outcome = "EXECUTED"
         if steering:
@@ -303,12 +345,13 @@ def _settle(inst: TrafficInstance, row: TrafficCell, d: TrafficDecision, ok: boo
 
 
 def _follow_dispatch(inst: TrafficInstance, rows: dict[str, TrafficCell], decisions: dict[str, TrafficDecision],
-                     dispatch: dict, execution_id: str) -> None:
+                     dispatch: dict, execution_id: str, enacted_at: dict[str, datetime.datetime] | None = None) -> None:
     """Settles the cells of one AutonomyDispatch according to where it is.
 
     SHADOWED, REJECTED and AWAITING_SCOPE only record the outcome (ASSIST remembers the pending dispatch on the instance); a dispatched step is
     matched to the Intent's action report, verified by an O1 read-back, and rolled back through DME when the action did not complete or the
-    read-back differs.
+    read-back differs. A rollback RAN NF OAM holds for a person leaves the cell with the approval pending (25e). `enacted_at` ({cell: time}) is
+    when `reconcile` found an ASSIST step enacted.
     """
     intent = {"dispatchId": dispatch["dispatchId"], "autonomyMode": dispatch["autonomyMode"], "status": dispatch["status"],
               "intentId": dispatch.get("intentId"), "rejectedBy": dispatch.get("rejectedBy")}
@@ -333,28 +376,84 @@ def _follow_dispatch(inst: TrafficInstance, rows: dict[str, TrafficCell], decisi
         if not ok:
             trigger = "VERIFY_FAILED" if status == "COMPLETED" else "PARTIAL_SUCCESS" if status == "PARTIAL_SUCCESS" else "ACTION_FAILED"
             d.rollback = {"trigger": trigger, **_restore(inst, {ref: from_value}, execution_id, f"ROLLBACK:{trigger}")}
-        _settle(inst, rows[cell], d, ok, execution_id)
+            if d.rollback["result"] == "AWAITING_APPROVAL":
+                # call flow 25e: the rollback waits for a person; the cell is left alone until `_settle_approvals` reads it back
+                d.outcome = f"{trigger}_ROLLBACK_AWAITING_APPROVAL"
+                rows[cell].pending_approval_id, rows[cell].pending_decision_id = _uuid_or_none(d.rollback.get("approvalId")), d.decision_id
+                d.final_state = _final(rows[cell])
+                d.updated_at = datetime.datetime.now(datetime.UTC)
+                continue
+        _settle(inst, rows[cell], d, ok, execution_id, (enacted_at or {}).get(cell))
+
+
+def _latest_windows(inst: TrafficInstance) -> dict[str, datetime.datetime]:
+    """{cell: time of its latest PM window in the INFERENCE dataset}: when `reconcile` finds an ASSIST step enacted, its KPI hour, pacing and the
+    anti-oscillation log start after what was already measured (call flow 25d)."""
+    return {c: as_utc(series[-1][0]) for c, series in by_cell(_dataset(inst, "INFERENCE")).items() if series}
+
+
+def _settle_approvals(db: Session, inst: TrafficInstance, rows: dict[str, TrafficCell]) -> list[dict]:
+    """Call flow 25e: follows up the reverts and rollbacks RAN NF OAM held for a person (PR-AI-11). A request still PENDING is left; a decided one
+    (APPROVED, REJECTED, EXPIRED or REFUSED) is settled by reading the steered attribute back against the value the write restores (a revert's
+    `toValue`, a rollback's `fromValue`). A revert's audit row becomes REVERTED (the step's bias removed from the steering in force), REVERT_FAILED or
+    `APPROVAL_<status>`, and the cell STEADY; a rollback's `<trigger>_ROLLED_BACK` or `<trigger>_ROLLBACK_<FAILED | status>`."""
+    settled = []
+    for cell, row in rows.items():
+        if row.pending_approval_id is None:
+            continue
+        approval = sdk.platform.get_approval(row.pending_approval_id)
+        status = approval["status"]
+        if status == "PENDING":
+            continue
+        approval_id = row.pending_approval_id
+        d = db.get(TrafficDecision, row.pending_decision_id) if row.pending_decision_id else None
+        row.pending_approval_id = row.pending_decision_id = None
+        if d is None or d.managed_ref is None:
+            row.state, row.last_change = engine.STEADY, None
+            settled.append({"approvalId": str(approval_id), "status": status, "outcomes": {cell: row.state}})
+            continue
+        revert = d.decision == engine.REVERT
+        wanted = cast(int, d.to_value if revert else d.from_value)      # a step and its revert carry both values
+        restored = _value(inst, d.managed_ref) == wanted
+        settled_as = "FAILED" if status == "APPROVED" else status      # how a write that did not restore the value ended
+        if revert:
+            if restored:
+                _bias(row, TrafficDecision(cell_id=cell, knob=d.knob, managed_ref=d.managed_ref, targets=d.targets,
+                                           from_value=d.to_value, to_value=d.from_value), -1)
+                row.last_changed_at = d.observed_at
+            row.state, row.last_change = engine.STEADY, None
+            d.outcome = "REVERTED" if restored else "REVERT_FAILED" if status == "APPROVED" else f"APPROVAL_{status}"
+        else:
+            trigger = d.outcome.removesuffix("_ROLLBACK_AWAITING_APPROVAL")
+            d.outcome = f"{trigger}_ROLLED_BACK" if restored else f"{trigger}_ROLLBACK_{settled_as}"
+        d.action = {**(d.action or {}), "approval": {"status": status, "jobId": approval.get("jobId")}}
+        d.verification = _verify(inst, {d.managed_ref: wanted})
+        d.final_state = _final(row)
+        d.updated_at = datetime.datetime.now(datetime.UTC)
+        settled.append({"approvalId": str(approval_id), "status": status, "outcomes": {cell: d.outcome}})
+    return settled
 
 
 def _reconcile(db: Session, inst: TrafficInstance) -> list[dict]:
-    """Settles the instance's pending ASSIST dispatch once the operator has resolved it.
+    """Settles the instance's pending ASSIST dispatch once the operator has resolved it, and the reverts and rollbacks held for approval that were
+    decided (call flow 25e).
 
-    Returns [] when nothing is pending or the dispatch is still AWAITING_SCOPE; otherwise follows the dispatch, commits, and returns one summary
-    with each cell's outcome.
+    A dispatch still AWAITING_SCOPE is left; otherwise it is followed (an enacted step observed from its cell's latest PM window). Returns one summary
+    per settled dispatch or approval with each cell's outcome. The caller holds the instance's lock and commits.
     """
-    pending = inst.pending_dispatch
-    if not pending:
-        return []
-    dispatch = sdk.intent.get_autonomy_dispatch(pending["dispatchId"])
-    if dispatch["status"] == "AWAITING_SCOPE":
-        return []
     rows = _cells(db, inst)
-    decisions = {c: db.get_one(TrafficDecision, uuid.UUID(i)) for c, i in pending["decisionIds"].items()}
-    inst.pending_dispatch = None
-    _follow_dispatch(inst, rows, decisions, dispatch, next(iter(decisions.values())).execution_id)
-    db.commit()
-    return [{"dispatchId": pending["dispatchId"], "status": dispatch["status"],
-             "outcomes": {c: d.outcome for c, d in decisions.items()}}]
+    settled = []
+    pending = inst.pending_dispatch
+    if pending:
+        dispatch = sdk.intent.get_autonomy_dispatch(pending["dispatchId"])
+        if dispatch["status"] != "AWAITING_SCOPE":
+            decisions = {c: db.get_one(TrafficDecision, uuid.UUID(i)) for c, i in pending["decisionIds"].items()}
+            inst.pending_dispatch = None
+            enacted_at = _latest_windows(inst) if dispatch["status"] == "DISPATCHED" else None
+            _follow_dispatch(inst, rows, decisions, dispatch, next(iter(decisions.values())).execution_id, enacted_at)
+            settled.append({"dispatchId": pending["dispatchId"], "status": dispatch["status"],
+                            "outcomes": {c: d.outcome for c, d in decisions.items()}})
+    return settled + _settle_approvals(db, inst, rows)
 
 
 # ---------------------------------------------------------------- instance + datasets
@@ -389,6 +488,12 @@ def start_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     inst.coverage_instance_id = config.get("coverageInstanceId")
     inst.operator_notification_uri = config.get("operatorNotificationUri")
     inst.steering_log = inst.steering_log or []
+    every = config.get("evaluateEverySeconds")
+    if every is not None and (isinstance(every, bool) or not isinstance(every, int)
+                              or not EVALUATE_EVERY_MIN_SECONDS <= every <= EVALUATE_EVERY_MAX_SECONDS):
+        raise RappError(422, "INSTANCE_CONFIG_INVALID",
+                        f"evaluateEverySeconds must be a whole number from {EVALUATE_EVERY_MIN_SECONDS} to {EVALUATE_EVERY_MAX_SECONDS}, or absent")
+    inst.evaluate_every_seconds = every
     datasets = {}
     for stage, name in (("TRAINING", DATASET), ("INFERENCE", DATASET), ("EMULATION", SIM_DATASET)):
         found = sdk.data.get_dataset(name, _consumer(inst), lifecycle_stage=stage, max_records=1)
@@ -423,7 +528,8 @@ def _instance_view(i: TrafficInstance) -> dict:
             "coverageInstanceId": i.coverage_instance_id, "steeringLog": i.steering_log,
             "pendingDispatchId": (i.pending_dispatch or {}).get("dispatchId"), "datasets": i.data_jobs,
             "modelId": str(i.model_id) if i.model_id else None, "modelVersion": i.model_version,
-            "artifactVersion": i.artifact_version, "model": i.model_params, "lifecycleJobs": i.lifecycle_jobs}
+            "artifactVersion": i.artifact_version, "model": i.model_params, "lifecycleJobs": i.lifecycle_jobs,
+            "evaluateEverySeconds": i.evaluate_every_seconds, "lastEvaluation": i.last_evaluation}
 
 
 def _dataset(inst: TrafficInstance, stage: str) -> list[dict]:
@@ -535,9 +641,10 @@ def _coordination(inst: TrafficInstance) -> dict:
     """What the other rApps publish (D10.4-4c), read over R1."""
     es = {c["cellId"]: c for c in _items(inst.energy_saving_instance_id
                                          and _peer(inst.energy_saving_instance_id, "cells"))}
+    # a relation the Mobility rApp observes, or has a CIO write waiting on (an ASSIST dispatch or a held revert / rollback, call flow 25b)
     mro = {r["relation"] for r in _items(inst.mobility_instance_id
                                          and _peer(inst.mobility_instance_id, "relations"))
-           if r.get("state") == "OBSERVING"}
+           if r.get("state") == "OBSERVING" or r.get("pendingDispatchId") or r.get("pendingApprovalId")}
     cco = {c["cellId"] for c in _items(inst.coverage_instance_id
                                        and _peer(inst.coverage_instance_id, "cells"))
            if c.get("state") == "OBSERVING"}
@@ -567,13 +674,22 @@ def _record(db, inst, execution_id, cell, state, **kw) -> TrafficDecision:
 
 @app.post("/instances/{instance_id}/evaluate")
 def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
-    """One pass of the closed loop over the instance's cells. Its
-    X-Correlation-ID is the execution id in the audit trail."""
-    inst = _instance(db, instance_id)
+    """One pass of the closed loop over the instance's cells ("Evaluate now"). Its X-Correlation-ID is the execution id in the audit trail. 409
+    EVALUATION_IN_PROGRESS while another pass or reconcile of the instance runs."""
+    inst = _lock_instance(db, instance_id)
+    return run_pass(db, inst, get_correlation_id() or str(uuid.uuid4()), "MANUAL")
+
+
+def run_pass(db: Session, inst: TrafficInstance, execution_id: str, trigger: str,
+             started_at: datetime.datetime | None = None) -> dict:
+    """One pass over the instance's cells (call flows 25a-25e), for `evaluate` (trigger MANUAL) and the worker (SCHEDULED, `run_due_passes`). The
+    caller holds the instance's lock; the pass commits once at its end, with `last_evaluated_at` and `last_evaluation`. 409 MODEL_NOT_DEPLOYED before
+    the model is deployed. A cell whose revert or rollback waits for a person is left alone; while an ASSIST dispatch waits for the operator no new
+    step is planned, but a step under observation is still checked and reverted (25d)."""
     if not inst.model_id or not inst.model_params:
         raise RappError(409, "MODEL_NOT_DEPLOYED", "train, certify and deploy the model first")
+    started_at = started_at or datetime.datetime.now(datetime.UTC)
     reconciled = _reconcile(db, inst)
-    execution_id = get_correlation_id() or str(uuid.uuid4())
     rows = _cells(db, inst)
     model = SteeringModel.from_dict(inst.model_params)
     series = by_cell(_dataset(inst, "INFERENCE"))
@@ -582,29 +698,33 @@ def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     latest = {c: counters(series[c][-1][1]) for c in state}
     out = {"executionId": execution_id, "instanceId": str(inst.instance_id), "autonomyMode": inst.autonomy_mode,
            "reconciled": reconciled}
+    inst.last_evaluated_at = started_at
+    inst.last_evaluation = {"at": started_at.isoformat(), "executionId": execution_id, "trigger": trigger, "result": "OK"}
     if not state:
         db.commit()
         return {**out, "decisions": []}
     now = max(parse_time(s["observedAt"]) for s in state.values())
     decisions: dict[str, TrafficDecision] = {}
 
-    if inst.pending_dispatch:
-        # ASSIST: steps are waiting for the operator — nothing else moves
-        for cell in layers:
-            decisions[cell] = _record(db, inst, execution_id, cell, state, decision=engine.NO_CHANGE,
-                                      reason="AWAITING_APPROVAL", final_state=_final(rows[cell]))
-    else:
-        planning = []
-        for cell in layers:
-            row = rows[cell]
-            if row.state == engine.OBSERVING and row.last_change:
-                decisions[cell] = _kpi(db, inst, row, state, latest, now, execution_id)
-            elif cell in state:
-                planning.append(cell)
-            else:
-                decisions[cell] = _record(db, inst, execution_id, cell, state, decision=engine.NO_CHANGE, reason="NO_DATA",
-                                          final_state=_final(row))
-        decisions.update(_plan(db, inst, rows, model, state, latest, planning, now, execution_id))
+    planning = []
+    for cell in layers:
+        row = rows[cell]
+        if row.pending_approval_id:
+            # call flow 25e: a revert or rollback of this cell waits for a person: it is left alone
+            decisions[cell] = _record(db, inst, execution_id, cell, state, decision=engine.NO_CHANGE, reason="AWAITING_APPROVAL",
+                                      final_state=_final(row))
+        elif row.state == engine.OBSERVING and row.last_change:
+            decisions[cell] = _kpi(db, inst, row, state, latest, now, execution_id)
+        elif inst.pending_dispatch:
+            # ASSIST: steps wait for the operator, so no new step is planned (a step under observation is still checked, above)
+            decisions[cell] = _record(db, inst, execution_id, cell, state, decision=engine.NO_CHANGE, reason="AWAITING_APPROVAL",
+                                      final_state=_final(row))
+        elif cell in state:
+            planning.append(cell)
+        else:
+            decisions[cell] = _record(db, inst, execution_id, cell, state, decision=engine.NO_CHANGE, reason="NO_DATA",
+                                      final_state=_final(row))
+    decisions.update(_plan(db, inst, rows, model, state, latest, planning, now, execution_id))
 
     for row in rows.values():
         row.updated_at = datetime.datetime.now(datetime.UTC)
@@ -613,7 +733,8 @@ def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
 
 
 def _kpi(db, inst, row, state, latest, now, execution_id) -> TrafficDecision:
-    """KPI-verified revert of a cell's last steering step (D10.4-4b)."""
+    """KPI-verified revert of a cell's last steering step (D10.4-4b, call flow 25d). A revert held for a person keeps the cell OBSERVING with its
+    step until `reconcile` settles it (25e)."""
     change = {**row.last_change, "at": parse_time(row.last_change["at"])}
     ho = ho_fail_rate(latest.get(row.cell_id, {}), change["targets"][0]) if change["knob"] == "CONNECTED" else None
     kpi = engine.kpi_check(change, {c: s["score"] for c, s in state.items()}, ho, now)
@@ -626,6 +747,13 @@ def _kpi(db, inst, row, state, latest, now, execution_id) -> TrafficDecision:
                     reason="KPI_DEGRADED:" + ",".join(kpi["causes"]), kpi=kpi, from_value=change["to"],
                     to_value=change["from"], **common)
         restore = _restore(inst, {change["ref"]: change["from"]}, execution_id, "REVERT:KPI_DEGRADED")
+        if restore["result"] == "AWAITING_APPROVAL":
+            # call flow 25e: the revert waits for a person; the cell stays OBSERVING with its step until `_settle_approvals` reads it back
+            db.flush()                                      # gives the audit row its id
+            d.action, d.outcome = restore["attempts"][0]["action"], "REVERT_AWAITING_APPROVAL"
+            row.pending_approval_id, row.pending_decision_id = _uuid_or_none(restore.get("approvalId")), d.decision_id
+            d.final_state = _final(row)
+            return d
         d.action = restore["attempts"][0]["action"] if restore["performed"] else None
         d.verification = restore["attempts"][-1]["verification"] if restore["performed"] else restore["verification"]
         ok = restore["result"] in ("VERIFIED", "ALREADY_RESTORED")
@@ -656,6 +784,7 @@ def _plan(db, inst, rows, model, state, latest, planning, now, execution_id) -> 
     woken = {c: parse_time(e["lastUnlockedAt"]) for c, e in coord["es"].items() if e.get("lastUnlockedAt")}
     horizon = now - engine.ANTI_OSCILLATION
     inst.steering_log = [e for e in (inst.steering_log or []) if parse_time(e["at"]) > horizon]
+    held = {c for c, r in rows.items() if r.pending_approval_id} | set((inst.pending_dispatch or {}).get("decisionIds") or {})
     protected = lambda c: guards.get(c, {}).get("cellClass") == "EMERGENCY" or bool(guards.get(c, {}).get("incidentZone"))  # noqa: E731
 
     sources, safety, opts = {}, {}, {}
@@ -666,7 +795,7 @@ def _plan(db, inst, rows, model, state, latest, planning, now, execution_id) -> 
             rel = _read(inst, f"NRCellRelation={cell}-{t}") or {}
             nbrs.append(engine.Neighbour(
                 cell=t, layer=layers.get(t, "?"), protected=protected(t), asleep=t in asleep, last_woken=woken.get(t),
-                coverage_observing=t in coord["ccoObserving"], critical_alarm=bool(alarms.holding([t])),
+                coverage_observing=t in coord["ccoObserving"], critical_alarm=bool(alarms.holding([t])), held=t in held,
                 cio=next((v for v in (_parse_cio(rel.get("cellIndividualOffset")),) if v is not None), inst.baseline_cio),
                 ho_allowed=_flag(rel, "isHOAllowed"), mlb_allowed=_flag(rel, "isMLBAllowed"),
                 mro_observing=f"{cell}-{t}" in coord["mroObserving"]))
@@ -733,9 +862,51 @@ def _plan(db, inst, rows, model, state, latest, planning, now, execution_id) -> 
 
 @app.post("/instances/{instance_id}/reconcile")
 def reconcile(instance_id: uuid.UUID, db: Session = Depends(get_session)):
-    # Settles a pending ASSIST dispatch now (the same step `evaluate` runs first); returns {settled: [...]}, empty when there is nothing to
-    # settle.
-    return {"settled": _reconcile(db, _instance(db, instance_id))}
+    # Settles a pending ASSIST dispatch and the held writes that were decided now (the same step `evaluate` runs first); returns {settled: [...]},
+    # empty when there is nothing to settle. 409 EVALUATION_IN_PROGRESS while a pass runs.
+    settled = _reconcile(db, _lock_instance(db, instance_id))
+    db.commit()
+    return {"settled": settled}
+
+
+def run_due_passes(db: Session, now: datetime.datetime | None = None) -> list[dict]:
+    """Call flow 25f, the worker's `evaluate-due` task: a pass (trigger SCHEDULED) of every instance with an `evaluateEverySeconds` whose last pass began
+    at least that long ago, each acting as its instance and under its own execution id. An instance whose lock another holds is skipped (BUSY); a pass
+    that fails is rolled back and recorded on the instance (`lastEvaluation` result ERROR), so it is retried after the interval, and the other instances
+    still run. Returns one entry per instance it looked at."""
+    now = now or datetime.datetime.now(datetime.UTC)
+    scheduled = list(db.scalars(select(TrafficInstance.instance_id).where(TrafficInstance.evaluate_every_seconds.is_not(None))))
+    db.rollback()
+    results = []
+    for instance_id in scheduled:
+        try:
+            inst = _lock_instance(db, instance_id)
+        except RappError as exc:
+            results.append({"instanceId": str(instance_id), "result": "BUSY" if exc.status == 409 else "GONE"})
+            continue
+        last = as_utc(inst.last_evaluated_at) if inst.last_evaluated_at else None
+        if inst.evaluate_every_seconds is None or (last is not None and (now - last).total_seconds() < inst.evaluate_every_seconds):
+            db.rollback()
+            continue
+        execution_id = str(uuid.uuid4())
+        token = set_acting_instance(str(instance_id))
+        try:
+            with correlation_scope(execution_id):
+                run_pass(db, inst, execution_id, "SCHEDULED", started_at=now)
+            results.append({"instanceId": str(instance_id), "executionId": execution_id, "result": "OK"})
+        except Exception as exc:  # noqa: BLE001 — one instance's failure is recorded on it and never stops the others
+            db.rollback()
+            error = f"{exc.status} {exc.title}" if isinstance(exc, RappError) else \
+                f"{exc.status_code} {exc.body}" if isinstance(exc, SdkError) else f"{type(exc).__name__}: {exc}"
+            logger.warning("scheduled pass of instance %s failed: %s", instance_id, error)
+            failed = db.get_one(TrafficInstance, instance_id)
+            failed.last_evaluated_at = now
+            failed.last_evaluation = {"at": now.isoformat(), "executionId": execution_id, "trigger": "SCHEDULED", "result": "ERROR", "error": error[:500]}
+            db.commit()
+            results.append({"instanceId": str(instance_id), "executionId": execution_id, "result": "ERROR", "error": error[:500]})
+        finally:
+            reset_acting_instance(token)
+    return results
 
 
 # ---------------------------------------------------------------- audit + dashboard
@@ -765,7 +936,8 @@ def list_decisions(instance_id: uuid.UUID, cell_id: str | None = None, execution
 
 def _cell_view(inst: TrafficInstance, r: TrafficCell) -> dict:
     return {"cellId": r.cell_id, "layer": _layers(inst).get(r.cell_id), "state": r.state, "steering": r.steering,
-            "lastChange": r.last_change, "lastChangedAt": r.last_changed_at.isoformat() if r.last_changed_at else None}
+            "lastChange": r.last_change, "lastChangedAt": r.last_changed_at.isoformat() if r.last_changed_at else None,
+            "pendingApprovalId": str(r.pending_approval_id) if r.pending_approval_id else None}
 
 
 @app.get("/instances/{instance_id}/cells")
@@ -781,18 +953,26 @@ def list_cells(instance_id: uuid.UUID, db: Session = Depends(get_session)):
 @app.get("/instances/{instance_id}/relations")
 def list_relations(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     """The neighbour relations this rApp has CIO steering on, and whether a
-    change on each is under observation. The Mobility rApp reads this for
-    the shared-CIO arbitration (D10.4-1)."""
+    change on each is under observation, or PENDING: a CIO write on it waits
+    for the operator (ASSIST) or for a person (a held revert or rollback,
+    call flow 25e). The Mobility rApp reads this for the shared-CIO
+    arbitration (D10.4-1) and holds an OBSERVING or PENDING relation."""
     inst = _instance(db, instance_id)
+    rows = _cells(db, inst)
+    waiting = [uuid.UUID(i) for i in ((inst.pending_dispatch or {}).get("decisionIds") or {}).values()]
+    waiting += [r.pending_decision_id for r in rows.values() if r.pending_approval_id and r.pending_decision_id]
+    pending = {d.managed_ref.split("=", 1)[1] for d in db.scalars(select(TrafficDecision).where(TrafficDecision.decision_id.in_(waiting)))
+               if d.knob == "CONNECTED" and d.managed_ref} if waiting else set()
     items = []
-    for cell, row in _cells(db, inst).items():
+    for cell, row in rows.items():
         observing = row.state == engine.OBSERVING and (row.last_change or {}).get("knob") == "CONNECTED"
         observed_target = (row.last_change or {}).get("targets", [None])[0] if observing else None
-        targets = set((row.steering or {}).get("cio", {})) | ({observed_target} if observed_target else set())
+        targets = set((row.steering or {}).get("cio", {})) | ({observed_target} if observed_target else set()) | {
+            r.split("-", 1)[1] for r in pending if r.split("-", 1)[0] == cell}
         for t in sorted(targets):
+            state = "PENDING" if f"{cell}-{t}" in pending else engine.OBSERVING if t == observed_target else engine.STEADY
             items.append({"relation": f"{cell}-{t}", "source": cell, "target": t,
-                          "cioBias": (row.steering or {}).get("cio", {}).get(t, 0),
-                          "state": engine.OBSERVING if t == observed_target else engine.STEADY})
+                          "cioBias": (row.steering or {}).get("cio", {}).get(t, 0), "state": state})
     db.commit()
     return {"items": items}
 
