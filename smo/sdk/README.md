@@ -11,7 +11,7 @@
 | Called by | The four sample rApps (`../samples/{energy-saving,mobility-optimization,coverage-optimization,traffic-steering}-rapp/app/main.py`); any rApp author. No SMO module imports it |
 | Database tables | None |
 | Retries and idempotency | Every POST carries a generated `Idempotency-Key`; a mutating call that lost a write race (`409 CONCURRENT_MODIFICATION`) is sent once more with the same key (`smo_sdk/_common.py`) |
-| Unit tests | 153 passed (`tests/`, no network: a recording fake `R1Client`) |
+| Unit tests | 178 passed (`tests/`, no network: a recording fake `R1Client`) |
 | Status | Done. No OPEN_ITEMS ids |
 
 ## 1. High-level design (HLD)
@@ -165,7 +165,8 @@ Usage: `sdk = AiRuntimeSdk()` (or `AiRuntimeSdk(r1=R1Client(base_url, bearer_tok
 
 | Method | Route | Notes |
 |---|---|---|
-| `register_producer(producer_id, analytics_type, dme_input_types, output_schema, mda_type=None)` | `POST /ran-analytics/producers` (query `producer_id`, `analytics_type`, `mda_type`; body `{dme_input_types, output_schema}`) | omit `mda_type` to let the route derive a TS 28.104 `MDAType` for known shorthand values |
+| `register_producer(producer_id, analytics_type, dme_input_types, output_schema, mda_type=None)` | `POST /ran-analytics/producers` (query `producer_id`, `analytics_type`, `mda_type`; body `{dme_input_types, output_schema}`) | omit `mda_type` to let the route derive a TS 28.104 `MDAType` for known shorthand values; an rApp registers only itself (`producer_id` = its own invoker id, else 403 `PRODUCER_IDENTITY_MISMATCH`) and may publish reports only of the types it is registered for (call flow 08) |
+| `deregister_producer(producer_id, analytics_type)` -> None | `DELETE /ran-analytics/producers/{producer_id}?analytics_type=` | withdraws the producer's SME service; an rApp deregisters only itself |
 | `list_producers(analytics_type=None, producer_id=None)` | `GET /ran-analytics/producers` | |
 | `publish_report(analytics_type, output, input_sources=None, scope=None)` | `POST /mdaf/reports` (query `analytics_type`; body `{output, input_sources, scope}`) | |
 | `query_reports(analytics_type=None)` | `GET /mdaf/reports` | |
@@ -309,7 +310,7 @@ Each test asserts the verb, path, params and body the client sends against a scr
 |---|---|---|
 | `tests/test_data.py` | Producer/type registration (with and without provenance; one producer left per callback when the process and instances register),  discovery, deregistration, `delete_type`, status; data jobs (create, get, update, status, terminate, terminate-for-consumer, list); offers and notify (raw body); type subscriptions; record ingest/fetch; `mediate_action`, `get_action`/`list_actions`; RAN inventory reads; 4xx -> `SdkError` | 26 |
 | `tests/test_lifecycle.py` | Training (request, status, cancel, suspend/resume, model-metrics raw body); `advance_model_lifecycle` is deprecated and raises 403 with no call, and the gateway policy refuses the advance path while it allows the model routes a rApp uses; inference (request, status, resolve, list); MLMF subscriptions/reports (query plus body split, the ceiling only when given); feature groups (with a DME type, delete); training progress; `deploy_model` raw list body; 4xx | 28 |
-| `tests/test_analytics.py` | Producer registration (with explicit `mda_type`), reports, subscriptions with scope and `thresholdInfo` body, `create_mda_request` dropping unset fields, `publish_mda_report`, `get_prediction` (named PM prediction, none without reports); 4xx | 13 |
+| `tests/test_analytics.py` | Producer registration (with explicit `mda_type`) and deregistration, reports, subscriptions with scope and `thresholdInfo` body, `create_mda_request` dropping unset fields, `publish_mda_report`, `get_prediction` (named PM prediction, none without reports); 4xx | 14 |
 | `tests/test_intent.py` | `create_intent`, `energy_saving_expectation`, get/list/admin-state/delete, reports, RMIH register/deregister/list; 4xx | 12 |
 | `tests/test_models.py` | Register (with domain and vendors), discover, get, update, deregister, upload, download (raw response, `SdkError` on 4xx), coordination groups | 11 |
 | `tests/test_alarm_scope.py` | Which cell an alarm is about (cell IOCs, relation IOCs, element-level functions, no ref); a cell alarm holds that cell only; an element alarm holds every cell; only critical alarms hold; `query_critical_alarms` | 16 |

@@ -1032,7 +1032,7 @@ def lcm_data(w: Walk):
     w.row(w.section(p, "data.invokers"), invoker).get_by_role("button", name="Trust…").click()
     dlg = p.get_by_role("dialog")
     dlg.get_by_label("AEF ID").fill("aef-ran-nf-oam")
-    dlg.get_by_label("API ID").fill("mdaf.coverage-issue-analysis")
+    dlg.get_by_label("API ID").fill("mdaf.coverage-issue-analysis.energy-saving-rapp")
     w.shot(p, "lcm/sme-trusted-invoker-dialog")
     w.click(p, dlg.get_by_role("button", name="Register"))
 

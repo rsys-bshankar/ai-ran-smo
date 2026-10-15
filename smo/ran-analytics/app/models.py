@@ -70,3 +70,5 @@ class MDAFProducer(Base):
     # for the two shorthand values above where the correspondence is
     # unambiguous.
     mda_type: Mapped[str | None] = mapped_column(String)
+    # DOC-CF-1.8 flow 08: the SME service published for this producer and type (`mdaf.<analyticsType>.<producerId>`), withdrawn on deregistration
+    sme_service_id: Mapped[str | None] = mapped_column(String)

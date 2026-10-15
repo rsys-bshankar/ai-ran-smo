@@ -17,6 +17,16 @@ from app.main import app
 from app.models import MDAFProducer
 
 
+class FakeSme:
+    """Stands in for SME's answer: a status code and a JSON body (a service id by default)."""
+    def __init__(self, status_code=201, payload=None):
+        self.status_code = status_code
+        self._payload = payload if payload is not None else {"serviceId": "11111111-1111-1111-1111-111111111111"}
+
+    def json(self):
+        return self._payload
+
+
 @pytest.fixture
 def db_session_factory():
     """Creates the producer table on an in-memory SQLite engine and returns a session factory."""
@@ -27,7 +37,7 @@ def db_session_factory():
 
 @pytest.fixture
 def client(db_session_factory, monkeypatch):
-    """A TestClient with `get_session` overridden and `R1Client.post` stubbed to do nothing; both are undone afterwards."""
+    """A TestClient with `get_session` overridden and `R1Client.post` / `delete` stubbed to answer as SME does (201 with a service id, 204); undone afterwards."""
     def override_get_session():
         session = db_session_factory()
         try:
@@ -36,7 +46,8 @@ def client(db_session_factory, monkeypatch):
             session.close()
 
     app.dependency_overrides[get_session] = override_get_session
-    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: None)
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeSme())
+    monkeypatch.setattr("app.main.R1Client.delete", lambda self, path, **kw: FakeSme(204, {}))
     yield TestClient(app)
     app.dependency_overrides.clear()
 
@@ -79,9 +90,10 @@ def test_different_analytics_type_for_same_producer_is_a_separate_row(client):
 
 
 def test_register_analytics_producer_publishes_sme_service_registration(client, monkeypatch):
-    """A registration enrols the producer in SME first and then publishes the `mdaf.<analyticsType>` service, with the producer id on both calls."""
+    """A registration enrols the producer in SME first and then publishes the `mdaf.<analyticsType>.<producerId>` service, with the producer id on both calls;
+    the producer keeps SME's service id."""
     calls = []
-    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: calls.append((path, json)))
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: calls.append((path, json)) or FakeSme())
 
     dme_type = str(uuid.uuid4())
     client.post("/producers", params={"producer_id": "rapp-mdaf-2", "analytics_type": "failure-prediction"},
@@ -93,9 +105,10 @@ def test_register_analytics_producer_publishes_sme_service_registration(client, 
     assert enroll_payload == {"apfId": "rapp-mdaf-2"}
     path, payload = calls[1]
     assert path == "/sme/published-apis/v1/rapp-mdaf-2/service-apis"
-    assert payload["serviceName"] == "mdaf.failure-prediction"
+    assert payload["serviceName"] == "mdaf.failure-prediction.rapp-mdaf-2"
     assert payload["producerId"] == "rapp-mdaf-2"
     assert payload["moduleScope"] == "ran-analytics"
+    assert client.get("/producers").json()["items"][0]["smeServiceId"] == "11111111-1111-1111-1111-111111111111"
 
 
 def test_list_producers_returns_registered_producer(client):

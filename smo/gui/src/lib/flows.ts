@@ -275,21 +275,24 @@ export function flow07(instance: Instance | undefined, perf: PerfReport[], fault
 // ---------------------------------------------------------------- 08
 
 /**
- * Flow 08, RAN Analytics data production for one analytics type: the producer, its SME registration (`mdaf.<type>`, a warning when the producer exists but SME does not list it), subscriptions, published reports and the pull query.
+ * Flow 08, RAN Analytics data production for one analytics type: the producers, their SME services (`mdaf.<type>.<producer>`, one per producer and type; a warning
+ * when a producer exists but SME does not list its service), subscriptions at MDAF, published reports and the pull query (DOC-CF-1.8).
  */
 export function flow08(type: string, producers: AnalyticsProducer[], subs: AnalyticsSubscription[], reports: AnalyticsReport[], smeServiceNames: string[], t: Translator = ENGLISH): FlowStep[] {
   const p = producers.filter((x) => x.analyticsType === type);
   const s = subs.filter((x) => x.analyticsType === type);
   const r = reports.filter((x) => x.analyticsType === type);
   const pushed = s.filter((x) => x.notificationDestination);
+  const listed = p.filter((x) => smeServiceNames.includes(`mdaf.${type}.${x.producerId}`));
+  const discoverable = p.length > 0 && listed.length === p.length;
   return settle([
     step("producer", "RegisterAnalyticsProducer(type, dmeInputTypes)", "Producer → RAN Analytics", p.length > 0, p.map((x) => x.producerId).join(", ") || undefined),
-    step("sme", `SME RegisterService(mdaf.${type})`, "RAN Analytics → SME", smeServiceNames.includes(`mdaf.${type}`) ? true : p.length ? "warn" : false,
-      smeServiceNames.includes(`mdaf.${type}`) ? t("flows.lib.f08.discoverable") : p.length ? t("flows.lib.f08.notInSme") : undefined),
-    step("subscribe", "SubscribeAnalytics(type, notificationDestination?)", "Consumer → RAN Analytics", s.length > 0,
+    step("sme", `SME RegisterService(mdaf.${type}.<producer>)`, "RAN Analytics → SME", discoverable ? true : p.length ? "warn" : false,
+      discoverable ? t("flows.lib.f08.discoverable") : p.length ? t("flows.lib.f08.notInSme") : undefined),
+    step("subscribe", "SubscribeAnalytics(type, notificationDestination?)", "Consumer → MDAF", s.length > 0,
       s.length ? t("flows.lib.f08.subscriptions", { n: s.length, pushed: pushed.length }) : undefined),
-    step("publish", t("flows.lib.f08.publish"), "Producer → RAN Analytics → Consumer", r.length > 0, r.length ? t("flows.lib.reports", { n: r.length }) : undefined),
-    step("query", "QueryAnalyticsReport (pull)", "Consumer → RAN Analytics", r.length > 0),
+    step("publish", t("flows.lib.f08.publish"), "Producer → MDAF → Consumer", r.length > 0, r.length ? t("flows.lib.reports", { n: r.length }) : undefined),
+    step("query", "QueryAnalyticsReport (pull)", "Consumer → MDAF", r.length > 0),
   ]);
 }
 

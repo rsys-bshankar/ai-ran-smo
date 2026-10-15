@@ -831,7 +831,7 @@ print(r.status_code, r.json())
 
 `energy-saving-rapp` was SME-enrolled in step 4; this re-registers the same
 provider (idempotent) and publishes a second service
-(`mdaf.coverage-issue-analysis`). Confirm the registration:
+(`mdaf.coverage-issue-analysis.energy-saving-rapp`, one service per producer and type). Confirm the registration:
 
 ```bash
 docker compose exec r1-termination python3 -c "

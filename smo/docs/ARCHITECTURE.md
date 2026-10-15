@@ -183,7 +183,7 @@ interval across any number of workers. RAN NF OAM is the first user
 | RAN NF OAM | `ran-nf-oam/` | O1 (CM/FM/PM/SWM, per-vendor capability registry) |
 | SO SMOS | `so-smos/` | O-RAN SMO-ARCH §4.2.7 SMOS (interfaces unspecified, internal design) |
 | SA SMOS | `sa-smos/` | O-RAN SMO-ARCH §4.2.8 SMOS (interfaces unspecified, internal design); O1-CM handler is a 3GPP TS 28.312 RMIH |
-| RAN Analytics | `ran-analytics/` | None (custom). A registry of analytics producers; reports go to MDAF, with no call between the two |
+| RAN Analytics | `ran-analytics/` | None (custom). A registry of analytics producers; reports go to MDAF, which asks it whether an rApp publishing a report is a registered producer of its type (call flow 08) |
 
 
 ## Repository layout

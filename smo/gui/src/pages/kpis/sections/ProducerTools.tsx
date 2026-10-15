@@ -1,5 +1,5 @@
 /** Section `kpis.producerTools` (RAN Analytics tab, admin-only, gated by the caller): act as an MDAF analytics producer (call flow 08):
- * register a producer (`POST /ran-analytics/producers`, which also registers `mdaf.<type>` with SME) and publish a report (`POST /mdaf/reports`),
+ * register a producer (`POST /ran-analytics/producers`, which also registers `mdaf.<type>.<producer>` with SME) and publish a report (`POST /mdaf/reports`),
  * pushed best-effort to subscribers with a notification destination. */
 import { useState } from "react";
 

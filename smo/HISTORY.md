@@ -2780,6 +2780,33 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.8 flow 08 — RAN analytics rewritten from the code: producers are who they say they are, and a subscription belongs to its maker
+
+The tenth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken):
+
+- **A. Producers are who they say they are.** No route of RAN Analytics or MDAF looked at the caller, and rApps may reach both: an rApp could register as any
+  producer and publish a report of any analytics type, which since call flow 04 can trigger an automatic configuration write. Now a caller with the rApp role
+  registers and deregisters only itself (`producer_id` = its invoker id, else 403 `PRODUCER_IDENTITY_MISMATCH`), and MDAF takes its report (`/reports` or
+  `/mda-reports`, the type being the first `mDAType`) only if RAN Analytics lists it as a producer of that type (`check_publisher`: 403
+  `PRODUCER_NOT_REGISTERED`, 502 `UPSTREAM_FAILED` when RAN Analytics cannot say, nothing stored). Every report records `published_by` (the rApp, the console
+  user `smo-gui:<user>`, or the module). The console and SMO modules are not checked.
+- **B. A subscription belongs to its maker.** An rApp's `requested_by` is its own invoker id whatever it sends, and it deletes only its own subscriptions (403
+  `SUBSCRIPTION_ACCESS_DENIED`), so it can no longer remove an SA SMOS monitor's subscription and silence the loop of call flow 04.
+- **C. SME is checked, and one service per producer and type.** RAN Analytics committed the producer and then called SME without reading the answers; the
+  service was `mdaf.<analyticsType>`, unique across producers at SME, so a second producer of a type got 409 and was silently undiscoverable. Now SME is asked
+  first (provider enrolment, then `mdaf.<analyticsType>.<producerId>`), a refusal or no answer is 502 with nothing stored, and the service id is kept
+  (`sme_service_id`).
+- **D. Deregistration.** `DELETE /ran-analytics/producers/{id}?analytics_type` withdraws the SME service (a 404 there is accepted) and removes the producer;
+  its reports stay at MDAF and it may publish no more of that type. `sdk.analytics.deregister_producer`.
+- **E. Not taken: checking a report's `output` against the producer's `outputSchema`.** The schema's format is not defined anywhere; open item `MDA-SCHEMA`.
+- **F. The document** is four diagrams (registering and deregistering a producer; subscribing with thresholds; publishing and delivering; querying,
+  unsubscribing and retention) with PNG images. Corrected: delivery is the outbox (retried, at least once), not "best-effort"; pulling is not "the only
+  working delivery path"; thresholds, retention and SA SMOS as a consumer are shown.
+
+Revision 0056 adds `mdaf.mdaf_report.published_by` and `ran_analytics.mdaf_producer.sme_service_id` (nullable, expand only). Tests:
+`ran-analytics/tests/test_producer_identity.py`, `mdaf/tests/test_publisher_and_ownership.py`, `tests_integration/test_analytics_producer_identity.py`, the SDK's
+`test_deregister_producer` and the console's flow 08 board.
+
 ### DOC-CF-1.8 flow 04 — closed-loop assurance rewritten from the code: the loop closes on MDAF's reports, and an action says what happened
 
 The ninth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken):

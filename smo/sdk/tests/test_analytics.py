@@ -35,6 +35,12 @@ def test_register_producer_with_an_explicit_mda_type(client, r1):
     assert r1.calls[0]["params"]["mda_type"] == "PREDICTIONS_PM_DATA"
 
 
+def test_deregister_producer(client, r1):
+    """`deregister_producer` deletes the producer with its analytics type in the query (call flow 08a)."""
+    client.deregister_producer("prod-1", "RAN.Coverage")
+    assert r1.calls[0] == {"verb": "delete", "path": "/ran-analytics/producers/prod-1", "params": {"analytics_type": "RAN.Coverage"}}
+
+
 def test_list_producers(client, r1):
     """`list_producers` filters by analytics type and sends the unset producer id as null."""
     client.list_producers(analytics_type="RAN.Coverage")

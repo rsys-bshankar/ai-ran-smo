@@ -14,7 +14,8 @@ class AnalyticsClient(BaseClient):
     """The `sdk.analytics` namespace: analytics producers, reports and subscriptions, and the TS 28.104 MDARequest / MDAReport calls."""
     def register_producer(self, producer_id: str, analytics_type: str, dme_input_types: list[uuid.UUID | str],
                            output_schema: dict, mda_type: str | None = None) -> dict:
-        """Register an analytics producer at RAN Analytics (`POST /ran-analytics/producers`).
+        """Register an analytics producer at RAN Analytics (`POST /ran-analytics/producers`). An rApp registers only itself: `producer_id` is its own invoker id (403
+        PRODUCER_IDENTITY_MISMATCH otherwise), and it may publish reports only of the types it is registered for (call flow 08).
 
         `mda_type` is TS 28.104's closed MDAType enum, optional: omit it to let the route derive one for this build's unambiguous shorthand values (HISTORY.md section 7), or pass one of the 24 spec
         values for genuine conformance. The query parameters carry the ids and the JSON body carries the input types and the output schema.
@@ -24,6 +25,10 @@ class AnalyticsClient(BaseClient):
             params={"producer_id": producer_id, "analytics_type": analytics_type, "mda_type": mda_type},
             json={"dme_input_types": [str(t) for t in dme_input_types], "output_schema": output_schema},
         ))
+
+    def deregister_producer(self, producer_id: str, analytics_type: str) -> None:
+        """Deregister a producer of `analytics_type` (`DELETE /ran-analytics/producers/{producer_id}`); RAN Analytics withdraws its SME service. An rApp deregisters only itself."""
+        ensure_ok(self._r1.delete(f"/ran-analytics/producers/{producer_id}", params={"analytics_type": analytics_type}))
 
     def list_producers(self, analytics_type: str | None = None, producer_id: str | None = None) -> list[dict]:
         return ensure_ok(self._r1.get("/ran-analytics/producers", params={"analytics_type": analytics_type, "producer_id": producer_id}))

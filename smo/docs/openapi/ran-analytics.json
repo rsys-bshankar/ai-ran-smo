@@ -637,7 +637,7 @@
         "summary": "List Analytics Producers"
       },
       "post": {
-        "description": "RegisterAnalyticsProducer \u2014 an update-in-place upsert on\n(producer_id, analytics_type), not just an insert: the same producer\nre-registering the same analytics_type (e.g. on restart) is a normal\noccurrence, not a conflict, and previously crashed with an unhandled\nIntegrityError on the composite primary key instead. Same shape of\nfix as SME's RegisterService (Foundational Platform LLD section 5).\n\nHISTORY.md \u00a77's `analytics_type` enum finding: `mda_type`, TS28104's\nown real closed MDAType enum, is optional and additive \u2014 a caller may\ndeclare one directly (validated against the real 24 values), or, if\nomitted, `infer_mda_type` derives it for the two shorthand values\nthis build already honestly maps; anything else stays `None`, not\nguessed.",
+        "description": "RegisterAnalyticsProducer \u2014 an update-in-place upsert on\n(producer_id, analytics_type), not just an insert: the same producer\nre-registering the same analytics_type (e.g. on restart) is a normal\noccurrence, not a conflict. An rApp registers only itself (its own\ninvoker id) as the producer.\n\nThe producer is enrolled in SME and its service API\n`mdaf.<analyticsType>.<producerId>` published before it is stored, so\nevery stored producer is discoverable; SME refusing or not answering\nstores nothing.\n\nHISTORY.md \u00a77's `analytics_type` enum finding: `mda_type`, TS28104's\nown real closed MDAType enum, is optional and additive \u2014 a caller may\ndeclare one directly (validated against the real 24 values), or, if\nomitted, `infer_mda_type` derives it for the two shorthand values\nthis build already honestly maps; anything else stays `None`, not\nguessed.",
         "operationId": "register_analytics_producer_producers_post",
         "parameters": [
           {
@@ -796,6 +796,138 @@
           }
         },
         "summary": "Register Analytics Producer"
+      }
+    },
+    "/producers/{producer_id}": {
+      "delete": {
+        "description": "DeregisterAnalyticsProducer: withdraws the producer's SME service API and removes its registration for `analytics_type`. An rApp deregisters only itself.\nReports it published stay at MDAF; once deregistered, an rApp may not publish more of that type.",
+        "operationId": "deregister_analytics_producer_producers__producer_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "producer_id",
+            "required": true,
+            "schema": {
+              "title": "Producer Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "analytics_type",
+            "required": true,
+            "schema": {
+              "title": "Analytics Type",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Deregister Analytics Producer"
       }
     },
     "/ready": {

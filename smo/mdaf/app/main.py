@@ -22,7 +22,7 @@ so it is imported last (see the end of the file). The docstrings of routes and r
 import uuid
 
 import httpx
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -32,7 +32,9 @@ from smo_shared.metrics import install_metrics
 from smo_shared.health import database_check, install_health, sme_token_check
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
+from smo_shared.invoker import acting_user, invoker_id
 from smo_shared.r1_client import R1Client
+from smo_shared.roles import ROLE_RAPP, role_of
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.outbox import enqueue
@@ -77,14 +79,39 @@ def _validate_input_sources_are_real_dme_artifacts(input_sources: list[uuid.UUID
             raise framework_error(FrameworkError.DME_ARTIFACT_NOT_FOUND, detail=f"no such DME data job {source_id}")
 
 
+def check_publisher(request: Request, analytics_type: str) -> str | None:
+    """Who is publishing a report of `analytics_type` (call flow 08c), after checking that an rApp may: a caller with the rApp role must be a registered producer of
+    that type at RAN Analytics (403 PRODUCER_NOT_REGISTERED; 502 UPSTREAM_FAILED when RAN Analytics cannot say). The console and SMO modules are not asked.
+
+    Returns what the report records as `published_by`: the rApp's invoker id, else the console user (`smo-gui:<user>`) or the calling module's id.
+    """
+    caller = invoker_id(request)
+    if role_of(request) == ROLE_RAPP:
+        try:
+            resp = _r1.get("/ran-analytics/producers", params={"producer_id": caller, "analytics_type": analytics_type})
+        except httpx.HTTPError as exc:
+            raise framework_error(FrameworkError.UPSTREAM_FAILED, detail=f"RAN Analytics did not answer ({type(exc).__name__})") from exc
+        if resp.status_code != 200:
+            raise framework_error(FrameworkError.UPSTREAM_FAILED, detail=f"RAN Analytics answered {resp.status_code} to the producer check")
+        if not resp.json().get("items"):
+            raise framework_error(FrameworkError.PRODUCER_NOT_REGISTERED,
+                                  detail=f"{caller} is not a registered producer of {analytics_type} (POST /ran-analytics/producers)")
+        return caller
+    person = acting_user(request)
+    return f"smo-gui:{person}" if person else caller
+
+
 @app.post("/reports", status_code=201)
-def publish_report(analytics_type: str, output: dict, input_sources: list[uuid.UUID], scope: dict | None = None, db: Session = Depends(get_session)):
-    # Stores a report from a producer (201 `{reportId}`; 422 DME_ARTIFACT_NOT_FOUND when an input source is unknown to DME).
-    # Order: sources checked, the report added and flushed, subscribers notified (outbox rows, threshold state), then
+def publish_report(analytics_type: str, output: dict, input_sources: list[uuid.UUID], request: Request, scope: dict | None = None,
+                   db: Session = Depends(get_session)):
+    # Stores a report from a producer (201 `{reportId}`; 403 PRODUCER_NOT_REGISTERED for an rApp that is not a registered producer of the type; 422
+    # DME_ARTIFACT_NOT_FOUND when an input source is unknown to DME; 502 when RAN Analytics cannot be asked).
+    # Order: publisher checked, sources checked, the report added and flushed, subscribers notified (outbox rows, threshold state), then
     # `_deliver_legacy_report` matches the report against open MDA requests and commits everything in one transaction. Nothing is sent
     # if the commit fails.
+    published_by = check_publisher(request, analytics_type)
     _validate_input_sources_are_real_dme_artifacts(input_sources)
-    report = MDAFReport(analytics_type=analytics_type, output=output, input_sources=input_sources, scope=scope)
+    report = MDAFReport(analytics_type=analytics_type, output=output, input_sources=input_sources, scope=scope, published_by=published_by)
     db.add(report)
     db.flush()
     _notify_report_subscribers(db, report)
@@ -170,8 +197,9 @@ class SubscribeAnalyticsRequest(BaseModel):
 
 
 @app.post("/subscriptions", status_code=201)
-def subscribe_analytics(analytics_type: str, requested_by: str,
+def subscribe_analytics(analytics_type: str, requested_by: str, request: Request,
                          body: SubscribeAnalyticsRequest = SubscribeAnalyticsRequest(), db: Session = Depends(get_session)):
+    """SubscribeAnalytics. A subscription belongs to who made it: for an rApp, `requested_by` is its own invoker id whatever it sent (call flow 08b)."""
     # Creates a subscription for `analytics_type` on behalf of `requested_by` (both query parameters). 201 `{subscriptionId}`; 422
     # SCHEMA_VALIDATION_FAILED for a threshold direction outside UP / DOWN / UP_AND_DOWN. The notification destination is not
     # checked here: an unsafe one is dropped at publish time (see `smo_shared.outbox.enqueue`), the subscription still exists.
@@ -179,6 +207,8 @@ def subscribe_analytics(analytics_type: str, requested_by: str,
         bad = [t.thresholdDirection for t in body.thresholdInfo if t.thresholdDirection not in THRESHOLD_DIRECTIONS]
         if bad:
             raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"unknown thresholdDirection {bad[0]!r}")
+    if role_of(request) == ROLE_RAPP:
+        requested_by = invoker_id(request) or requested_by
     sub = MDASubscription(analytics_type=analytics_type, requested_by=requested_by, notification_destination=body.notificationDestination,
                           scope=body.scope, threshold_info=[t.model_dump() for t in body.thresholdInfo] if body.thresholdInfo else None)
     db.add(sub)
@@ -187,12 +217,17 @@ def subscribe_analytics(analytics_type: str, requested_by: str,
 
 
 @app.delete("/subscriptions/{subscription_id}", status_code=204)
-def unsubscribe_analytics(subscription_id: uuid.UUID, db: Session = Depends(get_session)):
+def unsubscribe_analytics(subscription_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
+    """UnsubscribeAnalytics. An rApp removes only its own subscriptions (403 SUBSCRIPTION_ACCESS_DENIED), so it cannot silence another consumer, an SA SMOS
+    monitor's among them (call flow 04a); the console and SMO modules may remove any."""
     # Deletes a subscription; an unknown id is 204 as well (idempotent).
     sub = db.get(MDASubscription, subscription_id)
-    if sub is not None:
-        db.delete(sub)
-        db.commit()
+    if sub is None:
+        return
+    if role_of(request) == ROLE_RAPP and sub.requested_by != invoker_id(request):
+        raise framework_error(FrameworkError.SUBSCRIPTION_ACCESS_DENIED, detail=f"subscription {subscription_id} belongs to {sub.requested_by}")
+    db.delete(sub)
+    db.commit()
 
 
 @app.get("/subscriptions")
@@ -222,7 +257,7 @@ def query_analytics_report(analytics_type: str | None = None, limit: int = PageL
         stmt = stmt.where(MDAFReport.analytics_type == analytics_type)
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"reportId": str(r.report_id), "analyticsType": r.analytics_type, "output": r.output,
-                               "reportKind": r.report_kind, "mdaType": r.mda_type} for r in page["items"]]}
+                               "reportKind": r.report_kind, "mdaType": r.mda_type, "publishedBy": r.published_by} for r in page["items"]]}
 
 
 @app.get("/reports/{report_id}")
@@ -233,7 +268,7 @@ def get_analytics_report(report_id: uuid.UUID, db: Session = Depends(get_session
     if r is None:
         raise framework_error(FrameworkError.MDAF_REPORT_NOT_FOUND, detail=f"no report {report_id}")
     return {"reportId": str(r.report_id), "analyticsType": r.analytics_type, "output": r.output, "reportKind": r.report_kind, "mdaType": r.mda_type,
-            "inputSources": [str(s) for s in r.input_sources]}
+            "inputSources": [str(s) for s in r.input_sources], "publishedBy": r.published_by}
 
 
 def _subscription_view(s: MDASubscription) -> dict:

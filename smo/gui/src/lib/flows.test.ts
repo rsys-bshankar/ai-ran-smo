@@ -5,9 +5,9 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { ConfigJob, Instance, Model, ModelLifecycle, NfDeployment, O1Endpoint, OCloudResource, Package, ServiceOrder, SwmJob } from "../api/types";
+import type { AnalyticsProducer, ConfigJob, Instance, Model, ModelLifecycle, NfDeployment, O1Endpoint, OCloudResource, Package, ServiceOrder, SwmJob } from "../api/types";
 import {
-  FLOWS, flow01, flow02, flow02Phases, flow03, flow06, flow07, flow09, flow10, flow15, flow16, flow19, progress, settle, toStepState, type FlowStep,
+  FLOWS, flow01, flow02, flow02Phases, flow03, flow06, flow07, flow08, flow09, flow10, flow15, flow16, flow19, progress, settle, toStepState, type FlowStep,
 } from "./flows";
 
 const statuses = (steps: FlowStep[]) => steps.map((s) => s.status);
@@ -252,5 +252,16 @@ describe("flow 19 — software job", () => {
   // FAILED freezes the phase that failed; later phases are blocked
   it("marks the frozen phase failed", () => {
     expect(statuses(flow19(job("INSTALL", "FAILED")))).toEqual(["done", "done", "failed", "blocked"]);
+  });
+});
+
+describe("flow 08 — RAN Analytics", () => {
+  const producer = (producerId: string): AnalyticsProducer => ({ producerId, analyticsType: "cell-kpi", mdaType: null, dmeInputTypes: [], outputSchema: {} });
+  // DOC-CF-1.8: each producer of a type has its own SME service, mdaf.<type>.<producer>; the board warns until every one is listed
+  it("is discoverable only when every producer's service is in SME", () => {
+    const both = [producer("a"), producer("b")];
+    expect(flow08("cell-kpi", both, [], [], ["mdaf.cell-kpi.a", "mdaf.cell-kpi.b"])[1].status).toBe("done");
+    expect(flow08("cell-kpi", both, [], [], ["mdaf.cell-kpi.a"])[1].status).toBe("warn");
+    expect(flow08("cell-kpi", both, [], [], ["mdaf.cell-kpi"])[1].status).toBe("warn");
   });
 });
