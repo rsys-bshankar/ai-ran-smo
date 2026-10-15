@@ -317,7 +317,7 @@ def test_build_contexts_are_keyed_by_the_whole_from_text(tmp_path):
     """The key of a named context is the `FROM` reference exactly as written, digest included: BuildKit does not match a tag-only key against a digest-pinned
     `FROM` (shown with a local BuildKit when this was written). A stage name and `scratch` are not images, an unlisted base is left alone, a missing file is empty.
     """
-    entry = next(e for e in _entries() if e.source == "golang:1.27.0-alpine")
+    entry = next(e for e in _entries() if e.source == "golang:1.27.2-alpine")
     ref = ci.upstream_ref(entry)
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text(f"FROM {ref} AS build\nRUN true\nFROM scratch\nCOPY --from=build /x /x\nFROM busybox:1.36\nFROM build\n")

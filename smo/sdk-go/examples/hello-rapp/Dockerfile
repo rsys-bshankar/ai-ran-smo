@@ -2,7 +2,7 @@
 #
 #     docker build -f examples/hello-rapp/Dockerfile -t hello-go-rapp .
 #
-# The builder image is pinned by digest (golang:1.27.0-alpine; refresh with the registry's manifest digest when the Go
+# The builder image is pinned by digest (golang:1.27.2-alpine; refresh with the registry's manifest digest when the Go
 # version in go.mod or the .github/workflows/smo-tests.yml setup-go version moves). No dependency is downloaded: the module has none.
 FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS build
 WORKDIR /src

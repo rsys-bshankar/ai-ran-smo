@@ -28,7 +28,7 @@ drwetter/testssl.sh:3.2 | sha256:51e487545f506e4e58b3e557d99538dbc2e63eec40680a2
 projectdiscovery/nuclei:v3.9.0 | sha256:66b5f88c9b98ad29c03343dd34e5e85bde0ad10428d72e0171b067efe1ed7811 | nuclei |
 node:26-alpine | sha256:0b36e8c136b94cd4fcf02188228e76c31ad5872eef3fec8cbd2eee500cfd9e80 | node |
 alpine:3.22 | sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8 | alpine |
-golang:1.27.0-alpine | sha256:4c9fe60190a2a3350ddc51de80d0224b8a6698d12bdfc999fee45ea9d6c46dbc | golang |
+golang:1.27.2-alpine | sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d | golang |
 maven:3.9.11-eclipse-temurin-21-noble | sha256:6fdc855a6ed81d288ca7ca37ac6ff5e9308b612485c0801d70b25a858c83d237 | maven |
 eclipse-temurin:25-jre-noble | sha256:d9a39a23634650173f1e2bbc176227af9728587ecf0f4b62d53e9355cd7a19ab | eclipse-temurin |
 

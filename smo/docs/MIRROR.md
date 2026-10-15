@@ -58,7 +58,7 @@ digest at the mirror.
 | `<repo>/mirror/nuclei` | `projectdiscovery/nuclei:v3.9.0` | yes |
 | `<repo>/mirror/node` | `node:26-alpine` | yes |
 | `<repo>/mirror/alpine` | `alpine:3.22` | yes |
-| `<repo>/mirror/golang` | `golang:1.27.0-alpine` | yes |
+| `<repo>/mirror/golang` | `golang:1.27.2-alpine` | yes |
 | `<repo>/mirror/maven` | `maven:3.9.11-eclipse-temurin-21-noble` | yes |
 | `<repo>/mirror/eclipse-temurin` | `eclipse-temurin:25-jre-noble` | yes |
 | `<repo>/mirror/tempo` | `grafana/tempo:2.10.8` | yes |
