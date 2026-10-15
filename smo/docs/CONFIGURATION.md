@@ -329,6 +329,7 @@ compose and the chart use the file form (`docs/SECRETS.md` lists each secret, it
 | Variable | Default | Secret | Read in | What it does |
 |---|---|---|---|---|
 | `SA_SMOS_O1_CM_HANDLER_URL` | `http://sa-smos:8000/o1-cm-handler/intents` |  | `sa-smos/app/o1cm.py` | URL where the Intent Service pushes new O1 CM intents to SA SMOS's handler (default `http://sa-smos:8000/o1-cm-handler/intents`). Change it if SA SMOS has another address. |
+| `SA_SMOS_REPORTS_URL` | `http://sa-smos:8000` |  | `sa-smos/app/main.py` | Base URL MDAF pushes an assurance monitor's reports to (`<base>/monitors/{id}/reports`, call flow 04b; default `http://sa-smos:8000`, https under mTLS). Change it if SA SMOS has another address. |
 
 ### `scripts`
 

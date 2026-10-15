@@ -67,8 +67,11 @@ export const lib: Partial<Record<MessageKey, string>> = {
 
   "flows.lib.f04.group": "Modell-Koordinationsgruppe in Betrieb",
   "flows.lib.f04.noThresholds": "keine Schwellwerte",
-  "flows.lib.f04.input": "MDAF-/MLMF-Berichte treffen ein",
-  "flows.lib.f04.inputs": "{mdaf} MDAF-, {mlmf} MLMF-Bericht(e)",
+  "flows.lib.f04.input": "MDAF sendet Berichte, SA SMOS bewertet",
+  "flows.lib.f04.notWatching": "beobachtet keinen Analysetyp: von Hand bewerten ({mdaf} MDAF-, {mlmf} MLMF-Bericht(e) vorhanden)",
+  "flows.lib.f04.waiting": "beobachtet {type}, noch kein Bericht",
+  "flows.lib.f04.healthy": "{type}: letzter Bericht innerhalb der Schwellwerte",
+  "flows.lib.f04.breached": "{type}: letzter Bericht verletzt {list}",
   "flows.lib.f04.escalate": "EscalateToOperator (wenn die Behebung nicht hilft)",
   "flows.lib.f04.escalations": "{n} Eskalation(en)",
 

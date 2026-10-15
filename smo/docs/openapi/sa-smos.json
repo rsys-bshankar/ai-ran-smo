@@ -1,6 +1,24 @@
 {
   "components": {
     "schemas": {
+      "AutomationBody": {
+        "description": "Body of `PUT /monitors/{id}/automation`: the action a breach runs by itself, or null for none (a breach is then escalated to the operator).",
+        "properties": {
+          "autoAction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Autoaction"
+          }
+        },
+        "title": "AutomationBody",
+        "type": "object"
+      },
       "ErrorEnvelope": {
         "properties": {
           "detail": {
@@ -147,6 +165,78 @@
           }
         },
         "title": "RegistrationBody",
+        "type": "object"
+      },
+      "RemedyBody": {
+        "description": "Body of `PUT /monitors/{id}/remedy`: the change list CONFIG_CHANGE sends to RAN NF OAM (`POST /config-jobs` `changes`); null or empty clears it.",
+        "properties": {
+          "changes": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changes"
+          }
+        },
+        "title": "RemedyBody",
+        "type": "object"
+      },
+      "ReportNotification": {
+        "description": "What MDAF's outbox posts for a report (`mdaf/app/main.py` `_notify_report_subscribers`). Only `reportId` is trusted: the report itself is read back from MDAF.",
+        "properties": {
+          "analyticsType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analyticstype"
+          },
+          "inputSources": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inputsources"
+          },
+          "output": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output"
+          },
+          "reportId": {
+            "format": "uuid",
+            "title": "Reportid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reportId"
+        ],
+        "title": "ReportNotification",
         "type": "object"
       },
       "ValidationError": {
@@ -631,7 +721,7 @@
         "summary": "List Assurance Monitors"
       },
       "post": {
-        "description": "At most one target: a service order (NF deployment remediation), a\nmodel coordination group (retrain), or a rApp instance (remediation\nthrough rApp Management, including ROLLBACK).",
+        "description": "At most one target: a service order (NF deployment remediation), a\nmodel coordination group (retrain), or a rApp instance (remediation\nthrough rApp Management, including ROLLBACK). With `analytics_type`,\nSA SMOS subscribes to that MDAF analytics type and evaluates every\nreport MDAF pushes (call flow 04a).",
         "operationId": "register_assurance_monitor_monitors_post",
         "parameters": [
           {
@@ -700,6 +790,22 @@
                 }
               ],
               "title": "Analytics Subscription Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "analytics_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Analytics Type"
             }
           }
         ],
@@ -962,8 +1068,148 @@
         "summary": "Get Assurance Monitor"
       }
     },
+    "/monitors/{monitor_id}/automation": {
+      "put": {
+        "description": "Sets what a breach found in a pushed report runs by itself (call flow 04b). Admin-only in the console. The action must suit the target: RETRAIN, and only RETRAIN, for a\ncoordination-group monitor; ROLLBACK for a rApp-instance monitor; RECONNECT for an order or rApp-instance monitor; CONFIG_CHANGE once a remedy is set.",
+        "operationId": "set_automation_monitors__monitor_id__automation_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "monitor_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Monitor Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutomationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Set Automation"
+      }
+    },
     "/monitors/{monitor_id}/escalate": {
       "post": {
+        "description": "Puts the monitor in the operator's escalation queue with nothing dispatched (call flow 04d): an ESCALATE action, ESCALATED, with the reason kept as its `detail`.",
         "operationId": "escalate_to_operator_monitors__monitor_id__escalate_post",
         "parameters": [
           {
@@ -983,6 +1229,22 @@
             "schema": {
               "title": "Reason",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "requested_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Requested By"
             }
           }
         ],
@@ -1101,7 +1363,7 @@
     },
     "/monitors/{monitor_id}/evaluate": {
       "post": {
-        "description": "Periodic, aligned with RAN Analytics' subscription cadence\n(D-NFR-PERF-SA-1, unchanged from v1.3 \u2014 this was already specified,\nnot a gap this LLD pass needed to close).",
+        "description": "Compares the metrics given with the monitor's thresholds (call flow 04b, by hand): each metric below its minimum or above its maximum is a breach, a metric not given (or\nnot a number) is listed as missing, never a breach. Nothing is stored or run.",
         "operationId": "evaluate_thresholds_monitors__monitor_id__evaluate_post",
         "parameters": [
           {
@@ -1242,7 +1504,7 @@
     },
     "/monitors/{monitor_id}/remedial-actions": {
       "post": {
-        "description": "ExecuteRemedialAction \u2014 gated by autoExecutionScopeConfig, admin-only\nto change (REQ-CNFG-ADM pattern, unchanged). Dispatch per SO/SA SMOS\nLLD section 2.1: CONFIG_CHANGE, SCALE, and RECONNECT are resolved;\nROLLBACK is resolved for a rApp-instance-scoped monitor and refused\n(409 ROLLBACK_HISTORY_UNAVAILABLE) for any other (see the module\ndocstring). A coordination-group-scoped monitor bypasses all four\nactionType branches below \u2014 see the module docstring's\nMLModelCoordinationGroup convergence note.\n\nA rApp Management refusal (nothing left to roll back, the instance not\nRUNNING, the earlier package gone) is not an error here: the action is\nrecorded ESCALATED, with rApp Management's reason in `detail`. A\nRESOLVED rollback has started an upgrade back; `result` names the\nreplacement instance, which rApp Management resolves like any upgrade.",
+        "description": "ExecuteRemedialAction by hand (call flow 04c). Dispatch per SO/SA SMOS\nLLD section 2.1: CONFIG_CHANGE writes the monitor's remedy, SCALE\nescalates, RECONNECT heals, ROLLBACK is resolved for a\nrApp-instance-scoped monitor and refused (409\nROLLBACK_HISTORY_UNAVAILABLE) for any other; a coordination-group\nmonitor retrains whatever is asked (recorded RETRAIN).\n\nA refusal or no answer from the module that acts is not an error here:\nthe action is recorded ESCALATED with the reason in `detail`. A RESOLVED\nrollback has started an upgrade back; `result` names the replacement\ninstance, which rApp Management resolves like any upgrade.",
         "operationId": "execute_remedial_action_monitors__monitor_id__remedial_actions_post",
         "parameters": [
           {
@@ -1262,6 +1524,22 @@
             "schema": {
               "title": "Action Type",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "requested_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Requested By"
             }
           },
           {
@@ -1386,6 +1664,284 @@
           }
         },
         "summary": "Execute Remedial Action"
+      }
+    },
+    "/monitors/{monitor_id}/remedy": {
+      "put": {
+        "description": "Sets the configuration a CONFIG_CHANGE action writes for this monitor (call flow 04c). Each change names its element (`managedElementRef`); RAN NF OAM checks the rest when it is sent.",
+        "operationId": "set_remedy_monitors__monitor_id__remedy_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "monitor_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Monitor Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemedyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Set Remedy"
+      }
+    },
+    "/monitors/{monitor_id}/reports": {
+      "post": {
+        "description": "A report MDAF pushed for this monitor's analytics type (call flow 04b). The report is read back from MDAF, evaluated, and the evaluation kept as `lastEvaluation`. A breach\nafter a report without one (or the first report) runs the monitor's automatic action, or is recorded ESCALATED for the operator when it has none; a breach that persists runs\nnothing more. A report already evaluated is answered as before.",
+        "operationId": "receive_report_monitors__monitor_id__reports_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "monitor_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Monitor Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportNotification"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Receive Report"
       }
     },
     "/o1-cm-handler/enactments": {

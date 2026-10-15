@@ -16,8 +16,10 @@ from smo_shared.db import Base
 class AssuranceMonitor(Base):
     """Requirement thresholds for at most one target: a service order (NF deployment remediation), a model coordination group (retrain) or a rApp instance (remediation through rApp Management).
 
-    The CHECK `one_target_only` allows at most one of the three target columns to be set; no target is allowed. `requirement_thresholds` is {metric: minimum}. `analytics_subscription_id` is a
-    stored reference only; nothing subscribes or evaluates automatically.
+    The CHECK `one_target_only` allows at most one of the three target columns to be set; no target is allowed. `requirement_thresholds` maps each metric to a minimum (a number) or to
+    `{"min": n, "max": n}` (either bound may be left out). A monitor registered with `analytics_type` holds the MDAF subscription SA SMOS made for it in `analytics_subscription_id`, and each
+    report MDAF pushes for it is evaluated (call flow 04b); otherwise that column is a reference the caller gave. `auto_action` (set by an admin) is what a breach runs by itself, `remedy_changes`
+    the configuration CONFIG_CHANGE writes, `last_evaluation` the outcome of the latest pushed report ({at, reportId, breached, breaches, missing}).
     """
     __tablename__ = "assurance_monitor"
     __table_args__ = (
@@ -40,12 +42,21 @@ class AssuranceMonitor(Base):
     target_rapp_instance_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     analytics_subscription_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     requirement_thresholds: Mapped[dict] = mapped_column(JSON, nullable=False)
+    # DOC-CF-1.8 flow 04: the loop closes on MDAF's reports (04b)
+    analytics_type: Mapped[str | None] = mapped_column(String)
+    auto_action: Mapped[str | None] = mapped_column(String)          # CONFIG_CHANGE | RECONNECT | ROLLBACK | RETRAIN; admin-only to set
+    remedy_changes: Mapped[list | None] = mapped_column(JSON)        # the change list CONFIG_CHANGE sends to RAN NF OAM
+    last_evaluation: Mapped[dict | None] = mapped_column(JSON)
+    created_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
 
 
 class RemedialAction(Base):
     """One remedial action taken (or escalated) for a monitor, written once with its final outcome (RESOLVED or ESCALATED).
 
-    `auto_executed` records the `requester_is_admin` flag of the request. `auto_execution_scope_config` is not read or written by any route.
+    `action_type` is what was done: CONFIG_CHANGE, SCALE, RECONNECT, ROLLBACK, RETRAIN (a coordination-group monitor) or ESCALATE (a breach or an operator's escalation with
+    nothing dispatched). `auto_executed` is true only for an action a pushed report ran by itself (call flow 04b); `requested_by` is who asked (`smo-gui:<user>`, or `sa-smos` for
+    the loop), `detail` why it ended as it did, `result` what the module that acted answered, `report_id` the MDAF report that triggered it. `auto_execution_scope_config` is not
+    read or written by any route.
     """
     __tablename__ = "remedial_action"
 
@@ -55,6 +66,11 @@ class RemedialAction(Base):
     auto_executed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     auto_execution_scope_config: Mapped[str | None] = mapped_column(String)
     outcome: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
+    requested_by: Mapped[str | None] = mapped_column(String)
+    detail: Mapped[str | None] = mapped_column(String)
+    result: Mapped[dict | None] = mapped_column(JSON)
+    report_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
 
 
 class O1CmEnactment(Base):

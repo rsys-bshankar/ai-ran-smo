@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ModuleStatus } from "../api/types";
 
-import { REFUSAL_CODES, REFUSAL_MEANING, APPROVAL_MEANING, DISPOSITION_MEANING, approvalPolicyForm, approvalPolicyPayload, approvalProgress, decidedByText, describeApprovalPolicy, INTEGRITY_MEANING, completionRoute, decisionQuery, describeChange, describeElements, timeLeft, countBySeverity, canRollback, describeDifferences, describeGuardResult, describeLimits, describePlace, describeScope, describeSeconds, describeUserScope, userScopeFromFields, kpiNameProblem, limitsForm, limitsPayload, parseCounters, schedulePayload, stagedPayload, waveActions, windowPayload, waveProgress, metricSeries, moduleRows, modelActions, numericMetricKeys, packageActions, parseJsonObject, pipelineSteps, sortAlarms, splitList, type PipelineStepStatus } from "./domain";
+import { REFUSAL_CODES, REFUSAL_MEANING, APPROVAL_MEANING, DISPOSITION_MEANING, approvalPolicyForm, approvalPolicyPayload, approvalProgress, decidedByText, describeApprovalPolicy, INTEGRITY_MEANING, completionRoute, decisionQuery, describeChange, describeElements, timeLeft, countBySeverity, canRollback, describeDifferences, describeGuardResult, describeLimits, describePlace, describeScope, describeSeconds, describeUserScope, userScopeFromFields, kpiNameProblem, limitsForm, limitsPayload, parseCounters, schedulePayload, stagedPayload, waveActions, windowPayload, waveProgress, metricSeries, moduleRows, modelActions, numericMetricKeys, packageActions, parseJsonObject, pipelineSteps, sortAlarms, splitList, thresholdText, thresholdsText, type PipelineStepStatus } from "./domain";
 import type { StepStatus } from "./flows";
 
 describe("model lifecycle", () => {
@@ -447,5 +447,17 @@ describe("a console user's scope (GUI-5)", () => {
     expect(userScopeFromFields(" ", "")).toBeNull();
     expect(userScopeFromFields("eu-west, ap", "")).toEqual({ regions: ["eu-west", "ap"] });
     expect(userScopeFromFields("", "acme")).toEqual({ tenants: ["acme"] });
+  });
+});
+
+describe("assurance thresholds", () => {
+  // Call flow 04: a number is a minimum; an object gives a minimum, a maximum or both.
+  it("reads each threshold form", () => {
+    expect(thresholdText("rrc", 98)).toBe("rrc ≥ 98");
+    expect(thresholdText("latency", { max: 20 })).toBe("latency ≤ 20");
+    expect(thresholdText("drops", { min: 0, max: 5 })).toBe("0 ≤ drops ≤ 5");
+    expect(thresholdText("tput", { min: 10 })).toBe("tput ≥ 10");
+    expect(thresholdsText({ rrc: 98, latency: { max: 20 } })).toBe("rrc ≥ 98, latency ≤ 20");
+    expect(thresholdsText({})).toBe("");
   });
 });

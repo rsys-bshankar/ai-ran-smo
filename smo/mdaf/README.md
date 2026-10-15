@@ -9,7 +9,7 @@
 | Depends on (over R1) | DME (`GET /dme/data-jobs/{id}`, validates report inputs); AIMgF (`/aimgf/mlmf/subscriptions`, drift forwarding) |
 | Called by | Analytics producers (rApps, via `sdk.analytics`) publish reports; consumers (rApps, SA SMOS, GUI) subscribe, query and create MDA requests; ran-analytics is a separate producer registry, not an MDAF client: no code-level call either way |
 | Database tables | `mdaf_report`, `mda_subscription`, `mda_function`, `mda_request`, `mda_report_delivery` |
-| Unit tests | 36 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 46 passed (`tests/`, SQLite, standalone) |
 | Status | Done. `STREAMING` reporting is recorded, not streamed (see 2.8) |
 | Time-driven behaviour | Push on publish: subscribers are notified when a report is stored; no timer |
 
@@ -153,6 +153,7 @@ Producer-push (legacy, unchanged shape)
 |---|---|---|---|
 | POST | `/reports` | Publish a report. Query `analytics_type`; JSON body `{output, input_sources, scope?}`. Returns `{reportId}` (201). | 422 `DME_ARTIFACT_NOT_FOUND` |
 | GET | `/reports` | Query reports (`analytics_type`, `limit`, `offset`); items carry `reportKind`, `mdaType` | |
+| GET | `/reports/{report_id}` | Read one report with its `inputSources`; a subscriber that acts on a notification reads it back here (SA SMOS, call flow 04b) | 404 `MDAF_REPORT_NOT_FOUND` |
 | POST | `/subscriptions` | Subscribe. Query `analytics_type`, `requested_by`; optional body `{scope, thresholdInfo[], notificationDestination}`. | 422 `SCHEMA_VALIDATION_FAILED` (unknown `thresholdDirection`) |
 | GET | `/subscriptions` | List (`analytics_type`, `requested_by`, paging) | |
 | DELETE | `/subscriptions/{subscription_id}` | Unsubscribe (204, idempotent) | |
@@ -246,7 +247,7 @@ cd smo/mdaf && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 | File | Covers | Tests |
 |---|---|---|
-| `tests/test_main.py` | Publish/query, scope persistence, subscribe/unsubscribe/list and filters, notification delivery (with, without, other type, unreachable destination), DME input validation, `ThresholdInfo` (validation, fires on first crossing, no refire, refire after reset, DOWN, missing IE, no-threshold subscription), `/health` | 26 |
+| `tests/test_main.py` | Publish/query, scope persistence, subscribe/unsubscribe/list and filters, notification delivery (with, without, other type, unreachable destination), DME input validation, `ThresholdInfo` (validation, fires on first crossing, no refire, refire after reset, DOWN, missing IE, no-threshold subscription), a report read back by its id and 404, `/health` | 29 |
 | `tests/test_mda.py` | MDAFunction capability gating, request validation, typed output validation per `mDAType`, NOTIFICATION matching, edge-triggered IE thresholds, `filterValue` and `timeOut`, FILE method and download, report answering one request and legacy-report matching, DRIFT forwarding to MLMF, 404s | 10 `GET /mda-reports?total=false`: no `total`, `hasMore` set correctly. |
 
 ### 3.3 What is not covered here

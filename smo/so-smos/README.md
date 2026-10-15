@@ -206,6 +206,6 @@ needs Postgres; SQLite ignores it, so the cancel race is tested by order of call
 
 ## 4. References
 
-- Call flows: [04 closed-loop assurance](../docs/call-flows/04-closed-loop-assurance.md) (CONFIG then DEPLOY), [10 SO SMOS multi-step order](../docs/call-flows/10-so-smos-multi-step-infra-training-deploy.md), [02 AI/ML model train to inference](../docs/call-flows/02-aiml-model-train-to-inference.md)
+- Call flows: [04 closed-loop assurance](../docs/call-flows/04-closed-loop-assurance.md) (RECONNECT reads an order's DEPLOY step), [10 SO SMOS multi-step order](../docs/call-flows/10-so-smos-multi-step-infra-training-deploy.md), [02 AI/ML model train to inference](../docs/call-flows/02-aiml-model-train-to-inference.md)
 - OpenAPI: [`../docs/openapi/so-smos.json`](../docs/openapi/so-smos.json)
 - Related: [`../sa-smos/README.md`](../sa-smos/README.md), [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md), [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md)

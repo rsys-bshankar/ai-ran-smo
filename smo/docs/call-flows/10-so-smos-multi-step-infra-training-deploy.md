@@ -1,8 +1,8 @@
 # Call Flow 10: SO SMOS multi-step order — submit, dispatch, fail fast, cancel
 
 How a service order runs in SO SMOS: an ordered list of steps, each one call to another module through the dispatch table (`so-smos/app/dispatch.py`,
-SO/SA SMOS LLD section 1). The steps run one after another and the first failure halts the order; nothing already done is undone. Call flow 04 shows a
-two-step CONFIG → DEPLOY order that SA SMOS then watches. Four diagrams:
+SO/SA SMOS LLD section 1). The steps run one after another and the first failure halts the order; nothing already done is undone. An SA SMOS monitor can
+target an order (call flow 04): its RECONNECT heals the NF the order's DEPLOY step deployed. Four diagrams:
 
 | | Step | Who starts it | Ends with |
 |---|---|---|---|

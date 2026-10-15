@@ -148,6 +148,7 @@
   "SAFEGUARD_EVENT_MIN_INTERVAL_SECONDS": "Seconds between two safeguard-refusal notifications for the same rApp and reason at RAN NF OAM (default 60), so a looping rApp does not flood subscribers. `0` notifies every refusal.",
   "SAFEGUARD_REFUSAL_RETENTION_DAYS": "Days a recorded safeguard refusal is kept before the purge route may delete it. `0` (default) keeps them for ever. Compose passes it through from `.env`.",
   "SA_SMOS_O1_CM_HANDLER_URL": "URL where the Intent Service pushes new O1 CM intents to SA SMOS's handler (default `http://sa-smos:8000/o1-cm-handler/intents`). Change it if SA SMOS has another address.",
+  "SA_SMOS_REPORTS_URL": "Base URL MDAF pushes an assurance monitor's reports to (`<base>/monitors/{id}/reports`, call flow 04b; default `http://sa-smos:8000`, https under mTLS). Change it if SA SMOS has another address.",
   "SA_SMOS_URL": "Base URL R1 Termination forwards `/sa-smos/...` to (service assurance).",
   "SME_ALLOW_OPEN_ENROLLMENT": "`true`, `1`, `yes` or `on`: SME accepts invoker registration with no enrollment secret (role `internal`). Only for a lab with `SMO_ENROLLMENT_SECRET` unset; never in production.",
   "SME_TOKEN_AUDIENCE": {

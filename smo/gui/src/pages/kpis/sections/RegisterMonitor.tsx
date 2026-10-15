@@ -1,6 +1,7 @@
-/** Section `kpis.newMonitor` (Assurance tab, role-gated by the caller): register an SA SMOS assurance monitor with metric floors, scoped to an
- * SO SMOS order (remediates NF deployments), a model coordination group (retrains models) or an rApp instance (can roll the rApp back), or
- * unscoped. Reads the three scope lists (bounded at 200) only while the form is shown. */
+/** Section `kpis.newMonitor` (Assurance tab, role-gated by the caller): register an SA SMOS assurance monitor with thresholds (a number is a
+ * minimum, `{"min", "max"}` a range), scoped to an SO SMOS order (remediates NF deployments), a model coordination group (retrains models) or an
+ * rApp instance (can roll the rApp back), or unscoped; with an MDAF analytics type SA SMOS subscribes to it and evaluates every report (call flow
+ * 04a). Reads the three scope lists (bounded at 200) only while the form is shown. */
 import { useState } from "react";
 
 import { ActionButton, Card, Field } from "../../../components/ui";
@@ -16,6 +17,7 @@ export function RegisterMonitor() {
   const instances = useInstances();
   const [target, setTarget] = useState("");
   const [thresholds, setThresholds] = useState('{"throughputMbps": 100}');
+  const [analyticsType, setAnalyticsType] = useState("");
   const parsed = parseJsonObject(thresholds, t);
   const [kind, id] = target.split(":");
   return (
@@ -29,11 +31,12 @@ export function RegisterMonitor() {
             <optgroup label={t("kpis.register.instances")}>{instances.data?.filter((i) => i.state !== "UNDEPLOYED").map((i) => <option key={i.instanceId} value={`rapp:${i.instanceId}`}>{t("kpis.register.instance", { id: i.instanceId.slice(0, 8), state: i.state })}</option>)}</optgroup>
           </select>
         </Field>
+        <Field label={t("kpis.register.analyticsType")} hint={t("kpis.register.analyticsType.hint")}><input value={analyticsType} onChange={(e) => setAnalyticsType(e.target.value.trim())} placeholder={t("kpis.register.analyticsType.placeholder")} /></Field>
         <Field label={t("kpis.register.thresholds")} hint={parsed.ok ? undefined : <span className="text-bad">{parsed.error}</span>}><input value={thresholds} onChange={(e) => setThresholds(e.target.value)} /></Field>
         <ActionButton label={t("kpis.register.submit")} tone="primary" disabled={!parsed.ok} action={{
           method: "POST", path: MONITORS, json: parsed.ok ? parsed.value : {},
           query: { target_order_id: kind === "order" ? id : undefined, target_coordination_group_id: kind === "group" ? id : undefined,
-                   target_rapp_instance_id: kind === "rapp" ? id : undefined },
+                   target_rapp_instance_id: kind === "rapp" ? id : undefined, analytics_type: analyticsType || undefined },
           success: t("kpis.register.success"),
         }} />
       </div>

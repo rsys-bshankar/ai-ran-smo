@@ -11,7 +11,7 @@
  * `t` (English when omitted), and a `..._MEANING` map holds catalog keys a caller shows with `t(...)`.
  */
 
-import type { Alarm, AuthzScope, ConfigJob, KpiCounterSpec, KpiGuardResult, ModuleStatus, RollbackPreview } from "../api/types";
+import type { Alarm, AuthzScope, ConfigJob, KpiCounterSpec, KpiGuardResult, ModuleStatus, RollbackPreview, Threshold } from "../api/types";
 import { translate, type Params, type TKey, type Translator } from "../i18n";
 
 /** The English translator: the default of the helpers here (and in `data/scope.ts`) that callers and tests use without one; a page passes its
@@ -221,6 +221,18 @@ export function metricSeries(reports: Reported[], key: string): { t: string; v: 
 }
 
 // ---------------------------------------------------------------- formatting
+
+/** An SA SMOS threshold as text: a number is a minimum (`metric ≥ n`); an object reads `metric ≥ min`, `metric ≤ max` or `min ≤ metric ≤ max` (call flow 04). */
+export function thresholdText(metric: string, bound: Threshold): string {
+  if (typeof bound === "number") return `${metric} ≥ ${bound}`;
+  if (bound.min !== undefined && bound.max !== undefined) return `${bound.min} ≤ ${metric} ≤ ${bound.max}`;
+  return bound.max !== undefined ? `${metric} ≤ ${bound.max}` : `${metric} ≥ ${bound.min}`;
+}
+
+/** A monitor's thresholds as one line of `thresholdText`s, or "" when it has none. */
+export function thresholdsText(thresholds: Record<string, Threshold>): string {
+  return Object.entries(thresholds).map(([k, v]) => thresholdText(k, v)).join(", ");
+}
 
 /**
  * An identifier shortened to its first eight characters plus an ellipsis when it is longer than thirteen; a missing one is a dash.

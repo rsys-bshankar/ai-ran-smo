@@ -173,6 +173,9 @@ class FrameworkError:
     NFDEPLOYMENT_NOT_FOUND = ("NFDEPLOYMENT_NOT_FOUND", 404)
     RAPP_INSTANCE_NOT_FOUND = ("RAPP_INSTANCE_NOT_FOUND", 404)
     ASSURANCE_MONITOR_NOT_FOUND = ("ASSURANCE_MONITOR_NOT_FOUND", 404)
+    # DOC-CF-1.8 flow 04: SA SMOS reads back the report MDAF pushed it (GET /mdaf/reports/{id}); one remedial action per monitor at a time
+    MDAF_REPORT_NOT_FOUND = ("MDAF_REPORT_NOT_FOUND", 404)
+    REMEDIAL_ACTION_IN_PROGRESS = ("REMEDIAL_ACTION_IN_PROGRESS", 409)
     PUBLISHING_FUNCTION_NOT_FOUND = ("PUBLISHING_FUNCTION_NOT_FOUND", 404)
     # HISTORY.md OI-6.1 — an explicit operator-approval gate on
     # Training->Validation->Emulation, mirroring the existing

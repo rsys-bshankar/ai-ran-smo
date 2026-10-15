@@ -272,8 +272,21 @@ export interface OCloudMetric { resourceRef: string; metricName: string; value: 
 export interface Topology { entities: Record<string, { id: string; attributes: Record<string, unknown> }[]>[]; relationships: Record<string, { id: string; aSide: string; bSide: string }[]>[] }
 export interface OrderStep { stepType: string; targetModule: string; status: string; error?: string; result?: Record<string, unknown>; [k: string]: unknown }
 export interface ServiceOrder { orderId: string; scope: string; status?: string; submittedBy?: string | null; steps: OrderStep[]; homingDecision: Record<string, unknown> | null; rmihRegistration: string }
-export interface Monitor { monitorId: string; targetOrderId: string | null; targetCoordinationGroupId: string | null; targetRappInstanceId: string | null; analyticsSubscriptionId: string | null; thresholds: Record<string, number> }
-export interface RemedialAction { actionId: string; monitorId: string; actionType: string; autoExecuted: boolean; outcome: string | null }
+/** A threshold: a number is a minimum; an object gives a minimum and/or a maximum (call flow 04). */
+export type Threshold = number | { min?: number; max?: number };
+/** The outcome of the latest report MDAF pushed for a monitor (call flow 04b). */
+export interface MonitorEvaluation { at: string; reportId: string; breached: boolean; breaches: Record<string, Threshold>; missing: string[] }
+/** An SA SMOS assurance monitor: its target, thresholds and what closes its loop (call flow 04). */
+export interface Monitor {
+  monitorId: string; targetOrderId: string | null; targetCoordinationGroupId: string | null; targetRappInstanceId: string | null; analyticsSubscriptionId: string | null;
+  thresholds: Record<string, Threshold>; analyticsType?: string | null; autoAction?: string | null; remedyChanges?: Record<string, unknown>[] | null;
+  lastEvaluation?: MonitorEvaluation | null; createdAt?: string | null;
+}
+/** One remedial action or escalation SA SMOS recorded: what was done, how it ended and why, who asked and when (call flow 04). */
+export interface RemedialAction {
+  actionId: string; monitorId: string; actionType: string; autoExecuted: boolean; outcome: string | null;
+  createdAt?: string | null; requestedBy?: string | null; detail?: string | null; reportId?: string | null; result?: Record<string, unknown>;
+}
 export interface AnalyticsReport { reportId: string; analyticsType: string; output: Record<string, unknown> }
 export interface AnalyticsProducer { producerId: string; analyticsType: string; mdaType: string | null; dmeInputTypes: string[]; outputSchema: Record<string, unknown> }
 export interface AnalyticsSubscription { subscriptionId: string; analyticsType: string; requestedBy: string; notificationDestination: string | null; scope: Record<string, unknown> | null }

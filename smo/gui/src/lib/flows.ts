@@ -18,7 +18,7 @@ import type {
 } from "../api/types";
 import type { TKey, Translator } from "../i18n";
 import type { StepState } from "../kit/Timeline";
-import { ENGLISH, MODEL_PIPELINE, RUNTIME_PIPELINE } from "./domain";
+import { ENGLISH, MODEL_PIPELINE, RUNTIME_PIPELINE, thresholdsText } from "./domain";
 
 export type StepStatus = "done" | "current" | "todo" | "failed" | "blocked" | "warn";
 
@@ -185,7 +185,7 @@ export function flow03(endpoints: O1Endpoint[], job: ConfigJob | undefined, t: T
 // ---------------------------------------------------------------- 04
 
 /**
- * Flow 04, closed-loop assurance: the order or coordination group the monitor targets, the monitor and its thresholds, the MDAF and MLMF reports that arrive, the remedial actions (resolved, or a warning when they did not resolve) and the escalation to the operator.
+ * Flow 04, closed-loop assurance: the order or coordination group the monitor targets, the monitor and its thresholds, the MDAF reports pushed to it and the latest evaluation, the remedial actions (resolved, or a warning when they did not resolve) and the escalation to the operator.
  */
 export function flow04(monitor: Monitor | undefined, order: ServiceOrder | undefined, actions: RemedialAction[], analyticsReports: number, mlmfReports: number, t: Translator = ENGLISH): FlowStep[] {
   const orderDone = order ? order.steps.every((s) => s.status === "COMPLETED") : false;
@@ -193,14 +193,19 @@ export function flow04(monitor: Monitor | undefined, order: ServiceOrder | undef
   const resolved = actions.filter((a) => a.outcome === "RESOLVED");
   const escalated = actions.filter((a) => a.outcome === "ESCALATED");
   const groupScoped = !!monitor?.targetCoordinationGroupId;
+  const evaluation = monitor?.lastEvaluation;
   return settle([
     step("order", groupScoped ? t("flows.lib.f04.group") : "SubmitServiceOrder(CONFIG, DEPLOY)", groupScoped ? "AI/ML Workflow" : "Operator → SO SMOS",
       groupScoped ? true : !order ? (monitor?.targetOrderId ? "warn" : false) : orderFailed ? "failed" : orderDone,
       order ? order.steps.map((s) => `${s.stepType} ${s.status}`).join(", ") : undefined),
     step("monitor", "RegisterAssuranceMonitor(target, thresholds)", "SA SMOS", !!monitor,
-      monitor ? Object.entries(monitor.thresholds).map(([k, v]) => `${k} ≥ ${v}`).join(", ") || t("flows.lib.f04.noThresholds") : undefined),
-    step("input", t("flows.lib.f04.input"), "RAN Analytics / MLMF → SA SMOS", analyticsReports + mlmfReports > 0,
-      t("flows.lib.f04.inputs", { mdaf: analyticsReports, mlmf: mlmfReports })),
+      monitor ? thresholdsText(monitor.thresholds) || t("flows.lib.f04.noThresholds") : undefined),
+    // DOC-CF-1.8 flow 04: a monitor that watches an analytics type is pushed MDAF's reports and evaluates each one (lastEvaluation)
+    step("input", t("flows.lib.f04.input"), "MDAF → SA SMOS",
+      evaluation ? (evaluation.breached ? "warn" : true) : false,
+      !monitor?.analyticsType ? t("flows.lib.f04.notWatching", { mdaf: analyticsReports, mlmf: mlmfReports })
+        : evaluation ? t(evaluation.breached ? "flows.lib.f04.breached" : "flows.lib.f04.healthy", { type: monitor.analyticsType, list: Object.keys(evaluation.breaches).join(", ") })
+          : t("flows.lib.f04.waiting", { type: monitor.analyticsType })),
     step("remediate", "EvaluateThresholds → ExecuteRemedialAction", "SA SMOS → RAN NF OAM / NFO / AI/ML", resolved.length > 0 ? true : actions.length ? "warn" : false,
       actions.length ? actions.map((a) => `${a.actionType} ${a.outcome}`).join(", ") : undefined),
     step("escalate", t("flows.lib.f04.escalate"), "SA SMOS → Operator", escalated.length ? "warn" : resolved.length > 0,

@@ -6,12 +6,12 @@
 |---|---|
 | Standards basis | O-RAN SMO-ARCH §4.2.8 SMOS (role and capabilities); interfaces unspecified, so monitors and remedial actions are internal logic; its O1-CM handler acts as a 3GPP TS 28.312 intent handling function (RMIH) |
 | R1 route / port | `/sa-smos` via R1 Termination (container :8000) |
-| Depends on (over R1) | Intent Service; DME (`/dme/actions`); RAN NF OAM (`/ran-nf-oam/config-jobs`); NFO (`/nfo/deployments/{id}/heal`); SO SMOS (`/so-smos/orders/{id}`); rApp Management (`/rapp-mgmt/instances/...`); AIMgF (`/aimgf/training-jobs`) |
-| Called by | GUI BFF (monitors, evaluate, escalate, remedial actions); Intent Service (new-intent push to the O1-CM handler); rApp demos and integration environments (O1-CM registration) |
+| Depends on (over R1) | MDAF (`/mdaf/subscriptions`, `/mdaf/reports/{id}`); Intent Service; DME (`/dme/actions`); RAN NF OAM (`/ran-nf-oam/config-jobs`); NFO (`/nfo/deployments/{id}/heal`); SO SMOS (`/so-smos/orders/{id}`); rApp Management (`/rapp-mgmt/instances/...`); AIMgF (`/aimgf/training-jobs`) |
+| Called by | GUI BFF (monitors, evaluate, escalate, remedial actions, remedy, automatic action); MDAF's notification outbox (a monitor's reports, call flow 04b); Intent Service (new-intent push to the O1-CM handler); rApp demos and integration environments (O1-CM registration) |
 | Database tables | `assurance_monitor`, `remedial_action`, `o1_cm_enactment` |
-| Unit tests | 32 passed (`tests/`, SQLite, standalone) |
-| Status | Done for Phase 1; `SCALE` always escalates and `CONFIG_CHANGE` is a stub write (see 2.8) |
-| Time-driven behaviour | Caller-driven: `POST /monitors/{id}/evaluate` is called with current metrics; the service does not poll |
+| Unit tests | 74 passed (`tests/`, SQLite, standalone) |
+| Status | Done for Phase 1; `SCALE` always escalates (NFO scaling takes no target size, see 2.8) |
+| Time-driven behaviour | Event-driven: a monitor with an analytics type evaluates each report MDAF pushes (call flow 04b); `POST /monitors/{id}/evaluate` evaluates by hand. Nothing polls |
 
 ## 1. High-level design (HLD)
 
@@ -19,10 +19,13 @@
 
 SA SMOS has two independent roles.
 
-1. **Assurance.** An `AssuranceMonitor` holds requirement thresholds for exactly one kind of target: a service
-   order (NF deployment), an AIMgF model coordination group, or an rApp instance. A caller evaluates metrics
-   against it and, on a breach, asks for a remedial action. The action is dispatched to the module that can
-   perform it, and the outcome (`RESOLVED` or `ESCALATED`) is recorded. `ESCALATED` rows are the operator queue.
+1. **Assurance** (call flow 04). An `AssuranceMonitor` holds requirement thresholds for at most one target: a service
+   order (NF deployment), an AIMgF model coordination group, or an rApp instance. A monitor that names an MDAF
+   analytics type is subscribed to it: MDAF pushes each report, SA SMOS reads it back and evaluates it, and a new
+   breach runs the monitor's automatic action (set by an admin) or is escalated. An operator can also evaluate
+   metrics and run a remedial action by hand. Each action is dispatched to the module that can perform it and
+   recorded `RESOLVED` or `ESCALATED` with who asked, when, why and what came of it. `ESCALATED` rows are the
+   operator queue.
 2. **O1-CM intent handling.** SA SMOS registers as RMIH `sa-smos` with Intent Service for `RAN_SUBNETWORK`
    expectations whose targets are `<IOC>.<attribute>` CM attributes. It enacts a pushed intent by writing the
    change through DME's O1 action mediation and reports fulfilment back to Intent Service.
@@ -43,9 +46,9 @@ and attribute names. It realises no TS 28.312 expectation semantics beyond `IS_E
 
 ```
  operator / GUI ──► SA SMOS ──heal──► NFO
-                      │  ├──rollback──► rApp Management
-                      │  ├──retrain──► AIMgF
-                      │  └──config job──► RAN NF OAM (stub write)
+ MDAF ──push report──►  │  ├──rollback──► rApp Management
+   ◄──subscribe, read───┤  ├──retrain──► AIMgF
+                      │  └──config job (the monitor's remedy)──► RAN NF OAM
                       │
  Intent Service ──push intentId──► SA SMOS O1-CM handler ──GET /intents/{id}──► Intent Service
                                         ├──POST /dme/actions──► DME ──► RAN NF OAM config job ──► O1
@@ -58,6 +61,7 @@ and attribute names. It realises no TS 28.312 expectation semantics beyond `IS_E
 |---|---|
 | `AssuranceMonitor` (thresholds and one target) | The service order a monitor targets → SO SMOS |
 | `RemedialAction` records and their `RESOLVED` / `ESCALATED` outcome | Heal / deployment state → NFO |
+| A monitor's evaluation of the latest report (`lastEvaluation`) | Reports, subscriptions → MDAF |
 | O1-CM RMIH registration (`sa-smos`) and `O1CmEnactment` records | Intent, intent reports, RMIH registry → Intent Service |
 | | O1 change mediation, action ids, replay → DME; config jobs and schema pre-check → RAN NF OAM |
 | | rApp version history and rollback → rApp Management |
@@ -79,8 +83,25 @@ and attribute names. It realises no TS 28.312 expectation semantics beyond `IS_E
 - **RECONNECT means heal.** The NFO deployment is resolved from the order's completed `DEPLOY` step
   (`result.nfDeploymentId`), or from rApp Management's `workloadRef` for an rApp-scoped monitor (which follows an
   upgrade to the replacement instance). If none can be resolved, the action is `ESCALATED`.
-- **Auto-execution gating.** `requester_is_admin` is stored as `auto_executed`; the GUI BFF sets it from the
-  caller's role.
+- **The loop closes on MDAF's reports.** `analytics_type` at registration makes SA SMOS subscribe at MDAF with its
+  own report route as the destination. A push carries a report id only SA SMOS trusts: the report is read back from
+  MDAF (`GET /mdaf/reports/{id}`), so a forged push cannot trigger an action. A breach acts once: only a breach after
+  a report without one (or the first report) runs anything; a repeated delivery is answered `DUPLICATE`.
+- **The automatic action is an admin's.** `PUT /monitors/{id}/automation` sets what a breach runs by itself; the GUI
+  BFF allows it to admins only. It must suit the target (RETRAIN only, for a group; ROLLBACK for a rApp instance;
+  RECONNECT for an order or instance; CONFIG_CHANGE once a remedy is set); SCALE is never automatic. With none, a
+  breach is recorded as an `ESCALATE` action.
+- **No false success.** CONFIG_CHANGE writes the monitor's remedy (`PUT /monitors/{id}/remedy`) under the
+  idempotency key `sa-smos-action:<actionId>`; COMPLETED is `RESOLVED`, anything else (held for approval, partial,
+  failed, refused) is `ESCALATED` with the reason. Without a remedy nothing is written and the action is `ESCALATED`.
+- **An action says what happened.** `action_type` is what was run (`RETRAIN` for a group, `ESCALATE` for an
+  escalation); `auto_executed` is true only for an action a report ran; `requested_by` (the console pins it to
+  `smo-gui:<user>`), `created_at`, `detail`, `result` and `report_id` are kept. No answer from the module that acts
+  is `ESCALATED` "its outcome is unknown", recorded, never a 500.
+- **One action per monitor at a time.** The monitor row is locked (`FOR UPDATE NOWAIT`): a second action is 409
+  `REMEDIAL_ACTION_IN_PROGRESS`, a report pushed meanwhile 503 (MDAF's outbox sends it again).
+- **A missing metric is not a breach.** Thresholds are a number (a minimum) or `{min, max}`, checked at
+  registration (422); a metric with no numeric value is listed as `missing`.
 
 **O1-CM handler**
 
@@ -125,12 +146,18 @@ and attribute names. It realises no TS 28.312 expectation semantics beyond `IS_E
 | `target_order_id` | Bare UUID, SO SMOS order |
 | `target_coordination_group_id` | Bare UUID, AIMgF model coordination group |
 | `target_rapp_instance_id` | Bare UUID, rApp Management instance (may be superseded by an upgrade; rApp Management resolves it) |
-| `analytics_subscription_id` | Bare UUID, stored reference only |
-| `requirement_thresholds` | JSON `{metric: minimum}` |
+| `analytics_subscription_id` | Bare UUID: the MDAF subscription SA SMOS made (with `analytics_type`), else a reference the caller gave |
+| `requirement_thresholds` | JSON `{metric: minimum}` or `{metric: {min, max}}` |
+| `analytics_type` | The MDAF analytics type watched (null: evaluated by hand only) |
+| `auto_action` | `CONFIG_CHANGE` / `RECONNECT` / `ROLLBACK` / `RETRAIN` / null; what a new breach runs |
+| `remedy_changes` | JSON change list CONFIG_CHANGE sends to RAN NF OAM |
+| `last_evaluation` | JSON `{at, reportId, breached, breaches, missing}` of the latest pushed report |
+| `created_at` | Time registered (null for a monitor made before revision 0055) |
 | constraint | `one_target_only`: at most one of the three target columns is non-null |
 
-`remedial_action`: `action_id` PK; `monitor_id` FK `assurance_monitor` (no cascade); `action_type`; `auto_executed`;
-`auto_execution_scope_config` (unused by routes); `outcome` (`RESOLVED` / `ESCALATED`).
+`remedial_action`: `action_id` PK; `monitor_id` FK `assurance_monitor` (no cascade); `action_type` (`CONFIG_CHANGE` / `SCALE` /
+`RECONNECT` / `ROLLBACK` / `RETRAIN` / `ESCALATE`); `auto_executed` (run by a report); `auto_execution_scope_config` (unused by
+routes); `outcome` (`RESOLVED` / `ESCALATED`); `created_at`, `requested_by`, `detail`, `result` (JSON), `report_id` (revision 0055).
 
 `o1_cm_enactment`: `enactment_id` PK; `intent_id` bare UUID (Intent Service); `status` (`FULFILLED` /
 `NOT_FULFILLED`); `actions` JSON `[{expectationId, actionId, forwardedJobId, status, replayed}]`;
@@ -148,23 +175,26 @@ Assurance
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
-| POST | `/monitors` | Register. Query `target_order_id`, `target_coordination_group_id`, `target_rapp_instance_id`, `analytics_subscription_id`; JSON body is the thresholds object (`{metric: minimum}`). Returns `{monitorId}` (201). | 422 `COORDINATION_GROUP_MISMATCH` when more than one target is given |
+| POST | `/monitors` | Register. Query `target_order_id`, `target_coordination_group_id`, `target_rapp_instance_id`, `analytics_subscription_id`, `analytics_type`; JSON body is the thresholds object (`{metric: minimum}` or `{metric: {min, max}}`). With `analytics_type`, subscribes at MDAF first. Returns `{monitorId, analyticsSubscriptionId}` (201). | 422 `COORDINATION_GROUP_MISMATCH` (more than one target); 422 `SCHEMA_VALIDATION_FAILED` (a bad threshold, or `analytics_type` with `analytics_subscription_id`); 502 `UPSTREAM_FAILED` (MDAF refused or did not answer; nothing stored) |
 | GET | `/monitors`, `/monitors/{monitor_id}` | List (paging) / read | 404 `ASSURANCE_MONITOR_NOT_FOUND` |
-| POST | `/monitors/{monitor_id}/evaluate` | Body is the current metrics object. Returns `{monitorId, breaches}`; a metric is a breach when below its threshold, and a missing metric counts as 0. | Unknown monitor is an unhandled 500 |
-| POST | `/monitors/{monitor_id}/remedial-actions` | Query `action_type` (`CONFIG_CHANGE` / `SCALE` / `RECONNECT` / `ROLLBACK`), `requester_is_admin`. Returns `{actionId, outcome, result?, detail?}` (201). | 404 `ASSURANCE_MONITOR_NOT_FOUND`; 409 `ROLLBACK_HISTORY_UNAVAILABLE`; 422 `COORDINATION_GROUP_MISMATCH` for an unknown action type |
-| POST | `/monitors/{monitor_id}/escalate` | Query `reason`. Records an `ESCALATED` `CONFIG_CHANGE` action; the reason is echoed, not stored. | Does not check that the monitor exists |
-| GET | `/remedial-actions` | List (`monitor_id`, `outcome`, paging); `outcome=ESCALATED` is the operator queue | |
+| POST | `/monitors/{monitor_id}/evaluate` | Body is the current metrics object. Returns `{monitorId, breaches, missing}`: a breach is a value below its minimum or above its maximum; a metric with no numeric value is `missing`, never a breach. Nothing stored. | 404 `ASSURANCE_MONITOR_NOT_FOUND` |
+| PUT | `/monitors/{monitor_id}/remedy` | Body `{changes: [{managedElementRef, ...}] | null}`: the change list CONFIG_CHANGE writes; empty or null clears it. Returns the monitor view. | 404; 422 `SCHEMA_VALIDATION_FAILED` (a change without `managedElementRef`, or clearing it while the automatic action is CONFIG_CHANGE) |
+| PUT | `/monitors/{monitor_id}/automation` | Body `{autoAction}`: what a new breach runs by itself, or null (escalate). Admin-only in the console. Returns the monitor view. | 404; 422 `SCHEMA_VALIDATION_FAILED` (not an automatic action, or one the target cannot take) |
+| POST | `/monitors/{monitor_id}/reports` | MDAF's push `{reportId, analyticsType, output, inputSources}`. Reads the report back, evaluates it, keeps `lastEvaluation`, and on a new breach runs the automatic action or records an `ESCALATE` action. Returns `{status: EVALUATED / DUPLICATE / IGNORED, breaches, missing, action?}`. | 404; 503 `REMEDIAL_ACTION_IN_PROGRESS` or `UPSTREAM_FAILED` (MDAF's outbox sends it again) |
+| POST | `/monitors/{monitor_id}/remedial-actions` | Query `action_type` (`CONFIG_CHANGE` / `SCALE` / `RECONNECT` / `ROLLBACK` / `RETRAIN`), `requested_by` (pinned by the console); `requester_is_admin` is accepted and no longer stored. Returns the action view `{actionId, monitorId, actionType, autoExecuted, outcome, createdAt, requestedBy, detail, reportId, result?}` (201). | 404 `ASSURANCE_MONITOR_NOT_FOUND`; 409 `ROLLBACK_HISTORY_UNAVAILABLE`; 409 `REMEDIAL_ACTION_IN_PROGRESS`; 422 `COORDINATION_GROUP_MISMATCH` (unknown action type, or RETRAIN without a group) |
+| POST | `/monitors/{monitor_id}/escalate` | Query `reason`, `requested_by` (pinned by the console). Records an `ESCALATE` action, `ESCALATED`, with the reason as its `detail`. Returns the action view plus `reason`. | 404 `ASSURANCE_MONITOR_NOT_FOUND` |
+| GET | `/remedial-actions` | List of action views (`monitor_id`, `outcome`, paging); `outcome=ESCALATED` is the operator queue | |
 | GET | `/health` | Liveness probe | |
 
 Dispatch by target and action type
 
 | Monitor target | Action | Call | Outcome |
 |---|---|---|---|
-| Coordination group | any | `POST /aimgf/training-jobs {modelCoordinationGroupId, producerId: "sa-smos"}` | `RESOLVED` if < 300 else `ESCALATED` |
-| any | `CONFIG_CHANGE` | `POST /ran-nf-oam/config-jobs {requestedBy: "sa-smos", scope: "cell", changes: []}` | `RESOLVED` if < 300 else `ESCALATED` |
-| any | `SCALE` | none (NFO scaling is a Phase 1 stub) | always `ESCALATED` |
+| Coordination group | any | `POST /aimgf/training-jobs {modelCoordinationGroupId, producerId: "sa-smos"}` | recorded `RETRAIN`: `RESOLVED` if < 300 else `ESCALATED` with AIMgF's reason |
+| order, rApp instance or none | `CONFIG_CHANGE` | `POST /ran-nf-oam/config-jobs {requestedBy: "sa-smos", scope: "cell", changes: <the remedy>}` with `Idempotency-Key: sa-smos-action:<actionId>`; nothing without a remedy | `RESOLVED` when the job is COMPLETED; else `ESCALATED` (no remedy, held for approval, PARTIAL_SUCCESS / FAILED, refused) with why |
+| order, rApp instance or none | `SCALE` | none (NFO scaling takes no target size, OI-7-nfo-scale-size) | always `ESCALATED` |
 | rApp instance | `ROLLBACK` | `POST /rapp-mgmt/instances/{id}/rollback` | `RESOLVED` (`result` names the replacement instance) or `ESCALATED` with `detail` |
-| not rApp instance | `ROLLBACK` | none | 409 `ROLLBACK_HISTORY_UNAVAILABLE` |
+| order or none | `ROLLBACK` | none | 409 `ROLLBACK_HISTORY_UNAVAILABLE` |
 | rApp instance | `RECONNECT` | `GET /rapp-mgmt/instances/{id}/versions` for `workloadRef`, then `POST /nfo/deployments/{id}/heal` | `RESOLVED`, or `ESCALATED` if unresolved or the heal is refused |
 | order or none | `RECONNECT` | `GET /so-smos/orders/{id}` for the `DEPLOY` step's `nfDeploymentId`, then heal | as above |
 
@@ -197,7 +227,9 @@ a JSON string `{"actions": [...]}` carrying the DME action ids and forwarded RAN
 
 | Trigger | Outbound call | Failure behaviour |
 |---|---|---|
-| Remedial action | See the dispatch table | Non-2xx recorded as `ESCALATED`; a transport exception propagates as 500 |
+| Remedial action | See the dispatch table | Non-2xx recorded as `ESCALATED` with the reason; no answer recorded `ESCALATED` (outcome unknown) |
+| Registration with `analytics_type` | `POST /mdaf/subscriptions?analytics_type&requested_by=sa-smos:monitor/{id}` `{notificationDestination: <SA_SMOS_REPORTS_URL>/monitors/{id}/reports}` | Non-2xx or no answer → 502, nothing stored |
+| A pushed report | `GET /mdaf/reports/{reportId}` | 404 → `IGNORED`; other failure → 503 (the outbox retries) |
 | Registration | `DELETE` then `POST /intent-service/intent-handling-functions` with `notificationDestination = SA_SMOS_O1_CM_HANDLER_URL` | Non-201 → 422 |
 | `enact_intent` | `GET /intent-service/intents/{id}`; `GET /intent-service/intent-handling-functions` (CM targets); `POST /dme/actions` per expectation with `{requestedBy, changes, actionId, sourceContext {intentId, expectationId, rmioId}}`; `POST /intent-service/intent-reports` | A DME status other than 200/202 becomes `HTTP_<code>` and degrades the report; if the report publish fails the enactment is still recorded with a null `intent_report_id` |
 
@@ -209,6 +241,7 @@ retry). No background tasks.
 | Variable | Default | Use |
 |---|---|---|
 | `SA_SMOS_O1_CM_HANDLER_URL` | `http://sa-smos:8000/o1-cm-handler/intents` | The `notificationDestination` registered at Intent Service |
+| `SA_SMOS_REPORTS_URL` | `http://sa-smos:8000` (https under mTLS) | Base of the destination MDAF pushes a monitor's reports to (`<base>/monitors/{id}/reports`) |
 | `SMO_DATABASE_URL` | none; required (the service refuses to start without it) | Database |
 | `R1_GATEWAY_URL` | `http://r1-termination:8000` | Outbound R1 base URL |
 | `SMO_INVOKER_ID`, `SMO_INVOKER_SECRET` | unset (self-onboards at SME) | Outbound OAuth2 identity |
@@ -217,23 +250,24 @@ retry). No background tasks.
 
 | Code | HTTP | When |
 |---|---|---|
-| `ASSURANCE_MONITOR_NOT_FOUND` | 404 | Unknown monitor on read or remedial action |
+| `ASSURANCE_MONITOR_NOT_FOUND` | 404 | Unknown monitor on any monitor route |
 | `ROLLBACK_HISTORY_UNAVAILABLE` | 409 | `ROLLBACK` for a monitor that is not rApp-instance-scoped |
-| `COORDINATION_GROUP_MISMATCH` | 422 | More than one target on a monitor; unknown `actionType` (the code is reused for both) |
+| `REMEDIAL_ACTION_IN_PROGRESS` | 409 / 503 | Another remedial action of the monitor runs (409 to a person, 503 to MDAF's push so it is sent again) |
+| `UPSTREAM_FAILED` | 502 / 503 | MDAF refused or did not answer the subscription (502), or the report read (503 to the push) |
+| `COORDINATION_GROUP_MISMATCH` | 422 | More than one target on a monitor; unknown `actionType`; RETRAIN on a monitor without a group (the code is reused) |
 | `INTENT_NOT_FOUND` | 404 | O1-CM push for an intent Intent Service does not know |
 | `RMIH_CAPABILITY_MISMATCH` | 422 | O1-CM push for an intent addressed to another RMIH |
-| `SCHEMA_VALIDATION_FAILED` | 422 | CM target name not `<IOC>.<attribute>`; Intent Service refused the registration |
+| `SCHEMA_VALIDATION_FAILED` | 422 | A threshold that is not a number or `{min, max}`; `analytics_type` with `analytics_subscription_id`; a remedy change without `managedElementRef`; an automatic action the target cannot take; CM target name not `<IOC>.<attribute>`; Intent Service refused the registration |
 | FastAPI validation (`HTTPValidationError`, 422) | 422 | Malformed query or body |
 
 ### 2.8 Limits and open items
 
-- `SCALE` always escalates: NFO scaling is a Phase 1 stub.
-- `CONFIG_CHANGE` posts a RAN NF OAM config job with an empty `changes` list; it demonstrates the dispatch, it does
-  not change configuration. Real CM changes go through the O1-CM handler.
-- `evaluate` on an unknown monitor and `escalate` on an unknown monitor are not handled (500, and an orphan row
-  where the database does not enforce the FK, respectively).
-- `analytics_subscription_id` is stored; nothing subscribes or evaluates automatically. Evaluation is
-  caller-driven.
+- `SCALE` always escalates: NFO scaling takes no target size (`OI-7-nfo-scale-size`), and it is never an automatic action.
+- Only MDAF analytics close the loop; a model's performance is watched by AIMgF's MLMF monitor, which retrains the group
+  itself (call flows 13 and 02e). Evaluation reads the report's top-level `output` values; a nested value is `missing`.
+- There is no route to delete a monitor, so the MDAF subscription a monitor made stays until it is deleted at MDAF.
+- An escalation is a record, not a ticket: nothing assigns, acknowledges or closes it.
+- The target ids are not checked against the modules that own them at registration; a wrong one shows when an action runs.
 - `auto_execution_scope_config` is never read or written by a route.
 - The O1-CM handler enacts only `IS_EQUAL_TO` targets on `RAN_SUBNETWORK` objects; other conditions are reported
   unsupported.
@@ -252,6 +286,7 @@ cd smo/sa-smos && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | File | Covers | Tests |
 |---|---|---|
 | `tests/test_main.py` | Monitor registration and the single-target rule, threshold evaluation, CONFIG_CHANGE, SCALE escalation, ROLLBACK (409 without an rApp target, dispatch, rApp Management refusal escalated), RECONNECT (order, rApp-scoped, escalations), coordination-group retrain and its escalation, unknown monitor 404, escalate, list/get, remedial-action filters, `/health` | 21 |
+| `tests/test_assurance_loop.py` | Call flow 04: the MDAF subscription at registration (and its refusal), threshold validation, missing metrics and maximums, a pushed report read back and evaluated, a breach escalated once or running the automatic action, duplicates and ignored reports, 503 for MDAF unreadable or the monitor busy, the lock, the remedy and the automatic action's rules, how CONFIG_CHANGE / RETRAIN / RECONNECT end and why, escalation with its reason | 42 |
 | `tests/test_o1cm.py` | Registration and declared CM targets, per-cell enactment and FULFILLED report, failed config job reported DEGRADED, unenactable targets reported not written, DEACTIVATED / foreign / unknown intents, replay with the same action id, CIO on each relation, tilt and power per cell | 11 |
 
 ### 3.3 What is not covered here

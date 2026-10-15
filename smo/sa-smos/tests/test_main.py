@@ -92,12 +92,32 @@ def test_evaluate_thresholds_reports_breaches(client):
     assert resp.json()["breaches"] == {"latency": 100}
 
 
-def test_config_change_dispatches_and_resolves(client):
-    """CONFIG_CHANGE posts the config job and, when R1 answers 2xx, records the outcome RESOLVED."""
+REMEDY = [{"managedElementRef": "ME-1", "managedFunctionRef": "NRCellDU=1", "attributeChanges": {"administrativeState": "UNLOCKED"}}]
+
+
+def _completing_config_jobs(monkeypatch, calls=None):
+    """R1 posts answered as RAN NF OAM does for a write that completed; each call's path, body and headers are appended to `calls` when given."""
+    def post(self, path, json=None, **kw):
+        """Records the call and answers a COMPLETED job."""
+        if calls is not None:
+            calls.append({"path": path, "json": json, "headers": kw.get("headers") or {}})
+        return FakeR1Response(201, {"jobId": "11111111-1111-1111-1111-111111111111", "status": "COMPLETED"})
+    monkeypatch.setattr("app.main.R1Client.post", post)
+
+
+def test_config_change_writes_the_monitors_remedy_and_resolves(client, monkeypatch):
+    """CONFIG_CHANGE sends the monitor's remedy to RAN NF OAM under an idempotency key named after the action and, when the job is COMPLETED, records RESOLVED with the job."""
+    calls = []
+    _completing_config_jobs(monkeypatch, calls)
     monitor = client.post("/monitors", params={}, json={}).json()
-    resp = client.post(f"/monitors/{monitor['monitorId']}/remedial-actions", params={"action_type": "CONFIG_CHANGE"})
+    assert client.put(f"/monitors/{monitor['monitorId']}/remedy", json={"changes": REMEDY}).status_code == 200
+    resp = client.post(f"/monitors/{monitor['monitorId']}/remedial-actions", params={"action_type": "CONFIG_CHANGE", "requested_by": "smo-gui:alice"})
     assert resp.status_code == 201
-    assert resp.json()["outcome"] == "RESOLVED"
+    body = resp.json()
+    assert body["outcome"] == "RESOLVED" and body["result"] == {"jobId": "11111111-1111-1111-1111-111111111111", "status": "COMPLETED"}
+    assert body["requestedBy"] == "smo-gui:alice" and body["autoExecuted"] is False and body["createdAt"]
+    assert calls == [{"path": "/ran-nf-oam/config-jobs", "json": {"requestedBy": "sa-smos", "scope": "cell", "changes": REMEDY},
+                      "headers": {"Idempotency-Key": f"sa-smos-action:{body['actionId']}"}}]
 
 
 def test_scale_always_escalates_phase1_stub(client):
@@ -280,9 +300,11 @@ def test_list_and_get_monitors(client):
     assert client.get(f"/monitors/{uuid.uuid4()}").status_code == 404
 
 
-def test_list_remedial_actions_filters_escalations(client):
+def test_list_remedial_actions_filters_escalations(client, monkeypatch):
     """The action list can be filtered by outcome (the escalation queue) and by monitor; an unknown monitor gives an empty list."""
+    _completing_config_jobs(monkeypatch)
     monitor_id = client.post("/monitors", json={}).json()["monitorId"]
+    client.put(f"/monitors/{monitor_id}/remedy", json={"changes": REMEDY})
     resolved = client.post(f"/monitors/{monitor_id}/remedial-actions", params={"action_type": "CONFIG_CHANGE"}).json()
     escalated = client.post(f"/monitors/{monitor_id}/escalate", params={"reason": "manual"}).json()
 
