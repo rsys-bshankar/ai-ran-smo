@@ -5,7 +5,8 @@ handover failures, through O1. Like the EnergySaving rApp it uses O1 PM
 data only, and the R1 interface only through the AI Runtime SDK; there is
 no A1, Near-RT RIC, xApp or E2.
 
-The loop (POST /instances/{id}/evaluate), per neighbour relation:
+The loop (POST /instances/{id}/evaluate, or the worker's `evaluate-due` task every `evaluateEverySeconds` of the instance, call flow 23f; one pass at a
+time per instance), per neighbour relation:
 
     Input (HO_PERFORMANCE counters) → Classification + Prediction
           → KPI check of the last change → Safety → Decision
@@ -24,11 +25,15 @@ How each kind of write reaches O1:
     `/actions`, with its own `actionId`.
   * At deploy, the **DMRO bounds** (decision D10.2-1) are written to the
     gNB's DMROFunction and verified, so its own distributed MRO stays
-    inside the rApp's guard rails.
+    inside the rApp's guard rails. Until they are verified a CIO change is
+    held (`DMRO_NOT_APPLIED`); "Apply DMRO bounds" writes them again (23e).
+  * A revert or rollback RAN NF OAM holds for a person (PR-AI-11) waits for
+    the decision and is settled by `reconcile` (23d), never sent twice.
 """
 
 import datetime
 import json
+import logging
 import time
 import uuid
 from typing import cast
@@ -36,15 +41,16 @@ from typing import cast
 from fastapi import Depends, FastAPI
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from smo_sdk import AiRuntimeSdk, SdkError, instances
 from smo_shared.logconfig import install_logging
 from smo_shared.metrics import install_metrics
 from smo_shared.health import install_health
-from smo_shared.correlation import apply_correlation_id, get_correlation_id
+from smo_shared.correlation import apply_correlation_id, correlation_scope, get_correlation_id
 from smo_shared.db import get_session
-from smo_shared.r1_client import R1Client
+from smo_shared.r1_client import R1Client, reset_acting_instance, set_acting_instance
 from smo_shared.timeutil import as_utc
 
 from . import engine, producer  # producer: the sample data generator, also used by tests and demo.py
@@ -64,6 +70,10 @@ _r1 = R1Client()
 sdk = AiRuntimeSdk(_r1)
 
 RAPP_ID = "mobility-optimization-rapp"
+logger = logging.getLogger(__name__)
+
+# Call flow 23f: the bounds of an instance's `evaluateEverySeconds` (a pass reads PM and O1 and may write O1, so not more often than a minute).
+EVALUATE_EVERY_MIN_SECONDS, EVALUATE_EVERY_MAX_SECONDS = 60, 86400
 
 # The fulfilment report of a dispatched Intent is not there when the dispatch answers: Intent Service queues the push to the handler (an outbox row, sent
 # right after the commit with a 2 s timeout, then retried by the delivery sweep every few seconds), and the handler enacts the change and publishes the
@@ -104,6 +114,26 @@ def _instance(db: Session, instance_id: uuid.UUID) -> MobilityInstance:
     if inst is None:
         raise RappError(404, "INSTANCE_NOT_STARTED", f"instance {instance_id} is not started on this rApp")
     return inst
+
+
+def _lock_instance(db: Session, instance_id: uuid.UUID) -> MobilityInstance:
+    """The instance, locked for this transaction (`SELECT ... FOR UPDATE NOWAIT` on Postgres): a pass, a reconcile and "Apply DMRO bounds" of one
+    instance run one at a time (call flow 23a). 409 EVALUATION_IN_PROGRESS when another holds it, at once; 404 as `_instance`. SQLite has no row locks."""
+    try:
+        inst = db.get(MobilityInstance, instance_id, with_for_update={"nowait": True}, populate_existing=True)
+    except OperationalError as exc:
+        if getattr(exc.orig, "sqlstate", None) != "55P03":       # lock_not_available; anything else is not ours to answer
+            raise
+        db.rollback()
+        raise RappError(409, "EVALUATION_IN_PROGRESS", f"instance {instance_id} is being evaluated or reconciled; try again") from exc
+    if inst is None:
+        raise RappError(404, "INSTANCE_NOT_STARTED", f"instance {instance_id} is not started on this rApp")
+    return inst
+
+
+def _uuid_or_none(value: str | None) -> uuid.UUID | None:
+    """`value` as a UUID, or None when there is none."""
+    return uuid.UUID(str(value)) if value else None
 
 
 def _relations(db: Session, inst: MobilityInstance) -> dict[str, MobilityRelation]:
@@ -184,26 +214,35 @@ def _execute_direct(inst: MobilityInstance, changes: dict[str, int], execution_i
              for rel, v in changes.items()],
             action_id=action_id, source_context={"rApp": RAPP_ID, "correlationId": execution_id, "reason": reason},
             decision=_decision(inst, execution_id, reason))
-        return {"path": "DME_DIRECT", "actionId": result["actionId"], "forwardedJobId": result.get("forwardedJobId"),
-                "status": result["status"]}
+        done = {"path": "DME_DIRECT", "actionId": result["actionId"], "forwardedJobId": result.get("forwardedJobId"), "status": result["status"]}
+        return {**done, "approvalId": result["approvalId"]} if result.get("approvalId") else done
     except SdkError as e:
         return {"path": "DME_DIRECT", "actionId": action_id, "status": "REJECTED", "error": e.body}
 
 
 def _restore(inst: MobilityInstance, changes: dict[str, int], execution_id: str, reason: str) -> dict:
     """Write the given CIOs straight through DME, verify, and re-send once on
-    a mismatch (used for reverts and rollbacks)."""
+    a mismatch (used for reverts and rollbacks).
+
+    Call flow 23d: when RAN NF OAM holds the write for a person (PR-AI-11; DME answers PENDING_APPROVAL with an `approvalId`), nothing has changed yet, so
+    it is neither read back nor sent again (that would ask a second time): the result is AWAITING_APPROVAL with the `approvalId`, which
+    `_settle_approvals` follows up."""
     pending = {r: v for r, v in changes.items() if _read_relation(inst, r)[0] != v}
     if not pending:
         return {"performed": False, "result": "ALREADY_RESTORED", "verification": _verify_cio(inst, changes)}
-    attempts = []
+    attempts: list[dict] = []
+    result = "VERIFY_FAILED"
     for _ in range(2):
         action = _execute_direct(inst, pending, execution_id, reason)
+        if action["status"] == "PENDING_APPROVAL":
+            attempts.append({"action": action, "verification": None})
+            return {"performed": True, "result": "AWAITING_APPROVAL", "approvalId": action.get("approvalId"), "attempts": attempts}
         verification = _verify_cio(inst, pending)
         attempts.append({"action": action, "verification": verification})
-        if verification["result"] == "VERIFIED":
+        result = verification["result"]
+        if result == "VERIFIED":
             break
-    return {"performed": True, "result": attempts[-1]["verification"]["result"], "attempts": attempts}
+    return {"performed": True, "result": result, "attempts": attempts}
 
 
 def _intent_actions(intent_id: str) -> dict[str, dict]:
@@ -258,12 +297,14 @@ def _settle(row: MobilityRelation, d: MobilityDecision, now: datetime.datetime |
     d.updated_at = datetime.datetime.now(datetime.UTC)
 
 
-def _follow_dispatch(inst, rows, decisions: dict[str, MobilityDecision], dispatch: dict, execution_id: str) -> None:
+def _follow_dispatch(inst, rows, decisions: dict[str, MobilityDecision], dispatch: dict, execution_id: str,
+                     enacted_at: dict[str, datetime.datetime] | None = None) -> None:
     """Settles the relations of one AutonomyDispatch according to where it is.
 
     SHADOWED, REJECTED and AWAITING_SCOPE only record the outcome (ASSIST remembers the pending dispatch on the row); a dispatched change is
     matched to the Intent's action report, verified by an O1 read-back, and rolled back through DME when the action did not complete or the
-    read-back differs.
+    read-back differs. `enacted_at` ({relation: time}) is when `reconcile` found an ASSIST change enacted; the KPI window starts there, not at
+    the pass that planned it (call flow 23c). A pass that dispatches straight away gives None: the window starts at the decision's observation.
     """
     intent = {"dispatchId": dispatch["dispatchId"], "autonomyMode": dispatch["autonomyMode"], "status": dispatch["status"],
               "intentId": dispatch.get("intentId"), "rejectedBy": dispatch.get("rejectedBy")}
@@ -292,14 +333,112 @@ def _follow_dispatch(inst, rows, decisions: dict[str, MobilityDecision], dispatc
             trigger = "VERIFY_FAILED" if status == "COMPLETED" else "PARTIAL_SUCCESS" if status == "PARTIAL_SUCCESS" else "ACTION_FAILED"
             rollback = {"trigger": trigger, **_restore(inst, {rel: from_cio}, execution_id, f"ROLLBACK:{trigger}")}
         d.rollback = rollback
-        _settle(row, d, None, ok, rollback)
+        if rollback is not None and rollback["result"] == "AWAITING_APPROVAL":
+            # call flow 23d: the rollback waits for a person; the relation is left alone until `_settle_approvals` reads it back
+            d.outcome = f"{rollback['trigger']}_ROLLBACK_AWAITING_APPROVAL"
+            row.state = engine.STEADY
+            row.pending_approval_id, row.pending_decision_id = _uuid_or_none(rollback.get("approvalId")), d.decision_id
+            d.final_state = {"state": row.state, "cio": row.current_cio}
+            d.updated_at = datetime.datetime.now(datetime.UTC)
+            continue
+        _settle(row, d, (enacted_at or {}).get(rel), ok, rollback)
+
+
+def _settle_approvals(db: Session, inst: MobilityInstance, rows: dict[str, MobilityRelation]) -> list[dict]:
+    """Call flow 23d: follows up the reverts and rollbacks RAN NF OAM held for a person (PR-AI-11). A request still PENDING is left; a decided one
+    (APPROVED, REJECTED, EXPIRED or REFUSED) is settled by reading the relation's CIO back against the value the write restores (a revert's `to_cio`, a
+    rollback's `from_cio`). The relation is STEADY on the CIO read back. A revert's audit row becomes REVERTED, REVERT_FAILED or `APPROVAL_<status>`; a
+    rollback's `<trigger>_ROLLED_BACK` or `<trigger>_ROLLBACK_<FAILED | status>`."""
+    settled = []
+    for rel, row in rows.items():
+        if row.pending_approval_id is None:
+            continue
+        approval = sdk.platform.get_approval(row.pending_approval_id)
+        status = approval["status"]
+        if status == "PENDING":
+            continue
+        approval_id = row.pending_approval_id
+        d = db.get(MobilityDecision, row.pending_decision_id) if row.pending_decision_id else None
+        row.pending_approval_id = row.pending_decision_id = None
+        revert = d is not None and d.decision == engine.REVERT
+        wanted = (d.to_cio if revert else d.from_cio) if d is not None else None
+        live = _read_relation(inst, rel)[0]
+        restored = wanted is not None and live == wanted
+        row.state, row.last_change = engine.STEADY, None
+        if live is not None:
+            row.current_cio = live
+        if restored and revert and d is not None:
+            row.last_changed_at = d.observed_at
+        if d is not None:
+            settled_as = "FAILED" if status == "APPROVED" else status      # how a write that did not restore the CIO ended
+            if revert:
+                d.outcome = "REVERTED" if restored else "REVERT_FAILED" if status == "APPROVED" else f"APPROVAL_{status}"
+            else:
+                trigger = d.outcome.removesuffix("_ROLLBACK_AWAITING_APPROVAL")
+                d.outcome = f"{trigger}_ROLLED_BACK" if restored else f"{trigger}_ROLLBACK_{settled_as}"
+            d.action = {**(d.action or {}), "approval": {"status": status, "jobId": approval.get("jobId")}}
+            d.verification = _verify_cio(inst, {rel: wanted}) if wanted is not None else None
+            d.final_state = {"state": row.state, "cio": row.current_cio}
+            d.updated_at = datetime.datetime.now(datetime.UTC)
+        settled.append({"approvalId": str(approval_id), "status": status, "outcomes": {rel: d.outcome if d is not None else row.state}})
+    return settled
+
+
+def _apply_dmro(inst: MobilityInstance) -> dict:
+    """Call flow 23e: writes the instance's DMRO bounds to the gNB's DMROFunction through DME and reads them back; returns the status recorded on the
+    instance: VERIFIED, VERIFY_FAILED, AWAITING_APPROVAL (RAN NF OAM holds the write for a person, `approvalId`) or REJECTED (DME or RAN NF OAM refused,
+    `error`). Never raises for a platform refusal."""
+    now = datetime.datetime.now(datetime.UTC).isoformat()
+    dmro_ref = f"DMROFunction={inst.managed_element_ref}"
+    try:
+        action = sdk.platform.execute_action(
+            f"{RAPP_ID}:{inst.instance_id}", [{"managedElementRef": inst.managed_element_ref, "className": "DMROFunction",
+                                               "managedFunctionRef": dmro_ref, "attributeChanges": inst.dmro_bounds}],
+            action_id=uuid.uuid4(), source_context={"rApp": RAPP_ID, "reason": "DMRO_BOUNDS"},
+            decision={"modelVersion": inst.model_version, "rationale": "Apply the DMRO bounds the package declares once the model is certified and deployed"})
+    except SdkError as e:
+        return {"status": "REJECTED", "at": now, "error": e.body}
+    if action["status"] == "PENDING_APPROVAL":
+        return {"status": "AWAITING_APPROVAL", "at": now, "actionId": action["actionId"], "approvalId": action.get("approvalId")}
+    return {**_check_dmro(inst), "at": now, "actionId": action["actionId"]}
+
+
+def _check_dmro(inst: MobilityInstance) -> dict:
+    """Reads the DMROFunction back and compares it with the instance's bounds: {status VERIFIED | VERIFY_FAILED, observed}."""
+    observed = _read(inst, f"DMROFunction={inst.managed_element_ref}") or {}
+    verified = all(str(observed.get(k)) == str(v) for k, v in inst.dmro_bounds.items())
+    return {"status": "VERIFIED" if verified else "VERIFY_FAILED", "observed": observed}
+
+
+def _settle_dmro(inst: MobilityInstance) -> dict | None:
+    """Call flow 23e: when the DMRO write waits for a person, follows its approval; once decided, the bounds are read back (APPROVED: VERIFIED or
+    VERIFY_FAILED; otherwise `APPROVAL_<status>`). Returns the new status, or None when there was nothing to settle."""
+    current = inst.dmro_status or {}
+    if current.get("status") != "AWAITING_APPROVAL" or not current.get("approvalId"):
+        return None
+    approval = sdk.platform.get_approval(current["approvalId"])
+    if approval["status"] == "PENDING":
+        return None
+    checked = _check_dmro(inst)
+    if approval["status"] != "APPROVED" and checked["status"] != "VERIFIED":
+        checked["status"] = f"APPROVAL_{approval['status']}"
+    inst.dmro_status = {**current, **checked, "approval": {"status": approval["status"], "jobId": approval.get("jobId")},
+                        "at": datetime.datetime.now(datetime.UTC).isoformat()}
+    return inst.dmro_status
+
+
+def _latest_samples(inst: MobilityInstance) -> dict[str, datetime.datetime]:
+    """{relation: time of its latest PM window in the INFERENCE dataset}: when `reconcile` finds an ASSIST change enacted, the KPI window starts after
+    what was already measured, so windows from before the operator approved it are not counted as its effect (call flow 23c)."""
+    return {rel: as_utc(series[-1][0]) for rel, series in by_relation(_dataset(inst, "INFERENCE")).items() if series}
 
 
 def _reconcile(db: Session, inst: MobilityInstance) -> list[dict]:
-    """Settles ASSIST dispatches the operator has since resolved or rejected.
+    """Settles ASSIST dispatches the operator has since resolved or rejected (call flow 23d), the reverts and rollbacks held for approval that were
+    decided, and a DMRO write held for approval (23e).
 
-    Groups the relations by pending dispatch, skips those still AWAITING_SCOPE, follows the others, commits, and returns one summary per settled
-    dispatch with each relation's outcome.
+    Groups the relations by pending dispatch, skips those still AWAITING_SCOPE, follows the others, and returns one summary per settled dispatch or
+    approval with each relation's outcome. The caller holds the instance's lock and commits.
     """
     rows = _relations(db, inst)
     pending: dict[uuid.UUID, list[str]] = {}
@@ -307,6 +446,7 @@ def _reconcile(db: Session, inst: MobilityInstance) -> list[dict]:
         if row.pending_dispatch_id:
             pending.setdefault(row.pending_dispatch_id, []).append(rel)
     settled = []
+    latest: dict[str, datetime.datetime] | None = None
     for dispatch_id, rels in pending.items():
         dispatch = sdk.intent.get_autonomy_dispatch(dispatch_id)
         if dispatch["status"] == "AWAITING_SCOPE":
@@ -314,10 +454,16 @@ def _reconcile(db: Session, inst: MobilityInstance) -> list[dict]:
         decisions = {r: db.get_one(MobilityDecision, rows[r].pending_decision_id) for r in rels}
         for r in rels:
             rows[r].pending_dispatch_id = rows[r].pending_decision_id = None
-        _follow_dispatch(inst, rows, decisions, dispatch, next(iter(decisions.values())).execution_id)
+        if latest is None and dispatch["status"] == "DISPATCHED":
+            latest = _latest_samples(inst)
+        enacted_at = {r: latest[r] for r in rels if latest and r in latest}
+        _follow_dispatch(inst, rows, decisions, dispatch, next(iter(decisions.values())).execution_id, enacted_at)
         settled.append({"dispatchId": str(dispatch_id), "status": dispatch["status"],
                         "outcomes": {r: decisions[r].outcome for r in rels}})
-    db.commit()
+    settled += _settle_approvals(db, inst, rows)
+    dmro = _settle_dmro(inst)
+    if dmro is not None:
+        settled.append({"dmro": dmro["status"]})
     return settled
 
 
@@ -349,6 +495,12 @@ def start_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     inst.energy_saving_instance_id = config.get("energySavingInstanceId")
     inst.traffic_steering_instance_id = config.get("trafficSteeringInstanceId")
     inst.operator_notification_uri = config.get("operatorNotificationUri")
+    every = config.get("evaluateEverySeconds")
+    if every is not None and (isinstance(every, bool) or not isinstance(every, int)
+                              or not EVALUATE_EVERY_MIN_SECONDS <= every <= EVALUATE_EVERY_MAX_SECONDS):
+        raise RappError(422, "INSTANCE_CONFIG_INVALID",
+                        f"evaluateEverySeconds must be a whole number from {EVALUATE_EVERY_MIN_SECONDS} to {EVALUATE_EVERY_MAX_SECONDS}, or absent")
+    inst.evaluate_every_seconds = every
     datasets = {}
     for stage, name in (("TRAINING", DATASET), ("INFERENCE", DATASET), ("EMULATION", SIM_DATASET)):
         found = sdk.data.get_dataset(name, _consumer(inst), lifecycle_stage=stage, max_records=1)
@@ -382,7 +534,8 @@ def _instance_view(i: MobilityInstance) -> dict:
             "energySavingInstanceId": i.energy_saving_instance_id,
             "trafficSteeringInstanceId": i.traffic_steering_instance_id, "datasets": i.data_jobs,
             "modelId": str(i.model_id) if i.model_id else None, "modelVersion": i.model_version,
-            "artifactVersion": i.artifact_version, "model": i.model_params, "lifecycleJobs": i.lifecycle_jobs}
+            "artifactVersion": i.artifact_version, "model": i.model_params, "lifecycleJobs": i.lifecycle_jobs, "dmroStatus": i.dmro_status,
+            "evaluateEverySeconds": i.evaluate_every_seconds, "lastEvaluation": i.last_evaluation}
 
 
 def _dataset(inst: MobilityInstance, stage: str) -> list[dict]:
@@ -469,19 +622,33 @@ def deploy(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     sdk.lifecycle.activate_runtime(inst.model_id)
     artifact = sdk.models.download_artifact(inst.model_id, inst.artifact_version)
     inst.model_params = MobilityModel.from_artifact(artifact.content).to_dict()
-    dmro_ref = f"DMROFunction={inst.managed_element_ref}"
-    action = sdk.platform.execute_action(
-        f"{RAPP_ID}:{inst.instance_id}", [{"managedElementRef": inst.managed_element_ref, "className": "DMROFunction",
-                                           "managedFunctionRef": dmro_ref, "attributeChanges": inst.dmro_bounds}],
-        action_id=uuid.uuid4(), source_context={"rApp": RAPP_ID, "reason": "DMRO_BOUNDS"},
-        decision={"modelVersion": inst.model_version, "rationale": "Apply the DMRO bounds the package declares once the model is certified and deployed"})
-    observed = _read(inst, dmro_ref) or {}
-    verified = all(str(observed.get(k)) == str(v) for k, v in inst.dmro_bounds.items())
+    db.commit()                                   # call flow 23e: the deployed model is kept whatever becomes of the DMRO write below
+    inst.dmro_status = _apply_dmro(inst)
     db.commit()
     return {"modelId": str(inst.model_id), "artifactVersion": inst.artifact_version, "model": inst.model_params,
-            "dmro": {"actionId": action["actionId"], "status": action["status"], "bounds": inst.dmro_bounds,
-                     "observed": observed, "verification": "VERIFIED" if verified else "VERIFY_FAILED"},
-            "lifecycle": sdk.lifecycle.get_model_lifecycle(inst.model_id)}
+            "dmro": _dmro_view(inst), "lifecycle": sdk.lifecycle.get_model_lifecycle(inst.model_id)}
+
+
+def _dmro_view(inst: MobilityInstance) -> dict:
+    """The DMRO part of the deploy and "Apply DMRO bounds" answers: the bounds and the recorded status; `verification` is the status (the key the
+    deploy answer has always had)."""
+    status = inst.dmro_status or {}
+    return {**status, "bounds": inst.dmro_bounds, "verification": status.get("status")}
+
+
+@app.post("/instances/{instance_id}/dmro")
+def apply_dmro(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Call flow 23e, "Apply DMRO bounds": writes the bounds again and records the outcome, or, while an earlier write waits for a person, follows that
+    approval instead of asking again. 409 MODEL_NOT_DEPLOYED before deploy, 409 EVALUATION_IN_PROGRESS while a pass or reconcile runs."""
+    inst = _lock_instance(db, instance_id)
+    if not inst.model_id or not inst.model_params:
+        raise RappError(409, "MODEL_NOT_DEPLOYED", "train, certify and deploy the model first")
+    if (inst.dmro_status or {}).get("status") == "AWAITING_APPROVAL":
+        _settle_dmro(inst)
+    else:
+        inst.dmro_status = _apply_dmro(inst)
+    db.commit()
+    return _dmro_view(inst)
 
 
 # ---------------------------------------------------------------- the closed loop
@@ -513,13 +680,21 @@ def _mlb_observing(inst: MobilityInstance) -> set[str]:
 
 @app.post("/instances/{instance_id}/evaluate")
 def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
-    """One pass of the closed loop over the instance's relations. Its
-    X-Correlation-ID is the execution id in the audit trail."""
-    inst = _instance(db, instance_id)
+    """One pass of the closed loop over the instance's relations ("Evaluate now"). Its
+    X-Correlation-ID is the execution id in the audit trail. 409 EVALUATION_IN_PROGRESS while another pass or reconcile of the instance runs."""
+    inst = _lock_instance(db, instance_id)
+    return run_pass(db, inst, get_correlation_id() or str(uuid.uuid4()), "MANUAL")
+
+
+def run_pass(db: Session, inst: MobilityInstance, execution_id: str, trigger: str,
+             started_at: datetime.datetime | None = None) -> dict:
+    """One pass over the instance's relations (call flows 23a-23d), for `evaluate` (trigger MANUAL) and the worker (SCHEDULED, `run_due_passes`). The
+    caller holds the instance's lock; the pass commits once at its end, with `last_evaluated_at` and `last_evaluation`. 409 MODEL_NOT_DEPLOYED before the
+    model is deployed. Until the DMRO bounds are VERIFIED a CIO change is held (`DMRO_NOT_APPLIED`, 23e); a KPI revert still runs."""
     if not inst.model_id or not inst.model_params:
         raise RappError(409, "MODEL_NOT_DEPLOYED", "train, certify and deploy the model first")
+    started_at = started_at or datetime.datetime.now(datetime.UTC)
     reconciled = _reconcile(db, inst)
-    execution_id = get_correlation_id() or str(uuid.uuid4())
     rows = _relations(db, inst)
     series = by_relation(_dataset(inst, "INFERENCE"))
     guards = {g["cellId"]: g for g in sdk.data.query_cell_guards(managed_element_ref=inst.managed_element_ref)}
@@ -536,8 +711,8 @@ def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     results: dict[str, engine.Decision] = {}
     for rel in inst.relations:
         rid, row = rel["relation"], rows[rel["relation"]]
-        if row.pending_dispatch_id:
-            continue  # ASSIST: waiting for the operator
+        if row.pending_dispatch_id or row.pending_approval_id:
+            continue  # ASSIST, or a revert / rollback held for approval (23d): waiting for a person
         live_cio, ho_allowed = _read_relation(inst, rid)
         current = live_cio if live_cio is not None else (row.current_cio if row.current_cio is not None else inst.baseline_cio)
         es = es_cells.get(rel["target"]) or {}
@@ -574,6 +749,12 @@ def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
             continue
         d, row = decisions[rid], rows[rid]
         restore = _restore(inst, {rid: cast(int, result.new_cio)}, execution_id, "REVERT:KPI_DEGRADED")      # a revert names the CIO to restore
+        if restore["result"] == "AWAITING_APPROVAL":
+            # call flow 23d: the revert waits for a person; the relation stays OBSERVING with its change until `_settle_approvals` reads it back
+            d.action, d.outcome = restore["attempts"][0]["action"], "REVERT_AWAITING_APPROVAL"
+            row.pending_approval_id, row.pending_decision_id = _uuid_or_none(restore.get("approvalId")), d.decision_id
+            d.final_state = {"state": row.state, "cio": row.current_cio}
+            continue
         d.action = restore["attempts"][0]["action"] if restore["performed"] else None
         d.verification = restore["attempts"][-1]["verification"] if restore["performed"] else restore["verification"]
         ok = restore["result"] in ("VERIFIED", "ALREADY_RESTORED")
@@ -583,8 +764,13 @@ def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
             row.current_cio, row.last_changed_at = result.new_cio, result.observed_at
         d.final_state = {"state": row.state, "cio": row.current_cio}
 
-    # CIO changes follow the autonomy mode, through AutonomyDispatch
+    # CIO changes follow the autonomy mode, through AutonomyDispatch, once the DMRO bounds are verified (23e)
     changes = {rid: decisions[rid] for rid, r in results.items() if r.decision in (engine.RAISE, engine.LOWER)}
+    if changes and (inst.dmro_status or {}).get("status") != "VERIFIED":
+        for rid, d in changes.items():
+            d.outcome = "DMRO_NOT_APPLIED"
+            d.final_state = {"state": rows[rid].state, "cio": rows[rid].current_cio}
+        changes = {}
     if changes:
         dispatch = sdk.intent.request_autonomy_dispatch(
             inst.instance_id, [_expectation(inst, rid, cast(int, d.to_cio), execution_id) for rid, d in changes.items()], inst.rmih_id,
@@ -593,6 +779,8 @@ def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
         _follow_dispatch(inst, rows, changes, dispatch, execution_id)
     for row in rows.values():
         row.updated_at = datetime.datetime.now(datetime.UTC)
+    inst.last_evaluated_at = started_at
+    inst.last_evaluation = {"at": started_at.isoformat(), "executionId": execution_id, "trigger": trigger, "result": "OK"}
     db.commit()
     return {"executionId": execution_id, "instanceId": str(inst.instance_id), "autonomyMode": inst.autonomy_mode,
             "inferenceJobId": job["inferenceJobId"], "reconciled": reconciled,
@@ -601,9 +789,51 @@ def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
 
 @app.post("/instances/{instance_id}/reconcile")
 def reconcile(instance_id: uuid.UUID, db: Session = Depends(get_session)):
-    # Settles pending ASSIST dispatches now (the same step `evaluate` runs first); returns {settled: [...]}, empty when there is nothing to
-    # settle.
-    return {"settled": _reconcile(db, _instance(db, instance_id))}
+    # Settles pending ASSIST dispatches, held writes and a held DMRO write now (the same step `evaluate` runs first); returns {settled: [...]}, empty
+    # when there is nothing to settle. 409 EVALUATION_IN_PROGRESS while a pass runs.
+    settled = _reconcile(db, _lock_instance(db, instance_id))
+    db.commit()
+    return {"settled": settled}
+
+
+def run_due_passes(db: Session, now: datetime.datetime | None = None) -> list[dict]:
+    """Call flow 23f, the worker's `evaluate-due` task: a pass (trigger SCHEDULED) of every instance with an `evaluateEverySeconds` whose last pass began
+    at least that long ago, each acting as its instance and under its own execution id. An instance whose lock another holds is skipped (BUSY); a pass
+    that fails is rolled back and recorded on the instance (`lastEvaluation` result ERROR), so it is retried after the interval, and the other instances
+    still run. Returns one entry per instance it looked at."""
+    now = now or datetime.datetime.now(datetime.UTC)
+    scheduled = list(db.scalars(select(MobilityInstance.instance_id).where(MobilityInstance.evaluate_every_seconds.is_not(None))))
+    db.rollback()
+    results = []
+    for instance_id in scheduled:
+        try:
+            inst = _lock_instance(db, instance_id)
+        except RappError as exc:
+            results.append({"instanceId": str(instance_id), "result": "BUSY" if exc.status == 409 else "GONE"})
+            continue
+        last = as_utc(inst.last_evaluated_at) if inst.last_evaluated_at else None
+        if inst.evaluate_every_seconds is None or (last is not None and (now - last).total_seconds() < inst.evaluate_every_seconds):
+            db.rollback()
+            continue
+        execution_id = str(uuid.uuid4())
+        token = set_acting_instance(str(instance_id))
+        try:
+            with correlation_scope(execution_id):
+                run_pass(db, inst, execution_id, "SCHEDULED", started_at=now)
+            results.append({"instanceId": str(instance_id), "executionId": execution_id, "result": "OK"})
+        except Exception as exc:  # noqa: BLE001 — one instance's failure is recorded on it and never stops the others
+            db.rollback()
+            error = f"{exc.status} {exc.title}" if isinstance(exc, RappError) else \
+                f"{exc.status_code} {exc.body}" if isinstance(exc, SdkError) else f"{type(exc).__name__}: {exc}"
+            logger.warning("scheduled pass of instance %s failed: %s", instance_id, error)
+            failed = db.get_one(MobilityInstance, instance_id)
+            failed.last_evaluated_at = now
+            failed.last_evaluation = {"at": now.isoformat(), "executionId": execution_id, "trigger": "SCHEDULED", "result": "ERROR", "error": error[:500]}
+            db.commit()
+            results.append({"instanceId": str(instance_id), "executionId": execution_id, "result": "ERROR", "error": error[:500]})
+        finally:
+            reset_acting_instance(token)
+    return results
 
 
 # ---------------------------------------------------------------- audit + dashboard

@@ -22,6 +22,8 @@ services:
     deploy: { replicas: 2 }
   energy-saving-rapp-worker:
     deploy: { replicas: 2 }
+  mobility-optimization-rapp-worker:
+    deploy: { replicas: 2 }
   ran-nf-oam:
     deploy: { replicas: 2 }
   ran-nf-oam-worker:

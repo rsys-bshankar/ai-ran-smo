@@ -201,6 +201,39 @@ operatorUi:
       query:
         points: 48
       refreshSeconds: 15
+  # Call flow 23e/23f: whether the DMRO bounds are applied (a CIO change is held until they are VERIFIED) and the instance's scheduled passes.
+  - id: guard-rails
+    title: DMRO bounds and scheduled passes
+    kind: keyValues
+    items:
+    - label: DMRO status
+      path: dmroStatus.status
+      format: badge
+    - label: DMRO status since
+      path: dmroStatus.at
+    - label: Evaluated every (s)
+      path: evaluateEverySeconds
+      format: number
+    - label: Last pass
+      path: lastEvaluation.at
+    - label: Last pass trigger
+      path: lastEvaluation.trigger
+      format: badge
+    - label: Last pass result
+      path: lastEvaluation.result
+      format: badge
+    source:
+      path: /instances/{instanceId}
+      refreshSeconds: 30
+  - id: dmro
+    title: DMRO bounds
+    kind: actions
+    actions:
+    - id: apply-dmro
+      label: Apply DMRO bounds
+      method: POST
+      path: /instances/{instanceId}/dmro
+      success: DMRO bounds written (or the approval they wait for followed)
   # The demo's steps (demo.py, docs/GUI_DEMO_GUIDE.md) as buttons only an admin sees: the rApp plays the network and the Digital Twin. The
   # governance decisions between them (approve training and validation, certify, promote) stay on the AI/ML page, where a person makes them, and
   # the evaluations after the live PM and the KPI hour are the Closed loop panel's Evaluate now.

@@ -14,17 +14,22 @@ A Non-RT RIC rApp that classifies handover failures per neighbour relation and t
 | Operator API | served on `:8000` as `/instances/...`; the instance's base URL is registered at rApp Management (`operatorApiBase` when the instance is created) and R1 Termination reaches it at `/rapps/<instance>/operator/...`. The page the GUI draws for it is declared in `manifest.yaml` (`operatorUi`) |
 | Call flow | [23 Mobility Optimization closed loop](../../docs/call-flows/23-mobility-optimization-closed-loop.md) |
 | Demo runbook | [DEMO_RUNBOOK.md section 25](../../DEMO_RUNBOOK.md) (Demo 00-11) |
-| Unit tests | 52 passed (`tests/test_engine.py`, `tests/test_model.py`, `tests/test_routes.py`; 98 % of `app/`) |
+| Unit tests | 83 passed (`tests/, SQLite, standalone) |
 
 ## What it does
 
-One `POST /instances/{id}/evaluate` is one pass of the loop over the instance's relations:
+One `POST /instances/{id}/evaluate` ("Evaluate now") is one pass of the loop over the instance's relations. With `evaluateEverySeconds` in the
+instance configuration (60 to 86400; absent: manual only), the rApp's worker `mobility-optimization-rapp-worker` (the same image, `python -m
+smo_shared.worker`, task `evaluate-due` in `app/tasks.py`) runs a pass that often, as the instance, and records how it went (`lastEvaluation`); pick an
+interval well under an hour, so the KPI check of a change comes soon after its 60 minutes. A pass, a reconcile and "Apply DMRO bounds" lock the instance
+(`SELECT ... FOR UPDATE NOWAIT`): a second is 409 `EVALUATION_IN_PROGRESS` (call flow 23). A pass:
 
 - **Data in.** Hourly per-relation `MM.*` counters (attempts, too-late, too-early, wrong-cell, ping-pong) are read from DME as `HO_PERFORMANCE`.
 - **Model.** The model computes the mobility problem rate (failures plus ping-pongs, per attempt, in %), names the dominant failure class, and predicts next-hour rate. An inference job is recorded in AIMgF.
 - **Decision.** The engine checks the last change's KPI, then the guards, then the prediction, then takes one bounded CIO step.
 - **Autonomy dispatch.** CIO changes (RAISE or LOWER) go to `AutonomyDispatch`. SHADOW only records a recommendation. ASSIST waits for the operator, and `reconcile` settles it afterwards. AUTONOMOUS goes through an Intent, the SA SMOS O1-CM handler, DME and RAN NF OAM. The handler publishes its fulfilment report after the dispatch answers (and later still when Intent Service has to retry the push), so the rApp polls for the report, every 0.5 s for at most 30 s (`INTENT_REPORT_WAIT_SECONDS`), before it counts a change as `NOT_ENACTED`.
 - **O1 write.** `NRCellRelation.cellIndividualOffset` is written (six identical entries per TS 28.541). At deploy, the DMRO bounds are written to `DMROFunction`.
+- **Held for a person** (call flow 23d). When an approval policy on the rApp makes RAN NF OAM hold a revert or rollback (`PR-AI-11`), DME answers `PENDING_APPROVAL` with an `approvalId`; the write is not read back or sent again. The decision is `REVERT_AWAITING_APPROVAL` (a rollback `<trigger>_ROLLBACK_AWAITING_APPROVAL`), the relation keeps the `approvalId` and passes leave it alone; `reconcile` (or the next pass) reads the approval and, once decided, the CIO back: `REVERTED` / `<trigger>_ROLLED_BACK`, `REVERT_FAILED` / `_ROLLBACK_FAILED`, or `APPROVAL_<status>` / `_ROLLBACK_<status>`, the relation STEADY on the CIO read back.
 - **Verify.** Every write is read back over O1. A failed or unverified write is rolled back to the previous CIO.
 - **Decision record.** The direct writes (revert, rollback, and the DMRO bounds at deploy) send a `decision` (`PR-AI-13`): a reference to the execution, the model version and the reason in words, kept by RAN NF OAM as the decision record of the config job. Writes made through an Intent carry none.
 - **Revert.** A changed relation is OBSERVING until 60 minutes of post-change PM exist. If its rate is then worse, the previous CIO is restored straight through DME `/actions`.
@@ -45,7 +50,7 @@ Decision logic is in `app/engine.py` (pure functions) and `app/model/MobilityMod
   - `INSUFFICIENT_SAMPLES`: fewer than 50 handover attempts in the window.
   - `PACING`: relation changed less than 60 minutes ago.
   - `MLB_OBSERVING`: the Traffic Steering rApp has a CIO change on the relation under observation (shared CIO).
-- **DMRO bounds.** Written at deploy and read back (`VERIFIED` or `VERIFY_FAILED`). Defaults: `dmroControl` true, deviation -6 / +6, `minimumTimeBetweenHoTriggerChange` 60. The instance config key `dmroBounds` overrides them.
+- **DMRO bounds** (call flow 23e). Written at deploy, after the deployed model is saved, and read back; the outcome is kept on the instance as `dmroStatus` (`VERIFIED`, `VERIFY_FAILED`, `AWAITING_APPROVAL` when RAN NF OAM holds the write, `REJECTED` with the error, or `APPROVAL_<status>`). Until it is `VERIFIED` a RAISE or LOWER is held (`DMRO_NOT_APPLIED`); a KPI revert still runs. "Apply DMRO bounds" (`POST /instances/{id}/dmro`) writes them again, or follows a held write's approval instead of asking twice; reconcile settles a held one too. An instance deployed before revision 0051 has no status and holds its changes until then. Defaults: `dmroControl` true, deviation -6 / +6, `minimumTimeBetweenHoTriggerChange` 60. The instance config key `dmroBounds` overrides them.
 - **Validation.** Held-out ACT / HOLD / HEALTHY band score of at least 0.8 and RMSE of at most 1.5 points.
 - **Emulation.** Correct CIO direction on at least 90 % of faulty windows and no action on a healthy relation.
 - **Peers.** Optional `energySavingInstanceId` and `trafficSteeringInstanceId` in the instance config make it read those rApps' published cell and relation states over R1 (`/rapps/<instance>/operator/...`, the operator API that peer instance registered). Without them, the corresponding guards stay open.
@@ -54,7 +59,9 @@ Decision logic is in `app/engine.py` (pure functions) and `app/model/MobilityMod
 
 | File | Role |
 |---|---|
-| `app/main.py` | FastAPI service: instance binding, lifecycle, evaluate loop, dispatch follow-up, audit, dashboard |
+| `app/main.py` | FastAPI service: instance binding, lifecycle, evaluate loop (`run_pass`, `run_due_passes`), dispatch and approval follow-up, DMRO bounds, audit, dashboard |
+| `app/tasks.py` | The worker's task `evaluate-due` (every `MOBILITY_SCHEDULE_TICK_SECONDS`, default 15) |
+| `tests/test_schedule_dmro_and_approvals.py` | Call flow 23: `evaluateEverySeconds` bounds, the worker's task, due / not due / manual instances acting as themselves, a failed scheduled pass recorded, the instance lock (409, BUSY), reverts and rollbacks held for approval settled on approval, rejection and expiry, the DMRO status (held, refused, unknown) holding changes and "Apply DMRO bounds", the KPI hour of an ASSIST change starting at its enactment (22 tests) |
 | `app/engine.py` | Guards, KPI check, bounded step (no I/O) |
 | `app/model/MobilityModel.py` | Model, thresholds, MLMR artifact (JSON in a zip) |
 | `app/model/{Training,Validation,Emulation,Inference}Logic.py` | The four execution modes |
@@ -63,7 +70,7 @@ Decision logic is in `app/engine.py` (pure functions) and `app/model/MobilityMod
 | `app/models.py` | Instance, relation and decision tables |
 | `demo.py` | Demo 00-11 script |
 | `tests/` | Engine, model and route unit tests (routes through the TestClient on SQLite, the SDK replaced by a platform double) |
-| `tests/test_operator_page.py` | The `operatorUi` of `manifest.yaml` is valid, names only routes this rApp serves with query parameters they take, reads only fields its own answers carry, and ends with the admin-only demo panel (4 tests) |
+| `tests/test_operator_page.py` | The `operatorUi` of `manifest.yaml` is valid, names only routes this rApp serves with query parameters they take, reads only fields its own answers carry, and ends with the admin-only demo panel, after the DMRO and scheduled-passes panels and the Apply DMRO bounds button (4 tests) |
 | `tests/test_demo_routes.py` | The demo / simulation routes: prepare registers the twin producer and starts; history, live and the KPI hour send the PM `demo.py` sends, and a refused report is answered as refused; emulate publishes the twin's data then emulates (8 tests) |
 | `manifest.yaml`, `capabilities.yaml`, `Definitions/asd.yaml`, `TOSCA-Metadata/` | CSAR package content |
 
@@ -88,9 +95,10 @@ Paths are relative to the service root; through R1 Termination they sit under `/
 | `POST /instances/{id}/start` | Bind to the rapp-mgmt instance, discover datasets; then reports the instance up **as the instance** (`smo_sdk.instances.bootstrap` → `bootstrap-complete`, call flow 01d): the answer's `bootstrap` is `{state: RUNNING}`, or `{state: null, reason}` (`NO_CREDENTIALS` when rApp Management has not pushed the instance's credentials) |
 | `POST /instances/{id}/credentials` | Where rApp Management pushes the instance's credentials (`smo_sdk.instances`, call flow 01c): accepted with the internal role only; kept in the shared identity table (every replica, and after a restart). Every request under `/instances/{id}/` then acts as that instance |
 | `GET /instances`, `GET /instances/{id}` | Instance state |
-| `POST /instances/{id}/lifecycle/{train,validate,emulate,deploy}` | Model lifecycle; deploy also writes DMRO bounds |
-| `POST /instances/{id}/evaluate` | One closed-loop pass |
-| `POST /instances/{id}/reconcile` | Settle ASSIST dispatches the operator has resolved |
+| `POST /instances/{id}/lifecycle/{train,validate,emulate,deploy}` | Model lifecycle; deploy also writes DMRO bounds and records `dmroStatus` (a refused or held write no longer undoes the deploy) |
+| `POST /instances/{id}/dmro` | "Apply DMRO bounds": write them again, or follow a held write's approval; 409 `MODEL_NOT_DEPLOYED`, 409 `EVALUATION_IN_PROGRESS` |
+| `POST /instances/{id}/evaluate` | One closed-loop pass; 409 `EVALUATION_IN_PROGRESS` while another pass, reconcile or DMRO write runs |
+| `POST /instances/{id}/reconcile` | Settle ASSIST dispatches the operator has resolved, held reverts and rollbacks, and a held DMRO write |
 | `GET /instances/{id}/decisions` | Audit trail (`relation`, `execution_id` filters) |
 | `GET /instances/{id}/relations` | Per-relation state and CIO (read by the Coverage rApp) |
 | `GET /instances/{id}/dashboard` | Trends, latest decision per relation |
@@ -108,7 +116,7 @@ Paths are relative to the service root; through R1 Termination they sit under `/
 
 ```bash
 cd smo/samples/mobility-optimization-rapp
-PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # 52 passed
+PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # 83 passed
 ```
 
 The demo runs against a live stack, from inside the compose network (for example the `r1-termination` container). Steps are Demo 00 to 11:

@@ -333,8 +333,11 @@ modules:
   # the reference rApps: SME records them as rApps (no enrollment secret), and R1 applies the rApp role to them
   energy-saving-rapp: { image: energy-saving-rapp, databaseRole: energy-saving-rapp, enrollment: false, env: { SMO_IDENTITY_KIND: rapp, R1_GATEWAY_URL: "http://r1-termination:8000" } }
   # the same image as a worker: a pass of each instance whose evaluateEverySeconds has passed, so the loop closes by itself (call flow 22e)
-  energy-saving-rapp-worker: { image: energy-saving-rapp, databaseRole: energy-saving-rapp, enrollment: false, kind: worker, env: { SMO_IDENTITY_KIND: rapp, R1_GATEWAY_URL: "http://r1-termination:8000", ENERGY_SAVING_SCHEDULE_TICK_SECONDS: "15" } }
+  energy-saving-rapp-worker: { image: energy-saving-rapp, databaseRole: energy-saving-rapp, enrollment: false, kind: worker, env: { SMO_IDENTITY_KIND: rapp, R1_GATEWAY_URL: "http://r1-termination:8000", ENERGY_SAVING_SCHEDULE_TICK_SECONDS: "15" }, resources: { requests: { cpu: 10m, memory: 128Mi }, limits: { memory: 512Mi } } }
   mobility-optimization-rapp: { image: mobility-optimization-rapp, databaseRole: mobility-optimization-rapp, enrollment: false, env: { SMO_IDENTITY_KIND: rapp, R1_GATEWAY_URL: "http://r1-termination:8000" } }
+  # the same image as a worker: a pass of each instance whose evaluateEverySeconds has passed, so a CIO change is confirmed or reverted on time (call flow 23f).
+  # An rApp's worker asks for 10m of CPU, not the default 50m: it sleeps between ticks, and the defaults must fit a two-core lab node (test_helm_sizing).
+  mobility-optimization-rapp-worker: { image: mobility-optimization-rapp, databaseRole: mobility-optimization-rapp, enrollment: false, kind: worker, env: { SMO_IDENTITY_KIND: rapp, R1_GATEWAY_URL: "http://r1-termination:8000", MOBILITY_SCHEDULE_TICK_SECONDS: "15" }, resources: { requests: { cpu: 10m, memory: 128Mi }, limits: { memory: 512Mi } } }
   coverage-optimization-rapp: { image: coverage-optimization-rapp, databaseRole: coverage-optimization-rapp, enrollment: false, env: { SMO_IDENTITY_KIND: rapp, R1_GATEWAY_URL: "http://r1-termination:8000" } }
   traffic-steering-rapp: { image: traffic-steering-rapp, databaseRole: traffic-steering-rapp, enrollment: false, env: { SMO_IDENTITY_KIND: rapp, R1_GATEWAY_URL: "http://r1-termination:8000" } }
   # the GUI: its backend (one replica: it keeps its users in a SQLite file on a volume) and the nginx that serves the SPA

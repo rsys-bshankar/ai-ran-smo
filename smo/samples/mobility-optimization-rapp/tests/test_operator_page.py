@@ -40,7 +40,7 @@ def resolves(value, path: str) -> bool:
 def test_the_manifest_declares_a_valid_page_with_the_four_kinds_of_panel_it_needs():
     """The manifest's operator page validates and has its panels, ending with the demo's buttons, every one admin-only, and is not read-only."""
     d = declaration()
-    assert [p["kind"] for p in d["panels"]] == ["keyValues", "actions", "table", "actions"]
+    assert [p["kind"] for p in d["panels"]] == ["keyValues", "actions", "table", "keyValues", "actions", "actions"]
     assert d["panels"][-1]["id"] == "demo" and {a.get("role") for a in d["panels"][-1]["actions"]} == {"admin"}
     assert not d.get("readOnly")
 

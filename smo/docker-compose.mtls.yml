@@ -162,6 +162,11 @@ services:
       SMO_MTLS: "on"
     volumes:
       - ./certs/mtls/energy-saving-rapp-worker:/run/mtls:ro
+  mobility-optimization-rapp-worker:   # no port: a client of the others, with a certificate
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/mobility-optimization-rapp-worker:/run/mtls:ro
   rapp-mgmt-worker:        # no port: a client of the others, with a certificate
     environment:
       SMO_MTLS: "on"

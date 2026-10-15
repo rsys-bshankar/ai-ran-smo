@@ -217,6 +217,12 @@ compose and the chart use the file form (`docs/SECRETS.md` lists each secret, it
 |---|---|---|---|---|
 | `SMO_RETENTION_MDAF_REPORTS_DAYS` | `0` |  | `docker-compose.yml`, `mdaf/app/tasks.py` | Days to keep an MDAF report before the MDAF worker deletes it (`purge-reports`, hourly). 0 (the default) keeps them all. See docs/RETENTION.md. |
 
+### `mobility-optimization-rapp`
+
+| Variable | Default | Secret | Read in | What it does |
+|---|---|---|---|---|
+| `MOBILITY_SCHEDULE_TICK_SECONDS` | `15` |  | `docker-compose.yml`, `samples/mobility-optimization-rapp/app/tasks.py` | How often the Mobility Optimization rApp's worker (`mobility-optimization-rapp-worker`) looks for instances due a scheduled pass (default 15, at least 1), across all worker replicas (call flow 23f). An instance is due when its `evaluateEverySeconds` (instance configuration, 60 to 86400; absent: manual only) has passed since its last pass; the KPI check of a CIO change needs a pass about an hour after it. Read once at the worker's start. Seconds, not a secret. |
+
 ### `mock-o1-adaptor`
 
 | Variable | Default | Secret | Read in | What it does |
