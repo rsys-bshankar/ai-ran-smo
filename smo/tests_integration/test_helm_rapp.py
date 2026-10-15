@@ -8,7 +8,8 @@ fixtures and render helpers come from `test_helm_chart.py`. Run with: PYTHONPATH
 
 from test_helm_chart import CHART, COMPOSE, SMO_ROOT, VALUES, _deployment, _env_of, _modules, _pod_templates, _render, helm
 
-RAPPS = {"energy-saving-rapp", "mobility-optimization-rapp", "coverage-optimization-rapp", "traffic-steering-rapp"}
+# The chart's rApp modules: the four reference rApps and the workers that run their scheduled passes (call flow 22e), which are the same rApp identity.
+RAPPS = {"energy-saving-rapp", "mobility-optimization-rapp", "coverage-optimization-rapp", "traffic-steering-rapp", "energy-saving-rapp-worker"}
 
 
 def test_signing_and_the_egress_policy_are_off_by_default_in_the_chart_and_in_compose():
@@ -59,7 +60,7 @@ def _egress_policies(*args):
 
 @helm
 def test_the_rapp_egress_policy_lets_the_reference_rapps_reach_r1_dns_and_the_database_only():
-    """The rendered policy selects the four reference rApps and allows egress to the gateway on 8000, to cluster DNS on 53 and to the database on
+    """The rendered policy selects the reference rApps (and their workers) and allows egress to the gateway on 8000, to cluster DNS on 53 and to the database on
     5432, and nothing else. Needs helm.
     """
     [policy] = _egress_policies()

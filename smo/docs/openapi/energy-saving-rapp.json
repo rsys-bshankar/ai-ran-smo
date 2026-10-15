@@ -393,7 +393,7 @@
         "summary": "Clear Override"
       },
       "post": {
-        "description": "Manual UNLOCK: the cell is woken now (if it isn't already UNLOCKED)\nand AI recommendations for it are suppressed until the override is\ncleared.",
+        "description": "Manual UNLOCK: the cell is woken now (if it isn't already UNLOCKED)\nand AI recommendations for it are suppressed until the override is\ncleared. When RAN NF OAM holds the write for a person, the outcome is AWAITING_APPROVAL and `reconcile` settles it (call flow 22d).",
         "operationId": "override_instances__instance_id__cells__cell_id__override_post",
         "parameters": [
           {
@@ -736,7 +736,7 @@
     },
     "/instances/{instance_id}/evaluate": {
       "post": {
-        "description": "One pass of the closed loop over the instance's cells. The pass's\nX-Correlation-ID is its execution id in the audit trail.",
+        "description": "One pass of the closed loop over the instance's cells (\"Evaluate now\"). The pass's\nX-Correlation-ID is its execution id in the audit trail. 409 EVALUATION_IN_PROGRESS while another pass, reconcile or override of the instance runs.",
         "operationId": "evaluate_instances__instance_id__evaluate_post",
         "parameters": [
           {
@@ -931,7 +931,7 @@
     },
     "/instances/{instance_id}/reconcile": {
       "post": {
-        "description": "Follows up ASSIST dispatches the operator has resolved or rejected.",
+        "description": "Follows up ASSIST dispatches the operator has resolved or rejected, and writes held for approval that were decided (call flows 22c, 22d).",
         "operationId": "reconcile_instances__instance_id__reconcile_post",
         "parameters": [
           {

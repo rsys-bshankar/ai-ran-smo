@@ -63,6 +63,7 @@ services:
   ran-nf-oam: *pgtls_client
   ran-nf-oam-worker: *pgtls_client
   energy-saving-rapp: *pgtls_client
+  energy-saving-rapp-worker: *pgtls_client
   mobility-optimization-rapp: *pgtls_client
   coverage-optimization-rapp: *pgtls_client
   traffic-steering-rapp: *pgtls_client

@@ -110,6 +110,14 @@ runtime and tells the requester `TIMEOUT`, every `AIMGF_TIMEOUT_SWEEP_SECONDS` (
 never timed out. It uses AIMgF's database role (which now lists `periodic_run`; the migrate Job re-runs the grants) and its SME identity. More than one
 replica is fine (one runs the task per interval; `ci/ha-values.yaml` has two). Leave it enabled: without it, timeouts again depend on someone reading the jobs.
 
+## EnergySaving scheduled passes (call flow 22e)
+
+`modules.energy-saving-rapp-worker` (the EnergySaving rApp's image run as a worker) runs a pass of every EnergySaving instance whose `evaluateEverySeconds`
+(instance configuration) has passed since its last one, looking every `ENERGY_SAVING_SCHEDULE_TICK_SECONDS` (default `"15"`). An instance without
+`evaluateEverySeconds` is evaluated only from its page. It uses the rApp's database role (which now lists `periodic_run`, `notification_outbox` and
+`smo_event`, as every worker's does; the migrate Job re-runs the grants) and acts as each instance with the credentials rApp Management pushed. More than one
+replica is fine (one pass at a time per instance; `ci/ha-values.yaml` has two).
+
 ## Scheduled rotation of rApp instance secrets (SEC-15.19)
 
 `modules.rapp-mgmt-worker` (the rApp Management image run as a worker, like `ran-nf-oam-worker`) rotates the secret of running rApp instances on a schedule. **Off by default:** `RAPP_MGMT_SECRET_ROTATION_DAYS` is `"0"`, and the worker then does nothing (it is still one small pod; set `modules.rapp-mgmt-worker.enabled=false` to leave it out). To switch it on set the number of days:

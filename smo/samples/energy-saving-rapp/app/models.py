@@ -34,6 +34,11 @@ class EnergySavingInstance(Base):
     artifact_version: Mapped[int | None] = mapped_column(Integer)
     model_params: Mapped[dict | None] = mapped_column(JSON)
     lifecycle_jobs: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    # call flow 22e: how often the worker runs a pass (`evaluateEverySeconds` of the instance configuration; null: only "Evaluate now"), when the last
+    # one began, and how it went ({at, executionId, trigger, result OK | ERROR | SKIPPED, error?})
+    evaluate_every_seconds: Mapped[int | None] = mapped_column(Integer)
+    last_evaluated_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    last_evaluation: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
@@ -50,6 +55,7 @@ class EnergySavingCell(Base):
     override_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     pending_dispatch_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     pending_decision_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    pending_approval_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # call flow 22d: a service-restoring write RAN NF OAM holds for a person (PR-AI-11)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

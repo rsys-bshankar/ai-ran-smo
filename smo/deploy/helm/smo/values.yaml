@@ -332,6 +332,8 @@ modules:
   sa-smos: { image: sa-smos, databaseRole: sa-smos, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
   # the reference rApps: SME records them as rApps (no enrollment secret), and R1 applies the rApp role to them
   energy-saving-rapp: { image: energy-saving-rapp, databaseRole: energy-saving-rapp, enrollment: false, env: { SMO_IDENTITY_KIND: rapp, R1_GATEWAY_URL: "http://r1-termination:8000" } }
+  # the same image as a worker: a pass of each instance whose evaluateEverySeconds has passed, so the loop closes by itself (call flow 22e)
+  energy-saving-rapp-worker: { image: energy-saving-rapp, databaseRole: energy-saving-rapp, enrollment: false, kind: worker, env: { SMO_IDENTITY_KIND: rapp, R1_GATEWAY_URL: "http://r1-termination:8000", ENERGY_SAVING_SCHEDULE_TICK_SECONDS: "15" } }
   mobility-optimization-rapp: { image: mobility-optimization-rapp, databaseRole: mobility-optimization-rapp, enrollment: false, env: { SMO_IDENTITY_KIND: rapp, R1_GATEWAY_URL: "http://r1-termination:8000" } }
   coverage-optimization-rapp: { image: coverage-optimization-rapp, databaseRole: coverage-optimization-rapp, enrollment: false, env: { SMO_IDENTITY_KIND: rapp, R1_GATEWAY_URL: "http://r1-termination:8000" } }
   traffic-steering-rapp: { image: traffic-steering-rapp, databaseRole: traffic-steering-rapp, enrollment: false, env: { SMO_IDENTITY_KIND: rapp, R1_GATEWAY_URL: "http://r1-termination:8000" } }

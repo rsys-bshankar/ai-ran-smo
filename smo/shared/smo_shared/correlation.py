@@ -27,6 +27,8 @@ larger, largely cosmetic diff for no real behavior gain.
 """
 
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from contextvars import ContextVar
 
 from fastapi import FastAPI, Request
@@ -42,6 +44,17 @@ def get_correlation_id() -> str | None:
     script, or a service that hasn't applied it).
     """
     return _current_correlation_id.get()
+
+
+@contextmanager
+def correlation_scope(correlation_id: str) -> Iterator[str]:
+    """Makes `correlation_id` the current one inside the block, outside any request: a worker's task (call flow 22e: a scheduled pass of the
+    EnergySaving rApp) gets the same id on every downstream call, as a request would. The previous value comes back after the block."""
+    token = _current_correlation_id.set(correlation_id)
+    try:
+        yield correlation_id
+    finally:
+        _current_correlation_id.reset(token)
 
 
 def apply_correlation_id(app: FastAPI) -> None:

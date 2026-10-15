@@ -15,18 +15,24 @@ A Non-RT RIC rApp that predicts sustained low PRB utilisation from O1 PM data, p
 | Operator API | served on `:8000` as `/instances/...`; the instance's base URL is registered at rApp Management (`operatorApiBase` when the instance is created) and R1 Termination reaches it at `/rapps/<instance>/operator/...`. The page the GUI draws for it is declared in `manifest.yaml` (`operatorUi`) |
 | Call flow | [22-energy-saving-closed-loop.md](../../docs/call-flows/22-energy-saving-closed-loop.md) |
 | Demo runbook | [DEMO_RUNBOOK.md](../../DEMO_RUNBOOK.md) section 24 (`demo.py` steps 00-11) |
-| Unit tests | 63 passed |
+| Unit tests | 88 passed |
 
 ## What it does
 
-One pass of the closed loop is `POST /instances/{id}/evaluate`; its `X-Correlation-ID` is the execution id in the audit trail.
+One pass of the closed loop is `POST /instances/{id}/evaluate` ("Evaluate now"); its `X-Correlation-ID` is the execution id in the audit trail. With
+`evaluateEverySeconds` in the instance configuration (60 to 86400; absent: manual only), the rApp's worker `energy-saving-rapp-worker` (the same image,
+`python -m smo_shared.worker`, task `evaluate-due` in `app/tasks.py`) runs a pass that often, as the instance and under a new execution id, and records how
+it went on the instance (`lastEvaluation`: at, executionId, trigger MANUAL or SCHEDULED, result OK or ERROR with the error). A pass, a reconcile and an
+override lock the instance (`SELECT ... FOR UPDATE NOWAIT`): one at a time, a second is 409 `EVALUATION_IN_PROGRESS` and the worker skips it for a tick
+(call flow 22).
 
 - Data in: the per-cell `PRB_UTILIZATION` series from DME, cell guard attributes and critical alarms from RAN NF OAM, and MDAF's PRB prediction when there is one.
-- Model: an AIMgF inference job on the ACTIVE MLIF runtime; the model returns `futurePrb`, `recommendedState` and `confidence` for each cell.
+- Model: the rApp's own model, under an AIMgF inference job on the ACTIVE MLIF runtime (AIMgF records the job and the report, it does not run the model); it returns `futurePrb`, `recommendedState` and `confidence` for each cell.
 - Decision: `app/engine.py` returns LOCK, UNLOCK or NO_CHANGE per cell after the safety evaluation.
 - Idempotency: a cell whose live O1 value already equals the wanted one gets no action (`NO_ACTION_ALREADY_IN_STATE`).
 - Autonomy dispatch (LOCK only): the LOCK expectation goes to `sdk.intent` as an AutonomyDispatch. SHADOW records it as `SHADOWED`; ASSIST waits in `AWAITING_SCOPE` until an operator resolves or rejects it; AUTONOMOUS runs Intent, SA SMOS O1-CM handler, DME, RAN NF OAM, NETCONF. The handler publishes its fulfilment report after the dispatch answers (and later still when Intent Service has to retry the push), so the rApp polls for the report, every 0.5 s for at most 30 s (`INTENT_REPORT_WAIT_SECONDS`), before it counts a change as `NOT_ENACTED`.
 - O1 write (UNLOCK, rollback, override): these restore service, so they go straight to DME `/actions` in every enforcing mode, each with its own `actionId`. In SHADOW an UNLOCK is only recorded. Each such write sends a `decision` (`execute_action(decision=...)`, `PR-AI-13`): a reference to the execution (`inputsRef`), the model version and the reason in words (`rationale`), kept by RAN NF OAM as the decision record of the config job and shown to a person asked to approve it. The writes that go through an Intent are made by the handler and carry no `decision`.
+- Held for a person (call flow 22d): when an approval policy on the rApp makes RAN NF OAM hold a direct write (`PR-AI-11`), DME answers `PENDING_APPROVAL` with an `approvalId`. The write is not read back or sent again (that would ask twice): the decision is `AWAITING_APPROVAL` (a rollback `<trigger>_ROLLBACK_AWAITING_APPROVAL`), the cell stays asleep with the `approvalId` on it, and passes leave it alone. `reconcile`, or the next pass, reads the approval (`sdk.platform.get_approval`): once decided, the cell is read back and settled (`EXECUTED` or `<trigger>_ROLLED_BACK` when unlocked, `VERIFY_FAILED` / `_ROLLBACK_FAILED` when approved but still locked, `APPROVAL_<status>` when rejected, expired or refused).
 - Verify: every write is read back with `sdk.data.read_config`.
 - Revert: a failed, partial or unverified LOCK is rolled back to UNLOCKED through the same DME path, re-sent once if the read-back still disagrees. Every pass writes one `energy_saving_decision` row per cell (prediction, safety, intent, action, verification, rollback, final state).
 
@@ -59,7 +65,8 @@ Decision logic (`app/engine.py`, pure functions). Cell states are internal: SERV
 | `capabilities.yaml` | SDK namespaces consumed and provided, datasets, O1 targets and attributes |
 | `Definitions/asd.yaml` | ASD: package identity |
 | `TOSCA-Metadata/TOSCA.meta` | CSAR entry point |
-| `app/main.py` | FastAPI service: instances, lifecycle, evaluate loop, override, audit, dashboard |
+| `app/main.py` | FastAPI service: instances, lifecycle, evaluate loop (`run_pass`, `run_due_passes`), override, audit, dashboard |
+| `app/tasks.py` | The worker's task `evaluate-due` (every `ENERGY_SAVING_SCHEDULE_TICK_SECONDS`, default 15) |
 | `app/engine.py` | Decision engine (thresholds, guards, hysteresis) |
 | `app/models.py` | rApp state tables: instance, cell, decision audit |
 | `app/producer.py` | Synthetic diurnal PRB profile and the Digital Twin `PRB_UTILIZATION_SIM` producer |
@@ -67,6 +74,7 @@ Decision logic (`app/engine.py`, pure functions). Cell states are internal: SERV
 | `demo.py` | Demo steps 00-11 against a running stack |
 | `tests/` | `test_engine.py`, `test_model.py`, `test_routes.py` (the routes, with the SDK replaced by a platform double), `conftest.py` |
 | `tests/test_operator_page.py` | The `operatorUi` of `manifest.yaml` is valid, names only routes this rApp serves with query parameters they take, reads only fields its own answers carry (chart points included), starts with the ADR's worked example and ends with the admin-only demo panel (5 tests) |
+| `tests/test_schedule_and_approvals.py` | Call flow 22: `evaluateEverySeconds` bounds, the worker's task, due / not due / manual instances acting as themselves, a failed scheduled pass recorded and not retried before its interval, the instance lock (409, BUSY), wakes, rollbacks and overrides held for approval settled on approval, rejection and expiry (18 tests) |
 | `tests/test_demo_routes.py` | The demo / simulation routes: prepare registers the twin producer and starts; history and live send the PM `demo.py` sends, and a refused report is answered as refused; emulate publishes the twin trend then emulates (5 tests) |
 
 ## Package
@@ -81,7 +89,7 @@ Layout and field semantics: [RAPP_PACKAGING.md](../../docs/RAPP_PACKAGING.md).
 
 ## Service API
 
-Served on port 8000. R1 Termination reaches it at `/rapps/<instance>/operator/...` once the instance has registered its base URL (`operatorApiBase` in `POST /rapp-mgmt/instances`; `demo.py` and the integration environments pass it). The GUI draws its page from the `operatorUi` at the end of `manifest.yaml` (the worked example of `docs/adr/0004-operator-ui-declaration.md`): the instance block, Evaluate now and Reconcile approvals, and the cells table with a per-cell Override and a drawer (PRB chart, the latest execution, the last 20 decisions), then the cell-state history of the last 24 hours as a chart (one line per cell: 2 serving, 1 pre-sleep, 0 sleep) and a table of the changes (GUI-9.8b). The first three panels are the ADR's worked example verbatim. Last comes **Demo / simulation (admin)**: the demo's steps as admin-only buttons (`role: admin`): `demo/prepare`, `demo/history`, `lifecycle/train`, `lifecycle/validate`, `demo/emulate`, `lifecycle/deploy`, `demo/live` (`docs/GUI_DEMO_GUIDE.md`). Only those routes are reachable from the GUI; `start` (by itself) and `sim-producer/*` are API calls.
+Served on port 8000. R1 Termination reaches it at `/rapps/<instance>/operator/...` once the instance has registered its base URL (`operatorApiBase` in `POST /rapp-mgmt/instances`; `demo.py` and the integration environments pass it). The GUI draws its page from the `operatorUi` at the end of `manifest.yaml` (the worked example of `docs/adr/0004-operator-ui-declaration.md`): the instance block, Evaluate now and Reconcile approvals, and the cells table with a per-cell Override and a drawer (PRB chart, the latest execution, the last 20 decisions), then the cell-state history of the last 24 hours as a chart (one line per cell: 2 serving, 1 pre-sleep, 0 sleep) and a table of the changes (GUI-9.8b), then the instance's scheduled passes (`evaluateEverySeconds`, the last pass's time, trigger and result; call flow 22e). The first three panels are the ADR's worked example verbatim. Last comes **Demo / simulation (admin)**: the demo's steps as admin-only buttons (`role: admin`): `demo/prepare`, `demo/history`, `lifecycle/train`, `lifecycle/validate`, `demo/emulate`, `lifecycle/deploy`, `demo/live` (`docs/GUI_DEMO_GUIDE.md`). Only those routes are reachable from the GUI; `start` (by itself) and `sim-producer/*` are API calls.
 
 | Route | Purpose |
 |---|---|
@@ -93,8 +101,8 @@ Served on port 8000. R1 Termination reaches it at `/rapps/<instance>/operator/..
 | `POST /instances/{id}/lifecycle/validate` | Validation job (held-out score) |
 | `POST /instances/{id}/lifecycle/emulate` | Emulation job on the Digital Twin dataset |
 | `POST /instances/{id}/lifecycle/deploy` | Deploy and activate the MLIF runtime (needs a certified model) |
-| `POST /instances/{id}/evaluate` | One closed-loop pass |
-| `POST /instances/{id}/reconcile` | Follow up ASSIST dispatches an operator resolved or rejected |
+| `POST /instances/{id}/evaluate` | One closed-loop pass; 409 `EVALUATION_IN_PROGRESS` while another pass, reconcile or override of the instance runs, 409 `MODEL_NOT_DEPLOYED` before deploy |
+| `POST /instances/{id}/reconcile` | Follow up ASSIST dispatches an operator resolved or rejected, and writes held for approval that were decided |
 | `POST` / `DELETE /instances/{id}/cells/{cell_id}/override` | Operator unlock; clear the override |
 | `GET /instances/{id}/decisions` | Audit trail; filters `cell_id`, `execution_id`, `limit` |
 | `GET /instances/{id}/cells` | Cell states |
@@ -110,7 +118,7 @@ Served on port 8000. R1 Termination reaches it at `/rapps/<instance>/operator/..
 
 ## Run and test
 
-Unit tests (63 passed):
+Unit tests (88 passed):
 
 ```bash
 cd smo/samples/energy-saving-rapp && PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q
@@ -129,7 +137,8 @@ Ids are kept between steps in `$DEMO_STATE` (default `/tmp/energy-saving-demo.js
 
 - A critical alarm blocks a cell's LOCK when it is raised on the cell, on a neighbour the cell hands its traffic to (`neighbourRefs`), or on the managed element as a whole (an alarm that names no cell). A coverage alarm wakes a cell on the same terms.
 - The shipped model is threshold plus regression; an LSTM variant is backlog (HISTORY.md, W10.1 `W10-B1`).
-- State tables live in the shared Postgres (`migrations/001_init.sql`), not a private rApp store.
+- State tables live in the shared Postgres (`migrations/001_init.sql`, later revisions such as 0050), not a private rApp store.
+- A wake a person rejects is asked for again by the next pass that decides it, while load stays high.
 - The cell-state history has no table of its own: it is read from the decision audit trail (every change of state is settled in a decision row's `final_state`; a pending ASSIST cell gets no newer row until it is settled), timed by when the row was settled (`updated_at`, wall clock; `observedAt` is the PRB sample's simulation time). It is as long as the audit trail is kept; one answer reads at most 2000 decision rows (`truncated` past that) plus up to 50 per cell for the state before the window. The chart's x axis is the change times in order, not to scale.
 - Training fails with 422 on fewer than 3 hourly history rows.
 - `capabilities.yaml` lists `TRAFFIC_FORECAST` as supported analytics, but the code consumes MDAF PRB predictions only.
