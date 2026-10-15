@@ -265,7 +265,7 @@ def receive_report(monitor_id: uuid.UUID, body: ReportNotification, db: Session 
     breaches, missing = _evaluate(monitor.requirement_thresholds, report.get("output") or {})
     was_breached = bool(last.get("breached"))
     monitor.last_evaluation = {"at": _now().isoformat(), "reportId": str(body.reportId), "breached": bool(breaches), "breaches": breaches, "missing": missing}
-    answer.update(status="EVALUATED", breaches=breaches, missing=missing)
+    answer.update({"status": "EVALUATED", "breaches": breaches, "missing": missing})
     if breaches and not was_breached:
         found = "breach of " + ", ".join(sorted(breaches)) + f" in report {body.reportId}"
         if monitor.auto_action:
