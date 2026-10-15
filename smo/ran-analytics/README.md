@@ -9,7 +9,7 @@
 | Depends on (over R1) | SME (`/sme/provider-registrations`, `/sme/published-apis/v1/{apfId}/service-apis`) |
 | Called by | Analytics producer rApps via `sdk.analytics` (`register_producer`, `deregister_producer`, `list_producers`); GUI BFF (`POST /ran-analytics/producers`, admin); MDAF (`GET /producers`, to check an rApp publisher, call flow 08c) |
 | Database tables | `mdaf_producer` |
-| Unit tests | 20 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 22 passed (`tests/`, SQLite, standalone) |
 | Status | Done. Coverage is the thinnest in the repo by count (`../OPEN_ITEMS.md` OI-4) |
 
 ## 1. High-level design (HLD)
@@ -153,7 +153,7 @@ cd smo/ran-analytics && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | File | Covers | Tests |
 |---|---|---|
 | `tests/test_main.py` | Registration, in-place upsert, separate row per analytics type, SME service publication, list and its filters (type, producer, empty), `mda_type` inference (mapped, unmapped), explicit and invalid `mda_type`, `/health` | 13 |
-| `tests/test_producer_identity.py` | Call flow 08a: an rApp registers only itself, SME refusing or silent stores nothing, one SME service per producer and type, deregistration withdraws the service, another rApp's deregistration refused, SME silent keeps the producer | 7 |
+| `tests/test_producer_identity.py` | Call flow 08a: an rApp registers only itself, SME refusing or silent stores nothing, one SME service per producer and type, deregistration withdraws the service, another rApp's deregistration refused, SME silent or refusing keeps the producer, a service already gone at SME accepted | 9 |
 
 ### 3.3 What is not covered here
 

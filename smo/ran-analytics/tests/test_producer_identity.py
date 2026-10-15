@@ -81,3 +81,13 @@ def test_an_rapp_deregisters_only_itself_and_sme_must_answer(client, monkeypatch
     monkeypatch.setattr("app.main.R1Client.delete", down)
     assert client.delete("/producers/kpi-rapp", params={"analytics_type": "cell-kpi"}, headers=RAPP).status_code == 502
     assert len(client.get("/producers").json()["items"]) == 1
+
+
+@pytest.mark.parametrize("status, removed", [(404, True), (500, False)])
+def test_an_sme_service_already_gone_is_accepted_and_a_refusal_keeps_the_producer(client, monkeypatch, status, removed):
+    """Call flow 08a: SME answering 404 (the service is already gone) still removes the producer; any other refusal is 502 and the producer is kept."""
+    _register(client)
+    monkeypatch.setattr("app.main.R1Client.delete", lambda self, path, **kw: FakeSme(status, {}))
+    resp = client.delete("/producers/kpi-rapp", params={"analytics_type": "cell-kpi"}, headers=RAPP)
+    assert resp.status_code == (204 if removed else 502)
+    assert (client.get("/producers").json()["items"] == []) is removed
