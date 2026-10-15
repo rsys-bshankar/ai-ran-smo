@@ -298,3 +298,23 @@ def test_a_change_that_holds_up_is_still_confirmed_on_schedule(client, platform,
         assert [r["result"] for r in main.run_due_passes(db, now=datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=1))] == ["OK"]
     decisions = client.get(f"/instances/{instance_id}/decisions").json()["items"]
     assert any(d["outcome"] == "CONFIRMED" for d in decisions)
+
+
+def test_an_assist_change_enacted_later_is_observed_from_its_enactment_not_its_plan(client, platform, r1):
+    """Call flow 23c: the KPI window of an ASSIST change starts at the latest PM window when `reconcile` finds it enacted, so a window measured
+    while it waited for the operator is not taken as its effect; with a full hour after the enactment the check runs."""
+    instance_id = _deployed(client, platform, r1, "ASSIST")
+    dispatch_id = str(uuid.uuid4())
+    platform.dispatch = {"status": "AWAITING_SCOPE", "dispatchId": dispatch_id, "autonomyMode": "ASSIST"}
+    client.post(f"/instances/{instance_id}/evaluate")                     # planned on the hour-1 window
+    platform.records["INFERENCE"] += [_record(2, LATE)]                  # an hour passes before the operator approves
+    platform.dispatch = {**_dispatched("ASSIST"), "dispatchId": dispatch_id}
+    assert client.post(f"/instances/{instance_id}/reconcile").json()["settled"][0]["outcomes"][REL] == "EXECUTED"
+    rel = client.get(f"/instances/{instance_id}/relations").json()["items"][0]
+    assert rel["lastChange"]["at"] == _record(2, LATE)["timestamp"]
+    platform.records["INFERENCE"] += [_record(2.5, WORSE)]
+    d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
+    assert (d["decision"], d["reason"]) == ("NO_CHANGE", "OBSERVING")      # half an hour after the enactment: still observing
+    platform.records["INFERENCE"] += [_record(3, WORSE)]
+    d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
+    assert (d["decision"], d["reason"]) == ("REVERT_CIO", "KPI_DEGRADED") and d["kpi"]["windows"] == 2

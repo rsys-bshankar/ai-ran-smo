@@ -128,6 +128,8 @@ sequenceDiagram
     end
 ```
 
+The hour starts when the change was made: for AUTONOMOUS the pass that dispatched it, for ASSIST the latest PM window when reconcile found it enacted, so windows measured while it waited for the operator do not count as its effect.
+
 **Phase 1:** the check happens on the first pass after the hour; without a schedule (23f) that pass waits for someone to press "Evaluate now".
 
 ## 23d — ASSIST, and reverts and rollbacks held for a person
@@ -149,7 +151,7 @@ sequenceDiagram
         MRO-->>Op: 409 EVALUATION_IN_PROGRESS
     else
         MRO->>IS: GET /autonomy-dispatches/{id} for each pending dispatch
-        Note over MRO: AWAITING_SCOPE left · DISPATCHED verified as 23b · REJECTED: relation unchanged
+        Note over MRO: AWAITING_SCOPE left · DISPATCHED verified as 23b · REJECTED: relation unchanged<br/>an enacted change is observed from the latest PM window now, not from the pass that planned it (23c)
         MRO->>OAM: GET /rapp-approvals/{approvalId} for each held write
         alt still PENDING
             Note over MRO: left as it is

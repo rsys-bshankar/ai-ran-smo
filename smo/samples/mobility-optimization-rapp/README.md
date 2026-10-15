@@ -14,7 +14,7 @@ A Non-RT RIC rApp that classifies handover failures per neighbour relation and t
 | Operator API | served on `:8000` as `/instances/...`; the instance's base URL is registered at rApp Management (`operatorApiBase` when the instance is created) and R1 Termination reaches it at `/rapps/<instance>/operator/...`. The page the GUI draws for it is declared in `manifest.yaml` (`operatorUi`) |
 | Call flow | [23 Mobility Optimization closed loop](../../docs/call-flows/23-mobility-optimization-closed-loop.md) |
 | Demo runbook | [DEMO_RUNBOOK.md section 25](../../DEMO_RUNBOOK.md) (Demo 00-11) |
-| Unit tests | 82 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 83 passed (`tests/, SQLite, standalone) |
 
 ## What it does
 
@@ -61,7 +61,7 @@ Decision logic is in `app/engine.py` (pure functions) and `app/model/MobilityMod
 |---|---|
 | `app/main.py` | FastAPI service: instance binding, lifecycle, evaluate loop (`run_pass`, `run_due_passes`), dispatch and approval follow-up, DMRO bounds, audit, dashboard |
 | `app/tasks.py` | The worker's task `evaluate-due` (every `MOBILITY_SCHEDULE_TICK_SECONDS`, default 15) |
-| `tests/test_schedule_dmro_and_approvals.py` | Call flow 23: `evaluateEverySeconds` bounds, the worker's task, due / not due / manual instances acting as themselves, a failed scheduled pass recorded, the instance lock (409, BUSY), reverts and rollbacks held for approval settled on approval, rejection and expiry, the DMRO status (held, refused, unknown) holding changes and "Apply DMRO bounds" (21 tests) |
+| `tests/test_schedule_dmro_and_approvals.py` | Call flow 23: `evaluateEverySeconds` bounds, the worker's task, due / not due / manual instances acting as themselves, a failed scheduled pass recorded, the instance lock (409, BUSY), reverts and rollbacks held for approval settled on approval, rejection and expiry, the DMRO status (held, refused, unknown) holding changes and "Apply DMRO bounds", the KPI hour of an ASSIST change starting at its enactment (22 tests) |
 | `app/engine.py` | Guards, KPI check, bounded step (no I/O) |
 | `app/model/MobilityModel.py` | Model, thresholds, MLMR artifact (JSON in a zip) |
 | `app/model/{Training,Validation,Emulation,Inference}Logic.py` | The four execution modes |
@@ -116,7 +116,7 @@ Paths are relative to the service root; through R1 Termination they sit under `/
 
 ```bash
 cd smo/samples/mobility-optimization-rapp
-PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # 82 passed
+PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # 83 passed
 ```
 
 The demo runs against a live stack, from inside the compose network (for example the `r1-termination` container). Steps are Demo 00 to 11:

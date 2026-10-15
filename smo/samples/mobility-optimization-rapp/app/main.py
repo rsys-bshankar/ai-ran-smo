@@ -297,12 +297,14 @@ def _settle(row: MobilityRelation, d: MobilityDecision, now: datetime.datetime |
     d.updated_at = datetime.datetime.now(datetime.UTC)
 
 
-def _follow_dispatch(inst, rows, decisions: dict[str, MobilityDecision], dispatch: dict, execution_id: str) -> None:
+def _follow_dispatch(inst, rows, decisions: dict[str, MobilityDecision], dispatch: dict, execution_id: str,
+                     enacted_at: dict[str, datetime.datetime] | None = None) -> None:
     """Settles the relations of one AutonomyDispatch according to where it is.
 
     SHADOWED, REJECTED and AWAITING_SCOPE only record the outcome (ASSIST remembers the pending dispatch on the row); a dispatched change is
     matched to the Intent's action report, verified by an O1 read-back, and rolled back through DME when the action did not complete or the
-    read-back differs.
+    read-back differs. `enacted_at` ({relation: time}) is when `reconcile` found an ASSIST change enacted; the KPI window starts there, not at
+    the pass that planned it (call flow 23c). A pass that dispatches straight away gives None: the window starts at the decision's observation.
     """
     intent = {"dispatchId": dispatch["dispatchId"], "autonomyMode": dispatch["autonomyMode"], "status": dispatch["status"],
               "intentId": dispatch.get("intentId"), "rejectedBy": dispatch.get("rejectedBy")}
@@ -339,7 +341,7 @@ def _follow_dispatch(inst, rows, decisions: dict[str, MobilityDecision], dispatc
             d.final_state = {"state": row.state, "cio": row.current_cio}
             d.updated_at = datetime.datetime.now(datetime.UTC)
             continue
-        _settle(row, d, None, ok, rollback)
+        _settle(row, d, (enacted_at or {}).get(rel), ok, rollback)
 
 
 def _settle_approvals(db: Session, inst: MobilityInstance, rows: dict[str, MobilityRelation]) -> list[dict]:
@@ -425,6 +427,12 @@ def _settle_dmro(inst: MobilityInstance) -> dict | None:
     return inst.dmro_status
 
 
+def _latest_samples(inst: MobilityInstance) -> dict[str, datetime.datetime]:
+    """{relation: time of its latest PM window in the INFERENCE dataset}: when `reconcile` finds an ASSIST change enacted, the KPI window starts after
+    what was already measured, so windows from before the operator approved it are not counted as its effect (call flow 23c)."""
+    return {rel: as_utc(series[-1][0]) for rel, series in by_relation(_dataset(inst, "INFERENCE")).items() if series}
+
+
 def _reconcile(db: Session, inst: MobilityInstance) -> list[dict]:
     """Settles ASSIST dispatches the operator has since resolved or rejected (call flow 23d), the reverts and rollbacks held for approval that were
     decided, and a DMRO write held for approval (23e).
@@ -438,6 +446,7 @@ def _reconcile(db: Session, inst: MobilityInstance) -> list[dict]:
         if row.pending_dispatch_id:
             pending.setdefault(row.pending_dispatch_id, []).append(rel)
     settled = []
+    latest: dict[str, datetime.datetime] | None = None
     for dispatch_id, rels in pending.items():
         dispatch = sdk.intent.get_autonomy_dispatch(dispatch_id)
         if dispatch["status"] == "AWAITING_SCOPE":
@@ -445,7 +454,10 @@ def _reconcile(db: Session, inst: MobilityInstance) -> list[dict]:
         decisions = {r: db.get_one(MobilityDecision, rows[r].pending_decision_id) for r in rels}
         for r in rels:
             rows[r].pending_dispatch_id = rows[r].pending_decision_id = None
-        _follow_dispatch(inst, rows, decisions, dispatch, next(iter(decisions.values())).execution_id)
+        if latest is None and dispatch["status"] == "DISPATCHED":
+            latest = _latest_samples(inst)
+        enacted_at = {r: latest[r] for r in rels if latest and r in latest}
+        _follow_dispatch(inst, rows, decisions, dispatch, next(iter(decisions.values())).execution_id, enacted_at)
         settled.append({"dispatchId": str(dispatch_id), "status": dispatch["status"],
                         "outcomes": {r: decisions[r].outcome for r in rels}})
     settled += _settle_approvals(db, inst, rows)
