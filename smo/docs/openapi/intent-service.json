@@ -3303,7 +3303,7 @@
         "summary": "List Intent Handling Functions"
       },
       "post": {
-        "description": "RegisterIntentHandlingFunction \u2014 rejected if caller is external\n(D-SEC-POLICY-1, unchanged). identity.py's helper distinguishes an\nrApp caller (always rejected here) from a framework-internal SMO\nmodule (SO SMOS / SA SMOS, the only legitimate callers).",
+        "description": "RegisterIntentHandlingFunction \u2014 only the SMO registers handlers\n(D-SEC-POLICY-1): an rApp caller is refused, and so is an rmihId that\nis an rApp identity. Registering an rmihId again updates it in place,\nkeeping the intents addressed to it.",
         "operationId": "register_intent_handling_function_intent_handling_functions_post",
         "requestBody": {
           "content": {
@@ -3430,7 +3430,7 @@
     },
     "/intent-handling-functions/{rmih_id}": {
       "delete": {
-        "description": "NEW \u2014 symmetric with Register, closing v1.3's gap (Policy Mgmt LLD section 1).",
+        "description": "NEW \u2014 symmetric with Register, closing v1.3's gap (Policy Mgmt LLD section 1).\nRefused while intents are still addressed to the function.",
         "operationId": "deregister_intent_handling_function_intent_handling_functions__rmih_id__delete",
         "parameters": [
           {

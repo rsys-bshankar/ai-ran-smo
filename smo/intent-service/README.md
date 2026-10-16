@@ -90,9 +90,10 @@ Platform-wide ownership summary: [ARCHITECTURE.md](../docs/ARCHITECTURE.md).
   for every expectation object type, the handling scope if one is declared, the negotiation functionality the
   `intentMgmtPurpose` needs (when the RMIH declares any), and, for a fulfilment purpose, every target named in the
   capability's `supportedExpectationTargetInfoList` (with the same condition where declared).
-- `Intent.rmih_id` is a foreign key with `ON DELETE CASCADE`: deregistering an RMIH ends every intent addressed to
-  it, so a `GET /intents/{id}` can 404 after that. The cascade is enforced by PostgreSQL only; SQLite does not
-  enforce it in unit tests.
+- An RMIH with intents addressed to it cannot be deregistered (409 `INTENT_HANDLING_FUNCTION_IN_USE`, call flow 09c), so no
+  intent disappears under its owner; registering an `rmihId` again updates it in place and keeps its intents (it was a
+  409, and SA SMOS deleted the handler first, which cascaded away every intent). `Intent.rmih_id` keeps its
+  `ON DELETE CASCADE` foreign key.
 - Dispatch is one notification to the named RMIH, an outbox row committed with the intent (`PR-MSG-1.9`). RMIHs register with a `notificationDestination`.
 
 **Autonomy dispatch.** An rApp instance carries `autonomyMode` (`AUTONOMOUS` / `ASSIST` / `SHADOW`, default
@@ -135,11 +136,16 @@ The mode is snapshotted onto the dispatch at request time and never rewritten by
   operator notification are rows in the same transaction as the intent, report or dispatch they announce, sent right after it commits (2 s
   timeout), at least once; they never fail the triggering call, and a crash after the commit no longer loses them. An autonomy dispatch and the
   Intent it creates are now one transaction (`_create_intent_row` no longer commits; its callers do). A destination is never guessed.
-- **Security / RBAC.** RMIH registration is framework-internal only (D-SEC-POLICY-1):
-  `is_framework_internal_identity(rmihId)` rejects any rmihId that parses as a UUID (an rApp instance id). Only the
-  creating RMIO (`rmioId`) may change an intent's admin state. The GUI BFF pins `rmioId` for GUI-created intents,
-  restricts RMIH registration and report publication to admin, and pins `rejectedBy` on a reject
-  (`../gui-bff/app/rbac.py`). No per-service auth otherwise; R1 Termination enforces the bearer token.
+- **Security / RBAC** (call flow 09, DOC-CF-1.8; the caller's role and invoker id are the ones R1 Termination stamps).
+  An rApp caller may not register or deregister an RMIH or publish a report (403 `ROLE_NOT_PERMITTED`), and an
+  `rmihId` that parses as a UUID is refused for anyone (D-SEC-POLICY-1). An rApp's `rmioId` is its own invoker id, the
+  caller is recorded as the intent's owner (`ownerInvokerId`), and only the owner rApp may change the admin state,
+  answer a negotiation report or delete the intent (403 `INTENT_ACCESS_DENIED`); the console and modules act for others,
+  but must name the intent's `rmioId` as `requesterId` to change its admin state. An rApp dispatches only for the instance
+  whose `oauthClientId` is its invoker id (403 `INSTANCE_IDENTITY_MISMATCH`), recorded as `dispatchedBy`. Resolve and
+  reject need the console's signed-in user (`X-R1-Acting-User`; 403 `ROLE_NOT_PERMITTED` for an rApp or a module on its own
+  account), recorded as `resolvedBy` / `rejectedBy`. The GUI BFF pins `rmioId` for GUI-created intents and restricts
+  registration, report publication and deletion to admin (`../gui-bff/app/rbac.py`). Reads are open to any caller.
 - **Idempotency.** `DELETE` of an unknown intent, RMIH or formula is a 204 no-op. Admin-state change to the current
   state creates no new report.
 
@@ -166,7 +172,8 @@ The mode is snapshotted onto the dispatch at request time and never rewritten by
 | `intent_mgmt_purpose` | One of `FEASIBILITYCHECK`, `FEASIBILITYCHECK_WITH_RECOMMENDATIONS`, `FULFILMENT_WITHOUT_NEGOTIATION` (default), `EXPLORATION`, `FULFILMENT_WITH_NEGOTIATION` |
 | `intent_admin_state` | `ACTIVATED` (default) / `DEACTIVATED` |
 | `intent_priority` | 1 to 100 |
-| `rmio_id` | Creator identity; gates admin-state changes |
+| `rmio_id` | Creator identity; the console's `requesterId` must match it for an admin-state change |
+| `owner_invoker_id` | The invoker that created it (an rApp, a module, the dispatching rApp); an rApp acts only on its own. Null before revision `0057` (`rmio_id` stands in) |
 | `rmih_id` | FK `intent_handling_function.rmih_id`, `ON DELETE CASCADE`, not null |
 | `intent_report_reference` | Bare UUID of the current `intent_report` (no FK: avoids a cycle) |
 | `intent_utility_formula_id` | FK `intent_utility_formula`, `ON DELETE SET NULL` |
@@ -197,7 +204,8 @@ The mode is snapshotted onto the dispatch at request time and never rewritten by
 | `rmih_id` | FK `intent_handling_function`, `ON DELETE CASCADE` |
 | `region_scope` | Applied scope; null for SHADOW and for an unresolved ASSIST |
 | `status` | `AWAITING_SCOPE` / `DISPATCHED` / `SHADOWED` / `REJECTED` |
-| `rejected_by`, `rejection_reason` | Set on reject |
+| `rejected_by`, `rejection_reason` | Set on reject (`rejected_by` is the console user) |
+| `dispatched_by`, `resolved_by` | Who asked for the dispatch, and the console user who resolved it (revision `0057`) |
 | `intent_id` | FK `intent`, `ON DELETE SET NULL` |
 | `notification_destination` | Operator callback, optional |
 
@@ -232,20 +240,20 @@ Intents
 | POST | `/intents` | Create (201 `{intentId, intentReportReference}`). Body is the strict Intent plus `rmihId`, `rmioId`, `intentHandlingScope`. | 404 `INTENT_HANDLING_FUNCTION_NOT_FOUND`; 422 `RMIH_CAPABILITY_MISMATCH`; 404 `NRM_OBJECT_NOT_FOUND` (unknown utility formula); 422 schema |
 | GET | `/intents` | List (`admin_state`, paging; `fulfilled` true/false, an intent with no fulfilment report matching neither; `in_conflict` true/false) | |
 | GET | `/intents/{intent_id}` | Read (`attributes` carries the full TS 28.312 Intent; every intent view also carries `fulfilmentPercent`, `fulfilled` (null until a fulfilment report) and `inConflict`) | 404 `INTENT_NOT_FOUND` |
-| PATCH | `/intents/{intent_id}/admin-state` | `{newState, requesterId}` | 404; 409 `SERVICE_NAME_CONFLICT` when `requesterId` is not the creator |
-| DELETE | `/intents/{intent_id}` | Retract (204, idempotent; reports cascade) | |
-| POST | `/intents/{intent_id}/negotiation-feedback` | Pick a `possibleIntentOutcomeId` from the latest negotiation report | 404 `INTENT_NOT_FOUND`; 404 `NRM_OBJECT_NOT_FOUND` (no negotiation report); 422 `SCHEMA_VALIDATION_FAILED` (unknown outcome id) |
+| PATCH | `/intents/{intent_id}/admin-state` | `{newState, requesterId}` (an rApp's `requesterId` is not read) | 404; 403 `INTENT_ACCESS_DENIED` for an rApp that does not own it, or a `requesterId` that is not the creator |
+| DELETE | `/intents/{intent_id}` | Retract (204, idempotent); its reports are deleted with it | 403 `INTENT_ACCESS_DENIED` for an rApp that does not own it |
+| POST | `/intents/{intent_id}/negotiation-feedback` | Pick a `possibleIntentOutcomeId` from the latest negotiation report | 404 `INTENT_NOT_FOUND`; 403 `INTENT_ACCESS_DENIED`; 404 `NRM_OBJECT_NOT_FOUND` (no negotiation report); 422 `SCHEMA_VALIDATION_FAILED` (unknown outcome id) |
 
 Reports and handling functions
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
-| POST | `/intent-reports` | Publish one or more report kinds for `intentReference` (201); becomes the intent's current report and is delivered | 404 `INTENT_NOT_FOUND`; 422 `SCHEMA_VALIDATION_FAILED` when no report is present |
+| POST | `/intent-reports` | Publish one or more report kinds for `intentReference` (201); becomes the intent's current report and is delivered | 403 `ROLE_NOT_PERMITTED` for an rApp; 404 `INTENT_NOT_FOUND`; 422 `SCHEMA_VALIDATION_FAILED` when no report is present |
 | GET | `/intent-reports` | List, newest first (`intent_id`, paging) | |
 | GET | `/intent-reports/{report_id}` | Read | 404 `NRM_OBJECT_NOT_FOUND` |
-| POST | `/intent-handling-functions` | Register an RMIH (201) | 409 `SERVICE_NAME_CONFLICT` for an rApp-style (UUID) `rmihId` |
+| POST | `/intent-handling-functions` | Register an RMIH, or update a registered one in place (201) | 403 `ROLE_NOT_PERMITTED` for an rApp; 409 `SERVICE_NAME_CONFLICT` for an rApp-style (UUID) `rmihId` |
 | GET | `/intent-handling-functions` | List (discovery) | |
-| DELETE | `/intent-handling-functions/{rmih_id}` | Deregister (204); ends every intent addressed to it | |
+| DELETE | `/intent-handling-functions/{rmih_id}` | Deregister (204, idempotent); its autonomy dispatches go with it | 403 `ROLE_NOT_PERMITTED` for an rApp; 409 `INTENT_HANDLING_FUNCTION_IN_USE` while intents are addressed to it |
 | POST / GET | `/intent-utility-formulas` | Create / list `IntentUtilityFormula` | |
 | GET / DELETE | `/intent-utility-formulas/{formula_id}` | Read / delete (204, idempotent) | 404 `NRM_OBJECT_NOT_FOUND` on GET |
 
@@ -253,14 +261,14 @@ Autonomy dispatches
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
-| POST | `/autonomy-dispatches` | Request a dispatch `{instanceId, modelId?, expectations[], priority, rmihId, intentMgmtPurpose, intentHandlingScope?, notificationDestination?, userLabel?}` (201) | 404 `RAPP_INSTANCE_NOT_FOUND`; 404 `INTENT_HANDLING_FUNCTION_NOT_FOUND`; 422 `RMIH_CAPABILITY_MISMATCH`; 422 expectation schema; 422 `SCHEMA_VALIDATION_FAILED` when the region scope excludes the expectation |
+| POST | `/autonomy-dispatches` | Request a dispatch `{instanceId, modelId?, expectations[], priority, rmihId, intentMgmtPurpose, intentHandlingScope?, notificationDestination?, userLabel?}` (201) | 404 `RAPP_INSTANCE_NOT_FOUND`; 403 `INSTANCE_IDENTITY_MISMATCH` (an rApp, not the instance's `oauthClientId`); 404 `INTENT_HANDLING_FUNCTION_NOT_FOUND`; 422 `RMIH_CAPABILITY_MISMATCH`; 422 expectation schema; 422 `SCHEMA_VALIDATION_FAILED` when the region scope excludes the expectation |
 | GET | `/autonomy-dispatches` | List (`instance_id`, `status`, newest first) | |
 | GET | `/autonomy-dispatches/{dispatch_id}` | Read | 404 `AUTONOMY_DISPATCH_NOT_FOUND` |
-| POST | `/autonomy-dispatches/{dispatch_id}/resolve` | `{regionScope}` for an ASSIST dispatch | 404; 409 `AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE` |
-| POST | `/autonomy-dispatches/{dispatch_id}/reject` | `{rejectedBy, reason?}` | 404; 409 `AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE` |
+| POST | `/autonomy-dispatches/{dispatch_id}/resolve` | `{regionScope}` for an ASSIST dispatch | 403 `ROLE_NOT_PERMITTED` (an rApp, or no console user); 404; 409 `AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE` |
+| POST | `/autonomy-dispatches/{dispatch_id}/reject` | `{rejectedBy, reason?}` (`rejectedBy` is replaced by the console user) | 403 `ROLE_NOT_PERMITTED`; 404; 409 `AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE` |
 | GET | `/health` | Liveness probe | |
 
-An intent created from a dispatch carries `rmioId = instanceId`, a report control with a 60 s observation period
+An intent created from a dispatch carries `rmioId = instanceId`, is owned by the rApp that dispatched, and has a report control with a 60 s observation period
 and, when the dispatch has one, `reportRecipientAddress = notificationDestination`.
 
 ### 2.5 Interactions
@@ -296,7 +304,11 @@ No Intent-Service-specific variables.
 | `RMIH_CAPABILITY_MISMATCH` | 422 | Object type, scope, negotiation functionality or fulfilment target not covered by the RMIH |
 | `NRM_OBJECT_NOT_FOUND` | 404 | Unknown utility formula or report; no negotiation report to answer |
 | `SCHEMA_VALIDATION_FAILED` | 422 | Report with no content; unknown outcome id; expectation outside the dispatch region scope |
-| `SERVICE_NAME_CONFLICT` | 409 | Used for two unrelated refusals: an external (UUID) `rmihId` on RMIH registration, and an admin-state change by a non-creator |
+| `SERVICE_NAME_CONFLICT` | 409 | An external (UUID) `rmihId` on RMIH registration |
+| `ROLE_NOT_PERMITTED` | 403 | An rApp registering, deregistering an RMIH or publishing a report; resolve / reject by an rApp or without a console user |
+| `INTENT_ACCESS_DENIED` | 403 | An rApp acting on an intent it does not own; a `requesterId` that is not the creator |
+| `INSTANCE_IDENTITY_MISMATCH` | 403 | An rApp dispatching for an instance whose `oauthClientId` is not its invoker id |
+| `INTENT_HANDLING_FUNCTION_IN_USE` | 409 | Deregistering an RMIH that intents are still addressed to |
 | `RAPP_INSTANCE_NOT_FOUND` | 404 | Autonomy dispatch for an unknown instance |
 | `AUTONOMY_DISPATCH_NOT_FOUND` | 404 | Unknown dispatch id |
 | `AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE` | 409 | Resolve or reject outside `AWAITING_SCOPE` |
@@ -308,10 +320,9 @@ No Intent-Service-specific variables.
 - `ts28312_families.py` is generated from the spec text and carries its spelling as-is, including conditions such
   as `IS_less_THAN` (5GC `5GSession`) and `S_EQUAL_TO` (radio-service `AssuranceDuration`) that cannot equal any
   value of the `Condition` enum, so those two specialised contexts can never validate.
-- Registering an RMIH id that already exists has no explicit check (the primary key rejects it at commit).
-- `SERVICE_NAME_CONFLICT` is reused for authorisation-style refusals (see 2.7).
+- A module may publish a report for any intent, not only those addressed to it: module invoker ids are not tied to an `rmihId`.
 - `rApp Management` is the only cross-module read; the new-intent push is one attempt with no retry.
-- The ON DELETE CASCADE behaviour is verified against PostgreSQL, not in the unit suite.
+- The ON DELETE CASCADE of a deregistered RMIH's autonomy dispatches is verified against PostgreSQL, not in the unit suite.
 
 ## 3. Unit tests
 
@@ -328,6 +339,7 @@ cd smo/intent-service && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | File | Covers | Tests |
 |---|---|---|
 | `tests/test_main.py` | Create/query/delete intents, admin-state (creator only, SUSPENDED report), RMIH registration (external-caller rejection, capability validation, list, deregister), scope and capability matching, dispatch to the named RMIH (and unreachable callback), strict spec shapes and family constraints, feasibility (reject vs report), purpose/negotiation gating, initial report and conflicts, report-control delivery, all report kinds, negotiation feedback, utility formula IOC, autonomy dispatch (AUTONOMOUS, ASSIST resolve/reject, SHADOW, up-front RMIH validation, operator notification and its SSRF scheme guard, unknown instance/RMIH, list/get, region-scope folding and bounding), `/health` | 56 |
+| `tests/test_intent_identity.py` | Call flow 09 (DOC-CF-1.8): an rApp's intent is its own (rmioId, owner), another rApp's admin-state / delete / feedback is refused, the console deletes with the reports, the console's requesterId check; an rApp registers no handler and publishes no report, re-registration in place keeps the intents; dispatch only for the caller's own instance (no fallback), `dispatchedBy` and the intent's owner; ASSIST decided only by a console user, recorded as `resolvedBy` / `rejectedBy` | 13 |
 | `tests/test_business_metrics.py` | `smo_intents` counts intents by admin state, both states present at zero | 1 |
 | `tests/test_fulfilment_and_conflict.py` | `GUI-9.8`: a new intent is 0 % and not in conflict, the percent follows the newest fulfilment report, a handler's conflict report sets `inConflict` and an empty one clears it, a conflict found at creation shows, deactivation resets the percent, the `fulfilled` / `in_conflict` list filters both ways, and the percent rule on six report shapes | 12 |
 

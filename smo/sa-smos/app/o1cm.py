@@ -118,15 +118,15 @@ def _cm_targets_from_registration() -> dict[str, list[str]]:
 @router.post("/o1-cm-handler/registration", status_code=201)
 def register_o1_cm_handler(body: RegistrationBody = RegistrationBody()):
     """Registers SA SMOS with Intent Service as the O1-CM intent handling
-    function. Idempotent: an existing registration is replaced."""
+    function. Idempotent: an existing registration is updated in place,
+    and the intents addressed to it stay."""
     # Maintainer notes (not published). 201 with {rmihId, cmTargets, notificationDestination}; 422 SCHEMA_VALIDATION_FAILED for a target name without a '.' or when Intent Service does not answer 201.
-    # The existing registration is deleted first and the new one posted second, not atomically: when the post is refused the old registration is already gone. `notificationDestination` is HANDLER_URL, where Intent Service pushes
-    # new intents.
+    # One POST: Intent Service updates an existing registration in place (call flow 09c), so re-registering keeps every intent addressed to the handler (before
+    # DOC-CF-1.8 it deleted the handler first, and the database cascade deleted every one of them). `notificationDestination` is HANDLER_URL, where Intent Service pushes new intents.
     targets = body.cmTargets or DEFAULT_CM_TARGETS
     for name in targets:
         if "." not in name:
             raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"CM target {name!r} must be <IOC>.<attribute>")
-    _r1.delete(f"/intent-service/intent-handling-functions/{RMIH_ID}")
     resp = _r1.post("/intent-service/intent-handling-functions", json={
         "rmihId": RMIH_ID, "smeServiceId": "sa-smos-o1-cm-intent-handler", "notificationDestination": HANDLER_URL,
         "intentHandlingScope": body.intentHandlingScope,
@@ -144,8 +144,13 @@ def register_o1_cm_handler(body: RegistrationBody = RegistrationBody()):
 
 @router.delete("/o1-cm-handler/registration", status_code=204)
 def deregister_o1_cm_handler():
-    # Maintainer notes (not published). Deletes the RMIH at Intent Service and answers 204 whatever Intent Service answers.
-    _r1.delete(f"/intent-service/intent-handling-functions/{RMIH_ID}")
+    # Maintainer notes (not published). Deletes the RMIH at Intent Service. Its refusal is passed on (call flow 09c): 409 INTENT_HANDLING_FUNCTION_IN_USE while
+    # intents are addressed to the handler (they are deleted first); any other answer but 204 or 404 is 502 UPSTREAM_FAILED.
+    resp = _r1.delete(f"/intent-service/intent-handling-functions/{RMIH_ID}")
+    if resp.status_code == 409:
+        raise framework_error(FrameworkError.INTENT_HANDLING_FUNCTION_IN_USE, detail=resp.json().get("detail", {}).get("detail", "intents are addressed to the handler"))
+    if resp.status_code not in (204, 404):
+        raise framework_error(FrameworkError.UPSTREAM_FAILED, detail=f"Intent Service answered {resp.status_code} to the deregistration")
 
 
 def _cells(expectation: dict) -> list[str]:

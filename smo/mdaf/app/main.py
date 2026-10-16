@@ -97,8 +97,7 @@ def check_publisher(request: Request, analytics_type: str) -> str | None:
             raise framework_error(FrameworkError.PRODUCER_NOT_REGISTERED,
                                   detail=f"{caller} is not a registered producer of {analytics_type} (POST /ran-analytics/producers)")
         return caller
-    person = acting_user(request)
-    return f"smo-gui:{person}" if person else caller
+    return acting_user(request) or caller    # the console's header is already `smo-gui:<user>`
 
 
 @app.post("/reports", status_code=201)

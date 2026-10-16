@@ -13,7 +13,7 @@ from test_mda import PM, _pm_report
 
 RAPP = {"X-R1-Role": "rapp", "X-R1-Invoker-Id": "kpi-rapp"}
 OTHER = {"X-R1-Role": "rapp", "X-R1-Invoker-Id": "other-rapp"}
-CONSOLE = {"X-R1-Role": "internal", "X-R1-Invoker-Id": "gui-bff", "X-R1-Acting-User": "alice"}
+CONSOLE = {"X-R1-Role": "internal", "X-R1-Invoker-Id": "gui-bff", "X-R1-Acting-User": "smo-gui:alice"}
 
 
 class Answer:

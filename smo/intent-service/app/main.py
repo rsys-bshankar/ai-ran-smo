@@ -13,9 +13,10 @@ Where it sits: rApps (through `sdk.intent`), the GUI BFF and SA SMOS call the ro
 (`smo_shared.outbox`), never a direct HTTP call from a route. The spec models live in `ts28312.py`; this file does not redefine them.
 
 Owns: the capability, feasibility and conflict rules that decide whether an intent is accepted, the initial report, report delivery, the admin-state
-rule (only the creating RMIO may change it), the RMIH registration rule (an rApp identity may not register) and the autonomy-dispatch state machine
-(`AWAITING_SCOPE`, `DISPATCHED`, `SHADOWED`, `REJECTED`). Does not own: which caller may call which route (R1 Termination checks the token; the GUI BFF pins
-`rmioId` and restricts registration and report publication) or the autonomy mode and region scope of an instance (rApp Management).
+rule (only the creating RMIO may change it), the identity rules of call flow 09 (DOC-CF-1.8: an rApp manages only the intents it owns, dispatches only for
+its own instance, and registers no handler, publishes no report and decides no ASSIST dispatch) and the autonomy-dispatch state machine (`AWAITING_SCOPE`,
+`DISPATCHED`, `SHADOWED`, `REJECTED`). Does not own: which caller may call which route (R1 Termination checks the token and stamps the caller's role; the GUI BFF
+pins `rmioId` and restricts registration and report publication by the console user's role) or the autonomy mode and region scope of an instance (rApp Management).
 
 Before editing: (1) the docstring of a route function or a request model is published as OpenAPI text, so changing one makes
 `tests_integration/test_openapi_specs.py` fail until `scripts/generate_openapi_specs.py` is rerun; the maintainer notes for routes are `#` comments under
@@ -31,9 +32,9 @@ from typing import Any
 
 # Unused here on purpose: the unit tests patch `app.main.httpx.post` and the integration tests patch `loaded_apps[<module>].httpx` (see `ruff.toml`, F401).
 import httpx
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from smo_shared.logconfig import install_logging
@@ -42,6 +43,8 @@ from smo_shared.health import database_check, install_health, sme_token_check
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.identity import is_framework_internal_identity
+from smo_shared.invoker import acting_user, invoker_id
+from smo_shared.roles import ROLE_INTERNAL, ROLE_RAPP, role_of
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
@@ -102,7 +105,8 @@ class CreateIntentRequest(BaseModel):
     intentHandlingScope: ts28312.IntentHandlingScope | None = None
 
 
-# Body of PATCH /intents/{id}/admin-state. `requesterId` must equal the intent's `rmioId`; an unknown `newState` is a 422.
+# Body of PATCH /intents/{id}/admin-state. From the console or a module `requesterId` must equal the intent's `rmioId`; an rApp is checked as the intent's owner
+# instead and its `requesterId` is not read. An unknown `newState` is a 422.
 class AdminStateRequest(BaseModel):
     newState: ts28312.IntentAdminState
     requesterId: str
@@ -182,8 +186,47 @@ class ResolveAutonomyDispatchRequest(BaseModel):
     regionScope: dict
 
 
+# ---------------------------------------------------------------- DOC-CF-1.8 flow 09: who may do what
+
+def _is_rapp(request: Request) -> bool:
+    """Whether R1 Termination stamped the caller as an rApp (`X-R1-Role: rapp`). A call without the header (a test, an in-process call) is not one."""
+    return role_of(request) == ROLE_RAPP
+
+
+def _refuse_rapp(request: Request, what: str) -> None:
+    """Raises 403 `ROLE_NOT_PERMITTED` when the caller is an rApp. Handlers and the reports they publish are the SMO's own (SO SMOS, SA SMOS) or the console's."""
+    if _is_rapp(request):
+        raise framework_error(FrameworkError.ROLE_NOT_PERMITTED, detail=f"an rApp may not {what}")
+
+
+def _owner(intent: Intent) -> str:
+    """Returns the invoker that owns `intent`: the one recorded at creation, else (an intent from before revision 0057) its `rmio_id`."""
+    return intent.owner_invoker_id or intent.rmio_id
+
+
+def _check_intent_owner(request: Request, intent: Intent) -> None:
+    """Raises 403 `INTENT_ACCESS_DENIED` when an rApp acts on an intent it does not own; the console and modules pass (they act for others)."""
+    if _is_rapp(request) and invoker_id(request) != _owner(intent):
+        raise framework_error(FrameworkError.INTENT_ACCESS_DENIED, detail="an rApp may act only on the intents it created")
+
+
+def _operator(request: Request, fallback: str | None) -> str | None:
+    """Returns who decides an ASSIST dispatch: the console user (`X-R1-Acting-User`, `smo-gui:<user>`) for an internal caller, `fallback` for a call with
+    no role (a test or an in-process call). Raises 403 `ROLE_NOT_PERMITTED` for an rApp, and for an internal caller that names no signed-in person: the
+    decision is an operator's, never an rApp's or a module's on its own account.
+    """
+    if _is_rapp(request):
+        raise framework_error(FrameworkError.ROLE_NOT_PERMITTED, detail="an ASSIST dispatch is decided by an operator, not an rApp")
+    if role_of(request) == ROLE_INTERNAL:
+        person = acting_user(request)
+        if person is None:
+            raise framework_error(FrameworkError.ROLE_NOT_PERMITTED, detail="an ASSIST dispatch is decided by a signed-in operator (X-R1-Acting-User)")
+        return person
+    return fallback
+
+
 @app.post("/intents", status_code=201)
-def create_intent(body: CreateIntentRequest, db: Session = Depends(get_session)):
+def create_intent(body: CreateIntentRequest, request: Request, db: Session = Depends(get_session)):
     """CreateIntent — the caller addresses a specific, already-registered
     RMIH by `rmihId` (consumer-side selection, TS 28.312 containment).
     404 if no such function; 422 RMIH_CAPABILITY_MISMATCH if the function
@@ -192,10 +235,13 @@ def create_intent(body: CreateIntentRequest, db: Session = Depends(get_session))
     `_create_intent_row`). Dispatch to the RMIH is best-effort.
     """
     # Route notes (the docstring above is published): 201 `{intentId, intentReportReference}`. All checks are in `_create_intent_row`: 404
-    # `INTENT_HANDLING_FUNCTION_NOT_FOUND`, 422 `RMIH_CAPABILITY_MISMATCH`, 404 `NRM_OBJECT_NOT_FOUND` (unknown utility formula). `rmioId` is taken from the body
-    # as given (empty by default); the service does not check it against the caller, the GUI BFF pins it for GUI-created intents. A callback that is unreachable
-    # never fails the request: the RMIH push is an outbox row.
-    intent = _create_intent_row(db, body)
+    # `INTENT_HANDLING_FUNCTION_NOT_FOUND`, 422 `RMIH_CAPABILITY_MISMATCH`, 404 `NRM_OBJECT_NOT_FOUND` (unknown utility formula). An rApp's `rmioId` is its own
+    # invoker id whatever it sent (call flow 09a); the console's is pinned by the GUI BFF, a module's is taken as given. The caller's invoker is recorded as the
+    # intent's owner. A callback that is unreachable never fails the request: the RMIH push is an outbox row.
+    caller = invoker_id(request)
+    if _is_rapp(request):
+        body = body.model_copy(update={"rmioId": caller or ""})
+    intent = _create_intent_row(db, body, owner=caller)
     db.commit()  # the intent, its first report and their notifications commit together (PR-MSG-1.9)
     return {"intentId": str(intent.intent_id), "intentReportReference": _s(intent.intent_report_reference)}
 
@@ -290,8 +336,9 @@ def _received_fulfilment(expectations: list[dict], state: str = "RECEIVED") -> d
         for e in expectations]}
 
 
-def _create_intent_row(db: Session, body: CreateIntentRequest) -> Intent:
+def _create_intent_row(db: Session, body: CreateIntentRequest, owner: str | None = None) -> Intent:
     """Validates a `CreateIntentRequest` and adds the intent, its initial report and the notifications to `db`'s transaction; returns the intent. Does not commit.
+    `owner` is the invoker recorded as the intent's owner (`owner_invoker_id`; None leaves `rmio_id` standing in).
 
     Shared by `POST /intents` and the autonomy paths (AUTONOMOUS, and ASSIST at resolve), so an intent made from a dispatch is an intent in every respect.
     Raises, in this order: 404 `INTENT_HANDLING_FUNCTION_NOT_FOUND` (no such `rmihId`); 422 `RMIH_CAPABILITY_MISMATCH` when the RMIH lacks a capability for
@@ -323,7 +370,7 @@ def _create_intent_row(db: Session, body: CreateIntentRequest) -> Intent:
     conflicts = _conflicts(db, expectations)
 
     intent = Intent(user_label=body.userLabel, intent_expectations=expectations, intent_priority=body.intentPriority,
-                    rmio_id=body.rmioId, intent_mgmt_purpose=body.intentMgmtPurpose, rmih_id=body.rmihId,
+                    rmio_id=body.rmioId, owner_invoker_id=owner, intent_mgmt_purpose=body.intentMgmtPurpose, rmih_id=body.rmihId,
                     intent_admin_state=body.intentAdminState, intent_preemption_capability=body.intentPreemptionCapability,
                     context_selectivity=body.contextSelectivity, expectation_selectivity=body.expectationSelectivity,
                     consumer_satisfaction_index_threshold=body.consumerSatisfactionIndexThreshold,
@@ -478,19 +525,21 @@ def query_intents(admin_state: str | None = None, fulfilled: bool | None = None,
 
 
 @app.patch("/intents/{intent_id}/admin-state")
-def update_intent_admin_state(intent_id: uuid.UUID, body: AdminStateRequest, db: Session = Depends(get_session)):
+def update_intent_admin_state(intent_id: uuid.UUID, body: AdminStateRequest, request: Request, db: Session = Depends(get_session)):
     """UpdateIntentAdminState — RMIO-only. Wave 6: a DEACTIVATED intent's
     report moves to NOT_FULFILLED / SUSPENDED (TS 28.312 NotFulfilledState)
     and is delivered per intentReportControl; reactivating it reports
     RECEIVED again until the handler reports otherwise."""
-    # Route notes (the docstring above is published): 404 `INTENT_NOT_FOUND`; 409 `SERVICE_NAME_CONFLICT` when `requesterId` is not the intent's `rmioId` (the
-    # code is reused for this refusal). A change to the state it already has does nothing and writes no report. Otherwise: state changed, a new fulfilment report
-    # (SUSPENDED when deactivated, RECEIVED when activated) becomes the current report and is delivered, one commit. Returns the intent view.
+    # Route notes (the docstring above is published): 404 `INTENT_NOT_FOUND`; 403 `INTENT_ACCESS_DENIED` when an rApp does not own the intent (its `requesterId`
+    # is not read), or when the console or a module names a `requesterId` that is not the intent's `rmioId` (call flow 09b). A change to the state it already has
+    # does nothing and writes no report. Otherwise: state changed, a new fulfilment report (SUSPENDED when deactivated, RECEIVED when activated) becomes the
+    # current report and is delivered, one commit. Returns the intent view.
     intent = db.get(Intent, intent_id)
     if intent is None:
         raise framework_error(FrameworkError.INTENT_NOT_FOUND, detail="no such intent")
-    if intent.rmio_id != body.requesterId:
-        raise framework_error(FrameworkError.SERVICE_NAME_CONFLICT, detail="only the intent's creator (RMIO) may change its admin state")
+    _check_intent_owner(request, intent)
+    if not _is_rapp(request) and intent.rmio_id != body.requesterId:
+        raise framework_error(FrameworkError.INTENT_ACCESS_DENIED, detail="only the intent's creator (RMIO) may change its admin state")
     if intent.intent_admin_state != body.newState:
         intent.intent_admin_state = body.newState
         state = "SUSPENDED" if body.newState == "DEACTIVATED" else "RECEIVED"
@@ -506,29 +555,35 @@ def update_intent_admin_state(intent_id: uuid.UUID, body: AdminStateRequest, db:
 
 
 @app.delete("/intents/{intent_id}", status_code=204)
-def delete_intent(intent_id: uuid.UUID, db: Session = Depends(get_session)):
+def delete_intent(intent_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
     """HISTORY.md §7 item 5: an RMIO retracts an Intent it created.
     Idempotent."""
-    # Route notes: idempotent, 204 for an unknown id. The intent's reports are removed by the database foreign key (ON DELETE CASCADE), not by the ORM, so on SQLite
-    # they stay behind. Nothing is sent to the RMIH.
+    # Route notes: idempotent, 204 for an unknown id; 403 `INTENT_ACCESS_DENIED` when an rApp does not own the intent (call flow 09b). The intent's reports are
+    # deleted with it, in the same transaction (explicitly, so SQLite matches PostgreSQL's ON DELETE CASCADE). Nothing is sent to the RMIH.
     intent = db.get(Intent, intent_id)
     if intent is not None:
+        _check_intent_owner(request, intent)
+        intent.intent_report_reference = None
+        db.flush()
+        for report in db.scalars(select(IntentReport).where(IntentReport.intent_id == intent_id)):
+            db.delete(report)
         db.delete(intent)
         db.commit()
 
 
 @app.post("/intents/{intent_id}/negotiation-feedback")
-def submit_negotiation_feedback(intent_id: uuid.UUID, body: NegotiationFeedbackRequest, db: Session = Depends(get_session)):
+def submit_negotiation_feedback(intent_id: uuid.UUID, body: NegotiationFeedbackRequest, request: Request, db: Session = Depends(get_session)):
     """TS 28.312 IntentFulfilmentNegotiationFeedback: the consumer picks one
     of the possibleIntentOutcomeList entries of the intent's latest
     negotiation report."""
     # Route notes (the docstring above is published): 404 `INTENT_NOT_FOUND`; 404 `NRM_OBJECT_NOT_FOUND` when the intent has no negotiation report; 422
     # `SCHEMA_VALIDATION_FAILED` when `referredIntentOutcomeId` is not one of that report's outcomes. The feedback is written into the newest negotiation report
     # in place (a new JSON document is assigned so the change is saved): no new report row, no change to `intent_report_reference`, no notification to the RMIH.
-    # Calling it again overwrites the feedback. Returns the report view.
+    # Calling it again overwrites the feedback. 403 `INTENT_ACCESS_DENIED` when an rApp does not own the intent (call flow 09b). Returns the report view.
     intent = db.get(Intent, intent_id)
     if intent is None:
         raise framework_error(FrameworkError.INTENT_NOT_FOUND, detail="no such intent")
+    _check_intent_owner(request, intent)
     report = db.scalars(select(IntentReport).where(IntentReport.intent_id == intent_id,
                                                    IntentReport.intent_fulfilment_negotiation_report.is_not(None))
                         .order_by(IntentReport.last_updated_time.desc())).first()
@@ -547,13 +602,14 @@ def submit_negotiation_feedback(intent_id: uuid.UUID, body: NegotiationFeedbackR
 
 
 @app.post("/intent-reports", status_code=201)
-def publish_intent_report(body: IntentReportRequest, db: Session = Depends(get_session)):
+def publish_intent_report(body: IntentReportRequest, request: Request, db: Session = Depends(get_session)):
     """PublishIntentReport — any of the spec's report kinds, at least one.
     The new report becomes the intent's intentReportReference and is
     delivered per its intentReportControl."""
-    # Route notes (the docstring above is published): 404 `INTENT_NOT_FOUND`; 422 `SCHEMA_VALIDATION_FAILED` when no report kind is present. Does not check who the
-    # caller is, so any caller that can reach R1 and the route may publish (the GUI BFF restricts it to admin). The new report row becomes
-    # `intent_report_reference`, is delivered per report control, one commit. Answers 201 with `reportId` and the report view (which repeats it).
+    # Route notes (the docstring above is published): 403 `ROLE_NOT_PERMITTED` for an rApp (a report is the handler's, and handlers are SMO modules, call flow
+    # 09c); 404 `INTENT_NOT_FOUND`; 422 `SCHEMA_VALIDATION_FAILED` when no report kind is present. A module or the console (admin, by the GUI BFF) may publish for
+    # any intent. The new report row becomes `intent_report_reference`, is delivered per report control, one commit. Answers 201 with `reportId` and the report view.
+    _refuse_rapp(request, "publish an intent report")
     intent = db.get(Intent, body.intentReference)
     if intent is None:
         raise framework_error(FrameworkError.INTENT_NOT_FOUND, detail="no such intent")
@@ -571,36 +627,45 @@ def publish_intent_report(body: IntentReportRequest, db: Session = Depends(get_s
 
 
 @app.post("/intent-handling-functions", status_code=201)
-def register_intent_handling_function(body: RegisterRmihRequest, db: Session = Depends(get_session)):
-    """RegisterIntentHandlingFunction — rejected if caller is external
-    (D-SEC-POLICY-1, unchanged). identity.py's helper distinguishes an
-    rApp caller (always rejected here) from a framework-internal SMO
-    module (SO SMOS / SA SMOS, the only legitimate callers).
+def register_intent_handling_function(body: RegisterRmihRequest, request: Request, db: Session = Depends(get_session)):
+    """RegisterIntentHandlingFunction — only the SMO registers handlers
+    (D-SEC-POLICY-1): an rApp caller is refused, and so is an rmihId that
+    is an rApp identity. Registering an rmihId again updates it in place,
+    keeping the intents addressed to it.
     """
-    # Route notes (the docstring above is published): 409 `SERVICE_NAME_CONFLICT` for an `rmihId` that parses as a UUID (an rApp identity) and, with a different
-    # detail, for an `rmihId` that is already registered; both use that one code. The destination is not checked here; the SSRF guard runs when a push is
-    # enqueued. 201 with the RMIH view.
+    # Route notes (the docstring above is published): 403 `ROLE_NOT_PERMITTED` for an rApp caller (call flow 09c); 409 `SERVICE_NAME_CONFLICT` for an `rmihId`
+    # that parses as a UUID (an rApp identity). An `rmihId` already registered is replaced in place (capabilities, destination, scope), so its intents stay
+    # (before DOC-CF-1.8 it was a 409, and SA SMOS deleted the handler, and with it every intent, to register again). The destination is not checked here; the
+    # SSRF guard runs when a push is enqueued. 201 with the RMIH view.
+    _refuse_rapp(request, "register an intent handling function")
     if not is_framework_internal_identity(body.rmihId):
         raise framework_error(FrameworkError.SERVICE_NAME_CONFLICT, detail="external callers may never hold an rmihId (D-SEC-POLICY-1)")
-    fn = IntentHandlingFunction(rmih_id=body.rmihId, sme_service_id=body.smeServiceId,
-                                intent_handling_capability_list=ts28312.dump(body.intentHandlingCapabilityList),
-                                supported_negotiation_functionalities=body.supportedNegotiationFunctionalities,
-                                supported_utility_list=ts28312.dump(body.supportedUtilityList),
-                                notification_destination=body.notificationDestination, intent_handling_scope=body.intentHandlingScope)
-    if db.get(IntentHandlingFunction, body.rmihId) is not None:
-        raise framework_error(FrameworkError.SERVICE_NAME_CONFLICT, detail=f"rmihId {body.rmihId} is registered")
+    fn = db.get(IntentHandlingFunction, body.rmihId) or IntentHandlingFunction(rmih_id=body.rmihId)
+    fn.sme_service_id = body.smeServiceId
+    fn.intent_handling_capability_list = ts28312.dump(body.intentHandlingCapabilityList)
+    fn.supported_negotiation_functionalities = body.supportedNegotiationFunctionalities
+    fn.supported_utility_list = ts28312.dump(body.supportedUtilityList)
+    fn.notification_destination = body.notificationDestination
+    fn.intent_handling_scope = body.intentHandlingScope
     db.add(fn)
     db.commit()
     return _rmih_view(fn)
 
 
 @app.delete("/intent-handling-functions/{rmih_id}", status_code=204)
-def deregister_intent_handling_function(rmih_id: str, db: Session = Depends(get_session)):
-    """NEW — symmetric with Register, closing v1.3's gap (Policy Mgmt LLD section 1)."""
-    # Route notes: idempotent, 204 for an unknown id. The foreign keys then remove every intent and every autonomy dispatch addressed to the function (ON DELETE
-    # CASCADE, PostgreSQL only), so a later `GET /intents/{id}` can answer 404.
+def deregister_intent_handling_function(rmih_id: str, request: Request, db: Session = Depends(get_session)):
+    """NEW — symmetric with Register, closing v1.3's gap (Policy Mgmt LLD section 1).
+    Refused while intents are still addressed to the function."""
+    # Route notes: 403 `ROLE_NOT_PERMITTED` for an rApp caller; idempotent, 204 for an unknown id; 409 `INTENT_HANDLING_FUNCTION_IN_USE` while any intent is
+    # addressed to it (call flow 09c: its owners delete them first, so no intent disappears under its owner). Its autonomy dispatches go with it (ON DELETE
+    # CASCADE, PostgreSQL only).
+    _refuse_rapp(request, "deregister an intent handling function")
     fn = db.get(IntentHandlingFunction, rmih_id)
     if fn is not None:
+        in_use = db.scalar(select(func.count()).select_from(Intent).where(Intent.rmih_id == rmih_id))
+        if in_use:
+            raise framework_error(FrameworkError.INTENT_HANDLING_FUNCTION_IN_USE,
+                                  detail=f"{in_use} intent(s) are addressed to {rmih_id}; delete them first")
         db.delete(fn)
         db.commit()
 
@@ -612,7 +677,7 @@ def _intent_view(i: Intent) -> dict:
     `fulfilmentPercent` and `fulfilled` (null until a fulfilment report exists) and `inConflict` (always a bool), from the columns `_apply_report` keeps.
     """
     return {"id": str(i.intent_id), "intentId": str(i.intent_id), "intentAdminState": i.intent_admin_state,
-            "intentPriority": i.intent_priority, "rmioId": i.rmio_id, "intentMgmtPurpose": i.intent_mgmt_purpose,
+            "intentPriority": i.intent_priority, "rmioId": i.rmio_id, "ownerInvokerId": _owner(i), "intentMgmtPurpose": i.intent_mgmt_purpose,
             "rmihId": i.rmih_id, "userLabel": i.user_label,
             "fulfilmentPercent": i.fulfilment_percent, "fulfilled": i.fulfilled, "inConflict": bool(i.in_conflict),
             "attributes": {k: v for k, v in {
@@ -732,7 +797,7 @@ def _notify_autonomy_operator(db: Session, notification_destination: str | None,
 
 
 @app.post("/autonomy-dispatches", status_code=201)
-def request_autonomy_dispatch(body: CreateAutonomyDispatchRequest, db: Session = Depends(get_session)):
+def request_autonomy_dispatch(body: CreateAutonomyDispatchRequest, request: Request, db: Session = Depends(get_session)):
     """RequestAutonomyDispatch — the real, spec-shaped hand-off call flow
     02/03 lacked: an rApp that just pulled an inference result via DME
     calls this instead of a raw CM write (call flow 03 Path A/B) or an
@@ -749,11 +814,17 @@ def request_autonomy_dispatch(body: CreateAutonomyDispatchRequest, db: Session =
     # `RMIH_CAPABILITY_MISMATCH` (object types and scope only) for every mode. (3) The dispatch row is stored with the instance's mode copied onto it. (4)
     # AUTONOMOUS: the instance's `regionScope` is applied, an intent is created with `_create_intent_row` (which can still refuse it: purpose, infeasible target, 422
     # on a region-scope conflict) and the dispatch becomes DISPATCHED; ASSIST: AWAITING_SCOPE; any other mode value behaves as SHADOW. (5) The operator is
-    # notified and everything commits once, so a refused intent leaves no dispatch behind.
+    # notified and everything commits once, so a refused intent leaves no dispatch behind. Call flow 09d: an rApp dispatches only for its own instance, the one
+    # whose `oauthClientId` is its invoker id (403 `INSTANCE_IDENTITY_MISMATCH`, no fallback to a shared identity); the console and modules for any. The caller is
+    # recorded as `dispatchedBy` and owns the intent the dispatch makes.
     inst_resp = _r1.get(f"/rapp-mgmt/instances/{body.instanceId}")
     if inst_resp.status_code != 200:
         raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_FOUND, detail="no such RAppInstance")
     instance = inst_resp.json()
+    caller = invoker_id(request)
+    if _is_rapp(request) and (not caller or instance.get("oauthClientId") != caller):
+        raise framework_error(FrameworkError.INSTANCE_IDENTITY_MISMATCH,
+                              detail="an rApp dispatches only for its own instance (call it with that instance's credentials)")
     autonomy_mode = instance["autonomyMode"]
 
     # Validated the same way for all three modes, up front — even SHADOW
@@ -771,13 +842,13 @@ def request_autonomy_dispatch(body: CreateAutonomyDispatchRequest, db: Session =
     dispatch = AutonomyDispatch(instance_id=body.instanceId, model_id=body.modelId, autonomy_mode=autonomy_mode,
                                  expectations=expectations, priority=body.priority, rmih_id=body.rmihId,
                                  intent_mgmt_purpose=body.intentMgmtPurpose, intent_handling_scope=body.intentHandlingScope,
-                                 notification_destination=body.notificationDestination, status="SHADOWED")
+                                 notification_destination=body.notificationDestination, status="SHADOWED", dispatched_by=caller)
     db.add(dispatch)
     db.flush()
     if autonomy_mode == "AUTONOMOUS":
         # Set before `_dispatch_intent_request`, which reads `dispatch.region_scope` to fold the scope into the expectations.
         dispatch.region_scope = instance.get("regionScope")
-        intent = _create_intent_row(db, _dispatch_intent_request(dispatch, body.userLabel))
+        intent = _create_intent_row(db, _dispatch_intent_request(dispatch, body.userLabel), owner=caller)
         dispatch.status = "DISPATCHED"
         dispatch.intent_id = intent.intent_id
     elif autonomy_mode == "ASSIST":
@@ -791,7 +862,7 @@ def request_autonomy_dispatch(body: CreateAutonomyDispatchRequest, db: Session =
 
 
 @app.post("/autonomy-dispatches/{dispatch_id}/resolve")
-def resolve_autonomy_dispatch(dispatch_id: uuid.UUID, body: ResolveAutonomyDispatchRequest, db: Session = Depends(get_session)):
+def resolve_autonomy_dispatch(dispatch_id: uuid.UUID, body: ResolveAutonomyDispatchRequest, request: Request, db: Session = Depends(get_session)):
     """ASSIST's own human-in-the-loop scoping step: the operator supplies
     (or narrows) which RAN nodes/cells/slices the dispatch applies to,
     only now creating the real Intent — distinct from AUTONOMOUS, whose
@@ -800,7 +871,9 @@ def resolve_autonomy_dispatch(dispatch_id: uuid.UUID, body: ResolveAutonomyDispa
     # Route notes (the docstring above is published): 404 `AUTONOMY_DISPATCH_NOT_FOUND`; 409 `AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE` for any status but
     # AWAITING_SCOPE. The operator's `regionScope` is stored as given and folded into the expectations (`_scoped`); the intent is created with the
     # dispatch's recorded values and a generated label. An intent that `_create_intent_row` or `_scoped` refuses (422) leaves the dispatch AWAITING_SCOPE, since nothing was
-    # committed. The operator destination is notified; one commit.
+    # committed. The operator destination is notified; one commit. Call flow 09e: 403 `ROLE_NOT_PERMITTED` for an rApp, and for an internal caller with no
+    # console user; the user is recorded as `resolvedBy`. The intent is owned by the rApp that dispatched, as an AUTONOMOUS one would be.
+    decider = _operator(request, None)
     dispatch = db.get(AutonomyDispatch, dispatch_id)
     if dispatch is None:
         raise framework_error(FrameworkError.AUTONOMY_DISPATCH_NOT_FOUND, detail="no such autonomy dispatch")
@@ -809,15 +882,16 @@ def resolve_autonomy_dispatch(dispatch_id: uuid.UUID, body: ResolveAutonomyDispa
                                detail=f"cannot resolve a dispatch in status {dispatch.status}")
 
     dispatch.region_scope = body.regionScope
-    intent = _create_intent_row(db, _dispatch_intent_request(dispatch, None))
+    intent = _create_intent_row(db, _dispatch_intent_request(dispatch, None), owner=dispatch.dispatched_by)
     dispatch.status = "DISPATCHED"
     dispatch.intent_id = intent.intent_id
+    dispatch.resolved_by = decider
     _notify_autonomy_operator(db, dispatch.notification_destination, dispatch)
     db.commit()
     return _autonomy_dispatch_view(dispatch)
 
 
-# Body of POST /autonomy-dispatches/{id}/reject. `rejectedBy` is stored as given; the GUI BFF pins it to the operator's identity.
+# Body of POST /autonomy-dispatches/{id}/reject. `rejectedBy` is replaced by the console user (`X-R1-Acting-User`) when there is one; the GUI BFF also pins it.
 class RejectAutonomyDispatchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -826,14 +900,16 @@ class RejectAutonomyDispatchRequest(BaseModel):
 
 
 @app.post("/autonomy-dispatches/{dispatch_id}/reject")
-def reject_autonomy_dispatch(dispatch_id: uuid.UUID, body: RejectAutonomyDispatchRequest, db: Session = Depends(get_session)):
+def reject_autonomy_dispatch(dispatch_id: uuid.UUID, body: RejectAutonomyDispatchRequest, request: Request, db: Session = Depends(get_session)):
     """Wave 8 (W8-08, decision D-1b): ASSIST's other operator answer — the
     operator declines the recommendation outright. Only from AWAITING_SCOPE
     (an ASSIST dispatch stays there until it is either resolved or
     rejected); no Intent is ever created, and the operator destination is
     notified like every other dispatch outcome."""
     # Route notes (the docstring above is published): 404 `AUTONOMY_DISPATCH_NOT_FOUND`; 409 `AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE` for any status but
-    # AWAITING_SCOPE. Stores `rejectedBy` and the reason, creates no intent, notifies the operator destination, one commit.
+    # AWAITING_SCOPE. Stores `rejectedBy` and the reason, creates no intent, notifies the operator destination, one commit. Call flow 09e: 403
+    # `ROLE_NOT_PERMITTED` for an rApp, and for an internal caller with no console user; `rejectedBy` is that user.
+    decider = _operator(request, body.rejectedBy)
     dispatch = db.get(AutonomyDispatch, dispatch_id)
     if dispatch is None:
         raise framework_error(FrameworkError.AUTONOMY_DISPATCH_NOT_FOUND, detail="no such autonomy dispatch")
@@ -841,7 +917,7 @@ def reject_autonomy_dispatch(dispatch_id: uuid.UUID, body: RejectAutonomyDispatc
         raise framework_error(FrameworkError.AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE,
                                detail=f"cannot reject a dispatch in status {dispatch.status}")
     dispatch.status = "REJECTED"
-    dispatch.rejected_by = body.rejectedBy
+    dispatch.rejected_by = decider
     dispatch.rejection_reason = body.reason
     _notify_autonomy_operator(db, dispatch.notification_destination, dispatch)
     db.commit()
@@ -938,5 +1014,6 @@ def _autonomy_dispatch_view(d: AutonomyDispatch) -> dict:
         "regionScope": d.region_scope, "status": d.status,
         "intentId": str(d.intent_id) if d.intent_id else None,
         "rejectedBy": d.rejected_by, "rejectionReason": d.rejection_reason,
+        "dispatchedBy": d.dispatched_by, "resolvedBy": d.resolved_by,
         "createdAt": d.created_at.isoformat(),
     }
