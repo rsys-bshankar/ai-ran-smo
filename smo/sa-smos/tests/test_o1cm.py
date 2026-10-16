@@ -58,7 +58,8 @@ LOCK = {"targetName": "NRCellDU.administrativeState", "targetCondition": "IS_EQU
 
 
 def test_registration_declares_the_cm_targets(client, platform):
-    """Registration deletes any earlier RMIH first (idempotent), posts the default CM targets in order, and refuses a target name without a '.'."""
+    """Registration is one POST of the default CM targets in order (Intent Service updates an earlier one in place, call flow 09c, so nothing is deleted), and
+    a target name without a '.' is refused."""
     resp = client.post("/o1-cm-handler/registration", json={})
     assert resp.status_code == 201
     path, body = platform["posts"][0]
@@ -67,8 +68,19 @@ def test_registration_declares_the_cm_targets(client, platform):
     assert names == ["NRCellDU.administrativeState", "CESManagementFunction.energySavingControl",
                      "NRCellRelation.cellIndividualOffset", "CommonBeamformingFunction.digitalTilt",
                      "NRSectorCarrier.configuredMaxTxPower", "NRFreqRelation.cellReselectionPriority"]
-    assert platform["deletes"] == ["/intent-service/intent-handling-functions/sa-smos"]  # idempotent re-register
+    assert platform["deletes"] == []  # deleting first used to cascade away every intent addressed to the handler
     assert client.post("/o1-cm-handler/registration", json={"cmTargets": {"noDot": []}}).status_code == 422
+
+
+@pytest.mark.parametrize("answer, expected", [
+    (FakeR1Response(204), 204), (FakeR1Response(404, {}), 204),
+    (FakeR1Response(409, {"detail": {"title": "INTENT_HANDLING_FUNCTION_IN_USE", "detail": "2 intent(s)"}}), 409),
+    (FakeR1Response(500, {}), 502),
+])
+def test_deregistration_passes_on_intent_services_refusal(client, platform, monkeypatch, answer, expected):
+    """Call flow 09c: deregistering while intents are addressed to the handler is Intent Service's 409, passed on; another failure is 502; gone is 204."""
+    monkeypatch.setattr("app.o1cm.R1Client.delete", lambda self, path, **kw: answer)
+    assert client.delete("/o1-cm-handler/registration").status_code == expected
 
 
 def test_enacts_each_cell_and_reports_fulfilled(client, platform):

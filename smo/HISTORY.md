@@ -2780,6 +2780,40 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.8 flow 09 — intents rewritten from the code: an rApp manages only its own, handlers and reports are the SMO's, and re-registering a handler keeps its intents
+
+The eleventh flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken; for C, refuse rather than fall back to a
+shared identity):
+
+- **A. Handlers and reports are the SMO's.** `is_framework_internal_identity(rmihId)` only refused an `rmihId` that is a UUID; any rApp could register
+  `so-smos`-style handlers, deregister SA SMOS's, or publish a FULFILLED report for any intent. Now a caller with the rApp role is refused (403
+  `ROLE_NOT_PERMITTED`) on register, deregister and `POST /intent-reports`. Registering an existing `rmihId` updates it in place (201) instead of 409, and SA
+  SMOS's registration is one POST: it used to DELETE the handler first, and the `ON DELETE CASCADE` of `intent.rmih_id` then deleted every intent addressed
+  to it, so every re-registration (the console's button, the demos) silently wiped the live intents. Deregistering a handler that still has intents is 409
+  `INTENT_HANDLING_FUNCTION_IN_USE`; SA SMOS's DELETE passes it on (502 for any other refusal, where it always answered 204).
+- **B. An intent belongs to its creator.** `rmioId` came from the body and admin state was the only check (`requesterId == rmio_id`, 409
+  `SERVICE_NAME_CONFLICT`), which any caller could satisfy by naming it; delete and negotiation feedback had no check. Now an rApp's `rmioId` is its own
+  invoker id, `intent.owner_invoker_id` records the creator (the dispatching rApp for an intent a dispatch made), and an rApp acts on an intent only if it
+  owns it (`owner_invoker_id`, else `rmio_id` for an older row; 403 `INTENT_ACCESS_DENIED`). The console and modules act for others, and still name the
+  `rmioId` for an admin-state change, now 403 `INTENT_ACCESS_DENIED`. Deleting an intent deletes its reports explicitly (on SQLite they were left behind).
+- **C. An rApp dispatches only for its own instance.** Any caller could name any `instanceId` and so act under another instance's autonomy mode and region
+  scope. Now an rApp's invoker id must be the instance's `oauthClientId` (read from rApp Management, whose `GET /instances/{id}` now shows it; 403
+  `INSTANCE_IDENTITY_MISMATCH`, no fallback for an instance without per-instance credentials: the sample rApps dispatch with their instance's own, call flow
+  01). The dispatch records `dispatched_by`.
+- **D. An ASSIST decision is a person's.** Resolve and reject took any caller and `rejectedBy` from the body. Now an rApp is refused, and so is an internal
+  caller without the console's `X-R1-Acting-User`; the person is recorded as `resolved_by` / `rejected_by` (a direct call with no role, as in the unit tests,
+  keeps the body's value).
+- **E. Not taken.** Read restrictions (any caller reads any intent, report or dispatch) and TS 28.312 handling semantics beyond what an RMIH declares. A
+  module may still publish a report for any intent, since module invoker ids are not tied to an `rmihId`.
+- **F. The document** (`docs/call-flows/09-intent-service-intent-flow.md`) is five diagrams, 09a–09e, with PNGs.
+
+Found on the way: MDAF recorded a console publisher as `smo-gui:smo-gui:<user>` (flow 08), since the console's `X-R1-Acting-User` already carries the prefix;
+it now records the header as it is.
+
+Revision 0057 adds `intent_service.intent.owner_invoker_id` and `intent_service.autonomy_dispatch.dispatched_by` / `resolved_by`, all nullable. Tests:
+`intent-service/tests/test_intent_identity.py` (13), `sa-smos/tests/test_o1cm.py` (registration without delete, deregistration refusals),
+`tests_integration/test_intent_identity.py`.
+
 ### DOC-CF-1.8 flow 08 — RAN analytics rewritten from the code: producers are who they say they are, and a subscription belongs to its maker
 
 The tenth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken):

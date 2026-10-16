@@ -41,6 +41,9 @@ class Intent(Base):
     intent_priority: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     intent_preemption_capability: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     rmio_id: Mapped[str] = mapped_column(String, nullable=False)
+    # DOC-CF-1.8 flow 09: the invoker that created the intent (an rApp, a module, the dispatching rApp for a dispatch's intent); null before revision 0057.
+    # An rApp changes only the intents it owns; with no owner, `rmio_id` stands in.
+    owner_invoker_id: Mapped[str | None] = mapped_column(String)
     # Consumer-side RMIH selection: the intent belongs to the handling function it is addressed to (TS 28.312 NRM containment: an
     # IntentHandlingFunction contains its Intents). ON DELETE CASCADE matches that, so deregistering the function removes its intents
     # (enforced by PostgreSQL; SQLite ignores it).
@@ -151,6 +154,9 @@ class AutonomyDispatch(Base):
     # Set when an operator rejects an ASSIST dispatch.
     rejected_by: Mapped[str | None] = mapped_column(String)
     rejection_reason: Mapped[str | None] = mapped_column(String)
+    # DOC-CF-1.8 flow 09: who asked for the dispatch (the rApp's invoker id, or the module's), and the console user who scoped an ASSIST dispatch.
+    dispatched_by: Mapped[str | None] = mapped_column(String)
+    resolved_by: Mapped[str | None] = mapped_column(String)
     intent_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("intent.intent_id", ondelete="SET NULL"))
     # All three modes always notify the operator — not mode-gated.
     notification_destination: Mapped[str | None] = mapped_column(String)

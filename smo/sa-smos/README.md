@@ -116,7 +116,8 @@ and attribute names. It realises no TS 28.312 expectation semantics beyond `IS_E
   target, its condition is not `IS_EQUAL_TO`, its value is not in the target's allowed list (when one exists), or
   the expectation has no `objectInstance`. Unsupported targets degrade the report; the rest still enact.
 - **Registration is explicit and idempotent.** Nothing registers at startup. `POST /o1-cm-handler/registration`
-  deletes any existing `sa-smos` RMIH and re-registers; the demos and integration environments call it. The
+  is one POST, which Intent Service applies in place to an existing `sa-smos` RMIH, so the intents addressed to it stay (it used
+  to delete the handler first, which deleted every intent with it; call flow 09c); the demos and integration environments call it. The
   capability list held by Intent Service is the source of truth for the CM targets, falling back to the defaults
   if the lookup fails.
 - **Failure behaviour.** DEACTIVATED intents are skipped (`status: SKIPPED`, no report). An intent addressed to a
@@ -202,8 +203,8 @@ O1-CM intent handler
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
-| POST | `/o1-cm-handler/registration` | Register (replace) RMIH `sa-smos` at Intent Service. Optional body `{cmTargets: {"<IOC>.<attribute>": [allowed values]}, intentHandlingScope: ["RAN"]}`; defaults below. Returns `{rmihId, cmTargets, notificationDestination}` (201). | 422 `SCHEMA_VALIDATION_FAILED` for a target name without a `.` or when Intent Service refuses |
-| DELETE | `/o1-cm-handler/registration` | Deregister (204); ends intents addressed to `sa-smos` | |
+| POST | `/o1-cm-handler/registration` | Register (or update in place) RMIH `sa-smos` at Intent Service. Optional body `{cmTargets: {"<IOC>.<attribute>": [allowed values]}, intentHandlingScope: ["RAN"]}`; defaults below. Returns `{rmihId, cmTargets, notificationDestination}` (201). | 422 `SCHEMA_VALIDATION_FAILED` for a target name without a `.` or when Intent Service refuses |
+| DELETE | `/o1-cm-handler/registration` | Deregister (204, also when not registered) | 409 `INTENT_HANDLING_FUNCTION_IN_USE` (Intent Service's) while intents are addressed to `sa-smos`; 502 `UPSTREAM_FAILED` for any other refusal |
 | POST | `/o1-cm-handler/intents` | Intent Service's push, body `{intentId}`. Returns the enactment view, or `{status: "SKIPPED"}` for a DEACTIVATED intent. | 404 `INTENT_NOT_FOUND`; 422 `RMIH_CAPABILITY_MISMATCH` (addressed to another RMIH) |
 | GET | `/o1-cm-handler/enactments` | List (`intent_id`, paging), newest first | |
 
@@ -287,7 +288,7 @@ cd smo/sa-smos && PYTHONPATH=.:../shared python -m pytest tests/ -q
 |---|---|---|
 | `tests/test_main.py` | Monitor registration and the single-target rule, threshold evaluation, CONFIG_CHANGE, SCALE escalation, ROLLBACK (409 without an rApp target, dispatch, rApp Management refusal escalated), RECONNECT (order, rApp-scoped, escalations), coordination-group retrain and its escalation, unknown monitor 404, escalate, list/get, remedial-action filters, `/health` | 21 |
 | `tests/test_assurance_loop.py` | Call flow 04: the MDAF subscription at registration (and its refusal), threshold validation, missing metrics and maximums, a pushed report read back and evaluated, a breach escalated once or running the automatic action, duplicates and ignored reports, 503 for MDAF unreadable or the monitor busy, the lock, the remedy and the automatic action's rules, how CONFIG_CHANGE / RETRAIN / RECONNECT end and why, escalation with its reason | 42 |
-| `tests/test_o1cm.py` | Registration and declared CM targets, per-cell enactment and FULFILLED report, failed config job reported DEGRADED, unenactable targets reported not written, DEACTIVATED / foreign / unknown intents, replay with the same action id, CIO on each relation, tilt and power per cell | 11 |
+| `tests/test_o1cm.py` | Registration (one POST, no delete first) and declared CM targets, deregistration passing on Intent Service's 409 and 502 otherwise, per-cell enactment and FULFILLED report, failed config job reported DEGRADED, unenactable targets reported not written, DEACTIVATED / foreign / unknown intents, replay with the same action id, CIO on each relation, tilt and power per cell | 15 |
 
 ### 3.3 What is not covered here
 

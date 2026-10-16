@@ -182,6 +182,10 @@ class FrameworkError:
     PRODUCER_NOT_FOUND = ("PRODUCER_NOT_FOUND", 404)
     SUBSCRIPTION_ACCESS_DENIED = ("SUBSCRIPTION_ACCESS_DENIED", 403)
     PUBLISHING_FUNCTION_NOT_FOUND = ("PUBLISHING_FUNCTION_NOT_FOUND", 404)
+    # DOC-CF-1.8 flow 09: an rApp manages only its own intents and dispatches only for its own instance; a handler with intents is not removed under them
+    INTENT_ACCESS_DENIED = ("INTENT_ACCESS_DENIED", 403)
+    INSTANCE_IDENTITY_MISMATCH = ("INSTANCE_IDENTITY_MISMATCH", 403)
+    INTENT_HANDLING_FUNCTION_IN_USE = ("INTENT_HANDLING_FUNCTION_IN_USE", 409)
     # HISTORY.md OI-6.1 — an explicit operator-approval gate on
     # Training->Validation->Emulation, mirroring the existing
     # CERTIFY/PROMOTE governance shape.

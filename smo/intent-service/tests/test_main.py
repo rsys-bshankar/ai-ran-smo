@@ -192,12 +192,13 @@ def test_query_unknown_intent_is_404(client):
 
 
 def test_update_admin_state_only_allowed_by_creator(client):
-    """Only the creating RMIO may change the admin state (409 for anyone else); an unknown state is 422 and an unknown intent is 404."""
+    """Only the creating RMIO may change the admin state (403 INTENT_ACCESS_DENIED for anyone else, call flow 09b); an unknown state is 422 and an unknown
+    intent is 404."""
     _register_rmih(client)
     created = client.post("/intents", json=_intent()).json()
 
     denied = client.patch(f"/intents/{created['intentId']}/admin-state", json={"newState": "DEACTIVATED", "requesterId": "rapp-2"})
-    assert denied.status_code == 409
+    assert denied.status_code == 403 and denied.json()["detail"]["title"] == "INTENT_ACCESS_DENIED"
 
     allowed = client.patch(f"/intents/{created['intentId']}/admin-state", json={"newState": "DEACTIVATED", "requesterId": "rapp-1"})
     assert allowed.status_code == 200
@@ -303,12 +304,15 @@ def test_deregister_intent_handling_function_symmetric_with_register(client):
     assert resp.status_code == 204
 
 
-def test_deregister_intent_handling_function_of_an_intent_still_succeeds(client):
-    """Deregistering a function that has an intent does not error. The cascade that removes the intent is a PostgreSQL foreign key and SQLite does not enforce it, so only the call is checked."""
+def test_deregister_intent_handling_function_with_an_intent_is_refused(client):
+    """Call flow 09c: deregistering a function that still has an intent is 409 INTENT_HANDLING_FUNCTION_IN_USE and both stay; once the intent is deleted, 204."""
     _register_rmih(client, "so-smos")
-    client.post("/intents", json=_intent())
+    intent_id = client.post("/intents", json=_intent()).json()["intentId"]
     resp = client.delete("/intent-handling-functions/so-smos")
-    assert resp.status_code == 204
+    assert resp.status_code == 409 and resp.json()["detail"]["title"] == "INTENT_HANDLING_FUNCTION_IN_USE"
+    assert client.get(f"/intents/{intent_id}").status_code == 200
+    assert client.delete(f"/intents/{intent_id}").status_code == 204
+    assert client.delete("/intent-handling-functions/so-smos").status_code == 204
 
 
 def test_list_intent_handling_functions(client):

@@ -2357,7 +2357,7 @@
         "summary": "Deregister O1 Cm Handler"
       },
       "post": {
-        "description": "Registers SA SMOS with Intent Service as the O1-CM intent handling\nfunction. Idempotent: an existing registration is replaced.",
+        "description": "Registers SA SMOS with Intent Service as the O1-CM intent handling\nfunction. Idempotent: an existing registration is updated in place,\nand the intents addressed to it stay.",
         "operationId": "register_o1_cm_handler_o1_cm_handler_registration_post",
         "requestBody": {
           "content": {

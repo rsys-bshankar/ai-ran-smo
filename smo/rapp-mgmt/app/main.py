@@ -856,10 +856,13 @@ def get_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     inherited through an upgrade. `workload` is its NFO deployment's state
     now (call flow 15e). Reading an instance enforces its
     upgrade's upgradeTimeoutSeconds (an overdue upgrade rolls back).
+    `oauthClientId` is the instance's invoker id (never its secret), which
+    Intent Service compares with the caller of an autonomy dispatch (call flow 09).
     """
     inst = _load_instance(db, instance_id)
     return {
         "instanceId": str(inst.instance_id), "packageId": str(inst.package_id), "state": inst.state,
+        "oauthClientId": inst.oauth_client_id,
         "workloadRef": inst.workload_ref, "configuration": inst.configuration,
         "pendingUpgradeInstanceId": str(inst.pending_upgrade_instance_id) if inst.pending_upgrade_instance_id else None,
         "smeServiceIds": inst.sme_service_ids,
