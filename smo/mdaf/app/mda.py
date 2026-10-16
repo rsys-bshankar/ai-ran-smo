@@ -21,7 +21,7 @@ import datetime
 import json
 import uuid
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -33,7 +33,7 @@ from smo_shared.pagination import PageLimit, PageOffset, paginate, paginate_list
 from smo_shared.outbox import enqueue
 
 from . import ts28104
-from .main import _notify_report_subscribers, _r1, _validate_input_sources_are_real_dme_artifacts
+from .main import _notify_report_subscribers, _r1, _validate_input_sources_are_real_dme_artifacts, check_publisher
 from .models import MDAFReport, MDAFunction, MDAReportDelivery, MDARequest
 
 router = APIRouter()
@@ -275,7 +275,7 @@ def _report_view_for(db: Session):
         return {"id": str(report.report_id), "attributes": {
             "mDAReportID": str(report.report_id), "mDAOutputs": _outputs_of(report),
             "mDARequestRef": _s(report.mda_request_id), "mDAFunctionRef": _s(report.mda_function_id),
-            "reportKind": report.report_kind, "scope": report.scope,
+            "reportKind": report.report_kind, "scope": report.scope, "publishedBy": report.published_by,
             "deliveredToRequestRefList": [str(d.mda_request_id) for d in deliveries],
             "generatedAt": _iso(report.generated_at)}}
     return view
@@ -427,8 +427,9 @@ def _infer_kind(outputs: list[dict]) -> str:
 
 
 @router.post("/mda-reports", status_code=201)
-def publish_mda_report(body: MDAReportBody, db: Session = Depends(get_session)):
-    # Stores a spec-shaped report. 201 with the MDAReport resource. 422 for empty `mDAOutputs` or an unknown DME source; 404
+def publish_mda_report(body: MDAReportBody, request: Request, db: Session = Depends(get_session)):
+    # Stores a spec-shaped report. 201 with the MDAReport resource. 403 PRODUCER_NOT_REGISTERED for an rApp not registered for the first output's mDAType
+    # (call flow 08c, as for POST /reports). 422 for empty `mDAOutputs` or an unknown DME source; 404
     # NRM_OBJECT_NOT_FOUND for an unknown `mDARequestRef` or `mDAFunctionRef`. The report's `analytics_type` and `mda_type` are the type of
     # the first output; all outputs' entries are also flattened into the free-form `output` (a later output overwrites a same-named
     # entry of an earlier one). Order: checks, add and flush, subscribers of that type notified, delivery to requests (which commits),
@@ -440,8 +441,9 @@ def publish_mda_report(body: MDAReportBody, db: Session = Depends(get_session)):
         _get(db, MDARequest, body.mDARequestRef, "MDARequest")
     if body.mDAFunctionRef is not None:
         _get(db, MDAFunction, body.mDAFunctionRef, "MDAFunction")
-    _validate_input_sources_are_real_dme_artifacts(body.inputSources)
     outputs = ts28104.dump(body.mDAOutputs)
+    published_by = check_publisher(request, outputs[0]["mDAType"])
+    _validate_input_sources_are_real_dme_artifacts(body.inputSources)
     flat = {}
     for o in body.mDAOutputs:
         flat.update(o.entries())
@@ -449,7 +451,7 @@ def publish_mda_report(body: MDAReportBody, db: Session = Depends(get_session)):
                         output=json.loads(json.dumps(flat, default=str)), input_sources=body.inputSources,
                         scope={"managedEntitiesScope": body.managedEntitiesScope} if body.managedEntitiesScope else None,
                         report_kind=body.reportKind or _infer_kind(outputs),
-                        mda_request_id=body.mDARequestRef, mda_function_id=body.mDAFunctionRef)
+                        mda_request_id=body.mDARequestRef, mda_function_id=body.mDAFunctionRef, published_by=published_by)
     db.add(report)
     db.flush()
     # Existing analytics_type subscribers (keyed by the first mDAType) are

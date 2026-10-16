@@ -30,6 +30,8 @@ class MDAFReport(Base):
     output: Mapped[dict] = mapped_column(JSON, nullable=False)
     generated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
     subscriber_attribution: Mapped[str | None] = mapped_column(String)
+    # DOC-CF-1.8 flow 08: who published it (the rApp's invoker id, or the console user / SMO module); null for a report published before revision 0056
+    published_by: Mapped[str | None] = mapped_column(String)
     # Wave 4-10 roadmap, Wave 5 — TS 28.104 MDAReport. A report published
     # through `POST /mda-reports` carries the spec's own typed mDAOutputs;
     # one published through the original `POST /reports` keeps its

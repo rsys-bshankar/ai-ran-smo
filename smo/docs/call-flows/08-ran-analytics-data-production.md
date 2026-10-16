@@ -1,62 +1,167 @@
-# Call Flow: RAN Analytics — Producer Registration → Report → Subscriber Query
+# Call Flow 08: RAN analytics — producer registration, subscriptions, reports and their delivery
 
-An analytics producer registers with RAN Analytics, publishes reports to MDAF, and
-subscribers receive or query them (RAN Analytics LLD sections 1-2).
-`RegisterAnalyticsProducer` gives a producer a way to register at all, which v1.3 lacked
-(it had only Subscribe/Unsubscribe/Query). This is RAN *behavior* analytics (MDA), not
-model performance (MLMF).
+How RAN behaviour analytics (TS 28.104 MDA, not a model's own performance, which is MLMF's, call flow 02) go from a producer to its consumers
+(RAN Analytics LLD sections 1–2). Two services share the flow: **RAN Analytics** keeps the producer registry and enrols each producer in SME;
+**MDAF** stores the reports, holds the subscriptions and delivers to them. An rApp is a producer only for itself, publishes only what it is registered
+for, and a subscription belongs to who made it. Four diagrams:
 
-Two services share the flow. RAN Analytics keeps the use-case-specific producer
-registration; **MDAF** (TS 28.104's MDA NRM realization) owns report storage,
-subscriptions and subscriber notification. See the MDAF section of `docs/ARCHITECTURE.md`.
-Producer registration is never validated against a report or subscription, so the two
-services need no cross-call.
+| | Step | Who starts it | Ends with |
+|---|---|---|---|
+| 08a | Registering (and deregistering) a producer | Owner rApp (SDK), Admin (GUI) | a producer discoverable in SME, or refused with nothing stored |
+| 08b | Subscribing, with thresholds | a consumer: an rApp, SA SMOS (call flow 04), Operator (GUI) | a subscription that is the consumer's own |
+| 08c | Publishing a report and delivering it | Owner rApp (SDK), Admin (GUI) | the report stored with its publisher and pushed to each subscriber that should hear of it, or refused |
+| 08d | Querying, unsubscribing and retention | a consumer, the worker | reports read, a subscription removed, old reports purged |
+
+**As images:** [08a](images/08-ran-analytics-data-production/08a-registering-and-deregistering-a-producer.png) ·
+[08b](images/08-ran-analytics-data-production/08b-subscribing-with-thresholds.png) ·
+[08c](images/08-ran-analytics-data-production/08c-publishing-a-report-and-delivering-it.png) ·
+[08d](images/08-ran-analytics-data-production/08d-querying-unsubscribing-and-retention.png)
+(PNG, drawn from the diagrams below by `scripts/render_call_flows.py`).
+
+**How to read the diagrams.** As in call flow 01: an arrow is one call with the inputs that matter, a box on the receiver says what it does with them,
+an `alt` block is the outcome (success first, then each failure and what the caller gets). Every call reaches RAN Analytics and MDAF through R1
+Termination, which stamps the caller's role (`X-R1-Role`: `rapp` or `internal`) and invoker id; the rules below are for a caller with the rApp role, the
+console and SMO modules are trusted to act for others.
+
+## 08a — Registering (and deregistering) a producer
 
 ```mermaid
 sequenceDiagram
-    actor Producer as Analytics Producer rApp
-    participant R1 as R1 Termination
-    participant RanA as RAN Analytics SMOS
-    participant MDAF as MDAF
-    participant DME as DME
+    participant P as Owner rApp (SDK) / Admin (GUI)
+    participant RA as RAN Analytics
     participant SME as SME
-    actor Consumer as Analytics Consumer rApp (e.g. SA SMOS)
+    participant DB as RAN Analytics database
 
-    Producer->>R1: POST /ran-analytics/producers (producerId, analyticsType, dmeInputTypes, outputSchema, mdaType?)
-    R1->>RanA: (proxied) RegisterAnalyticsProducer
-    RanA->>RanA: upsert MDAFProducer on (producer_id, analytics_type) —<br/>re-registering the same pair updates in place, not a conflict
-    RanA->>RanA: mdaType: validate against the real 24-value TS28104 MDAType<br/>enum if declared — else infer_mda_type() for the two shorthand<br/>values this build honestly maps, else leave null — never guessed
-    RanA->>SME: RegisterService (serviceName=mdaf.{analyticsType}, serviceCapabilities.analyticsType)
-    SME-->>RanA: serviceId
-    RanA-->>Producer: {status: registered}
-
-    Consumer->>R1: POST /mdaf/subscriptions (analyticsType, requestedBy, notificationDestination?)
-    R1->>MDAF: (proxied) SubscribeAnalytics
-    MDAF-->>Consumer: subscriptionId
-
-    loop per analytics cycle
-        Producer->>R1: POST /mdaf/reports (analyticsType, output, inputSources, scope?)
-        R1->>MDAF: (proxied) PublishAnalyticsReport
-        MDAF->>DME: GET /dme/data-jobs/{id} per inputSources entry
-        DME-->>MDAF: 200 (real DataJob) or 404
-        Note over MDAF,DME: every inputSources id must be a real DME DataJob —<br/>DME_ARTIFACT_NOT_FOUND otherwise — MDAF only proves the reference<br/>is real here, it never fetches the data itself (Wave 3)
-        MDAF->>MDAF: persist MDAFReport
-        MDAF->>Consumer: best-effort POST notificationDestination (reportId, analyticsType, output, inputSources)
-        Note over MDAF,Consumer: A subscription with no notificationDestination stays pull-only —<br/>delivery is never guessed from requestedBy.
-        MDAF-->>Producer: {reportId}
+    P->>RA: POST /producers?producer_id, analytics_type, mda_type? {dme_input_types, output_schema}
+    alt an rApp naming another producer than itself
+        RA-->>P: 403 PRODUCER_IDENTITY_MISMATCH
+    else an mda_type outside the 24 TS 28.104 MDAType values
+        RA-->>P: 422 SCHEMA_VALIDATION_FAILED
+    else
+        RA->>SME: POST /provider-registrations {apfId: producer_id} (an upsert)
+        RA->>SME: POST /published-apis/v1/{producer_id}/service-apis {serviceName mdaf.<analyticsType>.<producerId>,<br/>serviceCapabilities {analyticsType}, moduleScope ran-analytics}
+        alt SME enrols and publishes
+            SME-->>RA: 201 {serviceId}
+            Note over RA: upsert on (producer_id, analytics_type), mdaType given, else inferred for the two mapped shorthands, else null
+            RA->>DB: producer {dmeInputTypes, outputSchema, mdaType, smeServiceId} committed
+            RA-->>P: 201 {status registered, smeServiceId}
+        else SME refuses either call or does not answer
+            RA-->>P: 502 UPSTREAM_FAILED, nothing stored
+        end
     end
-
-    Consumer->>R1: GET /mdaf/reports?analytics_type=...
-    R1->>MDAF: (proxied) QueryAnalyticsReport
-    MDAF-->>Consumer: [MDAFReport, ...] — pull-based retrieval, the only working delivery path
-
-    Consumer->>R1: DELETE /mdaf/subscriptions/{id}
-    R1->>MDAF: (proxied) UnsubscribeAnalytics
+    P->>RA: DELETE /producers/{producer_id}?analytics_type
+    alt an rApp naming another producer
+        RA-->>P: 403 PRODUCER_IDENTITY_MISMATCH
+    else not registered for that type
+        RA-->>P: 404 PRODUCER_NOT_FOUND
+    else
+        RA->>SME: DELETE /published-apis/v1/{producer_id}/service-apis/{smeServiceId}
+        alt withdrawn (or already gone)
+            RA->>DB: producer removed
+            RA-->>P: 204 (its reports stay at MDAF, it may publish no more of that type)
+        else SME does not answer
+            RA-->>P: 502 UPSTREAM_FAILED, the producer kept
+        end
+    end
 ```
 
-**Key decisions this flow depends on:**
-- `MDAFProducer`'s primary key is `(producer_id, analytics_type)` — the same producer registering a second `analyticsType` is a distinct row, not an update; re-registering the *same* pair (e.g. on restart) upserts in place rather than failing on the composite-key conflict.
-- RAN Analytics registers its producer's capability through SME (`RegisterService`), making it independently discoverable via `service-apis` like any other R1 service — not a private RAN-Analytics-only registry.
-- `SubscribeAnalytics` accepts an optional `notificationDestination` (the same shape as Intent Service's subscription callbacks), and each published report is best-effort POSTed to every matching subscriber that registered one — an unreachable subscriber never fails the publish. A subscriber with no destination stays pull-only via `QueryAnalyticsReport`; delivery is never guessed from `requestedBy`.
-- This is architecturally distinct from MLMF (call flow 02, AIMgF) even though both look like "metrics in, subscribers out" — `analyticsType` describes RAN *behavior* (coverage, interference, resource utilization), never a model's own performance, which stays MLMF's domain exclusively (RAN Analytics LLD section 2).
-- `analyticsType` is a free string — callers use informal shorthand, not TS 28.104's 24 closed wire values. An optional `mdaType` is validated against the real enum when a caller declares one, and is inferred for the two shorthand values with an unambiguous spec correspondence; anything else stays `null` rather than being fabricated (HISTORY.md SA-MDA-2).
+**Phase 1:** `dme_input_types` are stored as given, not looked up at DME, and `output_schema` is not checked against the reports the producer publishes
+(open item `MDA-SCHEMA`). A producer registered before revision 0056 has no `smeServiceId`; its deregistration withdraws nothing at SME.
+
+## 08b — Subscribing, with thresholds
+
+```mermaid
+sequenceDiagram
+    participant C as Consumer: rApp (SDK) / SA SMOS / Operator (GUI)
+    participant MDAF as MDAF
+    participant DB as MDAF database
+
+    C->>MDAF: POST /subscriptions?analytics_type, requested_by<br/>{notificationDestination?, scope?, thresholdInfo? [{monitoredMDAOutputIE, thresholdDirection UP / DOWN / UP_AND_DOWN, thresholdValue, hysteresis}]}
+    alt a threshold direction outside UP / DOWN / UP_AND_DOWN
+        MDAF-->>C: 422 SCHEMA_VALIDATION_FAILED
+    else
+        Note over MDAF: an rApp's requested_by is its own invoker id, whatever it sent
+        MDAF->>DB: subscription committed
+        MDAF-->>C: 201 {subscriptionId}
+    end
+```
+
+Without `notificationDestination` a subscription is pull-only (08d). With `thresholdInfo` it is notified only when a report crosses a threshold
+(edge-triggered: a crossing fires once, a value back beyond the hysteresis band re-arms it; a metric missing from the report is skipped); without, it is
+notified of every report of its type. A destination is checked when a notification is queued (08c): an unsafe one is dropped, the subscription stays.
+
+## 08c — Publishing a report and delivering it
+
+```mermaid
+sequenceDiagram
+    participant P as Owner rApp (SDK) / Admin (GUI)
+    participant MDAF as MDAF
+    participant RA as RAN Analytics
+    participant DME as DME
+    participant DB as MDAF database
+    participant S as Subscriber (e.g. SA SMOS, call flow 04b)
+
+    P->>MDAF: POST /reports?analytics_type {output, input_sources, scope?} (or POST /mda-reports, typed, the type its first mDAType)
+    alt an rApp
+        MDAF->>RA: GET /producers?producer_id = the rApp, analytics_type
+        alt not a registered producer of that type
+            MDAF-->>P: 403 PRODUCER_NOT_REGISTERED, nothing stored
+        else RAN Analytics cannot say
+            MDAF-->>P: 502 UPSTREAM_FAILED, nothing stored
+        end
+    end
+    MDAF->>DME: GET /dme/data-jobs/{id} per input source (the reference is proven, the data is not fetched)
+    alt a source DME does not know
+        MDAF-->>P: 422 DME_ARTIFACT_NOT_FOUND
+    else
+        Note over MDAF: the report stored with publishedBy (the rApp, smo-gui:<user>, or the module),<br/>each subscriber of the type: thresholds crossed? (state updated), an outbox row for those to tell,<br/>open MDA requests matched (deliveries), all in one transaction
+        MDAF->>DB: report, threshold state, outbox rows, deliveries committed
+        MDAF-->>P: 201 {reportId}
+        MDAF->>S: POST notificationDestination {reportId, analyticsType, output, inputSources} (after the commit)
+        alt 2xx, or a 4xx (the subscriber refused it)
+            Note over MDAF: the row SENT
+        else no answer or a 5xx
+            Note over MDAF: retried by the worker's sweep with backoff, DEAD after 5 attempts
+        end
+    end
+```
+
+**Phase 1:** delivery is at least once; a subscriber that acts on a notification should read the report back by its id (`GET /reports/{id}`), as SA
+SMOS does, rather than trust the pushed copy. A report's `output` is free-form JSON (a typed report's outputs are also flattened into it).
+
+## 08d — Querying, unsubscribing and retention
+
+```mermaid
+sequenceDiagram
+    participant C as Consumer: rApp (SDK) / Operator (GUI)
+    participant MDAF as MDAF
+    participant W as MDAF worker
+
+    C->>MDAF: GET /reports?analytics_type (paged) or GET /reports/{id}
+    MDAF-->>C: [{reportId, analyticsType, output, reportKind, mdaType, publishedBy}] / one report with its inputSources (404 MDAF_REPORT_NOT_FOUND)
+    C->>MDAF: DELETE /subscriptions/{id}
+    alt an rApp removing another consumer's subscription (an SA SMOS monitor's among them)
+        MDAF-->>C: 403 SUBSCRIPTION_ACCESS_DENIED, the subscription stays
+    else its own, or the console or a module, or an unknown id
+        MDAF-->>C: 204
+    end
+    loop every hour (purge-reports)
+        W->>MDAF: reports older than SMO_RETENTION_MDAF_REPORTS_DAYS deleted (0, the default: kept)
+    end
+```
+
+**Phase 1:** reports are readable by any caller; a report carries no access restriction of its own.
+
+## Decisions this flow depends on
+
+- **Two services, one flow:** RAN Analytics registers producers and enrols them in SME; MDAF (TS 28.104's MDA NRM realization) owns reports, subscriptions
+  and delivery. MDAF asks RAN Analytics only to check an rApp publisher (DOC-CF-1.8).
+- **A producer is who it says it is** (DOC-CF-1.8): an rApp registers, deregisters and publishes only as itself, for the types it is registered for. A report
+  can trigger an automatic configuration write (call flow 04), so an unregistered rApp's report is refused, not stored.
+- **A subscription belongs to its maker** (DOC-CF-1.8): an rApp's `requested_by` is its own id and it removes only its own; the console and SMO modules may
+  remove any.
+- **One SME service per producer and type** (`mdaf.<analyticsType>.<producerId>`): SME service names are unique across producers, so a shared
+  `mdaf.<analyticsType>` left a second producer of a type undiscoverable. SME is asked before the producer is stored.
+- **`MDAFProducer`'s key is (producer_id, analytics_type)**: one producer may serve several types; registering the same pair again updates it in place.
+- **`analyticsType` is a free string**; an optional `mdaType` is checked against TS 28.104's 24 values, inferred for the two shorthands with an unambiguous
+  correspondence, else null, never guessed (HISTORY.md SA-MDA-2).

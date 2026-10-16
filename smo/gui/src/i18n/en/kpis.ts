@@ -249,7 +249,7 @@ export const kpis = {
   "kpis.producer.adminNote": "Admin: act as an MDAF analytics producer",
   "kpis.producer.register.heading": "Register a producer",
   "kpis.producer.register.before": "Also registers ",
-  "kpis.producer.register.type": "mdaf.<type>",
+  "kpis.producer.register.type": "mdaf.<type>.<producer>",
   "kpis.producer.register.after": " with SME so consumers can discover it — the producer must be a registered SME provider (Data & Exposure → SME).",
   "kpis.producer.register.id": "Producer ID",
   "kpis.producer.register.inputs": "DME input types",

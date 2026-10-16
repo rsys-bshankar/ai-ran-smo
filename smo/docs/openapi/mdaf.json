@@ -3759,6 +3759,7 @@
         "summary": "List Analytics Subscriptions"
       },
       "post": {
+        "description": "SubscribeAnalytics. A subscription belongs to who made it: for an rApp, `requested_by` is its own invoker id whatever it sent (call flow 08b).",
         "operationId": "subscribe_analytics_subscriptions_post",
         "parameters": [
           {
@@ -3905,6 +3906,7 @@
     },
     "/subscriptions/{subscription_id}": {
       "delete": {
+        "description": "UnsubscribeAnalytics. An rApp removes only its own subscriptions (403 SUBSCRIPTION_ACCESS_DENIED), so it cannot silence another consumer, an SA SMOS\nmonitor's among them (call flow 04a); the console and SMO modules may remove any.",
         "operationId": "unsubscribe_analytics_subscriptions__subscription_id__delete",
         "parameters": [
           {

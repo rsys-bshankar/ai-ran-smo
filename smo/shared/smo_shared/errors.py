@@ -176,6 +176,11 @@ class FrameworkError:
     # DOC-CF-1.8 flow 04: SA SMOS reads back the report MDAF pushed it (GET /mdaf/reports/{id}); one remedial action per monitor at a time
     MDAF_REPORT_NOT_FOUND = ("MDAF_REPORT_NOT_FOUND", 404)
     REMEDIAL_ACTION_IN_PROGRESS = ("REMEDIAL_ACTION_IN_PROGRESS", 409)
+    # DOC-CF-1.8 flow 08: an rApp registers only itself as an analytics producer, publishes only what it is registered for, and removes only its own subscriptions
+    PRODUCER_IDENTITY_MISMATCH = ("PRODUCER_IDENTITY_MISMATCH", 403)
+    PRODUCER_NOT_REGISTERED = ("PRODUCER_NOT_REGISTERED", 403)
+    PRODUCER_NOT_FOUND = ("PRODUCER_NOT_FOUND", 404)
+    SUBSCRIPTION_ACCESS_DENIED = ("SUBSCRIPTION_ACCESS_DENIED", 403)
     PUBLISHING_FUNCTION_NOT_FOUND = ("PUBLISHING_FUNCTION_NOT_FOUND", 404)
     # HISTORY.md OI-6.1 — an explicit operator-approval gate on
     # Training->Validation->Emulation, mirroring the existing

@@ -9,7 +9,7 @@
 | Depends on (over R1) | DME (`GET /dme/data-jobs/{id}`, validates report inputs); AIMgF (`/aimgf/mlmf/subscriptions`, drift forwarding) |
 | Called by | Analytics producers (rApps, via `sdk.analytics`) publish reports; consumers (rApps, SA SMOS, GUI) subscribe, query and create MDA requests; ran-analytics is a separate producer registry, not an MDAF client: no code-level call either way |
 | Database tables | `mdaf_report`, `mda_subscription`, `mda_function`, `mda_request`, `mda_report_delivery` |
-| Unit tests | 46 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 53 passed (`tests/`, SQLite, standalone) |
 | Status | Done. `STREAMING` reporting is recorded, not streamed (see 2.8) |
 | Time-driven behaviour | Push on publish: subscribers are notified when a report is stored; no timer |
 
@@ -54,8 +54,9 @@ The compliance matrix is in `../docs/STANDARDS.md` ("TS 28.104").
                                                     └──DRIFT report: /aimgf/mlmf/subscriptions/{id}/reports──► AIMgF
 ```
 
-MDAF consumes DME's data plane like any rApp and never touches DME's O1 action-mediation path. It never calls
-ran-analytics, MLMR or NFO. Cross-module references are bare UUIDs.
+MDAF consumes DME's data plane like any rApp and never touches DME's O1 action-mediation path. It calls RAN Analytics only
+to check that an rApp publishing a report is a registered producer of its type (`GET /ran-analytics/producers`, call flow
+08c), and never MLMR or NFO. Cross-module references are bare UUIDs.
 
 ### 1.4 Ownership
 
@@ -87,9 +88,17 @@ ownership summary.
   notifications are sent right after (2 s timeout), at least once. A crash after the commit no longer loses them; an unreachable
   or rejected destination never fails the publish. `delivery.notified` means "enqueued". A subscription without
   `notificationDestination` is pull-only; the target is never guessed from `requestedBy`.
+- **A publisher is a registered producer** (DOC-CF-1.8 flow 08). A caller with the rApp role may publish (`/reports` or
+  `/mda-reports`) only an analytics type it is a registered producer of at RAN Analytics: 403 `PRODUCER_NOT_REGISTERED`
+  otherwise, 502 `UPSTREAM_FAILED` when RAN Analytics cannot say, nothing stored either way. A report can trigger an SA
+  SMOS automatic action (call flow 04), so it is not taken from anyone. Every report records `published_by`: the rApp, the
+  console user (`smo-gui:<user>`) or the calling module. The console and SMO modules are not checked.
+- **A subscription belongs to its maker.** An rApp's `requested_by` is its own invoker id whatever it sent, and it may
+  delete only its own subscriptions (403 `SUBSCRIPTION_ACCESS_DENIED`), so it cannot silence another consumer, an SA SMOS
+  monitor's among them; the console and SMO modules may delete any.
 - **Drift forwarding never fails the publish.** Any exception talking to AIMgF is swallowed per model.
-- **Security.** No per-service auth: every route is declared bearer-protected in the OpenAPI contract
-  (`apply_r1_gateway_security`) and enforced only by R1 Termination. The GUI BFF RBAC rule table lists
+- **Security.** Every route is declared bearer-protected in the OpenAPI contract (`apply_r1_gateway_security`) and enforced
+  by R1 Termination, which stamps the caller's role and invoker id that the two rules above read. The GUI BFF RBAC rule table lists
   `/mdaf/subscriptions` (operator) and `/mdaf/reports` (admin); see `../gui-bff/app/rbac.py`.
 - **Idempotency.** `DELETE` of an unknown subscription, function or request is a 204 no-op. `POST` is not idempotent.
 
@@ -120,6 +129,7 @@ ownership summary.
 | `mda_type`, `mda_outputs` | Set by `/mda-reports`; null for legacy reports |
 | `mda_function_id`, `mda_request_id` | FK to `mda_function` / `mda_request`, `ON DELETE SET NULL` |
 | `subscriber_attribution`, `generated_at` | Attribution string (unused by routes), timestamp |
+| `published_by` | Who published it: an rApp's invoker id, `smo-gui:<user>` or a module's id (revision 0056; null before) |
 
 `mda_subscription` (`MDASubscription`): `subscription_id` PK; `analytics_type`, `requested_by` (required);
 `notification_destination`; `scope` (stored, not matched); `threshold_info` (list of wire-shaped
@@ -151,12 +161,12 @@ Producer-push (legacy, unchanged shape)
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
-| POST | `/reports` | Publish a report. Query `analytics_type`; JSON body `{output, input_sources, scope?}`. Returns `{reportId}` (201). | 422 `DME_ARTIFACT_NOT_FOUND` |
-| GET | `/reports` | Query reports (`analytics_type`, `limit`, `offset`); items carry `reportKind`, `mdaType` | |
+| POST | `/reports` | Publish a report. Query `analytics_type`; JSON body `{output, input_sources, scope?}`. Returns `{reportId}` (201). | 403 `PRODUCER_NOT_REGISTERED` (an rApp not a producer of the type); 422 `DME_ARTIFACT_NOT_FOUND`; 502 `UPSTREAM_FAILED` (RAN Analytics cannot say) |
+| GET | `/reports` | Query reports (`analytics_type`, `limit`, `offset`); items carry `reportKind`, `mdaType`, `publishedBy` | |
 | GET | `/reports/{report_id}` | Read one report with its `inputSources`; a subscriber that acts on a notification reads it back here (SA SMOS, call flow 04b) | 404 `MDAF_REPORT_NOT_FOUND` |
-| POST | `/subscriptions` | Subscribe. Query `analytics_type`, `requested_by`; optional body `{scope, thresholdInfo[], notificationDestination}`. | 422 `SCHEMA_VALIDATION_FAILED` (unknown `thresholdDirection`) |
+| POST | `/subscriptions` | Subscribe. Query `analytics_type`, `requested_by` (an rApp's is its own invoker id); optional body `{scope, thresholdInfo[], notificationDestination}`. | 422 `SCHEMA_VALIDATION_FAILED` (unknown `thresholdDirection`) |
 | GET | `/subscriptions` | List (`analytics_type`, `requested_by`, paging) | |
-| DELETE | `/subscriptions/{subscription_id}` | Unsubscribe (204, idempotent) | |
+| DELETE | `/subscriptions/{subscription_id}` | Unsubscribe (204, idempotent); an rApp only its own | 403 `SUBSCRIPTION_ACCESS_DENIED` |
 
 TS 28.104 resources (`{"id", "attributes"}`; bodies reject unknown fields)
 
@@ -167,7 +177,7 @@ TS 28.104 resources (`{"id", "attributes"}`; bodies reject unknown fields)
 | POST | `/mda-requests` | Create MDARequest | 422 `SCHEMA_VALIDATION_FAILED` (empty `requestedMDAOutputs`; `NOTIFICATION`/`FILE` without `reportingTarget`; `stopTime` not after `startTime`), 422 `MDA_CAPABILITY_NOT_SUPPORTED` (type not in the named function's capabilities), 404 unknown function |
 | GET | `/mda-requests` | List (`requested_by`, paging); each view carries `active` | |
 | GET / DELETE | `/mda-requests/{request_id}` | Read / withdraw (no further matching) | 404 on GET |
-| POST | `/mda-reports` | Publish a typed report: `mDAOutputs[]`, optional `mDARequestRef`, `mDAFunctionRef`, `managedEntitiesScope[]`, `inputSources[]`, `reportKind` | 422 empty `mDAOutputs` or a typed list that does not match its `mDAType`; 422 `DME_ARTIFACT_NOT_FOUND`; 404 unknown request or function ref |
+| POST | `/mda-reports` | Publish a typed report: `mDAOutputs[]`, optional `mDARequestRef`, `mDAFunctionRef`, `managedEntitiesScope[]`, `inputSources[]`, `reportKind` | 422 empty `mDAOutputs` or a typed list that does not match its `mDAType`; 422 `DME_ARTIFACT_NOT_FOUND`; 404 unknown request or function ref; 403 `PRODUCER_NOT_REGISTERED` / 502 as for `/reports` (the type is the first `mDAType`) |
 | GET | `/mda-reports` | List, newest first. Filters `mda_type`, `report_kind`, `mda_request_id`, `managed_entity`, paging | |
 | GET | `/mda-reports/{report_id}` | Read | 404 |
 | GET | `/mda-reports/{report_id}/file` | Report as a downloadable JSON file (`FILE` method) | 404 |
@@ -182,6 +192,7 @@ set explicitly. A `pmPredictions` list is flattened so each `pmName` is addressa
 
 | Trigger | Action | Failure behaviour |
 |---|---|---|
+| Publish by an rApp (`/reports`, `/mda-reports`) | `GET /ran-analytics/producers?producer_id=<the rApp>&analytics_type` | No match → 403 `PRODUCER_NOT_REGISTERED`; non-200 or no answer → 502; nothing stored |
 | Publish (`/reports`, `/mda-reports`) | `GET /dme/data-jobs/{id}` per input source | Non-200 aborts the publish with `DME_ARTIFACT_NOT_FOUND` |
 | Publish | `analytics_type` subscribers: POST `{reportId, analyticsType, output, inputSources}` to `notificationDestination`, gated by `thresholdInfo` | Through the outbox, in the report's own transaction; `threshold_state` is committed regardless |
 | Publish | Request matching and delivery (see below) | Outbox rows, committed with the report |
@@ -219,6 +230,10 @@ The worker (`python -m smo_shared.worker`, `app/tasks.py`) has one task, `purge-
 | Code | HTTP | When |
 |---|---|---|
 | `DME_ARTIFACT_NOT_FOUND` | 422 | An `input_sources` / `inputSources` id is not a DME DataJob |
+| `PRODUCER_NOT_REGISTERED` | 403 | An rApp publishing a type it is not a registered producer of |
+| `SUBSCRIPTION_ACCESS_DENIED` | 403 | An rApp deleting another consumer's subscription |
+| `MDAF_REPORT_NOT_FOUND` | 404 | `GET /reports/{id}` for an unknown report |
+| `UPSTREAM_FAILED` | 502 | RAN Analytics could not answer the producer check |
 | `SCHEMA_VALIDATION_FAILED` | 422 | Unknown subscription `thresholdDirection`; invalid MDARequest / empty `mDAOutputs` (see 2.4) |
 | `MDA_CAPABILITY_NOT_SUPPORTED` | 422 | Request names an `mDAType` its `mDAFunctionRef` does not support |
 | `NRM_OBJECT_NOT_FOUND` | 404 | Unknown MDAFunction / MDARequest / MDAReport id, including a bad `mDARequestRef` / `mDAFunctionRef` |
@@ -233,7 +248,8 @@ The worker (`python -m smo_shared.worker`, `app/tasks.py`) has one task, `purge-
 - `MDASubscription.scope` is stored and returned but not used for matching.
 - `/mda-reports` list filters `managed_entity` in Python after loading all rows matching the SQL filters.
 - Legacy `POST /reports` does not accept `reportKind` or `mdaType`; those exist only on `/mda-reports`.
-- No `../OPEN_ITEMS.md` entry is specific to MDAF.
+- A report's `output` is not checked against its producer's `outputSchema` (`../OPEN_ITEMS.md` `MDA-SCHEMA`).
+- `DELETE /mda-requests/{id}` is not yet limited to the request's maker.
 
 ## 3. Unit tests
 
@@ -248,6 +264,7 @@ cd smo/mdaf && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | File | Covers | Tests |
 |---|---|---|
 | `tests/test_main.py` | Publish/query, scope persistence, subscribe/unsubscribe/list and filters, notification delivery (with, without, other type, unreachable destination), DME input validation, `ThresholdInfo` (validation, fires on first crossing, no refire, refire after reset, DOWN, missing IE, no-threshold subscription), a report read back by its id and 404, `/health` | 29 |
+| `tests/test_publisher_and_ownership.py` | Call flows 08b and 08c: an rApp publishes only what it is a registered producer of (legacy and typed reports), `publishedBy` recorded for an rApp, the console and a module, 502 when RAN Analytics cannot say, an rApp's subscription is its own, an rApp removes only its own subscription | 7 |
 | `tests/test_mda.py` | MDAFunction capability gating, request validation, typed output validation per `mDAType`, NOTIFICATION matching, edge-triggered IE thresholds, `filterValue` and `timeOut`, FILE method and download, report answering one request and legacy-report matching, DRIFT forwarding to MLMF, 404s | 10 `GET /mda-reports?total=false`: no `total`, `hasMore` set correctly. |
 
 ### 3.3 What is not covered here

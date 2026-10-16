@@ -250,7 +250,7 @@ export const kpis: Partial<Record<MessageKey, string>> = {
   "kpis.producer.adminNote": "Admin: als MDAF-Analytics-Produzent handeln",
   "kpis.producer.register.heading": "Produzenten registrieren",
   "kpis.producer.register.before": "Registriert außerdem ",
-  "kpis.producer.register.type": "mdaf.<Typ>",
+  "kpis.producer.register.type": "mdaf.<Typ>.<Produzent>",
   "kpis.producer.register.after": " bei SME, damit Konsumenten ihn finden — der Produzent muss ein registrierter SME-Provider sein (Data & Exposure → SME).",
   "kpis.producer.register.id": "Produzenten-ID",
   "kpis.producer.register.inputs": "DME-Eingabetypen",
