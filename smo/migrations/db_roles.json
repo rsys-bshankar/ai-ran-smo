@@ -124,7 +124,8 @@
  "focom": {
   "schema": "focom",
   "shared": [
-   "notification_outbox"
+   "notification_outbox",
+   "smo_event"
   ]
  },
  "aimgf": {
