@@ -43,12 +43,13 @@ TYPE = {"dmeTypeId": "t-1", "dmeTypeIdStruct": {"namespace": "RAN", "name": "PRB
 
 
 def test_get_dataset_reuses_the_consumers_job_and_pages_records_oldest_first():
-    """`get_dataset` reuses the consumer's existing data job (no POST), reads the records in pages of 500 and returns all 501 oldest first."""
+    """`get_dataset` reuses the consumer's existing data job (no POST), reads the records in pages of 500, the second before the oldest record of the first
+    (call flow 12b: a cursor, not an offset), and returns all 501 oldest first."""
     pages = [[{"recordId": str(i)} for i in range(500, 0, -1)], [{"recordId": "0"}]]
     r1 = RoutedR1({
         ("get", "/dme/dme-types"): FakeResponse(200, [TYPE]),
         ("get", "/dme/data-jobs"): FakeResponse(200, {"items": [{"dataJobId": "j-1", "lifecycleStage": "INFERENCE"}]}),
-        ("get", "/dme/data-jobs/j-1/records"): lambda params: FakeResponse(200, {"items": pages[params["offset"] // 500]}),
+        ("get", "/dme/data-jobs/j-1/records"): lambda params: FakeResponse(200, {"items": pages[0 if "before" not in params else 1 if params["before"] == "1" else 2]}),
     })
     out = DataClient(r1).get_dataset("PRB_UTILIZATION", consumer_id="es-rapp", lifecycle_stage="INFERENCE")
     assert (out["dmeTypeId"], out["dataJobId"], out["sourceDomain"]) == ("t-1", "j-1", "LIVE_RAN")

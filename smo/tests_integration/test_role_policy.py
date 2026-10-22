@@ -82,7 +82,7 @@ def test_an_rapp_is_refused_on_exactly_the_routes_the_policy_names_and_a_module_
     """
     client, upstream_calls = gateway
     refused_to_rapp, wrongly_refused_to_module, walked = [], [], 0
-    for prefix in sorted(set(R1_PREFIX_TO_SERVICE) - {"/dme-push", "/dme-pull"}):
+    for prefix in sorted(R1_PREFIX_TO_SERVICE):
         for method, path in _real_routes(loaded_apps, prefix):
             walked += 1
             expected = roles.internal_only(prefix, method, path) or not roles.rapp_may_change(prefix, method, path)

@@ -53,11 +53,9 @@ def test_bootstrap_needs_no_authorization_header():
 
 
 def test_route_table_covers_every_module():
-    """Section 4.2's extended route table — every SMO module plus the two
-    DME data-plane transport routes.
-    """
+    """Section 4.2's extended route table: every SMO module (call flow 12: the /dme-push and /dme-pull aliases are gone, DME had no route under them)."""
     expected_prefixes = {
-        "/sme", "/dme", "/dme-push", "/dme-pull", "/onboarding", "/rapp-mgmt",
+        "/sme", "/dme", "/onboarding", "/rapp-mgmt",
         "/ran-nf-oam", "/nfo", "/focom", "/aimgf", "/mlmr", "/mllf",
         "/ran-analytics", "/mdaf", "/intent-service", "/so-smos", "/sa-smos",
     }   # a rApp's own operator API is the dynamic prefix /rapps/{instanceId}/operator (test_operator_api.py), not a route of this table
@@ -296,15 +294,11 @@ def test_proxy_handles_prefix_only_path_with_no_trailing_segment(monkeypatch):
     assert recorder.calls[0]["url"] == f"{ROUTES['/sme']}/"
 
 
-def test_dme_push_and_pull_prefixes_route_to_dme_without_colliding(monkeypatch):
-    """/dme, /dme-push, and /dme-pull all resolve to the DME backend but
-    are distinct dict keys — proves none of the three shadows another via
-    prefix matching (the proxy's prefix lookup is dict equality, not
-    startswith, but that invariant was never actually asserted).
-    """
+def test_dme_routes_to_dme_and_the_removed_aliases_are_unknown(monkeypatch):
+    """/dme resolves to the DME backend; /dme-push (an alias removed in call flow 12) is an unknown prefix, 404, with no upstream call."""
     recorder = _install_recording_client(monkeypatch)
-    client.get("/dme-push/some/path", headers=AUTH_HEADERS)
-    assert recorder.calls[0]["url"] == f"{ROUTES['/dme-push']}/some/path"
+    assert client.get("/dme-push/some/path", headers=AUTH_HEADERS).status_code == 404
+    assert recorder.calls == []
 
     recorder2 = _install_recording_client(monkeypatch)
     client.get("/dme/some/path", headers=AUTH_HEADERS)

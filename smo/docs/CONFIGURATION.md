@@ -161,6 +161,7 @@ compose and the chart use the file form (`docs/SECRETS.md` lists each secret, it
 | Variable | Default | Secret | Read in | What it does |
 |---|---|---|---|---|
 | `DME_PRODUCER_HEALTH_CACHE_SECONDS` | `30` |  | `dme/app/main.py` | DME: how long, in seconds, a producer's health answer is remembered when a type's status is computed (call flow 11c). Default 30; 0 asks the producer at every read. |
+| `SMO_RETENTION_DME_RECORDS_DAYS` | `0` |  | `dme/app/tasks.py`, `docker-compose.yml` | Days to keep a DME data record (by `produced_at`) before `dme-worker` purges it (task `purge-records`, hourly; call flow 12d). Default 0 keeps every record; `docs/RETENTION.md` proposes 30. |
 
 ### `energy-saving-rapp`
 
@@ -259,7 +260,7 @@ compose and the chart use the file form (`docs/SECRETS.md` lists each secret, it
 | Variable | Default | Secret | Read in | What it does |
 |---|---|---|---|---|
 | `AIMGF_URL` | `http://aimgf:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/aimgf/...` to. Change it only when AIMgF is not reachable as `http://aimgf:8000` (another service name, an external host). |
-| `DME_URL` | `http://dme:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/dme`, `/dme-push` and `/dme-pull` to (Data Management and Exposure). |
+| `DME_URL` | `http://dme:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/dme` to (Data Management and Exposure). |
 | `FOCOM_URL` | `http://focom:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/focom/...` to (O-Cloud inventory and O2ims). |
 | `INTENT_SERVICE_URL` | `http://intent-service:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/intent-service/...` to. |
 | `MDAF_URL` | `http://mdaf:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/mdaf/...` to (analytics catalogue and reports). |

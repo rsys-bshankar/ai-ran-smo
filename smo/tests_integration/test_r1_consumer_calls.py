@@ -289,10 +289,11 @@ def test_every_gateway_call_goes_through_an_r1_client_the_finder_knows(real_run)
 
 
 def test_the_routing_table_and_the_specs_line_up():
-    """The gateway's routing table has the known prefixes (`/dme-push` goes to DME) and every routed module has a spec to check calls against."""
+    """The gateway's routing table has the known prefixes (`/dme` goes to DME, call flow 12 removed its `/dme-push` and `/dme-pull` aliases) and every routed
+    module has a spec to check calls against."""
     routes, specs = gateway_routes(), load_specs()
-    assert {"/sme", "/nfo", "/ran-nf-oam", "/dme-push"} <= set(routes)
-    assert routes["/dme-push"] == "dme"
+    assert {"/sme", "/nfo", "/ran-nf-oam", "/dme"} <= set(routes) and not {"/dme-push", "/dme-pull"} & set(routes)
+    assert routes["/dme"] == "dme"
     assert set(routes.values()) <= set(specs), f"routes without a spec: {sorted(set(routes.values()) - set(specs))}"
 
 

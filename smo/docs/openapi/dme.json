@@ -1819,6 +1819,7 @@
     },
     "/data-jobs/{data_job_id}/records": {
       "get": {
+        "description": "A data job's records as a page, newest first. With `before` (a record id) the page is the records older than that one, newest first; with\n`after`, the records newer than it, oldest first. Both are stable while records arrive, unlike `offset`. 404 when the job or the record is unknown.",
         "operationId": "fetch_data_records_data_jobs__data_job_id__records_get",
         "parameters": [
           {
@@ -1843,6 +1844,40 @@
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "After"
             }
           },
           {

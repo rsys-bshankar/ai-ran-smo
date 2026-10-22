@@ -182,6 +182,11 @@ services:
       SMO_MTLS: "on"
     volumes:
       - ./certs/mtls/rapp-mgmt-worker:/run/mtls:ro
+  dme-worker:              # no port: a client of the others, with a certificate
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/dme-worker:/run/mtls:ro
   mdaf-worker:             # no port: a client of the others, with a certificate
     environment:
       SMO_MTLS: "on"

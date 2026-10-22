@@ -21,6 +21,9 @@ modules:
   mdaf-worker:
     env:
       SMO_RETENTION_MDAF_REPORTS_DAYS: "30"        # task purge-reports
+  dme-worker:
+    env:
+      SMO_RETENTION_DME_RECORDS_DAYS: "30"         # task purge-records: keep at least the longest training window a consumer reads
 
 # The GUI backend's audit log is purged by a command, not by a worker, and NOT by a CronJob of this chart: its SQLite file is on a volume that
 # one pod may hold (gui-bff rolls with Recreate, ReadWriteOnce), so a second pod cannot open it safely. These two variables go to the gui-bff pod, and

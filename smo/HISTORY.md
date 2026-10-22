@@ -2780,6 +2780,36 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.8 flow 12 — DME data jobs, records and offers rewritten from the code: each is its maker's, only a producer delivers, and records page by a cursor and expire
+
+The thirteenth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken; one refined while building it, below):
+
+- **A. A job is its creator's.** `PUT` and `DELETE /data-jobs/{id}` checked nobody, and R1 lets an rApp make both: any rApp could rewrite another's job (its
+  `targetUri` included, re-sent to the producers) or delete it, and `DELETE /data-jobs?consumer_id=` deleted any consumer's jobs. Now an rApp changes and
+  deletes only a job it created (`created_by`; 403 `DATA_JOB_NOT_OWNER`), and its delete by consumer is refused, with none deleted, when any of the jobs is
+  another's. The console and SMO modules act for others. A bulk delete is one transaction (it committed job by job), and every deleted job is announced
+  (`data-job.state-changed` to `DELETED`; before, only a deleted type's jobs were).
+- **B. Only a producer delivers.** Any rApp could post records into any job, so a consumer could forge its own data and junk records kept a stalled job
+  looking on time. Now an rApp delivers only to a job of a type it produces (403 `DME_NOT_A_PRODUCER`), and a `NO_PRODUCER` job takes no record (409
+  `DATA_JOB_NO_PRODUCER`). Refined: records are **not** validated against the type's `dataProductionSchema`. That schema describes a job's definition (ICS's
+  `infoJobDataSchema`), which DME already checks; using it for records would refuse valid data. No schema for records exists to check against.
+- **C. Reads are scoped.** An rApp sees the jobs it created, the jobs that name it as consumer, and the jobs of the types it produces (a producer must see the
+  jobs it delivers to, as the sample rApps' Digital Twins do); any other job, its status and its records are a 404, so a job's existence is not told.
+- **D. An offer is its maker's.** `data_offer.created_by` (revision 0058); an rApp ends only its own offer (403 `DATA_OFFER_NOT_OWNER`). A notify of an
+  unknown offer is 404 `DATA_OFFER_NOT_FOUND` (it was 409 `DME_TYPE_VERSION_CONFLICT`).
+- **E. Records page by a cursor.** Newest first by offset, so a record arriving between two pages repeated one, and the SDK's `get_dataset` paged that way.
+  Now `before=<recordId>` and `after=<recordId>` page by `(produced_at, record_id)`, and `get_dataset` uses `before`. The default order is unchanged.
+- **F. Records expire.** A new worker, `dme-worker` (compose and the chart; its database role gains `periodic_run`), purges records older than
+  `SMO_RETENTION_DME_RECORDS_DAYS` hourly; 0, the default, keeps them, and the production sample proposes 30 (`docs/RETENTION.md`).
+- **G. No Digital Twin under INFERENCE jobs.** A type could be redefined as `DIGITAL_TWIN` while INFERENCE jobs fed on it; now that is 409
+  `DME_TYPE_HAS_INFERENCE_JOBS`.
+- **I. The dead routes.** R1 Termination routed `/dme-push` and `/dme-pull` to DME, which had no route under them (every call a 404), and the role policy let
+  an rApp make any change there; both aliases are removed.
+- **J. The document** (`docs/call-flows/12-dme-data-record-lifecycle-eligibility.md`) is four diagrams, 12a–12d, with PNGs.
+- **Not taken:** acting on an offer's availability notice and keeping its dropped fields (`OPEN_ITEMS.md` DME-OFFER-AVAIL).
+
+Tests: `dme/tests/test_data_ownership.py` (9), `dme/tests/test_tasks.py` (4), `sdk/tests/test_wave10_wrappers.py`, `tests_integration/test_dme_data_ownership.py`.
+
 ### DOC-CF-1.8 flow 11 — DME producers and types rewritten from the code: a job is never left with a producer that is gone, and an rApp does not delete a shared type
 
 The twelfth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken):

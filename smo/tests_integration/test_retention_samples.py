@@ -24,11 +24,11 @@ helm = pytest.mark.skipif(shutil.which("helm") is None, reason="helm is not inst
 
 # the settings in days that docs/RETENTION.md proposes a value for, and where the chart puts each (module env; "gui" is gui.env)
 PROPOSED = {"SMO_RETENTION_ALARMS_DAYS": "90", "SMO_RETENTION_PM_FILES_DAYS": "14", "SAFEGUARD_REFUSAL_RETENTION_DAYS": "90",
-            "SMO_RETENTION_MDAF_REPORTS_DAYS": "30", "GUI_AUDIT_RETENTION_DAYS": "365"}
+            "SMO_RETENTION_MDAF_REPORTS_DAYS": "30", "SMO_RETENTION_DME_RECORDS_DAYS": "30", "GUI_AUDIT_RETENTION_DAYS": "365"}
 # settings with a column in the table but no proposal ("keep"): the code and the chart keep every row, the production sample does not set them
 KEPT = {"SMO_RETENTION_APPROVALS_DAYS": "keep", "SMO_RETENTION_DECISION_RECORDS_DAYS": "keep"}
 WHERE = {"SMO_RETENTION_ALARMS_DAYS": ["ran-nf-oam-worker"], "SMO_RETENTION_PM_FILES_DAYS": ["ran-nf-oam-worker"],
-         "SAFEGUARD_REFUSAL_RETENTION_DAYS": ["ran-nf-oam", "ran-nf-oam-worker"], "SMO_RETENTION_MDAF_REPORTS_DAYS": ["mdaf-worker"],
+         "SAFEGUARD_REFUSAL_RETENTION_DAYS": ["ran-nf-oam", "ran-nf-oam-worker"], "SMO_RETENTION_MDAF_REPORTS_DAYS": ["mdaf-worker"], "SMO_RETENTION_DME_RECORDS_DAYS": ["dme-worker"],
          "GUI_AUDIT_RETENTION_DAYS": ["gui"]}
 
 

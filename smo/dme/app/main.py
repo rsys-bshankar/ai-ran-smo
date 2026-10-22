@@ -16,7 +16,7 @@ import jsonschema
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -158,6 +158,47 @@ def _refuse_unless_producer_owner(request: Request, producer_id: str, action: st
         raise framework_error(DME_PRODUCER_NOT_OWNER, detail=f"the producerId {producer_id!r} is not this caller's invoker id: an rApp may {action} only under its own invoker id")
 
 
+# ---------------------------------------------------------------- DOC-CF-1.8 flow 12: whose job, records and offer
+# A caller with the rApp role is held to these; an SMO module, the console (role `internal`) and a call without a role (a test) are not.
+
+def _rapp_caller(request: Request) -> str | None:
+    """The invoker id of a caller with the rApp role ("" when the gateway gave none), or None for any other caller (who is not held to the rules below)."""
+    return (invoker_id(request) or "") if role_of(request) == ROLE_RAPP else None
+
+
+def _is_producer_of(db: Session, producer_id: str, dme_type_id: uuid.UUID) -> bool:
+    """Whether `producer_id` is linked to the type as one of its producers."""
+    return bool(producer_id) and db.get(DMEProducerType, (producer_id, dme_type_id)) is not None
+
+
+def _visible_job_or_404(db: Session, request: Request, data_job_id: uuid.UUID) -> DataJob:
+    """The job, or 404 `DATA_JOB_NOT_FOUND` when there is none or an rApp may not see it: an rApp sees the jobs it created, the jobs that name it as
+    consumer, and the jobs of the types it produces (it delivers to them). A job it may not see is a 404, not a 403, so its existence is not told."""
+    job = db.get(DataJob, data_job_id)
+    caller = _rapp_caller(request)
+    if job is None or (caller is not None and caller not in (job.created_by, job.consumer_id)
+                       and not _is_producer_of(db, caller, job.dme_type_id)):
+        raise framework_error(FrameworkError.DATA_JOB_NOT_FOUND, detail="no such data job")
+    return job
+
+
+def _refuse_unless_job_owner(request: Request, job: DataJob, action: str) -> None:
+    """Raises 403 `DATA_JOB_NOT_OWNER` when an rApp changes a job it did not create (`created_by`); a job created before revision 0045 has no creator and
+    is the console's or a module's to change."""
+    caller = _rapp_caller(request)
+    if caller is not None and (not caller or job.created_by != caller):
+        raise framework_error(FrameworkError.DATA_JOB_NOT_OWNER, detail=f"an rApp may {action} only a data job it created")
+
+
+def _job_deleted(db: Session, job: DataJob, reason: str) -> None:
+    """Deletes `job`, queues the stop to every producer of its type and publishes `data-job.state-changed` to `DELETED`; the caller commits."""
+    dme_type = db.get(DMEType, job.dme_type_id)
+    _set_job_status(db, job, "DELETED", reason)
+    db.delete(job)
+    if dme_type is not None:
+        _stop_job_at_producers(db, dme_type, job.data_job_id)      # enqueued in the transaction that deletes the job (MSG-1.10)
+
+
 def _redefines(t: DMEType, body: DMETypeRegistration) -> bool:
     """True when registering `body` would change the stored definition of the existing type `t` (its name, schema, collection spec or source), as opposed to re-stating it."""
     return (t.type_name, t.data_production_schema, t.collection_spec, t.source_domain, t.source_context) != (
@@ -225,6 +266,11 @@ def _register(db: Session, request: Request, body: DMETypeRegistration) -> dict:
     if existing is not None and _redefines(existing, body) and not _may_redefine_type(db, request, existing):
         raise framework_error(DME_TYPE_NOT_OWNER, detail=f"the type {body.namespace}/{body.name}/{body.version} was registered by another producer: only that producer, "
                                                           "an SMO module or the operator may change its definition")
+    if (existing is not None and body.sourceDomain == "DIGITAL_TWIN" and existing.source_domain != "DIGITAL_TWIN"
+            and db.scalar(select(DataJob.data_job_id).where(DataJob.dme_type_id == existing.dme_type_id, DataJob.lifecycle_stage == "INFERENCE").limit(1))):
+        # call flow 12d: a Digital Twin may not feed inference, so a type with INFERENCE jobs cannot become one under them
+        raise framework_error(FrameworkError.DME_TYPE_HAS_INFERENCE_JOBS,
+                              detail="the type has INFERENCE data jobs: a Digital Twin source may not feed them; delete them before redefining the type")
 
     producer = db.get(DMEProducer, body.producerId)
     callback_changed = False
@@ -565,16 +611,13 @@ def create_data_job(body: DataJobRequest, request: Request, db: Session = Depend
 
 
 @app.get("/data-jobs/{data_job_id}")
-def get_data_job(data_job_id: uuid.UUID, db: Session = Depends(get_session)):
-    # One data job. 404 DATA_JOB_NOT_FOUND. Read only.
-    job = db.get(DataJob, data_job_id)
-    if job is None:
-        raise framework_error(FrameworkError.DATA_JOB_NOT_FOUND, detail="no such data job")
-    return _job_view(job)
+def get_data_job(data_job_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
+    # One data job. 404 DATA_JOB_NOT_FOUND, also for an rApp that may not see it (call flow 12a: `_visible_job_or_404`). Read only.
+    return _job_view(_visible_job_or_404(db, request, data_job_id))
 
 
 @app.put("/data-jobs/{data_job_id}")
-def update_data_job(data_job_id: uuid.UUID, body: DataJobRequest, db: Session = Depends(get_session)):
+def update_data_job(data_job_id: uuid.UUID, body: DataJobRequest, request: Request, db: Session = Depends(get_session)):
     """PutIndividualInfoJob (ICS's ConsumerController.java) — DME had no
     update-in-place semantics at all, only POST-create/DELETE. ICS's own
     PUT is create-or-update against a caller-supplied jobId (201 new /
@@ -588,9 +631,9 @@ def update_data_job(data_job_id: uuid.UUID, body: DataJobRequest, db: Session = 
     endpoint (same adaptation AI/ML Workflow's update_model already
     made for its own identity fields).
     """
-    job = db.get(DataJob, data_job_id)
-    if job is None:
-        raise framework_error(FrameworkError.DATA_JOB_NOT_FOUND, detail="no such data job")
+    # Call flow 12a: 404 for a job an rApp may not see, 403 DATA_JOB_NOT_OWNER for one it did not create.
+    job = _visible_job_or_404(db, request, data_job_id)
+    _refuse_unless_job_owner(request, job, "change")
     if job.dme_type_id != body.dmeTypeId or job.consumer_id != body.consumerId or job.data_delivery_mode != body.dataDeliveryMode:
         raise framework_error(FrameworkError.DATA_JOB_TARGET_IMMUTABLE, detail="dmeTypeId/consumerId/dataDeliveryMode cannot change on update")
     _validate_delivery_method(db, body.dmeTypeId, body.dataDeliveryMethod)
@@ -613,27 +656,26 @@ def update_data_job(data_job_id: uuid.UUID, body: DataJobRequest, db: Session = 
 
 
 @app.get("/data-jobs/{data_job_id}/status")
-def query_data_job_status(data_job_id: uuid.UUID, db: Session = Depends(get_session)):
-    # The job's stored status. 404 DATA_JOB_NOT_FOUND. Read only.
-    job = db.get(DataJob, data_job_id)
-    if job is None:
-        raise framework_error(FrameworkError.DATA_JOB_NOT_FOUND, detail="no such data job")
+def query_data_job_status(data_job_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
+    # The job's stored status. 404 DATA_JOB_NOT_FOUND, also for an rApp that may not see it. Read only.
+    job = _visible_job_or_404(db, request, data_job_id)
     return {"dataJobId": str(job.data_job_id), "status": job.status}
 
 
 @app.delete("/data-jobs/{data_job_id}", status_code=204)
-def terminate_data_job(data_job_id: uuid.UUID, db: Session = Depends(get_session)):
+def terminate_data_job(data_job_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
     """Handles both directions per section 3.7: a Consumer rApp cancelling
     its own job, or the DME framework itself tearing down a job it created
     against a Producer rApp (consumer_id == 'DME_FRAMEWORK').
     """
-    job = db.get(DataJob, data_job_id)
-    if job is None:
+    # Route notes. Idempotent: 204 for an unknown id, or one an rApp may not see. Call flow 12a: 403 DATA_JOB_NOT_OWNER when an rApp deletes a job it did not
+    # create. The producers are told to stop and `data-job.state-changed` (to DELETED) is published, in the transaction that deletes the job.
+    try:
+        job = _visible_job_or_404(db, request, data_job_id)
+    except HTTPException:
         return
-    dme_type = db.get(DMEType, job.dme_type_id)
-    db.delete(job)
-    if dme_type is not None:
-        _stop_job_at_producers(db, dme_type, data_job_id)      # enqueued in the transaction that deletes the job (MSG-1.10)
+    _refuse_unless_job_owner(request, job, "delete")
+    _job_deleted(db, job, "deleted by its owner")
     db.commit()
 
 
@@ -656,16 +698,17 @@ def terminate_data_jobs_for_consumer(request: Request, consumer_id: str | None =
         raise framework_error(DATA_JOBS_NOT_OWNER, detail="an rApp may delete only the data jobs it created")
     owner = DataJob.consumer_id == consumer_id if consumer_id is not None else DataJob.created_by == created_by
     jobs = db.scalars(select(DataJob).where(owner)).all()
+    caller = _rapp_caller(request)
+    if caller is not None and any(j.created_by != caller for j in jobs):
+        # call flow 12a: an rApp's teardown by consumer covers only jobs it created; one it did not refuses the whole call, so nothing is half done
+        raise framework_error(DATA_JOBS_NOT_OWNER, detail="an rApp may delete only the data jobs it created; some jobs of that consumer are another's")
     for job in jobs:
-        dme_type = db.get(DMEType, job.dme_type_id)
-        db.delete(job)
-        if dme_type is not None:
-            _stop_job_at_producers(db, dme_type, job.data_job_id)
-        db.commit()
+        _job_deleted(db, job, "deleted with its consumer's jobs")
+    db.commit()                                     # call flow 12a: one transaction, so a failure part way deletes none
 
 
 @app.post("/offers", status_code=201)
-def create_data_offer(body: DataOfferRequest, db: Session = Depends(get_session)):
+def create_data_offer(body: DataOfferRequest, request: Request, db: Session = Depends(get_session)):
     # Stores an offer, committing to the first of the offered methods. 404 DME_TYPE_NOT_FOUND when the type is not registered (SEC-15.10), then 409 DELIVERY_METHOD_NOT_OFFERED when the list is empty or holds an unknown method. Answers 201.
     _registered_type_or_404(db, body.dmeTypeId)
     if not body.dataDeliveryMethods or not set(body.dataDeliveryMethods) <= DELIVERY_METHODS:
@@ -676,6 +719,7 @@ def create_data_offer(body: DataOfferRequest, db: Session = Depends(get_session)
         data_delivery_method_committed=body.dataDeliveryMethods[0],  # framework commits to one, section 3.5
         data_availability_notification_uri=body.dataAvailabilityNotificationUri,
         data_offer_termination_notification_uri=body.dataOfferTerminationNotificationUri,
+        created_by=invoker_id(request),       # call flow 12c: who made it, as the gateway vouched for it
     )
     db.add(offer)
     db.commit()
@@ -692,15 +736,20 @@ def get_data_offer(offer_id: uuid.UUID, db: Session = Depends(get_session)):
 
 
 @app.delete("/offers/{offer_id}", status_code=204)
-def terminate_data_offer(offer_id: uuid.UUID, db: Session = Depends(get_session)):
+def terminate_data_offer(offer_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
     """Section 3.5: drain in-flight notifications before tearing down —
     Phase 1, 'drain' means simply not accepting new availability
     notifications for this offer once termination starts; a real queue
     drain is future work, flagged rather than silently skipped.
     """
+    # Route notes. Idempotent: 204 for an unknown id. Call flow 12c: 403 DATA_OFFER_NOT_OWNER when an rApp terminates an offer it did not create (an offer
+    # from before revision 0058 has no creator and is the console's or a module's to end).
     offer = db.get(DataOffer, offer_id)
     if offer is None:
         return
+    caller = _rapp_caller(request)
+    if caller is not None and (not caller or offer.created_by != caller):
+        raise framework_error(FrameworkError.DATA_OFFER_NOT_OWNER, detail="an rApp may terminate only an offer it created")
     termination_uri = offer.data_offer_termination_notification_uri
     db.delete(offer)
     enqueue(db, termination_uri, {"dataOfferId": str(offer_id)})  # normal direction; sent once the deletion has committed
@@ -715,9 +764,8 @@ def offer_data_availability(offer_id: uuid.UUID, body: dict, db: Session = Depen
     """
     offer = db.get(DataOffer, offer_id)
     if offer is None:
-        raise framework_error(FrameworkError.DME_TYPE_VERSION_CONFLICT, detail="no such offer")
-    # Phase 1: framework pulls/receives here — deferred to the actual pull/push
-    # transport handler (dme-pull/dme-push routes), this endpoint just acks.
+        raise framework_error(FrameworkError.DATA_OFFER_NOT_FOUND, detail="no such data offer")      # call flow 12c (a 409 DME_TYPE_VERSION_CONFLICT before)
+    # Phase 1: an acknowledgement only; DME neither pulls the offered data nor calls the availability URI (`OPEN_ITEMS.md` DME-OFFER-AVAIL).
 
 
 def _producers_for_type(db: Session, dme_type_id: uuid.UUID) -> list[DMEProducer]:
@@ -922,11 +970,16 @@ def _producer_is_healthy(callback_url: str) -> bool:
 # (call flow 01).
 
 @app.get("/data-jobs")
-def list_data_jobs(dme_type_id: uuid.UUID | None = None, consumer_id: str | None = None, late: bool | None = None, limit: int = PageLimit,
+def list_data_jobs(request: Request, dme_type_id: uuid.UUID | None = None, consumer_id: str | None = None, late: bool | None = None, limit: int = PageLimit,
                    offset: int = PageOffset, db: Session = Depends(get_session)):
     """The data jobs, paginated, optionally of one type and one consumer. GUI-9.8: `late=true` keeps the jobs that are LATE (no delivery for two of
     their declared intervals), `late=false` the jobs that declare an interval and are on time; a job that declares none matches neither."""
     stmt = select(DataJob)
+    caller = _rapp_caller(request)
+    if caller is not None:
+        # call flow 12a: an rApp lists the jobs it created, the jobs that name it as consumer, and the jobs of the types it produces
+        produced = select(DMEProducerType.dme_type_id).where(DMEProducerType.producer_id == caller)
+        stmt = stmt.where(or_(DataJob.created_by == caller, DataJob.consumer_id == caller, DataJob.dme_type_id.in_(produced)))
     if dme_type_id:
         stmt = stmt.where(DataJob.dme_type_id == dme_type_id)
     if consumer_id:
@@ -957,11 +1010,18 @@ def list_data_offers(dme_type_id: uuid.UUID | None = None, limit: int = PageLimi
 # paths, not one" — this is the data path, reachable by either).
 
 @app.post("/data-jobs/{data_job_id}/records", status_code=201)
-def ingest_data_record(data_job_id: uuid.UUID, body: DataRecordRequest, db: Session = Depends(get_session)):
-    # Stores one payload for the job. 404 DATA_JOB_NOT_FOUND; 201 with the record id. The caller is not checked against the job's producers: who may call is decided at the gateway.
+def ingest_data_record(data_job_id: uuid.UUID, body: DataRecordRequest, request: Request, db: Session = Depends(get_session)):
+    # Stores one payload for the job; 201 with the record id. Call flow 12b: 404 DATA_JOB_NOT_FOUND (also a job an rApp may not see); 403 DME_NOT_A_PRODUCER when
+    # an rApp is not a producer of the job's type (the console, admin, and SMO modules may deliver); 409 DATA_JOB_NO_PRODUCER for a job whose type has no
+    # producer. The payload is stored as it is (the type's dataProductionSchema describes the job's definition, not its records).
     job = db.get(DataJob, data_job_id)
     if job is None:
         raise framework_error(FrameworkError.DATA_JOB_NOT_FOUND, detail="no such data job")
+    caller = _rapp_caller(request)
+    if caller is not None and not _is_producer_of(db, caller, job.dme_type_id):
+        raise framework_error(FrameworkError.DME_NOT_A_PRODUCER, detail="only a producer of the job's type may deliver records to it")
+    if job.status == "NO_PRODUCER":
+        raise framework_error(FrameworkError.DATA_JOB_NO_PRODUCER, detail="the job's type has no producer: nothing may be delivered to it until one joins")
     record = DataRecord(data_job_id=data_job_id, payload=body.payload)
     db.add(record)
     job.last_delivery_at = _now()                # GUI-9.8: the delivery the job's `late` is measured from
@@ -971,13 +1031,31 @@ def ingest_data_record(data_job_id: uuid.UUID, body: DataRecordRequest, db: Sess
 
 
 @app.get("/data-jobs/{data_job_id}/records")
-def fetch_data_records(data_job_id: uuid.UUID, limit: int = PageLimit, offset: int = PageOffset,
-                        db: Session = Depends(get_session)):
-    # The job's records as a page, newest first. 404 DATA_JOB_NOT_FOUND. Read only.
-    job = db.get(DataJob, data_job_id)
-    if job is None:
-        raise framework_error(FrameworkError.DATA_JOB_NOT_FOUND, detail="no such data job")
-    stmt = select(DataRecord).where(DataRecord.data_job_id == data_job_id).order_by(DataRecord.produced_at.desc())
+def fetch_data_records(data_job_id: uuid.UUID, request: Request, limit: int = PageLimit, offset: int = PageOffset,
+                        before: uuid.UUID | None = None, after: uuid.UUID | None = None, db: Session = Depends(get_session)):
+    """A data job's records as a page, newest first. With `before` (a record id) the page is the records older than that one, newest first; with
+    `after`, the records newer than it, oldest first. Both are stable while records arrive, unlike `offset`. 404 when the job or the record is unknown."""
+    # Route notes. Call flow 12b: 404 DATA_JOB_NOT_FOUND also for a job an rApp may not see; 422 for both cursors at once; a cursor record of another job is
+    # 404 DATA_RECORD_NOT_FOUND. Order is (produced_at, record_id), so records of one instant are still in one order. `offset` applies only without a cursor.
+    _visible_job_or_404(db, request, data_job_id)
+    if before is not None and after is not None:
+        raise HTTPException(status_code=422, detail="give at most one of before and after")
+    stmt = select(DataRecord).where(DataRecord.data_job_id == data_job_id)
+    cursor_id = before or after
+    if cursor_id is not None:
+        cursor = db.get(DataRecord, cursor_id)
+        if cursor is None or cursor.data_job_id != data_job_id:
+            raise framework_error(FrameworkError.DATA_RECORD_NOT_FOUND, detail="no such record of this job")
+        at, rid = cursor.produced_at, cursor.record_id
+        if after is not None:
+            stmt = stmt.where(or_(DataRecord.produced_at > at, and_(DataRecord.produced_at == at, DataRecord.record_id > rid)))
+            stmt = stmt.order_by(DataRecord.produced_at.asc(), DataRecord.record_id.asc())
+        else:
+            stmt = stmt.where(or_(DataRecord.produced_at < at, and_(DataRecord.produced_at == at, DataRecord.record_id < rid)))
+            stmt = stmt.order_by(DataRecord.produced_at.desc(), DataRecord.record_id.desc())
+        offset = 0
+    else:
+        stmt = stmt.order_by(DataRecord.produced_at.desc(), DataRecord.record_id.desc())
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [_record_view(r) for r in page["items"]]}
 
