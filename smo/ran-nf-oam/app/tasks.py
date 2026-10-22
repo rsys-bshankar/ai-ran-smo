@@ -48,7 +48,7 @@ def advance_waves() -> None:
     with SessionLocal() as db:
         main.advance_due(db)
         lifecycle.advance_due(db)                  # MGT-15: the software campaigns whose pause has elapsed, and the running ones that have fallen behind
-        lifecycle.dispatch_due(db)                 # call flow 19b: any software phase not yet sent to its element (a wave the sweep started, a send a crash cut short)
+        lifecycle.dispatch_due(db)                 # call flow 19b: any software phase not yet claimed for sending (a wave the sweep started, a commit a crash cut short)
 
 
 def start_due_windows() -> None:

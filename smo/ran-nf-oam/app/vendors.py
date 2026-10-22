@@ -38,10 +38,11 @@ from typing import Literal
 from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, Query, Request
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from smo_shared import events
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared import scope as authz_scope
@@ -66,6 +67,7 @@ PROTOCOL_MODE = {"NETCONF": "O1_NETCONF", "RESTCONF": "O1_RESTCONF"}
 
 _BUILTIN_DIR = Path(__file__).parent / "cm_schemas"
 DEFAULT_SPEC_SCHEMA = ("3gpp-ts28541-nrnrm", "19.6.0")
+SOURCE = "/smo/ran-nf-oam"       # the event source of registry changes (call flow 21)
 
 
 @lru_cache
@@ -98,11 +100,47 @@ class CMSchemaBody(BaseModel):
     descriptor: dict = Field(description='{"classes": {"<IOC>": {"<attribute>": {"type": ..., "enum"?: [...]}}}}')
 
 
+LEAF_TYPES = ("integer", "number", "boolean", "string", "array", "object", "any")
+
+
+def _intervals_ok(value) -> bool:
+    """A `range` or `length`: a list of [lo, hi] pairs, each bound a number or None (unbounded)."""
+    def bound(b) -> bool:
+        return b is None or (isinstance(b, (int, float)) and not isinstance(b, bool))
+    return isinstance(value, list) and all(isinstance(i, list) and len(i) == 2 and bound(i[0]) and bound(i[1]) for i in value)
+
+
+def _entry_problem(entry) -> str | None:
+    """Why an attribute entry is not one `leafcheck.check_value` can use (call flow 21, DOC-CF-1.8), or None: a dict, a known `type`, an `enum` list, `range` and
+    `length` interval lists, a `pattern` list of strings, an integer `fractionDigits`."""
+    if not isinstance(entry, dict):
+        return "is not an object"
+    if entry.get("type", "any") not in LEAF_TYPES:
+        return f"has type {entry.get('type')!r}, not one of {', '.join(LEAF_TYPES)}"
+    if "enum" in entry and not isinstance(entry["enum"], list):
+        return "has an enum that is not a list"
+    for key in ("range", "length"):
+        if key in entry and not _intervals_ok(entry[key]):
+            return f"has a {key} that is not a list of [lo, hi] pairs"
+    if "pattern" in entry and not (isinstance(entry["pattern"], list) and all(isinstance(x, str) for x in entry["pattern"])):
+        return "has a pattern that is not a list of strings"
+    if "fractionDigits" in entry and (isinstance(entry["fractionDigits"], bool) or not isinstance(entry["fractionDigits"], int)):
+        return "has a fractionDigits that is not an integer"
+    return None
+
+
 def _check_descriptor(descriptor: dict) -> None:
+    """422 SCHEMA_VALIDATION_FAILED unless the descriptor is `{"classes": {IOC: {attribute: entry}}}` with every entry one the leaf checker can use (call flow
+    21: a malformed entry loaded, and every later CM write touching it was a 500; schemas cannot be replaced, so it stuck)."""
     classes = descriptor.get("classes")
     if not isinstance(classes, dict) or not all(isinstance(a, dict) for a in classes.values()):
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
                               detail='descriptor must be {"classes": {IOC: {attribute: {...}}}}')
+    for ioc, attrs in classes.items():
+        for attr, entry in attrs.items():
+            problem = _entry_problem(entry)
+            if problem is not None:
+                raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"descriptor entry {ioc}.{attr} {problem}")
 
 
 def _schema_view(name: str, revision: str, type_: str, location: str, descriptor: dict | None, builtin: bool,
@@ -147,12 +185,15 @@ def _load_schema(db: Session, body: CMSchemaBody) -> tuple[dict, bool]:
     db.add(CMSchemaCache(schema_name=body.schemaName, revision=body.revision, location=body.location, type=body.type,
                          descriptor={"classes": body.descriptor["classes"]}))
     db.flush()
+    events.publish(db, "cm-schema", "loaded", SOURCE, f"{body.schemaName}@{body.revision}",
+                   {"schemaName": body.schemaName, "revision": body.revision, "classCount": len(body.descriptor["classes"])})
     return {"schemaName": body.schemaName, "revision": body.revision}, True
 
 
 @router.post("/cm-schemas", status_code=201)
-def load_cm_schema(body: CMSchemaBody, db: Session = Depends(get_session)):
+def load_cm_schema(body: CMSchemaBody, request: Request, db: Session = Depends(get_session)):
     # 422 SCHEMA_VALIDATION_FAILED for a descriptor without a `classes` map; 409 CM_SCHEMA_CONFLICT when the name and revision are already loaded (even with an identical descriptor, here; `POST /vendor-onboarding` reuses an identical one instead) or are a bundled schema. 201 with the stored schema (descriptor not echoed).
+    _require_registry_writer(request)            # call flow 21: a schema is global and immutable, so an rApp loading one could hold a name another needs (403)
     ref, created = _load_schema(db, body)
     if not created:
         raise framework_error(FrameworkError.CM_SCHEMA_CONFLICT, detail=f"{ref['schemaName']}@{ref['revision']} is already loaded")
@@ -226,6 +267,22 @@ def _capability_view(c: VendorCapability) -> dict:
     }
 
 
+def _with_resolution(db: Session, c: VendorCapability) -> dict:
+    """The view of a capability entry with `unresolvedSchemas`: each schema it names that is neither loaded nor bundled (call flow 21, DOC-CF-1.8: such an entry
+    refuses every CM write of its elements rather than leaving them unchecked)."""
+    return {**_capability_view(c), "unresolvedSchemas": _unresolved_schemas(db, c)}
+
+
+def _unresolved_schemas(db: Session, c: VendorCapability) -> list[str]:
+    """`name@revision` of each schema the entry's conformance mode uses that is neither loaded nor bundled."""
+    refs = []
+    if c.conformance_mode != "OWN" and c.spec_schema_name:
+        refs.append((c.spec_schema_name, c.spec_schema_revision or ""))
+    if c.conformance_mode != "SPEC" and c.schema_name:
+        refs.append((c.schema_name, c.schema_revision or ""))
+    return [f"{name}@{rev}" for name, rev in refs if _descriptor(db, name, rev) is None]
+
+
 def _declare_capability(db: Session, vendor_name: str, body: VendorCapabilityBody,
                         discovery_uri: str | None = None) -> VendorCapability:
     """Creates or replaces the capability entry of `vendor_name` in the caller's transaction (flushed, not committed). 422 SCHEMA_VALIDATION_FAILED when OWN or COMBINED has no `schemaRef`; 404 CM_SCHEMA_NOT_FOUND when a referenced schema is not loaded or bundled. A SPEC or COMBINED entry with no `specSchemaRef` gets the bundled TS 28.541 descriptor. Every managed element of the vendor is then re-checked against the new modes (`check_vendor_mode`), so a declaration that would strand a registered element is refused and, since the caller does not commit, not kept.
@@ -253,6 +310,7 @@ def _declare_capability(db: Session, vendor_name: str, body: VendorCapabilityBod
     # every endpoint already registered for this vendor must use a declared mode
     for me in db.scalars(select(ManagedEntity).where(ManagedEntity.vendor_name == vendor_name)):
         check_vendor_mode(db, vendor_name, me.o1_protocol)
+    events.publish(db, "vendor-capability", "declared", SOURCE, vendor_name, _capability_view(cap))      # call flow 21: a registry change is on the feed
     return cap
 
 
@@ -270,7 +328,7 @@ def declare_vendor_capability(vendor_name: str, body: VendorCapabilityBody, requ
     _require_registry_writer(request)
     cap = _declare_capability(db, vendor_name, body)
     db.commit()
-    return _capability_view(cap)
+    return _with_resolution(db, cap)
 
 
 def _vendor_capabilities(scope: authz_scope.Scope | None):
@@ -284,7 +342,7 @@ def _vendor_capabilities(scope: authz_scope.Scope | None):
 def list_vendor_capabilities(request: Request, limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
     # Paged, ordered by vendor name. A caller with a scope claim sees only the vendors of its own elements.
     page = paginate(db, _vendor_capabilities(scoping.request_scope(request)).order_by(VendorCapability.vendor_name), limit, offset)
-    return {**page, "items": [_capability_view(c) for c in page["items"]]}
+    return {**page, "items": [_with_resolution(db, c) for c in page["items"]]}
 
 
 @router.get("/vendor-capabilities/{vendor_name}")
@@ -293,18 +351,25 @@ def get_vendor_capability(vendor_name: str, request: Request, db: Session = Depe
     cap = db.scalars(_vendor_capabilities(scoping.request_scope(request)).where(VendorCapability.vendor_name == vendor_name)).one_or_none()
     if cap is None:
         raise framework_error(FrameworkError.VENDOR_CAPABILITY_NOT_FOUND, detail=f"no capability registered for vendor {vendor_name!r}")
-    return _capability_view(cap)
+    return _with_resolution(db, cap)
 
 
 @router.delete("/vendor-capabilities/{vendor_name}", status_code=204)
-def delete_vendor_capability(vendor_name: str, request: Request, db: Session = Depends(get_session)):
+def delete_vendor_capability(vendor_name: str, request: Request, force: bool = False, db: Session = Depends(get_session)):
     # SEC-15.7b: 403 ROLE_NOT_PERMITTED for an rApp. 204 whether or not the entry existed. Elements of the vendor stay registered and are then unchecked (no entry means the permissive default).
     # SEC-15.7: filtered by scope as the get is: a caller with a scope claim can delete only the entry of a vendor one of its own elements uses; any other entry is left alone and
     # the 204 says nothing, as when a subscription outside the scope is unsubscribed (the answer must not tell it which vendors exist). An unscoped caller is not asked.
+    # Call flow 21 (DOC-CF-1.8): deleting an entry switches off both checks for every element of the vendor, in every tenant, so it is refused while elements
+    # use the vendor (409 VENDOR_CAPABILITY_IN_USE, naming how many) unless `force=true`; the deletion is published (`vendor-capability.deleted`).
     _require_registry_writer(request)
     cap = db.scalars(_vendor_capabilities(scoping.request_scope(request)).where(VendorCapability.vendor_name == vendor_name)).one_or_none()
     if cap is not None:
+        in_use = db.scalar(select(func.count()).select_from(ManagedEntity).where(ManagedEntity.vendor_name == vendor_name)) or 0
+        if in_use and not force:
+            raise framework_error(FrameworkError.VENDOR_CAPABILITY_IN_USE,
+                                  detail=f"{in_use} managed element(s) use vendor {vendor_name!r}: without its entry they are not checked; send force=true to delete it anyway")
         db.delete(cap)
+        events.publish(db, "vendor-capability", "deleted", SOURCE, vendor_name, {"vendorName": vendor_name, "elementsLeftUnchecked": in_use})
         db.commit()
 
 
@@ -371,7 +436,17 @@ def onboard_vendor(body: VendorOnboardingBody, request: Request, db: Session = D
         resp = get_webhook(discovery_uri)
         if resp is None or resp.status_code != 200:
             raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"capability discovery at {discovery_uri} failed")
-        discovered = resp.json()
+        try:
+            discovered = resp.json()
+        except ValueError:
+            discovered = None
+        # call flow 21 (DOC-CF-1.8): the adaptor's answer is checked like any input (a non-JSON or non-object answer, or an unknown service or mode, was a 500)
+        if not isinstance(discovered, dict):
+            raise framework_error(FrameworkError.UPSTREAM_FAILED, detail=f"capability discovery at {discovery_uri} did not answer a JSON object")
+        unknown = [x for x in _as_list(discovered.get("supportedServices")) if x not in MNS_SERVICES] + \
+                  [x for x in _as_list(discovered.get("supportedVendorModes")) if x not in ("O1_NETCONF", "O1_RESTCONF")]
+        if unknown or not all(isinstance(discovered.get(k), (list, type(None))) for k in ("supportedServices", "supportedVendorModes")):
+            raise framework_error(FrameworkError.UPSTREAM_FAILED, detail=f"the adaptor's declaration names unknown services or modes: {unknown or 'not lists'}")
         if discovered.get("vendorName") not in (None, body.vendorName):
             raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
                                   detail=f"adaptor declares vendor {discovered['vendorName']!r}, not {body.vendorName!r}")
@@ -385,12 +460,20 @@ def onboard_vendor(body: VendorOnboardingBody, request: Request, db: Session = D
     schema_ref = body.schemaRef
     if schema_ref is None and body.conformanceMode in ("OWN", "COMBINED") and len(body.schemas) == 1:
         schema_ref = SchemaRef(schemaName=body.schemas[0].schemaName, revision=body.schemas[0].revision)
-    cap = _declare_capability(db, body.vendorName, VendorCapabilityBody(
-        supportedServices=services, conformanceMode=body.conformanceMode, supportedVendorModes=modes,
-        schemaRef=schema_ref, specSchemaRef=body.specSchemaRef), discovery_uri=discovery_uri)
+    try:
+        declaration = VendorCapabilityBody(supportedServices=services, conformanceMode=body.conformanceMode, supportedVendorModes=modes,
+                                           schemaRef=schema_ref, specSchemaRef=body.specSchemaRef)
+    except ValidationError as exc:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"the declaration is not valid: {exc.error_count()} error(s)") from None
+    cap = _declare_capability(db, body.vendorName, declaration, discovery_uri=discovery_uri)
     db.commit()
     return {"vendorName": body.vendorName, "discovered": discovered, "schemasLoaded": loaded,
-            "capability": _capability_view(cap)}
+            "capability": _with_resolution(db, cap)}
+
+
+def _as_list(value) -> list:
+    """`value` when it is a list, else an empty list (the type itself is checked separately)."""
+    return value if isinstance(value, list) else []
 
 
 # ---------------------------------------------------------------- the two generic checks
@@ -400,15 +483,20 @@ def vendor_capability(db: Session, me: ManagedEntity | None) -> VendorCapability
 
 
 def effective_services(db: Session, me: ManagedEntity | None) -> list[str] | None:
-    """The endpoint's own declaration, else its vendor's; None = unchecked."""
+    """The services an element may be asked for: its endpoint's own declaration narrowed to its vendor's, either one alone when only it exists; None = unchecked.
+    Call flow 21 (DOC-CF-1.8): the endpoint's list used to win outright, so an endpoint registered before its vendor's entry, or kept after the vendor was
+    narrowed, could claim a service the vendor lacks."""
     if me is None:
         return None
+    own = None
     if me.o1_adaptor_endpoint_id is not None:
         endpoint = db.get(O1AdaptorEndpoint, me.o1_adaptor_endpoint_id)
         if endpoint is not None and endpoint.supported_services is not None:
-            return endpoint.supported_services
+            own = list(endpoint.supported_services)
     cap = vendor_capability(db, me)
-    return cap.supported_services if cap is not None else None
+    if cap is None:
+        return own
+    return [s for s in own if s in cap.supported_services] if own is not None else cap.supported_services
 
 
 def require_service(db: Session, managed_element_ref: str, service: str) -> None:
@@ -447,10 +535,13 @@ def schema_problems(db: Session, change: dict) -> list[str]:
     cap = vendor_capability(db, me)
     if cap is None:
         return []
+    where = f"{change['managedElementRef']} ({cap.vendor_name}, {cap.conformance_mode})"
+    missing = _unresolved_schemas(db, cap)
+    if missing:           # call flow 21: a schema the entry names that is gone refuses the write, it no longer leaves the element unchecked
+        return [f"{where}: the vendor's CM schema {', '.join(missing)} is not loaded"]
     classes = _allowed_classes(db, cap)
     if classes is None:
         return []
-    where = f"{change['managedElementRef']} ({cap.vendor_name}, {cap.conformance_mode})"
     ioc = change_class(change)
     if ioc is not None and ioc not in classes:
         return [f"{where}: class {ioc} is not in the vendor's data model"]
@@ -462,6 +553,8 @@ def schema_problems(db: Session, change: dict) -> list[str]:
             spec = next((a[attr] for a in classes.values() if attr in a), None)
         if spec is None:
             problems.append(f"{where}: attribute {attr} is not defined" + (f" on {ioc}" if ioc else " on any class"))
+        elif _entry_problem(spec) is not None:     # a bundled or older descriptor entry the leaf checker cannot use: a refusal, not a 500
+            problems.append(f"{where}: the descriptor entry of {attr} {_entry_problem(spec)}")
         else:  # SB-5.2: the leaf's type, range, length, pattern, fraction digits and enum, before anything is dispatched
             reason = check_value(spec, value)
             if reason is not None:

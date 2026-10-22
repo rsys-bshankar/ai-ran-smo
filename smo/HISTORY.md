@@ -2780,6 +2780,40 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.8 flow 21 — O1 vendor onboarding rewritten from the code: the registry decides at every operation, and only the operator changes it
+
+The nineteenth and last flow of DOC-CF-1.8. The product owner asked for this one to be done on the audit's recommendations without a further review
+(A to I; F folded into what the shared integrity handler already does):
+
+- **A. The vendor bounds an element's services at every operation.** The subset check ran only at registration and only when the vendor already had an
+  entry, and `effective_services` preferred the endpoint's list outright: an endpoint registered before its vendor's entry, or kept after the vendor was
+  narrowed, could be asked for a service the vendor lacks. `effective_services` now intersects the two.
+- **B. The adaptor's declaration is checked.** A non-JSON answer, one that is not an object, lists that are not lists, or an unknown service or mode was a
+  500 (`resp.json()`, `.get` on a list, a pydantic `ValidationError` raised inside the route); now 502 `UPSTREAM_FAILED`, and a declaration that still fails
+  the body model is 422. Nothing is declared in either case.
+- **C. Descriptors are checked on load.** `_check_descriptor` checked only that each class was an object: an entry such as `"string"` loaded, and every
+  later CM write touching it was a 500 in `leafcheck`; schemas are immutable, so it stuck. Every entry must now be an object with a known `type` and
+  well-formed `enum`, `range`, `length`, `pattern` and `fractionDigits` (422 naming `IOC.attribute`); an entry already stored is reported as a refusal of
+  the write, not a crash.
+- **D. Only the operator or a module loads a schema or registers an element.** `POST /cm-schemas` had no role check of its own (only R1's allow-list), so
+  under `SMO_ROLE_ENFORCEMENT=audit` an rApp could take a schema name an admin needs; it is now 403 for the rApp role, as its sibling routes. `POST
+  /o1-adaptor-endpoints` took no `Request`: it is now 403 for an rApp and 403 `SCOPE_DENIED` for a scoped caller placing an element outside its claim.
+- **E. Deleting a used vendor entry is deliberate, and registry changes are announced.** A delete silently switched off both checks for every tenant's
+  elements of the vendor; it is now 409 `VENDOR_CAPABILITY_IN_USE` (new code) while elements use the vendor, unless `force=true`. Declaring, deleting and
+  loading publish `org.oran.smo.vendor-capability.declared` / `.deleted` and `org.oran.smo.cm-schema.loaded`.
+- **F. Races.** The audit's concurrent first inserts (a vendor entry, a schema key, two registrations of one element) end at a unique key; on Postgres the
+  shared integrity handler already answers that 409 `RESOURCE_ALREADY_EXISTS`, not a 500, so nothing was added.
+- **G. A missing schema fails closed.** An entry naming a schema that is neither loaded nor bundled left SPEC elements unchecked and refused every class
+  under COMBINED; `schema_problems` now refuses the write naming the schema, and the capability views carry `unresolvedSchemas`.
+- **H. The doc** is 21a-21d: it said an endpoint could never claim a service its vendor lacks (true only at registration), drew the adaptor registering
+  itself (the operator or a module does), and left out the scope, role and SSRF limits, the ssh/tls discovery refusal and the missing-`vendorName` pass.
+- **I. The adaptor address.** An http-mock `adaptorUri` must be an http(s) URL with a host and no user or password (422); address vetting of CM dispatch
+  itself is not taken (the registrant is the operator or a module).
+- **Not taken:** deregistering or moving an endpoint, refusing a capability declaration narrower than an existing endpoint (A makes it harmless), and
+  vetting the CM dispatch address.
+- Tests: `ran-nf-oam/tests/test_vendor_onboarding_rules.py` (8), `test_scope_job_actions.py` (force on a used vendor). `docs/call-flows/21-o1-vendor-onboarding.md`
+  (21a-21d, with PNGs).
+
 ### DOC-CF-1.8 flow 20 — Alarms and PM / FM subscriptions rewritten from the code: a raise is checked and happens once, and a subscription is its maker's
 
 The eighteenth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, A to J, all taken):
