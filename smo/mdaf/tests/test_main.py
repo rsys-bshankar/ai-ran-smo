@@ -170,7 +170,7 @@ def test_list_subscriptions_excludes_unsubscribed(client):
 def test_publish_report_notifies_subscriber_with_a_notification_destination(client, monkeypatch):
     """A published report reaches the notification destination of a matching subscription, with the report id, type and output."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
 
     client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos"}, json={"notificationDestination": "http://sa-smos:8000/analytics-reports"})
     resp = client.post("/reports", params={"analytics_type": "coverage-issue-analysis"}, json={"output": {"issue": "cellA"}, "input_sources": []})
@@ -186,7 +186,7 @@ def test_publish_report_notifies_subscriber_with_a_notification_destination(clie
 def test_publish_report_does_not_notify_subscriber_without_a_notification_destination(client, monkeypatch):
     """A subscription with no destination is a polling consumer and nothing is sent for it."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
 
     client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos"})
     client.post("/reports", params={"analytics_type": "coverage-issue-analysis"}, json={"output": {}, "input_sources": []})
@@ -197,7 +197,7 @@ def test_publish_report_does_not_notify_subscriber_without_a_notification_destin
 def test_publish_report_does_not_notify_subscriber_of_a_different_analytics_type(client, monkeypatch):
     """A subscription is notified only for reports of its own analytics type."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
 
     client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"}, json={"notificationDestination": "http://nfo:8000/analytics-reports"})
     client.post("/reports", params={"analytics_type": "coverage-issue-analysis"}, json={"output": {}, "input_sources": []})
@@ -209,7 +209,7 @@ def test_publish_report_notification_delivery_survives_unreachable_subscriber(cl
     """An unreachable subscriber does not fail the publish."""
     import httpx as httpx_module
 
-    def raise_error(url, json=None, timeout=None):
+    def raise_error(url, json=None, timeout=None, **kw):
         raise httpx_module.ConnectError("unreachable")
 
     monkeypatch.setattr("app.main.httpx.post", raise_error)
@@ -268,7 +268,7 @@ def test_subscribe_persists_threshold_info(client):
 def test_threshold_subscription_fires_on_first_report_already_crossed(client, monkeypatch):
     """A threshold subscription is notified by its first report if the value is already across the threshold."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
     client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"},
                 json={"notificationDestination": "http://nfo:8000/analytics-reports", "thresholdInfo": [{"monitoredMDAOutputIE": "utilization", "thresholdDirection": "UP", "thresholdValue": 0.8}]})
     client.post("/reports", params={"analytics_type": "resource-utilization"},
@@ -279,7 +279,7 @@ def test_threshold_subscription_fires_on_first_report_already_crossed(client, mo
 def test_threshold_subscription_does_not_notify_below_threshold(client, monkeypatch):
     """A report that does not reach the threshold sends nothing."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
     client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"},
                 json={"notificationDestination": "http://nfo:8000/analytics-reports", "thresholdInfo": [{"monitoredMDAOutputIE": "utilization", "thresholdDirection": "UP", "thresholdValue": 0.8}]})
     client.post("/reports", params={"analytics_type": "resource-utilization"},
@@ -290,7 +290,7 @@ def test_threshold_subscription_does_not_notify_below_threshold(client, monkeypa
 def test_threshold_subscription_does_not_refire_while_staying_above(client, monkeypatch):
     """While the value stays on the far side (even moving inside the hysteresis band) only the first crossing notifies."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
     client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"},
                 json={"notificationDestination": "http://nfo:8000/analytics-reports", "thresholdInfo": [{"monitoredMDAOutputIE": "utilization", "thresholdDirection": "UP",
                                           "thresholdValue": 0.8, "hysteresis": 0.05}]})
@@ -303,7 +303,7 @@ def test_threshold_subscription_does_not_refire_while_staying_above(client, monk
 def test_threshold_subscription_refires_after_reset_and_recross(client, monkeypatch):
     """After the value drops beyond the hysteresis band the threshold re-arms and the next crossing notifies again."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
     client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"},
                 json={"notificationDestination": "http://nfo:8000/analytics-reports", "thresholdInfo": [{"monitoredMDAOutputIE": "utilization", "thresholdDirection": "UP",
                                           "thresholdValue": 0.8, "hysteresis": 0.05}]})
@@ -316,7 +316,7 @@ def test_threshold_subscription_refires_after_reset_and_recross(client, monkeypa
 def test_threshold_subscription_ignores_reports_missing_the_monitored_field(client, monkeypatch):
     """A report that lacks the monitored output does not notify and does not fail."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
     client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"},
                 json={"notificationDestination": "http://nfo:8000/analytics-reports", "thresholdInfo": [{"monitoredMDAOutputIE": "utilization", "thresholdDirection": "UP", "thresholdValue": 0.8}]})
     client.post("/reports", params={"analytics_type": "resource-utilization"},
@@ -327,7 +327,7 @@ def test_threshold_subscription_ignores_reports_missing_the_monitored_field(clie
 def test_threshold_subscription_down_direction_fires_on_drop(client, monkeypatch):
     """A DOWN threshold fires when the value falls to or below it."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
     client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"},
                 json={"notificationDestination": "http://nfo:8000/analytics-reports", "thresholdInfo": [{"monitoredMDAOutputIE": "freeCapacity", "thresholdDirection": "DOWN", "thresholdValue": 0.1}]})
     client.post("/reports", params={"analytics_type": "resource-utilization"},
@@ -338,7 +338,7 @@ def test_threshold_subscription_down_direction_fires_on_drop(client, monkeypatch
 def test_subscription_without_threshold_info_is_still_notified_every_report(client, monkeypatch):
     """A subscription without thresholds is notified for every report regardless of value."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
     client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"},
                 json={"notificationDestination": "http://nfo:8000/analytics-reports"})
     for value in (0.1, 0.9, 0.1):
@@ -369,7 +369,7 @@ def test_a_report_notification_survives_a_crash_between_commit_and_send(client, 
     monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")
     monkeypatch.setenv("MODULE", "mdaf")
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)) or FakeDmeResponse(200))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)) or FakeDmeResponse(200))
     client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos"},
                 json={"notificationDestination": "http://sa-smos:8000/analytics-reports"})
 
@@ -391,7 +391,7 @@ def test_a_report_notification_survives_a_crash_between_commit_and_send(client, 
 def test_nothing_is_announced_and_no_report_is_stored_when_the_publish_does_not_commit(client, db_session_factory, monkeypatch):
     """When the commit fails nothing is sent, no outbox row remains and no report is stored (500 to the caller)."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
     client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos"},
                 json={"notificationDestination": "http://sa-smos:8000/analytics-reports"})
 

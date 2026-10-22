@@ -77,7 +77,12 @@ def parse_traceparent(value: str | None, state: str | None = None) -> TraceConte
     version, trace_id, span_id, flags, extra = match.groups()
     if version == "ff" or (version == "00" and extra) or set(trace_id) == {"0"} or set(span_id) == {"0"}:
         return None
-    return TraceContext(trace_id, span_id, flags, state or None)
+    return TraceContext(trace_id, span_id, flags, state if _valid_state(state) else None)
+
+
+def _valid_state(state: str | None) -> bool:
+    """A `tracestate` worth passing on: at most 512 printable ASCII characters (W3C's limit); anything else is dropped, not forwarded (call flow 14a)."""
+    return state is not None and 0 < len(state) <= 512 and all(" " <= c <= "~" for c in state)
 
 
 def format_traceparent(context: TraceContext) -> str:

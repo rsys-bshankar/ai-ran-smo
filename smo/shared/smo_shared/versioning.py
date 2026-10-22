@@ -24,6 +24,7 @@ from sqlalchemy import Integer
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column
 from sqlalchemy.orm.exc import StaleDataError
 
+from .correlation import get_correlation_id
 from .errors import FrameworkError, ProblemDetails
 
 CONCURRENT_MODIFICATION_TITLE = FrameworkError.CONCURRENT_MODIFICATION[0]
@@ -51,7 +52,7 @@ def concurrent_modification_response(exc: Exception | None = None) -> JSONRespon
     """
     title, status = FrameworkError.CONCURRENT_MODIFICATION
     detail = "the resource was modified by another request while this one was running; repeat the request"
-    body = ProblemDetails(title=title, status=status, detail=detail).model_dump()
+    body = ProblemDetails(title=title, status=status, detail=detail, correlationId=get_correlation_id()).model_dump()
     return JSONResponse(status_code=status, content={"detail": body})  # same envelope as errors.problem()
 
 

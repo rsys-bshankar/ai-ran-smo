@@ -37,10 +37,12 @@ import os
 import signal
 import sys
 import threading
+import uuid
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from .correlation import correlation_scope
 from .identity_secrets import check_configuration
 from .metrics import record_worker_task
 from .single_runner import run_once_per_interval
@@ -71,7 +73,10 @@ def _qualified(module: str, task: Task) -> str:
 
 def tick(tasks: Iterable[Task], *, module: str = "", skip: Iterable[str] = (), session_factory=None, engine=None,
          now: datetime.datetime | None = None) -> dict[str, str]:
-    """Offer every task not in `skip` to `run_once_per_interval`. One task failing does not stop the others."""
+    """Offer every task not in `skip` to `run_once_per_interval`. One task failing does not stop the others.
+
+    Each offer runs under its own correlation id, `task:<name>:<uuid>` (call flow 14c): the task's log lines, the calls it makes to other modules
+    and the notifications and events it writes all carry it, as a request's would."""
     outcome: dict[str, str] = {}
     skipped = set(skip)
     for task in tasks:
@@ -79,8 +84,9 @@ def tick(tasks: Iterable[Task], *, module: str = "", skip: Iterable[str] = (), s
             outcome[task.name] = "skipped"
             continue
         try:
-            ran = run_once_per_interval(_qualified(module, task), task.interval_seconds, task.fn, session_factory=session_factory,
-                                        engine=engine, now=now)
+            with correlation_scope(f"task:{task.name}:{uuid.uuid4()}"):
+                ran = run_once_per_interval(_qualified(module, task), task.interval_seconds, task.fn, session_factory=session_factory,
+                                            engine=engine, now=now)
         except Exception:                                      # noqa: BLE001 (the loop must outlive any one task)
             log.exception("worker task failed", extra={"task": task.name})
             outcome[task.name] = "failed"

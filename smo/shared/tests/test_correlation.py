@@ -61,3 +61,41 @@ def test_correlation_scope_sets_the_id_outside_a_request_and_restores_it():
     with correlation_scope("pass-1") as cid:
         assert cid == get_correlation_id() == "pass-1"
     assert get_correlation_id() is None
+
+
+def test_a_correlation_id_that_is_not_short_printable_ascii_is_replaced():
+    """Call flow 14a: an id with a space, a non-ASCII character, or more than 128 characters is replaced by a fresh UUID (seen by the handler and
+    echoed), so it can never reach a downstream call; 128 printable characters are kept."""
+    import uuid
+    client = _app()
+    for bad in ("has space", "x" * 129):
+        resp = client.get("/echo", headers={HEADER_NAME: bad})
+        assert resp.json()["correlationId"] == resp.headers[HEADER_NAME] != bad
+        uuid.UUID(resp.headers[HEADER_NAME])
+    resp = client.get("/echo", headers=[(HEADER_NAME.encode(), "café".encode("latin-1"))])
+    uuid.UUID(resp.json()["correlationId"])
+    assert client.get("/echo", headers={HEADER_NAME: "~" * 128}).json()["correlationId"] == "~" * 128
+
+
+def test_an_unhandled_error_answers_with_the_correlation_id_in_the_header_and_the_body():
+    """Call flow 14a: the 500 of an unhandled exception (handled outside the correlation middleware) carries the request's id in `X-Correlation-ID`
+    and in the problem body's `correlationId`; a refusal raised by a route carries it in the body too."""
+    from smo_shared.errors import FrameworkError, framework_error, install_integrity_handlers
+    app = FastAPI()
+    apply_correlation_id(app)
+    install_integrity_handlers(app)
+
+    @app.get("/boom")
+    def boom():
+        # Test route raising an unexpected error; not part of any published API.
+        raise RuntimeError("boom")
+
+    @app.get("/refused")
+    def refused():
+        # Test route raising a framework error; not part of any published API.
+        raise framework_error(FrameworkError.INTERNAL_ERROR, detail="no")
+
+    client = TestClient(app, raise_server_exceptions=False)
+    resp = client.get("/boom", headers={HEADER_NAME: "flow14-500"})
+    assert resp.status_code == 500 and resp.headers[HEADER_NAME] == "flow14-500" and resp.json()["detail"]["correlationId"] == "flow14-500"
+    assert client.get("/refused", headers={HEADER_NAME: "flow14-refused"}).json()["detail"]["correlationId"] == "flow14-refused"

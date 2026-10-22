@@ -144,7 +144,7 @@ def test_the_health_answer_is_remembered_and_forgotten_on_reregistration(client,
     monkeypatch.setenv("DME_PRODUCER_HEALTH_CACHE_SECONDS", "30")
     main._health_cache.clear()
     asked = []
-    monkeypatch.setattr("app.main.httpx.get", lambda url, timeout=None: asked.append(url) or FakeHealthResponse(200))
+    monkeypatch.setattr("app.main.httpx.get", lambda url, timeout=None, **kw: asked.append(url) or FakeHealthResponse(200))
     client.post("/production-capabilities", json=register_type_body(name="A", producerId="rapp-1", producerHealthCallbackUrl="http://rapp-1/health"))
     client.post("/production-capabilities", json=register_type_body(name="B", producerId="rapp-1", producerHealthCallbackUrl="http://rapp-1/health"))
     assert [t["typeStatus"] for t in client.get("/dme-types").json()] == ["ENABLED", "ENABLED"]

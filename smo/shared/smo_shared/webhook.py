@@ -58,6 +58,8 @@ import httpcore
 import httpx
 
 from . import metrics, mtls
+from .correlation import HEADER_NAME as CORRELATION_ID_HEADER
+from .correlation import get_correlation_id
 
 log = logging.getLogger(__name__)
 
@@ -327,6 +329,9 @@ def _send(method: str, destination: str | None, **kwargs) -> httpx.Response | No
             log.warning("webhook destination %r rejected by SSRF guard; notification dropped", destination)
         metrics.record_outbound("webhook", "callback", method, "blocked")
         return None
+    correlation_id = get_correlation_id()
+    if correlation_id:                                  # the request or task that caused the callback, so the receiver can quote it (call flow 14c)
+        kwargs["headers"] = {**kwargs.get("headers", {}), CORRELATION_ID_HEADER: correlation_id}
     started = time.perf_counter()
     try:
         with _pinned_to(destination, vetting):          # SEC-15.16: the connect goes to the addresses vetted above

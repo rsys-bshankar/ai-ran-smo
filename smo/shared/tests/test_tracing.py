@@ -36,6 +36,13 @@ def test_a_valid_traceparent_round_trips_and_a_future_version_may_carry_extra_fi
     assert tracing.parse_traceparent(f"01-{TRACE_ID}-{PARENT_ID}-01-more") is not None
 
 
+def test_a_tracestate_too_long_or_not_printable_ascii_is_dropped_and_the_trace_kept():
+    """Call flow 14a: a tracestate over 512 characters, or with a character outside printable ASCII, is not passed on; the traceparent still is."""
+    for state in ("v=" + "x" * 511, "v=caf\u00e9", "v=a\nb"):
+        assert tracing.parse_traceparent(INBOUND, state) == tracing.TraceContext(TRACE_ID, PARENT_ID, "01", None)
+    assert tracing.parse_traceparent(INBOUND, "v=" + "x" * 510).state == "v=" + "x" * 510
+
+
 def test_nothing_is_injected_outside_a_trace():
     """Outside a trace there are no headers to inject and no trace id."""
     assert tracing.inject_headers() == {}

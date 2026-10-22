@@ -111,15 +111,15 @@ def test_the_answers_are_complete_problem_documents():
     client = app_with_handlers()
     answer = client.get("/integrity")
     assert answer.status_code == 422 and answer.json() == {"detail": {"type": "about:blank", "title": "REFERENCED_RESOURCE_NOT_FOUND", "status": 422,
-                                                                      "detail": "the request refers to something that does not exist", "instance": None}}
+                                                                      "detail": "the request refers to something that does not exist", "instance": None, "correlationId": None}}
     unhandled = client.get("/other")
     assert unhandled.status_code == 500 and unhandled.json() == {"detail": {"type": "about:blank", "title": "INTERNAL_ERROR", "status": 500,
-                                                                            "detail": "the service could not complete the request", "instance": None}}
+                                                                            "detail": "the service could not complete the request", "instance": None, "correlationId": None}}
     for path in ("/overflow", "/data"):
         answer = client.get(path)
         assert answer.status_code == 422 and answer.json()["detail"] == {
             "type": "about:blank", "title": "VALUE_OUT_OF_RANGE", "status": 422,
-            "detail": "a value in the request is outside the range the service can store", "instance": None}
+            "detail": "a value in the request is outside the range the service can store", "instance": None, "correlationId": None}
 
 
 def test_the_integrity_log_line_names_the_request_the_answer_and_the_first_line_of_the_database_s_words(caplog):

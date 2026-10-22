@@ -432,6 +432,44 @@ def _backend_that_accepts_any_token(monkeypatch, client_id="caller-a", forwarded
     monkeypatch.setattr("app.main.httpx.AsyncClient", Fake)
 
 
+def test_a_413_carries_the_correlation_id_in_its_header_and_body(monkeypatch):
+    """Call flow 14a: the body cap runs inside the correlation middleware, so its 413 echoes the caller's X-Correlation-ID and names it in the body."""
+    _backend_that_accepts_any_token(monkeypatch)
+    resp = client.post("/dme/data-jobs", headers={**AUTH_HEADERS, "X-Correlation-ID": "flow14-413"}, content=b"x" * (1024 * 1024 + 1))
+    assert resp.status_code == 413 and resp.headers["X-Correlation-ID"] == "flow14-413" and resp.json()["correlationId"] == "flow14-413"
+
+
+def test_a_non_ascii_header_is_a_400_and_a_non_ascii_correlation_id_is_replaced(monkeypatch):
+    """Call flow 14a: a header httpx cannot encode was a 500 (UnicodeEncodeError is not an httpx error); it is a 400 HEADER_NOT_ASCII. A non-ASCII
+    X-Correlation-ID is not that case: it is replaced by a fresh id, which is what the backend gets."""
+    import httpx as real_httpx
+    seen: list = []
+
+    class Encoding:
+        """A fake httpx client that encodes the headers as httpx does, so a non-ASCII value raises."""
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def request(self, method, url, headers=None, **kwargs):
+            _ = real_httpx.Headers(headers or {}).raw        # raises UnicodeEncodeError on a non-ASCII value, as the real client does
+            if url == INTROSPECT_URL:
+                return FakeResponse(content=json.dumps({"active": True, "client_id": "caller-a"}).encode())
+            seen.append(dict(headers))
+            return FakeResponse()
+
+    monkeypatch.setattr("app.main.httpx.AsyncClient", Encoding)
+    refused = client.get("/sme/x", headers=[*AUTH_HEADERS.items(), ("X-Note", "caf\u00e9".encode("latin-1"))])
+    assert refused.status_code == 400 and refused.json()["title"] == "HEADER_NOT_ASCII" and refused.json()["correlationId"] == refused.headers["X-Correlation-ID"]
+    replaced = client.get("/sme/x", headers=[*AUTH_HEADERS.items(), ("X-Correlation-ID", "caf\u00e9".encode("latin-1"))])
+    assert replaced.status_code == 200 and seen[-1]["X-Correlation-ID"] == replaced.headers["X-Correlation-ID"] != "caf\u00e9"
+
+
 def test_a_caller_over_its_budget_gets_429_with_retry_after_and_is_not_forwarded(monkeypatch):
     """Past its burst a caller gets 429 `RATE_LIMITED` with a `Retry-After`, and the refused requests never reach the backend."""
     monkeypatch.setenv("R1_RATE_BURST", "3")

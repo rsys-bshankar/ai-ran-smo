@@ -403,6 +403,20 @@ def test_every_proxied_call_names_the_signed_in_user_in_a_header_the_browser_can
     assert [r.headers["x-r1-acting-user"] for r in smo.proxied] == ["smo-gui:operator", "smo-gui:admin"]
 
 
+def test_each_console_action_gets_its_own_correlation_id_the_browser_cannot_choose_recorded_in_the_audit(app, smo):
+    """Call flow 14d: the BFF mints a fresh X-Correlation-ID per proxied call (a value the browser sent is not forwarded), sends it to R1, echoes it to the
+    browser and records it on the audit row of a change, which the audit view and CSV show."""
+    import uuid
+    operator = login(app, "operator")
+    resp = operator.post("/api/smo/ran-nf-oam/rapp-approvals/a-1/approve", json={"reason": "ok"}, headers={"X-Correlation-ID": "chosen-by-browser"})
+    second = operator.get("/api/smo/ran-nf-oam/alarms", headers={"X-Correlation-ID": "chosen-by-browser"})
+    sent = [r.headers["x-correlation-id"] for r in smo.proxied]
+    assert "chosen-by-browser" not in sent and len(set(sent)) == 2 and [uuid.UUID(s) for s in sent]
+    assert resp.headers["X-Correlation-ID"] == sent[0] and second.headers["X-Correlation-ID"] == sent[1]
+    rows = login(app, "admin").get("/api/admin/audit", params={"action": "PROXY"}).json()["items"]
+    assert [r["correlationId"] for r in rows] == [sent[0]]
+
+
 def test_a_policy_asking_for_two_approvals_reaches_ran_nf_oam_from_an_admin_only_with_the_setter_pinned(app, smo):
     """Two-person approval is a field of the approval policy: the BFF passes it through, pins who set the policy, and leaves the policy to an admin."""
     body = {"timeoutSeconds": 600, "onTimeout": "EXPIRE", "requiredApprovals": 2, "requestedBy": "someone-else"}
@@ -834,7 +848,7 @@ def test_the_audit_csv_export_is_admin_only_streamed_and_safe_to_open(app, db, m
     assert resp.status_code == 200 and resp.headers["content-type"].startswith("text/csv")
     assert resp.headers["content-disposition"].startswith('attachment; filename="smo-gui-audit-')
     rows = list(csv_module.reader(io.StringIO(resp.text)))
-    assert rows[0] == ["id", "at", "username", "role", "action", "method", "path", "statusCode", "detail"]
+    assert rows[0] == ["id", "at", "username", "role", "action", "method", "path", "statusCode", "detail", "correlationId"]
     assert len(rows) - 1 == len(audit_rows(db)) and "'=HYPERLINK(1)" in [r[2] for r in rows[1:]]
     ids = [int(r[0]) for r in rows[1:]]
     assert ids == sorted(ids, reverse=True) and len(set(ids)) == len(ids)

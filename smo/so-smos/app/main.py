@@ -27,7 +27,7 @@ from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
 from smo_shared.openapi_security import apply_r1_gateway_security
-from smo_shared.correlation import apply_correlation_id
+from smo_shared.correlation import apply_correlation_id, get_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from .dispatch import Submitter, run_step
@@ -83,7 +83,8 @@ def order_status(steps: list[dict]) -> str:
 
 def _view(order: ServiceOrder) -> dict:
     """The JSON of an order as every route returns it."""
-    return {"orderId": str(order.order_id), "scope": order.scope, "status": order_status(order.steps), "submittedBy": order.submitted_by, "steps": order.steps,
+    return {"orderId": str(order.order_id), "scope": order.scope, "status": order_status(order.steps), "submittedBy": order.submitted_by,
+            "correlationId": order.correlation_id, "steps": order.steps,
             "homingDecision": order.homing_decision, "rmihRegistration": order.rmih_registration}
 
 
@@ -105,7 +106,7 @@ def submit_service_order(body: SubmitOrderRequest, db: Session = Depends(get_ses
     # The order is committed with every step PENDING before anything is dispatched. Each step is then committed RUNNING, dispatched, and committed with its outcome. Before a step
     # starts the row is re-read under a lock: a step a cancel has made CANCELLED is not started, and neither is anything after it. The first FAILED step halts the order (fail-fast).
     order = ServiceOrder(scope=body.scope, steps=[{**step, "status": "PENDING"} for step in body.steps], rmih_registration=body.rmihRegistration,
-                         submitted_by=body.requestedBy)
+                         submitted_by=body.requestedBy, correlation_id=get_correlation_id())
     db.add(order)
     db.commit()
     order_id = order.order_id

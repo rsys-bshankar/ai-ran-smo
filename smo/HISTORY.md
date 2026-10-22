@@ -2780,6 +2780,38 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.8 flow 14 — Correlation ids rewritten from the code: a checked id on every answer, carried past the request, minted by the console
+
+The fourteenth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken):
+
+- **A. An inbound id is checked.** Any `X-Correlation-ID` was taken as sent. One with a character outside ASCII made every onward call fail: httpx
+  cannot encode it, and its `UnicodeEncodeError` is not an `httpx.HTTPError`, so R1 Termination answered 500 (confirmed). One of any length went into
+  every log line. Now `correlation.accepted_correlation_id` takes 1 to 128 printable ASCII characters (`!` to `~`) and replaces anything else with a fresh
+  UUID, logging only the refused value's length. A `tracestate` over 512 characters (W3C's limit) or outside printable ASCII is dropped
+  (`tracing.parse_traceparent`); the `traceparent` is still continued. Any other header R1 cannot encode is a 400 `HEADER_NOT_ASCII`, not a 500.
+- **B. The id outlives the request.** Revision 0059 adds a nullable `correlation_id` to `notification_outbox` and `smo_event`. `outbox.enqueue` stores
+  the current id and `drain` sends each row under it (`correlation_scope`, in a copy of the drainer's context per thread), so a retried delivery from any
+  worker carries the id of the request that caused it; `webhook` puts `X-Correlation-ID` on every callback. An event keeps the id and its envelope carries
+  it as `correlationid` (the attribute name smo-teiv uses). Each worker task run is under its own `task:<name>:<uuid>`, so a task's log lines, calls,
+  notifications and events can be told apart from another run's.
+- **C. The console mints its own.** The GUI BFF sent no id, so R1 minted one the BFF never saw and its audit could not point at the logs. Now the BFF
+  mints a UUID per proxied action (the browser's header is not among those forwarded, so the browser cannot choose it), sends it to R1, returns it on the
+  answer and on its own 502s, and stores it on the audit row of a change (`gui_audit_log.correlation_id`, added to an older database by
+  `_add_missing_columns`); the audit API, its CSV and the console's audit log show it.
+- **D. Every answer carries it.** R1's body cap was added after the correlation middleware, so it ran outside it and a 413 had no id; it now runs inside.
+  An unhandled exception is answered by Starlette outside every middleware, so a 500 had none; the middleware now also keeps the id in `request.state`
+  and the handler puts it back (header and body). `ProblemDetails` gains `correlationId` (an RFC 7807 extension member), filled by `problem()` and the
+  integrity, range and concurrency handlers; R1's gateway-made problems name it too.
+- **E. What the work leaves names it.** SO SMOS's `service_order` and RAN NF OAM's `write_config_job` keep the id of the request that made them (same
+  revision), shown as `correlationId` on the order and on the job and the job list.
+- **Not taken:** passing the id on R1's token-introspection calls to SME: they are the gateway's own, one per request, and SME logs them under its own id.
+
+Tests: `shared/tests/test_correlation.py` (validation, the 500 and a refusal), `test_tracing.py` (tracestate), `test_outbox.py` (row id and send),
+`test_worker.py` (per-run id), `test_events.py` (`correlationid`); `r1-termination/tests/test_main.py` (413, non-ASCII header and id);
+`gui-bff/tests/test_main.py` (minted per action, not the browser's, echoed and audited); `so-smos` and `ran-nf-oam` (stored and shown). Test stubs of
+`httpx.get/post/delete` now accept extra keyword arguments, since a callback sends a header. `docs/call-flows/14-correlation-id-propagation.md` is
+rewritten as 14a-14d.
+
 ### DOC-CF-1.8 flow 12 — DME data jobs, records and offers rewritten from the code: each is its maker's, only a producer delivers, and records page by a cursor and expire
 
 The thirteenth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken; one refined while building it, below):

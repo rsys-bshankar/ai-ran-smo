@@ -130,7 +130,7 @@ Per step, within one order
 | GET | `/orders/{order_id}` | Read one order | 404 `SERVICE_ORDER_NOT_FOUND` |
 | POST | `/orders/{order_id}/cancel` | Mark `PENDING` steps `CANCELLED`, also while the order runs | 404 `SERVICE_ORDER_NOT_FOUND` |
 
-Every route answers an order as `{orderId, scope, status, submittedBy, steps, homingDecision, rmihRegistration}`.
+Every route answers an order as `{orderId, scope, status, submittedBy, correlationId, steps, homingDecision, rmihRegistration}`. `correlationId` is the `X-Correlation-ID` of the submit request (revision 0059; null on an older order), which every step's call carries too, so the order's log lines in each module can be found from it (call flow 14b).
 | GET | `/health` | Liveness probe | |
 
 Dispatch table (each dispatcher returns the downstream JSON as the step `result`)
@@ -195,7 +195,7 @@ cd smo/so-smos && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | File | Covers | Tests |
 |---|---|---|
 | `tests/test_dispatch.py` | `execute_order` (all succeed, first failure halts and leaves `PENDING`, unknown pair), `_ensure_ok` (pass-through, 4xx raises), every dispatcher posts to its own module path (parametrized), inference notification destination as query param (present and absent), every AI/ML step dispatches to its own AIMgF path, model-runtime deploy distinct from workload deploy, `run_step` sends the submitter over anything the step carries | 18 |
-| `tests/test_main.py` | Submit persists and returns executed steps, read, cancel marks only `PENDING` steps, list, `/health`, unknown id 404 and a step without its type 422, `GET /orders?total=false` (no count, `hasMore` on the last page) | 7 |
+| `tests/test_main.py` | Submit persists and returns executed steps, read, cancel marks only `PENDING` steps, list, `/health`, unknown id 404 and a step without its type 422, `GET /orders?total=false` (no count, `hasMore` on the last page) ; an order keeps the correlation id of its submit (call flow 14b) | 8 |
 | `tests/test_order_execution.py` | Call flow 10: a CONFIG step carries the order's submitter and role (and `so-smos` with none when unnamed), a step naming its own `requestedBy`/`msacRole` is 422, the order readable with the step `RUNNING` while it runs, a crash leaves the step `RUNNING` and earlier results kept, a cancel during the run stops it after the running step, fail-fast, the order status from its steps (parametrized) | 14 |
 
 ### 3.3 What is not covered here

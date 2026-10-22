@@ -107,6 +107,9 @@ class AuditEntry(Base):
     path: Mapped[str | None] = mapped_column(String)
     status_code: Mapped[int | None] = mapped_column(Integer)
     detail: Mapped[str | None] = mapped_column(String)
+    # Call flow 14d: the X-Correlation-ID the BFF minted for a proxied action, the key to that action's log lines in every module. Added by
+    # `_add_missing_columns` to a database made before; NULL on older rows and on actions that never left the BFF.
+    correlation_id: Mapped[str | None] = mapped_column(String)
 
 
 @event.listens_for(Session, "before_flush")
@@ -284,7 +287,8 @@ class Database:
         """`create_all` makes absent tables but never alters a table that exists, so a column added to one later is added here (expand only: nullable or
         with a default, so the previous release's code keeps working on the upgraded database). The BFF's tables are not in the Alembic history."""
         wanted = {"gui_user": [("break_glass", "BOOLEAN NOT NULL DEFAULT " + ("false" if self.engine.dialect.name == "postgresql" else "0")),
-                               ("scope", "VARCHAR")]}
+                               ("scope", "VARCHAR")],
+                  "gui_audit_log": [("correlation_id", "VARCHAR")]}
         for table, columns in wanted.items():
             for name, ddl in columns:
                 if name in {c["name"] for c in inspect(self.engine).get_columns(table)}:

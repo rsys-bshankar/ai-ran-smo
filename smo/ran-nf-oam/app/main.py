@@ -1065,7 +1065,7 @@ def _execute_write(body: WriteConfigRequest, db: Session, rollback_of: uuid.UUID
     job = WriteConfigJob(requested_by=body.requestedBy, scope=body.accessScope, msac_role=body.msacRole, rollback_of=rollback_of,
                          rollback_forced=rollback_forced, wave_size=body.waveSize, wave_pause_seconds=body.wavePauseSeconds,
                          wave_count=max(wave_of.values(), default=1), gate_max_new_alarms=body.gateMaxNewAlarms,
-                         on_gate_failure=body.onGateFailure, invoker_id=invoker,
+                         on_gate_failure=body.onGateFailure, invoker_id=invoker, correlation_id=get_correlation_id(),
                          kpi_guard=body.kpiGuard.model_dump() if body.kpiGuard else None,
                          scheduled_at=window.start if window else None, window_end=window.end if window else None,
                          requester_scope=(authz_scope.to_claim(requester_scope) or (approval.requester_scope if approval is not None else None)) if hold else None)
@@ -3110,7 +3110,7 @@ def query_write_config_job_status(job_id: uuid.UUID, request: Request, db: Sessi
     if job is None or not _job_owned(db, request, job) or scoping.denied_refs(db, scoping.request_scope(request), _job_elements(db, job_id)):
         raise framework_error(FrameworkError.CONFIG_JOB_NOT_FOUND, detail=f"unknown jobId {job_id}")
     sub_changes = db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job_id).order_by(WriteConfigSubChange.position)).all()
-    return {"jobId": str(job.job_id), "status": job.status, "requestedBy": job.requested_by,
+    return {"jobId": str(job.job_id), "status": job.status, "requestedBy": job.requested_by, "correlationId": job.correlation_id,
             "rollbackOf": str(job.rollback_of) if job.rollback_of else None, "rollbackForced": job.rollback_forced,
             "waveSize": job.wave_size, "waveCount": job.wave_count, "currentWave": job.current_wave,
             "wavePauseSeconds": job.wave_pause_seconds, "onGateFailure": job.on_gate_failure, "gateMaxNewAlarms": job.gate_max_new_alarms,
@@ -4031,7 +4031,7 @@ def list_write_config_jobs(request: Request, status: str | None = None, region: 
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"jobId": str(j.job_id), "requestedBy": j.requested_by, "accessScope": j.scope, "scope": j.scope,
              "status": j.status, "msacRole": j.msac_role, "createdAt": as_utc(j.created_at).isoformat() if j.created_at else None,
-             **_window_view(j)} for j in page["items"]]}
+             "correlationId": j.correlation_id, **_window_view(j)} for j in page["items"]]}
 
 
 @app.get("/software-management-jobs")
