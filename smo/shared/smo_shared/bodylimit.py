@@ -19,6 +19,8 @@ import json
 import os
 from collections.abc import Callable
 
+from .correlation import get_correlation_id
+
 MIB = 1024 * 1024
 
 Settings = Callable[[], tuple[int, dict[str, int]]]
@@ -114,7 +116,8 @@ class BodySizeLimit:
         Built by hand because it runs in the middleware, ahead of the application's exception handlers.
         """
         body = json.dumps({"title": "PAYLOAD_TOO_LARGE", "status": 413,
-                           "detail": f"the request body is larger than the {limit} bytes this route accepts"}).encode()
+                           "detail": f"the request body is larger than the {limit} bytes this route accepts",
+                           "correlationId": get_correlation_id()}).encode()
         await send({"type": "http.response.start", "status": 413, "headers": [
             (b"content-type", b"application/json"), (b"content-length", str(len(body)).encode()), (b"connection", b"close")]})
         await send({"type": "http.response.body", "body": body})

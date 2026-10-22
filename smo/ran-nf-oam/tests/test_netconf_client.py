@@ -83,7 +83,7 @@ def test_send_get_config_reads_the_managed_object(monkeypatch):
     data = ('<rpc-reply message-id="m" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0"><data>'
             '<managed-object ref="gnb-1" function-ref="NRCellDU=101"><administrativeState>LOCKED</administrativeState>'
             '</managed-object></data></rpc-reply>')
-    monkeypatch.setattr("app.netconf_client.httpx.post", lambda url, content=None, headers=None, timeout=None: FakeResponse(200, data))
+    monkeypatch.setattr("app.netconf_client.httpx.post", lambda url, content=None, headers=None, timeout=None, **kw: FakeResponse(200, data))
     assert send_get_config("http://a/edit-config", "gnb-1", "m", "NRCellDU=101") == {"administrativeState": "LOCKED"}
-    monkeypatch.setattr("app.netconf_client.httpx.post", lambda url, content=None, headers=None, timeout=None: FakeResponse(200, ERROR_REPLY))
+    monkeypatch.setattr("app.netconf_client.httpx.post", lambda url, content=None, headers=None, timeout=None, **kw: FakeResponse(200, ERROR_REPLY))
     assert send_get_config("http://a/edit-config", "gnb-1", "m") is None

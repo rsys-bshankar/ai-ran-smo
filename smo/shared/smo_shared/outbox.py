@@ -39,6 +39,7 @@ SENT rows are kept for `SMO_OUTBOX_SENT_RETENTION_SECONDS` (default 86400) for t
 full drain. The table is created by schema revision `0002`; its `method` column by `0005`.
 """
 
+import contextvars
 import datetime
 import logging
 import os
@@ -52,6 +53,7 @@ from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from . import webhook
+from .correlation import correlation_scope, get_correlation_id
 from .db import Base
 
 log = logging.getLogger(__name__)
@@ -87,6 +89,8 @@ class NotificationOutbox(Base):
     next_attempt_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
     last_error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
+    # The id of the request or worker task that enqueued it (revision 0059), sent with the notification as X-Correlation-ID (call flow 14c).
+    correlation_id: Mapped[str | None] = mapped_column(String)
 
 
 def enqueue(db: Session, destination: str | None, payload: dict, module: str | None = None,
@@ -105,7 +109,8 @@ def enqueue(db: Session, destination: str | None, payload: dict, module: str | N
         return None
     now = _now()
     row = NotificationOutbox(id=uuid.uuid4(), module=module or os.environ.get("MODULE", "unknown"), destination=destination,
-                             payload=payload, method=method, status=PENDING, attempts=0, next_attempt_at=now, created_at=now)
+                             payload=payload, method=method, status=PENDING, attempts=0, next_attempt_at=now, created_at=now,
+                             correlation_id=get_correlation_id())
     db.add(row)
     db.info.setdefault(_PENDING_IDS_KEY, []).append(row.id)
     return row
@@ -147,6 +152,15 @@ def _send(destination: str, payload, method: str = "POST") -> tuple[bool, str | 
     return True, None, False
 
 
+def _send_row(row: NotificationOutbox) -> tuple[bool, str | None, bool]:
+    """Sends one claimed row under the correlation id it was enqueued with, so the delivery carries the id of what caused it, whichever process or
+    thread sends it (call flow 14c). A row from before revision 0059 has none and goes out under the sender's own."""
+    if not row.correlation_id:
+        return _send(row.destination, row.payload, row.method)
+    with correlation_scope(row.correlation_id):
+        return _send(row.destination, row.payload, row.method)
+
+
 def drain(engine, ids: list[uuid.UUID] | None = None, now: datetime.datetime | None = None, limit: int = 100) -> dict[str, int]:
     """Sends due PENDING rows, oldest first, and records each outcome; returns {"sent": n, "retry": n, "dead": n}.
 
@@ -174,7 +188,9 @@ def drain(engine, ids: list[uuid.UUID] | None = None, now: datetime.datetime | N
             claimed.append(row)
         # sent concurrently: one after the other, a subscriber that never answers made every row behind it wait out its timeout
         with ThreadPoolExecutor(max_workers=max(1, min(_send_concurrency(), len(claimed) or 1))) as pool:
-            outcomes = list(pool.map(lambda r: _send(r.destination, r.payload, r.method), claimed))
+            # each send runs in a copy of this thread's context, so a row without its own id goes out under the drainer's (a worker task's id)
+            contexts = [contextvars.copy_context() for _ in claimed]
+            outcomes = list(pool.map(lambda pair: pair[1].run(_send_row, pair[0]), zip(claimed, contexts, strict=True)))
         for row, (delivered, error, retryable) in zip(claimed, outcomes, strict=True):
             if delivered:
                 row.status, row.last_error = SENT, None

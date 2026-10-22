@@ -54,7 +54,7 @@ def test_post_webhook_calls_httpx_post_for_an_allowed_destination(monkeypatch):
     """An allowed destination is called with httpx.post with the JSON body, and the response is returned."""
     calls = []
     monkeypatch.setattr("smo_shared.webhook.httpx.post",
-                         lambda url, json=None, timeout=None: calls.append((url, json)) or httpx.Response(200))
+                         lambda url, json=None, timeout=None, **kw: calls.append((url, json)) or httpx.Response(200))
     resp = post_webhook("http://consumer/cb", json={"a": 1}, timeout=2.0)
     assert calls == [("http://consumer/cb", {"a": 1})]
     assert resp is not None and resp.status_code == 200
@@ -63,7 +63,7 @@ def test_post_webhook_calls_httpx_post_for_an_allowed_destination(monkeypatch):
 def test_post_webhook_no_ops_for_a_disallowed_destination(monkeypatch):
     """A destination the guard refuses is never called and None is returned."""
     calls = []
-    monkeypatch.setattr("smo_shared.webhook.httpx.post", lambda url, json=None, timeout=None: calls.append(url))
+    monkeypatch.setattr("smo_shared.webhook.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append(url))
     resp = post_webhook("http://169.254.169.254/latest/meta-data/", json={"a": 1})
     assert calls == []
     assert resp is None
@@ -71,7 +71,7 @@ def test_post_webhook_no_ops_for_a_disallowed_destination(monkeypatch):
 
 def test_post_webhook_swallows_an_unreachable_destination(monkeypatch):
     """A connection error is swallowed: post_webhook returns None."""
-    def raise_error(url, json=None, timeout=None):
+    def raise_error(url, json=None, timeout=None, **kw):
         raise httpx.ConnectError("boom")
     monkeypatch.setattr("smo_shared.webhook.httpx.post", raise_error)
     assert post_webhook("http://consumer/cb", json={}) is None
@@ -79,14 +79,14 @@ def test_post_webhook_swallows_an_unreachable_destination(monkeypatch):
 
 def test_get_webhook_calls_httpx_get_for_an_allowed_destination(monkeypatch):
     """get_webhook calls an allowed destination with httpx.get."""
-    monkeypatch.setattr("smo_shared.webhook.httpx.get", lambda url, timeout=None: httpx.Response(200))
+    monkeypatch.setattr("smo_shared.webhook.httpx.get", lambda url, timeout=None, **kw: httpx.Response(200))
     assert get_webhook("http://producer/health") is not None
 
 
 def test_get_webhook_no_ops_for_a_disallowed_destination(monkeypatch):
     """get_webhook does not call a refused destination."""
     calls = []
-    monkeypatch.setattr("smo_shared.webhook.httpx.get", lambda url, timeout=None: calls.append(url))
+    monkeypatch.setattr("smo_shared.webhook.httpx.get", lambda url, timeout=None, **kw: calls.append(url))
     assert get_webhook("http://127.0.0.1/health") is None
     assert calls == []
 
@@ -95,7 +95,7 @@ def test_delete_webhook_calls_httpx_delete_for_an_allowed_destination(monkeypatc
     """delete_webhook calls an allowed destination with httpx.delete and returns the response."""
     calls = []
     monkeypatch.setattr("smo_shared.webhook.httpx.delete",
-                         lambda url, timeout=None: calls.append(url) or httpx.Response(204))
+                         lambda url, timeout=None, **kw: calls.append(url) or httpx.Response(204))
     resp = delete_webhook("http://producer/jobs/123")
     assert calls == ["http://producer/jobs/123"]
     assert resp is not None and resp.status_code == 204
@@ -104,7 +104,7 @@ def test_delete_webhook_calls_httpx_delete_for_an_allowed_destination(monkeypatc
 def test_delete_webhook_no_ops_for_a_disallowed_destination(monkeypatch):
     """delete_webhook does not call a refused destination."""
     calls = []
-    monkeypatch.setattr("smo_shared.webhook.httpx.delete", lambda url, timeout=None: calls.append(url))
+    monkeypatch.setattr("smo_shared.webhook.httpx.delete", lambda url, timeout=None, **kw: calls.append(url))
     assert delete_webhook("file:///etc/passwd") is None
     assert calls == []
 
@@ -218,7 +218,7 @@ def test_a_name_that_resolves_to_a_public_or_private_address_is_called(monkeypat
     """Resolution must not break the ordinary case: public and private-range answers are called as before."""
     _resolver(monkeypatch, {"ok.example": ["93.184.216.34"], "inner.example": ["10.0.3.7"]})
     calls = []
-    monkeypatch.setattr("smo_shared.webhook.httpx.post", lambda url, json=None, timeout=None: calls.append(url) or httpx.Response(200))
+    monkeypatch.setattr("smo_shared.webhook.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append(url) or httpx.Response(200))
     assert post_webhook("http://ok.example/cb", {}) is not None and post_webhook("http://inner.example/cb", {}) is not None
     assert calls == ["http://ok.example/cb", "http://inner.example/cb"]
 
@@ -227,7 +227,7 @@ def test_a_name_that_does_not_resolve_is_still_attempted(monkeypatch):
     """The fictional subscriber names of the unit tests (`http://consumer/cb`) do not resolve; they are passed to the client as before."""
     _resolver(monkeypatch, {})
     calls = []
-    monkeypatch.setattr("smo_shared.webhook.httpx.post", lambda url, json=None, timeout=None: calls.append(url) or httpx.Response(200))
+    monkeypatch.setattr("smo_shared.webhook.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append(url) or httpx.Response(200))
     assert post_webhook("http://consumer/cb", {}) is not None and calls == ["http://consumer/cb"]
 
 

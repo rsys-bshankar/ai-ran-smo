@@ -245,7 +245,7 @@ observability:
       limits: { memory: 512Mi }
   fluentBit:
     enabled: false                             # needs loki.enabled (or a Loki at the Service name `loki`)
-    image: fluent/fluent-bit:5.1.3@sha256:c5542543523c9678398dd78d927c05e8425ec15b038f226b67b3b019b1a70845
+    image: fluent/fluent-bit:5.1.4@sha256:a9cc9627aeabb8bb33077ee85b6ec8c0fe40aff8e7000bb4e8cd924511fa626c
     resources:
       requests: { cpu: 25m, memory: 64Mi }
       limits: { memory: 128Mi }

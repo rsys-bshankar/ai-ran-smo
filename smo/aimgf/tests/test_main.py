@@ -402,7 +402,7 @@ def test_complete_training_for_coordination_group_job_never_touches_a_model_life
 def test_complete_training_notifies_the_registered_destination(client, mlmr, monkeypatch):
     """Completing a run with a `notificationUri` sends one notification to it, carrying the job kind, id, outcome and artifact id."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
     model_id = mlmr.add_model()
     training_job_id = client.post("/training-jobs", json={
         "modelId": str(model_id), "producerId": "rapp-1", "notificationUri": "http://consumer/training-cb",
@@ -423,7 +423,7 @@ def test_complete_training_notifies_the_registered_destination(client, mlmr, mon
 def test_complete_training_without_notification_uri_never_calls_out(client, mlmr, monkeypatch):
     """A run with no `notificationUri` sends nothing on completion."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
     model_id = mlmr.add_model()
     training_job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
 
@@ -436,7 +436,7 @@ def test_complete_training_notification_delivery_survives_an_unreachable_destina
     """If the notification destination raises on delivery, the completion call still answers 200."""
     import httpx as httpx_module
 
-    def raise_error(url, json=None, timeout=None):
+    def raise_error(url, json=None, timeout=None, **kw):
         raise httpx_module.HTTPError("unreachable")
 
     monkeypatch.setattr("app.main.httpx.post", raise_error)
@@ -452,7 +452,7 @@ def test_complete_training_notification_delivery_survives_an_unreachable_destina
 def test_complete_validation_records_outcome_artifact_and_notifies(client, mlmr, db_session_factory, monkeypatch):
     """Completing a validation run stores the outcome artifact id and notifies the requester with job kind VALIDATION."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED, training_approved=True)
     job_id = client.post("/validation-jobs", json={
@@ -471,7 +471,7 @@ def test_complete_validation_records_outcome_artifact_and_notifies(client, mlmr,
 def test_complete_emulation_records_outcome_artifact_and_notifies(client, mlmr, db_session_factory, monkeypatch):
     """Completing an emulation run stores the outcome artifact id and notifies the requester with job kind EMULATION."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.VALIDATED, validation_approved=True)
     job_id = client.post("/emulation-jobs", json={
@@ -1251,7 +1251,7 @@ def test_subscribe_performance_monitoring_without_notification_destination_is_st
 def test_report_performance_notifies_the_subscribers_own_destination(client, mlmr, monkeypatch):
     """A report is pushed once to the subscription's destination, with the model id, metrics and breach flag."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
 
     model_id = mlmr.add_model()
     sub_id = client.post("/mlmf/subscriptions", params={
@@ -1272,7 +1272,7 @@ def test_report_performance_notifies_the_subscribers_own_destination(client, mlm
 def test_report_performance_skips_notification_when_no_destination_registered(client, mlmr, monkeypatch):
     """A subscription without a destination sends no push when a report arrives."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
 
     model_id = mlmr.add_model()
     sub_id = client.post("/mlmf/subscriptions", params={"model_id": str(model_id), "dme_type_id": str(uuid.uuid4())},
@@ -1287,7 +1287,7 @@ def test_report_performance_succeeds_even_if_the_subscriber_is_unreachable(clien
     """An unreachable subscriber never fails the report call that triggered the push."""
     import httpx as httpx_module
 
-    def raise_error(url, json=None, timeout=None):
+    def raise_error(url, json=None, timeout=None, **kw):
         raise httpx_module.ConnectError("unreachable")
 
     monkeypatch.setattr("app.main.httpx.post", raise_error)
@@ -1625,7 +1625,7 @@ def test_a_job_completion_notification_survives_a_crash_between_commit_and_send(
     monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")
     monkeypatch.setenv("MODULE", "aimgf")
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)) or FakeResponse(200, {}))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)) or FakeResponse(200, {}))
     model_id = mlmr.add_model()
     training_job_id = client.post("/training-jobs", json={
         "modelId": str(model_id), "producerId": "rapp-1", "notificationUri": "http://consumer/training-cb",
@@ -1662,7 +1662,7 @@ def test_a_performance_report_is_committed_with_its_subscriber_push(client, mlmr
 def test_nothing_is_announced_when_the_completion_does_not_commit(client, mlmr, db_session_factory, monkeypatch):
     """If the commit of a completion fails, no notification is sent, no outbox row exists and the job is not FINISHED: the announcement and the change stand or fall together."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
     model_id = mlmr.add_model()
     training_job_id = client.post("/training-jobs", json={
         "modelId": str(model_id), "producerId": "rapp-1", "notificationUri": "http://consumer/training-cb",

@@ -26,6 +26,8 @@ formal parameter to ~200 operations across 18 services would be a much
 larger, largely cosmetic diff for no real behavior gain.
 """
 
+import logging
+import re
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -35,6 +37,22 @@ from fastapi import FastAPI, Request
 
 HEADER_NAME = "X-Correlation-ID"
 _current_correlation_id: ContextVar[str | None] = ContextVar("_current_correlation_id", default=None)
+_VALID = re.compile(r"^[\x21-\x7e]{1,128}$")    # 1 to 128 printable ASCII characters, no space (call flow 14a)
+log = logging.getLogger(__name__)
+
+
+def accepted_correlation_id(value: str | None) -> str:
+    """The id a request carries on: the caller's `X-Correlation-ID` when it is 1 to 128 printable ASCII characters, else a fresh UUID (call flow 14a).
+
+    A header with other characters would make every downstream call fail (httpx refuses to encode it) and a long one would bloat every log line, so
+    either is replaced and the replacement logged; the refused value itself is not logged, only its length.
+    """
+    if value and _VALID.match(value):
+        return value
+    fresh = str(uuid.uuid4())
+    if value:
+        log.warning("refused an X-Correlation-ID of %d characters (not 1-128 printable ASCII); using %s", len(value), fresh)
+    return fresh
 
 
 def get_correlation_id() -> str | None:
@@ -84,7 +102,8 @@ def apply_correlation_id(app: FastAPI) -> None:
 
     @app.middleware("http")
     async def _correlation_id_middleware(request: Request, call_next):
-        correlation_id = request.headers.get(HEADER_NAME) or str(uuid.uuid4())
+        correlation_id = accepted_correlation_id(request.headers.get(HEADER_NAME))
+        request.state.correlation_id = correlation_id     # for the unhandled-exception handler, which runs outside this middleware (call flow 14a)
         token = _current_correlation_id.set(correlation_id)
         try:
             response = await call_next(request)

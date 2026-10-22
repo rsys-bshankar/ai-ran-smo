@@ -298,7 +298,7 @@ def test_unsubscribe_by_wrong_subscriber_is_a_silent_noop(client, db_session_fac
 def test_register_service_notifies_only_matching_subscribers(client, monkeypatch):
     """Registering a service delivers SERVICE_API_AVAILABLE to a subscriber of that event type and not to one that subscribed only to SERVICE_API_UPDATE."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
 
     client.post("/capif-events/v1/rapp-2/subscriptions", json={
         "subscriberId": "rapp-2", "eventTypes": ["SERVICE_API_AVAILABLE"], "callbackUri": "http://rapp-2/cb",
@@ -316,7 +316,7 @@ def test_register_service_notifies_only_matching_subscribers(client, monkeypatch
 def test_reregister_service_notifies_with_update_event_type(client, monkeypatch):
     """Re-registering an existing service sends SERVICE_API_UPDATE, not AVAILABLE."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
 
     client.post("/capif-events/v1/rapp-2/subscriptions", json={
         "subscriberId": "rapp-2", "eventTypes": ["SERVICE_API_AVAILABLE", "SERVICE_API_UPDATE"], "callbackUri": "http://rapp-2/cb",
@@ -333,7 +333,7 @@ def test_reregister_service_notifies_with_update_event_type(client, monkeypatch)
 def test_deregister_service_notifies_with_unavailable_event_type(client, monkeypatch):
     """Deleting a service sends SERVICE_API_UNAVAILABLE (the row is still live when the event is built)."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
 
     client.post("/capif-events/v1/rapp-2/subscriptions", json={
         "subscriberId": "rapp-2", "eventTypes": ["SERVICE_API_UNAVAILABLE"], "callbackUri": "http://rapp-2/cb",
@@ -350,7 +350,7 @@ def test_deregister_service_notifies_with_unavailable_event_type(client, monkeyp
 def test_deregister_by_wrong_producer_does_not_notify(client, monkeypatch):
     """A refused (wrong-producer) delete notifies nobody: nothing changed, so nothing is announced."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
 
     client.post("/capif-events/v1/rapp-2/subscriptions", json={
         "subscriberId": "rapp-2", "eventTypes": ["SERVICE_API_UNAVAILABLE"], "callbackUri": "http://rapp-2/cb",
@@ -366,7 +366,7 @@ def test_deregister_by_wrong_producer_does_not_notify(client, monkeypatch):
 def test_subscription_with_api_ids_filter_only_notifies_for_a_matching_service(client, monkeypatch):
     """An `apiIds` filter limits notifications to that service's events: another service's events (any type) and the watched service's other event types do not reach the subscriber."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
 
     watched = client.post("/published-apis/v1/rapp-1/service-apis", json=register_body(service_name="watched-service")).json()
     client.post("/capif-events/v1/rapp-2/subscriptions", json={
@@ -386,7 +386,7 @@ def test_subscription_with_api_ids_filter_only_notifies_for_a_matching_service(c
 def test_subscription_without_api_ids_filter_notifies_for_every_matching_service(client, monkeypatch):
     """A subscription with no filter is notified for every service of the subscribed event type."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
 
     client.post("/capif-events/v1/rapp-2/subscriptions", json={
         "subscriberId": "rapp-2", "eventTypes": ["SERVICE_API_AVAILABLE"], "callbackUri": "http://rapp-2/cb",
@@ -401,7 +401,7 @@ def test_subscription_without_api_ids_filter_notifies_for_every_matching_service
 def test_notify_service_change_does_not_notify_a_subscriber_the_service_is_not_visible_to(client, monkeypatch):
     """Notifications use the discovery gate: a subscriber outside `allowedConsumers` is not told about the service, since it could not discover it."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
 
     client.post("/capif-events/v1/rapp-3/subscriptions", json={
         "subscriberId": "rapp-3", "eventTypes": ["SERVICE_API_AVAILABLE"], "callbackUri": "http://rapp-3/cb",
@@ -416,7 +416,7 @@ def test_notify_service_change_survives_unreachable_subscriber(client, monkeypat
     import httpx as httpx_module
 
     # Stands in for `httpx.post` with the signature `smo_shared.webhook` calls it with; ConnectError is what an unreachable callback raises.
-    def raise_error(url, json=None, timeout=None):
+    def raise_error(url, json=None, timeout=None, **kw):
         raise httpx_module.ConnectError("unreachable")
 
     monkeypatch.setattr("app.main.httpx.post", raise_error)
@@ -945,7 +945,7 @@ def test_a_service_event_survives_a_crash_between_commit_and_send(client, db_ses
     monkeypatch.setenv("MODULE", "sme")
     calls = []
     # The stub returns an object with `status_code` 200 so the outbox counts the row as sent when the later drain runs.
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)) or type("R", (), {"status_code": 200})())
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)) or type("R", (), {"status_code": 200})())
     client.post("/capif-events/v1/rapp-2/subscriptions", json={
         "subscriberId": "rapp-2", "eventTypes": ["SERVICE_API_AVAILABLE"], "callbackUri": "http://rapp-2/cb"})
 
@@ -977,7 +977,7 @@ def test_the_visibility_gate_still_sees_the_policy_written_in_the_same_request(c
 def test_nothing_is_announced_when_the_registration_does_not_commit(client, db_session_factory, monkeypatch):
     """If the commit fails, nothing is announced: no callback is made, no outbox row survives and the service row is not stored (a consumer is never told about something that did not happen)."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
     client.post("/capif-events/v1/rapp-2/subscriptions", json={
         "subscriberId": "rapp-2", "eventTypes": ["SERVICE_API_AVAILABLE"], "callbackUri": "http://rapp-2/cb"})
 

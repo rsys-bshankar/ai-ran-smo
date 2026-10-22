@@ -141,7 +141,7 @@ def test_training_timeout_fails_run_and_model_without_corruption(client, mlmr, d
     completion cannot resurrect it (409) and the model can be retrained.
     """
     notified = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: notified.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: notified.append((url, json)))
     model_id = mlmr.add_model()
     job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "p", "timeoutSeconds": 60,
                                                  "notificationUri": "http://rapp/done"}).json()["trainingJobId"]

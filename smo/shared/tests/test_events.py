@@ -300,3 +300,17 @@ def test_the_listen_path_subscribes_reads_again_and_waits_for_one_notification(m
     monkeypatch.setattr(events, "POLL_SECONDS", 0.01)
     answers = iter([[], [], [{"smoseq": 7}]])
     assert events.wait_after(engine, 0, 5, lambda: next(answers)) == [{"smoseq": 7}]
+
+
+def test_an_event_carries_the_correlation_id_of_what_published_it():
+    """Call flow 14c: the row keeps the id of the request or task that published the event and the envelope carries it as `correlationid`; an event
+    published outside any has no such attribute."""
+    from smo_shared.correlation import correlation_scope
+    engine = _engine()
+    with Session(engine) as db:
+        with correlation_scope("req-14"):
+            events.publish(db, "alarm", "raised", "/smo/ran-nf-oam", "a-1")
+        events.publish(db, "alarm", "cleared", "/smo/ran-nf-oam", "a-1")
+        db.commit()
+        feed = events.read_after(db, 0)
+    assert feed[0]["correlationid"] == "req-14" and "correlationid" not in feed[1]

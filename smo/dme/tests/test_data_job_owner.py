@@ -25,7 +25,7 @@ def test_a_job_records_the_invoker_that_created_it(client):
 def test_every_job_one_invoker_created_is_deleted_and_no_other(client, monkeypatch):
     """rApp Management's teardown call deletes the instance's jobs (whatever consumer id the rApp gave them) and leaves another instance's job, and a
     job with no recorded creator, alone; the producers are told as for any terminated job."""
-    monkeypatch.setattr("app.main.httpx.delete", lambda url, timeout=None: None)
+    monkeypatch.setattr("app.main.httpx.delete", lambda url, timeout=None, **kw: None)
     type_id = client.post("/production-capabilities", json=register_type_body()).json()["registrationId"]
     mine = [_job(client, type_id, INSTANCE, "energy-saving-rapp:i-1"), _job(client, type_id, INSTANCE, "something-else")]
     others = [_job(client, type_id, OTHER, "energy-saving-rapp:i-2"), _job(client, type_id)]

@@ -302,7 +302,7 @@ export interface GuiUser {
   // GUI-5: the user's region/tenant scope (absent on an older BFF)
   scope?: UserScope;
 }
-export interface AuditEntry { id: number; at: string; username: string | null; role: string | null; action: string; method: string | null; path: string | null; statusCode: number | null; detail: string | null }
+export interface AuditEntry { id: number; at: string; username: string | null; role: string | null; action: string; method: string | null; path: string | null; statusCode: number | null; detail: string | null; correlationId?: string | null }
 
 // ---- GUI pass 2: DME, SME registries, onboarding/NFO detail
 /** A DME data job (a consumer's subscription to a data type). */

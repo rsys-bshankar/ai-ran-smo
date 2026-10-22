@@ -110,7 +110,7 @@ def test_the_ceiling_is_shown_with_the_subscription(client, mlmr):
 def test_the_push_carries_the_missing_metrics(client, mlmr, monkeypatch):
     """The subscriber's notification carries `missingMetrics` with the rest of the report (call flow 13d)."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append(json))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append(json))
     sub_id = _subscribe(client, mlmr.add_model(), floor={"accuracy": 0.9}, destination="http://consumer/mlmf").json()["subscriptionId"]
 
     client.post(f"/mlmf/subscriptions/{sub_id}/reports", json={"latency": 12})

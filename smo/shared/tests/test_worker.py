@@ -195,3 +195,13 @@ def test_the_event_purge_removes_old_events_and_can_be_turned_off(tmp_path, monk
         assert len(conn.execute(select(events.SmoEvent.seq)).all()) == 1
     monkeypatch.setenv("SMO_EVENT_PURGE", "off")
     assert worker.event_purge_task() is None
+
+
+def test_each_task_run_has_its_own_correlation_id(db):
+    """Call flow 14c: a task runs under `task:<name>:<uuid>`, a new one each run, and nothing is left set after the tick."""
+    from smo_shared.correlation import get_correlation_id
+    seen = []
+    tasks = [Task("t", 60, lambda: seen.append(get_correlation_id()))]
+    run_tick(db, tasks, at(0))
+    run_tick(db, tasks, at(61))
+    assert [s.rsplit(":", 1)[0] for s in seen] == ["task:t", "task:t"] and seen[0] != seen[1] and get_correlation_id() is None

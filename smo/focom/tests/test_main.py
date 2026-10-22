@@ -115,7 +115,7 @@ def test_subscribe_inventory_changes_without_consumer_subscription_id_defaults_t
 def test_provision_resource_notification_passes_through_consumer_subscription_id(client, monkeypatch):
     """The subscription's `consumerSubscriptionId` comes back on the notification itself, so the consumer can route it, not just in the stored row."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
 
     client.post("/inventory/subscriptions", json={
         "callback": "http://consumer/callback", "resourceTypeId": "gpu-l40", "consumerSubscriptionId": "consumer-sub-1",
@@ -146,7 +146,7 @@ def test_unsubscribe_unknown_inventory_subscription_is_idempotent(client):
 def test_provision_resource_notifies_matching_subscriber(client, monkeypatch):
     """Provisioning a resource sends a CREATE notification, with the resource id and type, to a subscriber whose type filter matches."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
 
     client.post("/inventory/subscriptions", json={"callback": "http://consumer/callback", "resourceTypeId": "gpu-l40"})
 
@@ -163,7 +163,7 @@ def test_provision_resource_notifies_matching_subscriber(client, monkeypatch):
 def test_provision_resource_does_not_notify_subscriber_filtered_out_by_type(client, monkeypatch):
     """A subscriber filtered to another resource type receives nothing."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
 
     client.post("/inventory/subscriptions", json={"callback": "http://consumer/callback", "resourceTypeId": "gpu-l40"})
 
@@ -175,7 +175,7 @@ def test_provision_resource_does_not_notify_subscriber_filtered_out_by_type(clie
 def test_deprovision_resource_notifies_subscriber_regardless_of_type_filter(client, monkeypatch):
     """Deprovisioning an id that was never provisioned has no known type, so a type-filtered subscriber is still notified of the DELETE rather than missing it."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
 
     client.post("/inventory/subscriptions", json={"callback": "http://consumer/callback", "resourceTypeId": "gpu-l40"})
 
@@ -189,7 +189,7 @@ def test_deprovision_resource_notifies_subscriber_regardless_of_type_filter(clie
 def test_deprovision_known_resource_notifies_with_its_real_type(client, monkeypatch):
     """Deprovisioning a stored resource sends DELETE with the resource's real type, which the filter is matched against."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
 
     client.post("/inventory/subscriptions", json={"callback": "http://consumer/callback", "resourceTypeId": "gpu-l40"})
     provisioned = client.post("/resources/provision", json={"resourceTypeId": "gpu-l40"}).json()
@@ -206,7 +206,7 @@ def test_inventory_notification_delivery_survives_unreachable_subscriber(client,
     """A subscriber that cannot be reached does not fail the provision: the request still answers 200."""
     import httpx as httpx_module
 
-    def raise_error(url, json=None, timeout=None):
+    def raise_error(url, json=None, timeout=None, **kw):
         raise httpx_module.ConnectError("unreachable")
 
     monkeypatch.setattr("app.main.httpx.post", raise_error)
@@ -562,7 +562,7 @@ def test_an_inventory_notification_survives_a_crash_between_commit_and_send(clie
     monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")
     monkeypatch.setenv("MODULE", "focom")
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)) or type("R", (), {"status_code": 200})())
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)) or type("R", (), {"status_code": 200})())
     client.post("/inventory/subscriptions", json={"callback": "http://consumer/callback", "resourceTypeId": "gpu-l40", "consumerSubscriptionId": "sub-1"})
 
     resource_id = client.post("/resources/provision", json={"resourceTypeId": "gpu-l40"}).json()["resourceId"]
@@ -592,7 +592,7 @@ def test_an_alarm_and_its_notification_commit_together(client, db_session, monke
 def test_nothing_is_announced_when_the_provision_does_not_commit(client, db_session, monkeypatch):
     """When the commit fails, no outbox row and no callback exist and the resource is not stored: a subscriber is never told about something that did not happen."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
     client.post("/inventory/subscriptions", json={"callback": "http://consumer/callback", "resourceTypeId": "gpu-l40"})
 
     from sqlalchemy.orm import Session as OrmSession

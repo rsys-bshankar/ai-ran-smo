@@ -6,22 +6,27 @@ TS 28.532/28.111 for CM/FM).
 from fastapi import HTTPException
 from pydantic import BaseModel
 
+from .correlation import HEADER_NAME as CORRELATION_ID_HEADER
+from .correlation import get_correlation_id
+
 
 # Published in the OpenAPI documents as the error body schema, so it carries no docstring (see CODE_DOCUMENTATION.md). RFC 7807 fields: `type`,
 # `title` (the error code, one of the names in `FrameworkError`), `status` (the HTTP status), `detail`, `instance`. Routes raise it through
-# `problem()` / `framework_error()`, which wrap it in an HTTPException, so the body on the wire is {"detail": {...ProblemDetails...}}.
+# `problem()` / `framework_error()`, which wrap it in an HTTPException, so the body on the wire is {"detail": {...ProblemDetails...}}. `correlationId`
+# (an extension member, RFC 7807 section 3.2) is the request's `X-Correlation-ID`, so a refusal shown to someone can be found in the logs (call flow 14a).
 class ProblemDetails(BaseModel):
     type: str = "about:blank"
     title: str
     status: int
     detail: str | None = None
     instance: str | None = None
+    correlationId: str | None = None
 
 
 def problem(status: int, title: str, detail: str | None = None) -> HTTPException:
     return HTTPException(
         status_code=status,
-        detail=ProblemDetails(title=title, status=status, detail=detail).model_dump(),
+        detail=ProblemDetails(title=title, status=status, detail=detail, correlationId=get_correlation_id()).model_dump(),
     )
 
 
@@ -266,7 +271,8 @@ def install_out_of_range_handler(app) -> None:
     title, status = FrameworkError.VALUE_OUT_OF_RANGE
 
     async def _out_of_range(request, exc):  # noqa: ARG001
-        body = ProblemDetails(title=title, status=status, detail="a value in the request is outside the range the service can store").model_dump()
+        body = ProblemDetails(title=title, status=status, detail="a value in the request is outside the range the service can store",
+                              correlationId=get_correlation_id()).model_dump()
         return JSONResponse(status_code=status, content={"detail": body})
 
     app.add_exception_handler(OverflowError, _out_of_range)
@@ -338,11 +344,17 @@ def install_integrity_handlers(app) -> None:
     async def _integrity(request, exc):
         title, status, detail = _integrity_problem(exc)
         log.warning("%s %s answered %s %s: %s", request.method, request.url.path, status, title, str(_orig(exc)).splitlines()[0][:200])
-        return JSONResponse(status_code=status, content={"detail": ProblemDetails(title=title, status=status, detail=detail).model_dump()})
+        return JSONResponse(status_code=status, content={"detail": ProblemDetails(title=title, status=status, detail=detail,
+                                                                                  correlationId=get_correlation_id()).model_dump()})
 
     async def _unhandled(request, exc):  # noqa: ARG001
+        # Runs outside the correlation middleware (Starlette's outermost layer), so the id comes from the request's state and is put back on the
+        # response here; before, a 500 was the one answer without it (call flow 14a).
         title, status = FrameworkError.INTERNAL_ERROR
-        return JSONResponse(status_code=status, content={"detail": ProblemDetails(title=title, status=status, detail="the service could not complete the request").model_dump()})
+        correlation_id = getattr(request.state, "correlation_id", None)
+        body = ProblemDetails(title=title, status=status, detail="the service could not complete the request", correlationId=correlation_id)
+        headers = {CORRELATION_ID_HEADER: correlation_id} if correlation_id else None
+        return JSONResponse(status_code=status, content={"detail": body.model_dump()}, headers=headers)
 
     app.add_exception_handler(IntegrityError, _integrity)
     app.add_exception_handler(Exception, _unhandled)

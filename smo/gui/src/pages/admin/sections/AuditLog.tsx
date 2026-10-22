@@ -76,7 +76,8 @@ export function AuditLog() {
         { header: t("admin.audit.col.when"), render: (e) => <span className="mono small">{formatTime(e.at)}</span> },
         { header: t("admin.audit.col.user"), render: (e) => <>{e.username ?? "—"}{e.role && <span className="muted small"> ({e.role})</span>}</> },
         { header: t("admin.audit.col.event"), render: (e) => <code className="small">{e.action}</code> },
-        { header: t("admin.audit.col.call"), render: (e) => e.method ? <code className="small">{e.method} {e.path}</code> : <span className="muted">—</span> },
+        // call flow 14d: the correlation id the BFF gave the action, the key to its log lines in every module
+        { header: t("admin.audit.col.call"), render: (e) => e.method ? <><code className="small">{e.method} {e.path}</code>{e.correlationId && <div className="muted small mono">{e.correlationId}</div>}</> : <span className="muted">—</span> },
         { header: t("admin.audit.col.detail"), render: (e) => <span className="small">{e.detail ?? ""}</span> },
         { header: t("admin.audit.col.outcome"), render: (e) => { const o = auditOutcome(e, t); return <Badge tone={o.tone}>{o.text}</Badge>; } },
       ]} />

@@ -59,9 +59,9 @@ def _default_producer_callbacks_are_harmless(monkeypatch):
     exercise health/push/stop behavior override this with their own
     monkeypatch.setattr call.
     """
-    monkeypatch.setattr("app.main.httpx.get", lambda url, timeout=None: FakeHealthResponse(200))
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: FakeHealthResponse(200))
-    monkeypatch.setattr("app.main.httpx.delete", lambda url, timeout=None: FakeHealthResponse(204))
+    monkeypatch.setattr("app.main.httpx.get", lambda url, timeout=None, **kw: FakeHealthResponse(200))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: FakeHealthResponse(200))
+    monkeypatch.setattr("app.main.httpx.delete", lambda url, timeout=None, **kw: FakeHealthResponse(204))
 
 
 def register_type_body(name="PMCounters", version="1.0.0", **extra):
@@ -105,7 +105,7 @@ def test_type_status_disabled_when_producer_health_callback_is_unreachable(clien
     """
     import httpx as httpx_module
 
-    def raise_error(url, timeout=None):
+    def raise_error(url, timeout=None, **kw):
         raise httpx_module.ConnectError("unreachable")
 
     monkeypatch.setattr("app.main.httpx.get", raise_error)
@@ -117,7 +117,7 @@ def test_type_status_disabled_when_producer_health_callback_is_unreachable(clien
 
 def test_type_status_disabled_on_a_non_2xx_health_response(client, monkeypatch):
     """A producer whose health callback answers 503 makes the type DISABLED."""
-    monkeypatch.setattr("app.main.httpx.get", lambda url, timeout=None: FakeHealthResponse(503))
+    monkeypatch.setattr("app.main.httpx.get", lambda url, timeout=None, **kw: FakeHealthResponse(503))
     client.post("/production-capabilities", json=register_type_body())
     resp = client.get("/dme-types")
     assert resp.json()[0]["typeStatus"] == "DISABLED"
@@ -127,7 +127,7 @@ def test_type_status_enabled_when_producer_health_callback_responds(client, monk
     """The type is ENABLED when a producer's registered health callback answers, and that registered URL is the one called."""
     calls = []
 
-    def fake_get(url, timeout=None):
+    def fake_get(url, timeout=None, **kw):
         calls.append(url)
         return FakeHealthResponse(200)
 
@@ -145,7 +145,7 @@ def test_type_status_stays_disabled_even_with_an_active_job_if_producer_is_unrea
     """
     import httpx as httpx_module
 
-    def raise_error(url, timeout=None):
+    def raise_error(url, timeout=None, **kw):
         raise httpx_module.ConnectError("unreachable")
 
     monkeypatch.setattr("app.main.httpx.get", raise_error)
@@ -440,7 +440,7 @@ def test_delete_dme_type_succeeds_once_its_last_producer_is_gone_and_notifies_su
     """Once the last producer has left, the type can be deleted, and the subscribers are told it was DEREGISTERED with its schema.
     """
     notified = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: notified.append(json) or FakeHealthResponse(200))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: notified.append(json) or FakeHealthResponse(200))
 
     client.post("/type-subscriptions", json={"notificationDestination": "http://consumer/dme-type-events", "owner": "consumer-1"})
     reg = client.post("/production-capabilities", json=register_type_body()).json()
@@ -480,7 +480,7 @@ def test_terminate_data_offer_fires_termination_notification(client, monkeypatch
     notification the Producer sends the other way.
     """
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
 
     reg = client.post("/production-capabilities", json=register_type_body()).json()
     offer = client.post("/offers", json={
@@ -614,7 +614,7 @@ def test_update_data_job_re_pushes_to_the_producer(client, monkeypatch):
     updated — the producer is re-notified with the new job definition.
     """
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
 
     reg = client.post("/production-capabilities", json=register_type_body()).json()
     created = client.post("/data-jobs", json={
@@ -695,7 +695,7 @@ def test_create_data_job_pushes_the_job_to_the_producer(client, monkeypatch):
     (ProducerJobInfo's wire shape). This is the actual fix.
     """
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
 
     reg = client.post("/production-capabilities", json=register_type_body()).json()
     created = client.post("/data-jobs", json={
@@ -721,7 +721,7 @@ def test_create_data_job_succeeds_even_if_the_producer_push_fails(client, monkey
     """
     import httpx as httpx_module
 
-    def raise_error(url, json=None, timeout=None):
+    def raise_error(url, json=None, timeout=None, **kw):
         raise httpx_module.ConnectError("unreachable")
 
     monkeypatch.setattr("app.main.httpx.post", raise_error)
@@ -745,7 +745,7 @@ def test_terminate_data_job_stops_the_job_at_the_producer(client, monkeypatch):
     }).json()
 
     calls = []
-    monkeypatch.setattr("app.main.httpx.delete", lambda url, timeout=None: calls.append(url))
+    monkeypatch.setattr("app.main.httpx.delete", lambda url, timeout=None, **kw: calls.append(url))
 
     client.delete(f"/data-jobs/{created['dataJobId']}")
     assert calls == [f"http://ran-nf-oam:8000/dme-jobs/{created['dataJobId']}"]
@@ -754,7 +754,7 @@ def test_terminate_data_job_stops_the_job_at_the_producer(client, monkeypatch):
 def test_terminate_unknown_data_job_pushes_nothing(client, monkeypatch):
     """Terminating a job that does not exist is 204 and no producer is told."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.delete", lambda url, timeout=None: calls.append(url))
+    monkeypatch.setattr("app.main.httpx.delete", lambda url, timeout=None, **kw: calls.append(url))
 
     resp = client.delete("/data-jobs/11111111-1111-1111-1111-111111111111")
     assert resp.status_code == 204
@@ -766,7 +766,7 @@ def test_terminate_data_job_succeeds_even_if_the_producer_stop_fails(client, mon
     """
     import httpx as httpx_module
 
-    def raise_error(url, timeout=None):
+    def raise_error(url, timeout=None, **kw):
         raise httpx_module.ConnectError("unreachable")
 
     reg = client.post("/production-capabilities", json=register_type_body()).json()
@@ -803,7 +803,7 @@ def test_terminate_data_jobs_for_consumer_deletes_every_matching_job(client, mon
     }).json()
 
     calls = []
-    monkeypatch.setattr("app.main.httpx.delete", lambda url, timeout=None: calls.append(url))
+    monkeypatch.setattr("app.main.httpx.delete", lambda url, timeout=None, **kw: calls.append(url))
 
     resp = client.delete("/data-jobs", params={"consumer_id": "rapp-1"})
     assert resp.status_code == 204
@@ -832,7 +832,7 @@ def test_query_producer_status_enabled_when_healthy(client, monkeypatch):
     """
     calls = []
 
-    def fake_get(url, timeout=None):
+    def fake_get(url, timeout=None, **kw):
         calls.append(url)
         return FakeHealthResponse(200)
 
@@ -849,7 +849,7 @@ def test_query_producer_status_disabled_when_unreachable(client, monkeypatch):
     """A producer whose health callback cannot be reached is reported DISABLED (200, not an error)."""
     import httpx as httpx_module
 
-    def raise_error(url, timeout=None):
+    def raise_error(url, timeout=None, **kw):
         raise httpx_module.ConnectError("unreachable")
 
     monkeypatch.setattr("app.main.httpx.get", raise_error)
@@ -923,7 +923,7 @@ def test_register_dme_type_notifies_subscribers(client, monkeypatch):
     matching the reference's own lack of per-type scoping.
     """
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
     client.post("/type-subscriptions", json={"notificationDestination": "http://consumer/type-changes", "owner": "sa-smos"})
 
     reg = client.post("/production-capabilities", json=register_type_body()).json()
@@ -945,7 +945,7 @@ def test_deleting_a_types_last_producer_notifies_subscribers_per_type(client, mo
     reg_b = client.post("/production-capabilities", json=register_type_body(name="TypeB", producerId="rapp-1")).json()
 
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
     client.post("/type-subscriptions", json={"notificationDestination": "http://consumer/type-changes", "owner": "sa-smos"})
 
     client.delete("/production-capabilities", params={"producer_id": "rapp-1"})
@@ -959,7 +959,7 @@ def test_deleting_a_types_last_producer_notifies_subscribers_per_type(client, mo
 def test_register_dme_type_does_not_notify_when_no_subscribers(client, monkeypatch):
     """With no subscribers, registering a type sends no notification."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
 
     client.post("/production-capabilities", json=register_type_body())
 
@@ -971,7 +971,7 @@ def test_register_dme_type_succeeds_even_if_a_subscriber_is_unreachable(client, 
     """
     import httpx as httpx_module
 
-    def raise_error(url, json=None, timeout=None):
+    def raise_error(url, json=None, timeout=None, **kw):
         raise httpx_module.ConnectError("unreachable")
 
     monkeypatch.setattr("app.main.httpx.post", raise_error)
@@ -1313,7 +1313,7 @@ def test_a_type_registration_notification_survives_a_crash_between_commit_and_se
     monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")           # the process dies right after the commit
     monkeypatch.setenv("MODULE", "dme")                              # what the container sets
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)) or FakeHealthResponse(200))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)) or FakeHealthResponse(200))
     client.post("/type-subscriptions", json={"notificationDestination": "http://consumer/type-changes", "owner": "sa-smos"})
 
     reg = client.post("/production-capabilities", json=register_type_body()).json()
@@ -1335,7 +1335,7 @@ def test_a_job_push_to_producers_is_one_row_per_producer_and_sent_after_commit(c
     client.post("/production-capabilities", json=register_type_body(producerId="rapp-1"))
     client.post("/production-capabilities", json=register_type_body(producerId="rapp-2", jobCallbackUrl="http://rapp-2:8000/jobs"))
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)) or FakeHealthResponse(200))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)) or FakeHealthResponse(200))
     monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")
     with sessionmaker(bind=app.state.test_engine)() as db:
         type_id = db.query(DMEType).one().dme_type_id
@@ -1351,7 +1351,7 @@ def test_a_job_push_to_producers_is_one_row_per_producer_and_sent_after_commit(c
 def test_nothing_is_announced_when_the_change_does_not_commit(client, monkeypatch):
     """The other half: a change that rolls back used to have told its subscribers already; now it leaves no row and sends nothing."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)) or FakeHealthResponse(200))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)) or FakeHealthResponse(200))
     client.post("/type-subscriptions", json={"notificationDestination": "http://consumer/type-changes", "owner": "sa-smos"})
 
     from sqlalchemy.orm import Session as OrmSession
@@ -1377,7 +1377,7 @@ def test_stopping_a_job_at_the_producers_is_a_delete_row_in_the_same_transaction
     """MSG-1.10: the producer's stop-job DELETE was an inline call after the commit, lost if the process died in between."""
     client.post("/production-capabilities", json=register_type_body(producerId="rapp-1"))
     client.post("/production-capabilities", json=register_type_body(producerId="rapp-2", jobCallbackUrl="http://rapp-2:8000/jobs"))
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: FakeHealthResponse(200))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: FakeHealthResponse(200))
     with sessionmaker(bind=app.state.test_engine)() as db:
         type_id = db.query(DMEType).one().dme_type_id
     job = client.post("/data-jobs", json={"dataDeliveryMode": "ONE_TIME", "dmeTypeId": str(type_id), "consumerId": "rapp-x",

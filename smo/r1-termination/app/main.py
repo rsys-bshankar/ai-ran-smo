@@ -60,17 +60,18 @@ install_metrics(app)  # /metrics and request count/latency series (PR-OBS-2)
 # below: the probes are answered ahead of the token check entirely, /bootstrap is "No auth (network-isolated)") — every other
 # path here is the catch-all proxy route, which really does introspect the token (`_introspect_token`) on every request.
 apply_r1_gateway_security(app, public_paths=frozenset({"/health", "/live", "/ready", "/version", "/bootstrap"}))
+# Request body cap (PR-SEC-8.1): 1 MiB for every route, except the two that carry a file: an AI/ML model
+# artifact upload and an rApp package (CSAR) upload (call flow 01a); the GUI's nginx allows the same 50 MiB. Environment: R1_MAX_BODY_BYTES and
+# R1_MAX_BODY_OVERRIDES (`<path-pattern>=<bytes>,...`; setting it replaces the default overrides). Added before the correlation middleware, so it
+# runs inside it: a 413 carries the request's X-Correlation-ID like every other answer (call flow 14a).
+app.add_middleware(BodySizeLimit, settings=settings_from_env(
+    "R1", default_overrides=f"/mlmr/models/*/artifact={50 * MIB},/onboarding/packages/upload={50 * MIB}"))
+
 # This gateway is the true origin point for external traffic: a caller
 # that never sent its own X-Correlation-ID gets one assigned here, which
 # then propagates through the whole downstream fan-out (see the proxy
 # route below, and smo_shared/r1_client.py for the intra-mesh half).
 apply_correlation_id(app)
-
-# Request body cap (PR-SEC-8.1): 1 MiB for every route, except the two that carry a file: an AI/ML model
-# artifact upload and an rApp package (CSAR) upload (call flow 01a); the GUI's nginx allows the same 50 MiB. Environment: R1_MAX_BODY_BYTES and
-# R1_MAX_BODY_OVERRIDES (`<path-pattern>=<bytes>,...`; setting it replaces the default overrides).
-app.add_middleware(BodySizeLimit, settings=settings_from_env(
-    "R1", default_overrides=f"/mlmr/models/*/artifact={50 * MIB},/onboarding/packages/upload={50 * MIB}"))
 
 # Per-caller request budget (PR-SEC-8.2): a token bucket per invoker id. R1_RATE_PER_SECOND (default 100, 0 turns
 # it off) refills it, R1_RATE_BURST (default 200) is its size. R1_RATE_STORE (read once at start) says where the buckets live:
@@ -416,12 +417,12 @@ async def _proxy(full_path: str, request: Request):
                 )
             tracing.mark_status(client_span, upstream.status_code)
     except httpx.TimeoutException:
-        return JSONResponse(status_code=504, content={
-            "title": "UPSTREAM_TIMEOUT", "status": 504,
-            "detail": f"{prefix} did not answer within {upstream_timeout():g} s"})
+        return _problem(504, "UPSTREAM_TIMEOUT", f"{prefix} did not answer within {upstream_timeout():g} s")
     except httpx.HTTPError:
-        return JSONResponse(status_code=502, content={
-            "title": "UPSTREAM_UNAVAILABLE", "status": 502, "detail": f"{prefix} could not be reached"})
+        return _problem(502, "UPSTREAM_UNAVAILABLE", f"{prefix} could not be reached")
+    except UnicodeEncodeError:
+        # A header the caller sent with a character outside ASCII cannot be put on the onward request; it was a 500 (call flow 14a).
+        return _problem(400, "HEADER_NOT_ASCII", "a request header carries a character outside ASCII")
     return Response(content=upstream.content, status_code=upstream.status_code, headers=dict(upstream.headers))
 
 
@@ -434,8 +435,9 @@ _OPERATOR_API_DROP_RESPONSE = frozenset({"connection", "keep-alive", "transfer-e
 
 
 def _problem(status: int, title: str, detail: str) -> JSONResponse:
-    """A gateway-made error response in the gateway's RFC 7807 shape (`title`, `status`, `detail` at the top level, not under `detail`)."""
-    return JSONResponse(status_code=status, content={"title": title, "status": status, "detail": detail})
+    """A gateway-made error response in the gateway's RFC 7807 shape (`title`, `status`, `detail` at the top level, not under `detail`), with the request's
+    `correlationId` (call flow 14a)."""
+    return JSONResponse(status_code=status, content={"title": title, "status": status, "detail": detail, "correlationId": get_correlation_id()})
 
 
 def _forwarded_headers(request: Request, role: str, invoker_id: str | None, caller_scope: authz_scope.Scope | None) -> dict[str, str]:
@@ -532,6 +534,8 @@ async def _forward_operator_api(request: Request, rest_of_path: str, body: bytes
         log.warning("operator API of instance %s at %s could not be reached (%s); check the instance's operator API base URL and that the rApp is running",
                     instance_id, base, exc.__class__.__name__)
         return _problem(502, "UPSTREAM_UNAVAILABLE", "the rApp's operator API could not be reached")
+    except UnicodeEncodeError:
+        return _problem(400, "HEADER_NOT_ASCII", "a request header carries a character outside ASCII")
     if upstream is None:                                       # the registered address failed the SSRF guard again (it changed, or the guard did)
         log.warning("operator API of instance %s at %s not called: the address is refused by the SSRF guard (loopback, link-local or metadata)",
                     instance_id, base)
