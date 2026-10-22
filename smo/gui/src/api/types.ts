@@ -168,8 +168,10 @@ export interface Alarm {
   // PR-GUI-9.8: when it was acknowledged (null while unacknowledged; absent from an older backend) and cleared (`clearedAt` again)
   ackTime?: string | null; clearTime?: string | null;
 }
-export interface PmSubscription { subscriptionId: string; managedElementRef: string; counterType: string; deliveryMethod: string; southboundEngine: string; granularityPeriod: number | null }
-export interface FmSubscription { subscriptionId: string; managedElementRef: string; deliveryMethod: string; southboundEngine: string }
+/** One row of `GET /ran-nf-oam/pm-subscriptions`; `createdBy` is who made it, the one person (besides an admin) who may delete it (call flow 20c). */
+export interface PmSubscription { subscriptionId: string; managedElementRef: string; counterType: string; deliveryMethod: string; southboundEngine: string; granularityPeriod: number | null; createdBy?: string | null }
+/** One row of `GET /ran-nf-oam/fm-subscriptions` (call flow 20d). */
+export interface FmSubscription { subscriptionId: string; managedElementRef: string; deliveryMethod: string; southboundEngine: string; createdBy?: string | null }
 /**
  * A registered O1 endpoint: the managed element, the adaptor URI, supported protocols, health, and (PR-SEC-10.2) the region and tenant that decide which scoped callers may touch it; unset means unscoped callers only.
  */

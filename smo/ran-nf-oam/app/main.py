@@ -2968,6 +2968,37 @@ def _register_with_dme(body: dict) -> None:
         raise framework_error(FrameworkError.UPSTREAM_FAILED, detail=f"DME refused the producer registration of {body['typeName']} ({resp.status_code})")
 
 
+def _deregister_type_at_dme(namespace: str, name: str, version: str = "1.0.0") -> None:
+    """Withdraws RAN NF OAM as the producer of one DME type (`DELETE /dme/production-capabilities/ran-nf-oam/types`, idempotent at DME); raises 502
+    `UPSTREAM_FAILED` when DME refuses or does not answer, so the caller deletes nothing (call flow 20c/20d)."""
+    try:
+        resp = R1Client().delete("/dme/production-capabilities/ran-nf-oam/types", params={"namespace": namespace, "name": name, "version": version})
+    except httpx.HTTPError as exc:
+        raise framework_error(FrameworkError.UPSTREAM_FAILED, detail=f"DME did not answer the producer deregistration ({type(exc).__name__})") from exc
+    if resp.status_code >= 300:
+        raise framework_error(FrameworkError.UPSTREAM_FAILED, detail=f"DME refused the producer deregistration of {namespace}.{name} ({resp.status_code})")
+
+
+# Call flow 20c (DOC-CF-1.8): how a PM or FM subscription is delivered; anything else was registered at DME and then refused by the database
+DeliveryMethod = Literal["pull", "push", "stream"]
+
+
+def _subscriber(request: Request) -> str | None:
+    """Who makes a PM or FM subscription (call flow 20, DOC-CF-1.8): the console's signed-in person (`X-R1-Acting-User`), else the module's invoker id;
+    None for a call that did not come through the gateway."""
+    return acting_user(request) or invoker_id(request)
+
+
+def _require_subscriber(request: Request, created_by: str | None, as_admin: bool) -> None:
+    """403 `SUBSCRIPTION_ACCESS_DENIED` unless the caller made the subscription (`_subscriber`), it has no recorded subscriber (made before revision 0061),
+    the call did not come through the gateway, or an admin acts in the console (`as_admin`, which the GUI BFF forces from the signed-in user's role and
+    which counts only with an acting user)."""
+    caller = _subscriber(request)
+    if created_by is None or caller is None or caller == created_by or (as_admin and acting_user(request) is not None):
+        return
+    raise framework_error(FrameworkError.SUBSCRIPTION_ACCESS_DENIED, detail=f"the subscription is {created_by}'s: only they or an admin may delete it")
+
+
 def _publish_kpi_to_dme(definition: KpiDefinition, result: dict) -> tuple[int, int]:
     """(open data jobs, records delivered) for a computed KPI; registers the DME type first."""
     r1 = R1Client()
@@ -3310,7 +3341,7 @@ def correlated_alarms(alarm_id: uuid.UUID, request: Request, window_seconds: int
 
 
 @app.post("/alarms/ingest")
-def ingest_alarm(source_alarm_id: str, managed_element_ref: str, severity: str, correlation_group: str | None = None,
+def ingest_alarm(source_alarm_id: str, managed_element_ref: str, severity: str, request: Request, correlation_group: str | None = None,
                   probable_cause: str | None = None, specific_problem: str | None = None, root_cause_indicator: bool = False,
                   correlated_notifications: list[uuid.UUID] = Query(default=[]), proposed_repair_actions: str | None = None,
                   alarm_type: str | None = None, managed_function_ref: str | None = None, db: Session = Depends(get_session)):
@@ -3329,12 +3360,39 @@ def ingest_alarm(source_alarm_id: str, managed_element_ref: str, severity: str, 
     alarm is about inside the element (AlarmRecord's objectInstance below
     the ME), e.g. `NRCellDU=101`, so a consumer can hold that one cell
     rather than the whole element. Omitted = the element as a whole.
+
+    Call flow 20a (DOC-CF-1.8): the caller is checked as for acknowledging an alarm: 403 `SCOPE_DENIED` for an element outside its scope claim, 404
+    `MANAGED_ENTITY_NOT_FOUND` for an unknown element, MSAC `create` on the element. `severity=cleared` is 422 (a clear is `PATCH /alarms/{id}/clear` or
+    a VES `NORMAL`; a new row raised already cleared left the open one open). Each correlated alarm must exist and be one the caller may see (422). A
+    report of an alarm that is still open (same element and `source_alarm_id`) is the same alarm, as for VES: its id is answered with `duplicate: true`,
+    and a new severity re-grades it (an NF retrying after a timeout made a second open alarm).
     """
+    scoping.require_elements(db, scoping.request_scope(request), [managed_element_ref])
+    if db.get(ManagedEntity, managed_element_ref) is None:
+        raise framework_error(FrameworkError.MANAGED_ENTITY_NOT_FOUND, detail=f"no managed element {managed_element_ref!r}")
+    _require_msac(db, request, "create", managed_element_ref, managed_function_ref)
+    if _perceived_severity(severity) == "cleared":
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
+                              detail="an alarm is not raised cleared: clear the open alarm with PATCH /alarms/{alarmId}/clear")
+    scope = scoping.request_scope(request)
+    for correlated_id in correlated_notifications:
+        other = db.get(Alarm, correlated_id)
+        if other is None or not scoping.element_permitted(db, scope, other.managed_element_ref):
+            raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"correlatedNotifications names no alarm {correlated_id}")
+    open_alarm = db.scalars(select(Alarm).where(Alarm.managed_element_ref == managed_element_ref, Alarm.source_alarm_id == source_alarm_id,
+                                                Alarm.severity != "cleared").order_by(Alarm.raised_at.desc())).first()
+    if open_alarm is not None:
+        require_service(db, managed_element_ref, "FM")
+        new_severity = _perceived_severity(severity)
+        if open_alarm.severity != new_severity:
+            open_alarm.severity, open_alarm.changed_at = new_severity, datetime.datetime.now(datetime.UTC)
+            db.commit()
+        return {"alarmId": str(open_alarm.alarm_id), "duplicate": True}
     alarm = _raise_alarm(db, source_alarm_id=source_alarm_id, managed_element_ref=managed_element_ref, severity=severity,
                          correlation_group=correlation_group, probable_cause=probable_cause, specific_problem=specific_problem,
                          root_cause_indicator=root_cause_indicator, correlated_notifications=correlated_notifications,
                          proposed_repair_actions=proposed_repair_actions, alarm_type=alarm_type, managed_function_ref=managed_function_ref)
-    return {"alarmId": str(alarm.alarm_id)}
+    return {"alarmId": str(alarm.alarm_id), "duplicate": False}
 
 
 def _raise_alarm(db: Session, *, source_alarm_id: str, managed_element_ref: str, severity: str, correlation_group: str | None = None,
@@ -3373,6 +3431,12 @@ def change_alarm_ack_state(alarm_id: uuid.UUID, new_state: Literal["ACKNOWLEDGED
     this build actually mutates an existing alarm.
     """
     alarm = _get_alarm(db, alarm_id, request)
+    # Call flow 20b (DOC-CF-1.8): a cleared alarm is not acknowledged (409 ALARM_CLEARED), and asking for the state it is already in changes nothing, so
+    # the first acknowledger and their time stay together (a repeat replaced the user and kept the first time)
+    if alarm.severity == "cleared":
+        raise framework_error(FrameworkError.ALARM_CLEARED, detail=f"alarm {alarm_id} is cleared: its acknowledgement no longer changes")
+    if alarm.ack_state == new_state:
+        return _alarm_view(alarm)
     now = datetime.datetime.now(datetime.UTC)
     # PR-GUI-9.8: the ack time is the moment the alarm became acknowledged: a repeated ack keeps the first, an un-ack drops it (ackTime null again)
     if new_state == "UNACKNOWLEDGED":
@@ -3396,6 +3460,8 @@ def clear_alarm(alarm_id: uuid.UUID, request: Request, clear_user_id: str | None
     build's own CHECK constraint) rather than a separate state field.
     """
     alarm = _get_alarm(db, alarm_id, request)
+    if alarm.severity == "cleared":             # call flow 20b: clearing again keeps who cleared it and when (a repeat overwrote both, with no history row)
+        return _alarm_view(alarm)
     alarm.severity = "cleared"
     alarm.cleared_at = datetime.datetime.now(datetime.UTC)
     alarm.clear_user_id = clear_user_id
@@ -3405,7 +3471,7 @@ def clear_alarm(alarm_id: uuid.UUID, request: Request, clear_user_id: str | None
 
 
 @app.post("/pm-subscriptions")
-def subscribe_pm(managed_element_ref: str, counter_type: str, delivery_method: str, request: Request, granularity_period: int | None = None,
+def subscribe_pm(managed_element_ref: str, counter_type: str, delivery_method: DeliveryMethod, request: Request, granularity_period: int | None = None,
                   db: Session = Depends(get_session)):
     """SubscribePM — RAN NF OAM LLD section 3.5: this is a DME-producer
     registration wrapper, NOT a clause-8 API call. No R1AP endpoint exists
@@ -3421,7 +3487,7 @@ def subscribe_pm(managed_element_ref: str, counter_type: str, delivery_method: s
     if db.get(ManagedEntity, managed_element_ref) is None:      # the subscription refers to the element: no element, no subscription (a 404, not the foreign key's 500)
         raise framework_error(FrameworkError.MANAGED_ENTITY_NOT_FOUND, detail=f"no managed element {managed_element_ref!r}")
     require_service(db, managed_element_ref, "PM")  # Wave 9 (W9-01)
-    engine = {"pull": "ProvMnS", "push": "PMJobControl", "stream": "StreamingDataReporting"}.get(delivery_method, "FileDataReporting")
+    engine = {"pull": "ProvMnS", "push": "PMJobControl", "stream": "StreamingDataReporting"}[delivery_method]
     # Call flow 11a (DOC-CF-1.8): DME is asked first, and its refusal is this route's 502 with nothing stored (the answer was not read, so a refused
     # registration left a subscription whose counters no rApp could find).
     _register_with_dme({
@@ -3431,10 +3497,10 @@ def subscribe_pm(managed_element_ref: str, counter_type: str, delivery_method: s
         "jobCallbackUrl": f"{SELF_URL}/dme-jobs",
     })
     sub = PMSubscription(managed_element_ref=managed_element_ref, counter_type=counter_type, delivery_method=delivery_method,
-                          southbound_engine=engine, granularity_period=granularity_period)
+                          southbound_engine=engine, granularity_period=granularity_period, created_by=_subscriber(request))
     db.add(sub)
     db.commit()
-    return {"subscriptionId": str(sub.subscription_id), "southboundEngine": engine, "granularityPeriod": sub.granularity_period}
+    return {"subscriptionId": str(sub.subscription_id), "southboundEngine": engine, "granularityPeriod": sub.granularity_period, "createdBy": sub.created_by}
 
 
 # One PM sample: a cell, a time and either one `value` or several counters in `values` (at least one is required); `relation` names the neighbour relation the counters are measured on.
@@ -3948,12 +4014,12 @@ def list_pm_subscriptions(request: Request, managed_element_ref: str | None = No
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"subscriptionId": str(s.subscription_id), "managedElementRef": s.managed_element_ref,
              "counterType": s.counter_type, "deliveryMethod": s.delivery_method,
-             "southboundEngine": s.southbound_engine, "granularityPeriod": s.granularity_period}
+             "southboundEngine": s.southbound_engine, "granularityPeriod": s.granularity_period, "createdBy": s.created_by}
             for s in page["items"]]}
 
 
 @app.delete("/pm-subscriptions/{subscription_id}", status_code=204)
-def unsubscribe_pm(subscription_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
+def unsubscribe_pm(subscription_id: uuid.UUID, request: Request, as_admin: bool = False, db: Session = Depends(get_session)):
     """`docs/call-flows/20-alarm-pm-subscription-lifecycle.md`'s own
     gap, closed: every other subscription-shaped resource in this build
     (DME's type subscriptions, MDAF's, Intent
@@ -3962,15 +4028,23 @@ def unsubscribe_pm(subscription_id: uuid.UUID, request: Request, db: Session = D
     torn down through this build's own API. Idempotent, matching all of
     those.
     """
+    # Call flow 20c (DOC-CF-1.8): 403 SUBSCRIPTION_ACCESS_DENIED for another's subscription (`_require_subscriber`); the last subscription of a counter type
+    # withdraws RAN NF OAM's registration of that type at DME first (a refusal is 502 and nothing is deleted), so no consumer is left with a producer that
+    # will never feed it.
     sub = db.get(PMSubscription, subscription_id)
     if sub is not None and scoping.element_permitted(db, scoping.request_scope(request), sub.managed_element_ref) \
             and msac.may_read(db, request, sub.managed_element_ref):                    # PR-SEC-10.6, MGT-2.6: one outside the scope, or not readable to the caller, is left alone, and 204 says nothing
+        _require_subscriber(request, sub.created_by, as_admin)
+        others = db.scalar(select(func.count()).select_from(PMSubscription).where(PMSubscription.counter_type == sub.counter_type,
+                                                                                   PMSubscription.subscription_id != sub.subscription_id))
+        if not others:
+            _deregister_type_at_dme("RAN", f"PMCounters.{sub.counter_type}")
         db.delete(sub)
         db.commit()
 
 
 @app.post("/fm-subscriptions")
-def subscribe_fm(managed_element_ref: str, delivery_method: str, request: Request, db: Session = Depends(get_session)):
+def subscribe_fm(managed_element_ref: str, delivery_method: DeliveryMethod, request: Request, db: Session = Depends(get_session)):
     """SubscribeFM — HISTORY.md OI-6.7, closed: mirrors
     subscribe_pm's own DME-producer registration wrapper shape exactly
     (RAN NF OAM LLD section 3.5's SubscribePM pattern), for alarms
@@ -3990,17 +4064,17 @@ def subscribe_fm(managed_element_ref: str, delivery_method: str, request: Reques
     if db.get(ManagedEntity, managed_element_ref) is None:      # the subscription refers to the element: no element, no subscription (a 404, not the foreign key's 500)
         raise framework_error(FrameworkError.MANAGED_ENTITY_NOT_FOUND, detail=f"no managed element {managed_element_ref!r}")
     require_service(db, managed_element_ref, "FM")  # Wave 9 (W9-01)
-    engine = {"pull": "FaultMnS", "push": "FaultMnS", "stream": "StreamingDataReporting"}.get(delivery_method, "FaultMnS")
+    engine = {"pull": "FaultMnS", "push": "FaultMnS", "stream": "StreamingDataReporting"}[delivery_method]
     _register_with_dme({                       # call flow 11a: DME first, as for PM
         "namespace": "RAN", "name": "FaultRecords", "version": "1.0.0",
         "typeName": "RAN.FaultRecords", "producerId": "ran-nf-oam",
         "dataProductionSchema": {}, "producerHealthCallbackUrl": f"{SELF_URL}/health",
         "jobCallbackUrl": f"{SELF_URL}/dme-jobs",
     })
-    sub = FMSubscription(managed_element_ref=managed_element_ref, delivery_method=delivery_method, southbound_engine=engine)
+    sub = FMSubscription(managed_element_ref=managed_element_ref, delivery_method=delivery_method, southbound_engine=engine, created_by=_subscriber(request))
     db.add(sub)
     db.commit()
-    return {"subscriptionId": str(sub.subscription_id), "southboundEngine": engine}
+    return {"subscriptionId": str(sub.subscription_id), "southboundEngine": engine, "createdBy": sub.created_by}
 
 
 @app.get("/fm-subscriptions")
@@ -4013,18 +4087,23 @@ def list_fm_subscriptions(request: Request, managed_element_ref: str | None = No
         stmt = stmt.where(FMSubscription.managed_element_ref == managed_element_ref)
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"subscriptionId": str(s.subscription_id), "managedElementRef": s.managed_element_ref,
-             "deliveryMethod": s.delivery_method, "southboundEngine": s.southbound_engine}
+             "deliveryMethod": s.delivery_method, "southboundEngine": s.southbound_engine, "createdBy": s.created_by}
             for s in page["items"]]}
 
 
 @app.delete("/fm-subscriptions/{subscription_id}", status_code=204)
-def unsubscribe_fm(subscription_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
+def unsubscribe_fm(subscription_id: uuid.UUID, request: Request, as_admin: bool = False, db: Session = Depends(get_session)):
     """Idempotent, matching pm-subscriptions' own unsubscribe route and
-    every other subscription-shaped resource in this build.
+    every other subscription-shaped resource in this build. Call flow 20d: as for PM, only its subscriber (or an admin in the console) may delete it,
+    and the last FM subscription withdraws the `RAN.FaultRecords` registration at DME first.
     """
     sub = db.get(FMSubscription, subscription_id)
     if sub is not None and scoping.element_permitted(db, scoping.request_scope(request), sub.managed_element_ref) \
             and msac.may_read(db, request, sub.managed_element_ref):                    # PR-SEC-10.6, MGT-2.6: one outside the scope, or not readable to the caller, is left alone
+        _require_subscriber(request, sub.created_by, as_admin)
+        others = db.scalar(select(func.count()).select_from(FMSubscription).where(FMSubscription.subscription_id != sub.subscription_id))
+        if not others:
+            _deregister_type_at_dme("RAN", "FaultRecords")
         db.delete(sub)
         db.commit()
 

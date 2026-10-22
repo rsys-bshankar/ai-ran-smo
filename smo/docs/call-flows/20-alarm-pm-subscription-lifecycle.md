@@ -1,93 +1,194 @@
-# Call Flow: Alarm Raise → Ack → Clear (Correlated) + PM/FM Subscription → DME Registration
+# Call Flow 20: Alarms and PM / FM subscriptions — raising, acknowledging and clearing, and subscribing an element's measurements and alarms
 
-RAN NF OAM's fault and performance subscription surface: a correlated multi-alarm raise →
-ack → clear sequence (TS 28.111 fault NRM; HISTORY.md SA-RANOAM-5, SA-RANOAM-6), and
-`SubscribePM`/FM subscriptions, whose real side effect is registering RAN NF OAM itself as
-a DME producer (TS 28.550 PM job control; HISTORY.md SA-RANOAM-7, OI-6.7). Call flow 03
-mentions fresh alarm-UUID minting and call flow 01 an ordinary rApp's
-`/dme/production-capabilities` registration; this flow walks both topics in full.
+How RAN NF OAM keeps an element's alarms (TS 28.111 fault NRM, TS 28.532 FaultMnS; HISTORY.md SA-RANOAM-5, SA-RANOAM-6, MGT-8) and how a PM or FM
+subscription makes RAN NF OAM the DME producer of an element's measurements or alarms (TS 28.550 PM job control; HISTORY.md SA-RANOAM-7, OI-6.7). Call flow 03
+mentions alarm ids and call flow 11 the many-producers-one-type join; this flow walks both topics in full. Four diagrams:
+
+| | Step | Who starts it | Ends with |
+|---|---|---|---|
+| 20a | Raising an alarm | the element (its adaptor, or a VES event), an SMO module, Admin (GUI test data) | a new alarm, or the open one it repeats, announced; or refused |
+| 20b | Acknowledging and clearing | Operator (GUI), an SMO module; a VES `NORMAL` event or the adaptor for a clear | the alarm acknowledged or cleared once, recorded in its history and announced |
+| 20c | PM subscription | Operator (GUI), an SMO module | RAN NF OAM the DME producer of `RAN.PMCounters.<counter>`, withdrawn with the last subscription |
+| 20d | FM subscription | Operator (GUI), an SMO module | RAN NF OAM the DME producer of `RAN.FaultRecords`, withdrawn with the last subscription |
+
+**As images:** [20a](images/20-alarm-pm-subscription-lifecycle/20a-raising-an-alarm.png) ·
+[20b](images/20-alarm-pm-subscription-lifecycle/20b-acknowledging-and-clearing.png) ·
+[20c](images/20-alarm-pm-subscription-lifecycle/20c-pm-subscription.png) ·
+[20d](images/20-alarm-pm-subscription-lifecycle/20d-fm-subscription.png)
+(PNG, drawn from the diagrams below by `scripts/render_call_flows.py`).
+
+**How to read the diagrams.** As in call flow 01: an arrow is one call with the inputs that matter, a box on the receiver says what it does with them,
+an `alt` block is the outcome (success first, then each failure and what the caller gets). Calls reach RAN NF OAM through R1 Termination, which stamps the
+caller's role, invoker id and scope claim, and for the console the signed-in person (`X-R1-Acting-User`). An rApp may not raise, acknowledge, clear or
+subscribe (R1's allow-list); it reads alarms, and an element's alarms through DME once FM is subscribed. Every alarm change writes a history row and an event
+(`org.oran.smo.alarm.*`, `docs/EVENTS.md`) in the same commit.
+
+## 20a — Raising an alarm
 
 ```mermaid
 sequenceDiagram
-    actor Source as RAN NF (raising alarms)
-    participant NFOAM as RAN NF OAM
-    actor Operator
-    participant DME as DME
+    participant S as The element's adaptor / SMO module / Admin (GUI)
+    participant OAM as RAN NF OAM
+    participant DB as RAN NF OAM database
 
-    rect rgb(240, 255, 240)
-    Note over Source,NFOAM: Correlated raise — one root cause, two symptomatic alarms
-    Source->>NFOAM: POST /alarms/ingest (sourceAlarmId=A1, ME, severity=critical,<br/>correlationGroup=G1, rootCauseIndicator=true, probableCause, specificProblem)
-    NFOAM->>NFOAM: mint a fresh alarmId (UUID) — never trusts the raising ME's own<br/>native sourceAlarmId directly (R1UCR's fleet-wide collision risk)
-    NFOAM-->>Source: alarmId=X1
-    Source->>NFOAM: POST /alarms/ingest (sourceAlarmId=A2, ME, severity=major,<br/>correlationGroup=G1, rootCauseIndicator=false, correlatedNotifications=[X1])
-    NFOAM-->>Source: alarmId=X2
-    end
-
-    rect rgb(240, 248, 255)
-    Note over Operator,NFOAM: Acknowledge, then clear — two separate lifecycle steps
-    Operator->>NFOAM: GET /alarms?managed_element_ref=ME&severity=critical
-    NFOAM-->>Operator: [alarm X1]
-    Operator->>NFOAM: PATCH /alarms/X1/ack (newState=ACKNOWLEDGED, ackUserId)
-    NFOAM->>NFOAM: ackState=ACKNOWLEDGED, ackUserId set, changedAt=now()
-    NFOAM-->>Operator: updated alarm
-
-    Note over Source,NFOAM: root cause resolved on the real NF
-    Source->>NFOAM: PATCH /alarms/X1/clear (clearUserId)
-    NFOAM->>NFOAM: severity="cleared" (reuses the severity CHECK constraint's own<br/>legal value — a separate lifecycle field was deliberately not added),<br/>clearedAt=changedAt=now()
-    NFOAM-->>Source: updated alarm
-
-    Operator->>NFOAM: GET /alarms?severity=cleared
-    NFOAM-->>Operator: [alarm X1] — X2 (the symptomatic alarm) is untouched —<br/>clearing the root cause doesn't cascade-clear its correlated alarms
-    end
-
-    rect rgb(255, 240, 240)
-    Note over Operator,DME: PM subscription — a DME-producer registration wrapper, not a clause-8 job
-    Operator->>NFOAM: POST /pm-subscriptions (managedElementRef, counterType, deliveryMethod=push, granularityPeriod)
-    NFOAM->>NFOAM: southboundEngine = {pull:ProvMnS, push:PMJobControl, stream:StreamingDataReporting}[deliveryMethod]
-    NFOAM->>DME: RegisterDMEType(namespace=RAN, name=PMCounters.{counterType},<br/>producerId=ran-nf-oam, producerHealthCallbackUrl, jobCallbackUrl)
-    Note over NFOAM,DME: RAN NF OAM registers ITSELF as a DME producer for this<br/>counter type — the real cross-service call this wrapper's<br/>own name doesn't advertise
-    DME-->>NFOAM: registrationId
-    NFOAM-->>Operator: subscriptionId, southboundEngine, granularityPeriod
-
-    Operator->>NFOAM: GET /pm-subscriptions?managed_element_ref=ME
-    NFOAM-->>Operator: [PMSubscription, ...]
-    Operator->>NFOAM: DELETE /pm-subscriptions/{subscriptionId}
-    Note over Operator,NFOAM: idempotent, matching every other subscription-shaped<br/>resource's own unsubscribe route (see "Key decisions")
-    NFOAM-->>Operator: 204
-    end
-
-    rect rgb(230, 240, 255)
-    Note over Operator,DME: FM subscription (HISTORY.md OI-6.7, closed) — same wrapper<br/>shape as PM, one shared type instead of one per counter
-    Operator->>NFOAM: POST /fm-subscriptions (managedElementRef, deliveryMethod=push)
-    NFOAM->>NFOAM: southboundEngine = {pull:FaultMnS, push:FaultMnS, stream:StreamingDataReporting}[deliveryMethod]
-    NFOAM->>DME: RegisterDMEType(namespace=RAN, name=FaultRecords,<br/>producerId=ran-nf-oam, producerHealthCallbackUrl, jobCallbackUrl)
-    Note over NFOAM,DME: every subscribing ME joins the SAME RAN.FaultRecords type —<br/>unlike PM's per-counterType identity, FM has no per-ME split —<br/>this is exactly the many-producers-one-type join call flow 11 walks
-    DME-->>NFOAM: registrationId
-    NFOAM-->>Operator: subscriptionId, southboundEngine
-
-    Operator->>NFOAM: GET /fm-subscriptions?managed_element_ref=ME
-    NFOAM-->>Operator: [FMSubscription, ...]
-    Operator->>NFOAM: DELETE /fm-subscriptions/{subscriptionId}
-    Note over Operator,NFOAM: idempotent, same shape as pm-subscriptions' own unsubscribe
-    NFOAM-->>Operator: 204
-    Note over NFOAM: this only ever closes the VISIBILITY gap — DME/a consuming rApp<br/>still never clears an alarm — that stays the Ack/Clear block above,<br/>called by the source NF or an operator, unaffected by FM registration
+    S->>OAM: POST /alarms/ingest?source_alarm_id&managed_element_ref&severity&probable_cause?&specific_problem?<br/>&correlation_group?&root_cause_indicator?&correlated_notifications?&proposed_repair_actions?&alarm_type?&managed_function_ref?
+    alt the element outside the caller's scope claim
+        OAM-->>S: 403 SCOPE_DENIED
+    else the element not registered
+        OAM-->>S: 404 MANAGED_ENTITY_NOT_FOUND
+    else MSAC on and no create on the element, or its vendor's services lack FM
+        OAM-->>S: 403 MSAC_ACCESS_DENIED / 409 O1_SERVICE_NOT_SUPPORTED
+    else severity not a PerceivedSeverity, or cleared
+        OAM-->>S: 422 (a clear is 20b)
+    else a correlated alarm id that does not exist or is outside the caller's scope
+        OAM-->>S: 422
+    else an open alarm with the same element and source_alarm_id
+        Note over OAM: the same alarm: a new severity re-grades it (SEVERITY_CHANGED in its history)
+        OAM-->>S: 200 {alarmId, duplicate: true}
+    else
+        Note over OAM: a new alarmId (UUID), never the element's own id,<br/>the correlation fields stored as the source declares them
+        OAM->>DB: alarm, history RAISED, event alarm.raised (with the element's region and tenant), one commit
+        OAM-->>S: 200 {alarmId, duplicate: false}
     end
 ```
 
-**FM subscriptions** (HISTORY.md OI-6.7). `POST /fm-subscriptions` mirrors `subscribe_pm`:
-it registers RAN NF OAM as a DME producer for a single, shared `RAN.FaultRecords` type,
-so an rApp or AI/ML model that wants outstanding-alarm or alarm-history context during
-inference (or during Training/Validation/Emulation, call flow 02's execution runtimes) can
-get it through DME rather than calling `GET /alarms` on RAN NF OAM directly. Every
-subscribing ME's alarms join that one type instead of getting a type of their own, since
-alarms (unlike PM counters) have no natural per-counter-type split to key on. This covers
-*visibility* only: there is no route through which DME or a consuming rApp clears an alarm
-— clearing stays RAN NF OAM's `PATCH /alarms/{id}/clear`, called by the source NF or an
-operator, unaffected by whether FM is DME-registered.
+The VES listener (`POST /ves/eventListener/v7`, when enabled) raises the same way from a `fault` event: an open alarm of the same condition is updated, not
+repeated. The ingest used to check nothing about its caller, made a second open alarm when a source retried, took `cleared` as a new already-cleared alarm
+(the open one stayed open) and stored correlated ids that named nothing. **Phase 1:** RAN NF OAM does no root-cause analysis: the correlation is the
+source's; `GET /alarms/{id}/correlated` adds a same-element-in-a-window heuristic.
 
-**Key decisions this flow depends on:**
-- `correlationGroup`/`correlatedNotifications`/`rootCauseIndicator` are caller-declared, not computed by RAN NF OAM itself — this build carries the correlation a raising source already knows; it doesn't run its own root-cause-analysis algorithm (OPEN_ITEMS.md OI-1-alarm-storm).
-- Clearing an alarm never cascades to its correlated siblings — `clear_alarm` only ever mutates the one `alarmId` it's called against; a correlation group with a cleared root cause and un-cleared symptomatic alarms is a real, representable state, not a bug.
-- `SubscribePM` is explicitly *not* a clause-8 PM job — RAN NF OAM LLD section 3.5's documented design intent, confirmed by this route's shape: it's a DME-producer registration wrapper (`RegisterDMEType` under the hood) that also records `granularityPeriod`, the one job-control field judged worth keeping despite the wrapper scope cut. `schedule`/`priority`/`multi-instance`/`reportingPeriod` all stay out.
-- `DELETE /pm-subscriptions/{id}` is idempotent, matching every other subscription-shaped resource's unsubscribe route in this build (DME's type subscriptions, MDAF's, A1 Related's EI jobs, Intent Service's RMIH registration, MLMF's); the GUI's PM subscriptions table has a matching "Unsubscribe" action (HISTORY.md OI-3-pm-unsubscribe).
-- PM and FM subscriptions are gated by the axis-2 presence guard: when the ME's vendor has a registered capability, it must implement PM or FM respectively (`O1_SERVICE_NOT_SUPPORTED` otherwise; call flow 21).
+## 20b — Acknowledging and clearing
+
+```mermaid
+sequenceDiagram
+    participant O as Operator (GUI) / SMO module
+    participant E as The element (VES NORMAL) / its adaptor
+    participant OAM as RAN NF OAM
+    participant DB as RAN NF OAM database
+
+    O->>OAM: PATCH /alarms/{id}/ack?new_state=ACKNOWLEDGED|UNACKNOWLEDGED&ack_user_id (the console's person, set by the BFF)
+    alt unknown alarm, or one outside the caller's scope
+        OAM-->>O: 404 ALARM_NOT_FOUND
+    else MSAC on and no update on the element
+        OAM-->>O: 403 MSAC_ACCESS_DENIED
+    else the alarm is cleared
+        OAM-->>O: 409 ALARM_CLEARED
+    else already in that state
+        OAM-->>O: 200 the alarm, unchanged (the first acknowledger and time stay)
+    else
+        OAM->>DB: ack state, user, time, history ACKNOWLEDGED or UNACKNOWLEDGED,<br/>event alarm.acknowledged or alarm.unacknowledged, one commit
+        OAM-->>O: 200 the alarm
+    end
+    O->>OAM: PATCH /alarms/{id}/clear?clear_user_id
+    E->>OAM: a VES fault event with eventSeverity NORMAL, or the adaptor's PATCH /alarms/{id}/clear
+    alt 404 / 403 as above
+        OAM-->>O: 404 ALARM_NOT_FOUND / 403 MSAC_ACCESS_DENIED
+    else already cleared
+        OAM-->>O: 200 the alarm, unchanged (who cleared it and when stay)
+    else
+        Note over OAM: severity cleared (a value of the severity CHECK, not a separate state),<br/>its correlated alarms untouched
+        OAM->>DB: cleared time and user, history CLEARED, event alarm.cleared, one commit
+        OAM-->>O: 200 the alarm
+    end
+    O->>OAM: GET /alarms, /alarms/{id}/history, /alarms/{id}/comments, POST /alarms/{id}/comments
+    OAM-->>O: alarms (filters, keyset paging), history oldest first, comments
+```
+
+A second acknowledgement replaced the user and kept the first time, a second clear overwrote who cleared it and when (with no history row), a cleared
+alarm could still be acknowledged, and acknowledgements were not on the event feed.
+
+## 20c — PM subscription
+
+```mermaid
+sequenceDiagram
+    participant O as Operator (GUI) / SMO module
+    participant OAM as RAN NF OAM
+    participant DME as DME
+    participant DB as RAN NF OAM database
+
+    O->>OAM: POST /pm-subscriptions?managed_element_ref&counter_type&delivery_method=pull|push|stream&granularity_period?
+    alt delivery_method not pull, push or stream
+        OAM-->>O: 422, DME not asked
+    else outside the scope claim / MSAC read refused / element unknown / vendor lacks PM
+        OAM-->>O: 403 SCOPE_DENIED / 403 MSAC_ACCESS_DENIED / 404 MANAGED_ENTITY_NOT_FOUND / 409 O1_SERVICE_NOT_SUPPORTED
+    else
+        OAM->>DME: POST /production-capabilities {RAN, PMCounters.counter, producerId ran-nf-oam, health and job callbacks}
+        alt DME refuses or does not answer
+            OAM-->>O: 502 UPSTREAM_FAILED, nothing stored
+        else
+            OAM->>DB: subscription {engine ProvMnS / PMJobControl / StreamingDataReporting, granularityPeriod,<br/>createdBy: the console's person or the module's invoker id}
+            OAM-->>O: 200 {subscriptionId, southboundEngine, granularityPeriod, createdBy}
+        end
+    end
+    O->>OAM: DELETE /pm-subscriptions/{id} (as_admin forced by the GUI BFF from the signed-in role)
+    alt unknown, or outside the caller's scope or MSAC read
+        OAM-->>O: 204, nothing changed
+    else another person's or module's subscription, and not an admin in the console
+        OAM-->>O: 403 SUBSCRIPTION_ACCESS_DENIED
+    else the last subscription of the counter type
+        OAM->>DME: DELETE /production-capabilities/ran-nf-oam/types?namespace=RAN&name=PMCounters.counter&version
+        Note over DME: the type's jobs are told to stop at ran-nf-oam, a job left with no producer is NO_PRODUCER,<br/>the type and RAN NF OAM's other types stay
+        alt DME refuses or does not answer
+            OAM-->>O: 502 UPSTREAM_FAILED, nothing deleted
+        else
+            OAM->>DB: subscription deleted
+            OAM-->>O: 204
+        end
+    else
+        OAM->>DB: subscription deleted (another subscription still needs the type)
+        OAM-->>O: 204
+    end
+```
+
+A subscription is a DME-producer registration with the job-control field worth keeping (`granularityPeriod`), not a clause-8 PM job. A bad delivery
+method used to register at DME and then fail at the database; an unsubscribe never told DME, so consumers kept making jobs RAN NF OAM would never feed; and
+anyone who could see a subscription could delete it.
+
+## 20d — FM subscription
+
+```mermaid
+sequenceDiagram
+    participant O as Operator (GUI) / SMO module
+    participant OAM as RAN NF OAM
+    participant DME as DME
+    participant DB as RAN NF OAM database
+
+    O->>OAM: POST /fm-subscriptions?managed_element_ref&delivery_method=pull|push|stream
+    alt refused as in 20c
+        OAM-->>O: 422 / 403 / 404 / 409 (vendor lacks FM)
+    else
+        OAM->>DME: POST /production-capabilities {RAN, FaultRecords, producerId ran-nf-oam}
+        Note over OAM,DME: every subscribing element joins the one RAN.FaultRecords type (no per-element split, as call flow 11's join)
+        alt DME refuses or does not answer
+            OAM-->>O: 502 UPSTREAM_FAILED, nothing stored
+        else
+            OAM->>DB: subscription {engine FaultMnS / StreamingDataReporting, createdBy}
+            OAM-->>O: 200 {subscriptionId, southboundEngine, createdBy}
+        end
+    end
+    O->>OAM: DELETE /fm-subscriptions/{id}
+    Note over OAM,DME: as in 20c: 204 for unknown or out of scope, 403 for another's,<br/>the last FM subscription withdraws RAN.FaultRecords at DME first (502 if refused)
+    OAM-->>O: 204
+    Note over OAM: an FM subscription gives visibility only: no consumer clears an alarm through DME, clearing stays 20b
+```
+
+## Decisions this flow depends on
+
+- **An alarm is the element's, kept by RAN NF OAM**: its id is minted here (a fleet of elements' own ids would collide), and the correlation fields are the
+  source's declaration.
+- **A raise is checked like any change to the element** (DOC-CF-1.8): scope, a registered element, MSAC `create`; a correlated alarm must exist and be
+  visible to the caller.
+- **One open alarm per element and source id** (DOC-CF-1.8): a repeat is the same alarm (`duplicate: true`), re-graded if its severity changed, as the VES
+  path already did; a clear is a clear, never a new row raised cleared.
+- **Acknowledging and clearing happen once** (DOC-CF-1.8): repeating either changes nothing, and a cleared alarm is not acknowledged (409 `ALARM_CLEARED`).
+- **Every change is announced**: raised, acknowledged, unacknowledged and cleared on the event feed, with the element's region and tenant; a re-grade is
+  in the history only.
+- **Clearing never cascades**: a cleared root cause leaves its correlated alarms as they are.
+- **A subscription is a DME producer registration**: DME is asked first, and its refusal is a 502 with nothing stored (call flow 11a); the last
+  subscription of a type withdraws the type at DME first (`DELETE /production-capabilities/{producerId}/types`, new in DME), so no consumer waits on a
+  producer that will never send.
+- **A subscription is its maker's** (DOC-CF-1.8): `createdBy` is the console's person or the module's invoker id; only they, or an admin in the console,
+  delete it. A subscription made before revision 0061 has no maker and is anyone's who may see it.
+- **The vendor's services decide** (call flow 21): an element whose vendor does not implement FM or PM is refused `O1_SERVICE_NOT_SUPPORTED`.
+- **Not taken:** RAN NF OAM's own root-cause analysis, a clause-8 PM job (schedule, priority, reporting period), a per-element DME type for alarms, an rApp
+  raising or clearing alarms, and refusing a duplicate subscription (two subscriptions of the same element and counter are allowed).

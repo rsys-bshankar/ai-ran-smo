@@ -98,7 +98,8 @@ def bus(monkeypatch):
 
 def test_a_raise_and_a_clear_are_published_with_the_elements_place(client, db_session_factory, bus):
     """MSG-3.6: an alarm raised through the ORM is published as `alarm.raised`, its clear as `alarm.cleared`, each about the alarm and carrying the element's
-    region; an acknowledgement and a re-grade publish nothing, and an alarm that arrives already cleared is only recorded."""
+    region; an acknowledgement is published as `alarm.acknowledged` (call flow 20b), a re-grade publishes nothing, and an alarm that arrives already cleared is
+    only recorded."""
     with db_session_factory() as db:
         db.add(ManagedEntity(managed_element_ref="ME-1", entity_type="O-DU", o1_protocol="NETCONF", region="eu", tenant="acme", managed_function_ref="f"))
         db.commit()
@@ -111,7 +112,9 @@ def test_a_raise_and_a_clear_are_published_with_the_elements_place(client, db_se
         db.get(Alarm, uuid.UUID(alarm_id)).severity = "critical"
         db.commit()
     assert client.patch(f"/alarms/{alarm_id}/clear", params={"clear_user_id": "u"}).status_code == 200
-    assert [(e["type"], e["subject"]) for e in bus] == [("org.oran.smo.alarm.raised", alarm_id), ("org.oran.smo.alarm.cleared", alarm_id)]
+    assert [(e["type"], e["subject"]) for e in bus] == [("org.oran.smo.alarm.raised", alarm_id), ("org.oran.smo.alarm.acknowledged", alarm_id),
+                                                         ("org.oran.smo.alarm.cleared", alarm_id)]
+    assert bus[1]["data"]["ackUserId"] == "u"
     assert bus[0]["source"] == "/smo/ran-nf-oam" and (bus[0]["smoregion"], bus[0]["smotenant"]) == ("eu", "acme")
     assert bus[0]["data"]["severity"] == "major" and bus[0]["data"]["managedElementRef"] == "ME-1"
 

@@ -32,6 +32,7 @@ After the move, a notification is sent after the transaction that caused it comm
 | `dme/app/main.py` | `_stop_job_at_producers` | `enqueue` | A | Each supporting producer: stop this job (a DELETE row) | moved (MSG-1.10) |
 | `dme/app/main.py` | `_send_open_jobs` | `enqueue` | A | A producer that joined a type or moved its job callback: each open job of the type (call flow 11a) | moved (DOC-CF-1.8 flow 11, outbox from the start) |
 | `dme/app/main.py` | `deregister_producer` | `enqueue` | A | The leaving producer: stop each of its jobs (a DELETE row, call flow 11d) | moved (DOC-CF-1.8 flow 11, outbox from the start) |
+| `dme/app/main.py` | `deregister_producer_type` | `enqueue` | A | The producer leaving one type: stop each of that type's jobs (a DELETE row, call flow 20c) | new (DOC-CF-1.8 flow 20, outbox from the start) |
 | `dme/app/main.py` | `delete_dme_type` | `enqueue` | A | Each offer owner's termination URI: the offer went with its deleted type (call flow 11d) | moved (DOC-CF-1.8 flow 11, outbox from the start) |
 | `dme/app/main.py` | `_producer_is_healthy` | `get_webhook` | C | A producer's health URL: answers the type's ENABLED/DISABLED status | stays inline |
 | `mock-o1-adaptor/app/main.py` | `_emit` | `post_webhook` | A | RAN NF OAM (the stub's configured or requested target): a test trigger of the stub; its answer is read by the caller of the stub | stays inline (exempt) |

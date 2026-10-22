@@ -14,6 +14,20 @@
             ],
             "title": "Alarmtype"
           },
+          "correlatedNotifications": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlatednotifications"
+          },
           "correlationGroup": {
             "anyOf": [
               {
@@ -50,6 +64,28 @@
               }
             ],
             "title": "Probablecause"
+          },
+          "proposedRepairActions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposedrepairactions"
+          },
+          "rootCauseIndicator": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rootcauseindicator"
           },
           "severity": {
             "title": "Severity",
@@ -94,6 +130,19 @@
           "severity"
         ],
         "title": "EmitAlarm",
+        "type": "object"
+      },
+      "EmitAlarmClear": {
+        "properties": {
+          "alarmId": {
+            "title": "Alarmid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "alarmId"
+        ],
+        "title": "EmitAlarmClear",
         "type": "object"
       },
       "EmitHeartbeat": {
@@ -731,6 +780,90 @@
           }
         },
         "summary": "Emit Alarm"
+      }
+    },
+    "/emit/alarm-clear": {
+      "post": {
+        "description": "FM: clear an alarm this adaptor raised (`PATCH /alarms/{alarmId}/clear` at MOCK_O1_OAM_URL, cleared by `mock-o1-adaptor`), as the element's\nNotifyClearedAlarm would (call flow 20b). An alarm already cleared stays as it was.",
+        "operationId": "emit_alarm_clear_emit_alarm_clear_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmitAlarmClear"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmitResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MockError"
+                }
+              }
+            },
+            "description": "the body is not JSON"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "no RAN NF OAM target configured, or this adaptor does not declare the service"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "unusable target, or a body of the wrong shape"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "RAN NF OAM could not be reached"
+          }
+        },
+        "summary": "Emit Alarm Clear"
       }
     },
     "/emit/heartbeat": {

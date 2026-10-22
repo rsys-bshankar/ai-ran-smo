@@ -1417,3 +1417,24 @@ def test_one_type_is_read_by_its_id_and_an_unknown_one_is_404(client):
     assert client.get(f"/dme-types/{type_id}").json() == listed
     resp = client.get(f"/dme-types/{uuid.uuid4()}")
     assert resp.status_code == 404 and resp.json()["detail"]["title"] == "DME_TYPE_NOT_FOUND"
+
+
+def test_a_producer_stops_producing_one_type_and_keeps_the_others(client):
+    """Call flow 20c: `DELETE /production-capabilities/{producerId}/types` removes the producer's link to one type only: the type stays registered, the
+    producer still serves its other types, a job of a type left with no producer is NO_PRODUCER, and an unknown producer or type is a 204 that changes
+    nothing; an rApp may not withdraw another producer's type."""
+    client.post("/production-capabilities", json=register_type_body(name="TypeA", producerId="ran-nf-oam"))
+    reg_b = client.post("/production-capabilities", json=register_type_body(name="TypeB", producerId="ran-nf-oam")).json()
+    job = client.post("/data-jobs", json={"dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg_b["registrationId"],
+                                          "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1"}).json()
+    refused = client.delete("/production-capabilities/ran-nf-oam/types", params={"namespace": "RAN", "name": "TypeB", "version": "1.0.0"},
+                            headers={"X-R1-Role": "rapp", "X-R1-Invoker-Id": "rapp-1"})
+    assert refused.status_code == 403
+    resp = client.delete("/production-capabilities/ran-nf-oam/types", params={"namespace": "RAN", "name": "TypeB", "version": "1.0.0"})
+    assert resp.status_code == 204
+    types = {t["typeName"]: t for t in client.get("/dme-types").json()}
+    assert types["RAN.TypeA"]["producerIds"] == ["ran-nf-oam"] and types["RAN.TypeB"]["producerIds"] == []
+    assert client.get(f"/data-jobs/{job['dataJobId']}").json()["status"] == "NO_PRODUCER"
+    for params in ({"namespace": "RAN", "name": "TypeB", "version": "1.0.0"}, {"namespace": "RAN", "name": "Nope", "version": "1.0.0"}):
+        assert client.delete("/production-capabilities/ran-nf-oam/types", params=params).status_code == 204
+    assert client.delete("/production-capabilities/nobody/types", params={"namespace": "RAN", "name": "TypeA", "version": "1.0.0"}).status_code == 204

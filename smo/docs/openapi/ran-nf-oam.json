@@ -2983,7 +2983,7 @@
     },
     "/alarms/ingest": {
       "post": {
-        "description": "alarmId is ALWAYS a fresh UUID minted here, never the raising ME's\nnative ID \u2014 RAN NF OAM LLD section 3.3, closing R1UCR's own flagged,\nunresolved collision risk under a fleet of N MEs.\n\nprobableCause/specificProblem/rootCauseIndicator/correlatedNotifications/\nproposedRepairActions (HISTORY.md \u00a75): the standard fault\nfields 3GPP TS 28.532 FaultMnS's NotifyNewAlarm carries, previously\nentirely absent from this alarm model. alarmType (HISTORY.md \u00a77,\nTS28111_FaultNrm.yaml's AlarmRecord) was the one of these fields\nstill missing after that pass.\n\nW10-alarm-cellref: `managed_function_ref` is the managed function the\nalarm is about inside the element (AlarmRecord's objectInstance below\nthe ME), e.g. `NRCellDU=101`, so a consumer can hold that one cell\nrather than the whole element. Omitted = the element as a whole.",
+        "description": "alarmId is ALWAYS a fresh UUID minted here, never the raising ME's\nnative ID \u2014 RAN NF OAM LLD section 3.3, closing R1UCR's own flagged,\nunresolved collision risk under a fleet of N MEs.\n\nprobableCause/specificProblem/rootCauseIndicator/correlatedNotifications/\nproposedRepairActions (HISTORY.md \u00a75): the standard fault\nfields 3GPP TS 28.532 FaultMnS's NotifyNewAlarm carries, previously\nentirely absent from this alarm model. alarmType (HISTORY.md \u00a77,\nTS28111_FaultNrm.yaml's AlarmRecord) was the one of these fields\nstill missing after that pass.\n\nW10-alarm-cellref: `managed_function_ref` is the managed function the\nalarm is about inside the element (AlarmRecord's objectInstance below\nthe ME), e.g. `NRCellDU=101`, so a consumer can hold that one cell\nrather than the whole element. Omitted = the element as a whole.\n\nCall flow 20a (DOC-CF-1.8): the caller is checked as for acknowledging an alarm: 403 `SCOPE_DENIED` for an element outside its scope claim, 404\n`MANAGED_ENTITY_NOT_FOUND` for an unknown element, MSAC `create` on the element. `severity=cleared` is 422 (a clear is `PATCH /alarms/{id}/clear` or\na VES `NORMAL`; a new row raised already cleared left the open one open). Each correlated alarm must exist and be one the caller may see (422). A\nreport of an alarm that is still open (same element and `source_alarm_id`) is the same alarm, as for VES: its id is answered with `duplicate: true`,\nand a new severity re-grades it (an NF retrying after a timeout made a second open alarm).",
         "operationId": "ingest_alarm_alarms_ingest_post",
         "parameters": [
           {
@@ -9519,6 +9519,11 @@
             "name": "delivery_method",
             "required": true,
             "schema": {
+              "enum": [
+                "pull",
+                "push",
+                "stream"
+              ],
               "title": "Delivery Method",
               "type": "string"
             }
@@ -9639,7 +9644,7 @@
     },
     "/fm-subscriptions/{subscription_id}": {
       "delete": {
-        "description": "Idempotent, matching pm-subscriptions' own unsubscribe route and\nevery other subscription-shaped resource in this build.",
+        "description": "Idempotent, matching pm-subscriptions' own unsubscribe route and\nevery other subscription-shaped resource in this build. Call flow 20d: as for PM, only its subscriber (or an admin in the console) may delete it,\nand the last FM subscription withdraws the `RAN.FaultRecords` registration at DME first.",
         "operationId": "unsubscribe_fm_fm_subscriptions__subscription_id__delete",
         "parameters": [
           {
@@ -9650,6 +9655,16 @@
               "format": "uuid",
               "title": "Subscription Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "as_admin",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "As Admin",
+              "type": "boolean"
             }
           }
         ],
@@ -18766,6 +18781,11 @@
             "name": "delivery_method",
             "required": true,
             "schema": {
+              "enum": [
+                "pull",
+                "push",
+                "stream"
+              ],
               "title": "Delivery Method",
               "type": "string"
             }
@@ -18913,6 +18933,16 @@
               "format": "uuid",
               "title": "Subscription Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "as_admin",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "As Admin",
+              "type": "boolean"
             }
           }
         ],
