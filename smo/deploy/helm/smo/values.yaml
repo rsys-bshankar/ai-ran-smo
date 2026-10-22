@@ -309,7 +309,8 @@ modules:
   sme: { image: sme, databaseRole: sme, resources: { requests: { cpu: 50m, memory: 480Mi }, limits: { memory: 768Mi } } }   # the largest module: 361 MiB at its peak (docs/SIZING.md); values-sized.yaml asks for 250m
   dme: { image: dme, databaseRole: dme }
   # the same image as a worker: purges DME data records older than SMO_RETENTION_DME_RECORDS_DAYS (call flow 12d)
-  dme-worker: { image: dme, databaseRole: dme, kind: worker, env: { SMO_RETENTION_DME_RECORDS_DAYS: "0" } }
+  # it sleeps between hourly purges, so it asks for 10m of CPU, as the rApps' workers do, and the defaults still fit a two-core lab node (test_helm_sizing)
+  dme-worker: { image: dme, databaseRole: dme, kind: worker, env: { SMO_RETENTION_DME_RECORDS_DAYS: "0" }, resources: { requests: { cpu: 10m, memory: 128Mi }, limits: { memory: 512Mi } } }
   onboarding: { image: onboarding, databaseRole: onboarding, persistence: { mountPath: /srv/packages, size: 5Gi } }
   rapp-mgmt: { image: rapp-mgmt, databaseRole: rapp-mgmt, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
   # the same image as a worker: rotates the secret of running rApp instances older than RAPP_MGMT_SECRET_ROTATION_DAYS (SEC-15.19; 0 = never, the default: the worker then does nothing)
