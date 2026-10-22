@@ -183,17 +183,21 @@ def fm_severity(ctx: Context) -> None:
             raise Fail(f"an alarm sent with severity {sent!r} is listed as severity {found[0].get('severity')!r} / perceivedSeverity {found[0].get('perceivedSeverity')!r}")
 
 
-@check("FM-4", "FM", "the alarmId is minted by RAN NF OAM: a UUID that is not the adaptor's own id, new for each alarm even when the adaptor repeats its id", "FM")
+@check("FM-4", "FM", "the alarmId is minted by RAN NF OAM: a UUID that is not the adaptor's own id, new for each alarm; a repeat of an open alarm is that alarm", "FM")
 def fm_fresh_alarm_id(ctx: Context) -> None:
-    """FM-4: RAN NF OAM mints the `alarmId`: two alarms with the same adaptor id get two different UUIDs, neither equal to the adaptor's id."""
+    """FM-4: RAN NF OAM mints the `alarmId`: two alarms with different adaptor ids get two different UUIDs, neither equal to an adaptor id, and the adaptor
+    repeating the id of an alarm still open reports that same alarm (one alarm listed, call flow 20a)."""
     ref, _ = _element(ctx)
-    source = _source_id(ctx)
-    for _ in range(2):
+    first, second = _source_id(ctx), _source_id(ctx)
+    for source in (first, first, second):
         _trigger(ctx, "alarm", {"managedElementRef": ref, "severity": "MAJOR", "sourceAlarmId": source})
-    ids = [a.get("alarmId") for a in _alarms(ctx, ref, source)]
+    repeated = [a.get("alarmId") for a in _alarms(ctx, ref, first)]
+    if len(repeated) != 1:
+        raise Fail(f"an alarm reported twice with the same source id {first} while open is listed as {len(repeated)} alarm(s) with alarmIds {repeated}")
+    ids = repeated + [a.get("alarmId") for a in _alarms(ctx, ref, second)]
     if len(ids) != 2 or len(set(ids)) != 2:
-        raise Fail(f"two alarms with the same source id {source} are listed as {len(ids)} alarm(s) with alarmIds {ids}")
-    if any(not isinstance(i, str) or not UUID_RE.match(i) or i == source for i in ids):
+        raise Fail(f"two alarms with the source ids {first} and {second} are listed as {len(ids)} alarm(s) with alarmIds {ids}")
+    if any(not isinstance(i, str) or not UUID_RE.match(i) or i in (first, second) for i in ids):
         raise Fail(f"the alarmIds {ids} are not new UUIDs")
 
 

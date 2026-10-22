@@ -7,8 +7,8 @@ update and clear, a failed O1 config job, the onboarding flow, the ack and clear
 changes an alarm through the ORM is recorded without knowing this module exists; a bulk SQL UPDATE that bypasses the ORM is not, and no
 such statement touches these two fields today. Installed by importing this module (app/main.py does).
 
-MSG-3.6: the same two listeners publish the alarm's raise and its clear on the event bus (`org.oran.smo.alarm.raised` / `.cleared`, smo_shared/events.py), in the
-same flush, with the element's region and tenant, so a reader that follows the feed hears of an alarm when it is committed.
+MSG-3.6: the same two listeners publish the alarm's raise and its clear on the event bus (`org.oran.smo.alarm.raised` / `.cleared`, smo_shared/events.py), and
+its acknowledgement (`.acknowledged` / `.unacknowledged`, call flow 20b) in the same flush, with the element's region and tenant, so a reader that follows the feed hears of an alarm when it is committed.
 """
 
 import datetime
@@ -40,7 +40,7 @@ def _publish(connection: Connection, alarm: Alarm, change: str) -> None:
                                .where(ManagedEntity.managed_element_ref == alarm.managed_element_ref)).first()
     events.publish(connection, "alarm", change, SOURCE, str(alarm.alarm_id),
                    {"alarmId": str(alarm.alarm_id), "managedElementRef": alarm.managed_element_ref, "managedFunctionRef": alarm.managed_function_ref,
-                    "severity": alarm.severity, "probableCause": alarm.probable_cause},
+                    "severity": alarm.severity, "probableCause": alarm.probable_cause, "ackState": alarm.ack_state, "ackUserId": alarm.ack_user_id},
                    place[0] if place else None, place[1] if place else None)
 
 
@@ -68,6 +68,7 @@ def _changed(_mapper, connection: Connection, alarm: Alarm) -> None:
     ack = _change(alarm, "ack_state")
     if ack is not None:
         _write(connection, alarm, ack[1] or "UNACKNOWLEDGED", ack[0], ack[1], alarm.ack_user_id)
+        _publish(connection, alarm, (ack[1] or "UNACKNOWLEDGED").lower())        # call flow 20b: org.oran.smo.alarm.acknowledged / .unacknowledged
     severity = _change(alarm, "severity")
     if severity is not None:
         if severity[1] == "cleared":

@@ -866,3 +866,10 @@ def test_the_audit_csv_export_stops_at_its_row_limit(app, monkeypatch):
     for i in range(4):
         admin.post("/api/admin/users", json={"username": f"m{i}", "password": "long-enough", "role": "viewer"})
     assert len(admin.get("/api/admin/audit.csv").text.strip().splitlines()) == 1 + 3
+
+
+@pytest.mark.parametrize("user,expected", [("admin", "true"), ("operator", "false")])
+def test_an_unsubscribe_says_whether_an_admin_made_it(app, smo, user, expected):
+    """Call flow 20c: the `as_admin` of a PM or FM unsubscribe is forced from the signed-in role, so an operator cannot claim it."""
+    login(app, user).delete("/api/smo/ran-nf-oam/pm-subscriptions/s-1", params={"as_admin": "true"})
+    assert smo.proxied[0].url.params.get_list("as_admin") == [expected]

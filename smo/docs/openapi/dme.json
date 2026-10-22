@@ -4213,6 +4213,156 @@
         "summary": "Query Producer Status"
       }
     },
+    "/production-capabilities/{producer_id}/types": {
+      "delete": {
+        "description": "A producer stops producing one type and keeps the others (call flow 20c/20d, DOC-CF-1.8): RAN NF OAM withdraws `RAN.PMCounters.<counter>` when the last\nPM subscription of that counter goes, and `RAN.FaultRecords` with the last FM subscription. As `DELETE /production-capabilities` does for every type of\nthe producer: its link to the type is removed, it is told to stop each of the type's active jobs (a DELETE per job, in the outbox), and a job left with no\nproducer becomes NO_PRODUCER. The type itself stays (`DELETE /dme-types/{id}` removes it). Idempotent: an unknown producer or type, or one the producer\ndoes not serve, is 204. 403 `DME_PRODUCER_NOT_OWNER` for an rApp naming another producer.",
+        "operationId": "deregister_producer_type_production_capabilities__producer_id__types_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "producer_id",
+            "required": true,
+            "schema": {
+              "title": "Producer Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "namespace",
+            "required": true,
+            "schema": {
+              "title": "Namespace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Deregister Producer Type"
+      }
+    },
     "/ready": {
       "get": {
         "description": "Readiness probe: 200 when the database and SME (where this module uses them) answer, else 503\nnaming the failing check. Take the replica out of rotation on 503; do not restart it.",

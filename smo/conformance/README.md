@@ -68,7 +68,7 @@ A check that is acknowledged-but-not-applied is the commonest real defect (an ag
 | FM-1 | FM | an alarm the adaptor raises is accepted by RAN NF OAM's ingest, which answers 200 with an alarmId |
 | FM-2 | FM | RAN NF OAM lists the alarm with the fields the adaptor sent (cause, problem, type, correlation group) |
 | FM-3 | FM | the severity is taken as a PerceivedSeverity whatever its case: listed in lower case, with the upper-case perceivedSeverity |
-| FM-4 | FM | the alarmId is minted by RAN NF OAM: a UUID that is not the adaptor's own id, new for each alarm even when the adaptor repeats its id |
+| FM-4 | FM | the alarmId is minted by RAN NF OAM: a UUID that is not the adaptor's own id, new for each alarm; a repeat of an open alarm is that alarm |
 | PM-1 | PM | after a PM subscription on the element, a report of its counter is accepted (201) and its measurements are counted |
 | PM-2 | PM | a performance file the adaptor reports is accepted (201) and listed by GET /files with its format and a size |
 | PM-3 | PM | the stored file holds what was reported: its element, its counter and the cells measured |

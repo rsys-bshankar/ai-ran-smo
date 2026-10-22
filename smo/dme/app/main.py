@@ -358,6 +358,29 @@ def get_producer(producer_id: str, db: Session = Depends(get_session)):
     return _producer_view(db, p)
 
 
+@app.delete("/production-capabilities/{producer_id}/types", status_code=204)
+def deregister_producer_type(producer_id: str, namespace: str, name: str, version: str, request: Request, db: Session = Depends(get_session)):
+    """A producer stops producing one type and keeps the others (call flow 20c/20d, DOC-CF-1.8): RAN NF OAM withdraws `RAN.PMCounters.<counter>` when the last
+    PM subscription of that counter goes, and `RAN.FaultRecords` with the last FM subscription. As `DELETE /production-capabilities` does for every type of
+    the producer: its link to the type is removed, it is told to stop each of the type's active jobs (a DELETE per job, in the outbox), and a job left with no
+    producer becomes NO_PRODUCER. The type itself stays (`DELETE /dme-types/{id}` removes it). Idempotent: an unknown producer or type, or one the producer
+    does not serve, is 204. 403 `DME_PRODUCER_NOT_OWNER` for an rApp naming another producer."""
+    _refuse_unless_producer_owner(request, producer_id, "deregister a producer")
+    p = db.get(DMEProducer, producer_id)
+    t = db.scalar(select(DMEType).where(DMEType.namespace == namespace, DMEType.name == name, DMEType.version == version))
+    link = db.get(DMEProducerType, (producer_id, t.dme_type_id)) if p is not None and t is not None else None
+    if p is None or t is None or link is None:
+        return
+    for job in db.scalars(select(DataJob).where(DataJob.dme_type_id == t.dme_type_id, DataJob.status == "ACTIVE")).all():
+        enqueue(db, f"{p.job_callback_url}/{job.data_job_id}", {}, method="DELETE")
+    db.delete(link)
+    db.flush()
+    if not _producers_for_type(db, t.dme_type_id):
+        for job in db.scalars(select(DataJob).where(DataJob.dme_type_id == t.dme_type_id, DataJob.status == "ACTIVE")).all():
+            _set_job_status(db, job, "NO_PRODUCER", f"producer {producer_id} stopped producing the type and it has no other")
+    db.commit()
+
+
 @app.delete("/production-capabilities", status_code=204)
 def deregister_producer(producer_id: str, request: Request, db: Session = Depends(get_session)):
     """The DME half of rApp Management's producer-reconsideration trigger

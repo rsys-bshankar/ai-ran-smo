@@ -174,3 +174,17 @@ def test_the_triggers_are_in_the_openapi_document_with_their_error_responses():
     for route in ("alarm", "pm-report", "pm-file", "heartbeat", "software-phase"):
         responses = paths[f"/emit/{route}"]["post"]["responses"]
         assert {"200", "409", "422", "502"} <= set(responses)
+
+
+def test_correlation_fields_are_passed_on_and_an_alarm_is_cleared_by_its_id(oam, monkeypatch):
+    """Call flow 20a/20b: the root-cause indicator, correlated alarm ids and repair actions go to RAN NF OAM's ingest; `/emit/alarm-clear` PATCHes
+    `/alarms/{alarmId}/clear` as the adaptor and relays the answer."""
+    client.post("/emit/alarm", json={"managedElementRef": "gnb-1", "severity": "MAJOR", "rootCauseIndicator": True, "correlatedNotifications": ["a-0"],
+                                     "proposedRepairActions": "reseat the SFP"})
+    params = oam.calls[0]["params"]
+    assert (params["root_cause_indicator"], params["correlated_notifications"], params["proposed_repair_actions"]) == (True, ["a-0"], "reseat the SFP")
+    patched = []
+    monkeypatch.setattr(httpx, "patch", lambda url, params=None, timeout=None: patched.append((url, params)) or httpx.Response(200, json={"severity": "cleared"}))
+    resp = client.post("/emit/alarm-clear", json={"alarmId": "a-1"})
+    assert resp.json() == {"emitted": True, "status": 200, "response": {"severity": "cleared"}, "target": OAM}
+    assert patched == [(f"{OAM}/alarms/a-1/clear", {"clear_user_id": "mock-o1-adaptor"})]

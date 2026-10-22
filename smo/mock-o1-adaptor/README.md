@@ -38,7 +38,7 @@ The real O-RAN-SC `sim-o1-interface` (`ntsim-ng`) is a YANG-validated NETCONF / 
  RAN NF OAM --HTTP JSON (PATCH / PUT / POST / DELETE / GET /restconf/data/...)--> mock-o1-adaptor   (RESTCONF ME)
  RAN NF OAM --HTTP GET /capabilities---------------> mock-o1-adaptor   (vendor onboarding discovery)
  tests / demo --HTTP GET /objects, /edit-config/{ref}, POST /faults, DELETE /state --> mock-o1-adaptor
- tests / demo / conformance kit --HTTP POST /emit/alarm | pm-report | pm-file | heartbeat | software-phase --> mock-o1-adaptor
+ tests / demo / conformance kit --HTTP POST /emit/alarm | alarm-clear | pm-report | pm-file | heartbeat | software-phase --> mock-o1-adaptor
  mock-o1-adaptor --HTTP POST /alarms/ingest, /pm-reports, /pm-files, /o1-adaptor-endpoints/{id}/heartbeat, /software-management-jobs/{id}/advance--> RAN NF OAM   (MOCK_O1_OAM_URL)
 ```
 
@@ -139,7 +139,8 @@ All `POST`, JSON body, `200` [`EmitResult`](../docs/openapi/mock-o1-adaptor.json
 
 | Path | Body | Sends |
 |---|---|---|
-| `/emit/alarm` | `managedElementRef`, `severity` (a PerceivedSeverity, any case), `sourceAlarmId?` (default a new UUID), `probableCause?`, `specificProblem?`, `managedFunctionRef?`, `alarmType?`, `correlationGroup?` | `POST {oam}/alarms/ingest` with the fields as **query parameters** (`source_alarm_id`, `managed_element_ref`, `severity`, `probable_cause`, `specific_problem`, `managed_function_ref`, `alarm_type`, `correlation_group`; unset ones left out) |
+| `/emit/alarm` | `managedElementRef`, `severity` (a PerceivedSeverity, any case), `sourceAlarmId?` (default a new UUID), `probableCause?`, `specificProblem?`, `managedFunctionRef?`, `alarmType?`, `correlationGroup?`, `rootCauseIndicator?`, `correlatedNotifications?` (alarm ids RAN NF OAM answered before), `proposedRepairActions?` | `POST {oam}/alarms/ingest` with the fields as **query parameters** (`source_alarm_id`, `managed_element_ref`, `severity`, `probable_cause`, `specific_problem`, `managed_function_ref`, `alarm_type`, `correlation_group`, `root_cause_indicator`, `correlated_notifications`, `proposed_repair_actions`; unset ones left out). `CLEARED` is refused by RAN NF OAM (422): clear with `/emit/alarm-clear` |
+| `/emit/alarm-clear` | `alarmId` (the id an earlier `/emit/alarm` answered) | `PATCH {oam}/alarms/{alarmId}/clear?clear_user_id=mock-o1-adaptor` (call flow 20b); `MOCK_O1_OAM_URL` only, no `target` |
 | `/emit/pm-report` | `managedElementRef`, `counterType`, `measurements[{cellId, timestamp, value?, values?, relation?}]` | `POST {oam}/pm-reports` with the body as JSON |
 | `/emit/pm-file` | the same, plus `fileDataType="Performance"`, `fileFormat="json"`, `fileCompression?`, `jobId?`, `fileExpirationTime?` | `POST {oam}/pm-files` |
 | `/emit/heartbeat` | `endpointId` | `POST {oam}/o1-adaptor-endpoints/{endpointId}/heartbeat` |

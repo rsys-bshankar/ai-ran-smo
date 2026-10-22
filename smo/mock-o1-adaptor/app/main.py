@@ -487,7 +487,7 @@ def query_object(managed_object_ref: str, function_ref: str | None = None):
 EMIT_TIMEOUT_SECONDS = 5.0
 log = logging.getLogger(__name__)
 # the trigger -> the MnS service that must be in /capabilities' supportedServices for the stub to emit it
-EMIT_SERVICES = {"alarm": "FM", "pm-report": "PM", "pm-file": "FILE", "heartbeat": "HEARTBEAT", "software-phase": "SWM"}
+EMIT_SERVICES = {"alarm": "FM", "alarm-clear": "FM", "pm-report": "PM", "pm-file": "FILE", "heartbeat": "HEARTBEAT", "software-phase": "SWM"}
 
 
 # RFC 7807 problem body of the emit routes' error responses (409, 422, 502), declared in `EMIT_RESPONSES`; a model of the published OpenAPI document, so no docstring.
@@ -514,13 +514,23 @@ class EmitTarget(BaseModel):
 # Request body of POST /emit/alarm; the fields become the query parameters of RAN NF OAM's `POST /alarms/ingest` (renamed to snake_case in `emit_alarm`).
 class EmitAlarm(EmitTarget):
     managedElementRef: str
-    severity: str  # a PerceivedSeverity: CRITICAL, MAJOR, MINOR, WARNING, INDETERMINATE or CLEARED, any case
-    sourceAlarmId: str | None = None  # default: a new UUID, so every call raises a new alarm
+    severity: str  # a PerceivedSeverity: CRITICAL, MAJOR, MINOR, WARNING or INDETERMINATE, any case (CLEARED is refused: clear with POST /emit/alarm-clear)
+    sourceAlarmId: str | None = None  # default: a new UUID, so every call raises a new alarm; the same id of an open alarm re-reports (re-grades) that alarm
     probableCause: str | None = None
     specificProblem: str | None = None
     managedFunctionRef: str | None = None
     alarmType: str | None = None
     correlationGroup: str | None = None
+    # call flow 20a: the correlation a raising element knows, passed on as RAN NF OAM's root_cause_indicator, correlated_notifications (alarm ids it
+    # answered earlier) and proposed_repair_actions
+    rootCauseIndicator: bool | None = None
+    correlatedNotifications: list[str] | None = None
+    proposedRepairActions: str | None = None
+
+
+# Request body of POST /emit/alarm-clear (call flow 20b): the alarm RAN NF OAM answered for an earlier /emit/alarm, cleared by this adaptor. Sent to MOCK_O1_OAM_URL only.
+class EmitAlarmClear(BaseModel):
+    alarmId: str
 
 
 # One measurement of a PM report or file, in the shape RAN NF OAM's `POST /pm-reports` takes: `value` for a plain counter, or `values` (name -> number), plus the optional `relation`.
@@ -572,7 +582,7 @@ def _declared_services() -> list[str]:
     return [s.strip() for s in os.environ.get("MOCK_O1_SUPPORTED_SERVICES", fallback).split(",") if s.strip()]
 
 
-def _emit(kind: str, path: str, target: str | None, *, params: dict | None = None, body: dict | None = None) -> JSONResponse:
+def _emit(kind: str, path: str, target: str | None, *, params: dict | None = None, body: dict | None = None, method: str = "POST") -> JSONResponse:
     """POSTs `path` (with `params` as the query string and `body` as JSON) to RAN NF OAM for the trigger `kind` and returns the outcome as a JSON response.
 
     Answers 409 when this adaptor does not declare the service for `kind` or no target is configured, 422 for an unusable `target`, 502 when RAN NF OAM cannot be
@@ -593,13 +603,16 @@ def _emit(kind: str, path: str, target: str | None, *, params: dict | None = Non
     if not origin:
         return _problem(409, "no target configured", "no RAN NF OAM to emit to: set MOCK_O1_OAM_URL, or name a `target` in the request")
     if target:   # a caller-supplied origin goes through the guarded sender (smo_shared.webhook)
-        url = origin + path + ("?" + urlencode(params) if params else "")
+        url = origin + path + ("?" + urlencode(params, doseq=True) if params else "")
         resp = post_webhook(url, json=body or {}, timeout=EMIT_TIMEOUT_SECONDS)
         if resp is None:
             return _problem(502, "RAN NF OAM unreachable", f"POST to {kind} target failed")
     else:
         try:
-            resp = httpx.post(origin + path, params=params, json=body, timeout=EMIT_TIMEOUT_SECONDS)
+            if method == "PATCH":
+                resp = httpx.patch(origin + path, params=params, timeout=EMIT_TIMEOUT_SECONDS)
+            else:
+                resp = httpx.post(origin + path, params=params, json=body, timeout=EMIT_TIMEOUT_SECONDS)
         except httpx.HTTPError as exc:
             log.warning("emit %s to %s%s failed: %s: %s", kind, origin, path, type(exc).__name__, exc)
             return _problem(502, "RAN NF OAM unreachable", f"POST {path} failed: {type(exc).__name__}")
@@ -625,8 +638,17 @@ def emit_alarm(body: EmitAlarm):
     # Maintainer note (not published). Fields left unset are not sent. Errors: see `_emit` (409, 422, 502); a body of the wrong shape is FastAPI's 422.
     params = {"source_alarm_id": body.sourceAlarmId or str(uuid.uuid4()), "managed_element_ref": body.managedElementRef, "severity": body.severity,
               "probable_cause": body.probableCause, "specific_problem": body.specificProblem, "managed_function_ref": body.managedFunctionRef,
-              "alarm_type": body.alarmType, "correlation_group": body.correlationGroup}
+              "alarm_type": body.alarmType, "correlation_group": body.correlationGroup, "root_cause_indicator": body.rootCauseIndicator,
+              "correlated_notifications": body.correlatedNotifications or None, "proposed_repair_actions": body.proposedRepairActions}
     return _emit("alarm", "/alarms/ingest", body.target, params={k: v for k, v in params.items() if v is not None})
+
+
+@app.post("/emit/alarm-clear", response_model=EmitResult, responses=EMIT_RESPONSES)
+def emit_alarm_clear(body: EmitAlarmClear):
+    """FM: clear an alarm this adaptor raised (`PATCH /alarms/{alarmId}/clear` at MOCK_O1_OAM_URL, cleared by `mock-o1-adaptor`), as the element's
+    NotifyClearedAlarm would (call flow 20b). An alarm already cleared stays as it was."""
+    # Maintainer note (not published). No caller-supplied `target`: the guarded sender only POSTs. Errors: see `_emit` (409, 502).
+    return _emit("alarm-clear", f"/alarms/{quote(body.alarmId, safe='')}/clear", None, params={"clear_user_id": "mock-o1-adaptor"}, method="PATCH")
 
 
 @app.post("/emit/pm-report", response_model=EmitResult, responses=EMIT_RESPONSES)

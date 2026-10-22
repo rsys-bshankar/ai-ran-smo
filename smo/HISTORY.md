@@ -2780,6 +2780,44 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.8 flow 20 — Alarms and PM / FM subscriptions rewritten from the code: a raise is checked and happens once, and a subscription is its maker's
+
+The eighteenth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, A to J, all taken):
+
+- **A. A raise is checked like an acknowledgement.** `POST /alarms/ingest` took no `Request`, so it checked neither the scope claim nor MSAC: a module scoped to
+  one region could raise a critical alarm on another region's element and trip that region's campaign health gate. It is now 403 `SCOPE_DENIED` outside the
+  claim, 404 `MANAGED_ENTITY_NOT_FOUND` for an unknown element (a foreign-key 422 on Postgres, an orphan row on SQLite, before) and MSAC `create` on the
+  element.
+- **B. One open alarm per element and source id.** A source retrying after a timeout made a second open alarm (two `alarm.raised`, inflated counts). As the
+  VES path already did, a report of an open alarm answers its id with `duplicate: true` and re-grades it when the severity differs. `severity=cleared` is 422:
+  it inserted a new row already cleared and left the open alarm open.
+- **C. Acknowledge and clear happen once.** Clearing a cleared alarm overwrote who cleared it and when (with no history row); a repeated acknowledgement
+  replaced the user and kept the first time; a cleared alarm could be acknowledged. Now repeats return the alarm unchanged and acknowledging a cleared alarm
+  is 409 `ALARM_CLEARED` (new code); the console offers neither on a cleared alarm.
+- **D. The delivery method is checked first.** `delivery_method` was free text: an unknown one registered at DME and then failed the database's CHECK
+  (leaving a producer with no subscription), and the engine map quietly fell back. It is `pull`, `push` or `stream` (422 before DME is asked).
+- **E. Acknowledgements are announced.** `alarm_history` publishes `org.oran.smo.alarm.acknowledged` / `.unacknowledged` beside `.raised` and `.cleared`,
+  and every alarm event carries `ackState` and `ackUserId`.
+- **F. The last subscription withdraws the type at DME.** An unsubscribe only deleted the row, so DME kept RAN NF OAM as the producer and consumers kept
+  making jobs nobody fed; DME could only remove a producer whole. DME has a new `DELETE /production-capabilities/{producerId}/types?namespace&name&version`
+  (the link removed, a stop per active job to the producer, `NO_PRODUCER` when the type has no producer left, the type kept; idempotent; an rApp only for
+  itself). RAN NF OAM calls it before deleting the last PM subscription of a counter type, or the last FM subscription; a refusal is 502 and nothing is
+  deleted.
+- **G. Correlated alarms exist.** Each `correlated_notifications` id must be an alarm the caller may see (422).
+- **H. The mock adaptor can drive the flow.** `/emit/alarm` passes on `rootCauseIndicator`, `correlatedNotifications` and `proposedRepairActions`, and
+  `POST /emit/alarm-clear {alarmId}` clears an alarm as the adaptor.
+- **I. The doc** is 20a-20d: it said DME answered a `registrationId` (only the status is read), left out the 502, scope, MSAC and 404 answers, the events,
+  history and comments, and had the element call `PATCH .../clear` (a VES `NORMAL`, the adaptor, or an operator clears); the README had the PM path's order
+  backwards.
+- **J. A subscription is its maker's.** Revision 0061 adds `created_by` (the console's person from `X-R1-Acting-User`, else the module's invoker id); only
+  that caller, or an admin in the console (`as_admin`, forced by the GUI BFF from the signed-in role and counted only with an acting user), deletes it (403
+  `SUBSCRIPTION_ACCESS_DENIED`). A subscription from before 0061 is anyone's who may see it.
+- **Not taken:** root-cause analysis in RAN NF OAM, a clause-8 PM job, a per-element DME type for alarms, refusing a duplicate subscription, and an rApp
+  raising or clearing alarms.
+- Tests: `ran-nf-oam/tests/test_alarm_subscription_rules.py` (4), `test_alarm_history.py` (the acknowledgement event), `dme/tests/test_main.py` (the per-type
+  deregistration), `mock-o1-adaptor/tests/test_emit.py`, `gui-bff/tests/test_main.py` (`as_admin`). `docs/call-flows/20-alarm-pm-subscription-lifecycle.md`
+  (20a-20d, with PNGs).
+
 ### DOC-CF-1.8 flow 19 — Software management job rewritten from the code: the job is sent to its element, and the element's answer decides
 
 The seventeenth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken; two more found while building it, below):

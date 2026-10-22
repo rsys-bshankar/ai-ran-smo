@@ -26,8 +26,9 @@ A CloudEvents 1.0 event in its JSON form, plus three extension attributes. Schem
 
 | Type | Published by | `subject` | `data` |
 |---|---|---|---|
-| `org.oran.smo.alarm.raised` | RAN NF OAM, when an alarm row is inserted (unless it arrives already cleared) | the alarm id | `alarmId`, `managedElementRef`, `managedFunctionRef`, `severity`, `probableCause` |
+| `org.oran.smo.alarm.raised` | RAN NF OAM, when an alarm row is inserted (unless it arrives already cleared) | the alarm id | `alarmId`, `managedElementRef`, `managedFunctionRef`, `severity`, `probableCause`, `ackState`, `ackUserId` |
 | `org.oran.smo.alarm.cleared` | RAN NF OAM, when an alarm's severity becomes `cleared` (the clear route, a VES clear, any ORM change) | the alarm id | as above |
+| `org.oran.smo.alarm.acknowledged` / `.unacknowledged` | RAN NF OAM, when an alarm's ack state changes (call flow 20b) | the alarm id | as above, with `ackState`, `ackUserId` |
 | `org.oran.smo.rapp-instance.state-changed` | rApp Management, at every transition of an instance's state machine | the instance id | `machine`, `from`, `event`, `to` |
 | `org.oran.smo.rapp-instance.credentials-rotated` | rApp Management's worker, when it rotated an instance's secret on schedule (`RAPP_MGMT_SECRET_ROTATION_DAYS`, `SEC-15.19`) and the rApp took the new one | the instance id | `instanceId`, `oauthClientId`, `olderThanDays`; never a secret |
 | `org.oran.smo.rapp-instance.credentials-rotation-failed` | rApp Management's worker, when a scheduled rotation did not complete | the instance id | as above, plus `reason` (`WORKLOAD_UNREACHABLE`: nothing changed; `SME_DID_NOT_ISSUE_A_SECRET`: nothing changed; `WORKLOAD_DID_NOT_TAKE_THE_SECRET`: the old secret is already invalid) and `oldSecretStillValid` |

@@ -6,6 +6,7 @@ dispatching anything. Run with: pytest smo/ran-nf-oam/tests -q
 
 import datetime
 import uuid
+import httpx
 
 import pytest
 from types import SimpleNamespace
@@ -371,6 +372,7 @@ def test_unsubscribe_pm(client, db_session_factory, monkeypatch, elements):
     unlike every other subscription-shaped resource in this build.
     """
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: ACCEPTED)
+    monkeypatch.setattr("app.main.R1Client.delete", lambda self, path, **kw: httpx.Response(204))     # call flow 20c: the last one withdraws the type at DME
     sub_id = client.post("/pm-subscriptions", params={
         "managed_element_ref": "ME-1", "counter_type": "PRB.Usage", "delivery_method": "pull",
     }).json()["subscriptionId"]
@@ -440,6 +442,7 @@ def test_list_fm_subscriptions_filters_by_managed_element_ref(client, db_session
 def test_unsubscribe_fm(client, db_session_factory, monkeypatch, elements):
     """Deleting an FM subscription is 204 and removes the row."""
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: ACCEPTED)
+    monkeypatch.setattr("app.main.R1Client.delete", lambda self, path, **kw: httpx.Response(204))     # call flow 20c: the last one withdraws the type at DME
     sub_id = client.post("/fm-subscriptions", params={"managed_element_ref": "ME-1", "delivery_method": "push"}).json()["subscriptionId"]
 
     resp = client.delete(f"/fm-subscriptions/{sub_id}")
@@ -490,7 +493,7 @@ def test_ingest_alarm_persists_standard_fault_fields(client, db_session_factory)
     the one of these still missing after that pass.
     """
     _make_me(db_session_factory)
-    other_alarm_id = str(uuid.uuid4())
+    other_alarm_id = client.post("/alarms/ingest", params={"source_alarm_id": "src-0", "managed_element_ref": "ME-1", "severity": "major"}).json()["alarmId"]
 
     resp = client.post("/alarms/ingest", params={
         "source_alarm_id": "src-1", "managed_element_ref": "ME-1", "severity": "critical",
@@ -502,9 +505,8 @@ def test_ingest_alarm_persists_standard_fault_fields(client, db_session_factory)
     alarm_id = resp.json()["alarmId"]
 
     listing = client.get("/alarms").json()["items"]
-    assert len(listing) == 1
-    alarm = listing[0]
-    assert alarm["alarmId"] == alarm_id
+    assert len(listing) == 2
+    alarm = next(a for a in listing if a["alarmId"] == alarm_id)
     assert alarm["probableCause"] == "linkFailure"
     assert alarm["specificProblem"] == "Optical link down"
     assert alarm["rootCauseIndicator"] is True

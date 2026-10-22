@@ -103,6 +103,11 @@ def _requester(user) -> dict:
     return {"requested_by": f"smo-gui:{user.username}"}
 
 
+def _unsubscriber(user) -> dict:
+    """The `as_admin` of a PM or FM unsubscribe made in the console: true only for an admin, whatever the browser sent (call flow 20)."""
+    return {"as_admin": "true" if user.role == Role.ADMIN else "false"}
+
+
 V, O, A = Role.VIEWER, Role.OPERATOR, Role.ADMIN
 
 RULES: list[Rule] = [
@@ -226,7 +231,8 @@ RULES: list[Rule] = [
     # GUI-10.1: the FM subscription form and the FM / PM Unsubscribe buttons: subscribing an element's alarms or measurements to the SMO, and ending it,
     # is an operator action like creating the PM subscription above
     _rule("POST", "/ran-nf-oam/fm-subscriptions", O),
-    _rule("DELETE", "/ran-nf-oam/(fm-subscriptions|pm-subscriptions)/{id}", O),
+    # call flow 20c/20d: RAN NF OAM lets a person delete only their own subscription, or any as an admin: `as_admin` is forced from the signed-in role
+    _rule("DELETE", "/ran-nf-oam/(fm-subscriptions|pm-subscriptions)/{id}", O, query_overrides=_unsubscriber),
     _rule("POST", "/ran-nf-oam/software-management-jobs/{id}/advance", O),
     _rule("POST", "/ran-nf-oam/software-management-jobs/{id}/abort", O),   # DOC-CF-1.8 flow 19: ending a job the element will not finish
     _rule("POST", "/ran-nf-oam/o1-adaptor-endpoints/{id}/heartbeat", A),   # what the ME's adaptor sends: simulation

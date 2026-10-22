@@ -555,6 +555,8 @@ class PMSubscription(Base):
     # by any real PM subscription regardless of wrapper shape, and was
     # fully absent. Nullable: optional in the real spec too.
     granularity_period: Mapped[int | None] = mapped_column(Integer)
+    # call flow 20c (revision 0061): who made it (the console's person or the module's invoker id); only they, or an admin in the console, delete it
+    created_by: Mapped[str | None] = mapped_column(String)
 
 
 class FMSubscription(Base):
@@ -572,6 +574,7 @@ class FMSubscription(Base):
     managed_element_ref: Mapped[str] = mapped_column(String, ForeignKey("managed_entity.managed_element_ref"))
     delivery_method: Mapped[str] = mapped_column(String, nullable=False)
     southbound_engine: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str | None] = mapped_column(String)        # call flow 20d (revision 0061), as PMSubscription.created_by
 
 
 class SoftwareManagementJob(Versioned, Base):
