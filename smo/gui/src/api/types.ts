@@ -228,7 +228,12 @@ export interface KpiScheduleRow {
   scheduleId: string; kpi: string; intervalSeconds: number; lookbackSeconds: number; groupBy: string; managedElementRef: string | null; cellId: string | null;
   enabled: boolean; lastRunAt: string | null; lastStatus: "OK" | "ERROR" | null; lastDetail: string | null; nextRunAt: string | null;
 }
-export interface SwmJob { jobId: string; managedElementRef: string; ruInstanceId: string | null; phase: string; status: string }
+/** One row of `GET /ran-nf-oam/software-management-jobs` (call flow 19). */
+export interface SwmJob {
+  jobId: string; managedElementRef: string; ruInstanceId: string | null; phase: string; status: string;
+  /** Flow 19: the package sent in `software-download` (none on a campaign's revert job), its version, and why the job failed. */
+  remoteFilePath?: string | null; softwareVersion?: string | null; failureReason?: string | null;
+}
 
 // ---- Intent Service
 /** A TS 28.312 intent as Intent Service lists it: summary keys plus the full intent under `attributes`. */

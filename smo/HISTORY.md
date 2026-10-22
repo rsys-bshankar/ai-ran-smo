@@ -2780,6 +2780,42 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.8 flow 19 — Software management job rewritten from the code: the job is sent to its element, and the element's answer decides
+
+The seventeenth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken; two more found while building it, below):
+
+- **A. The phases are sent to the element.** No RPC was ever sent: a job was an SMO-side record an operator (or the mock adaptor's emit route) advanced.
+  `app/swm_rpc.py` builds the O-RAN WG4 `software-download` (with `remote-file-path`), `software-install` (slot `standby`, the path's last segment as
+  `file-names`) and `software-activate` RPCs, escaped, and sends them over the element's endpoint transport (NETCONF over SSH or TLS through
+  `netconf_ssh.send_rpc`, the adaptor's HTTP bridge through `netconf_client.send_rpc`). `lifecycle.dispatch_due` sends every phase not yet sent: after the
+  commit that started a job or moved it on (the start, advance, abort and campaign routes) and from the worker's `advance-waves` task. A send is claimed first
+  by an UPDATE of the new `dispatched_phase` that only one process wins, committed, so a phase goes out once however many replicas run; an `<rpc-error>`,
+  no answer, no endpoint, an UNREACHABLE or DEGRADED endpoint, an element not on NETCONF, or an error raised while sending fails the job (`PHASE_FAILED`) with
+  the reason, and a campaign job's campaign is told.
+- **B. A job names its package.** `remote_file_path` is required on `POST /software-management-jobs` (422 without it, at most 1000 characters) and
+  `software_version` optional; campaigns take `remoteFilePath` for every job (revision 0060). A campaign's revert job names no path.
+- **C. One job at a time, on a registered element.** An unknown element made a job; it is now 404 `MANAGED_ENTITY_NOT_FOUND`. A second job on an element
+  with one PENDING or IN_PROGRESS is 409 `SOFTWARE_JOB_IN_PROGRESS` (new code), which the campaign route now uses too (it answered `SERVICE_NAME_CONFLICT`).
+- **D. Reporting is as guarded as starting.** `advance` (and the new abort) need MSAC `exec` on the element when MSAC is on; a failure report keeps its
+  `reason` (default "the element reported the phase failed").
+- **E. A job can be read and ended.** `GET /software-management-jobs/{id}` (404 outside the caller's scope, as advance), and `POST .../abort?reason` ends
+  a running job FAILED "aborted: reason", sending nothing; an ended job is 409.
+- **F. The element's version follows the job.** `lifecycle.job_event` is the one path for a status change: the FSM, the next phase, `failure_reason`, the
+  element's `ElementOnboarding.software_version` when a job naming a version completes (not a revert), and `org.oran.smo.software-job.state-changed`
+  (`managedElementRef`, `from`, `to`, `phase`, `reason`, `campaignId`) in the same commit; the campaign timeout sweep uses it too ("no report within N s").
+- **G. Every view says what the job is.** The start, read, advance, abort and list answers are one view with `softwareVersion`, `remoteFilePath`,
+  `dispatchedPhase` and `failureReason`.
+- **H. The adaptor end.** The mock adaptor acknowledges the three RPCs with `<ok/>` and lists them (`GET /software-rpcs`); the O1 conformance kit's SW
+  checks name a package and abort the job SW-1 leaves running (one job per element).
+- Found while building it: the console's start form and the flow 19 board's retry started jobs without a package (they would have been 422): the form asks
+  for the path and version and offers **Abort**, the retry repeats the failed job's package, and the GUI BFF allows abort to an operator. And a send that
+  raised something other than a transport error answered 500 after the job was committed and claimed, leaving it waiting forever; it now fails the job.
+- **Not taken:** subscribing to the element's NETCONF notifications (the adaptor reports through `advance`), choosing a slot other than `standby`, checking
+  a package's checksum or signature in the SMO, and software RPCs over RESTCONF.
+- Tests: `ran-nf-oam/tests/test_software_dispatch.py` (5, the NETCONF client's HTTP post patched); the other RAN NF OAM suites run with a stand-in that
+  accepts every RPC (`conftest.py`, opt out with the `real_software_rpc` marker); `mock-o1-adaptor/tests/test_main.py`; the conformance kit's integration
+  test routes the kit's adaptor hosts to the stub. `docs/call-flows/19-software-management-job-lifecycle.md` (19a-19d, with PNGs).
+
 ### DOC-CF-1.8 flow 18 — SME security rewritten from the code: an rApp acts at SME only as itself, and nothing outlives what it belongs to
 
 The sixteenth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken; one more read found while building it, below):

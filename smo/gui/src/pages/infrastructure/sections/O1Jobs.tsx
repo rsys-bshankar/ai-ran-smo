@@ -1,6 +1,6 @@
 /** Infrastructure → O1 endpoints & jobs, the two job boxes: CM write jobs (`infrastructure.config-jobs`, server-paged with a status filter, a
  * row opens the shared config-job drawer, "New config write" opens `ConfigWrite`) and software management jobs (`infrastructure.swm-jobs`,
- * server-paged, with "Start software update" and the phase advance / fail buttons). */
+ * server-paged, with "Start software update" (an element and the package's remote path, flow 19a) and the phase advance / fail / abort buttons). */
 import { useState } from "react";
 
 import type { ConfigJobSummary, SwmJob } from "../../../api/types";
@@ -49,6 +49,7 @@ export function SoftwareJobs() {
           <div className="row gap end">
             <ActionButton label={t("infrastructure.swm.phaseOk", { phase: j.phase })} action={{ method: "POST", path: `${PATHS.swmJobs}/${j.jobId}/advance`, query: { succeeded: true }, success: t("infrastructure.swm.advanced") }} />
             <ActionButton label={t("infrastructure.swm.failed")} action={{ method: "POST", path: `${PATHS.swmJobs}/${j.jobId}/advance`, query: { succeeded: false }, success: t("infrastructure.swm.jobFailed") }} />
+            <ActionButton label={t("infrastructure.swm.abort")} tone="danger" action={{ method: "POST", path: `${PATHS.swmJobs}/${j.jobId}/abort`, success: t("infrastructure.swm.aborted") }} />
           </div>
         ) },
       ]} />
@@ -56,15 +57,21 @@ export function SoftwareJobs() {
   );
 }
 
-/** The element picker and start button; its element list (one bounded page) is read only once the operator opens it. */
+/** The element picker, the package's remote path and version, and the start button; its element list (one bounded page) is read only once the
+ * operator opens it. */
 function StartSoftwareUpdate({ onDone }: { onDone: () => void }) {
   const t = useT();
   const [me, setMe] = useState("");
+  const [path, setPath] = useState("");
+  const [version, setVersion] = useState("");
   const choices = useEndpointChoices(true);
   return (
     <>
       <select value={me} onChange={(e) => setMe(e.target.value)} aria-label={t("infrastructure.col.managedElement")}><option value="">{t("infrastructure.swm.pickElement")}</option>{choices.data?.items.map((e) => <option key={e.endpointId}>{e.managedElementRef}</option>)}</select>
-      <ActionButton label={t("infrastructure.swm.start")} disabled={!me} onDone={onDone} action={{ method: "POST", path: PATHS.swmJobs, query: { managed_element_ref: me }, success: t("infrastructure.swm.started") }} />
+      <input value={path} onChange={(e) => setPath(e.target.value)} placeholder={t("infrastructure.swm.remotePath")} aria-label={t("infrastructure.swm.remotePath")} />
+      <input value={version} onChange={(e) => setVersion(e.target.value)} placeholder={t("infrastructure.swm.version")} aria-label={t("infrastructure.swm.version")} />
+      <ActionButton label={t("infrastructure.swm.start")} disabled={!me || !path.trim()} onDone={onDone} action={{ method: "POST", path: PATHS.swmJobs,
+        query: { managed_element_ref: me, remote_file_path: path.trim(), ...(version.trim() ? { software_version: version.trim() } : {}) }, success: t("infrastructure.swm.started") }} />
       <button type="button" className="btn ghost" onClick={onDone}>{t("components.cancel")}</button>
     </>
   );

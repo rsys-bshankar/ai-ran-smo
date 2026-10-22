@@ -242,6 +242,10 @@ export const infrastructure = {
   "infrastructure.swm.pickElement": "Managed element…",
   "infrastructure.swm.start": "Start software update",
   "infrastructure.swm.started": "Software job started (DOWNLOAD)",
+  "infrastructure.swm.remotePath": "Package path (sftp://…)",
+  "infrastructure.swm.version": "Version (optional)",
+  "infrastructure.swm.abort": "Abort",
+  "infrastructure.swm.aborted": "Job aborted",
 
   "infrastructure.inventory.group.place": "Where it is",
   "infrastructure.inventory.group.work": "Work on it",

@@ -116,6 +116,8 @@ Not R1-facing. The OpenAPI document is [`../docs/openapi/mock-o1-adaptor.json`](
 | Method | Path | Purpose / responses |
 |---|---|---|
 | POST | `/edit-config` | XML body. For `<get-config>`: `<rpc-reply><data><managed-object ref function-ref>` + the object's current attributes (defaults merged with writes); missing `ref` -> `invalid-value`. For `<edit-config>`: `<ok/>` on success; `<rpc-error>` with `malformed-message` (unparseable XML), `invalid-value` (no `ref`, or empty payload for a non-delete operation) or `operation-failed` (`RPC_ERROR` fault); HTTP 504 for a `TIMEOUT` fault. `delete` / `remove` clear the object's state |
+| POST | `/edit-config` (software management) | Call flow 19b: an O-RAN `software-download` / `software-install` / `software-activate` RPC (`urn:o-ran:software-management:1.0`) is answered `<ok/>` and recorded; nothing is written. Completion is reported with `POST /emit/software-phase` |
+| GET | `/software-rpcs` | The software RPCs acknowledged, oldest first (`{rpc, remote-file-path?, slot-name?, file-names?}`); cleared by `DELETE /state` |
 | GET | `/capabilities` | Vendor declaration (see 2.6) |
 
 **RESTCONF surface (RFC 8040, used by RAN NF OAM for a RESTCONF ME)**

@@ -437,6 +437,12 @@
   },
   {
     "method": "POST",
+    "pattern": "^/ran-nf-oam/software-management-jobs/[^/]+/abort$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
     "pattern": "^/ran-nf-oam/o1-adaptor-endpoints/[^/]+/heartbeat$",
     "role": "admin",
     "queryMatch": {}

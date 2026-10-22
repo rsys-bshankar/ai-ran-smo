@@ -128,7 +128,7 @@ def test_a_service_the_vendor_does_not_offer_is_refused(vendor):
     stub, oam, _ = vendor
     onboard(vendor)
     assert register(oam, "du-sw").status_code == 201
-    assert oam.post("/software-management-jobs", params={"managed_element_ref": "du-sw"}).status_code == 409
+    assert oam.post("/software-management-jobs", params={"managed_element_ref": "du-sw", "remote_file_path": "sftp://repo/sw-2.0.zip"}).status_code == 409
 
 
 def kit_report(vendor) -> tuple[list, str]:

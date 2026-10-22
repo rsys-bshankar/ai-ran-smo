@@ -19,8 +19,10 @@ export function useFlow19(subjectId: string | null): FlowBoardData {
     <ActionButton label={t("flows.f19.phaseOk", { phase: job.phase })} tone="primary" action={{ method: "POST", path: `/ran-nf-oam/software-management-jobs/${job.jobId}/advance`, query: { succeeded: true }, success: t("flows.f19.advanced") }} />
     <ActionButton label={t("flows.f19.phaseFailed", { phase: job.phase })} tone="danger" action={{ method: "POST", path: `/ran-nf-oam/software-management-jobs/${job.jobId}/advance`, query: { succeeded: false }, success: t("flows.f19.failed") }} />
   </>;
-  const retry = job && job.status === "FAILED" && <ActionButton label={t("flows.f19.retry")}
-    action={{ method: "POST", path: "/ran-nf-oam/software-management-jobs", query: { managed_element_ref: job.managedElementRef, ...(job.ruInstanceId ? { ru_instance_id: job.ruInstanceId } : {}) }, success: t("flows.f19.retried") }} />;
+  // a retry starts the same package again: a job without a remote path (a campaign's revert) is not retried from here
+  const retry = job && job.status === "FAILED" && job.remoteFilePath && <ActionButton label={t("flows.f19.retry")}
+    action={{ method: "POST", path: "/ran-nf-oam/software-management-jobs", query: { managed_element_ref: job.managedElementRef, remote_file_path: job.remoteFilePath,
+      ...(job.softwareVersion ? { software_version: job.softwareVersion } : {}), ...(job.ruInstanceId ? { ru_instance_id: job.ruInstanceId } : {}) }, success: t("flows.f19.retried") }} />;
   return {
     subjects: jobs.data?.map((j) => ({ id: j.jobId, label: label(j) })),
     subjectsError: jobs.error, retry: () => void jobs.refetch(),

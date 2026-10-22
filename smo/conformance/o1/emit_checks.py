@@ -261,13 +261,22 @@ def pm_file_content(ctx: Context) -> None:
 
 # ------------------------------------------------------------------------------------------------------------ software management
 
+SW_PACKAGE = "sftp://conformance.invalid/sw/conformance-1.0.zip"     # the package each check's job names; the adaptor is only asked to accept the RPC
+
 def _start_job(ctx: Context) -> str:
-    """Start a software-management job on the run's element at RAN NF OAM; returns its id, and fails unless a new job reads IN_PROGRESS in phase DOWNLOAD."""
+    """Start a software-management job on the run's element at RAN NF OAM; returns its id, and fails unless a new job reads IN_PROGRESS in phase DOWNLOAD
+    (RAN NF OAM has sent the adaptor `software-download` and the adaptor accepted it, call flow 19b)."""
     ref, _ = _element(ctx)
-    job = _oam(ctx, "POST", "/software-management-jobs", "starting a software-management job", params={"managed_element_ref": ref})
+    job = _oam(ctx, "POST", "/software-management-jobs", "starting a software-management job",
+               params={"managed_element_ref": ref, "remote_file_path": SW_PACKAGE})
     if job.get("status") != "IN_PROGRESS" or job.get("phase") != "DOWNLOAD":
         raise Fail(f"a new software-management job reads {job.get('status')}/{job.get('phase')}, not IN_PROGRESS/DOWNLOAD")
     return job["jobId"]
+
+
+def _abort(ctx: Context, job_id: str) -> None:
+    """End a job the check left running, so the next check may start one on the same element (one software job per element at a time)."""
+    _oam(ctx, "POST", f"/software-management-jobs/{job_id}/abort", "aborting the software-management job", params={"reason": "conformance check done"})
 
 
 def _job(ctx: Context, job_id: str) -> dict:
@@ -290,6 +299,7 @@ def sw_download_done(ctx: Context) -> None:
     job_id = _start_job(ctx)
     _report_phase(ctx, job_id, True)
     job = _job(ctx, job_id)
+    _abort(ctx, job_id)
     if (job.get("phase"), job.get("status")) != ("INSTALL", "IN_PROGRESS"):
         raise Fail(f"after the adaptor reported the DOWNLOAD phase the job reads phase {job.get('phase')}, status {job.get('status')}; expected INSTALL, IN_PROGRESS")
 

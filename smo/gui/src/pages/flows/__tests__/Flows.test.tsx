@@ -30,7 +30,7 @@ function bff(extra: Record<string, unknown> = {}) {
     [`GET /smo/rapp-mgmt/instances/${B}`]: { ...inst(B, "FAULTED"), workloadRef: null, configuration: {}, pendingUpgradeInstanceId: null, smeServiceIds: null, regionScope: null },
     "GET /smo/rapp-mgmt/instances/*": { items: [] },
     "GET /summary/rapps": { page: "rapps", computedAt: "t", partial: [], counts: { "instances.total": 487, "instances.RUNNING": 471, "instances.FAULTED": 6, "instances.DEPLOYING": 0, "instances.UPGRADING": 10, "instances.UNDEPLOYED": 0 } },
-    "GET /smo/ran-nf-oam/software-management-jobs": { items: [{ jobId: "j1", managedElementRef: "ME-1", ruInstanceId: null, phase: "INSTALL", status: "FAILED" }], total: 1, limit: 500, offset: 0 },
+    "GET /smo/ran-nf-oam/software-management-jobs": { items: [{ jobId: "j1", managedElementRef: "ME-1", ruInstanceId: null, phase: "INSTALL", status: "FAILED", remoteFilePath: "sftp://repo/du-2.0.zip" }], total: 1, limit: 500, offset: 0 },
     "GET /smo/onboarding/packages": { items: [], total: 0, limit: 500, offset: 0 },
     ...extra,
   });
@@ -110,6 +110,7 @@ describe("Lifecycle flows page", () => {
     await click(byText(container, "button", "Retry from DOWNLOAD (new job)")!);
     await settle();
     expect(calls.find((c) => c.method === "POST")?.query.get("managed_element_ref")).toBe("ME-1");
+    expect(calls.find((c) => c.method === "POST")?.query.get("remote_file_path")).toBe("sftp://repo/du-2.0.zip");
   });
 });
 

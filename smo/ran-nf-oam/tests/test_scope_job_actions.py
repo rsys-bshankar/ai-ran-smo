@@ -72,18 +72,18 @@ def test_the_owner_and_the_operator_still_act_on_a_halted_job(client, places):
 
 def test_a_software_update_needs_an_element_inside_the_scope(client, places):
     """Starting a software job on an element outside the caller's scope (or not registered) is 403 SCOPE_DENIED and starts nothing; inside the scope and without a claim it is accepted."""
-    denied = client.post("/software-management-jobs", headers=EU, params={"managed_element_ref": "ME-3"})
-    unknown = client.post("/software-management-jobs", headers=EU, params={"managed_element_ref": "ME-99"})
+    denied = client.post("/software-management-jobs", headers=EU, params={"managed_element_ref": "ME-3", "remote_file_path": "sftp://repo/sw-2.0.zip"})
+    unknown = client.post("/software-management-jobs", headers=EU, params={"managed_element_ref": "ME-99", "remote_file_path": "sftp://repo/sw-2.0.zip"})
     assert denied.status_code == unknown.status_code == 403 and _title(denied) == _title(unknown) == "SCOPE_DENIED"
     with places["db"]() as db:
         assert db.query(SoftwareManagementJob).count() == 0
-    assert client.post("/software-management-jobs", headers=EU, params={"managed_element_ref": "ME-1"}).status_code == 202
-    assert client.post("/software-management-jobs", params={"managed_element_ref": "ME-3"}).status_code == 202            # no claim: as before
+    assert client.post("/software-management-jobs", headers=EU, params={"managed_element_ref": "ME-1", "remote_file_path": "sftp://repo/sw-2.0.zip"}).status_code == 202
+    assert client.post("/software-management-jobs", params={"managed_element_ref": "ME-3", "remote_file_path": "sftp://repo/sw-2.0.zip"}).status_code == 202            # no claim: as before
 
 
 def test_a_software_job_on_an_element_outside_the_scope_cannot_be_advanced(client, places):
     """Reporting a phase of a software job on an element outside the caller's scope is a 404 like an unknown job, and the job does not move; an unscoped caller advances it."""
-    job = client.post("/software-management-jobs", params={"managed_element_ref": "ME-3"}).json()["jobId"]
+    job = client.post("/software-management-jobs", params={"managed_element_ref": "ME-3", "remote_file_path": "sftp://repo/sw-2.0.zip"}).json()["jobId"]
     hidden = client.post(f"/software-management-jobs/{job}/advance", headers=EU, params={"succeeded": True})
     assert hidden.status_code == 404 and _title(hidden) == "SOFTWARE_JOB_NOT_FOUND"
     with places["db"]() as db:

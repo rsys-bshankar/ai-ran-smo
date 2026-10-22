@@ -695,7 +695,7 @@ def test_list_config_and_software_jobs(client, db_session_factory, monkeypatch):
     _make_me(db_session_factory, last_heartbeat_at=datetime.datetime.now(datetime.UTC))
     monkeypatch.setattr("app.main.send_edit_config", lambda *a, **kw: None)
     job = client.post("/config-jobs", json={"requestedBy": "op", "scope": "cell", "changes": []}).json()
-    swm = client.post("/software-management-jobs", params={"managed_element_ref": "ME-1"}).json()
+    swm = client.post("/software-management-jobs", params={"managed_element_ref": "ME-1", "remote_file_path": "sftp://repo/sw-2.0.zip"}).json()
 
     assert [j["jobId"] for j in client.get("/config-jobs").json()["items"]] == [job["jobId"]]
     assert [(j["jobId"], j["phase"]) for j in client.get("/software-management-jobs").json()["items"]] == [(swm["jobId"], swm["phase"])]
@@ -720,7 +720,7 @@ def test_an_alarm_can_name_the_cell_it_is_about(client, db_session_factory):
 def test_a_concurrent_writer_turns_a_software_job_advance_into_a_409_and_the_repeat_succeeds(client, db_session_factory):
     """PR-ST-2: SoftwareManagementJob is versioned; a stale write is a 409, not a lost update."""
     _make_me(db_session_factory, last_heartbeat_at=datetime.datetime.now(datetime.UTC))
-    job = client.post("/software-management-jobs", params={"managed_element_ref": "ME-1"}).json()
+    job = client.post("/software-management-jobs", params={"managed_element_ref": "ME-1", "remote_file_path": "sftp://repo/sw-2.0.zip"}).json()
 
     with concurrent_commit_on("software_management_job") as fired:
         stale = client.post(f"/software-management-jobs/{job['jobId']}/advance", params={"succeeded": True})

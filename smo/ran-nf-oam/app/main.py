@@ -3661,39 +3661,92 @@ def stop_dme_job(data_job_id: str):
     pass
 
 
-@app.post("/software-management-jobs", status_code=202)
-def software_update(managed_element_ref: str, request: Request, ru_instance_id: str | None = None, db: Session = Depends(get_session)):
-    # 202 with the new job, started at once (IN_PROGRESS, phase DOWNLOAD). With the MSAC switch on a managed caller needs `exec` on the element; 409 O1_SERVICE_NOT_SUPPORTED when the element's services lack SWM. The element's registration is not checked here.
-    # SEC-15.4: 403 `SCOPE_DENIED` when the element is outside the caller's scope claim or not registered (a scoped caller cannot tell the two apart), as for the other routes that name an element; an unscoped caller is not asked.
-    scoping.require_elements(db, scoping.request_scope(request), [managed_element_ref])
-    _require_msac(db, request, "exec", managed_element_ref)                                    # MGT-2.4: a software job runs a procedure on the element
-    require_service(db, managed_element_ref, "SWM")  # Wave 9 (W9-01)
-    job = lifecycle.start_software_job(db, managed_element_ref, ru_instance_id)
-    db.commit()
-    return {"jobId": str(job.job_id), "status": job.status, "phase": job.phase}
+def _software_job_view(j: SoftwareManagementJob) -> dict:
+    """A software job as the routes answer it (call flow 19): what it installs, its phase and status, the phase last sent to the element and why it failed."""
+    return {"jobId": str(j.job_id), "managedElementRef": j.managed_element_ref, "ruInstanceId": j.ru_instance_id, "phase": j.phase, "status": j.status,
+            "softwareVersion": j.software_version, "remoteFilePath": j.remote_file_path, "dispatchedPhase": j.dispatched_phase, "failureReason": j.failure_reason,
+            **({"campaignId": str(j.campaign_id), "campaignWave": j.campaign_wave} if j.campaign_id else {}),
+            **({"rollbackOf": str(j.rollback_of)} if j.rollback_of else {})}
 
 
-@app.post("/software-management-jobs/{job_id}/advance")
-def advance_software_job(job_id: uuid.UUID, succeeded: bool, request: Request, db: Session = Depends(get_session)):
-    # Reports the outcome of the job's current phase: `succeeded=false` fails the job; true completes the phase (DOWNLOAD moves to INSTALL, INSTALL to ACTIVATE, ACTIVATE completes the job). 404 SOFTWARE_JOB_NOT_FOUND; 409 when the job has already ended (a late report after a campaign timed it out). After the commit, a job that belongs to a campaign lets the campaign go on, in its own transaction.
-    # SEC-15.4: a job on an element outside the caller's scope is a 404, as if it did not exist (an item addressed by an id the system made, PR-SEC-10); an unscoped caller is not asked.
+def _software_job_or_404(db: Session, job_id: uuid.UUID, request: Request) -> SoftwareManagementJob:
+    """The job, or 404 SOFTWARE_JOB_NOT_FOUND for an unknown one and one on an element outside the caller's scope (PR-SEC-10: an id the system made)."""
     job = db.get(SoftwareManagementJob, job_id)
     if job is None or not scoping.element_permitted(db, scoping.request_scope(request), job.managed_element_ref):
         raise framework_error(FrameworkError.SOFTWARE_JOB_NOT_FOUND, detail=f"unknown jobId {job_id}")
+    return job
+
+
+@app.post("/software-management-jobs", status_code=202)
+def software_update(managed_element_ref: str, remote_file_path: str, request: Request, software_version: str | None = None, ru_instance_id: str | None = None,
+                    db: Session = Depends(get_session)):
+    # 202 with the new job, started at once (IN_PROGRESS, phase DOWNLOAD), and after the commit its `software-download` RPC is sent to the element's O1 adaptor
+    # (call flow 19b): when the element refuses it or cannot be reached the answer already shows the job FAILED with the reason. `remote_file_path` is the
+    # package the element downloads, `software_version` what it is (recorded on the element when the job completes). With the MSAC switch on a managed caller
+    # needs `exec` on the element; 409 O1_SERVICE_NOT_SUPPORTED when the element's services lack SWM; 404 MANAGED_ENTITY_NOT_FOUND for an element not
+    # registered; 409 SOFTWARE_JOB_IN_PROGRESS while it already has a running job.
+    # SEC-15.4: 403 `SCOPE_DENIED` when the element is outside the caller's scope claim or not registered (a scoped caller cannot tell the two apart), as for the other routes that name an element; an unscoped caller is not asked.
+    scoping.require_elements(db, scoping.request_scope(request), [managed_element_ref])
+    if db.get(ManagedEntity, managed_element_ref) is None:
+        raise framework_error(FrameworkError.MANAGED_ENTITY_NOT_FOUND, detail=f"unknown managed element {managed_element_ref}")
+    if not remote_file_path.strip() or len(remote_file_path) > 1000:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="remote_file_path must be 1 to 1000 characters")
+    _require_msac(db, request, "exec", managed_element_ref)                                    # MGT-2.4: a software job runs a procedure on the element
+    require_service(db, managed_element_ref, "SWM")  # Wave 9 (W9-01)
+    running = db.scalar(select(SoftwareManagementJob.job_id).where(SoftwareManagementJob.managed_element_ref == managed_element_ref,
+                                                                   SoftwareManagementJob.status.in_(("PENDING", "IN_PROGRESS"))).limit(1))
+    if running is not None:
+        raise framework_error(FrameworkError.SOFTWARE_JOB_IN_PROGRESS, detail=f"software job {running} is still running on {managed_element_ref}")
+    job = lifecycle.start_software_job(db, managed_element_ref, ru_instance_id, software_version=software_version, remote_file_path=remote_file_path)
+    db.commit()
+    job_id = job.job_id
+    lifecycle.dispatch_due(db)
+    return _software_job_view(db.get_one(SoftwareManagementJob, job_id))
+
+
+@app.get("/software-management-jobs/{job_id}")
+def get_software_management_job(job_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
+    # Call flow 19c: the job. 404 SOFTWARE_JOB_NOT_FOUND for an unknown one or one outside the caller's scope.
+    return _software_job_view(_software_job_or_404(db, job_id, request))
+
+
+@app.post("/software-management-jobs/{job_id}/advance")
+def advance_software_job(job_id: uuid.UUID, succeeded: bool, request: Request, reason: str | None = None, db: Session = Depends(get_session)):
+    # Reports the outcome of the job's current phase (the element's download-event, install-event or activation-event, through its adaptor): `succeeded=false`
+    # fails the job (`reason` kept); true completes the phase (DOWNLOAD moves to INSTALL, INSTALL to ACTIVATE, ACTIVATE completes the job), and after the
+    # commit the next phase's RPC is sent. 404 SOFTWARE_JOB_NOT_FOUND; 409 when the job has already ended (a late report after a campaign timed it out). With
+    # the MSAC switch on a managed caller needs `exec` on the element, as to start the job (call flow 19c). After the commit, a job that belongs to a campaign
+    # lets the campaign go on, in its own transaction.
+    # SEC-15.4: a job on an element outside the caller's scope is a 404, as if it did not exist (an item addressed by an id the system made, PR-SEC-10); an unscoped caller is not asked.
+    job = _software_job_or_404(db, job_id, request)
+    _require_msac(db, request, "exec", job.managed_element_ref)
     event = {"DOWNLOAD": SwmEvent.DOWNLOAD_OK, "INSTALL": SwmEvent.INSTALL_OK, "ACTIVATE": SwmEvent.ACTIVATE_OK}[job.phase]
     try:
-        if not succeeded:
-            job.status = SOFTWARE_MANAGEMENT_FSM.fire(SwmState(job.status), SwmEvent.PHASE_FAILED)
-        else:
-            job.status = SOFTWARE_MANAGEMENT_FSM.fire(SwmState(job.status), event)
-            if event in PHASE_ORDER:
-                job.phase = PHASE_ORDER[event]
+        lifecycle.job_event(db, job, event if succeeded else SwmEvent.PHASE_FAILED, None if succeeded else (reason or None))
     except IllegalTransition as exc:                    # a report for a job that has ended (a campaign timed it out, MGT-15.7): 409, as for a config job, not a 500
         raise illegal_transition_error(exc, f"software management job {job_id}") from None
     db.commit()
     if job.campaign_id is not None:
         lifecycle.on_job_advanced(db, job.campaign_id)          # MGT-15: the job belongs to a campaign, which decides what comes next (its own transaction)
-    return {"jobId": str(job.job_id), "status": job.status, "phase": job.phase}
+    lifecycle.dispatch_due(db)                                   # call flow 19b: the next phase's RPC (and a next wave's DOWNLOADs)
+    return _software_job_view(db.get_one(SoftwareManagementJob, job_id))
+
+
+@app.post("/software-management-jobs/{job_id}/abort")
+def abort_software_job(job_id: uuid.UUID, request: Request, reason: str | None = None, db: Session = Depends(get_session)):
+    # Call flow 19c: ends a running job FAILED with "aborted" (and `reason`), for an element that will never report. Nothing is sent to the element. 404 as
+    # above, 409 LIFECYCLE_ILLEGAL_TRANSITION for a job that has ended, MSAC `exec` as to start it. A campaign job's campaign decides as for any failed job.
+    job = _software_job_or_404(db, job_id, request)
+    _require_msac(db, request, "exec", job.managed_element_ref)
+    try:
+        lifecycle.job_event(db, job, SwmEvent.PHASE_FAILED, "aborted" + (f": {reason}" if reason else ""))
+    except IllegalTransition as exc:
+        raise illegal_transition_error(exc, f"software management job {job_id}") from None
+    db.commit()
+    if job.campaign_id is not None:
+        lifecycle.on_job_advanced(db, job.campaign_id)
+    lifecycle.dispatch_due(db)
+    return _software_job_view(db.get_one(SoftwareManagementJob, job_id))
 
 
 def _age_endpoint_health(ep: O1AdaptorEndpoint, now: datetime.datetime) -> None:
@@ -4043,10 +4096,7 @@ def list_software_management_jobs(request: Request, managed_element_ref: str | N
     if managed_element_ref:
         stmt = stmt.where(SoftwareManagementJob.managed_element_ref == managed_element_ref)
     page = paginate(db, stmt, limit, offset)
-    return {**page, "items": [{"jobId": str(j.job_id), "managedElementRef": j.managed_element_ref, "ruInstanceId": j.ru_instance_id,
-             "phase": j.phase, "status": j.status,
-             **({"campaignId": str(j.campaign_id), "campaignWave": j.campaign_wave} if j.campaign_id else {}),
-             **({"rollbackOf": str(j.rollback_of)} if j.rollback_of else {})} for j in page["items"]]}
+    return {**page, "items": [_software_job_view(j) for j in page["items"]]}
 
 
 # Wave 9 — multi-vendor capability registry, CM schemas, cell guards (vendors.py)

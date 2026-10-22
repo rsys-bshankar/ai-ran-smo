@@ -590,6 +590,11 @@ class SoftwareManagementJob(Versioned, Base):
     campaign_wave: Mapped[int | None] = mapped_column(Integer)
     rollback_of: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     software_version: Mapped[str | None] = mapped_column(String)
+    # Call flow 19 (revision 0060): the package the element downloads (`software-download`'s remote-file-path), the last phase whose RPC was sent (so a
+    # phase is sent once, whichever process sends it), and why a failed or aborted job ended.
+    remote_file_path: Mapped[str | None] = mapped_column(String)
+    dispatched_phase: Mapped[str | None] = mapped_column(String)
+    failure_reason: Mapped[str | None] = mapped_column(String)
 
 
 class OnboardingTemplate(Base):
@@ -639,6 +644,7 @@ class SoftwareCampaign(Versioned, Base):
     requested_by: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False, default="PENDING")
     software_version: Mapped[str | None] = mapped_column(String)
+    remote_file_path: Mapped[str | None] = mapped_column(String)     # call flow 19: the package every job of the campaign downloads (revision 0060)
     selector: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))
     elements: Mapped[list] = mapped_column(JSON, nullable=False)
     wave_size: Mapped[int | None] = mapped_column(Integer)
