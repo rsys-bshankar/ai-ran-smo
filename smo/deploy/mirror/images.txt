@@ -30,7 +30,7 @@ node:26-alpine | sha256:0b36e8c136b94cd4fcf02188228e76c31ad5872eef3fec8cbd2eee50
 alpine:3.22 | sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8 | alpine |
 golang:1.27.2-alpine | sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d | golang |
 maven:3.9.11-eclipse-temurin-21-noble | sha256:6fdc855a6ed81d288ca7ca37ac6ff5e9308b612485c0801d70b25a858c83d237 | maven |
-eclipse-temurin:25-jre-noble | sha256:d9a39a23634650173f1e2bbc176227af9728587ecf0f4b62d53e9355cd7a19ab | eclipse-temurin |
+eclipse-temurin:25-jre-noble | sha256:3f2223fe04b750aa5a8179e29b5c9a1ddf7665fc9bb08bfe11ad01d143bc13a5 | eclipse-temurin |
 
 grafana/tempo:2.10.8 | sha256:f0561deb1c68ec44d6e6e7e4487f30106c4e5e768642077695b37958b105812a | tempo |
 grafana/loki:3.7.8 | sha256:1107dd5274e0ada47e42472b7a7e71f3b2a2fe878878108f3e2f9e51528f0193 | loki |
