@@ -160,7 +160,7 @@ def test_service_presence_guards(client, dispatched):
         client.post("/alarms/ingest", params={"source_alarm_id": "a", "managed_element_ref": "ME-A", "severity": "major"}),
         client.post("/pm-subscriptions", params={"managed_element_ref": "ME-A", "counter_type": "c", "delivery_method": "pull"}),
         client.post("/fm-subscriptions", params={"managed_element_ref": "ME-A", "delivery_method": "pull"}),
-        client.post("/software-management-jobs", params={"managed_element_ref": "ME-A"}),
+        client.post("/software-management-jobs", params={"managed_element_ref": "ME-A", "remote_file_path": "sftp://repo/sw-2.0.zip"}),
         _write(client, managedFunctionRef="NRCellDU=1", attributeChanges={"administrativeState": "LOCKED"}),
     ]:
         assert resp.status_code == 409 and resp.json()["detail"]["title"] == "O1_SERVICE_NOT_SUPPORTED"

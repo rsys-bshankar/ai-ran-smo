@@ -402,6 +402,17 @@ def send_edit_config(adaptor_uri: str, target_ref: str, attribute_changes: dict,
         return EditResult(False, exc.reason, exc.detail or None)
 
 
+def send_rpc(adaptor_uri: str, rpc: str, credential_ref: str | None = None, host_keys: list[tuple[str, str]] | None = None) -> EditResult:
+    """Sends an operation RPC (a software management phase, call flow 19) over NETCONF (SSH or TLS by the URI): applied when the reply carries `<ok/>`; a
+    refusal or a transport failure is a non-applied EditResult, never raised."""
+    try:
+        with open_session(adaptor_uri, credential_ref, host_keys) as session:
+            return edit_outcome(session.rpc(rpc))
+    except NetconfSshError as exc:
+        log.warning("software RPC on %s failed: %s", adaptor_uri, exc)
+        return EditResult(False, exc.reason, exc.detail or None)
+
+
 def send_edit_configs(adaptor_uri: str, edits: list[dict], message_id: str, credential_ref: str | None = None,
                       host_keys: list[tuple[str, str]] | None = None) -> list[EditResult]:
     """PR-SB-1.10: several edits of one element as one candidate transaction (`?datastore=candidate` only). Each edit is

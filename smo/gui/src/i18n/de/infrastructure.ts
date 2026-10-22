@@ -243,6 +243,10 @@ export const infrastructure: Partial<Record<MessageKey, string>> = {
   "infrastructure.swm.pickElement": "Verwaltetes Element…",
   "infrastructure.swm.start": "Software-Update starten",
   "infrastructure.swm.started": "Software-Job gestartet (DOWNLOAD)",
+  "infrastructure.swm.remotePath": "Paketpfad (sftp://…)",
+  "infrastructure.swm.version": "Version (optional)",
+  "infrastructure.swm.abort": "Abbrechen",
+  "infrastructure.swm.aborted": "Job abgebrochen",
 
   "infrastructure.inventory.group.place": "Wo es ist",
   "infrastructure.inventory.group.work": "Arbeit daran",

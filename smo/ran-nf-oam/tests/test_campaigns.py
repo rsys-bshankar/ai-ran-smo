@@ -98,7 +98,7 @@ def test_a_campaign_without_waves_starts_every_job_and_completes_when_they_all_h
 
 def test_the_software_job_list_shows_the_campaign_of_a_job_and_leaves_other_jobs_as_they_were(client, fleet):
     """The software job list shows the campaign and wave of a campaign's jobs and nothing extra for a job started the old way."""
-    plain = client.post("/software-management-jobs", params={"managed_element_ref": "ME-1"}).json()
+    plain = client.post("/software-management-jobs", params={"managed_element_ref": "ME-1", "remote_file_path": "sftp://repo/sw-2.0.zip"}).json()
     _complete(client, plain["jobId"])                                          # a job started the old way, advanced the old way
     cid = _campaign(client, ["ME-2"])
     items = {j["managedElementRef"]: j for j in client.get("/software-management-jobs").json()["items"]}
@@ -185,7 +185,7 @@ def test_selecting_skips_elements_without_a_software_service_and_an_oversized_se
 
 def test_an_element_that_already_has_a_software_job_running_is_refused(client, fleet):
     """An element that already has a software job in flight, from a manual job or another campaign, is 409 and the campaign is not started."""
-    client.post("/software-management-jobs", params={"managed_element_ref": "ME-3"})
+    client.post("/software-management-jobs", params={"managed_element_ref": "ME-3", "remote_file_path": "sftp://repo/sw-2.0.zip"})
     busy = _create(client)
     assert busy.status_code == 409 and "ME-3" in busy.json()["detail"]["detail"]
     other = _create(client, ["ME-1", "ME-2"])

@@ -377,7 +377,7 @@ ABOUT_ELEMENTS = {
     "/kpis/{name}", "/kpis/{name}/series", "/topology/graph", "/managed-entities", "/managed-entities/{managed_element_ref}", "/managed-entities/{managed_element_ref}/config",
     "/managed-entities/{managed_element_ref}/config-history", "/managed-entities/{managed_element_ref}/config-history/diff", "/managed-objects/{dn}",
     "/managed-objects/{dn}/children", "/managed-objects/{dn}/subtree", "/o1-adaptor-endpoints", "/o1-adaptor-endpoints/{endpoint_id}/host-keys", "/pm-files/{file_id}/file",
-    "/pm-subscriptions", "/software-campaigns", "/software-campaigns/{campaign_id}", "/software-campaigns/{campaign_id}/report", "/software-management-jobs",
+    "/pm-subscriptions", "/software-campaigns", "/software-campaigns/{campaign_id}", "/software-campaigns/{campaign_id}/report", "/software-management-jobs", "/software-management-jobs/{job_id}",
     "/topology", "/topology/links", "/topology/relation", "/kpi-schedules", "/kpi-schedules/{schedule_id}", "/vendor-capabilities", "/vendor-capabilities/{vendor_name}",
     "/capabilities", "/cm-schemas", "/cm-schemas/{schema_name}", "/rapp-approvals/{approval_id}", "/decision-records/{decision_id}",
     # PR-GUI-9.3/9.4/9.8: the console's aggregates count only the caller's elements

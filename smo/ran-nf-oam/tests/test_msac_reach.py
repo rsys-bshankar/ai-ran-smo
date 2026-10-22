@@ -72,7 +72,7 @@ CALLS = [
     ("fm subscription", lambda c, h, w: c.post("/fm-subscriptions", params={"managed_element_ref": ME, "delivery_method": "pull"}, headers=h)),
     ("alarm ack", lambda c, h, w: c.patch(f"/alarms/{w['alarm']}/ack", params={"new_state": "ACKNOWLEDGED"}, headers=h)),
     ("alarm clear", lambda c, h, w: c.patch(f"/alarms/{w['alarm']}/clear", headers=h)),
-    ("software job", lambda c, h, w: c.post("/software-management-jobs", params={"managed_element_ref": ME}, headers=h)),
+    ("software job", lambda c, h, w: c.post("/software-management-jobs", params={"managed_element_ref": ME, "remote_file_path": "sftp://repo/sw-2.0.zip"}, headers=h)),
     ("file download", lambda c, h, w: c.get(f"/pm-files/{w['file']}/file", headers=h)),
 ]
 NEEDS = {"config": "read", "config of a function": "read", "config history": "read", "config diff": "read", "pm subscription": "read", "fm subscription": "read",
@@ -144,7 +144,7 @@ def test_a_refused_alarm_change_leaves_the_alarm_as_it_was(client, db_session_fa
 
 def test_a_refused_software_job_creates_nothing(client, db_session_factory, world, on):
     """A software job refused by the rules creates no job row."""
-    denied(client.post("/software-management-jobs", params={"managed_element_ref": ME}, headers=as_("reader")))
+    denied(client.post("/software-management-jobs", params={"managed_element_ref": ME, "remote_file_path": "sftp://repo/sw-2.0.zip"}, headers=as_("reader")))
     with db_session_factory() as db:
         assert db.query(SoftwareManagementJob).count() == 0
 

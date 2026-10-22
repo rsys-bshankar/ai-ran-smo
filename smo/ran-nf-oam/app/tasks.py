@@ -2,7 +2,8 @@
 process. Each task finds what is due from the database, does it in committed steps, and may run again after a crash.
 
   advance-waves             every 15 s   the next wave of every staged CM job whose pause has elapsed (`POST /config-jobs/advance-due`), and of every software campaign
-                                         (`POST /software-campaigns/advance-due`, which also fails the software jobs of a campaign with a `jobTimeoutSeconds` that have not reported in time, MGT-15.7)
+                                         (`POST /software-campaigns/advance-due`, which also fails the software jobs of a campaign with a `jobTimeoutSeconds` that have not reported in time, MGT-15.7),
+                                         then sends every software phase RPC not yet sent (call flow 19b)
   start-due-windows         every 15 s   the approved (SCHEDULED) config jobs whose change window has opened, started by the worker itself and once however many replicas run (MGT-4.4);
                                          `RAN_NF_OAM_WINDOW_START_SECONDS`
   expire-windows            every 30 s   the config jobs still PENDING_APPROVAL or SCHEDULED when their `window_end` has passed, ended EXPIRED with nothing sent (MGT-4.5);
@@ -47,6 +48,7 @@ def advance_waves() -> None:
     with SessionLocal() as db:
         main.advance_due(db)
         lifecycle.advance_due(db)                  # MGT-15: the software campaigns whose pause has elapsed, and the running ones that have fallen behind
+        lifecycle.dispatch_due(db)                 # call flow 19b: any software phase not yet sent to its element (a wave the sweep started, a send a crash cut short)
 
 
 def start_due_windows() -> None:

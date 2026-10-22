@@ -228,6 +228,7 @@ RULES: list[Rule] = [
     _rule("POST", "/ran-nf-oam/fm-subscriptions", O),
     _rule("DELETE", "/ran-nf-oam/(fm-subscriptions|pm-subscriptions)/{id}", O),
     _rule("POST", "/ran-nf-oam/software-management-jobs/{id}/advance", O),
+    _rule("POST", "/ran-nf-oam/software-management-jobs/{id}/abort", O),   # DOC-CF-1.8 flow 19: ending a job the element will not finish
     _rule("POST", "/ran-nf-oam/o1-adaptor-endpoints/{id}/heartbeat", A),   # what the ME's adaptor sends: simulation
     # GUI-9.7: a pinned SSH host key is the trust anchor of the O1 session, so re-pinning or unpinning one is admin; who pinned it is the
     # signed-in user, never what the browser sent (STD-4.6). DELETE is `/host-keys/{keyType}` in RAN NF OAM; the bare path is matched too.

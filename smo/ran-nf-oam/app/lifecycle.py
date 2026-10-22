@@ -37,10 +37,12 @@ from typing import Any, Literal, cast
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import StaleDataError
 
+from smo_shared import events
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error, illegal_transition_error
 from smo_shared.idempotency import idempotent
@@ -50,7 +52,8 @@ from smo_shared.statemachine import IllegalTransition
 from smo_shared.timeutil import as_utc
 from smo_shared.webhook import is_safe_webhook_destination
 
-from . import scoping
+from . import scoping, swm_rpc
+from .netconf_client import EditResult
 from .ldn import check_ref
 from .models import Alarm, ElementOnboarding, LifecycleSubscription, ManagedEntity, OnboardingTemplate, SoftwareCampaign, SoftwareManagementJob, WriteConfigSubChange
 from .statemachine import (
@@ -88,12 +91,75 @@ def _stamp(moment: datetime.datetime | None) -> str | None:
 
 
 def start_software_job(db: Session, managed_element_ref: str, ru_instance_id: str | None = None, **campaign: Any) -> SoftwareManagementJob:
-    """A software management job, PENDING and started (IN_PROGRESS, phase DOWNLOAD): what `POST /software-management-jobs` does, and what each element of a campaign wave gets."""
+    """A software management job, PENDING and started (IN_PROGRESS, phase DOWNLOAD): what `POST /software-management-jobs` does, and what each element of a campaign wave gets.
+    Nothing is sent here: the DOWNLOAD RPC goes out after the caller commits (`dispatch_due`, call flow 19b)."""
     job = SoftwareManagementJob(managed_element_ref=managed_element_ref, ru_instance_id=ru_instance_id, status="PENDING", phase="DOWNLOAD", **campaign)
     db.add(job)
     db.flush()
-    job.status = SOFTWARE_MANAGEMENT_FSM.fire(SwmState.PENDING, SwmEvent.START)
+    job_event(db, job, SwmEvent.START)
     return job
+
+
+_NEXT_PHASE = {SwmEvent.DOWNLOAD_OK: "INSTALL", SwmEvent.INSTALL_OK: "ACTIVATE"}
+
+
+def job_event(db: Session, job: SoftwareManagementJob, event: SwmEvent, reason: str | None = None) -> None:
+    """Every status change of a software job goes through here (call flow 19): the state machine, the next phase after a phase's OK, the reason a job failed,
+    the element's recorded software version when a job that names one completes, and `software-job.state-changed` on the event feed. Raises IllegalTransition
+    for a job that has ended. The caller commits."""
+    before = job.status
+    job.status = SOFTWARE_MANAGEMENT_FSM.fire(SwmState(before), event)
+    if event in _NEXT_PHASE:
+        job.phase = _NEXT_PHASE[event]
+    if event == SwmEvent.PHASE_FAILED:
+        job.failure_reason = (reason or "the element reported the phase failed")[:300]
+    if job.status == SwmState.COMPLETED.value and job.software_version and job.rollback_of is None:
+        onboarding = db.get(ElementOnboarding, job.managed_element_ref)
+        if onboarding is not None:
+            onboarding.software_version = job.software_version
+    if job.status != before:
+        events.publish(db, "software-job", "state-changed", "/smo/ran-nf-oam", str(job.job_id),
+                       {"managedElementRef": job.managed_element_ref, "from": before, "to": job.status, "phase": job.phase, "reason": job.failure_reason,
+                        "campaignId": str(job.campaign_id) if job.campaign_id else None})
+
+
+def dispatch_due(db: Session, limit: int = 50) -> int:
+    """Sends the RPC of the current phase of every running software job whose phase has not been sent yet (call flow 19b): after the commit that started a
+    job or moved its phase on, and by the worker as a backstop. Each send is claimed first (`dispatched_phase` set in an UPDATE that only one process wins,
+    committed), so a phase is sent once. A send the element refuses, or that cannot reach it, fails the job (`PHASE_FAILED`, the reason kept), and a campaign
+    job's campaign is told. Returns the number of RPCs sent."""
+    due = db.scalars(select(SoftwareManagementJob.job_id).where(
+        SoftwareManagementJob.status == SwmState.IN_PROGRESS.value,
+        or_(SoftwareManagementJob.dispatched_phase.is_(None), SoftwareManagementJob.dispatched_phase != SoftwareManagementJob.phase))
+        .order_by(SoftwareManagementJob.job_id).limit(limit)).all()
+    db.commit()
+    sent = 0
+    for job_id in due:
+        claimed = cast(CursorResult, db.execute(update(SoftwareManagementJob).where(
+            SoftwareManagementJob.job_id == job_id, SoftwareManagementJob.status == SwmState.IN_PROGRESS.value,
+            or_(SoftwareManagementJob.dispatched_phase.is_(None), SoftwareManagementJob.dispatched_phase != SoftwareManagementJob.phase))
+            .values(dispatched_phase=SoftwareManagementJob.phase).execution_options(synchronize_session=False)))
+        db.commit()
+        if claimed.rowcount != 1:
+            continue                                          # another process sent it, or the job moved on meanwhile
+        job = db.get_one(SoftwareManagementJob, job_id)
+        db.refresh(job)
+        try:
+            outcome = swm_rpc.send_phase(db, job, f"{job_id}:{job.phase}")
+        except Exception as exc:                              # noqa: BLE001  the job is claimed and committed: a send that breaks fails the job, never the caller's request
+            log.warning("software job %s: sending %s raised %s", job_id, job.phase, type(exc).__name__)
+            outcome = EditResult(False, "NETCONF_UNREACHABLE", type(exc).__name__)
+        sent += 1
+        if outcome.applied:
+            continue
+        db.refresh(job)
+        if job.status != SwmState.IN_PROGRESS.value:
+            continue
+        job_event(db, job, SwmEvent.PHASE_FAILED, f"{swm_rpc.RPC_OF_PHASE[job.phase]} not accepted: {outcome.reason}" + (f" ({outcome.detail})" if outcome.detail else ""))
+        db.commit()
+        if job.campaign_id is not None:
+            on_job_advanced(db, job.campaign_id)
+    return sent
 
 
 def _raise_alarm(db: Session, ref: str, source_id: str, severity: str, alarm_type: str, cause: str, problem: str) -> None:
@@ -505,6 +571,8 @@ class CampaignRequest(BaseModel):
     requestedBy: str = Field(min_length=1, max_length=200)
     name: str = Field(min_length=1, max_length=200)
     softwareVersion: str | None = Field(default=None, min_length=1, max_length=100)
+    # call flow 19: the package every job of the campaign downloads (`software-download`'s remote-file-path); without it the element is sent no path
+    remoteFilePath: str | None = Field(default=None, min_length=1, max_length=1000)
     managedElementRefs: list[str] | None = Field(default=None, min_length=1, max_length=MAX_CAMPAIGN_ELEMENTS)
     selector: CampaignSelector | None = None
     waveSize: int | None = Field(default=None, ge=1)
@@ -570,7 +638,7 @@ def _start_wave(db: Session, c: SoftwareCampaign, wave: int) -> None:
     """
     c.current_wave, c.wave_started_at, c.next_wave_at = wave, _now(), None
     for ref in _wave_elements(c, wave):
-        start_software_job(db, ref, campaign_id=c.campaign_id, campaign_wave=wave, software_version=c.software_version)
+        start_software_job(db, ref, campaign_id=c.campaign_id, campaign_wave=wave, software_version=c.software_version, remote_file_path=c.remote_file_path)
     _log(c, "WAVE_STARTED", f"{len(_wave_elements(c, wave))} element(s)")
     db.flush()
 
@@ -743,7 +811,7 @@ def expire_jobs(db: Session, c: SoftwareCampaign) -> int:
     jobs = _jobs(db, c, c.current_wave) if c.status == CampaignState.RUNNING.value else _jobs(db, c, reverts=True)
     stuck = [j for j in jobs if j.status == SwmState.IN_PROGRESS.value]
     for job in stuck:
-        job.status = SOFTWARE_MANAGEMENT_FSM.fire(SwmState(job.status), SwmEvent.PHASE_FAILED)
+        job_event(db, job, SwmEvent.PHASE_FAILED, f"no report within {c.job_timeout_seconds} s")
         _log(c, "JOB_TIMED_OUT", f"{job.managed_element_ref} did not report within {c.job_timeout_seconds} s (phase {job.phase})", wave=job.campaign_wave, job=job.job_id)
     return len(stuck)
 
@@ -790,7 +858,7 @@ def _summary(c: SoftwareCampaign) -> dict:
 
 
 def _view(c: SoftwareCampaign) -> dict:
-    return {**_summary(c), "name": c.name, "requestedBy": c.requested_by, "softwareVersion": c.software_version, "selector": c.selector, "elements": c.elements,
+    return {**_summary(c), "name": c.name, "requestedBy": c.requested_by, "softwareVersion": c.software_version, "remoteFilePath": c.remote_file_path, "selector": c.selector, "elements": c.elements,
             "waveSize": c.wave_size, "wavePauseSeconds": c.wave_pause_seconds, "gateMaxNewAlarms": c.gate_max_new_alarms, "onGateFailure": c.on_gate_failure,
             "jobTimeoutSeconds": c.job_timeout_seconds, "rollbackOrder": c.rollback_order, "haltedDetail": c.halted_detail, "nextWaveAt": _stamp(c.next_wave_at), "createdAt": _stamp(c.created_at), "finishedAt": _stamp(c.finished_at),
             "events": c.wave_log}
@@ -833,7 +901,7 @@ def _resolve_elements(db: Session, body: CampaignRequest, request: Request) -> l
     busy = db.scalars(select(SoftwareManagementJob.managed_element_ref).where(
         SoftwareManagementJob.managed_element_ref.in_(elements), SoftwareManagementJob.status.in_((SwmState.PENDING.value, SwmState.IN_PROGRESS.value))).distinct()).all()
     if busy:
-        raise framework_error(FrameworkError.SERVICE_NAME_CONFLICT, detail=f"a software job is already running on: {', '.join(sorted(busy)[:10])}")
+        raise framework_error(FrameworkError.SOFTWARE_JOB_IN_PROGRESS, detail=f"a software job is already running on: {', '.join(sorted(busy)[:10])}")
     return elements
 
 
@@ -850,6 +918,7 @@ def create_software_campaign(body: CampaignRequest, request: Request, db: Sessio
         return JSONResponse(status_code=200, content={"dryRun": True, "status": "VALIDATED", "waveCount": wave_count,
                                                       "waves": [elements[i * size:(i + 1) * size] for i in range(wave_count)]})
     c = SoftwareCampaign(name=body.name, requested_by=body.requestedBy, status=CampaignState.PENDING.value, software_version=body.softwareVersion,
+                         remote_file_path=body.remoteFilePath,
                          selector=body.selector.model_dump(exclude_none=True) if body.selector else None, elements=elements, wave_size=body.waveSize,
                          wave_count=wave_count, wave_pause_seconds=body.wavePauseSeconds, gate_max_new_alarms=body.gateMaxNewAlarms,
                          on_gate_failure=body.onGateFailure, job_timeout_seconds=body.jobTimeoutSeconds, rollback_order=body.rollbackOrder, wave_log=[], created_at=_now())
@@ -859,6 +928,7 @@ def create_software_campaign(body: CampaignRequest, request: Request, db: Sessio
     _log(c, "STARTED", f"{len(elements)} element(s) in {wave_count} wave(s)", wave=0, by=body.requestedBy)
     _start_wave(db, c, 1)
     db.commit()
+    dispatch_due(db)                                                       # call flow 19b: the first wave's DOWNLOAD RPCs
     return _summary(c)
 
 
@@ -914,6 +984,7 @@ def continue_software_campaign(campaign_id: uuid.UUID, body: CampaignAction, req
         raise framework_error(FrameworkError.WAVE_PAUSE_NOT_ELAPSED, detail=f"the pause between waves ends at {as_utc(c.next_wave_at).isoformat()}; send force=true to go on now")
     _resume(db, c, body.requestedBy)
     db.commit()
+    dispatch_due(db)
     return _summary(c)
 
 
@@ -958,6 +1029,7 @@ def rollback_software_campaign(campaign_id: uuid.UUID, body: CampaignAction, req
         raise framework_error(FrameworkError.ROLLBACK_NOT_POSSIBLE, detail=f"software job(s) still running: {', '.join(running[:10])}")
     _start_rollback(db, c, f"requested by {body.requestedBy}", by=body.requestedBy)
     db.commit()
+    dispatch_due(db)
     return _summary(c)
 
 

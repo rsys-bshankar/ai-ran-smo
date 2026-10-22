@@ -205,6 +205,15 @@ def edit_outcome(root) -> EditResult:
     return EditResult(True)
 
 
+def send_rpc(adaptor_uri: str, rpc: str) -> EditResult:
+    """Sends an operation RPC (a software management phase, call flow 19) to the adaptor: applied when the reply carries `<ok/>`, otherwise not applied with
+    the transport reason or the `<rpc-error>` detail, as an edit."""
+    resp, reason = _post(adaptor_uri, rpc)
+    if resp is None:
+        return EditResult(False, reason)
+    return edit_outcome(_reply_root(resp))
+
+
 def send_get_config(adaptor_uri: str, target_ref: str, message_id: str,
                     managed_function_ref: str | None = None) -> dict | None:
     """Wave 10.1 (W10-20): read-after-write — RFC 6241 <get-config> for one

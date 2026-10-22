@@ -47,6 +47,9 @@ export interface CampaignDryRun { dryRun: true; status: "VALIDATED"; waveCount: 
 export interface SwmJob {
   jobId: string; managedElementRef: string; ruInstanceId: string | null; phase: string; status: string;
   campaignId?: string; campaignWave?: number; rollbackOf?: string;
+  /** The package sent in `software-download`, the version recorded on the element when the job completes, the phase whose RPC was last sent, and why
+   * the job failed (the element's rpc-error, an unreachable endpoint, the reported reason, or "aborted: ..."). */
+  softwareVersion?: string | null; remoteFilePath?: string | null; dispatchedPhase?: string | null; failureReason?: string | null;
 }
 
 /** The catalog key of what each halted reason means, in words. */

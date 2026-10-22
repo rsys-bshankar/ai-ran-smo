@@ -1457,6 +1457,30 @@
         "summary": "Restconf Data"
       }
     },
+    "/software-rpcs": {
+      "get": {
+        "description": "The O-RAN software management RPCs this adaptor has acknowledged, oldest first: `{rpc, remote-file-path?, slot-name?, file-names?}` (call flow 19b).",
+        "operationId": "software_rpcs_software_rpcs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Software Rpcs Software Rpcs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Software Rpcs"
+      }
+    },
     "/state": {
       "delete": {
         "description": "Test-only: forget every applied change and pending fault.",

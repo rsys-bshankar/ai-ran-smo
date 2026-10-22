@@ -112,6 +112,8 @@ class FrameworkError:
     # ProblemDetails convention, rather than a bare string only a human
     # ever reads.
     SOFTWARE_JOB_NOT_FOUND = ("SOFTWARE_JOB_NOT_FOUND", 404)
+    # Call flow 19: one software job at a time on an element (a second one would undo the first's download, install or activation)
+    SOFTWARE_JOB_IN_PROGRESS = ("SOFTWARE_JOB_IN_PROGRESS", 409)
     UPSTREAM_FAILED = ("UPSTREAM_FAILED", 502)
     LCM_OPERATION_NOT_FOUND = ("LCM_OPERATION_NOT_FOUND", 404)
     SERVICE_ORDER_NOT_FOUND = ("SERVICE_ORDER_NOT_FOUND", 404)

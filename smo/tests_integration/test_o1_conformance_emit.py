@@ -27,6 +27,18 @@ def stub_targets_oam(monkeypatch):
     monkeypatch.delenv("MOCK_O1_SUPPORTED_SERVICES", raising=False)
 
 
+@pytest.fixture(autouse=True)
+def element_rpcs_reach_the_stub(mesh):
+    """The kit registers its element at the adaptor client's own base URL (`testserver`, or `fake-adaptor` for the broken adaptors below), and RAN NF OAM
+    sends a software job's RPCs there (call flow 19b): the mesh routes both hosts to the stub, as the network does in a real run."""
+    aliases = [host for host in ("testserver", "fake-adaptor") if host not in mesh]
+    for host in aliases:
+        mesh[host] = mesh["mock-o1-adaptor"]
+    yield
+    for host in aliases:
+        mesh.pop(host, None)
+
+
 def ctx_for(adaptor, oam, protocols=()) -> Context:
     return Context(adaptor, set(protocols), oam=oam)
 

@@ -141,6 +141,17 @@ def _take_fault(ref: str, function_ref: str | None) -> str | None:
     return None
 
 
+SWM_NS = "urn:o-ran:software-management:1.0"
+SWM_RPCS = ("software-download", "software-install", "software-activate")
+_software_rpcs: list[dict] = []          # the software RPCs received, oldest first (GET /software-rpcs), for a test or a demo to look at
+
+
+@app.get("/software-rpcs")
+def software_rpcs() -> list[dict]:
+    """The O-RAN software management RPCs this adaptor has acknowledged, oldest first: `{rpc, remote-file-path?, slot-name?, file-names?}` (call flow 19b)."""
+    return list(_software_rpcs)
+
+
 @app.post("/edit-config")
 async def edit_config(request: Request) -> Response:
     """Mirrors netconf_client.py's own build_edit_config_rpc/send_edit_config
@@ -168,6 +179,13 @@ async def edit_config(request: Request) -> Response:
         return _reply(message_id="0", ok=False, error_tag="malformed-message")
 
     message_id = root.attrib.get("message-id", "0")
+    # Call flow 19b: an O-RAN software management RPC (software-download, -install, -activate) is acknowledged and recorded; the phase's completion is
+    # reported separately (`POST /emit/software-phase`), as the element's download-event, install-event and activation-event would be.
+    operation_rpc = next((child for child in root if child.tag in {f"{{{SWM_NS}}}{name}" for name in SWM_RPCS}), None)
+    if operation_rpc is not None:
+        name = operation_rpc.tag.rsplit("}", 1)[-1]
+        _software_rpcs.append({"rpc": name, **{c.tag.rsplit("}", 1)[-1]: c.text for c in operation_rpc}})
+        return _reply(message_id, ok=True)
     managed_object = root.find(f".//{{{NETCONF_BASE_NS}}}managed-object")
     ref = managed_object.attrib.get("ref") if managed_object is not None else None
     function_ref = managed_object.attrib.get("function-ref") if managed_object is not None else None
@@ -447,6 +465,7 @@ def reset_state():
     _applied_changes.clear()
     _object_state.clear()
     _faults.clear()
+    _software_rpcs.clear()
 
 
 @app.get("/objects/{managed_object_ref}")

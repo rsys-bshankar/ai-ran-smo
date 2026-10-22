@@ -311,3 +311,16 @@ def test_restconf_shares_the_injected_faults():
     assert failed.status_code == 500 and _tag(failed) == "operation-failed"
     assert client.patch(CELL, json=_cell(administrativeState="LOCKED"), headers=YANG).status_code == 204
     assert client.get(CELL).json()["managed-function"][0]["administrativeState"] == "UNLOCKED"  # ignored
+
+
+def test_a_software_management_rpc_is_acknowledged_and_recorded():
+    """Call flow 19b: a `software-download` RPC (O-RAN software management namespace) is answered `<ok/>` and listed by `GET /software-rpcs` with its
+    remote path; no managed object is written; `DELETE /state` forgets it."""
+    rpc = (f'<rpc message-id="j:DOWNLOAD" xmlns="{NETCONF_BASE_NS}"><software-download xmlns="urn:o-ran:software-management:1.0">'
+           '<remote-file-path>sftp://repo/du-2.0.zip</remote-file-path></software-download></rpc>')
+    reply = client.post("/edit-config", content=rpc)
+    assert reply.status_code == 200 and "<ok" in reply.text
+    assert client.get("/software-rpcs").json() == [{"rpc": "software-download", "remote-file-path": "sftp://repo/du-2.0.zip"}]
+    assert _applied_changes == {}
+    client.delete("/state")
+    assert client.get("/software-rpcs").json() == []
