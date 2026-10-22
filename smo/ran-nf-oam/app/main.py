@@ -22,6 +22,8 @@ import json
 import os
 import time
 import uuid
+
+import httpx
 import sys
 from typing import Any, Literal, NoReturn, cast
 
@@ -2955,11 +2957,22 @@ def publish_kpi(name: str, from_time: datetime.datetime, to_time: datetime.datet
     return {"kpi": name, "typeName": f"RAN.KPI.{name}", "groups": len(result["items"]), "dataJobs": jobs, "recordsDelivered": delivered}
 
 
+def _register_with_dme(body: dict) -> None:
+    """Registers RAN NF OAM as the producer of a DME type (`POST /dme/production-capabilities`, idempotent); raises 502 `UPSTREAM_FAILED` when DME refuses
+    or does not answer (call flow 11a, DOC-CF-1.8: the answer used to be ignored)."""
+    try:
+        resp = R1Client().post("/dme/production-capabilities", json=body)
+    except httpx.HTTPError as exc:
+        raise framework_error(FrameworkError.UPSTREAM_FAILED, detail=f"DME did not answer the producer registration ({type(exc).__name__})") from exc
+    if resp.status_code >= 300:
+        raise framework_error(FrameworkError.UPSTREAM_FAILED, detail=f"DME refused the producer registration of {body['typeName']} ({resp.status_code})")
+
+
 def _publish_kpi_to_dme(definition: KpiDefinition, result: dict) -> tuple[int, int]:
     """(open data jobs, records delivered) for a computed KPI; registers the DME type first."""
     r1 = R1Client()
     type_name = f"RAN.KPI.{definition.name}"
-    r1.post("/dme/production-capabilities", json={
+    _register_with_dme({
         "namespace": "RAN", "name": f"KPI.{definition.name}", "version": "1.0.0", "typeName": type_name, "producerId": "ran-nf-oam",
         "dataProductionSchema": KPI_RESULT_SCHEMA, "producerHealthCallbackUrl": f"{SELF_URL}/health",
         "jobCallbackUrl": f"{SELF_URL}/dme-jobs"})
@@ -3409,18 +3422,18 @@ def subscribe_pm(managed_element_ref: str, counter_type: str, delivery_method: s
         raise framework_error(FrameworkError.MANAGED_ENTITY_NOT_FOUND, detail=f"no managed element {managed_element_ref!r}")
     require_service(db, managed_element_ref, "PM")  # Wave 9 (W9-01)
     engine = {"pull": "ProvMnS", "push": "PMJobControl", "stream": "StreamingDataReporting"}.get(delivery_method, "FileDataReporting")
-    sub = PMSubscription(managed_element_ref=managed_element_ref, counter_type=counter_type, delivery_method=delivery_method,
-                          southbound_engine=engine, granularity_period=granularity_period)
-    db.add(sub)
-    db.commit()
-
-    r1 = R1Client()
-    r1.post("/dme/production-capabilities", json={
+    # Call flow 11a (DOC-CF-1.8): DME is asked first, and its refusal is this route's 502 with nothing stored (the answer was not read, so a refused
+    # registration left a subscription whose counters no rApp could find).
+    _register_with_dme({
         "namespace": "RAN", "name": f"PMCounters.{counter_type}", "version": "1.0.0",
         "typeName": f"RAN.PMCounters.{counter_type}", "producerId": "ran-nf-oam",
         "dataProductionSchema": {}, "producerHealthCallbackUrl": f"{SELF_URL}/health",
         "jobCallbackUrl": f"{SELF_URL}/dme-jobs",
     })
+    sub = PMSubscription(managed_element_ref=managed_element_ref, counter_type=counter_type, delivery_method=delivery_method,
+                          southbound_engine=engine, granularity_period=granularity_period)
+    db.add(sub)
+    db.commit()
     return {"subscriptionId": str(sub.subscription_id), "southboundEngine": engine, "granularityPeriod": sub.granularity_period}
 
 
@@ -3925,17 +3938,15 @@ def subscribe_fm(managed_element_ref: str, delivery_method: str, request: Reques
         raise framework_error(FrameworkError.MANAGED_ENTITY_NOT_FOUND, detail=f"no managed element {managed_element_ref!r}")
     require_service(db, managed_element_ref, "FM")  # Wave 9 (W9-01)
     engine = {"pull": "FaultMnS", "push": "FaultMnS", "stream": "StreamingDataReporting"}.get(delivery_method, "FaultMnS")
-    sub = FMSubscription(managed_element_ref=managed_element_ref, delivery_method=delivery_method, southbound_engine=engine)
-    db.add(sub)
-    db.commit()
-
-    r1 = R1Client()
-    r1.post("/dme/production-capabilities", json={
+    _register_with_dme({                       # call flow 11a: DME first, as for PM
         "namespace": "RAN", "name": "FaultRecords", "version": "1.0.0",
         "typeName": "RAN.FaultRecords", "producerId": "ran-nf-oam",
         "dataProductionSchema": {}, "producerHealthCallbackUrl": f"{SELF_URL}/health",
         "jobCallbackUrl": f"{SELF_URL}/dme-jobs",
     })
+    sub = FMSubscription(managed_element_ref=managed_element_ref, delivery_method=delivery_method, southbound_engine=engine)
+    db.add(sub)
+    db.commit()
     return {"subscriptionId": str(sub.subscription_id), "southboundEngine": engine}
 
 

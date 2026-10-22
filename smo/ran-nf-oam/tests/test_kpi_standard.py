@@ -85,6 +85,8 @@ def test_a_kpi_cannot_be_named_standard(client):
 # ---- MGT-11.7: delivery to DME
 
 class Resp:
+    status_code = 200            # an accepted call (call flow 11a reads the producer registration's answer)
+
     def __init__(self, body):
         self.body = body
 

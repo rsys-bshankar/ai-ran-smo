@@ -242,6 +242,25 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_dme
 
+  # Call flow 12d: the same image, run as a worker. It purges DME data records older than SMO_RETENTION_DME_RECORDS_DAYS (dme/app/tasks.py).
+  dme-worker:
+    build: { context: ., args: { <<: *build_info, MODULE: dme, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    command: ["python", "-m", "smo_shared.worker"]
+    stop_grace_period: 30s
+    secrets: [db_password_dme, enrollment_secret]
+    <<: *hardening
+    healthcheck: *worker_probe
+    depends_on: *wait_for_schema
+    environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}
+      SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret
+      <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_dme@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_dme
+      SMO_RETENTION_DME_RECORDS_DAYS: ${SMO_RETENTION_DME_RECORDS_DAYS:-0}
+      SMO_RETENTION_WARN_ROWS: ${SMO_RETENTION_WARN_ROWS:-1000000}
+
   onboarding:
     build: { context: ., args: { <<: *build_info, MODULE: onboarding, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
@@ -861,7 +880,7 @@ services:
 
   grafana:
     profiles: ["tracing", "logging"]
-    image: grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
+    image: grafana/grafana:13.2.4@sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f
     restart: unless-stopped
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]

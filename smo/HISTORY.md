@@ -2780,6 +2780,66 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.8 flow 12 — DME data jobs, records and offers rewritten from the code: each is its maker's, only a producer delivers, and records page by a cursor and expire
+
+The thirteenth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken; one refined while building it, below):
+
+- **A. A job is its creator's.** `PUT` and `DELETE /data-jobs/{id}` checked nobody, and R1 lets an rApp make both: any rApp could rewrite another's job (its
+  `targetUri` included, re-sent to the producers) or delete it, and `DELETE /data-jobs?consumer_id=` deleted any consumer's jobs. Now an rApp changes and
+  deletes only a job it created (`created_by`; 403 `DATA_JOB_NOT_OWNER`), and its delete by consumer is refused, with none deleted, when any of the jobs is
+  another's. The console and SMO modules act for others. A bulk delete is one transaction (it committed job by job), and every deleted job is announced
+  (`data-job.state-changed` to `DELETED`; before, only a deleted type's jobs were).
+- **B. Only a producer delivers.** Any rApp could post records into any job, so a consumer could forge its own data and junk records kept a stalled job
+  looking on time. Now an rApp delivers only to a job of a type it produces (403 `DME_NOT_A_PRODUCER`), and a `NO_PRODUCER` job takes no record (409
+  `DATA_JOB_NO_PRODUCER`). Refined: records are **not** validated against the type's `dataProductionSchema`. That schema describes a job's definition (ICS's
+  `infoJobDataSchema`), which DME already checks; using it for records would refuse valid data. No schema for records exists to check against.
+- **C. Reads are scoped.** An rApp sees the jobs it created, the jobs that name it as consumer, and the jobs of the types it produces (a producer must see the
+  jobs it delivers to, as the sample rApps' Digital Twins do); any other job, its status and its records are a 404, so a job's existence is not told.
+- **D. An offer is its maker's.** `data_offer.created_by` (revision 0058); an rApp ends only its own offer (403 `DATA_OFFER_NOT_OWNER`). A notify of an
+  unknown offer is 404 `DATA_OFFER_NOT_FOUND` (it was 409 `DME_TYPE_VERSION_CONFLICT`).
+- **E. Records page by a cursor.** Newest first by offset, so a record arriving between two pages repeated one, and the SDK's `get_dataset` paged that way.
+  Now `before=<recordId>` and `after=<recordId>` page by `(produced_at, record_id)`, and `get_dataset` uses `before`. The default order is unchanged.
+- **F. Records expire.** A new worker, `dme-worker` (compose and the chart; its database role gains `periodic_run`), purges records older than
+  `SMO_RETENTION_DME_RECORDS_DAYS` hourly; 0, the default, keeps them, and the production sample proposes 30 (`docs/RETENTION.md`).
+- **G. No Digital Twin under INFERENCE jobs.** A type could be redefined as `DIGITAL_TWIN` while INFERENCE jobs fed on it; now that is 409
+  `DME_TYPE_HAS_INFERENCE_JOBS`.
+- **I. The dead routes.** R1 Termination routed `/dme-push` and `/dme-pull` to DME, which had no route under them (every call a 404), and the role policy let
+  an rApp make any change there; both aliases are removed.
+- **J. The document** (`docs/call-flows/12-dme-data-record-lifecycle-eligibility.md`) is four diagrams, 12a–12d, with PNGs.
+- **Not taken:** acting on an offer's availability notice and keeping its dropped fields (`OPEN_ITEMS.md` DME-OFFER-AVAIL).
+
+Tests: `dme/tests/test_data_ownership.py` (9), `dme/tests/test_tasks.py` (4), `sdk/tests/test_wave10_wrappers.py`, `tests_integration/test_dme_data_ownership.py`.
+
+### DOC-CF-1.8 flow 11 — DME producers and types rewritten from the code: a job is never left with a producer that is gone, and an rApp does not delete a shared type
+
+The twelfth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken):
+
+- **A. Who deletes a type.** `DELETE /dme-types/{id}` checked nobody and R1 let an rApp call it; a type with no producer left could be deleted by any rApp,
+  taking every other consumer's jobs and offers with it, silently. Now an rApp is refused (403 `ROLE_NOT_PERMITTED`, and the R1 role policy no longer lists the
+  route for rApps); the console (a new GUI BFF rule, admin: the Data page's Delete button was refused before) and SMO modules may. Each deleted job is announced
+  (`org.oran.smo.data-job.state-changed`, to `DELETED`) and each offer's termination URI is told, as `DELETE /offers/{id}` does. The Python SDK's `delete_type`
+  is removed: no rApp can call it any more.
+- **B. A job is never left with a producer that is gone.** Deregistering a producer removed its links only: it was never told to stop, and a job whose type
+  lost its last producer stayed ACTIVE. Now the leaving producer is sent a stop per ACTIVE job of its types, a job whose type has no producer left becomes
+  `NO_PRODUCER` (also at creation, when nobody serves the type yet), and a producer that joins a type is sent its open jobs (ICS's `startInfoJobs` on
+  registration), which become ACTIVE again. Each change is an event, the only way a job's owner can hear of it (a job has no callback).
+- **C. Joining a type stays open.** Restricting it to the type's first registrant would stop two vendors serving the same data; who serves a type is its
+  `producerIds`.
+- **D. A moved job callback is sent the jobs again.** Re-registering with a new `jobCallbackUrl` overwrote it and nothing more; now the jobs of every type the
+  producer serves are queued to the new address.
+- **E. Health is remembered.** `typeStatus` asked every producer of every type at every read, one at a time with a 2 s timeout, and RAN NF OAM lists the types
+  at every PM fan-out. Now each producer's answer is remembered per process for `DME_PRODUCER_HEALTH_CACHE_SECONDS` (30; 0 asks every time) and forgotten when
+  it re-registers or deregisters.
+- **F. Two first registrations at once.** They collided on the producer or type key and the second answered 500; it is now retried once.
+- **G. RAN NF OAM checks DME's answer.** PM and FM subscriptions committed first and then registered the producer without reading the answer; a refusal left a
+  subscription whose data no rApp could find. Now the registration comes first and a refusal or no answer is 502 `UPSTREAM_FAILED` with nothing stored; the KPI
+  publication checks it too.
+- **H. The document** (`docs/call-flows/11-dme-producer-type-lifecycle.md`) is four diagrams, 11a–11d, with PNGs; the GUI BFF's description no longer says DME
+  producer registration is absent from the console.
+
+No schema change. Tests: `dme/tests/test_producer_lifecycle.py` (11), `ran-nf-oam/tests/test_dme_registration.py` (4),
+`tests_integration/test_dme_producer_lifecycle.py`.
+
 ### DOC-CF-1.8 flow 09 — intents rewritten from the code: an rApp manages only its own, handlers and reports are the SMO's, and re-registering a handler keeps its intents
 
 The eleventh flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken; for C, refuse rather than fall back to a

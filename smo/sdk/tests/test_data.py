@@ -75,13 +75,6 @@ def test_deregister_producer(client, r1):
     assert r1.calls[0] == {"verb": "delete", "path": "/dme/production-capabilities", "params": {"producer_id": "rapp-1"}}
 
 
-def test_delete_type(client, r1):
-    """`delete_type` deletes the type by id."""
-    dme_type_id = uuid.uuid4()
-    client.delete_type(dme_type_id)
-    assert r1.calls[0] == {"verb": "delete", "path": f"/dme/dme-types/{dme_type_id}", "params": None}
-
-
 def test_query_producer_status(client, r1):
     """`query_producer_status` reads the producer's status sub-resource."""
     client.query_producer_status("rapp-1")

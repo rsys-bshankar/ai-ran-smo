@@ -186,6 +186,13 @@ class FrameworkError:
     INTENT_ACCESS_DENIED = ("INTENT_ACCESS_DENIED", 403)
     INSTANCE_IDENTITY_MISMATCH = ("INSTANCE_IDENTITY_MISMATCH", 403)
     INTENT_HANDLING_FUNCTION_IN_USE = ("INTENT_HANDLING_FUNCTION_IN_USE", 409)
+    # DOC-CF-1.8 flow 12: a data job, its records and an offer are their owners'; only a producer of the type delivers; a Digital Twin may not take INFERENCE jobs
+    DATA_JOB_NOT_OWNER = ("DATA_JOB_NOT_OWNER", 403)
+    DATA_RECORD_NOT_FOUND = ("DATA_RECORD_NOT_FOUND", 404)
+    DATA_OFFER_NOT_OWNER = ("DATA_OFFER_NOT_OWNER", 403)
+    DME_NOT_A_PRODUCER = ("DME_NOT_A_PRODUCER", 403)
+    DATA_JOB_NO_PRODUCER = ("DATA_JOB_NO_PRODUCER", 409)
+    DME_TYPE_HAS_INFERENCE_JOBS = ("DME_TYPE_HAS_INFERENCE_JOBS", 409)
     # HISTORY.md OI-6.1 — an explicit operator-approval gate on
     # Training->Validation->Emulation, mirroring the existing
     # CERTIFY/PROMOTE governance shape.

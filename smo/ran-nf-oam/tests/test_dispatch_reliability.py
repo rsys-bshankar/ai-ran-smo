@@ -138,6 +138,8 @@ def test_pm_reports_are_delivered_to_every_data_job_of_the_counter_type(client, 
     posted = []
 
     class Resp:
+        status_code = 200            # an accepted call (call flow 11a reads the producer registration's answer)
+
         def __init__(self, body):
             self.body = body
 
@@ -169,6 +171,8 @@ def test_pm_reports_carry_multi_counter_per_relation_measurements(client, db_ses
     posted = []
 
     class Resp:
+        status_code = 200            # an accepted call (call flow 11a reads the producer registration's answer)
+
         def __init__(self, body):
             self.body = body
 

@@ -129,9 +129,7 @@ install_health(app)
 # path prefix -> backend service, per Foundational Platform LLD section 4.2
 ROUTES = {
     "/sme": os.environ.get("SME_URL", "http://sme:8000"),
-    "/dme": os.environ.get("DME_URL", "http://dme:8000"),
-    "/dme-push": os.environ.get("DME_URL", "http://dme:8000"),
-    "/dme-pull": os.environ.get("DME_URL", "http://dme:8000"),
+    "/dme": os.environ.get("DME_URL", "http://dme:8000"),       # call flow 12: no /dme-push and /dme-pull aliases (DME had no routes under them, every call was a 404)
     "/onboarding": os.environ.get("ONBOARDING_URL", "http://onboarding:8000"),
     "/rapp-mgmt": os.environ.get("RAPP_MGMT_URL", "http://rapp-mgmt:8000"),
     "/ran-nf-oam": os.environ.get("RAN_NF_OAM_URL", "http://ran-nf-oam:8000"),

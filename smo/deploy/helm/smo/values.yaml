@@ -251,7 +251,7 @@ observability:
       limits: { memory: 128Mi }
   grafana:
     enabled: false
-    image: grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
+    image: grafana/grafana:13.2.4@sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f
     resources:
       requests: { cpu: 50m, memory: 128Mi }
       limits: { memory: 384Mi }
@@ -308,6 +308,9 @@ modules:
   r1-termination: { image: r1-termination, databaseRole: r1-termination, enrollment: false, scratch: /srv/scratch, env: { R1_KILL_SWITCH_SCHEMA: ran_nf_oam, R1_RATE_STORE: memory, R1_INTROSPECTION_CACHE_SECONDS: "30", R1_INTROSPECTION_CACHE_MAX_ENTRIES: "10000" }, resources: { requests: { cpu: 50m, memory: 192Mi }, limits: { memory: 512Mi } } }   # CPU-bound at about one core per 39 requests/s: values-sized.yaml asks for 500m, scale by replicas (docs/SIZING.md)
   sme: { image: sme, databaseRole: sme, resources: { requests: { cpu: 50m, memory: 480Mi }, limits: { memory: 768Mi } } }   # the largest module: 361 MiB at its peak (docs/SIZING.md); values-sized.yaml asks for 250m
   dme: { image: dme, databaseRole: dme }
+  # the same image as a worker: purges DME data records older than SMO_RETENTION_DME_RECORDS_DAYS (call flow 12d)
+  # it sleeps between hourly purges, so it asks for 10m of CPU, as the rApps' workers do, and the defaults still fit a two-core lab node (test_helm_sizing)
+  dme-worker: { image: dme, databaseRole: dme, kind: worker, env: { SMO_RETENTION_DME_RECORDS_DAYS: "0" }, resources: { requests: { cpu: 10m, memory: 128Mi }, limits: { memory: 512Mi } } }
   onboarding: { image: onboarding, databaseRole: onboarding, persistence: { mountPath: /srv/packages, size: 5Gi } }
   rapp-mgmt: { image: rapp-mgmt, databaseRole: rapp-mgmt, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
   # the same image as a worker: rotates the secret of running rApp instances older than RAPP_MGMT_SECRET_ROTATION_DAYS (SEC-15.19; 0 = never, the default: the worker then does nothing)

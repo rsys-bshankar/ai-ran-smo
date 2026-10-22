@@ -5,6 +5,7 @@ routes are checked against the caller's access rules, when the switch is on and 
 import uuid
 
 import pytest
+from types import SimpleNamespace
 
 from test_main import _make_me, client, db_session_factory  # noqa: F401  (pytest fixtures)
 
@@ -13,6 +14,10 @@ from app.models import Alarm, PMFile, SoftwareManagementJob
 ME = "ME-1"
 CELL = "NRCellDU=101"
 
+
+
+# An R1 answer DME accepted (call flow 11a: the producer registration's answer is read now).
+ACCEPTED = SimpleNamespace(status_code=201, json=lambda: {})
 
 def rule(client, selector, operations, action="ALLOW"):
     return client.post("/msac/access-rules", json={"ruleName": f"r-{uuid.uuid4().hex[:6]}", "dataNodeSelector": selector, "operations": operations, "actions": action}).json()["id"]
@@ -78,7 +83,7 @@ NEEDS = {"config": "read", "config of a function": "read", "config history": "re
 def test_a_managed_caller_without_a_rule_is_refused_and_one_with_the_rule_is_not(client, world, on, monkeypatch, name, call):
     """For each guarded route (the CALLS table), a managed caller with no rule is refused, a DENY rule beats an ALLOW, a caller with the right rule gets through, and a rule for a different operation is not enough.
     """
-    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: None)
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: ACCEPTED)
     assert denied(call(client, as_("nobody"), world)).startswith("nobody is not permitted: ")
     assert f"{NEEDS[name]} /ManagedElement=ME-1" in denied(call(client, as_("denied"), world))                    # DENY beats ALLOW
     allowed = "reader" if NEEDS[name] == "read" else "updater"
@@ -92,14 +97,14 @@ def test_a_managed_caller_without_a_rule_is_refused_and_one_with_the_rule_is_not
 def test_nothing_changes_until_the_switch_is_on(client, world, monkeypatch, name, call):
     """With `RAN_NF_OAM_MSAC_REACH` unset no guarded route asks the access rules, so an upgrade changes nothing by itself."""
     monkeypatch.delenv("RAN_NF_OAM_MSAC_REACH", raising=False)
-    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: None)
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: ACCEPTED)
     assert call(client, as_("nobody"), world).status_code != 403
 
 
 @pytest.mark.parametrize("name,call", CALLS, ids=[c[0] for c in CALLS])
 def test_a_caller_that_is_not_a_registered_identity_is_not_asked(client, world, on, monkeypatch, name, call):
     """A caller with no registered Identity (an unknown rApp, or a call that did not come through the gateway) is not asked, as for writes."""
-    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: None)
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: ACCEPTED)
     assert call(client, as_("stranger"), world).status_code != 403            # an rApp or tool with no Identity: as for writes, no rule applies
     assert call(client, {}, world).status_code != 403                          # a call that did not come through the gateway
 

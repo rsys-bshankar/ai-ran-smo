@@ -676,6 +676,12 @@
     "queryMatch": {}
   },
   {
+    "method": "DELETE",
+    "pattern": "^/dme/dme-types/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
     "method": "POST",
     "pattern": "^/dme/offers$",
     "role": "admin",

@@ -90,12 +90,9 @@ class DataClient(BaseClient):
         return ensure_ok(self._r1.get(f"/dme/production-capabilities/{producer_id}"))
 
     def deregister_producer(self, producer_id: str) -> None:
-        """Remove this producer and its type links only; the types it supported stay registered if another producer still supports them (see `delete_type`), and go DISABLED if not."""
+        """Remove this producer and its type links only; DME tells it to stop each job of those types, and a type left with no producer keeps its jobs, NO_PRODUCER
+        until a producer joins (call flow 11d). Deleting a type is the operator's (the console) or an SMO module's, not an rApp's."""
         ensure_ok(self._r1.delete("/dme/production-capabilities", params={"producer_id": producer_id}))
-
-    def delete_type(self, dme_type_id: uuid.UUID | str) -> None:
-        """The ICS `DELETE /data-producer/v1/info-types/{id}`; DME answers 409 (raised as `SdkError`) while any producer still supports the type."""
-        ensure_ok(self._r1.delete(f"/dme/dme-types/{dme_type_id}"))
 
     def query_producer_status(self, producer_id: str) -> dict:
         return ensure_ok(self._r1.get(f"/dme/production-capabilities/{producer_id}/status"))
@@ -262,7 +259,7 @@ class DataClient(BaseClient):
 
         A dataset is a DME type found by its name, its type name or its leaf name (RAN NF OAM's PM counter types are `PMCounters.<counter>`, so "PRB_UTILIZATION" finds
         `PMCounters.PRB_UTILIZATION`), searched within `namespace` when given. The consumer's data job for the same `lifecycle_stage` is reused if it exists, else created (CONTINUOUS, PULL_HTTP);
-        so a call can create a job as a side effect. Records are read 500 at a time up to `max_records`. Raises `SdkError(404)` when no type matches. Design record: `HISTORY.md` W10-03 (D-4).
+        so a call can create a job as a side effect. Records are read newest first, 500 at a time up to `max_records`, each page before the oldest one read so far. Raises `SdkError(404)` when no type matches. Design record: `HISTORY.md` W10-03 (D-4).
         """
         dme_type = next((t for t in self.discover_types(namespace)
                          if name in (t["dmeTypeIdStruct"]["name"], t["typeName"])
@@ -275,13 +272,14 @@ class DataClient(BaseClient):
         job_id = job["dataJobId"] if job else self.create_data_job(
             type_id, "CONTINUOUS", "PULL_HTTP", consumer_id, lifecycle_stage=lifecycle_stage)["dataJobId"]
         records: list[dict] = []
-        offset = 0
+        params: dict = {"limit": 500}
         while len(records) < max_records:
-            page = ensure_ok(self._r1.get(f"/dme/data-jobs/{job_id}/records", params={"limit": 500, "offset": offset}))
+            # call flow 12b: page with `before` (the oldest record read so far), so records that arrive while reading do not shift the pages (an offset did)
+            page = ensure_ok(self._r1.get(f"/dme/data-jobs/{job_id}/records", params=params))
             records.extend(page)
-            offset += len(page)
             if len(page) < 500:
                 break
+            params = {"limit": 500, "before": page[-1]["recordId"]}
         return {"dmeTypeId": type_id, "dataJobId": job_id, "sourceDomain": dme_type.get("sourceDomain"),
                 "records": list(reversed(records[:max_records]))}
 

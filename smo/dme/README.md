@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | Standards basis | O-RAN R1 DME (O-RAN-SC ICS-derived data plane) + internal O1 action mediation |
-| R1 route / port | `/dme` via R1 Termination (container `:8000`); `/dme-push` and `/dme-pull` are routed to the same backend and are the same as `/dme` after prefix stripping |
+| R1 route / port | `/dme` via R1 Termination (container `:8000`) |
 | Depends on (over R1) | RAN NF OAM (`POST /ran-nf-oam/config-jobs`, action path only); caller-registered callback URLs (producers, type subscribers, offer termination) |
 | Called by | rApps and the SDK `data` namespace; MDAF (checks `input_sources` against `GET /dme/data-jobs/{id}`); RAN NF OAM (registers PM types, ingests records into jobs); SA SMOS O1-CM handler (`POST /dme/actions`); rApp Management (producer deregistration); GUI BFF |
 | Database tables | `dme_producer`, `dme_type`, `dme_producer_type`, `dme_type_subscription`, `dme_delivery_schema`, `data_job`, `data_offer`, `data_record`, `dme_action_record` |
@@ -33,7 +33,7 @@ The data plane follows the O-RAN-SC Information Coordination Service (ICS) as R1
 | Information Type (`info-types`), many-to-many with producers | `DMEType` keyed on `(namespace, name, version)`, link table `DMEProducerType`; `DELETE /dme-types/{id}` |
 | Information Job (`info-jobs`, `PUT`, `deleteJobsForOwner`) | `DataJob`; `POST/PUT/DELETE /data-jobs`, `DELETE /data-jobs?consumer_id=` (or `?created_by=`) |
 | `ProducerCallbacks.startInfoJob` / `stopInfoJob` | Job push to every producer's `jobCallbackUrl` on create and update; `DELETE {jobCallbackUrl}/{jobId}` on terminate |
-| Type status (ENABLED if any supporting producer is available) | `typeStatus` computed at read time from each producer's health callback |
+| Type status (ENABLED if any supporting producer is available) | `typeStatus` computed from each producer's health callback, each answer remembered for `DME_PRODUCER_HEALTH_CACHE_SECONDS` (30 s; call flow 11c) |
 | `InfoTypeSubscriptions` / `ConsumerCallbacks` | `DMETypeSubscription`; notified on type registered / removed, unfiltered |
 | `validateJsonObjectAgainstSchema` on job definition | `productionJobDefinition` validated against the type's `dataProductionSchema` (`jsonschema`) |
 | R1AP data offers (reverse-direction availability notification) | `DataOffer`, `POST /offers/{id}/notify` |
@@ -76,7 +76,7 @@ Inference runs inside the rApp. O-RAN WG4 (O-RU M-plane YANG) is out of scope ap
 
 **Multi-vendor principle.** Every dataset, record and control operation DME brokers carries enough source identity that a multi-vendor, multi-Digital-Twin deployment never mixes data across producers. Data-model conformance is chosen per vendor (own model, the O-RAN WG5 / 3GPP model, or combined), never hard-coded; the registry that realises this is in RAN NF OAM (see its README and [call flow 21](../docs/call-flows/21-o1-vendor-onboarding.md)). DME's part is to keep the source identity attached (`sourceDomain`, `sourceContext` on types; `sourceContext` and `requestedBy` on actions) and to pass a refused write back to the caller.
 
-**Producers and types are separate, many-to-many.** The earlier single-table shape made a second producer for a type impossible. Now a second producer registering a known type, and a producer re-registering after a restart, both succeed. Deregistering a producer removes only the producer and its links: types and their jobs and offers survive, and a type left with no producer reads `DISABLED`. Only `DELETE /dme-types/{id}` removes a type, and only when no producer still supports it (`DME_TYPE_HAS_ACTIVE_PRODUCERS`, 409); that also deletes its jobs and offers. Registration notifies type subscribers only when the type is new, not when a producer joins it. **Who may change a type (`SEC-15.10`).** Registering the definition a type already has (a second producer joining, the first one again) is open to every caller, as before. Registering a *different* definition (`typeName`, `dataProductionSchema`, `collectionSpec`, `sourceDomain` or `sourceContext`) of an existing type is 403 `DME_TYPE_NOT_OWNER` unless the caller is the one that registered it first (`registered_by`, compared with the invoker id the gateway vouches for), an `internal` caller (an SMO module or the operator's console; the GUI backend lets only an admin register a type) or a call that did not come through the gateway (no role). For a type from before revision `0036` the producers linked to it stand in for the first one. The check comes before the producer row is touched. Not covered: `producerId` is still the caller's own word, so a rApp can name another producer's id and replace that producer's callback URLs (the same finding class, not in this change).
+**Producers and types are separate, many-to-many.** The earlier single-table shape made a second producer for a type impossible. Now a second producer registering a known type, and a producer re-registering after a restart, both succeed. Deregistering a producer removes only the producer and its links: the producer is sent a stop (`DELETE jobCallbackUrl/{jobId}`) for each ACTIVE job of the types it served, types and their jobs and offers survive, a type left with no producer reads `DISABLED`, and its jobs become `NO_PRODUCER` until a producer joins (call flow 11d). A producer that joins a type, or registers a new job callback, is sent the type's open jobs (all its types' for a new callback), and `NO_PRODUCER` jobs become `ACTIVE` again (call flow 11a, ICS's `startInfoJobs`). Each of these status changes is published as `org.oran.smo.data-job.state-changed` (`docs/EVENTS.md`). Only `DELETE /dme-types/{id}` removes a type, never by an rApp (403 `ROLE_NOT_PERMITTED`; the console's admin or a module), and only when no producer still supports it (`DME_TYPE_HAS_ACTIVE_PRODUCERS`, 409); that also deletes its jobs (each announced, to `DELETED`) and offers (each termination URI told). Two first registrations of the same producer or type at once collide on a key; the second is retried once (it was a 500). Registration notifies type subscribers only when the type is new, not when a producer joins it. **Who may change a type (`SEC-15.10`).** Registering the definition a type already has (a second producer joining, the first one again) is open to every caller, as before. Registering a *different* definition (`typeName`, `dataProductionSchema`, `collectionSpec`, `sourceDomain` or `sourceContext`) of an existing type is 403 `DME_TYPE_NOT_OWNER` unless the caller is the one that registered it first (`registered_by`, compared with the invoker id the gateway vouches for), an `internal` caller (an SMO module or the operator's console; the GUI backend lets only an admin register a type) or a call that did not come through the gateway (no role). For a type from before revision `0036` the producers linked to it stand in for the first one. The check comes before the producer row is touched. Not covered: `producerId` is still the caller's own word, so a rApp can name another producer's id and replace that producer's callback URLs (the same finding class, not in this change).
 
 **A producer id is the caller's own (SEC-15.10b).** `producerId` is a name the caller types, and the producer row it names holds the `producerHealthCallbackUrl` and `jobCallbackUrl` that DME calls for every job of the types it supports, so naming another producer's id would replace where that producer's jobs go. A caller with the rApp role (`X-R1-Role: rapp`) may therefore register, re-register or deregister a producer only when `producerId` (the body of `POST /production-capabilities`, the `producer_id` query of `DELETE /production-capabilities`) equals the invoker id the gateway vouched for (`X-R1-Invoker-Id`); anything else is 403 `DME_PRODUCER_NOT_OWNER` before anything is read or written, and an rApp call with no invoker id is refused too. An SMO module (role `internal`: RAN NF OAM registers as `ran-nf-oam`, the console's admin registers a type, rApp Management deregisters an instance's `oauth_client_id`) and a call with no role (a test, an in-process call) name any producer id, as the rest of the module trusts them. What the gateway already did: let an rApp make these two calls at all (the role policy) and stamp the invoker id; it never compared the body's `producerId` with it. Not covered: the `owner` of `POST /type-subscriptions` (a label to filter the list by, not an identity), and the type definition, which `DME_TYPE_NOT_OWNER` (SEC-15.10) guards. An rApp registers under `sdk.data.own_invoker_id()`; the four sample rApps do.
 
@@ -88,7 +88,7 @@ Inference runs inside the rApp. O-RAN WG4 (O-RU M-plane YANG) is out of scope ap
 
 **Correlation.** The inbound `X-Correlation-ID` is stored on the action record, so an action joins the audit trail of the decision that caused it.
 
-**Security.** DME authenticates nothing itself: every call arrives through R1 Termination with a valid token. It has no per-caller authorization; `consumerId`, `producerId` and `requestedBy` are caller-asserted strings. The GUI BFF restricts which of these routes a GUI role may reach (producer registration, offers and records are admin; creating jobs is operator).
+**Security.** DME authenticates nothing itself: every call arrives through R1 Termination with a valid token. A caller with the rApp role is held to what is its own, by the invoker id the gateway vouches for: it registers producers only under that id (SEC-15.10b), changes and deletes only the data jobs it created, sees only the jobs it created, consumes or produces for, delivers records only to jobs of the types it produces, ends only the offers it made, and may not delete a type (call flows 11 and 12). The console and SMO modules act for others; `consumerId` and `requestedBy` stay caller-asserted. The GUI BFF restricts which of these routes a GUI role may reach (producer registration, offers and records are admin; creating jobs is operator).
 
 ## 2. Low-level design (LLD)
 
@@ -98,6 +98,7 @@ Inference runs inside the rApp. O-RAN WG4 (O-RU M-plane YANG) is out of scope ap
 |---|---|
 | `app/main.py` | All routes, request models, the validation helpers (`_validate_delivery_method`, `_validate_job_definition_schema`, `_validate_lifecycle_eligibility`), the producer fan-out (`_push_job_to_producers`, `_stop_job_at_producers`), type-status computation, action mediation. |
 | `app/models.py` | The SQLAlchemy tables and the value sets `DELIVERY_METHODS`, `SOURCE_DOMAINS`, `LIFECYCLE_STAGES`. |
+| `app/tasks.py` | The worker's task (`python -m smo_shared.worker`, compose and chart service `dme-worker`): `purge-records`, hourly, deletes records older than `SMO_RETENTION_DME_RECORDS_DAYS` (call flow 12d). |
 | `../shared/smo_shared/` | `outbox` (notifications), `webhook` (job stop, health probes), `r1_client` (to RAN NF OAM), `errors`, `pagination`, `correlation`, `openapi_security`. |
 
 ### 2.2 Data model
@@ -142,7 +143,7 @@ Cross-module references are bare UUIDs or strings; there are none to other modul
 | `delivery_details` (JSON) | `targetUri` is forwarded to producers |
 | `consumer_id` | rAppId, or `DME_FRAMEWORK` for a job the framework itself created against a producer |
 | `created_by` | The invoker id the gateway vouched for when the job was created (revision 0045; for an rApp acting as an instance, the instance's own). Null for a job created before, or not through the gateway. Returned as `createdBy`; what rApp Management closes an instance's jobs by (OI-7-rapp-data-jobs-teardown) |
-| `status` | set to `ACTIVE` on create; never changed afterwards |
+| `status` | `ACTIVE` on create, `NO_PRODUCER` when the type has no producer then or later; back to `ACTIVE` when one joins (call flow 11) |
 | `lifecycle_stage` (null) | one of `LIFECYCLE_STAGES` |
 | `expected_interval_seconds` (null) | how often the consumer expects a delivery (`expectedIntervalSeconds`, > 0, optional; `GUI-9.8`, revision `0037`) |
 | `last_delivery_at` (null) | when a producer last delivered a record for the job (`POST /data-jobs/{id}/records`); revision `0037` filled it from the newest `data_record` |
@@ -172,9 +173,9 @@ No formal state machine; the status fields only move forward:
 
 | Field | Values and transitions |
 |---|---|
-| `DataJob.status` | `ACTIVE` at creation; the row is deleted on terminate. No other value is written. |
+| `DataJob.status` | `ACTIVE` or `NO_PRODUCER` (the type has no producer); the row is deleted on terminate and with its type. Each change DME makes on its own is an `org.oran.smo.data-job.state-changed` event. |
 | `DmeActionRecord.status` | `FORWARDED` (inserted) → RAN NF OAM's job status (success), `REJECTED` (RAN NF OAM answered 4xx, or the call could not be made), or `UNCONFIRMED` (the outcome is unknown) → the answer a replay by the same caller gets. Nothing stays `FORWARDED` that was not forwarded. A replay of any other known `actionId` leaves the record untouched. |
-| `typeStatus` / producer `operationalState` | Not stored. `ENABLED` if a producer's health callback answers < 300 within 2 s (for a type: if any supporting producer does), else `DISABLED`. |
+| `typeStatus` / producer `operationalState` | Not stored. `ENABLED` if a producer's health callback answers < 300 within 2 s (for a type: if any supporting producer does), else `DISABLED`. Each producer's answer is remembered per process for `DME_PRODUCER_HEALTH_CACHE_SECONDS` (30; 0 asks every time), and forgotten when it re-registers or deregisters. |
 
 ### 2.4 API
 
@@ -184,14 +185,14 @@ All routes sit under `/dme`. Lists marked "paged" return `{items, total, limit, 
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
-| POST | `/production-capabilities` (201) | Register or re-register a producer and a type, and link them; body: `namespace, name, version, typeName, producerId, dataProductionSchema, collectionSpec?, producerHealthCallbackUrl, jobCallbackUrl, sourceDomain?, sourceContext?`. Returns `{registrationId}` (the type id). Notifies type subscribers if the type is new. | 422 `SCHEMA_VALIDATION_FAILED` (unknown `sourceDomain`); 403 `DME_PRODUCER_NOT_OWNER` (an rApp naming a `producerId` that is not its own invoker id); 403 `DME_TYPE_NOT_OWNER` (a different definition of a type another producer registered) |
+| POST | `/production-capabilities` (201) | Register or re-register a producer and a type, and link them; body: `namespace, name, version, typeName, producerId, dataProductionSchema, collectionSpec?, producerHealthCallbackUrl, jobCallbackUrl, sourceDomain?, sourceContext?`. Returns `{registrationId}` (the type id). Notifies type subscribers if the type is new; sends the producer the type's open jobs when it joins it, and every type's when its job callback changed. | 422 `SCHEMA_VALIDATION_FAILED` (unknown `sourceDomain`); 403 `DME_PRODUCER_NOT_OWNER` (an rApp naming a `producerId` that is not its own invoker id); 403 `DME_TYPE_NOT_OWNER` (a different definition of a type another producer registered) |
 | GET | `/production-capabilities` | List producers (not paged) | |
 | GET | `/production-capabilities/{producer_id}` | Producer with `supportedTypeIds` | 404 `PRODUCER_NOT_FOUND` |
 | GET | `/production-capabilities/{producer_id}/status` | `{producerId, operationalState}` from a live health probe | 404 `PRODUCER_NOT_FOUND` |
-| DELETE | `/production-capabilities?producer_id=` (204) | Deregister a producer and its links; types stay. Idempotent. | 403 `DME_PRODUCER_NOT_OWNER` (an rApp naming a `producer_id` that is not its own invoker id, whether or not that producer exists) |
+| DELETE | `/production-capabilities?producer_id=` (204) | Deregister a producer and its links; a stop per ACTIVE job to it; types stay, their jobs `NO_PRODUCER` when no producer is left. Idempotent. | 403 `DME_PRODUCER_NOT_OWNER` (an rApp naming a `producer_id` that is not its own invoker id, whether or not that producer exists) |
 | GET | `/dme-types?data_category=` | Discover types (not paged); `data_category` filters on `namespace`. Each item: `dmeTypeId, dmeTypeIdStruct, typeName, producerIds, typeStatus, sourceDomain, sourceContext` | |
 | GET | `/dme-types/{dme_type_id}` | One type, as the list shows it (its status computed from its producers' health). AIMgF checks an MLMF subscription's `dmeTypeId` with it (call flow 13a) | 404 `DME_TYPE_NOT_FOUND` |
-| DELETE | `/dme-types/{dme_type_id}` (204) | Delete a type with no producers, plus its jobs and offers; notifies subscribers `DEREGISTERED` | 404 `DME_TYPE_NOT_FOUND`; 409 `DME_TYPE_HAS_ACTIVE_PRODUCERS` |
+| DELETE | `/dme-types/{dme_type_id}` (204) | Delete a type with no producers, plus its jobs (an event each) and offers (each termination URI told); notifies subscribers `DEREGISTERED` | 403 `ROLE_NOT_PERMITTED` (an rApp); 404 `DME_TYPE_NOT_FOUND`; 409 `DME_TYPE_HAS_ACTIVE_PRODUCERS` |
 
 **Type subscriptions**
 
@@ -208,12 +209,12 @@ All routes sit under `/dme`. Lists marked "paged" return `{items, total, limit, 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
 | POST | `/data-jobs` (202) | Create a job (`dataDeliveryMode, dmeTypeId, productionJobDefinition, dataDeliveryMethod, deliveryDetails, consumerId, lifecycleStage?, expectedIntervalSeconds?`); pushes it to every producer of the type. Returns `{dataJobId}`. A job view carries `expectedIntervalSeconds`, `lastDeliveryAt` and `late` (`GUI-9.8`: null without an interval; true once two intervals passed since the last delivery, or since the job was declared before any) | 404 `DME_TYPE_NOT_FOUND` (the type is not registered; `SEC-15.10`); 409 `DELIVERY_METHOD_NOT_OFFERED`; 422 `SCHEMA_VALIDATION_FAILED`; 422 `DIGITAL_TWIN_INFERENCE_NOT_ELIGIBLE` |
-| GET | `/data-jobs?dme_type_id=&consumer_id=&late=` | Paged; `late=true` keeps the LATE jobs, `late=false` the on-time ones that declare an interval (a job without one matches neither) | |
-| GET | `/data-jobs/{id}` | | 404 `DATA_JOB_NOT_FOUND` |
-| GET | `/data-jobs/{id}/status` | `{dataJobId, status}` | 404 |
-| PUT | `/data-jobs/{id}` | Update definition, method, details, stage, `expectedIntervalSeconds` (left out: none); re-validated; producers re-notified | 404; 400 `DATA_JOB_TARGET_IMMUTABLE`; plus the create errors |
-| DELETE | `/data-jobs/{id}` (204) | Terminate; stops the job at every producer. Idempotent. | |
-| DELETE | `/data-jobs?consumer_id=` or `?created_by=` (204) | Terminate every job one consumer owns, or every job one invoker created (rApp Management's instance teardown). Exactly one of the two | 422 neither or both; 403 `DATA_JOBS_NOT_OWNER` an rApp naming another invoker in `created_by` |
+| GET | `/data-jobs?dme_type_id=&consumer_id=&late=` | Paged; `late=true` keeps the LATE jobs, `late=false` the on-time ones that declare an interval (a job without one matches neither). An rApp is shown only the jobs it created, the jobs naming it as consumer and the jobs of the types it produces (call flow 12a) | |
+| GET | `/data-jobs/{id}` | | 404 `DATA_JOB_NOT_FOUND` (also a job an rApp may not see) |
+| GET | `/data-jobs/{id}/status` | `{dataJobId, status}` (`ACTIVE` or `NO_PRODUCER`) | 404 |
+| PUT | `/data-jobs/{id}` | Update definition, method, details, stage, `expectedIntervalSeconds` (left out: none); re-validated; producers re-notified | 404; 403 `DATA_JOB_NOT_OWNER` (an rApp that did not create it); 400 `DATA_JOB_TARGET_IMMUTABLE`; plus the create errors |
+| DELETE | `/data-jobs/{id}` (204) | Terminate; stops the job at every producer and publishes `data-job.state-changed` to `DELETED`. Idempotent (204 also for a job an rApp may not see). | 403 `DATA_JOB_NOT_OWNER` |
+| DELETE | `/data-jobs?consumer_id=` or `?created_by=` (204) | Terminate every job one consumer owns, or every job one invoker created (rApp Management's instance teardown). Exactly one of the two | 422 neither or both; 403 `DATA_JOBS_NOT_OWNER` an rApp naming another invoker in `created_by`, or a `consumer_id` some of whose jobs it did not create (none deleted). One transaction: all or none |
 
 **Offers (R1AP reverse-direction availability)**
 
@@ -222,15 +223,15 @@ All routes sit under `/dme`. Lists marked "paged" return `{items, total, limit, 
 | POST | `/offers` (201) | `dmeTypeId, dataDeliveryMode, productionJobDefinition, dataDeliveryMethods, dataAvailabilityNotificationUri?, dataOfferTerminationNotificationUri`; commits to the first listed method. Returns `{offerId, committedMethod}`. | 404 `DME_TYPE_NOT_FOUND` (the type is not registered; `SEC-15.10`); 409 `DELIVERY_METHOD_NOT_OFFERED` (a method outside the wire set) |
 | GET | `/offers?dme_type_id=` | Paged | |
 | GET | `/offers/{id}` | | 404 `DATA_OFFER_NOT_FOUND` |
-| DELETE | `/offers/{id}` (204) | Delete, then POST `{dataOfferId}` to the termination URI. Idempotent. | |
-| POST | `/offers/{id}/notify` (204) | The producer tells DME its offered data is ready. Acknowledges only; no transport is attached. | 409 `DME_TYPE_VERSION_CONFLICT` for an unknown offer |
+| DELETE | `/offers/{id}` (204) | Delete, then POST `{dataOfferId}` to the termination URI. Idempotent. | 403 `DATA_OFFER_NOT_OWNER` (an rApp that did not create it; `createdBy`, revision `0058`) |
+| POST | `/offers/{id}/notify` (204) | The producer tells DME its offered data is ready. Acknowledges only; no transport is attached. | 404 `DATA_OFFER_NOT_FOUND` for an unknown offer (call flow 12c; a 409 before) |
 
 **Data records**
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
-| POST | `/data-jobs/{id}/records` (201) | `{payload}` → `{recordId}`; sets the job's `lastDeliveryAt` (the delivery DME sees: the consumer pulls from here) | 404 `DATA_JOB_NOT_FOUND` |
-| GET | `/data-jobs/{id}/records` | Paged, newest first | 404 |
+| POST | `/data-jobs/{id}/records` (201) | `{payload}` → `{recordId}`; sets the job's `lastDeliveryAt` (the delivery DME sees: the consumer pulls from here). The payload is stored as it is | 404 `DATA_JOB_NOT_FOUND`; 403 `DME_NOT_A_PRODUCER` (an rApp that is not a producer of the job's type, call flow 12b); 409 `DATA_JOB_NO_PRODUCER` |
+| GET | `/data-jobs/{id}/records?limit=&before=&after=` | Newest first, paged by offset; `before=<recordId>` the older records, newest first, `after=<recordId>` the newer ones, oldest first, both by `(producedAt, recordId)` so arrivals do not shift the pages | 404; 404 `DATA_RECORD_NOT_FOUND` (a cursor of another job); 422 both cursors |
 
 **O1 action mediation**
 
@@ -257,7 +258,7 @@ No background tasks and no scheduler.
 
 ### 2.6 Configuration
 
-DME reads no environment variable of its own. Through `smo_shared`: `SMO_DATABASE_URL` (required, no default), `R1_GATEWAY_URL` (default `http://r1-termination:8000`), and optionally `SMO_INVOKER_ID` / `SMO_INVOKER_SECRET` to pin the identity `R1Client` uses toward RAN NF OAM. Constant in code: `DME_TO_RAN_NF_OAM_TIMEOUT_SECONDS = 10.0`.
+DME reads `DME_PRODUCER_HEALTH_CACHE_SECONDS` (30; call flow 11c), and its worker `SMO_RETENTION_DME_RECORDS_DAYS` (0, keep; call flow 12d). Through `smo_shared`: `SMO_DATABASE_URL` (required, no default), `R1_GATEWAY_URL` (default `http://r1-termination:8000`), and optionally `SMO_INVOKER_ID` / `SMO_INVOKER_SECRET` to pin the identity `R1Client` uses toward RAN NF OAM. Constant in code: `DME_TO_RAN_NF_OAM_TIMEOUT_SECONDS = 10.0`.
 
 ### 2.7 Error codes
 
@@ -271,7 +272,11 @@ ProblemDetails `title` / status (see [R1 API conventions](../docs/ARCHITECTURE.m
 | `DME_TYPE_HAS_ACTIVE_PRODUCERS` | 409 | Delete of a type that still has a producer |
 | `DME_TYPE_NOT_OWNER` | 403 | `POST /production-capabilities` changes the definition of a type another producer registered, from a caller that is neither that producer nor `internal` (defined in `app/main.py`, not in `smo_shared.errors`) |
 | `DME_PRODUCER_NOT_OWNER` | 403 | `POST /production-capabilities` (body `producerId`) or `DELETE /production-capabilities?producer_id=` from a caller with the rApp role naming a producer id other than its own invoker id (defined in `app/main.py`, not in `smo_shared.errors`) |
-| `DME_TYPE_VERSION_CONFLICT` | 409 | Used only for `POST /offers/{id}/notify` on an unknown offer (the registration conflict it was named for no longer exists, since registration is an upsert) |
+| `DATA_JOB_NOT_OWNER` / `DATA_OFFER_NOT_OWNER` | 403 | An rApp changing or deleting a job, or ending an offer, it did not create (call flow 12) |
+| `DME_NOT_A_PRODUCER` | 403 | An rApp delivering a record to a job of a type it does not produce |
+| `DATA_JOB_NO_PRODUCER` | 409 | A record for a job whose type has no producer |
+| `DME_TYPE_HAS_INFERENCE_JOBS` | 409 | Redefining a type as `DIGITAL_TWIN` while it has INFERENCE jobs |
+| `DATA_RECORD_NOT_FOUND` | 404 | A records cursor that is not a record of the job |
 | `DATA_JOBS_NOT_OWNER` | 403 | `DELETE /data-jobs?created_by=` from a caller with the rApp role naming another invoker (defined in `app/main.py`) |
 | `DATA_JOB_TARGET_IMMUTABLE` | 400 | `PUT /data-jobs` changes `dmeTypeId`, `consumerId` or `dataDeliveryMode` |
 | `PRODUCER_NOT_FOUND`, `DME_TYPE_NOT_FOUND`, `TYPE_SUBSCRIPTION_NOT_FOUND`, `DATA_JOB_NOT_FOUND`, `DATA_OFFER_NOT_FOUND`, `DME_ACTION_NOT_FOUND` | 404 | Unknown id on a read, update or ingest (deletes of unknown ids are silent 204s, except `DELETE /dme-types`) |
@@ -279,8 +284,9 @@ ProblemDetails `title` / status (see [R1 API conventions](../docs/ARCHITECTURE.m
 
 ### 2.8 Limits and open items
 
-- Data delivery over the negotiated transport (push, Kafka) is not implemented; the pull case is real (`DataRecord`). `POST /offers/{id}/notify` only acknowledges. No queue drain on offer termination.
-- `DataJob.status` is always `ACTIVE`; there is no job lifecycle or per-record retention policy, and records are unbounded.
+- Data delivery over the negotiated transport (push, Kafka) is not implemented; the pull case is real (`DataRecord`). `POST /offers/{id}/notify` only acknowledges, the availability URI is never called and an offer's `dataDeliveryMode` / `productionJobDefinition` are not kept (`OPEN_ITEMS.md` DME-OFFER-AVAIL). No queue drain on offer termination.
+- `DataJob.status` is `ACTIVE` or `NO_PRODUCER` only (no per-producer delivery state). Records are kept until `SMO_RETENTION_DME_RECORDS_DAYS` (task `purge-records` of `dme-worker`, hourly; 0, the default, keeps them) and are not validated against any schema.
+- Any producer with the same definition may join a type (call flow 11, decision C): who serves a type is visible in its `producerIds`, not restricted.
 - `dataDeliveryMode` is not validated against `ONE_TIME` / `CONTINUOUS`; a job's `dmeTypeId` need not exist.
 - `dme_delivery_schema` has a table and no route.
 - `GET /production-capabilities` and `GET /dme-types` return bare arrays, not the `{items, total, ...}` page shape the other list routes use.
@@ -307,6 +313,7 @@ cd smo/dme && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | `tests/test_action_unconfirmed.py` | Call flow 03f (6): a timeout after the call was sent is 202 `UNCONFIRMED` and the same caller's replay recovers RAN NF OAM's answer under the same `Idempotency-Key`, after which a replay is `IGNORED`; a replay that still cannot tell (409 in progress, a 5xx, no connection) stays `UNCONFIRMED`; another caller's replay is `IGNORED` and not forwarded; a refusal on the replay is relayed and `REJECTED` |
 | `tests/test_event_feed.py` | `PR-MSG-3.2` (9): without `after` the newest position; order, `types`, pages and `next`; the long poll answers when an event is committed; a scoped caller sees only its regions' events and `next` moves past the others; out-of-bounds parameters are 422 (parametrized) | 9 |
 | `tests/test_type_ownership.py` | `SEC-15.10` (8, two of them added by the PR-SEC-15 part 4 mutation pass: the owner is the gateway's invoker id and only without a gateway the body's `producerId`): a second rApp's different schema is 403 and the stored schema and owner are unchanged, a refused overwrite leaves the producer row alone, the same definition by another producer still joins (which then cannot change it), an `internal` caller and a call without a role overwrite, a rApp without an invoker id cannot, a type from before the owner was recorded is open to its linked producers only | 6 |
+| `tests/test_producer_lifecycle.py` | Call flow 11 (DOC-CF-1.8): a joining producer is sent the open jobs, an idempotent re-registration sends none, a moved job callback is sent every type's jobs, a leaving producer is told to stop and the job waits as NO_PRODUCER (events both ways), a second producer keeps the job ACTIVE, a job on an unserved type starts NO_PRODUCER, an rApp may not delete a type, a deleted type announces its jobs and tells its offers, the health answer is remembered and forgotten, the cache setting's fallback, a registration that loses a race is retried | 11 |
 | `tests/test_producer_health.py` | The boundary of a producer's health callback in `typeStatus`: 200, 204 and 299 are ENABLED, 300, 301, 404 and 500 DISABLED (7) |
 | `tests/test_main.py` | Producer/type registry: registration, re-registration, second producer, discovery and `data_category` filter, deregistration keeping types, type deletion guard and cascade, producer status, one type read by its id (404 for an unknown one) | 23 |
 | | Type status from producer health (unreachable, non-2xx, healthy, active job does not override) | 4 |
@@ -317,6 +324,8 @@ cd smo/dme && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | | Data records: ingest, fetch, limit, unknown job | 4 |
 | | Action mediation: forward and record, RAN NF OAM refusal surfaced, empty changes, unknown action, list filter, replayed `actionId` ignored | 6 |
 | | Health probe | 1 |
+| `tests/test_data_ownership.py` | Call flow 12 (DOC-CF-1.8, 9): another rApp's change or deletion refused (404 unseen, 403 not the creator) and the creator's allowed; list, job, status and records scoped (creator, consumer, producer of the type; the console sees all); a bulk delete by consumer all or nothing; a deleted job announced; only a producer delivers and not to a NO_PRODUCER job; `before` / `after` cursors that do not drift, and one order for records of one instant; an offer ended only by its creator and notify of an unknown offer 404; a type with INFERENCE jobs not redefined as a Digital Twin |
+| `tests/test_tasks.py` | Call flow 12d (4): `purge-records` keeps everything at 0, deletes only records older than the retention and never the job, the task list, the retention-off gauge |
 | `tests/test_data_job_owner.py` | OI-7-rapp-data-jobs-teardown (4): a job records the gateway's invoker id (null without one); `created_by` deletes exactly that invoker's jobs, whatever their consumer id; an rApp may delete only its own; neither or both filters is a 422 | 4 |
 | `tests/test_delivery_health.py` | `GUI-9.8` delivery health: no interval means no verdict, LATE two intervals after the last delivery and on time again after the next, a job that never delivered turns LATE, PUT declares or drops the interval, the `late` list filter both ways, a non-positive interval is 422 | 6 |
 | | Total | 144 |

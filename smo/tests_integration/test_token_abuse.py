@@ -200,7 +200,7 @@ def _is_a_route(templates: list[tuple[str, str]], method: str, path: str) -> boo
 def _escapes(loaded_apps, refused_by_gateway) -> tuple[list[str], int]:
     """Calls the policy lets an rApp make as received (and the gateway does not refuse for its form) whose resolved path is a real route the policy would have refused."""
     escapes, walked = [], 0
-    for prefix in sorted(set(R1_PREFIX_TO_SERVICE) - {"/dme-push", "/dme-pull"}):
+    for prefix in sorted(R1_PREFIX_TO_SERVICE):
         templates = _templates(loaded_apps[R1_PREFIX_TO_SERVICE[prefix]].app)
         for method, template in templates:
             for received in _dot_segment_variants(template):
