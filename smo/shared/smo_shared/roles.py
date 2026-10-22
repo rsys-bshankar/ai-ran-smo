@@ -143,8 +143,6 @@ RAPP_MAY_CHANGE: dict[str, tuple[tuple[frozenset[str], re.Pattern], ...] | None]
         ),
         # an rApp's own data-producer surface, which the SDK does not wrap
         "/ran-analytics": None,
-        "/dme-push": None,
-        "/dme-pull": None,
     }.items()
 }
 

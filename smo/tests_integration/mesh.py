@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 # mirrors r1-termination/app/main.py's ROUTES table
 R1_PREFIX_TO_SERVICE = {
-    "/sme": "sme", "/dme": "dme", "/dme-push": "dme", "/dme-pull": "dme",
+    "/sme": "sme", "/dme": "dme",
     "/onboarding": "onboarding", "/rapp-mgmt": "rapp-mgmt", "/ran-nf-oam": "ran-nf-oam",
     "/nfo": "nfo", "/focom": "focom",
     "/aimgf": "aimgf", "/mlmr": "mlmr", "/mllf": "mllf", "/ran-analytics": "ran-analytics", "/mdaf": "mdaf",

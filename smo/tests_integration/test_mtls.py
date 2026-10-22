@@ -225,7 +225,7 @@ def test_the_override_covers_every_service_the_script_makes_a_certificate_for_an
     built service without it is named as exempt on purpose.
     """
     override = set(_override_services())
-    assert override == (set(certs.SERVERS) | {"ran-nf-oam-worker", "mdaf-worker", "rapp-mgmt-worker", "aimgf-worker", "energy-saving-rapp-worker", "mobility-optimization-rapp-worker",
+    assert override == (set(certs.SERVERS) | {"ran-nf-oam-worker", "mdaf-worker", "dme-worker", "rapp-mgmt-worker", "aimgf-worker", "energy-saving-rapp-worker", "mobility-optimization-rapp-worker",
                                                  "coverage-optimization-rapp-worker", "traffic-steering-rapp-worker", "gui-bff"})
     compose = _compose_services()
     assert override <= set(compose)
@@ -315,7 +315,7 @@ def test_the_chart_is_off_by_default_and_names_how_each_module_takes_part():
     modes = {name: {**values["moduleDefaults"], **spec}["mtls"] for name, spec in values["modules"].items()}
     assert {n for n, m in modes.items() if m == "off"} == {"mock-o1-adaptor", "gui"}
     assert {n for n, m in modes.items() if m == "client"} == {"gui-bff"}
-    assert {n for n, m in modes.items() if m == "server"} == set(certs.SERVERS) | {"ran-nf-oam-worker", "mdaf-worker", "rapp-mgmt-worker", "aimgf-worker", "energy-saving-rapp-worker", "mobility-optimization-rapp-worker",
+    assert {n for n, m in modes.items() if m == "server"} == set(certs.SERVERS) | {"ran-nf-oam-worker", "mdaf-worker", "dme-worker", "rapp-mgmt-worker", "aimgf-worker", "energy-saving-rapp-worker", "mobility-optimization-rapp-worker",
                                                                                     "coverage-optimization-rapp-worker", "traffic-steering-rapp-worker"}      # a worker is rendered as a client
 
 

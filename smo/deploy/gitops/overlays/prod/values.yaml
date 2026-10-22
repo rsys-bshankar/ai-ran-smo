@@ -43,6 +43,7 @@ modules:
   # Retention: the periods proposed in docs/RETENTION.md, the same as deploy/helm/smo/values-production.yaml (tests_integration/test_gitops.py checks that)
   ran-nf-oam-worker: { replicas: 2, env: { SAFEGUARD_REFUSAL_RETENTION_DAYS: "90", SMO_RETENTION_ALARMS_DAYS: "90", SMO_RETENTION_PM_FILES_DAYS: "14" } }
   mdaf-worker: { env: { SMO_RETENTION_MDAF_REPORTS_DAYS: "30" } }
+  dme-worker: { env: { SMO_RETENTION_DME_RECORDS_DAYS: "30" } }
   nfo: { replicas: 2 }
   focom: { replicas: 2 }
   so-smos: { replicas: 2 }

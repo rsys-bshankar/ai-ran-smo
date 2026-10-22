@@ -41,10 +41,10 @@ def test_off_by_default_every_backend_is_plain_http():
 
 
 def test_with_mtls_every_backend_and_the_advertised_token_endpoint_are_https(tmp_path):
-    """With `SMO_MTLS=on` every backend address, the DME push route included, and the advertised token endpoint are https."""
+    """With `SMO_MTLS=on` every backend address, DME's included, and the advertised token endpoint are https."""
     result = table({"SMO_MTLS": "on"})
     assert all(url.startswith("https://") for url in result["routes"].values())
-    assert result["routes"]["/dme-push"] == "https://dme:8000"
+    assert result["routes"]["/dme"] == "https://dme:8000"
     assert result["bootstrap"]["apiEndpoints"][0]["tokenEndPoint"]["uri"] == "https://sme:8000/oauth2/token"
 
 

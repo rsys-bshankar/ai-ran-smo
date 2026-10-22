@@ -162,6 +162,8 @@ class DataOffer(Base):
     data_delivery_method_committed: Mapped[str | None] = mapped_column(String)
     data_availability_notification_uri: Mapped[str | None] = mapped_column(String)  # REVERSED direction, section 3.5
     data_offer_termination_notification_uri: Mapped[str] = mapped_column(String, nullable=False)
+    # DOC-CF-1.8 flow 12 (revision 0058): the invoker that created the offer; an rApp terminates only its own. Null for an offer from before.
+    created_by: Mapped[str | None] = mapped_column(String)
 
 
 class DataRecord(Base):
