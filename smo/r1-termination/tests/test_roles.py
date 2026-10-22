@@ -80,7 +80,9 @@ INTERNAL_ONLY_CALLS = [("PUT", "/ran-nf-oam/rapp-limits/x"), ("DELETE", "/ran-nf
                        # MSG-3.2: the SMO's event feed names every module's entities
                        ("GET", "/dme/smo-events"),
                        # SEC-15.3c part 3: who owns a model is set by the operator, never by an rApp
-                       ("PUT", "/mlmr/models/m/owner")]
+                       ("PUT", "/mlmr/models/m/owner"),
+                       # call flow 18c: the trust contexts hold every invoker's authentication and authorization info
+                       ("GET", "/sme/trusted-invokers"), ("GET", "/sme/trusted-invokers/x")]
 
 
 @pytest.mark.parametrize("method, path", INTERNAL_ONLY_CALLS)
@@ -104,7 +106,7 @@ def test_an_smo_module_is_not_refused_there(gateway, method, path):
                                           ("POST", "/ran-nf-oam/config-jobs"), ("POST", "/ran-nf-oam/config-jobs/j/rollback"), ("POST", "/dme/actions"), ("POST", "/aimgf/training-jobs"),
                                           # the rApp container reports that it is up and how it performs (rApp Management checks that the instance is its own)
                                           ("POST", "/rapp-mgmt/instances/i/bootstrap-complete"), ("POST", "/rapp-mgmt/instances/i/performance"),
-                                          ("PUT", "/mlmr/models/m"), ("DELETE", "/sme/provider-registrations/a"), ("GET", "/onboarding/packages"), ("GET", "/rapp-mgmt/instances"), ("GET", "/sme/trusted-invokers")])
+                                          ("PUT", "/mlmr/models/m"), ("DELETE", "/sme/provider-registrations/a"), ("GET", "/onboarding/packages"), ("GET", "/rapp-mgmt/instances"), ("GET", "/sme/invoker-registrations")])
 def test_other_routes_are_open_to_an_rapp_as_before(gateway, method, path):
     """Routes that look similar to internal-only ones but are not (reads of one's own record, a different method or path) stay open to an rApp."""
     assert client.request(method, path, headers=AUTH).status_code == 200
@@ -181,7 +183,7 @@ def test_a_module_that_names_nobody_forwards_nothing(gateway):
     ("POST", "/onboarding/packages"), ("DELETE", "/onboarding/packages/p"), ("POST", "/rapp-mgmt/instances"), ("POST", "/rapp-mgmt/instances/i/terminate"),
     ("POST", "/nfo/deployments"), ("POST", "/focom/provisioning-requests"), ("POST", "/so-smos/anything"), ("POST", "/rapps/00000000-0000-0000-0000-000000000000/operator/instances/i/start"),
     ("PUT", "/sme/invoker-registrations/x"), ("DELETE", "/sme/invoker-registrations/x"), ("POST", "/sme/invoker-registrations/purge-stale"),
-    ("PUT", "/sme/trusted-invokers/x"), ("POST", "/aimgf/ml-training-functions"), ("POST", "/aimgf/execution-timeouts/sweep"),
+    ("PUT", "/sme/trusted-invokers/x"), ("POST", "/sme/oauth2/introspect"), ("POST", "/aimgf/ml-training-functions"), ("POST", "/aimgf/execution-timeouts/sweep"),
     ("POST", "/aimgf/models/m/runtime/rollback"),
     # SEC-15.1b: the governance and end-of-life decisions of a model are the operator's; the route is refused to an rApp at the gateway (and by AIMgF), with the near misses of its neighbours
     ("POST", "/aimgf/models/m/advance"), ("POST", "/aimgf/models/m/advance/x"), ("PUT", "/aimgf/models/m/advance"), ("POST", "/aimgf/models/advance"),

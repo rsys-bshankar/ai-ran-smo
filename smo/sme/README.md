@@ -140,9 +140,9 @@ None: stateless as to lifecycle. The only time-dependent state is token validity
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
-| POST | `/provider-registrations` (201) | `{apfId, providerDomainInfo?}`; idempotent upsert; returns `{apfId}` | |
+| POST | `/provider-registrations` (201) | `{apfId, providerDomainInfo?}`; idempotent upsert; returns `{apfId}`. An rApp registers only its own invoker id (403 `PROVIDER_IDENTITY_MISMATCH`, call flow 18a) | |
 | GET | `/provider-registrations` | Paged; each item has `serviceCount` | |
-| DELETE | `/provider-registrations/{apf_id}` (204) | Idempotent | |
+| DELETE | `/provider-registrations/{apf_id}` (204) | Idempotent. The provider's services go with it, each announced `SERVICE_API_UNAVAILABLE` (call flow 18a); an rApp deletes only its own (403 `PROVIDER_IDENTITY_MISMATCH`) | |
 
 **Invoker onboarding and tokens**
 
@@ -152,11 +152,11 @@ None: stateless as to lifecycle. The only time-dependent state is token validity
 | PUT | `/invoker-registrations/{id}/authz-scope` | PR-SEC-10.3: `{authzScope}` replaces the claim (`null` or `{}` removes it) → `{apiInvokerId, authzScope}`; emits `API_INVOKER_UPDATED`. Read live by the introspection, so tokens already issued are limited from the next request. Internal-only at the gateway (`INTERNAL_ONLY`; an admin's call in the GUI backend) | 400 `INVOKER_NOT_REGISTERED`; 422 `AUTHZ_SCOPE_INVALID` |
 | PUT | `/invoker-registrations/{id}` | Replace the public key (rotation) → `{apiInvokerId, keyAuthentication}`; emits `API_INVOKER_UPDATED` | 400 `INVOKER_NOT_REGISTERED`; 422 |
 | POST | `/invoker-registrations/{id}/secret` | Call flow 01e: a new onboarding secret for the same invoker id → `{apiInvokerId, onboardingSecret}` (shown once, stored as its hash); the old secret is refused at once and the invoker's issued tokens are revoked; emits `API_INVOKER_UPDATED`. rApp Management's, to re-send an instance's credentials (call flow 01e). Internal-only at the gateway (`INTERNAL_ONLY`: an rApp could otherwise take an identity over) | 400 `INVOKER_NOT_REGISTERED` |
-| DELETE | `/invoker-registrations/{id}` (204) | Offboard: the invoker, its tokens and its trusted-invoker context; idempotent; emits `API_INVOKER_OFFBOARDED` | |
+| DELETE | `/invoker-registrations/{id}` (204) | Offboard: the invoker, its tokens and its trusted-invoker context; idempotent; emits `API_INVOKER_OFFBOARDED` Also removes the invoker's CAPIF event subscriptions and the provider registered under its id with that provider's services (call flow 18b). | |
 | POST | `/invoker-registrations/purge-stale` | PR-ST-4 housekeeping (this build's own): query `unused_for_days` (> 0) and `dry_run` (default true). Offboards, like DELETE, every invoker that got no token for that long (or never did and was onboarded that long ago) → `{unusedForDays, dryRun, count, invokerIds}`. Invokers carry `created_at` and `last_token_issued_at`. A module whose identity is purged is onboarded afresh by `R1Client` | 422 `unused_for_days` missing or ≤ 0 |
 | GET | `/invoker-registrations` | Paged: `apiInvokerId`, `apiInvokerPublicKey`, `keyAuthentication`, `authzScope`, `trusted` | |
 | POST | `/oauth2/token` | `{grant_type: client_credentials, client_id, client_secret? \| client_assertion_type + client_assertion?, scope?}` → `{access_token, expires_in, token_type: Bearer, scope}` | 400 `unsupported_grant_type`, `invalid_request` (secret and assertion together), `invalid_client`, `unauthorized_client`, `invalid_scope` |
-| POST | `/oauth2/introspect` | `{token}` → `{active: false}` or `{active: true, client_id, exp, role, scope?, authz_scope?}` (`authz_scope`: PR-SEC-10.3, absent for an unscoped invoker); unauthenticated | |
+| POST | `/oauth2/introspect` | `{token}` → `{active: false}` or `{active: true, client_id, exp, role, scope?, authz_scope?}` (`authz_scope`: PR-SEC-10.3, absent for an unscoped invoker); unauthenticated Not open to an rApp through R1: only R1 Termination introspects, directly (call flow 18d). | |
 
 **Trusted invokers (CAPIF security contexts)**
 
@@ -164,7 +164,7 @@ None: stateless as to lifecycle. The only time-dependent state is token validity
 |---|---|---|---|
 | PUT | `/trusted-invokers/{id}` (201) | Create or replace `{notificationDestination, requestTestNotification, securityInfo[]}` | 400 `INVOKER_NOT_REGISTERED`; 422 `SECURITY_CONTEXT_INVALID` (blank destination, empty `securityInfo`, an entry without `prefSecurityMethods`) |
 | GET | `/trusted-invokers/{id}?authentication_info=&authorization_info=` | Secrets redacted unless the flag is set | 404 `TRUSTED_INVOKER_NOT_FOUND` |
-| GET | `/trusted-invokers` | Paged | |
+| GET | `/trusted-invokers` | Paged Internal-only at R1, as is `GET /trusted-invokers/{id}`: an rApp reads no trust context (call flow 18c). | |
 | POST | `/trusted-invokers/{id}/update` | Update in place; does not re-check invoker onboarding | 404; 422 |
 | POST | `/trusted-invokers/{id}/delete` (204) | Revocation by `{aefId?, apiIds[], apiInvokerId, cause}` (`cause`: `OVERLIMIT_USAGE` or `UNEXPECTED_REASON`) | 404; 422 (empty `apiIds`) |
 | DELETE | `/trusted-invokers/{id}` (204) | Idempotent | |
@@ -173,18 +173,18 @@ None: stateless as to lifecycle. The only time-dependent state is token validity
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
-| POST | `/published-apis/v1/{apf_id}/service-apis` (201) | Register or update; body: `serviceName, producerId, endpoint, version, moduleScope, fullApiVersions, serviceCapabilities, selectionCriteria, allowedConsumers, aefProfiles, apiSuppFeats, shareableInfo`. The path `apf_id` is the producer; the body `producerId` is not used for ownership. Returns `{serviceId}`. | 403 `APF_NOT_REGISTERED`; 409 `SERVICE_NAME_CONFLICT` |
+| POST | `/published-apis/v1/{apf_id}/service-apis` (201) | Register or update; body: `serviceName, producerId, endpoint, version, moduleScope, fullApiVersions, serviceCapabilities, selectionCriteria, allowedConsumers, aefProfiles, apiSuppFeats, shareableInfo`. The path `apf_id` is the producer; the body `producerId` is not used for ownership. Returns `{serviceId}`. An rApp publishes only under its own invoker id (403 `PROVIDER_IDENTITY_MISMATCH`, call flow 18a). | 403 `APF_NOT_REGISTERED`; 409 `SERVICE_NAME_CONFLICT` |
 | GET | `/published-apis/v1/{apf_id}/service-apis` | The publisher's own services (bare list). A publisher with services always gets them; one with none gets `[]` if enrolled | 404 `PUBLISHING_FUNCTION_NOT_FOUND` (not enrolled and no services) |
-| DELETE | `/published-apis/v1/{apf_id}/service-apis/{service_id}` (204) | Owner only; a different `apf_id` is a silent no-op. Notifies `SERVICE_API_UNAVAILABLE`. | |
-| GET | `/service-apis/v1/allServiceAPIs?api_invoker_id=&api_name=&api_version=&aef_id=&protocol=&data_format=&comm_type=` | Discovery (bare list). `api_invoker_id` is required and taken as given. A service is returned if it has no policy or `allowedConsumers` is empty or contains the invoker, and (when any AEF filter is given) at least one `aefProfile` matches all given AEF filters. | |
+| DELETE | `/published-apis/v1/{apf_id}/service-apis/{service_id}` (204) | Owner only; a different `apf_id` is a silent no-op. Notifies `SERVICE_API_UNAVAILABLE`. An rApp names only its own apfId (403 `PROVIDER_IDENTITY_MISMATCH`). | |
+| GET | `/service-apis/v1/allServiceAPIs?api_invoker_id=&api_name=&api_version=&aef_id=&protocol=&data_format=&comm_type=` | Discovery (bare list). `api_invoker_id` is required and taken as given. A service is returned if it has no policy or `allowedConsumers` is empty or contains the invoker, and (when any AEF filter is given) at least one `aefProfile` matches all given AEF filters. For an rApp `api_invoker_id` must be its own invoker id (403 `INVOKER_IDENTITY_MISMATCH`, call flow 18e); the console and modules may ask for any. | |
 
 **Events**
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
-| POST | `/capif-events/v1/{subscriber_id}/subscriptions` (201) | `{subscriberId, eventTypes[], callbackUri, apiIds?, apiInvokerIds?, aefIds?}` → `{subscriptionId}`. Each filter that is set must share a value with the event; an event with no value of that kind (an invoker event for an `apiIds` filter) does not match. | 422 `SUBSCRIPTION_SCOPE_CONFLICT` (an event type outside `EVENT_TYPES`) |
-| GET | `/capif-events/v1/{subscriber_id}/subscriptions` | Paged; a build addition (CAPIF defines only `POST`) | |
-| DELETE | `/capif-events/v1/{subscriber_id}/subscriptions/{subscription_id}` (204) | Only if the subscriber matches; otherwise a silent no-op | |
+| POST | `/capif-events/v1/{subscriber_id}/subscriptions` (201) | `{subscriberId, eventTypes[], callbackUri, apiIds?, apiInvokerIds?, aefIds?}` → `{subscriptionId}`. Each filter that is set must share a value with the event; an event with no value of that kind (an invoker event for an `apiIds` filter) does not match. An rApp subscribes only as itself (403 `INVOKER_IDENTITY_MISMATCH`); a `callbackUri` the SSRF guard refuses is 422 `SCHEMA_VALIDATION_FAILED` (call flow 18e). | 422 `SUBSCRIPTION_SCOPE_CONFLICT` (an event type outside `EVENT_TYPES`) |
+| GET | `/capif-events/v1/{subscriber_id}/subscriptions` | Paged; a build addition (CAPIF defines only `POST`) An rApp lists only its own (403 `INVOKER_IDENTITY_MISMATCH`). | |
+| DELETE | `/capif-events/v1/{subscriber_id}/subscriptions/{subscription_id}` (204) | Only if the subscriber matches; otherwise a silent no-op An rApp names only itself (403 `INVOKER_IDENTITY_MISMATCH`). | |
 
 **Other**: `GET /health`.
 
@@ -242,6 +242,7 @@ cd smo/sme && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | Test file | Covers | Count |
 |---|---|---|
 | `tests/test_main.py` | Service registry and discovery: register, name conflict, same-producer update, authorization gate (hidden / shown / unrestricted), deregistration ownership, `api_name` / `api_version` / AEF / protocol / data-format / comm-type filters | 16 |
+| `tests/test_identity.py` | Call flow 18: an rApp registers, publishes and deregisters only as its own provider; discovers only as itself; subscribes, lists and unsubscribes only as itself, and a refused callback is 422; offboarding removes the invoker's subscriptions and its provider with its services | 4 |
 | | Event subscriptions and notifications: event-type validation, unsubscribe ownership, matching subscribers only, update / unavailable events, `apiIds` filter, visibility respected, unreachable subscriber | 13 |
 | | Provider enrolment and the own-services query | 8 |
 | | Invoker onboarding, token issue and introspection (server-generated id and secret, no cleartext secret or token, bad grant / client / secret, expired and unknown tokens) | 12 |

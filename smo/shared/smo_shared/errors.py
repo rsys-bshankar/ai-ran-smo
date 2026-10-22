@@ -188,6 +188,10 @@ class FrameworkError:
     REMEDIAL_ACTION_IN_PROGRESS = ("REMEDIAL_ACTION_IN_PROGRESS", 409)
     # DOC-CF-1.8 flow 08: an rApp registers only itself as an analytics producer, publishes only what it is registered for, and removes only its own subscriptions
     PRODUCER_IDENTITY_MISMATCH = ("PRODUCER_IDENTITY_MISMATCH", 403)
+    # Call flow 18 (DOC-CF-1.8): an rApp acts at SME only as itself: the apfId it registers and publishes under, the invoker it discovers for and the
+    # subscriber it subscribes as must be its own invoker id.
+    PROVIDER_IDENTITY_MISMATCH = ("PROVIDER_IDENTITY_MISMATCH", 403)
+    INVOKER_IDENTITY_MISMATCH = ("INVOKER_IDENTITY_MISMATCH", 403)
     PRODUCER_NOT_REGISTERED = ("PRODUCER_NOT_REGISTERED", 403)
     PRODUCER_NOT_FOUND = ("PRODUCER_NOT_FOUND", 404)
     SUBSCRIPTION_ACCESS_DENIED = ("SUBSCRIPTION_ACCESS_DENIED", 403)
