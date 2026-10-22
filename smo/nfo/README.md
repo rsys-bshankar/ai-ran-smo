@@ -141,10 +141,10 @@ All routes are under `/nfo` through R1. Lists return `{items, total, limit, offs
 | POST | `/deployments/{id}/dms-notifications` | The deployment manager's report, body `{event, detail?}`: `UNINSTALL_COMPLETE`, `UNINSTALL_FAILED`, `DELETE_COMPLETE` (answers `state: DELETED`), `DELETE_FAILED`, `RUNTIME_FAILURE`. 404 `NFDEPLOYMENT_NOT_FOUND`, 409 `NFDEPLOYMENT_ILLEGAL_OPERATION`, 422 unknown event |
 | POST | `/deployments/{id}/heal` | Heal; 404 `NFDEPLOYMENT_NOT_FOUND`, 409 `NFDEPLOYMENT_ILLEGAL_OPERATION` |
 | POST | `/deployments/{id}/scale` | Scale (no target size argument); same errors |
-| GET | `/deployments/{id}/placement` | `{nfDeploymentId, clusterId}`; unknown id is an unhandled 500 |
+| GET | `/deployments/{id}/placement` | `{nfDeploymentId, clusterId}`; 404 `NFDEPLOYMENT_NOT_FOUND` for an unknown id |
 | GET | `/deployments/{id}/resources` | Resource links (`resourceLinkId`, `resourceRef`, `vresourceType`); empty list for an unknown id; a bare list, not paginated |
 | GET | `/deployments/{id}/operations` | LCM operation history |
-| GET | `/operations/{operation_id}` | `{operationId, status}`; unknown id is an unhandled 500 |
+| GET | `/operations/{operation_id}` | `{operationId, status}`; 404 `LCM_OPERATION_NOT_FOUND` for an unknown id |
 | GET | `/health` | Liveness (used by the GUI BFF module-status fan-out) |
 
 ### 2.5 Interactions
@@ -161,7 +161,7 @@ All routes are under `/nfo` through R1. Lists return `{items, total, limit, offs
 | `SMO_DATABASE_URL` | none; required (the service refuses to start without it) | Database (shared lib) |
 | `R1_GATEWAY_URL` | `http://r1-termination:8000` | R1 gateway for the FOCOM call (shared lib) |
 
-No NFO-specific variables. The fallback cluster id is a constant.
+No NFO-specific variables. There is no fallback cluster: when FOCOM names no O-Cloud, instantiate is 503 `ENDPOINT_UNREACHABLE` and nothing is created.
 
 ### 2.7 Error codes
 
@@ -173,7 +173,8 @@ Returned as `{"detail": {"type": "about:blank", "title": <code>, "status", "deta
 | `NFDEPLOYMENT_NAME_CONFLICT` | 409 | A deployment with that name already exists |
 | `NFDEPLOYMENT_DESCRIPTOR_ALREADY_DEPLOYED` | 409 | DeleteDescriptor while a deployment uses the descriptor |
 | `ENDPOINT_UNREACHABLE` | 503 | Instantiate when FOCOM names no O-Cloud |
-| `NFDEPLOYMENT_NOT_FOUND` | 404 | Heal or scale of an unknown deployment |
+| `NFDEPLOYMENT_NOT_FOUND` | 404 | Heal, scale or placement of an unknown deployment |
+| `LCM_OPERATION_NOT_FOUND` | 404 | `GET /operations/{id}` of an unknown operation |
 | `NFDEPLOYMENT_ILLEGAL_OPERATION` | 409 | Heal outside `ABNORMAL` / `RUNNING`, scale outside `RUNNING`, a DMS event the deployment's state can't take |
 
 ### 2.8 Limits and open items
@@ -184,7 +185,6 @@ Returned as `{"detail": {"type": "about:blank", "title": <code>, "status", "deta
 - **Scale has no target size** (replicas or resources); it only drives `RUNNING` -> `UPDATING` -> `RUNNING` (`OI-7-nfo-scale-size` in `OPEN_ITEMS.md`).
 - **No asynchronous completion** notification to callers; they observe the synchronous response.
 - **Single O-Cloud.** Placement is whatever FOCOM reports (`oCloudId`); there is no multi-cluster scheduling.
-- **Unguarded reads.** `placement` and `operations/{id}` on an unknown id are unhandled 500s (one is asserted as a known gap in the tests).
 
 ## 3. Unit tests
 

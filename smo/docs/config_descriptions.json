@@ -12,7 +12,7 @@
   "AWS_SECRET_ACCESS_KEY": "Secret key that goes with `AWS_ACCESS_KEY_ID`, for `db-backup` only. In an environment variable it is visible to anyone who can inspect the container; on AWS prefer an instance or pod role.",
   "DME_PRODUCER_HEALTH_CACHE_SECONDS": "DME: how long, in seconds, a producer's health answer is remembered when a type's status is computed (call flow 11c). Default 30; 0 asks the producer at every read.",
   "DME_URL": "Base URL R1 Termination forwards `/dme` to (Data Management and Exposure).",
-  "FOCOM_AUTO_REGISTER_RESOURCE_TYPES": "`true`, `1` or `yes`: FOCOM registers the O2ims resource types of an O-Cloud with the SMO registration service when it is created. Off by default; turning it on adds one call per O-Cloud.",
+  "FOCOM_AUTO_REGISTER_RESOURCE_TYPES": "`true`, `1` or `yes`: `POST /resources/provision` registers an unknown `resourceTypeId` in FOCOM's own resource types (named by its id) instead of refusing it with 404 `RESOURCE_TYPE_NOT_FOUND`. Off by default; nothing is called.",
   "FOCOM_IMS_ENDPOINT": "Path FOCOM advertises as the O2ims `infrastructureManagementServicesEndPoint` in an O-Cloud's registration. Change it when FOCOM is published under another path.",
   "FOCOM_SMO_REGISTRATION_SERVICE": "URL FOCOM advertises as the O2ims `smoRegistrationService` (where an O-Cloud registers with the SMO). Set it to the address the O-Cloud can reach R1 Termination at.",
   "FOCOM_URL": "Base URL R1 Termination forwards `/focom/...` to (O-Cloud inventory and O2ims).",

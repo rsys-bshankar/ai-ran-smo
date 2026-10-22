@@ -72,6 +72,9 @@ class FakeSme:
                 if method == "DELETE" and "/invoker-registrations/" in url:
                     sme.revoke_invoker(url.rsplit("/", 1)[1])
                     return httpx.Response(204)
+                if method == "POST" and url.endswith("/secret"):                 # a renewed secret: SME deletes the invoker's tokens
+                    sme.revoke_invoker(url.rsplit("/", 2)[1])
+                    return httpx.Response(200, json={})
                 return httpx.Response(200, json={})
 
         return Client
@@ -381,3 +384,14 @@ def test_the_max_entries_setting_falls_back_on_a_bad_value(monkeypatch):
     assert main._cache_max_entries() == 10000
     monkeypatch.setenv("R1_INTROSPECTION_CACHE_MAX_ENTRIES", "250")
     assert main._cache_max_entries() == 250
+
+
+def test_a_secret_renewed_through_this_gateway_drops_the_invokers_cached_tokens(sme, gateway, monkeypatch):
+    """A renewed invoker secret (`POST /sme/invoker-registrations/{id}/secret`) revokes the invoker's tokens at SME, so this replica forgets their cached
+    answers at once, as for an offboarding (found writing `r1-termination/docs/lifecycle.md`, DOC-CF-2.1: the old tokens stayed good for the TTL)."""
+    monkeypatch.setenv("R1_INTROSPECTION_CACHE_SECONDS", "3600")
+    sme.add("victim", invoker="rapp-1")
+    sme.add("admin", invoker="smo-admin", role="internal")
+    assert call(gateway, "victim").status_code == 200 and call(gateway, "admin").status_code == 200
+    assert call(gateway, "admin", "POST", "/sme/invoker-registrations/rapp-1/secret").status_code == 200
+    assert call(gateway, "victim").status_code == 401

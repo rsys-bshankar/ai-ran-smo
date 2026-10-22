@@ -817,7 +817,10 @@ def request_autonomy_dispatch(body: CreateAutonomyDispatchRequest, request: Requ
     # notified and everything commits once, so a refused intent leaves no dispatch behind. Call flow 09d: an rApp dispatches only for its own instance, the one
     # whose `oauthClientId` is its invoker id (403 `INSTANCE_IDENTITY_MISMATCH`, no fallback to a shared identity); the console and modules for any. The caller is
     # recorded as `dispatchedBy` and owns the intent the dispatch makes.
-    inst_resp = _r1.get(f"/rapp-mgmt/instances/{body.instanceId}")
+    try:
+        inst_resp = _r1.get(f"/rapp-mgmt/instances/{body.instanceId}")
+    except httpx.HTTPError as exc:          # DOC-CF-2.5: rApp Management not answering is a 503, not a 500
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"rApp Management did not answer ({type(exc).__name__})") from exc
     if inst_resp.status_code != 200:
         raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_FOUND, detail="no such RAppInstance")
     instance = inst_resp.json()

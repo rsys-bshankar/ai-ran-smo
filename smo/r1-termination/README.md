@@ -62,7 +62,7 @@ It calls only SME (introspection) and the chosen backend. It never reads a datab
 | Decision | Reason |
 |---|---|
 | Token check by introspection against SME on every request | SME issues opaque, server-tracked tokens (no IdP in this build), so validity can only be asked, not verified from a signature. |
-| Fails closed: an unreachable SME, a missing or non-`Bearer` header, an empty token, or `active != true` all give `401 UNAUTHORIZED` | Unlike best-effort notifications elsewhere, this is a security gate. |
+| Fails closed: a missing or non-`Bearer` header, an empty token, or `active != true` give `401 UNAUTHORIZED`; an SME that cannot answer (transport error, timeout or 5xx) gives `503 AUTH_SERVICE_UNAVAILABLE` with `Retry-After: 5`, and nothing is forwarded | Unlike best-effort notifications elsewhere, this is a security gate. |
 | `/bootstrap`, the probes (`/health`, `/live`, `/ready`) and `/version` are unauthenticated | Bootstrap must work before a token exists (an rApp calls it to find SME's token endpoint), and an orchestrator probes without a token; all are assumed network-isolated (see "Why `/bootstrap` has no token" below for what it reveals and the controls that narrow who can ask). The probes are declared ahead of the catch-all, so it is answered locally and not treated as an unknown prefix. |
 | Unknown prefix is `404 NO_ROUTE` before any token check | Nothing is forwarded, nothing is learned about backends. |
 | Prefix is stripped before forwarding | No backend carries its own prefix in its routes. |
@@ -136,10 +136,10 @@ A rApp's own operator API is not a row of this table: `/rapps/{instanceId}/opera
 
 | Call | When | Failure behaviour |
 |---|---|---|
-| `POST {SME_URL}/oauth2/introspect` with `{"token": ...}` | Every proxied request, before forwarding | Transport error, non-200, or `active != true`: request refused `401`. Fails closed. |
-| `{method} {backend}/{rest}` | After a successful token check | No handling: transport errors are not caught (see 1.5). |
+| `POST {SME_URL}/oauth2/introspect` with `{"token": ...}` | Every proxied request, before forwarding | Non-200 (other than 5xx) or `active != true`: refused `401`. Transport error, timeout or 5xx: refused `503 AUTH_SERVICE_UNAVAILABLE` with `Retry-After: 5`. Fails closed. |
+| `{method} {backend}/{rest}` | After a successful token check | A timeout is `504 UPSTREAM_TIMEOUT`, any other transport error `502 UPSTREAM_UNAVAILABLE`; otherwise the backend's own status. |
 
-Request-time order: route lookup (404) → bearer header present and non-empty (401) → introspection (401; 503 when SME cannot answer; from the cache when `R1_INTROSPECTION_CACHE_SECONDS` is on) → forward. Authentication only establishes that the token is active; the gateway does not read `client_id` from the introspection answer and does not pass an identity downstream.
+Request-time order: route lookup (404) → bearer header present and non-empty (401) → introspection (401; 503 when SME cannot answer; from the cache when `R1_INTROSPECTION_CACHE_SECONDS` is on) → forward. The gateway reads `client_id`, the role and the scope claim from the introspection answer and passes them downstream as `X-R1-Invoker-Id`, `X-R1-Role` and `X-R1-Scope` (see 1.5).
 
 ### 2.6 Configuration
 
@@ -160,7 +160,7 @@ Request-time order: route lookup (404) → bearer header present and non-empty (
 | `R1_KILL_CACHE_SECONDS` | `3` | How long the gateway keeps what it read about one rApp: the delay between throwing the switch and the gateway acting on it |
 | `R1_OPERATOR_API_CACHE_SECONDS` | `5` | How long the gateway keeps the operator API base a rApp instance registered (GUI-8.3): the delay between a registration, a change or the end of the instance and the gateway acting on it. `0` asks rApp Management on every call |
 | `R1_AUDIT` | `on` | `off` records nothing in the audit chain (PR-SEC-11). On, the gateway needs `SMO_DATABASE_URL` like a module does; a write that fails is logged and counted (`smo_audit_writes_total{outcome="failed"}`) and never fails the call |
-| `R1_INTROSPECT_TIMEOUT_SECONDS` | `5` | How long it waits for SME's token introspection (a timeout fails closed: 401) |
+| `R1_INTROSPECT_TIMEOUT_SECONDS` | `5` | How long it waits for SME's token introspection (a timeout fails closed: 503 `AUTH_SERVICE_UNAVAILABLE`) |
 | `R1_INTROSPECTION_CACHE_SECONDS` | `30` in compose and the chart (`0` in the code: off) | PR-SEC-5.4: seconds an answer of SME about a token is reused instead of asking again. Read on every call. A bad or negative value leaves it off. See "Introspection cache" |
 | `R1_INTROSPECTION_CACHE_MAX_ENTRIES` | `10000` | PR-SEC-5.4: most answers held (read once at start); the oldest goes first |
 
@@ -175,7 +175,8 @@ The gateway answers with `JSONResponse` bodies of the form `{"title": ..., "stat
 | `NO_ROUTE` | 404 | First path segment is not in `ROUTES` and not `rapps`, or a `/rapps` path is not `/rapps/<instance id>/operator/<route>` (the route only letters, digits and `._~-` between slashes) |
 | `OPERATOR_API_NOT_REGISTERED` | 404 | The instance has registered no operator API, is unknown, or is terminated (the answer of rApp Management, 404 or a null base, or a base that no longer passes the address check) |
 | `OPERATOR_API_UNRESOLVED` | 503 | rApp Management did not answer and no answer under a minute old is held; `Retry-After: 5`. Nothing is forwarded |
-| `UNAUTHORIZED` | 401 | No `Authorization` header, not `Bearer`, empty token, SME unreachable, or token not active; on `GET /bootstrap`, a missing or wrong `X-Bootstrap-Key` when `R1_BOOTSTRAP_KEY` is set |
+| `AUTH_SERVICE_UNAVAILABLE` | 503 | SME could not answer the introspection (transport error, timeout or 5xx); `Retry-After: 5`. Nothing is forwarded |
+| `UNAUTHORIZED` | 401 | No `Authorization` header, not `Bearer`, empty token, or token not active; on `GET /bootstrap`, a missing or wrong `X-Bootstrap-Key` when `R1_BOOTSTRAP_KEY` is set |
 | `PAYLOAD_TOO_LARGE` | 413 | The request body is larger than the cap for that path (`Content-Length`, or counted while streaming); the backend is not called |
 | `RATE_LIMITED` | 429 | The caller has used its request budget (per replica, or across replicas with `R1_RATE_STORE=postgres`); `Retry-After` is the whole seconds to wait. Counted after authentication, so a refused unauthenticated request spends nobody's budget |
 | `ROLE_NOT_PERMITTED` | 403 | The caller's role is `rapp` and the route is one only SMO modules and operators may call (`smo_shared/roles.py` `INTERNAL_ONLY`: setting or removing a per-rApp limit, defining or removing a KPI, purging CM history, and the approval queue: deciding a request, setting an approval policy, the subscriptions, and the lists of requests and decision records, `AI-11`/`AI-13`, and giving a model an owner, `PUT /mlmr/models/{id}/owner`, `SEC-15.3c`); the backend is not called |

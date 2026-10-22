@@ -766,7 +766,8 @@ services:
       GUI_DATABASE_URL: sqlite:////data/gui-bff.db
       GUI_INITIAL_PASSWORD_FILE: /data/initial-admin-password
       # Secrets come from the shell / an .env file, never from git. Unset
-      # GUI_JWT_SECRET: random per boot. Unset GUI_ADMIN_PASSWORD: a random
+      # GUI_JWT_SECRET: generated once, kept in the BFF database, and used by
+      # every instance of it. Unset GUI_ADMIN_PASSWORD: a random
       # admin password is generated into GUI_INITIAL_PASSWORD_FILE (0600, never
       # logged): docker compose exec gui-bff cat /data/initial-admin-password
       GUI_JWT_SECRET: ${GUI_JWT_SECRET:-}

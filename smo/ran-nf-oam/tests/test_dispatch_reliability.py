@@ -163,6 +163,11 @@ def test_pm_reports_are_delivered_to_every_data_job_of_the_counter_type(client, 
     assert posted[0] == ("/dme/data-jobs/j-1/records", {"payload": {
         "managedElementRef": "ME-1", "cellId": "101", "counter": "PRB_UTILIZATION", "value": 3.2,
         "timestamp": "2026-01-01T00:00:00+00:00"}})
+    # DOC-CF-2.3: a record DME refuses (here the second job's, 409) is not counted as delivered
+    refused = Resp({})
+    refused.status_code = 409
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: refused if "j-2" in path else Resp({}))
+    assert client.post("/pm-reports", json=report).json()["recordsDelivered"] == 1
 
 
 def test_pm_reports_carry_multi_counter_per_relation_measurements(client, db_session_factory, monkeypatch):

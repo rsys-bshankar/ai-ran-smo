@@ -330,7 +330,7 @@ def register_invoker(body: InvokerRegistrationRequest, request: Request, db: Ses
 def update_invoker(api_invoker_id: str, body: InvokerRegistrationRequest, db: Session = Depends(get_session)):
     """PutOnboardedInvokersApiInvokerId — replaces the invoker's public key
     (key rotation). Assertions signed with the old key stop verifying at
-    once. 404 for an unknown invoker. Emits API_INVOKER_UPDATED."""
+    once. 400 `INVOKER_NOT_REGISTERED` for an unknown invoker. Emits API_INVOKER_UPDATED."""
     # Route notes: the key is replaced as given; SME itself does not check who the caller is. Errors: 400 `INVOKER_NOT_REGISTERED`
     # (note 400, not 404), 422 `SECURITY_CONTEXT_INVALID`. The registration is looked up first so an unknown id is reported before the key is validated.
     # Does not touch the secret, the scope claim or issued tokens (tokens already issued stay valid; only new assertions are checked against the new key).
@@ -354,7 +354,7 @@ def set_invoker_authz_scope(api_invoker_id: str, body: AuthzScopeRequest, db: Se
     """PR-SEC-10.3: set (or, with `authzScope` null or `{}`, remove) the scope claim of an invoker: which managed elements, by region and tenant, it may touch
     (docs/adr/0005-tenant-region-authorization.md). Replaces the claim. For an operator or an SMO module: an rApp is refused at the gateway (the route
     is in `INTERNAL_ONLY` and not in `RAPP_MAY_CHANGE`). Takes effect on the invoker's next request (R1 Termination reads the claim from the
-    introspection; with its introspection cache on, within `R1_INTROSPECTION_CACHE_SECONDS`). 404 for an unknown invoker, 422 `AUTHZ_SCOPE_INVALID`."""
+    introspection; with its introspection cache on, within `R1_INTROSPECTION_CACHE_SECONDS`). 400 `INVOKER_NOT_REGISTERED` for an unknown invoker, 422 `AUTHZ_SCOPE_INVALID`."""
     # Route notes: the claim is validated before it is assigned, so a refused edit changes nothing. Emits API_INVOKER_UPDATED in the same transaction.
     inv = db.get(InvokerRegistration, api_invoker_id)
     if inv is None:

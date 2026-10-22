@@ -263,13 +263,15 @@ async def proxy(full_path: str, request: Request):
 
 
 def _drop_revoked_tokens(method: str, full_path: str, status: int) -> None:
-    """PR-SEC-5.4: SME removed the tokens of an invoker (offboarding it, or a purge that was not a dry run) or changed its scope claim (PR-SEC-10.3) through this gateway: forget the cached answers for them now,
+    """PR-SEC-5.4: SME removed the tokens of an invoker (offboarding it, renewing its secret, or a purge that was not a dry run) or changed its scope claim (PR-SEC-10.3) through this gateway: forget the cached answers for them now,
     so this replica stops honouring them on the next request instead of after the TTL. Other replicas, and a revocation made without this gateway, wait for the TTL."""
     if not 200 <= status < 300:
         return
     parts = [p for p in full_path.split("/") if p]
     if len(parts) == 4 and parts[:2] == ["sme", "invoker-registrations"] and parts[3] == "authz-scope" and method == "PUT":
         _introspection_cache.evict_invoker(parts[2])         # PR-SEC-10.3: a changed scope claim applies from the next request on this replica
+    elif len(parts) == 4 and parts[:2] == ["sme", "invoker-registrations"] and parts[3] == "secret" and method == "POST":
+        _introspection_cache.evict_invoker(parts[2])         # a renewed secret revokes the invoker's tokens at SME (DOC-CF-2.1): forget them here at once
     elif len(parts) == 3 and parts[0] == "sme" and parts[1] == "invoker-registrations":
         if method == "DELETE":
             _introspection_cache.evict_invoker(parts[2])

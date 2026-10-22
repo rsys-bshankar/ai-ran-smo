@@ -76,7 +76,7 @@
   "18-sme-trusted-invokers-lifecycle/18a-providers-and-publishing.png": "1d75da60cf484e5e6f725886e82cb2a1075e2d1a9752810b9c3e03d79494fe42",
   "18-sme-trusted-invokers-lifecycle/18b-invokers-onboarding-key-secret-offboarding.png": "b4701e6a5c5a73d5063842be0ae4fbe6d4f0d4750a52970667cc84c02e812cbf",
   "18-sme-trusted-invokers-lifecycle/18c-trust-contexts.png": "9cb0a3becdc65e8f9e21bf250e5f73487fcf13188e2279068738280bf00e4fd7",
-  "18-sme-trusted-invokers-lifecycle/18d-tokens-and-introspection.png": "cf9dda948ea46180e035b3343846aea24ef7abe8e8d824ee3ef1c2840bf6e36b",
+  "18-sme-trusted-invokers-lifecycle/18d-tokens-and-introspection.png": "28b32e7d45bb6c9bd47a1f2e3ab4404e019a9085d635ee011b4e1d390d03db52",
   "18-sme-trusted-invokers-lifecycle/18e-discovery-and-events.png": "0f4a2db0bdf9f1ad9f96ba9dee12f98604fa97c28c8044c6814de58bef779ab2",
   "19-software-management-job-lifecycle/19a-starting-a-job.png": "126f7039852a673133aa0b529431c1e70a46266f3738616bc5294e8e135b84d6",
   "19-software-management-job-lifecycle/19b-each-phase-sent-to-the-element.png": "c15486051e4d7619e73f8132b862a1316bb9b6325b483483e7c1a47365ead6dd",

@@ -10,6 +10,8 @@ Fixtures `db_session_factory` and `client` are imported by the other test files.
 
 import uuid
 
+import httpx
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
@@ -413,3 +415,13 @@ def test_nothing_is_announced_and_no_report_is_stored_when_the_publish_does_not_
     assert calls == [] and _outbox_rows(db_session_factory) == []
     with db_session_factory() as db:
         assert db.query(MDAFReport).count() == 0
+
+
+def test_publish_report_is_503_when_dme_does_not_answer(client, monkeypatch):
+    """DOC-CF-2.4: DME not answering the input-source check is 503 ENDPOINT_UNREACHABLE (it was a 500), and nothing is stored."""
+    def down(self, path, **kw):
+        raise httpx.ConnectError("dme down")
+    monkeypatch.setattr("app.main.R1Client.get", down)
+    resp = client.post("/reports", params={"analytics_type": "resource-utilization"},
+                       json={"output": {"utilization": 0.7}, "input_sources": [str(uuid.uuid4())]})
+    assert resp.status_code == 503 and resp.json()["detail"]["title"] == "ENDPOINT_UNREACHABLE"

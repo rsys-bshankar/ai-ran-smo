@@ -3025,8 +3025,8 @@ def _publish_kpi_to_dme(definition: KpiDefinition, result: dict) -> tuple[int, i
         payload = {"kpi": definition.name, "unit": definition.unit, "groupBy": result["groupBy"], "group": item["group"], "value": item["value"],
                    "samples": item["samples"], "reason": item["reason"], "windowStart": result["from"], "windowEnd": result["to"]}
         for job in jobs:
-            r1.post(f"/dme/data-jobs/{job['dataJobId']}/records", json={"payload": payload})
-            delivered += 1
+            resp = r1.post(f"/dme/data-jobs/{job['dataJobId']}/records", json={"payload": payload})
+            delivered += 1 if 200 <= resp.status_code < 300 else 0          # DOC-CF-2.3: a record DME refuses is not delivered
     return len(jobs), delivered
 
 
@@ -3583,8 +3583,8 @@ def _fan_out_to_dme(managed_element_ref: str, counter_type: str, measurements: l
         if m.relation is not None:
             payload["relation"] = m.relation
         for job in jobs:
-            r1.post(f"/dme/data-jobs/{job['dataJobId']}/records", json={"payload": payload})
-            delivered += 1
+            resp = r1.post(f"/dme/data-jobs/{job['dataJobId']}/records", json={"payload": payload})
+            delivered += 1 if 200 <= resp.status_code < 300 else 0          # DOC-CF-2.3: a record DME refuses is not delivered
     return len(jobs), delivered
 
 

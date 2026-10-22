@@ -1435,3 +1435,14 @@ def test_an_instance_without_a_workload_shows_none(client, db_session_factory):
     """An instance with no workloadRef (made before DOC-CF-1.4) shows no workload and NFO is not asked."""
     instance_id = _make_instance(db_session_factory)
     assert client.get(f"/instances/{instance_id}").json()["workload"] is None
+
+
+def test_create_instance_is_503_when_onboarding_does_not_answer(client, db_session_factory, monkeypatch):
+    """DOC-CF-2.2: Onboarding not answering the package read is 503 ENDPOINT_UNREACHABLE (it was a 500), and no instance is made."""
+    def down(self, path, **kw):
+        raise httpx.ConnectError("onboarding down")
+    monkeypatch.setattr("app.main.R1Client.get", down)
+    resp = client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}})
+    assert resp.status_code == 503 and resp.json()["detail"]["title"] == "ENDPOINT_UNREACHABLE"
+    with db_session_factory() as session:
+        assert session.query(RAppInstance).count() == 0
