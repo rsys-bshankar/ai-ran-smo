@@ -331,7 +331,7 @@ def _send(method: str, destination: str | None, **kwargs) -> httpx.Response | No
         return None
     correlation_id = get_correlation_id()
     if correlation_id:                                  # the request or task that caused the callback, so the receiver can quote it (call flow 14c)
-        kwargs["headers"] = {**kwargs.get("headers", {}), CORRELATION_ID_HEADER: correlation_id}
+        kwargs["headers"] = {CORRELATION_ID_HEADER: correlation_id}     # no caller passes headers of its own
     started = time.perf_counter()
     try:
         with _pinned_to(destination, vetting):          # SEC-15.16: the connect goes to the addresses vetted above
