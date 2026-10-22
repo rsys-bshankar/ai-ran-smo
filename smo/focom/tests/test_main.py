@@ -172,18 +172,15 @@ def test_provision_resource_does_not_notify_subscriber_filtered_out_by_type(clie
     assert calls == []
 
 
-def test_deprovision_resource_notifies_subscriber_regardless_of_type_filter(client, monkeypatch):
-    """Deprovisioning an id that was never provisioned has no known type, so a type-filtered subscriber is still notified of the DELETE rather than missing it."""
+def test_deprovisioning_an_unknown_resource_notifies_nobody(client, monkeypatch):
+    """Call flow 16d: deprovisioning an id that is not a stored resource (or not a UUID) is a 200 no-op that sends no DELETE (it told every subscriber
+    that a resource that never existed was gone)."""
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
-
-    client.post("/inventory/subscriptions", json={"callback": "http://consumer/callback", "resourceTypeId": "gpu-l40"})
-
-    client.delete("/resources/some-resource-id")
-
-    assert len(calls) == 1
-    assert calls[0][1]["notificationEventType"] == "DELETE"
-    assert calls[0][1]["resourceId"] == "some-resource-id"
+    client.post("/inventory/subscriptions", json={"callback": "http://consumer/callback"})
+    assert client.delete("/resources/some-resource-id").json() == {"status": "deprovisioned"}
+    assert client.delete(f"/resources/{uuid.uuid4()}").status_code == 200
+    assert calls == []
 
 
 def test_deprovision_known_resource_notifies_with_its_real_type(client, monkeypatch):
@@ -229,10 +226,19 @@ def test_provision_and_deprovision_resource(client):
     assert deprovisioned.json()["status"] == "deprovisioned"
 
 
-def test_monitor_resource_reports_healthy(client):
-    """`GET /resources/{id}/status` is a constant `healthy`, whatever the id."""
-    resp = client.get("/resources/some-resource-id/status")
-    assert resp.json() == {"resourceId": "some-resource-id", "status": "healthy"}
+def test_resource_status_follows_its_active_alarms_and_an_unknown_one_is_404(client):
+    """Call flow 16c: a resource is `healthy` with no active alarm and `degraded` with one, counted in `activeAlarms`; a cleared alarm no longer counts; an
+    unknown id is 404 `RESOURCE_NOT_FOUND` (it answered `healthy` for any id)."""
+    rid = client.post("/resources/provision", json={"resourceTypeId": "gpu-l40"}).json()["resourceId"]
+    assert client.get(f"/resources/{rid}/status").json() == {"resourceId": rid, "status": "healthy", "activeAlarms": 0}
+    alarm = client.post("/alarms/ingest", params={"resource_ref": rid, "severity": "major"}).json()
+    assert client.get(f"/resources/{rid}/status").json() == {"resourceId": rid, "status": "degraded", "activeAlarms": 1}
+    alarm_id = alarm.get("alarmId") or alarm.get("alarmEventRecordId")
+    client.patch(f"/alarms/{alarm_id}/clear")
+    assert client.get(f"/resources/{rid}/status").json()["status"] == "healthy"
+    missing = client.get("/resources/some-resource-id/status")
+    assert missing.status_code == 404 and missing.json()["detail"]["title"] == "RESOURCE_NOT_FOUND"
+    assert client.get(f"/resources/{rid}").json()["resourceTypeId"] == "gpu-l40" and client.get(f"/resources/{uuid.uuid4()}").status_code == 404
 
 
 def test_ingested_alarm_is_queryable(client):

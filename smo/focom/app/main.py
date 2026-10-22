@@ -30,6 +30,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from smo_shared import events
 from smo_shared.logconfig import install_logging
 from smo_shared.metrics import install_metrics
 from smo_shared.health import database_check, install_health
@@ -39,12 +40,13 @@ from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.outbox import enqueue
 from smo_shared.pagination import PageLimit, PageOffset, paginate
+from smo_shared.webhook import is_safe_webhook_destination
 
 from . import fcaps, provisioning, sites
 from .common import (IMS_ENDPOINT, PHASE1_CLUSTER_ID, PHASE1_DEPLOYMENT_MANAGER_ID, PHASE1_POOL_ID, PHASE1_RESOURCE_TYPE_ID,
                      SMO_REGISTRATION_SERVICE, auto_register_resource_types, ensure_phase1_topology, global_cloud_id, ioc,
                      location_view, pool_view, site_view)
-from .models import DeploymentManager, InventorySubscription, Location, OCloudSite, Resource, ResourcePool, ResourceType
+from .models import DeploymentManager, InventorySubscription, Location, O2imsObject, OCloudAlarm, OCloudSite, Resource, ResourcePool, ResourceType
 
 app = FastAPI(title="FOCOM SMOS (O2ims)")
 install_logging(app)  # structured JSON logs and one access-log line per request (PR-OBS-1)
@@ -143,11 +145,11 @@ class RegisterResourceTypeRequest(BaseModel):
 
 @app.post("/resource-types", status_code=201)
 def register_resource_type(body: RegisterResourceTypeRequest, db: Session = Depends(get_session)):
-    # Route notes: 201 with the stored type. 422 `SCHEMA_VALIDATION_FAILED` (not 409) when the id already exists. The body forbids unknown fields. The only
-    # route that sets the dictionary ids, kind and class of a type; a type registered here can then be provisioned.
+    # Route notes: 201 with the stored type. 409 `RESOURCE_TYPE_ALREADY_EXISTS` when the id already exists (a 422 before call flow 16). The body forbids unknown
+    # fields. The only route that sets the dictionary ids, kind and class of a type; a type registered here can then be provisioned.
     _ensure_phase1_topology(db)
     if db.get(ResourceType, body.resourceTypeId) is not None:
-        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"resource type {body.resourceTypeId!r} already exists")
+        raise framework_error(FrameworkError.RESOURCE_TYPE_ALREADY_EXISTS, detail=f"resource type {body.resourceTypeId!r} already exists")
     row = ResourceType(resource_type_id=body.resourceTypeId, name=body.name, description=body.description, vendor=body.vendor,
                        model=body.model, version=body.version, alarm_dictionary_id=body.alarmDictionaryId,
                        performance_dictionary_id=body.performanceDictionaryId, resource_kind=body.resourceKind,
@@ -328,31 +330,44 @@ def export_topology(db: Session = Depends(get_session)):
     return {"entities": entities, "relationships": relationships}
 
 
-def _notify_inventory_subscribers(db: Session, event_type: str, resource_id: str, resource_type_id: str | None) -> None:
-    """Enqueues a notification for each inventory subscription that wants this event; the caller commits.
+def _notify_inventory_subscribers(db: Session, event_type: str, resource: Resource) -> None:
+    """Enqueues a notification for each inventory subscription that wants this event, and publishes it on the SMO event feed; the caller commits.
 
-    `event_type` is `CREATE` or `DELETE`. A subscription with a `resource_type_id` filter is skipped when it differs from `resource_type_id`; when
-    `resource_type_id` is None (deprovisioning an id that is not a stored resource) every subscription matches, so a type-filtered subscriber still hears
-    about the delete. The payload is `{objectType: "resource", notificationEventType, resourceId, resourceTypeId, consumerSubscriptionId}`; the
-    subscriber's own `consumerSubscriptionId` comes back on the notification so it can route it.
+    `event_type` is `CREATE` or `DELETE`. A subscription with a `resource_type_id` filter is skipped when it differs from the resource's type. The payload
+    is O2-IMS's `InfrastructureInventoryEvent` (call flow 16b): `notificationId` (one per event, the same for every subscriber), `consumerSubscriptionId`
+    (the subscriber's own, so it can route it), `notificationEventType`, `objectRef` (`/focom/resources/<id>`), `postObjectState` on a CREATE and
+    `priorObjectState` on a DELETE (the resource as `GET /resources/{id}` shows it), plus this build's earlier fields `objectType`, `resourceId` and
+    `resourceTypeId`, which existing subscribers read. The event is `org.oran.smo.o-cloud-resource.created` / `.deleted`.
 
     One outbox row per subscription, added to the caller's transaction and sent after its commit (PR-MSG-1.8); nothing is sent when the caller rolls back.
-    A callback the SSRF guard refuses is dropped by `enqueue` with a log warning.
     """
+    view = _resource_view(resource)
+    resource_id = view["resourceId"]
+    states = {"postObjectState": view} if event_type == "CREATE" else {"priorObjectState": view}
+    notification_id = str(uuid.uuid4())
     for sub in db.scalars(select(InventorySubscription)).all():
-        if sub.resource_type_id is not None and resource_type_id is not None and sub.resource_type_id != resource_type_id:
+        if sub.resource_type_id is not None and sub.resource_type_id != resource.resource_type_id:
             continue
         enqueue(db, sub.callback, {
-            "objectType": "resource", "notificationEventType": event_type,
-            "resourceId": resource_id, "resourceTypeId": resource_type_id,
-            "consumerSubscriptionId": sub.consumer_subscription_id,
+            "notificationId": notification_id, "consumerSubscriptionId": sub.consumer_subscription_id, "notificationEventType": event_type,
+            "objectRef": f"/focom/resources/{resource_id}", **states,
+            "objectType": "resource", "resourceId": resource_id, "resourceTypeId": resource.resource_type_id,
         })
+    events.publish(db, "o-cloud-resource", "created" if event_type == "CREATE" else "deleted", "/smo/focom", resource_id,
+                   {"resourceTypeId": resource.resource_type_id, "resourcePoolId": resource.resource_pool_id})
 
 
 @app.post("/inventory/subscriptions", status_code=201)
 def subscribe_inventory_changes(body: SubscribeInventoryRequest, db: Session = Depends(get_session)):
-    # Route notes: 201 with `{subscriptionId, consumerSubscriptionId}`. Neither `callback` nor `resourceTypeId` is checked here: the SSRF guard runs when a
-    # notification is enqueued (a refused destination is dropped there), and a filter naming no registered type simply never matches.
+    # Route notes: 201 with `{subscriptionId, consumerSubscriptionId}`. Call flow 16a: a `callback` the SSRF guard refuses is 422 `SCHEMA_VALIDATION_FAILED`
+    # (it was accepted and every notification to it dropped), and a `resourceTypeId` filter naming no registered type is 404 `RESOURCE_TYPE_NOT_FOUND` (it
+    # never matched). The guard runs again when each notification is sent.
+    if not is_safe_webhook_destination(body.callback):
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="callback is not an allowed http(s) destination")
+    if body.resourceTypeId is not None:
+        _ensure_phase1_topology(db)
+        if db.get(ResourceType, body.resourceTypeId) is None:
+            raise framework_error(FrameworkError.RESOURCE_TYPE_NOT_FOUND, detail=f"resource type {body.resourceTypeId!r} is not registered")
     sub = InventorySubscription(callback=body.callback, resource_type_id=body.resourceTypeId,
                                  consumer_subscription_id=body.consumerSubscriptionId)
     db.add(sub)
@@ -369,71 +384,108 @@ def unsubscribe_inventory_changes(subscription_id: uuid.UUID, db: Session = Depe
         db.commit()
 
 
+class ProvisionResourceRequest(BaseModel):
+    """What `POST /resources/provision` stores of the O2-IMS `Resource`: its type (default `generic`), the pool to put it in (default `pool-0`), a
+    description, the global asset id, `tags` and `groups` (each a list of names, as O2-IMS has them). Any other key is accepted and ignored, so a service order's
+    step `spec` carrying more keeps working."""
+    model_config = ConfigDict(extra="ignore")
+
+    resourceTypeId: str | None = None
+    resourcePoolId: str | None = None
+    description: str | None = None
+    globalAssetId: str | None = None
+    tags: list[str] | None = None
+    groups: list[str] | None = None
+
+
 @app.post("/resources/provision")
-def provision_resource(spec: dict, db: Session = Depends(get_session)):
-    """Previously returned a random UUID and persisted nothing at all —
-    HISTORY.md §5's "no model shape to extend later" gap. Now
-    creates a real Resource row in the Phase 1 pool, so the new
-    GET /resource-pools/{id}/resources drill-down actually has
-    something behind it. An unrecognized resourceTypeId is
-    auto-registered as a new ResourceType rather than rejected — Phase
-    1 never validated this field, and rejecting it now would be a
-    scope-creeping behavior change, not just a schema addition.
-    """
-    # Route notes (the docstring above is published): `spec` is an untyped dict. `resourceTypeId` defaults to `generic` when absent or empty; an unregistered
-    # type is 404 `RESOURCE_TYPE_NOT_FOUND` unless `FOCOM_AUTO_REGISTER_RESOURCE_TYPES` is on. `description`, `globalAssetId`, `tags` and `groups` are
-    # copied as given without checking their types. The resource always goes into `pool-0` whatever pools exist (`sites.py`). Order: seed, resolve the type,
-    # insert the resource, flush for its id, enqueue the CREATE notifications, one commit. Answers 200 (not 201) with `{resourceId, clusterId}`.
+def provision_resource(spec: ProvisionResourceRequest, db: Session = Depends(get_session)):
+    """Creates an inventory resource in a pool, notifies the inventory subscribers whose filter matches its type and publishes
+    `o-cloud-resource.created`. An unregistered resource type is refused unless `FOCOM_AUTO_REGISTER_RESOURCE_TYPES` is on; an unknown pool is
+    refused."""
+    # Route notes (the docstring above is published): a field of the wrong type is 422 (call flow 16b; the body was an untyped dict stored as given).
+    # `resourceTypeId` defaults to `generic` when absent or empty; an unregistered type is 404 `RESOURCE_TYPE_NOT_FOUND` unless
+    # `FOCOM_AUTO_REGISTER_RESOURCE_TYPES` is on. `resourcePoolId` defaults to `pool-0`; an unknown one is 404 `RESOURCE_POOL_NOT_FOUND`. Order: seed, resolve
+    # the type and the pool, insert the resource, flush for its id, enqueue the CREATE notifications and the event, one commit. Answers 200 (not 201) with
+    # `{resourceId, clusterId}`.
     _ensure_phase1_topology(db)
-    resource_type_id = spec.get("resourceTypeId") or PHASE1_RESOURCE_TYPE_ID
+    resource_type_id = spec.resourceTypeId or PHASE1_RESOURCE_TYPE_ID
+    pool_id = spec.resourcePoolId or PHASE1_POOL_ID
+    if db.get(ResourcePool, pool_id) is None:
+        raise framework_error(FrameworkError.RESOURCE_POOL_NOT_FOUND, detail=f"no resource pool {pool_id!r}")
     if db.get(ResourceType, resource_type_id) is None:
         if not auto_register_resource_types():
             raise framework_error(FrameworkError.RESOURCE_TYPE_NOT_FOUND,
                                   detail=f"resource type {resource_type_id!r} is not registered (POST /resource-types, or set FOCOM_AUTO_REGISTER_RESOURCE_TYPES=true)")
         db.add(ResourceType(resource_type_id=resource_type_id, name=resource_type_id))
-        # A real bug against real Postgres, never caught by SQLite: flushing
-        # this new ResourceType row together with the new Resource row below
-        # in one commit — instead of flushing it first — hits a genuine
-        # ForeignKeyViolation on resource.resource_type_id. Confirmed with a
-        # minimal repro against a real local Postgres 16 instance; an
-        # explicit flush here (matching the pattern NFO's own Instantiate
-        # already uses between its own dependent inserts) makes the new
-        # ResourceType row visible before the Resource row that references
-        # it is ever inserted.
+        # The new type must be flushed before the resource that references it: one flush of both hits a ForeignKeyViolation on Postgres (SQLite, which
+        # does not enforce the key, never showed it).
         db.flush()
-    # HISTORY.md §7 item 7: globalAssetId/tags/groups — real
-    # ORAN.O2ims.Inventory.yaml Resource fields, previously not even
-    # readable from this already-untyped spec dict, let alone persisted.
-    resource = Resource(resource_type_id=resource_type_id, resource_pool_id=PHASE1_POOL_ID, description=spec.get("description"),
-                         global_asset_id=spec.get("globalAssetId"), tags=spec.get("tags"), groups=spec.get("groups"))
+    resource = Resource(resource_type_id=resource_type_id, resource_pool_id=pool_id, description=spec.description,
+                         global_asset_id=spec.globalAssetId, tags=spec.tags, groups=spec.groups)
     db.add(resource)
     db.flush()  # the resource's id, for the notification
-    _notify_inventory_subscribers(db, "CREATE", str(resource.resource_id), resource_type_id)  # enqueued in this transaction (PR-MSG-1.8)
+    _notify_inventory_subscribers(db, "CREATE", resource)  # enqueued in this transaction (PR-MSG-1.8)
     db.commit()
     return {"resourceId": str(resource.resource_id), "clusterId": PHASE1_CLUSTER_ID}
 
 
+def _stored_resource(db: Session, resource_id: str) -> Resource | None:
+    """The stored resource with this id, or None (also for an id that is not a UUID)."""
+    try:
+        return db.get(Resource, uuid.UUID(resource_id))
+    except ValueError:
+        return None
+
+
+def _resource_referrers(db: Session, resource_id: str) -> list[str]:
+    """What still names the inventory resource: `"<Kind> <id>"` for each cluster resource (`resourceId`), infrastructure resource (`inventoryResourceIds`)
+    and child resource (`parent_id`). Empty when nothing does."""
+    found = []
+    for kind, attr in (("ClusterResource", "resourceId"), ("InfrastructureResource", "inventoryResourceIds")):
+        for row in db.scalars(select(O2imsObject).where(O2imsObject.kind == kind)).all():
+            value = row.attributes.get(attr)
+            if value == resource_id or (isinstance(value, list) and resource_id in value):
+                found.append(f"{kind} {row.object_id}")
+    children = db.scalars(select(Resource.resource_id).where(Resource.parent_id == uuid.UUID(resource_id))).all()
+    return found + [f"Resource {c}" for c in children]
+
+
 @app.delete("/resources/{resource_id}")
 def deprovision_resource(resource_id: str, db: Session = Depends(get_session)):
-    # Route notes: always 200 `{status: "deprovisioned"}`. A `resource_id` that is not a UUID or names no stored resource is a no-op, but the DELETE
-    # notification is still enqueued, with the id exactly as given and no type (so every subscriber matches). The delete does not look at objects that
-    # name the resource (cluster resources, infrastructure resources, children through `parent_id`).
-    try:
-        resource = db.get(Resource, uuid.UUID(resource_id))
-    except ValueError:
-        resource = None  # Phase 1: an arbitrary, never-provisioned (or non-UUID) resource_id is a no-op, not an error
-    resource_type_id = resource.resource_type_id if resource is not None else None
-    if resource is not None:
-        db.delete(resource)
-    _notify_inventory_subscribers(db, "DELETE", resource_id, resource_type_id)
+    # Route notes: 200 `{status: "deprovisioned"}`. Call flow 16d: a `resource_id` that is not a UUID or names no stored resource is a no-op that sends no
+    # notification (a DELETE of a resource that never existed was sent to every subscriber); a resource that a cluster resource, an infrastructure resource or
+    # a child resource still names is 409 `RESOURCE_IN_USE`, listing them, and stays. Deleting one sends the DELETE notifications and the event in its commit.
+    resource = _stored_resource(db, resource_id)
+    if resource is None:
+        return {"status": "deprovisioned"}
+    referrers = _resource_referrers(db, resource_id)
+    if referrers:
+        raise framework_error(FrameworkError.RESOURCE_IN_USE, detail=f"resource {resource_id} is still named by: {', '.join(referrers)}")
+    _notify_inventory_subscribers(db, "DELETE", resource)
+    db.delete(resource)
     db.commit()
     return {"status": "deprovisioned"}
 
 
+@app.get("/resources/{resource_id}")
+def get_resource(resource_id: str, db: Session = Depends(get_session)):
+    # Route notes: call flow 16c. 404 `RESOURCE_NOT_FOUND` for an id that is not a stored resource (or not a UUID).
+    resource = _stored_resource(db, resource_id)
+    if resource is None:
+        raise framework_error(FrameworkError.RESOURCE_NOT_FOUND, detail="no such resource")
+    return _resource_view(resource)
+
+
 @app.get("/resources/{resource_id}/status")
-def monitor_resource(resource_id: str):
-    # Route notes: a constant. Answers `healthy` for any id, existing or not, and reads no database or telemetry.
-    return {"resourceId": resource_id, "status": "healthy"}
+def monitor_resource(resource_id: str, db: Session = Depends(get_session)):
+    # Route notes: call flow 16c. 404 `RESOURCE_NOT_FOUND` for an unknown id (it answered `healthy` for any id). `degraded` while the resource has an active
+    # (not cleared) FOCOM alarm, else `healthy`; `activeAlarms` counts them.
+    if _stored_resource(db, resource_id) is None:
+        raise framework_error(FrameworkError.RESOURCE_NOT_FOUND, detail="no such resource")
+    active = len(db.scalars(select(OCloudAlarm.alarm_id).where(OCloudAlarm.resource_ref == resource_id, OCloudAlarm.cleared_at.is_(None),
+                                                               OCloudAlarm.severity != "cleared")).all())
+    return {"resourceId": resource_id, "status": "degraded" if active else "healthy", "activeAlarms": active}
 
 
 def _resource_type_view(t: ResourceType) -> dict:

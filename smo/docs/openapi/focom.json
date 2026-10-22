@@ -777,6 +777,85 @@
         "title": "ProblemDetails",
         "type": "object"
       },
+      "ProvisionResourceRequest": {
+        "description": "What `POST /resources/provision` stores of the O2-IMS `Resource`: its type (default `generic`), the pool to put it in (default `pool-0`), a\ndescription, the global asset id, `tags` and `groups` (each a list of names, as O2-IMS has them). Any other key is accepted and ignored, so a service order's\nstep `spec` carrying more keeps working.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "globalAssetId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Globalassetid"
+          },
+          "groups": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Groups"
+          },
+          "resourcePoolId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resourcepoolid"
+          },
+          "resourceTypeId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resourcetypeid"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          }
+        },
+        "title": "ProvisionResourceRequest",
+        "type": "object"
+      },
       "ProvisioningRequest": {
         "additionalProperties": false,
         "properties": {
@@ -12812,15 +12891,13 @@
     },
     "/resources/provision": {
       "post": {
-        "description": "Previously returned a random UUID and persisted nothing at all \u2014\nHISTORY.md \u00a75's \"no model shape to extend later\" gap. Now\ncreates a real Resource row in the Phase 1 pool, so the new\nGET /resource-pools/{id}/resources drill-down actually has\nsomething behind it. An unrecognized resourceTypeId is\nauto-registered as a new ResourceType rather than rejected \u2014 Phase\n1 never validated this field, and rejecting it now would be a\nscope-creeping behavior change, not just a schema addition.",
+        "description": "Creates an inventory resource in a pool, notifies the inventory subscribers whose filter matches its type and publishes\n`o-cloud-resource.created`. An unregistered resource type is refused unless `FOCOM_AUTO_REGISTER_RESOURCE_TYPES` is on; an unknown pool is\nrefused.",
         "operationId": "provision_resource_resources_provision_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
-                "title": "Spec",
-                "type": "object"
+                "$ref": "#/components/schemas/ProvisionResourceRequest"
               }
             }
           },
@@ -13064,6 +13141,131 @@
           }
         },
         "summary": "Deprovision Resource"
+      },
+      "get": {
+        "operationId": "get_resource_resources__resource_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Resource"
       }
     },
     "/resources/{resource_id}/status": {

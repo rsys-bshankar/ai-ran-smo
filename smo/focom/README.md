@@ -90,7 +90,7 @@ String identifiers for the Phase 1 concepts, UUIDs for provisioned resources.
 
 ### 2.3 State machines
 
-None: stateless. Resources are created and deleted; there is no lifecycle state. `GET /resources/{id}/status` always returns `healthy`.
+None: stateless. Resources are created and deleted; there is no lifecycle state. `GET /resources/{id}/status` is derived from the resource's active FOCOM alarms (`degraded` / `healthy`).
 
 ### 2.4 API
 
@@ -111,15 +111,16 @@ All routes are under `/focom` through R1. Lists return `{items, total, limit, of
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/resources/provision` | Body is a free dict: `resourceTypeId` (default `generic`), `description`, `globalAssetId`, `tags`, `groups`. Creates a `Resource` in `pool-0`; returns `{resourceId, clusterId}`; notifies `CREATE` |
-| DELETE | `/resources/{resource_id}` | Returns `{status: "deprovisioned"}` (200); unknown or non-UUID id is a no-op; notifies `DELETE` |
-| GET | `/resources/{resource_id}/status` | Always `{resourceId, status: "healthy"}` |
+| POST | `/resources/provision` | Typed body (call flow 16b): `resourceTypeId` (default `generic`), `resourcePoolId` (default `pool-0`), `description`, `globalAssetId`, `tags` and `groups` (lists of names); other keys are ignored; a field of the wrong type is 422, an unknown pool 404 `RESOURCE_POOL_NOT_FOUND`, an unregistered type 404 `RESOURCE_TYPE_NOT_FOUND`. Creates a `Resource`; returns `{resourceId, clusterId}`; notifies `CREATE` and publishes `o-cloud-resource.created` |
+| DELETE | `/resources/{resource_id}` | Returns `{status: "deprovisioned"}` (200). An unknown or non-UUID id is a no-op that notifies nobody (call flow 16d). 409 `RESOURCE_IN_USE` while a cluster resource, an infrastructure resource or a child resource names it (listed in the detail). Otherwise deletes it, notifies `DELETE` and publishes `o-cloud-resource.deleted` |
+| GET | `/resources/{resource_id}` | The resource (`resourceId`, `resourceTypeId`, `resourcePoolId`, `parentId`, `description`, `globalAssetId`, `tags`, `groups`); 404 `RESOURCE_NOT_FOUND` (call flow 16c) |
+| GET | `/resources/{resource_id}/status` | `{resourceId, status, activeAlarms}`: `degraded` while the resource has an active (not cleared) FOCOM alarm, else `healthy`; 404 `RESOURCE_NOT_FOUND` for an unknown id (call flow 16c; it was a constant `healthy`) |
 
 **Subscriptions**
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/inventory/subscriptions` | Body `callback`, `resourceTypeId?`, `consumerSubscriptionId?`; 201 `{subscriptionId, consumerSubscriptionId}` |
+| POST | `/inventory/subscriptions` | Body `callback`, `resourceTypeId?`, `consumerSubscriptionId?`; 201 `{subscriptionId, consumerSubscriptionId}`. A callback the SSRF guard refuses is 422 `SCHEMA_VALIDATION_FAILED`, an unregistered `resourceTypeId` 404 `RESOURCE_TYPE_NOT_FOUND` (call flow 16a) |
 | GET | `/inventory/subscriptions` | List |
 | DELETE | `/inventory/subscriptions/{subscription_id}` | 204, idempotent |
 
@@ -146,7 +147,7 @@ All routes are under `/focom` through R1. Lists return `{items, total, limit, of
 
 ### 2.5 Interactions
 
-- **Inventory-change notification.** On provision (`CREATE`) and deprovision (`DELETE`), every subscription is considered; one with a `resourceTypeId` filter is skipped when it differs from the resource's type (an unknown type, as when deprovisioning an unprovisioned id, matches every filter). Delivery: `POST <callback>` with `{objectType: "resource", notificationEventType, resourceId, resourceTypeId, consumerSubscriptionId}` via `smo_shared.webhook.post_webhook`, 2 s timeout, failures swallowed.
+- **Inventory-change notification.** On provision (`CREATE`) and deprovision of a stored resource (`DELETE`), every subscription is considered; one with a `resourceTypeId` filter is skipped when it differs from the resource's type. The payload is O2-IMS's `InfrastructureInventoryEvent`: `notificationId` (one per event), `consumerSubscriptionId`, `notificationEventType`, `objectRef` (`/focom/resources/<id>`), `postObjectState` (CREATE) or `priorObjectState` (DELETE), each the resource's view; the earlier `objectType`, `resourceId` and `resourceTypeId` stay. The same change is published on the SMO event feed as `org.oran.smo.o-cloud-resource.created` / `.deleted` (call flow 16b, 16d).
 - **Outbound R1 calls:** none. **Background tasks:** none.
 - **Inbound:** NFO `GET /inventory` at every Instantiate; SO SMOS provisioning ([call flow 16](../docs/call-flows/16-focom-resource-inventory-lifecycle.md)).
 
@@ -170,10 +171,10 @@ Returned as `{"detail": {"type": "about:blank", "title": <code>, "status", "deta
 
 ### 2.8 Limits and open items
 
-- **Sites and locations.** A seeded `loc-0` / `site-0` / `pool-0`; `provision` still always creates resources in `pool-0` (`SA-FOCOM-2`, closed).
+- **Sites and locations.** A seeded `loc-0` / `site-0` / `pool-0`; `provision` puts a resource in `resourcePoolId` when given, else `pool-0` (`SA-FOCOM-2`, closed; call flow 16b).
 - **Alarms and performance.** Built as in 1.2 (`SA-FOCOM-6`, closed); `FILE` / `STREAM` performance reporting, retention and dictionary lookups are not.
-- **Provisioning model.** Built at the model level (`SA-FOCOM-7`, closed): FOCOM deploys no real cluster; `provision` takes an untyped dict.
-- **Stubbed health.** `GET /resources/{id}/status` is a constant; no hardware telemetry populates the resource tree (only the `parent_id` shape exists).
+- **Provisioning model.** Built at the model level (`SA-FOCOM-7`, closed): FOCOM deploys no real cluster; `provision` takes the typed O2-IMS `Resource` fields.
+- **Health from alarms only.** `GET /resources/{id}/status` reads FOCOM's own alarms; no hardware telemetry populates the resource tree (only the `parent_id` shape exists). Deprovisioning a resource leaves its alarms as they are (history).
 - **No topology push.** `/topology` is a pull; no Kafka / CRD integration.
 - **Node utilisation is ingested, not collected (PR-GUI-9.8b).** `/resources/{id}/utilisation` and `/utilisation` read the newest `CPU_UTILIZATION` /
   `MEMORY_UTILIZATION` records (the convention in 1.2). FOCOM collects nothing, so a node shows values only once a producer ingests them: on a stack
@@ -193,7 +194,8 @@ cd smo/focom && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | Test file | Covers | Count |
 |---|---|---|
 | `tests/test_o2ims_conformance.py` | Sites, locations and pools (links, inline resources, guarded deletes), `AlarmEventRecord` fields and validation, ack / clear / change and filtered notifications, performance records / jobs / subscriptions and reports, node utilisation (newest CPU and memory record whatever the arrival order, suspect / other-resource / other-measurement records ignored, nulls not 404, the batched read's order, duplicates and 1-100 bound, the 0-100 ingest check), artifact / cluster / infrastructure resources and their references, provisioning requests, closed and registrable resource types | 27 |
-| `tests/test_main.py` | `/inventory` shape, seeded types / manager / location / site, `resource_type` filtering; subscriptions (create, `consumerSubscriptionId`, delete idempotent, list); notifications on provision / deprovision (match, filtered out, delete regardless of filter, real type on delete, unreachable subscriber, id pass-through); provision / deprovision (incl. unknown id, new fields, auto-registered type); resource types, pools, pool resources, deployment managers (list, get, 404, spec-field exposure); alarms and performance (ingest, filter, empty); `/topology` entities and relationships; `/resources/{id}/status`; `/health` | 54 |
+| `tests/test_main.py` | `/inventory` shape, seeded types / manager / location / site, `resource_type` filtering; subscriptions (create, `consumerSubscriptionId`, delete idempotent, list); notifications on provision / deprovision (match, filtered out, delete regardless of filter, real type on delete, unreachable subscriber, id pass-through); provision / deprovision (incl. unknown id, new fields, auto-registered type); resource types, pools, pool resources, deployment managers (list, get, 404, spec-field exposure); alarms and performance (ingest, filter, empty); `/topology` entities and relationships; `/resources/{id}/status`; `/health` ; a resource's status follows its active alarms, an unknown resource 404, an unknown deprovision notifies nobody (call flow 16) | 54 |
+| `tests/test_inventory_lifecycle.py` | Call flow 16: a subscription with a refused callback or an unknown type refused; a notification is an O2-IMS inventory event and the change is on the event feed; a typed provision body and a pool; a resource still named by a cluster, infrastructure or child resource is not deprovisioned | 4 |
 
 Subscriber callbacks are intercepted by patching `httpx.post`.
 

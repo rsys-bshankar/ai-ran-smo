@@ -358,12 +358,14 @@ def test_a_provisioning_request_needs_a_template_and_a_cluster_type(client):
 # ---------------------------------------------------------------- SA-FOCOM-9
 
 def test_resource_types_can_be_registered_and_then_provisioned(client):
-    """SA-FOCOM-9: an unknown type is refused until `POST /resource-types` registers it; a duplicate id or a bad kind is 422."""
+    """SA-FOCOM-9: an unknown type is refused until `POST /resource-types` registers it; a duplicate id is 409 `RESOURCE_TYPE_ALREADY_EXISTS` (call flow
+    16), a bad kind 422."""
     assert client.post("/resources/provision", json={"resourceTypeId": "fpga-u280"}).status_code == 404
     out = client.post("/resource-types", json={"resourceTypeId": "fpga-u280", "name": "Alveo U280", "resourceKind": "PHYSICAL", "resourceClass": "COMPUTE"})
     assert out.status_code == 201 and out.json()["resourceClass"] == "COMPUTE"
     assert client.post("/resources/provision", json={"resourceTypeId": "fpga-u280"}).status_code == 200
-    assert client.post("/resource-types", json={"resourceTypeId": "fpga-u280", "name": "dup"}).status_code == 422
+    dup = client.post("/resource-types", json={"resourceTypeId": "fpga-u280", "name": "dup"})
+    assert dup.status_code == 409 and dup.json()["detail"]["title"] == "RESOURCE_TYPE_ALREADY_EXISTS"
     assert client.post("/resource-types", json={"resourceTypeId": "x", "name": "x", "resourceKind": "WEIRD"}).status_code == 422
 
 
