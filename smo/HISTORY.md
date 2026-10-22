@@ -2780,6 +2780,19 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-2 — Each module's own lifecycle documented, from its own point of view
+
+`<module>/docs/lifecycle.md` for every module (R1 Termination, SME, Onboarding, rApp Management, NFO, FOCOM, DME, RAN NF OAM, the mock O1 adaptor,
+AIMgF, MLMR, MLLF, RAN Analytics, MDAF, Intent Service, SO SMOS, SA SMOS, the GUI backend and the GUI), and `samples/docs/lifecycle.md` (a sample rApp
+instance) and `sdk/docs/lifecycle.md` (what the Python SDK does for an rApp, with the Go and Java SDKs' parity): how the module comes up and becomes
+ready (configuration and secrets, database, its SME identity, what it registers, its probes), what it does in service (requests, subscriptions,
+notifications, its worker and outbox), and how it stops and recovers (a crash mid-operation, a restart, several replicas), in the call flows' format,
+with a configuration table and the decisions it depends on, and PNGs beside each (`<module>/docs/images/`). The diagram check
+(`gui/scripts/validate-call-flow-diagrams.mjs`) parses them, `scripts/render_call_flows.py` draws them beside the document with a manifest, and
+`tests_integration/test_call_flow_images.py` fails on a stale one. Writing them from the code found what the module docs and READMEs had wrong, fixed in
+the follow-up change, and gaps recorded in `OPEN_ITEMS.md` (LIFE-STUCK, SA-REPLAY, UNIQUE-SELECT, SAMPLE-LIFE, FIRST-PAGE, OUTBOX-WORKERLESS, OAM-FM-DME,
+OAM-SWM-RESEND); the bootstrap key some modules are not given goes with DOC-CF-3.
+
 ### DOC-CF-1.8 flow 21 — O1 vendor onboarding rewritten from the code: the registry decides at every operation, and only the operator changes it
 
 The nineteenth and last flow of DOC-CF-1.8. The product owner asked for this one to be done on the audit's recommendations without a further review

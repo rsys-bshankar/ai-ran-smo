@@ -1,0 +1,7 @@
+{
+  "lifecycle/a-the-process-identity-and-the-first-token.png": "40e05583c8b4c1ebefcb46bce518c24aba81434db94140c44e7cf9d32723737f",
+  "lifecycle/b-one-call.png": "6383600d073ad765aed064af68e144533927e5809b7404b564e5e7ac275f6c6d",
+  "lifecycle/c-acting-for-an-instance.png": "bba3a1d00c9de6dea4e848b638490917d4b14d363f96cbdd0b13e4e0ebad1b6b",
+  "lifecycle/d-what-an-rapp-registers-and-creates-through-it.png": "6c1f3d9b617de84269e292442535b75c3c51bec6666e17ba73fdcd424dfde223",
+  "lifecycle/e-stopping-and-recovering.png": "139e3a4d0f811977fb4aa94cd4ac1378be9279b3f674fa538ef77666ee11d23e"
+}

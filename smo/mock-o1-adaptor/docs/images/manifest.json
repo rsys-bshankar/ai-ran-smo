@@ -1,0 +1,8 @@
+{
+  "lifecycle/a-starting-and-becoming-ready.png": "89265e8e5ffb20802c6ffd8708708674fe9fa4b469679602ac6fa3b4cb1e51ee",
+  "lifecycle/b-answering-cm-writes-and-reads.png": "cebef089e0ea58c76df0251fdaef2783b78e91a6baac045db9ce3c23eb3a71d1",
+  "lifecycle/c-declaring-the-vendor-and-acknowledging-software-rpcs.png": "a3d350d03e4d151d95602533badb9a90ce497219c72b67927e2625000489d5ee",
+  "lifecycle/d-emitting-towards-ran-nf-oam.png": "a0fc61db28d94be6097740bd02e57a5c236ba8b32f8204a314df9a5bf9e0aa7c",
+  "lifecycle/e-the-periodic-heartbeat.png": "c27d029cb24a46253d0c3b8acb84bbc290693744e7cfbb66ab158fd128830584",
+  "lifecycle/f-stopping-crashing-and-restarting.png": "cba7d2c6aa94ab2984165313456d7a6a1d781ebca756921b37e8246d0a62b8c1"
+}

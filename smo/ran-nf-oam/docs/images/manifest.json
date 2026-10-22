@@ -1,0 +1,9 @@
+{
+  "lifecycle/a-starting-and-becoming-ready.png": "c6198628265977ea71f25fcc4381c0f03e8dfa657e6cefd31f32959cfccdc8e0",
+  "lifecycle/b-elements-adaptors-and-their-health.png": "ef5f678901658c469d02d4adba5fd32ef310cc809695c208b3cdef2ed1348d80",
+  "lifecycle/c-cm-writes-and-config-jobs.png": "14a76e4e1dbf20a5e2b04820739d7fbac9c763e046f31484b5571ab5cc1c3143",
+  "lifecycle/d-fm-pm-files-and-ves-in-dme-out.png": "d38534819093d137b5541897a64f3e7e40d4945e03476bd3bb6213a4275139aa",
+  "lifecycle/e-software-jobs-and-campaigns.png": "530ed09f37bc021ec0b4d24dd40d4e388fd4021a9c839e1a84cafacc19d4cbc1",
+  "lifecycle/f-the-worker-app-tasks-py.png": "7c7d92bcdf79bdf15b72130849da2be7168f2d157aa59d48704030e7cbf8e2ef",
+  "lifecycle/g-stopping-crashing-and-recovering.png": "aac59b90b21fafba7f29fea393c910428377b5f71ecb9f127546b9313ddf5f6b"
+}

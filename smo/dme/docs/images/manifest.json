@@ -1,0 +1,8 @@
+{
+  "lifecycle/a-starting-and-becoming-ready.png": "648d3cca6f5ab1de0050b0f431f5e35e37b781d4d94b44b73176e59c6e710ebd",
+  "lifecycle/b-producers-and-types.png": "c871ce4e09cd6a907fae1abee34a33d83edc5f1b3a06909db9b97a8ffa73bbef",
+  "lifecycle/c-data-jobs-records-and-offers.png": "dc8418fefd219243fa68ee32d56df372d394e6a1b876f03abb7891197d437530",
+  "lifecycle/d-forwarding-an-o1-action.png": "e432dc45ba4ee6c506594eb07ee9452267a6cf36ae7bc458cd101d05779f06e2",
+  "lifecycle/e-the-worker-later-delivery-and-the-event-feed.png": "0d22cfd45bf4ddf9b7e8209301022e764a040eb78d4cde38496918f488a93dea",
+  "lifecycle/f-stopping-crashing-and-recovering.png": "7a7d95e07299e1763f66b90131cd00d33072cc31b555bbd1382f7a6e43ef0d42"
+}

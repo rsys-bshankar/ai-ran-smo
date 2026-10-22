@@ -1,0 +1,6 @@
+{
+  "lifecycle/a-starting-and-becoming-ready.png": "cd9e4e6f99247e4cec512bada4d71012d4c58520e8e912355e506be5bbcad584",
+  "lifecycle/b-running-an-order.png": "1309df99d5129e242b2882715c4bb68306baccd3288aac263d94312dbee659df",
+  "lifecycle/c-reading-and-cancelling-while-it-runs.png": "6ef7b0093a56134aba928fff338c9eb8d3deac56d593935187b33a88ae13e62b",
+  "lifecycle/d-stopping-crashing-and-recovering.png": "ef59e28f43bef6c60c2b812e00e5035e2ad2af052373c086005938977e46096d"
+}

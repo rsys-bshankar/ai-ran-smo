@@ -1,0 +1,6 @@
+{
+  "lifecycle/a-starting-and-becoming-ready.png": "0bb49b8c7f79466420d1afae514796e260383398bdef9b642cee8d9fbb8ae339",
+  "lifecycle/b-registering-a-producer.png": "0a5040b93c6c4ce4028cef2ce01e98de5bfe4cbc64f3434c2b37b744a699405c",
+  "lifecycle/c-being-asked-and-deregistering.png": "269ba2d39306192d9aa40182ceb7df8baedd5851a440bb8e869ce3784a560ccc",
+  "lifecycle/d-stopping-crashing-and-recovering.png": "d5f3da0bc48f9bb65314dbac007dd8a06767ae126a2c6ab8af2431936eea58f9"
+}

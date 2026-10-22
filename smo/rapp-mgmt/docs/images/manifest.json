@@ -1,0 +1,8 @@
+{
+  "lifecycle/a-starting-and-becoming-ready.png": "0e1652d6e3fb354b932627ed7e693adab3f75508b23802020fec3791982a1560",
+  "lifecycle/b-creating-an-instance-and-handing-over-its-credentials.png": "d5afe0459780081f8584f09a0b398675080cb95385894fc3f3759363b525bde7",
+  "lifecycle/c-coming-up-reporting-faulting.png": "6012fe5fb3eb492abb67a7a5ddba309e822ce8ef402e5c3042753ce068738a34",
+  "lifecycle/d-upgrading-rolling-back-terminating.png": "4a51e6b48b72982c74bb709c77fc94ca10bf11dbb49484531b48159140349c74",
+  "lifecycle/e-the-worker-rotating-secrets.png": "56e0e1c3158010c263276deada5f1eaec7ee7f83c33ee450ff050bafeac35e95",
+  "lifecycle/f-stopping-crashing-and-recovering.png": "ed4634f52ba64559a80fb8e8afbfce0dd4b048bb6871f786b72e9d1e6ca45071"
+}

@@ -1,0 +1,7 @@
+{
+  "lifecycle/a-starting-and-becoming-ready.png": "6b72d3b586c1749564752233883afe384bf51f98d3fbbd6307854d496eb4b34e",
+  "lifecycle/b-bootstrap-and-the-token-check.png": "56af5246c098b777d518643136602609f8e20d2c6fa46ed03be7f47032b67ed0",
+  "lifecycle/c-forwarding-a-call.png": "5b79f8f030e9322a7435aacdb5c24cc6010e9088b46742261e85c14399e9c44b",
+  "lifecycle/d-the-operator-api-of-a-rapp-instance.png": "600d36a6bbf767eae5465ff42740e99c446fe6a069458c8c539385629549de65",
+  "lifecycle/e-stopping-crashing-and-recovering.png": "51bc7ab2ef959b2c991ee1418f5b5f9d8689e41f1d2cd1bf6e14db304e226b8b"
+}
