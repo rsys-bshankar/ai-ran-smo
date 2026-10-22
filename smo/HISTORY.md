@@ -2780,6 +2780,35 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.8 flow 16 — FOCOM inventory resources rewritten from the code: checked subscriptions, a typed provision, O2-IMS notifications, honest deprovisioning
+
+The fifteenth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken; one corrected while building it, below):
+
+- **A. Only a real change is told.** Deprovisioning an id that is not a stored resource (or not a UUID) answered 200 and sent a DELETE to every
+  subscriber, with no type so every filter matched: subscribers were told a resource that never existed was gone. It stays an idempotent 200, and sends
+  nothing.
+- **B. A resource is not deleted from under what names it.** A cluster resource (`resourceId`), an infrastructure resource (`inventoryResourceIds`) or a
+  child resource (`parent_id`) could be left pointing at a deleted resource. Now the delete is 409 `RESOURCE_IN_USE`, the detail listing them, as the
+  O2-IMS objects already refuse a delete while named (`provisioning._referrers`).
+- **C. A provision has a typed body** (`ProvisionResourceRequest`): `resourceTypeId`, `resourcePoolId`, `description`, `globalAssetId`, `tags`, `groups`.
+  Corrected while building it: the audit proposed `tags` as an object, but the column is a Postgres `ARRAY(String)` and O2-IMS has a list, so both
+  `tags` and `groups` are lists of names; a dict there would have failed at the database. A wrong type is 422. `resourcePoolId` places the resource in a
+  pool that must exist (404 `RESOURCE_POOL_NOT_FOUND`); `pool-0` stays the default (`SA-FOCOM-2`'s "always pool-0" is gone). Unknown keys are ignored,
+  so a service order's step `spec` with more keys keeps working.
+- **D. A notification is O2-IMS's `InfrastructureInventoryEvent`.** It gains `notificationId` (one per event), `objectRef` (`/focom/resources/<id>`),
+  `postObjectState` on CREATE and `priorObjectState` on DELETE (the resource's view); `objectType`, `resourceId` and `resourceTypeId` stay for the
+  subscribers that read them. The change is also published on the SMO event feed: `org.oran.smo.o-cloud-resource.created` / `.deleted`.
+- **E. A subscription is checked when it is made.** A callback the SSRF guard refuses is 422 (it was accepted and every notification dropped), and an
+  unregistered filter type is 404 `RESOURCE_TYPE_NOT_FOUND` (it never matched).
+- **F. A resource can be read, and its status is real.** New `GET /resources/{id}`; `GET /resources/{id}/status` answered `healthy` for any id and now is
+  404 `RESOURCE_NOT_FOUND` for an unknown one, `degraded` while the resource has an active FOCOM alarm (`activeAlarms` counts them), else `healthy`.
+- **G.** Registering a resource type twice is 409 `RESOURCE_TYPE_ALREADY_EXISTS` (it was 422 `SCHEMA_VALIDATION_FAILED`).
+- **Not taken:** clearing a deprovisioned resource's alarms (kept as history), SO SMOS undoing an INFRA step on a failed or cancelled order (`SO-CHAIN`),
+  an owner per subscription (only the console and modules make them), and notifications for pools, sites and provisioning requests.
+
+Tests: `focom/tests/test_inventory_lifecycle.py` (4) and `test_main.py` / `test_o2ims_conformance.py` updated. `docs/call-flows/16-focom-resource-inventory-lifecycle.md`
+is rewritten as 16a-16d.
+
 ### DOC-CF-1.8 flow 14 — Correlation ids rewritten from the code: a checked id on every answer, carried past the request, minted by the console
 
 The fourteenth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken):
