@@ -29,3 +29,19 @@ def test_every_image_is_drawn_from_the_diagram_its_document_has_now():
 def test_a_changed_diagram_is_caught(tmp_path):
     """A diagram's digest changes with any edit to its text, so a stale image cannot pass."""
     assert render.digest("sequenceDiagram\n  A->>B: x\n") != render.digest("sequenceDiagram\n  A->>B: y\n")
+
+
+def test_every_lifecycle_image_is_drawn_from_the_diagram_its_document_has_now():
+    """DOC-CF-2: a module's lifecycle document (`<module>/docs/lifecycle.md`) keeps its images and manifest in `<module>/docs/images/`; each image is
+    drawn from the diagram the document has now, and the document has an image for each diagram."""
+    manifests = sorted(SMO.glob("*/docs/images/manifest.json"))
+    for manifest_path in manifests:
+        manifest = json.loads(manifest_path.read_text())
+        docs = manifest_path.parent.parent
+        expected = {}
+        for stem in {key.split("/", 1)[0] for key in manifest}:
+            for name, _, source in render.diagrams(docs / f"{stem}.md"):
+                expected[f"{stem}/{name}"] = render.digest(source)
+        assert manifest == expected, f"re-render: python3 scripts/render_call_flows.py {docs.relative_to(SMO)}/*.md"
+        for key in manifest:
+            assert (manifest_path.parent / key).is_file(), f"{key} is in {manifest_path.relative_to(SMO)} but not beside it"

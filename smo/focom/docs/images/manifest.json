@@ -1,0 +1,7 @@
+{
+  "lifecycle/a-starting-and-becoming-ready.png": "aa7e1f6a22720e109617da7a1e99601d74cb9056bbad1e9f13b31d96fc5241c2",
+  "lifecycle/b-inventory-subscribing-provisioning-deprovisioning.png": "d90920a73ddd8dfa0a9fff56c906e2926db1398c440b13b950479370e6f4835d",
+  "lifecycle/c-alarms-performance-and-provisioning-requests.png": "224d589874add90d8220a48996e53a2e0798ae636851e88fad27562d172b305b",
+  "lifecycle/d-notifications-the-outbox-and-who-retries.png": "c4cfd1c5833390af3880cc9da29db6d7b1a4bfa908930bbea00a2499d9562650",
+  "lifecycle/e-stopping-crashing-and-recovering.png": "d039f184201a9b59ebf16d2ba38d89aa305a6d11afde08f328853cab129c3f23"
+}

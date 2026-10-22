@@ -1,0 +1,7 @@
+{
+  "lifecycle/a-starting-and-becoming-ready.png": "f25aa4e0352cd74eb227439829c3c9f681bf800f6b2d593e6bea55957cb8db5e",
+  "lifecycle/b-onboarding-an-invoker-and-issuing-its-token.png": "a7b70e6b271f1e620d1742cfc4b4cc16c3670458d207f25ee4f8160e2ad1e17c",
+  "lifecycle/c-introspection-and-revocation.png": "d52e60bd27aae96bac63d1ea85dd4666efa73e380790e6d0ecc51684b2fd3656",
+  "lifecycle/d-publishing-discovery-and-subscriptions-and-the-events-they.png": "e22870f57be1d5bfc00c720360e31833e315ea5386e9882da33e14e138792a31",
+  "lifecycle/e-stopping-crashing-and-recovering.png": "8283ac4b0fae9ae3d95810b06713292618dfa8a12ecdb51b0c7eb429e2469630"
+}

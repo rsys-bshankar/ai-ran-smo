@@ -1,0 +1,8 @@
+{
+  "lifecycle/a-starting-and-becoming-ready.png": "bbefcb3765485aadc8f4eb751df2c17767121bcda33a1fe195d4d9ef776f3ad1",
+  "lifecycle/b-local-sign-in-the-one-time-code-and-the-session-check.png": "1c5c4de711ae0d159145911f273094090c66ee1cca65b491fc85c6027e9c7515",
+  "lifecycle/c-oidc-sign-in-and-sign-out.png": "0633dc5da9322cc4b338a01c7db0703cd562870a18f22ec0789929bb2edc31d7",
+  "lifecycle/d-a-call-through-the-proxy.png": "6c2b05c9aa53f580a7ab804dcfcc9abd3d747b8918f817b2523080f579a359a9",
+  "lifecycle/e-counts-the-event-stream-and-preferences.png": "72435f53673ce1bb086541d3a4869704ba848c4e937b07a272f687c84602ad99",
+  "lifecycle/f-stopping-and-recovering.png": "69cd1b451272fe73e013957ace4cb3c13a1bcbdb3b656ba2fb1364cc98d49a3f"
+}

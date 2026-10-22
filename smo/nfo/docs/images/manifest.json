@@ -1,0 +1,7 @@
+{
+  "lifecycle/a-starting-and-becoming-ready.png": "b92d94bcae0037db8a0fcbd13b280f6c02a435c85eeb35778f7ecc784fdf9873",
+  "lifecycle/b-descriptors-and-instantiation.png": "77313144b7ec983b5c8e5c4ea442a0a8b867869a1accb300d6ed0f21d866269b",
+  "lifecycle/c-scale-heal-and-the-deployment-manager-s-reports.png": "668688f2f074e5a5891bef17e54fa4d8b993f19c345d704048cdc22a0fdf1759",
+  "lifecycle/d-terminating.png": "4a5e599cc5858c2051c206797c675c7613887e34de6f34453c5fdd625634034c",
+  "lifecycle/e-stopping-crashing-and-recovering.png": "bf496650fab2fa86126d8dcfe9953fa041daa06f15297a7886e1d60fcfe3900b"
+}

@@ -294,7 +294,7 @@ smo/
     PRIVACY.md              personal-data inventory and the GUI user erasure procedure
     DATA_RESIDENCY.md       where data lives and what leaves a site
     CONTROL_MATRIX.md       ISO 27001 Annex A and NESAS/SCAS themes against what exists
-    call-flows/             27 Mermaid sequence diagrams of end-to-end journeys
+    call-flows/             27 Mermaid sequence diagrams of end-to-end journeys (each module's own lifecycle: <module>/docs/lifecycle.md)
     openapi/                committed OpenAPI spec per service, checked against the live schema
 ```
 

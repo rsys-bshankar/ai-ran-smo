@@ -137,6 +137,27 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
 - **OAM-SWM-RESEND** — A software phase claimed and then not sent stays unsent: `lifecycle.dispatch_due` commits `dispatched_phase` before the RPC,
   so a crash between the two leaves the job IN_PROGRESS until its campaign's `jobTimeoutSeconds` or an abort (call flow 19b). Approach: record when
   the phase was claimed and let the worker re-send a claim older than a grace period (an element answers a repeated RPC as a repeat).
+- **LIFE-STUCK** — Four records can be left in a working state by a crash between their commit and the call that finishes them, with no sweep to
+  end them (found writing the module lifecycle docs, DOC-CF-2): an Onboarding package left `ONBOARDING` (committed before the fetch and the NFO call,
+  and a slow onboarding can outlast the 20 s graceful stop; call flow 06d says it is never stuck), a RAN NF OAM element onboarding left `APPLYING`, a
+  DME action left `FORWARDED` (a replay is answered `IGNORED`, so its caller never learns the outcome), and a software phase claimed and not sent
+  (OAM-SWM-RESEND). Approach: record when each entered the working state and let the module's worker end one older than a grace period (FAILED,
+  UNCONFIRMED or re-sent, as the step allows).
+- **SA-REPLAY** — SA SMOS can do the same work twice after a retry: the O1-CM intent handler does not look for an existing enactment, so Intent
+  Service's outbox re-push of a slow enactment records a second one and publishes a second IntentReport (DME's replay protection stops a second CM
+  write), and a remedial action's `Idempotency-Key` is made from a new action id on every run, so a report MDAF re-delivers after a crash runs the
+  action again. Approach: key the enactment on the intent id, and the remedial action on the report id.
+- **UNIQUE-SELECT** — Two uniqueness rules are a read before an insert, not a constraint: an NFO deployment name and an Onboarding package's content
+  hash; two replicas can both pass. NFO also answers 204 to a synchronous terminate of a deployment already TERMINATING without removing it, which
+  rApp Management records as done. Approach: unique indexes (expand-only), and 202 for the TERMINATING case.
+- **SAMPLE-LIFE** — The sample rApps' `/ready` checks nothing (the database and SME token checks are not passed to `install_health`), and a
+  terminated instance is never forgotten, so the worker runs a failing pass for it every `evaluateEverySeconds`. Approach: pass the checks, and drop the
+  instance (and its stored identity) when rApp Management terminates it.
+- **FIRST-PAGE** — Two lookups read only the first page of a paged list: AIMgF's coordination group at MLMR and SA SMOS's own RMIH at Intent Service
+  (100 by default); past that they miss. Approach: a filtered read by key at the owning module.
+- **OUTBOX-WORKERLESS** — SME, FOCOM and Intent Service have no worker of their own: their notification retries are done by the database-wide outbox
+  sweep that other modules' workers run, so a deployment without those workers never retries them (and a row DEAD after five attempts is never resent).
+  Approach: state the dependency in the chart (one sweep is required), or give each module the sweep.
 - **OI-7-config-push** — An instance's configuration change does not reach its rApp: `PUT /rapp-mgmt/instances/{id}/config` only stores
   it, and the rApp reads it when it starts the instance (call flow 07e). Approach: push it to the rApp's operator API as the credentials are
   (`POST /rapps/{id}/operator/instances/{id}/config`, through R1 Termination), with a declared schema checked first; the SDK applies it.
@@ -1382,12 +1403,12 @@ and how it stops and recovers. Same diagram format.
 
 | ID | Modules | State |
 |---|---|---|
-| DOC-CF-2.1 | R1 Termination, SME | open |
-| DOC-CF-2.2 | Onboarding, rApp Management, NFO, FOCOM | open |
-| DOC-CF-2.3 | DME, RAN NF OAM, mock O1 adaptor | open |
-| DOC-CF-2.4 | AIMgF, MLMR, MLLF, RAN Analytics, MDAF | open |
-| DOC-CF-2.5 | Intent Service, SO SMOS, SA SMOS | open |
-| DOC-CF-2.6 | GUI backend and GUI; the sample rApps and the SDK | open |
+| DOC-CF-2.1 | R1 Termination, SME | done |
+| DOC-CF-2.2 | Onboarding, rApp Management, NFO, FOCOM | done |
+| DOC-CF-2.3 | DME, RAN NF OAM, mock O1 adaptor | done |
+| DOC-CF-2.4 | AIMgF, MLMR, MLLF, RAN Analytics, MDAF | done |
+| DOC-CF-2.5 | Intent Service, SO SMOS, SA SMOS | done |
+| DOC-CF-2.6 | GUI backend and GUI; the sample rApps and the SDK | done |
 
 ### DOC-CF-3 — Deployment and operations flows
 

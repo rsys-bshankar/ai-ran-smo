@@ -1,0 +1,7 @@
+{
+  "lifecycle/a-starting-and-becoming-ready.png": "c216fce502143ea418840ba878b55018910cce416708d4cc3f2ef71c5957af58",
+  "lifecycle/b-intents-reports-and-their-notifications.png": "3de7ec84b833515ad52b94ea9a3497016265e596977d50e6e486cd1a4e75e57c",
+  "lifecycle/c-autonomy-dispatches.png": "d6e1182e8f7adcc210f3589efd6210a882af027506cc713b496edd40d4e23693",
+  "lifecycle/d-delivering-notifications-the-outbox.png": "681f64383710d26971f610e39498a4aa679076dea8d1b7f0ef040b1499eab8a1",
+  "lifecycle/e-stopping-crashing-and-recovering.png": "447c8746b33e62f80ebd43402c745d1a5ffeb28dc4bfb13a8738a1cca76fc283"
+}

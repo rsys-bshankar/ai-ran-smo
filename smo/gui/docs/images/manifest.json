@@ -1,0 +1,7 @@
+{
+  "lifecycle/a-loading-the-console.png": "cd936f4d2cccf761f8d72112819948222e996efdcc50c384576eadeabc1a4537",
+  "lifecycle/b-signing-in-and-out.png": "de341c64dd38f52b7ca1c423e676eddf670a50084fe62aa94329a0bf768344df",
+  "lifecycle/c-reading-data-polling-and-the-event-stream.png": "b71574a8710898295c3d3fd4b3cbbc4e72f5800d250c436e2264df917be3d345",
+  "lifecycle/d-actions-through-the-bff.png": "62b03d625576fe70dd9f3d25786601cc34806ae8c938c2bde9b4cbd1adaefdf8",
+  "lifecycle/e-errors-and-a-lost-session.png": "360254c7f0c2d5f8a954a887984cc8b797bd5c52aab17f14c2fb6797ca371baa"
+}

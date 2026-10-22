@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Parses every mermaid code block in docs/call-flows/*.md with mermaid's own parser. A bare `;` inside a Note or message, for one, breaks GitHub's
+ * Parses every mermaid code block in docs/call-flows/*.md, and in every module's docs/lifecycle.md (DOC-CF-2), with mermaid's own parser. A bare `;` inside a Note or message, for one, breaks GitHub's
  * sequence-diagram renderer without breaking anything a human skimming the Markdown would notice, so the check runs in CI
  * (smo-tests.yml, job `call-flow-diagrams`) and can be run locally.
  *
@@ -19,9 +19,16 @@ global.document = dom.window.document;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const callFlowsDir = path.resolve(here, "../../docs/call-flows");
+const smoDir = path.resolve(here, "../..");
+// DOC-CF-2: every module's lifecycle document (`<module>/docs/lifecycle.md`, and `samples/docs/lifecycle.md`) is checked the same way
+const lifecycleDocs = fs.readdirSync(smoDir, { withFileTypes: true })
+  .filter((d) => d.isDirectory())
+  .map((d) => path.join(smoDir, d.name, "docs", "lifecycle.md"))
+  .filter((f) => fs.existsSync(f));
 const files = fs.readdirSync(callFlowsDir)
   .filter((f) => f.endsWith(".md"))
-  .map((f) => path.join(callFlowsDir, f));
+  .map((f) => path.join(callFlowsDir, f))
+  .concat(lifecycleDocs);
 
 let failed = false;
 let blockCount = 0;
