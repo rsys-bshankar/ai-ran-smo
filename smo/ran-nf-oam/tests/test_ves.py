@@ -285,6 +285,7 @@ def test_a_heartbeat_from_an_unknown_element_or_one_without_an_endpoint_is_refus
 # ---------------------------------------------------------------- SB-7.4: measurement and 3GPP PM
 
 class _Resp:
+    status_code = 200            # an accepted call (call flow 11a reads the producer registration's answer)
     def __init__(self, body):
         self.body = body
 

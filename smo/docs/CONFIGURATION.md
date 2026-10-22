@@ -156,6 +156,12 @@ compose and the chart use the file form (`docs/SECRETS.md` lists each secret, it
 |---|---|---|---|---|
 | `COVERAGE_SCHEDULE_TICK_SECONDS` | `15` |  | `docker-compose.yml`, `samples/coverage-optimization-rapp/app/tasks.py` | How often the Coverage Optimization rApp's worker (`coverage-optimization-rapp-worker`) looks for instances due a scheduled pass (default 15, at least 1), across all worker replicas (call flow 24f). An instance is due when its `evaluateEverySeconds` (instance configuration, 60 to 86400; absent: manual only) has passed since its last pass; the KPI check of a change set needs a pass about an hour after it. Read once at the worker's start. Seconds, not a secret. |
 
+### `dme`
+
+| Variable | Default | Secret | Read in | What it does |
+|---|---|---|---|---|
+| `DME_PRODUCER_HEALTH_CACHE_SECONDS` | `30` |  | `dme/app/main.py` | DME: how long, in seconds, a producer's health answer is remembered when a type's status is computed (call flow 11c). Default 30; 0 asks the producer at every read. |
+
 ### `energy-saving-rapp`
 
 | Variable | Default | Secret | Read in | What it does |

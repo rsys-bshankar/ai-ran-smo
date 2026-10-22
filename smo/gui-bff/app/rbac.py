@@ -7,9 +7,10 @@ Allowlist semantics: the first matching rule wins, and a request matching no
 rule is refused. Every read under a known module prefix is Viewer-level
 (apart from the one sensitive read listed first); every mutation must be
 listed explicitly. Machine-to-machine routes that only an rApp, NF or
-another SMO module should call (SME token/registration APIs, DME producer
-registration, NFO Instantiate, usage registrations, heartbeats, ...) are
-deliberately absent, so the GUI can't reach them at all.
+another SMO module should call (SME token/registration APIs, NFO
+Instantiate, usage registrations, heartbeats, ...) are deliberately absent,
+so the GUI can't reach them at all; DME producer registration is listed
+(admin), for an operator standing in for a producer.
 
 Some rules also pin request parameters to the caller's GUI identity rather
 than trusting what the browser sent: who acknowledged or cleared an alarm,
@@ -291,6 +292,7 @@ RULES: list[Rule] = [
     _rule("DELETE", "/dme/type-subscriptions/{id}", O),
     _rule("POST", "/dme/production-capabilities", A),
     _rule("DELETE", "/dme/production-capabilities", A),
+    _rule("DELETE", "/dme/dme-types/{id}", A),                       # call flow 11d: a type with no producer left, its jobs and offers with it
     _rule("POST", "/dme/offers", A),
     _rule("POST", "/dme/offers/{id}/notify", A),
     _rule("DELETE", "/dme/offers/{id}", A),

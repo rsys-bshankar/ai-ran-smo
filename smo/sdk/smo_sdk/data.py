@@ -90,12 +90,9 @@ class DataClient(BaseClient):
         return ensure_ok(self._r1.get(f"/dme/production-capabilities/{producer_id}"))
 
     def deregister_producer(self, producer_id: str) -> None:
-        """Remove this producer and its type links only; the types it supported stay registered if another producer still supports them (see `delete_type`), and go DISABLED if not."""
+        """Remove this producer and its type links only; DME tells it to stop each job of those types, and a type left with no producer keeps its jobs, NO_PRODUCER
+        until a producer joins (call flow 11d). Deleting a type is the operator's (the console) or an SMO module's, not an rApp's."""
         ensure_ok(self._r1.delete("/dme/production-capabilities", params={"producer_id": producer_id}))
-
-    def delete_type(self, dme_type_id: uuid.UUID | str) -> None:
-        """The ICS `DELETE /data-producer/v1/info-types/{id}`; DME answers 409 (raised as `SdkError`) while any producer still supports the type."""
-        ensure_ok(self._r1.delete(f"/dme/dme-types/{dme_type_id}"))
 
     def query_producer_status(self, producer_id: str) -> dict:
         return ensure_ok(self._r1.get(f"/dme/production-capabilities/{producer_id}/status"))
