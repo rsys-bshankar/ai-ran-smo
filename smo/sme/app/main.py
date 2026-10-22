@@ -48,6 +48,8 @@ from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.outbox import enqueue
 from smo_shared import mtls, roles, scope as authz_scope
+from smo_shared.invoker import invoker_id
+from smo_shared.webhook import is_safe_webhook_destination
 from smo_shared.secretfile import read_secret
 
 from .models import (API_INVOKER_EVENTS, EVENT_TYPES, InvokerRegistration, IssuedAccessToken, ProviderRegistration,
@@ -144,6 +146,30 @@ class EventSubscriptionRequest(BaseModel):
     aefIds: list[str] | None = None
 
 
+def _rapp_caller(request: Request) -> str | None:
+    """The invoker id of a caller with the rApp role ("" when the gateway gave none), or None for the console or an SMO module, which act for others and are
+    not held to the identity rules of call flow 18."""
+    return (invoker_id(request) or "") if roles.role_of(request) == roles.ROLE_RAPP else None
+
+
+def _require_own(request: Request, claimed: str, code: tuple[str, int], what: str) -> None:
+    """Call flow 18: refuses (403 `code`) an rApp naming an identity (`claimed`: an apfId, an invoker id, a subscriber id) that is not its own invoker id."""
+    caller = _rapp_caller(request)
+    if caller is not None and claimed != caller:
+        raise framework_error(code, detail=f"an rApp acts at SME only as itself: the {what} must be its own invoker id")
+
+
+def _delete_provider(db: Session, apf_id: str) -> None:
+    """Deletes the provider registered under `apf_id` and every service it published, each announced as SERVICE_API_UNAVAILABLE (call flow 18a); the
+    caller commits. Nothing happens for an apfId with neither."""
+    for profile in db.scalars(select(ServiceProfile).where(ServiceProfile.producer_id == apf_id)).all():
+        notify_service_change(db, profile, "SERVICE_API_UNAVAILABLE")   # before the delete: it reads the live row
+        db.delete(profile)
+    provider = db.get(ProviderRegistration, apf_id)
+    if provider is not None:
+        db.delete(provider)
+
+
 # Body of POST /provider-registrations: `apfId` is the publisher identity (apfId == producerId == rAppId).
 class ProviderRegistrationRequest(BaseModel):
     apfId: str
@@ -151,7 +177,7 @@ class ProviderRegistrationRequest(BaseModel):
 
 
 @app.post("/provider-registrations", status_code=201)
-def register_provider(body: ProviderRegistrationRequest, db: Session = Depends(get_session)):
+def register_provider(body: ProviderRegistrationRequest, request: Request, db: Session = Depends(get_session)):
     """HISTORY.md §5: Provider (APF) enrolment
     (`PostRegistrations`, `providermanagement.go`) — the real registry
     `register_service`'s own `apf_id` check needs, entirely absent
@@ -162,7 +188,8 @@ def register_provider(body: ProviderRegistrationRequest, db: Session = Depends(g
     this build has no separate provider-domain concept to collide on.
     """
     # Route notes (kept out of the docstring because FastAPI publishes it): upsert, so 201 is returned for a re-registration too and the response is only `{"apfId"}`.
-    # No authorization is checked here; who may call it is decided at the gateway. No event is emitted.
+    # Call flow 18a: an rApp registers only its own invoker id as apfId (403 `PROVIDER_IDENTITY_MISMATCH`); the console and modules register any. No event.
+    _require_own(request, body.apfId, FrameworkError.PROVIDER_IDENTITY_MISMATCH, "apfId")
     provider = db.get(ProviderRegistration, body.apfId)
     if provider is None:
         provider = ProviderRegistration(apf_id=body.apfId)
@@ -173,16 +200,15 @@ def register_provider(body: ProviderRegistrationRequest, db: Session = Depends(g
 
 
 @app.delete("/provider-registrations/{apf_id}", status_code=204)
-def deregister_provider(apf_id: str, db: Session = Depends(get_session)):
+def deregister_provider(apf_id: str, request: Request, db: Session = Depends(get_session)):
     """DeleteRegistrationsRegistrationId, providermanagement.go — idempotent,
     matching the reference's own delete-if-present-else-still-204 shape.
     """
-    # Route notes: the provider's published services are NOT removed or notified; `query_own_services` keeps answering for an apf_id that still has services.
-    # Always 204, including for an unknown id.
-    provider = db.get(ProviderRegistration, apf_id)
-    if provider is not None:
-        db.delete(provider)
-        db.commit()
+    # Route notes: call flow 18a. 403 `PROVIDER_IDENTITY_MISMATCH` for an rApp naming another apfId. The provider's published services go with it, each announced
+    # SERVICE_API_UNAVAILABLE, in one transaction (they stayed discoverable before). 204, also for an unknown id.
+    _require_own(request, apf_id, FrameworkError.PROVIDER_IDENTITY_MISMATCH, "apfId")
+    _delete_provider(db, apf_id)
+    db.commit()
 
 
 # Body of POST/PUT /invoker-registrations. `apiInvokerPublicKey` is either a PEM public key (it then verifies RFC 7523 client assertions) or an opaque label.
@@ -380,6 +406,9 @@ def _offboard(db: Session, inv: InvokerRegistration) -> None:
     api_invoker_id = inv.api_invoker_id
     # Tokens first: introspection must stop answering active for an invoker that no longer exists.
     db.query(IssuedAccessToken).filter(IssuedAccessToken.api_invoker_id == api_invoker_id).delete()
+    # Call flow 18b: what the invoker made as itself goes too: its CAPIF event subscriptions, and the provider registered under its id with that provider's services.
+    db.query(ServiceEventSubscription).filter(ServiceEventSubscription.subscriber_id == api_invoker_id).delete()
+    _delete_provider(db, api_invoker_id)
     trusted = db.get(TrustedInvoker, api_invoker_id)
     if trusted is not None:
         db.delete(trusted)
@@ -798,7 +827,7 @@ def _trusted_invoker_view(ti: TrustedInvoker) -> dict:
 
 
 @app.post("/published-apis/v1/{apf_id}/service-apis", status_code=201)
-def register_service(apf_id: str, body: ServiceRegistration, db: Session = Depends(get_session)):
+def register_service(apf_id: str, body: ServiceRegistration, request: Request, db: Session = Depends(get_session)):
     """RegisterService. apfId == producerId == rAppId (Foundational Platform
     LLD section 1) — identity.py's equivalence, enforced here.
 
@@ -816,7 +845,9 @@ def register_service(apf_id: str, body: ServiceRegistration, db: Session = Depen
     """
     # Route notes. Errors: 403 `APF_NOT_REGISTERED` (no provider enrolment for the path's `apf_id`), 409 `SERVICE_NAME_CONFLICT` (name held by another producer). Answers 201 with
     # `{serviceId}` for an update too. The body's `producerId` is ignored; the path's `apf_id` is stored. Transaction: profile, policy and outbox rows commit together.
-    # Re-registration replaces every field including `allowedConsumers` and publishes SERVICE_API_UPDATE.
+    # Re-registration replaces every field including `allowedConsumers` and publishes SERVICE_API_UPDATE. Call flow 18a: an rApp publishes only under its own invoker id
+    # (403 `PROVIDER_IDENTITY_MISMATCH`), checked first.
+    _require_own(request, apf_id, FrameworkError.PROVIDER_IDENTITY_MISMATCH, "apfId")
     if db.get(ProviderRegistration, apf_id) is None:
         raise framework_error(FrameworkError.APF_NOT_REGISTERED, detail=f"{apf_id} is not a registered publishing function")
 
@@ -854,9 +885,10 @@ def register_service(apf_id: str, body: ServiceRegistration, db: Session = Depen
 
 
 @app.delete("/published-apis/v1/{apf_id}/service-apis/{service_id}", status_code=204)
-def deregister_service(apf_id: str, service_id: uuid.UUID, db: Session = Depends(get_session)):
-    # Route notes: 204 always. Only the owning producer's call has any effect; a different `apf_id` is a silent no-op, indistinguishable from an unknown id, and notifies nobody.
+def deregister_service(apf_id: str, service_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
+    # Route notes: 403 `PROVIDER_IDENTITY_MISMATCH` for an rApp naming another apfId (call flow 18a); otherwise 204. Only the owning producer's call has any effect; a different `apf_id` is a silent no-op, indistinguishable from an unknown id, and notifies nobody.
     # Emits SERVICE_API_UNAVAILABLE in the same transaction as the delete.
+    _require_own(request, apf_id, FrameworkError.PROVIDER_IDENTITY_MISMATCH, "apfId")
     profile = db.get(ServiceProfile, service_id)
     if profile is not None and profile.producer_id == apf_id:
         notify_service_change(db, profile, "SERVICE_API_UNAVAILABLE")  # before delete: notify_service_change needs the still-live row
@@ -883,7 +915,7 @@ def query_own_services(apf_id: str, db: Session = Depends(get_session)):
 
 
 @app.get("/service-apis/v1/allServiceAPIs")
-def discover_services(api_invoker_id: str, api_name: str | None = None, api_version: str | None = None,
+def discover_services(api_invoker_id: str, request: Request, api_name: str | None = None, api_version: str | None = None,
                        aef_id: str | None = None, protocol: str | None = None, data_format: str | None = None,
                        comm_type: str | None = None, db: Session = Depends(get_session)):
     """DiscoverServices. Section 2.2's decision: one gate — an unauthorized
@@ -902,9 +934,11 @@ def discover_services(api_invoker_id: str, api_name: str | None = None, api_vers
     category, and nothing that publishes a service supplies one
     (OI-5-sme-filters).
     """
-    # Route notes. `api_invoker_id` is required and caller-supplied: it is not tied to the token's identity, so the gate trusts whatever id the caller claims. `api_name` and `api_version`
+    # Route notes. `api_invoker_id` is required. Call flow 18e: for an rApp it must be its own invoker id (403 `INVOKER_IDENTITY_MISMATCH`), so it cannot see what
+    # another invoker may; the console and modules may discover for any invoker. `api_name` and `api_version`
     # filter in SQL; the AEF filters and the visibility gate are applied in Python afterwards (`aefProfiles` is a JSON column), so all rows matching name/version are loaded first.
     # No pagination: the full visible list is returned.
+    _require_own(request, api_invoker_id, FrameworkError.INVOKER_IDENTITY_MISMATCH, "api_invoker_id")
     stmt = select(ServiceProfile)
     if api_name:
         stmt = stmt.where(ServiceProfile.service_name == api_name)
@@ -940,7 +974,7 @@ def _matches_aef_filters(r: ServiceProfile, aef_id: str | None, protocol: str | 
 
 
 @app.post("/capif-events/v1/{subscriber_id}/subscriptions", status_code=201)
-def subscribe_events(subscriber_id: str, body: EventSubscriptionRequest, db: Session = Depends(get_session)):
+def subscribe_events(subscriber_id: str, body: EventSubscriptionRequest, request: Request, db: Session = Depends(get_session)):
     """SubscribeEvent, with TS 29.222's CAPIFEventFilter (OI-5-sme-filters):
     `apiIds` (this build's serviceIds), `apiInvokerIds` and `aefIds`. Each
     filter that is set must share a value with the event — see
@@ -949,8 +983,13 @@ def subscribe_events(subscriber_id: str, body: EventSubscriptionRequest, db: Ses
     # Route notes. 422 `SUBSCRIPTION_SCOPE_CONFLICT` when `eventTypes` is not a subset of `EVENT_TYPES` (the code name is a reuse; no conflict is involved). An empty `eventTypes` list is accepted
     # and never matches anything. `callbackUri` is stored unchecked; the SSRF guard runs when a notification is enqueued and sent. The path `subscriber_id` is stored and used by `_visible_to`
     # when events are delivered; nothing authenticates it.
+    # Call flow 18e: an rApp subscribes only as itself (403 `INVOKER_IDENTITY_MISMATCH`), since the subscriber id decides which services' events it is shown; a callback
+    # the SSRF guard refuses is 422 `SCHEMA_VALIDATION_FAILED` (it was stored and every notification to it dropped).
+    _require_own(request, subscriber_id, FrameworkError.INVOKER_IDENTITY_MISMATCH, "subscriber id")
     if not set(body.eventTypes) <= EVENT_TYPES:
         raise framework_error(FrameworkError.SUBSCRIPTION_SCOPE_CONFLICT, detail=f"eventTypes must be a subset of {sorted(EVENT_TYPES)}")
+    if not is_safe_webhook_destination(body.callbackUri):
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="callbackUri is not an allowed http(s) destination")
     sub = ServiceEventSubscription(subscriber_id=subscriber_id, event_types=body.eventTypes, callback_uri=body.callbackUri,
                                    api_ids=body.apiIds, api_invoker_ids=body.apiInvokerIds, aef_ids=body.aefIds)
     db.add(sub)
@@ -959,8 +998,10 @@ def subscribe_events(subscriber_id: str, body: EventSubscriptionRequest, db: Ses
 
 
 @app.delete("/capif-events/v1/{subscriber_id}/subscriptions/{subscription_id}", status_code=204)
-def unsubscribe_events(subscriber_id: str, subscription_id: uuid.UUID, db: Session = Depends(get_session)):
-    # Route notes: no docstring on purpose (it would become OpenAPI text). 204 always; the row is deleted only when it belongs to the `subscriber_id` in the path.
+def unsubscribe_events(subscriber_id: str, subscription_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
+    # Route notes: no docstring on purpose (it would become OpenAPI text). 403 `INVOKER_IDENTITY_MISMATCH` for an rApp naming another subscriber (call flow 18e);
+    # otherwise 204, the row deleted only when it belongs to the `subscriber_id` in the path.
+    _require_own(request, subscriber_id, FrameworkError.INVOKER_IDENTITY_MISMATCH, "subscriber id")
     sub = db.get(ServiceEventSubscription, subscription_id)
     if sub is not None and sub.subscriber_id == subscriber_id:
         db.delete(sub)
@@ -1065,14 +1106,15 @@ def list_trusted_invokers(limit: int = PageLimit, offset: int = PageOffset, db: 
 
 
 @app.get("/capif-events/v1/{subscriber_id}/subscriptions")
-def list_event_subscriptions(subscriber_id: str, limit: int = PageLimit, offset: int = PageOffset,
+def list_event_subscriptions(subscriber_id: str, request: Request, limit: int = PageLimit, offset: int = PageOffset,
                               db: Session = Depends(get_session)):
     """The real TS29222_CAPIF_Events_API.yaml only ever defines POST on
     this path — no GET/list operation exists in the real spec at all, so
     this is this build's own GUI-pass addition, not a spec-mandated
     shape: free to follow this build's own pagination convention.
     """
-    # Route notes: lists only the subscriptions of the `subscriber_id` in the path.
+    # Route notes: lists only the subscriptions of the `subscriber_id` in the path; an rApp lists only its own (403 `INVOKER_IDENTITY_MISMATCH`, call flow 18e).
+    _require_own(request, subscriber_id, FrameworkError.INVOKER_IDENTITY_MISMATCH, "subscriber id")
     stmt = select(ServiceEventSubscription).where(ServiceEventSubscription.subscriber_id == subscriber_id)
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"subscriptionId": str(s.subscription_id), "subscriberId": s.subscriber_id, "eventTypes": s.event_types,

@@ -2780,6 +2780,30 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Translating the actors of the lifecycle flows ("Operator → Onboarding"): they are the lane names of the call-flow diagrams in `docs/call-flows/`.
   Units ("min", "h"), dashes and the browser's own JSON error text stay as they are.
 
+### DOC-CF-1.8 flow 18 — SME security rewritten from the code: an rApp acts at SME only as itself, and nothing outlives what it belongs to
+
+The sixteenth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken; one more read found while building it, below):
+
+- **A. Providers and publishing are the rApp's own.** R1 let an rApp register any `apfId`, delete any provider, and publish, replace or delete services under
+  any registered `apfId` (publishing checked only that the provider existed), so an rApp could take over another's service name or endpoint. Now, for a
+  caller with the rApp role, the `apfId` of every provider and publish route must be its invoker id (403 `PROVIDER_IDENTITY_MISMATCH`); the console and SMO
+  modules (RAN Analytics and rApp Management register for an rApp) are not restricted.
+- **B. Discovery is for oneself.** `api_invoker_id` was taken as given, so an rApp named another invoker and saw services whose `allowedConsumers` excluded
+  it; for an rApp it must now be its own (403 `INVOKER_IDENTITY_MISMATCH`).
+- **C. CAPIF event subscriptions are one's own.** The path's `subscriber_id` decides which services' events are delivered, and was trusted: an rApp now
+  creates, lists and deletes only its own (403 `INVOKER_IDENTITY_MISMATCH`), and a callback the SSRF guard refuses is 422 (it was stored and dropped).
+- **D. A provider takes its services with it.** Deleting a provider left its services published and discoverable; they are now deleted with it, each
+  announced `SERVICE_API_UNAVAILABLE`, in one transaction (`_delete_provider`).
+- **E. An offboarded invoker leaves nothing behind.** Besides its tokens and trust context, its CAPIF subscriptions and the provider registered under its
+  id, with that provider's services, are removed (also by `purge-stale`).
+- **F. What only the platform needs, an rApp cannot reach.** `POST /oauth2/introspect` is off the rApp allow-list at R1 (R1 introspects SME directly); and,
+  found while building it, `GET /trusted-invokers` and `GET /trusted-invokers/{id}` are internal-only: the list returned every invoker's authentication and
+  authorization info unredacted to any rApp.
+- **Not taken:** a real AEF security-method catalog, signed JWT tokens, authenticating introspection itself, and a limit on how many invokers one rApp onboards.
+
+Tests: `sme/tests/test_identity.py` (4), `test_main.py` (a deleted provider's services go with it), `r1-termination/tests/test_roles.py` (the new
+internal-only reads and introspection). `docs/call-flows/18-sme-trusted-invokers-lifecycle.md` is rewritten as 18a-18e.
+
 ### DOC-CF-1.8 flow 16 — FOCOM inventory resources rewritten from the code: checked subscriptions, a typed provision, O2-IMS notifications, honest deprovisioning
 
 The fifteenth flow of DOC-CF-1.8, decided with the product owner (the recommendations of the audit, all taken; one corrected while building it, below):

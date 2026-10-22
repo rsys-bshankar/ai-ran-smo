@@ -485,15 +485,14 @@ def test_query_own_services_with_enrollment_and_no_services_is_empty_list(client
     assert resp.json() == []
 
 
-def test_query_own_services_returns_existing_services_even_after_deregistration(client):
-    """An apf_id that still has services gets them back even after its enrolment was removed: the reference looks at the published services first and only checks enrolment when there are none."""
+def test_deregistering_a_provider_takes_its_services_with_it(client):
+    """Call flow 18a: deleting a provider deletes the services it published (they stayed discoverable before), so its apfId is then not a publisher at all."""
     client.post("/provider-registrations", json={"apfId": "rapp-99"})
     client.post("/published-apis/v1/rapp-99/service-apis", json=register_body(producer="rapp-99", service_name="rapp-99-service"))
     client.delete("/provider-registrations/rapp-99")
 
-    resp = client.get("/published-apis/v1/rapp-99/service-apis")
-    assert resp.status_code == 200
-    assert len(resp.json()) == 1
+    assert client.get("/published-apis/v1/rapp-99/service-apis").status_code == 404
+    assert client.get("/service-apis/v1/allServiceAPIs", params={"api_invoker_id": "anyone", "api_name": "rapp-99-service"}).json() == []
 
 
 def _register_invoker(client, public_key="pk-1"):

@@ -65,6 +65,8 @@ INTERNAL_ONLY: tuple[tuple[str, frozenset[str], re.Pattern], ...] = tuple(
         ("/sme", ("PUT",), r"^/invoker-registrations/[^/]+/authz-scope$"),
         # call flow 01d: a new secret for an existing invoker is rApp Management's act for a RUNNING instance, never an rApp's (it would take the identity over)
         ("/sme", ("POST",), r"^/invoker-registrations/[^/]+/secret$"),
+        # call flow 18c: the trust contexts hold each invoker's authentication and authorization info (the list unredacted); an rApp reads none of them
+        ("/sme", ("GET",), r"^/trusted-invokers(/[^/]+)?$"),
         ("/ran-nf-oam", ("PUT",), r"^/managed-entities/[^/]+/scope$"),
         # SEC-15.3c part 3: who owns a model is set by the operator or an SMO module, never by an rApp (`PUT /models/{id}` is on the allow-list and does not match this path)
         ("/mlmr", ("PUT",), r"^/models/[^/]+/owner$"),
@@ -83,7 +85,8 @@ CHANGES = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 RAPP_MAY_CHANGE: dict[str, tuple[tuple[frozenset[str], re.Pattern], ...] | None] = {
     prefix: None if rules is None else tuple((frozenset(m), re.compile(rx)) for m, rx in rules) for prefix, rules in {
         "/sme": (
-            (("POST",), r"^/(provider-registrations|invoker-registrations|oauth2/(token|introspect))$"),
+            # not /oauth2/introspect: only R1 Termination introspects, and it calls SME directly (call flow 18d)
+            (("POST",), r"^/(provider-registrations|invoker-registrations|oauth2/token)$"),
             (("DELETE",), r"^/provider-registrations/[^/]+$"),
             (("POST",), r"^/published-apis/v1/[^/]+/service-apis$"),
             (("DELETE",), r"^/published-apis/v1/[^/]+/service-apis/[^/]+$"),
