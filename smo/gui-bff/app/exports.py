@@ -372,7 +372,8 @@ class ExportRunner:
             stmt = stmt.where(AuditEntry.id < below)
         with self.db.session() as s:
             batch = s.scalars(stmt.limit(AUDIT_BATCH)).all()
-            return [(e.id, [self.csv_cell(v) for v in (e.id, self.iso(e.at), e.username, e.role, e.action, e.method, e.path, e.status_code, e.detail)])
+            return [(e.id, [self.csv_cell(v) for v in (e.id, self.iso(e.at), e.username, e.role, e.action, e.method, e.path, e.status_code, e.detail,
+                                                       e.correlation_id)])
                     for e in batch]
 
     async def _audit(self, params: dict) -> AsyncIterator[list[list[str]]]:

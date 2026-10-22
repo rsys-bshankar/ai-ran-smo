@@ -30,6 +30,7 @@ from sqlalchemy import JSON, BigInteger, DateTime, Identity, Integer, String, Uu
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
+from .correlation import get_correlation_id
 from .db import Base
 
 log = logging.getLogger("smo.events")
@@ -56,6 +57,7 @@ class SmoEvent(Base):
     data: Mapped[dict] = mapped_column(JSON, nullable=False)
     region: Mapped[str | None] = mapped_column(String)
     tenant: Mapped[str | None] = mapped_column(String)
+    correlation_id: Mapped[str | None] = mapped_column(String)     # the request or worker task that published it (revision 0059, call flow 14c)
 
 
 def event_type(what: str, change: str) -> str:
@@ -64,13 +66,14 @@ def event_type(what: str, change: str) -> str:
 
 
 def envelope(event_id: uuid.UUID, type_: str, source: str, subject: str | None, at: datetime.datetime, data: dict,
-             seq: int | None = None, region: str | None = None, tenant: str | None = None) -> dict:
-    """The CloudEvents 1.0 JSON form of an event; the extension attributes only when they are set."""
+             seq: int | None = None, region: str | None = None, tenant: str | None = None, correlation_id: str | None = None) -> dict:
+    """The CloudEvents 1.0 JSON form of an event; the extension attributes only when they are set. `correlationid` is the X-Correlation-ID of the request
+    or worker task that published it (the name smo-teiv gives the same attribute; call flow 14c)."""
     out: dict[str, Any] = {"specversion": SPEC_VERSION, "id": str(event_id), "source": source, "type": type_, "time": at.isoformat(),
                            "datacontenttype": "application/json", "data": data}
     if subject is not None:
         out["subject"] = subject
-    for name, value in (("smoseq", seq), ("smoregion", region), ("smotenant", tenant)):
+    for name, value in (("smoseq", seq), ("smoregion", region), ("smotenant", tenant), ("correlationid", correlation_id)):
         if value is not None:
             out[name] = value
     return out
@@ -79,7 +82,7 @@ def envelope(event_id: uuid.UUID, type_: str, source: str, subject: str | None, 
 def view(row: SmoEvent) -> dict:
     """A stored event as its envelope."""
     at = row.time if row.time.tzinfo else row.time.replace(tzinfo=datetime.UTC)
-    return envelope(row.event_id, row.type, row.source, row.subject, at, row.data, row.seq, row.region, row.tenant)
+    return envelope(row.event_id, row.type, row.source, row.subject, at, row.data, row.seq, row.region, row.tenant, row.correlation_id)
 
 
 class EventPublisher(Protocol):
@@ -100,7 +103,7 @@ class InMemoryPublisher:
         """Appends the envelope (its `smoseq` is its position, from 1) and wakes `wait`; `target` is not used."""
         with self._changed:
             self.events.append(envelope(uuid.uuid4(), type_, source, subject, datetime.datetime.now(datetime.UTC), data,
-                                        len(self.events) + 1, region, tenant))
+                                        len(self.events) + 1, region, tenant, get_correlation_id()))
             self._changed.notify_all()
 
     def wait(self, after: int, timeout: float) -> list[dict]:
@@ -142,7 +145,7 @@ class TablePublisher:
             MEMORY.publish(target, type_, source, subject, data, region, tenant)
             return
         row = {"event_id": uuid.uuid4(), "type": type_, "source": source, "subject": subject, "time": datetime.datetime.now(datetime.UTC), "data": data,
-               "region": region, "tenant": tenant}
+               "region": region, "tenant": tenant, "correlation_id": get_correlation_id()}
         seq = target.execute(insert(SmoEvent).values(**row).returning(SmoEvent.seq)).scalar_one()
         if bind.dialect.name == "postgresql":
             target.execute(text("SELECT pg_notify(:channel, :payload)"), {"channel": CHANNEL, "payload": str(seq)})

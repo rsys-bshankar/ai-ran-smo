@@ -122,7 +122,7 @@ def test_onboard_routes_to_failed_on_a_real_malformed_zip(client, monkeypatch):
         def raise_for_status(self):
             pass
 
-    monkeypatch.setattr("app.main.httpx.get", lambda location, timeout=None: FakeHttpResponse())
+    monkeypatch.setattr("app.main.httpx.get", lambda location, timeout=None, **kw: FakeHttpResponse())
 
     resp = client.post("/packages", json={"location": "http://example/pkg.csar"})
     package_id = resp.json()["packageId"]
@@ -162,7 +162,7 @@ def _mock_fetch(monkeypatch, content: bytes) -> None:
         def raise_for_status(self):
             pass
     FakeHttpResponse.content = content
-    monkeypatch.setattr("app.main.httpx.get", lambda location, timeout=None: FakeHttpResponse())
+    monkeypatch.setattr("app.main.httpx.get", lambda location, timeout=None, **kw: FakeHttpResponse())
 
 
 def test_onboard_routes_to_failed_when_location_does_not_end_with_csar(client, monkeypatch):
@@ -930,7 +930,7 @@ def test_onboarding_a_package_with_a_non_utf8_sme_file_ends_in_failed(client, mo
         def raise_for_status(self):
             pass
 
-    monkeypatch.setattr("app.main.httpx.get", lambda location, timeout=None: FakeHttpResponse())
+    monkeypatch.setattr("app.main.httpx.get", lambda location, timeout=None, **kw: FakeHttpResponse())
     resp = client.post("/packages", json={"location": "http://example/pkg.csar"})
     assert resp.status_code == 202
     status = client.get(f"/packages/{resp.json()['packageId']}/onboarding-status")
@@ -1072,7 +1072,7 @@ def test_other_failures_report_their_kind_not_internals(client, monkeypatch):
         def raise_for_status(self):
             pass
 
-    monkeypatch.setattr("app.main.httpx.get", lambda location, timeout=None: FakeHttpResponse())
+    monkeypatch.setattr("app.main.httpx.get", lambda location, timeout=None, **kw: FakeHttpResponse())
     answer = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()
     assert answer["failureReason"] == "BadZipFile"
 

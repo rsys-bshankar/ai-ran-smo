@@ -49,6 +49,7 @@ import os
 import re
 import secrets
 import time
+import uuid
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from typing import Any, Iterator, cast
@@ -107,7 +108,7 @@ SIGN_IN_HISTORY_ACTIONS = (*SIGN_IN_ACTIONS, "LOGIN_FAILED", "OIDC_LOGIN_FAILED"
 # GUI-9.5: the CSV export of the audit log stops after this many rows, read from the database this many at a time.
 AUDIT_CSV_MAX_ROWS = 1_000_000
 AUDIT_CSV_BATCH = 1000
-AUDIT_CSV_COLUMNS = ("id", "at", "username", "role", "action", "method", "path", "statusCode", "detail")
+AUDIT_CSV_COLUMNS = ("id", "at", "username", "role", "action", "method", "path", "statusCode", "detail", "correlationId")
 # GUI-10.4: every audit action the BFF writes (the first argument of each `audit(...)` call in app/), served by `GET /api/admin/audit/actions`
 # for the console's action filter. tests/test_main.py scans the source and fails when a call writes an action missing here, or one here is no
 # longer written.
@@ -125,6 +126,7 @@ HOP_BY_HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authoriza
               "trailers", "transfer-encoding", "upgrade"}
 _NEVER_FORWARD_RESPONSE = HOP_BY_HOP | {"content-length", "content-encoding", "set-cookie", "server", "date"}
 _FORWARD_REQUEST = {"content-type", "accept"}
+CORRELATION_ID_HEADER = "X-Correlation-ID"     # the name smo_shared/correlation.py uses (this image does not install smo_shared)
 
 # Everything the BFF itself serves is JSON: nothing may frame, sniff or run it.
 SECURITY_HEADERS = {
@@ -192,8 +194,8 @@ def _problem_body(status: int, title: str, detail: str | None = None) -> dict:
     return body
 
 
-def _problem(status: int, title: str, detail: str | None = None) -> JSONResponse:
-    return JSONResponse(status_code=status, content=_problem_body(status, title, detail))
+def _problem(status: int, title: str, detail: str | None = None, headers: dict[str, str] | None = None) -> JSONResponse:
+    return JSONResponse(status_code=status, content=_problem_body(status, title, detail), headers=headers)
 
 
 def _problem_exception(status: int, title: str, detail: str | None = None) -> HTTPException:
@@ -334,10 +336,10 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
     # ------------------------------------------------------------ helpers
 
     def audit(action: str, user: User | None = None, *, username: str | None = None, method: str | None = None,
-              path: str | None = None, status_code: int | None = None, detail: str | None = None) -> None:
+              path: str | None = None, status_code: int | None = None, detail: str | None = None, correlation_id: str | None = None) -> None:
         with app.state.db.session() as s:
             s.add(AuditEntry(username=user.username if user else username, role=user.role if user else None,
-                             action=action, method=method, path=path, status_code=status_code, detail=detail))
+                             action=action, method=method, path=path, status_code=status_code, detail=detail, correlation_id=correlation_id))
             s.commit()
 
     def source_of(request: Request) -> str:
@@ -1004,24 +1006,31 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         # of from the body. GUI-5: the person's scope claim goes beside it (`X-R1-Acting-User-Scope`) and the module narrows its answer by it. Both set after the browser's
         # headers were filtered above, so the browser cannot choose them.
         headers.update(scoping.headers(session.user.username, session.user.scope))
+        # Call flow 14d: each console action gets its own correlation id, minted here (a browser's X-Correlation-ID is not among the headers forwarded
+        # above, so the browser cannot choose it). R1 Termination keeps it, every module's log line and stored row carries it, the audit row below records
+        # it and the browser gets it back, so an operator's "this failed" leads to the logs of every module the action reached.
+        correlation_id = str(uuid.uuid4())
+        headers[CORRELATION_ID_HEADER] = correlation_id
+        echo = {CORRELATION_ID_HEADER: correlation_id}
         try:
             upstream = await app.state.gateway.request(request.method, path, params=params, content=body or None, headers=headers)
         except SmoAuthError as exc:
             if mutating:
-                audit("PROXY", session.user, method=request.method, path=path, status_code=502, detail=f"auth: {exc}")
-            log.warning("proxy %s %s: SMO token unavailable: %s", request.method, path, exc)
-            return _problem(502, "SMO_AUTH_FAILED", "the BFF could not obtain an SMO access token from SME")
+                audit("PROXY", session.user, method=request.method, path=path, status_code=502, detail=f"auth: {exc}", correlation_id=correlation_id)
+            log.warning("proxy %s %s: SMO token unavailable: %s", request.method, path, exc, extra={"correlationId": correlation_id})
+            return _problem(502, "SMO_AUTH_FAILED", "the BFF could not obtain an SMO access token from SME", headers=echo)
         except httpx.HTTPError as exc:
             if mutating:
-                audit("PROXY", session.user, method=request.method, path=path, status_code=502, detail=exc.__class__.__name__)
-            log.warning("proxy %s %s: R1 Termination unreachable: %r", request.method, path, exc)
-            return _problem(502, "R1_UNREACHABLE", "R1 Termination did not answer")
+                audit("PROXY", session.user, method=request.method, path=path, status_code=502, detail=exc.__class__.__name__, correlation_id=correlation_id)
+            log.warning("proxy %s %s: R1 Termination unreachable: %r", request.method, path, exc, extra={"correlationId": correlation_id})
+            return _problem(502, "R1_UNREACHABLE", "R1 Termination did not answer", headers=echo)
 
         if mutating:
             query_text = "&".join(f"{k}={v}" for k, v in params)
             audit("PROXY", session.user, method=request.method, path=path + (f"?{query_text}" if query_text else ""),
-                  status_code=upstream.status_code)
+                  status_code=upstream.status_code, correlation_id=correlation_id)
         out_headers = {k: v for k, v in upstream.headers.items() if k.lower() not in _NEVER_FORWARD_RESPONSE}
+        out_headers[CORRELATION_ID_HEADER] = correlation_id
         return Response(content=upstream.content, status_code=upstream.status_code, headers=out_headers)
 
     # ------------------------------------------------------------ rApp directory, declared pages, pins (PR-GUI-8)
@@ -1214,7 +1223,7 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
 
     def audit_view(e: AuditEntry) -> dict:
         return {"id": e.id, "at": e.at.isoformat(), "username": e.username, "role": e.role, "action": e.action,
-                "method": e.method, "path": e.path, "statusCode": e.status_code, "detail": e.detail}
+                "method": e.method, "path": e.path, "statusCode": e.status_code, "detail": e.detail, "correlationId": e.correlation_id}
 
     @app.get("/api/admin/audit")
     def list_audit(limit: int = PageLimit, offset: int = PageOffset, username: str | None = None, action: str | None = None,
@@ -1261,7 +1270,8 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
                 with app.state.db.session() as s:
                     batch = s.scalars(batch_stmt.limit(min(AUDIT_CSV_BATCH, AUDIT_CSV_MAX_ROWS - sent))).all()
                 for e in batch:
-                    writer.writerow([_csv_cell(v) for v in (e.id, _iso(e.at), e.username, e.role, e.action, e.method, e.path, e.status_code, e.detail)])
+                    writer.writerow([_csv_cell(v) for v in (e.id, _iso(e.at), e.username, e.role, e.action, e.method, e.path, e.status_code, e.detail,
+                                                            e.correlation_id)])
                 yield buffer.getvalue()
                 buffer.seek(0)
                 buffer.truncate()

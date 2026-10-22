@@ -82,7 +82,7 @@ def test_the_thread_beats_on_its_interval_and_stops(oam, monkeypatch):
 def test_a_refused_heartbeat_is_logged_and_not_counted(oam, monkeypatch, caplog):
     """RAN NF OAM answering an endpoint's heartbeat with an error (the endpoint deleted meanwhile) is logged, not counted, and the others still go."""
     oam["endpoints"] = [_ep("gone", f"{SELF}/edit-config"), _ep("a", f"{SELF}/edit-config")]
-    monkeypatch.setattr(keepalive.httpx, "post", lambda url, timeout=None: httpx.Response(404 if "/gone/" in url else 200, json={}))
+    monkeypatch.setattr(keepalive.httpx, "post", lambda url, timeout=None, **kw: httpx.Response(404 if "/gone/" in url else 200, json={}))
     with caplog.at_level("WARNING", logger="app.keepalive"):
         assert keepalive.beat_once(OAM, SELF) == 1
     assert any("gone" in r.getMessage() and "404" in r.getMessage() for r in caplog.records)

@@ -276,8 +276,8 @@ def test_webhooks_are_counted_under_one_constant_target_never_the_host(monkeypat
     """
     import httpx
     from smo_shared import webhook
-    monkeypatch.setattr(webhook.httpx, "post", lambda url, json=None, timeout=None: httpx.Response(500))
-    monkeypatch.setattr(webhook.httpx, "delete", lambda url, timeout=None: (_ for _ in ()).throw(httpx.ConnectError("x")))
+    monkeypatch.setattr(webhook.httpx, "post", lambda url, json=None, timeout=None, **kw: httpx.Response(500))
+    monkeypatch.setattr(webhook.httpx, "delete", lambda url, timeout=None, **kw: (_ for _ in ()).throw(httpx.ConnectError("x")))
     p0, d0, b0 = _calls("webhook", "callback", "POST", "5xx"), _calls("webhook", "callback", "DELETE", "error"), _calls("webhook", "callback", "GET", "blocked")
     webhook.post_webhook("http://consumer.example/cb", {})
     webhook.delete_webhook("http://consumer.example/cb/1")

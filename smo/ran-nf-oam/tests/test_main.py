@@ -81,6 +81,17 @@ def _make_me(db_session_factory, protocol="NETCONF", health="ACTIVE", last_heart
     db.close()
 
 
+def test_a_config_job_keeps_the_correlation_id_of_the_request_that_made_it(client, db_session_factory, monkeypatch):
+    """Call flow 14b: a config job stores the X-Correlation-ID of its create request and shows it as `correlationId` in the job and in the list."""
+    _make_me(db_session_factory, protocol="NETCONF")
+    monkeypatch.setattr("app.main.send_edit_config", lambda adaptor_uri, target_ref, attribute_changes, message_id, operation="merge", **kw: True)
+    job_id = client.post("/config-jobs", headers={"X-Correlation-ID": "flow14-job"}, json={
+        "requestedBy": "operator", "scope": "cell", "changes": [{"managedElementRef": "ME-1", "attributeChanges": {"adminState": "UNLOCKED"}}],
+    }).json()["jobId"]
+    assert client.get(f"/config-jobs/{job_id}").json()["correlationId"] == "flow14-job"
+    assert [j["correlationId"] for j in client.get("/config-jobs").json()["items"]] == ["flow14-job"]
+
+
 def test_config_change_dispatches_netconf_and_applies(client, db_session_factory, monkeypatch):
     """A config job for a NETCONF element dispatches the edit, ends COMPLETED, and its sub-change is APPLIED with the default merge operation."""
     _make_me(db_session_factory, protocol="NETCONF")

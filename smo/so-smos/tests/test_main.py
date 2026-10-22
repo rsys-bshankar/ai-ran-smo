@@ -47,6 +47,14 @@ def test_submit_order_persists_and_returns_executed_steps(client, monkeypatch):
     assert "orderId" in body
 
 
+def test_an_order_keeps_the_correlation_id_of_its_submit(client, monkeypatch):
+    """Call flow 14b: an order stores the X-Correlation-ID of the submit request and shows it as `correlationId`, so its log lines can be found."""
+    monkeypatch.setattr("app.main.run_step", lambda r1, step, submitter: {**step, "status": "COMPLETED", "result": {}})
+    created = client.post("/orders", json={"scope": "deploy-rollout", "steps": [{"stepType": "DEPLOY", "targetModule": "NFO"}]},
+                          headers={"X-Correlation-ID": "flow14-order"}).json()
+    assert created["correlationId"] == "flow14-order" and client.get(f"/orders/{created['orderId']}").json()["correlationId"] == "flow14-order"
+
+
 def test_query_order_status_returns_the_persisted_order(client, monkeypatch):
     """GET /orders/{id} returns the same steps the submit answered with, read back from the database."""
     monkeypatch.setattr("app.main.run_step", lambda r1, step, submitter: {**step, "status": "COMPLETED", "result": {}})

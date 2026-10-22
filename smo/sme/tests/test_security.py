@@ -231,7 +231,7 @@ def test_offboarding_revokes_the_invokers_tokens(client):
 def webhooks(monkeypatch):
     """Replaces `httpx.post` with a recorder and returns its list of `(url, json)` calls; use it to see the callbacks SME makes (the inline outbox drain sends right after the commit)."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
     return calls
 
 

@@ -498,6 +498,8 @@ class WriteConfigJob(Versioned, Base):
     window_end: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     decided_by: Mapped[str | None] = mapped_column(String)
     decided_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    # The X-Correlation-ID of the request that created the job (revision 0059, call flow 14b): the key to its log lines across modules.
+    correlation_id: Mapped[str | None] = mapped_column(String)
     decision_reason: Mapped[str | None] = mapped_column(String)
     # MGT-4.4: the scope claim of the caller that asked for the job (`smo_shared.scope.to_claim`; NULL: no claim), kept so that the start, which no request comes with, asks the
     # same question of the elements as the request did. `start_attempts` counts the consecutive starts of the job that failed unexpectedly (NULL: none); the worker ends the job

@@ -97,7 +97,7 @@ def rapp_mgmt(monkeypatch):
 def webhooks(monkeypatch):
     """Fixture: the list of `(url, json)` callbacks sent, recorded by patching `httpx.post` (which the outbox's inline drain calls after a commit)."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
     return calls
 
 
@@ -384,7 +384,7 @@ def test_create_intent_succeeds_even_if_rmih_callback_is_unreachable(client, mon
     """An unreachable function callback never fails the create: the push is an outbox row, not an inline call."""
     import httpx as httpx_module
 
-    def raise_error(url, json=None, timeout=None):
+    def raise_error(url, json=None, timeout=None, **kw):
         raise httpx_module.ConnectError("unreachable")
 
     monkeypatch.setattr("app.main.httpx.post", raise_error)
@@ -795,7 +795,7 @@ def test_an_intent_and_its_notifications_survive_a_crash_between_commit_and_send
     monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")
     monkeypatch.setenv("MODULE", "intent-service")
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)) or FakeResponse(200, {}))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)) or FakeResponse(200, {}))
     _register_rmih(client, callback="http://so-smos:8000/intents/notify")
 
     created = client.post("/intents", json=_intent(intentReportControl=[
@@ -831,7 +831,7 @@ def test_an_autonomy_dispatch_the_intent_it_creates_and_the_notifications_are_on
 def test_nothing_is_announced_and_no_intent_is_stored_when_the_create_does_not_commit(client, monkeypatch):
     """When the commit fails, no callback and no outbox row exist and no intent is stored: nobody is told about an intent that does not exist."""
     calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
     _register_rmih(client)
 
     from sqlalchemy.orm import Session as OrmSession

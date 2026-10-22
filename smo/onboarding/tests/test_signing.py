@@ -99,7 +99,7 @@ def nfo(monkeypatch):
 
 def onboard(client, monkeypatch, content: bytes) -> tuple[dict, dict]:
     """Fakes the fetch of `content`, posts the package and returns (the POST answer, the onboarding-status body)."""
-    monkeypatch.setattr("app.main.httpx.get", lambda location, timeout=None: Fetched(content))
+    monkeypatch.setattr("app.main.httpx.get", lambda location, timeout=None, **kw: Fetched(content))
     answer = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()
     return answer, client.get(f"/packages/{answer['packageId']}/onboarding-status").json()
 

@@ -13,6 +13,6 @@ from test_main import FakeHealthResponse, client, register_type_body  # noqa: F4
 @pytest.mark.parametrize("status, expected", [(200, "ENABLED"), (204, "ENABLED"), (299, "ENABLED"), (300, "DISABLED"), (301, "DISABLED"), (404, "DISABLED"), (500, "DISABLED")])
 def test_type_status_follows_the_class_of_the_health_status(client, monkeypatch, status, expected):
     """A producer's health callback answering below 300 makes the type ENABLED and 300 or above DISABLED: the boundary of `_producer_is_healthy`."""
-    monkeypatch.setattr("app.main.httpx.get", lambda url, timeout=None: FakeHealthResponse(status))
+    monkeypatch.setattr("app.main.httpx.get", lambda url, timeout=None, **kw: FakeHealthResponse(status))
     client.post("/production-capabilities", json=register_type_body())
     assert client.get("/dme-types").json()[0]["typeStatus"] == expected

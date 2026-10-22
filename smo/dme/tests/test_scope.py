@@ -105,7 +105,8 @@ def test_an_action_by_id_outside_the_claim_is_a_404_like_one_that_is_not_there(c
     oam.visible = ["ME-1"]
     mine, theirs = _action(client, "ME-1"), _action(client, "ME-3")
     assert client.get(f"/actions/{mine}", headers=EU).status_code == 200
-    hidden, absent = client.get(f"/actions/{theirs}", headers=EU), client.get(f"/actions/{uuid.uuid4()}", headers=EU)
+    same = {**EU, "X-Correlation-ID": "one-id"}                 # the problem body names the request's id (call flow 14a): the same for both
+    hidden, absent = client.get(f"/actions/{theirs}", headers=same), client.get(f"/actions/{uuid.uuid4()}", headers=same)
     assert hidden.status_code == absent.status_code == 404 and hidden.json() == absent.json()
     assert client.get(f"/actions/{theirs}", headers=UNSCOPED).status_code == 200
 

@@ -20,6 +20,7 @@ A CloudEvents 1.0 event in its JSON form, plus three extension attributes. Schem
 | `data` | What the type carries (below) |
 | `smoseq` | Its position in the feed; a reader passes the last one it read as `after` |
 | `smoregion`, `smotenant` | Where the managed element the event is about is, when it is one's: a scoped reader is given only the events inside its claim |
+| `correlationid` | The `X-Correlation-ID` of the request or worker task (`task:<name>:<uuid>`) that published the event, when there was one (the name smo-teiv gives the same attribute; revision 0059, call flow 14c) |
 
 ## Types
 

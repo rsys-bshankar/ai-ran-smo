@@ -324,3 +324,27 @@ def test_a_destination_that_does_not_answer_does_not_hold_up_the_others(engine, 
     result = drain(engine)
     assert result == {"sent": 1, "retry": 8, "dead": 0}
     assert delivered_at["http://healthy/cb"] < 0.3 * 3, f"the healthy destination waited {delivered_at['http://healthy/cb']:.1f} s behind the dead ones"
+
+
+def test_a_row_keeps_the_correlation_id_it_was_enqueued_under_and_is_sent_with_it(engine, monkeypatch):
+    """Call flow 14c: a row stores the id of the request that enqueued it and is sent under that id, so the delivery's X-Correlation-ID is the
+    request's even when a worker, outside any request, sends it; a row enqueued outside any request has none."""
+    from smo_shared.correlation import correlation_scope, get_correlation_id
+    seen: list[str | None] = []
+
+    def post(destination, json, timeout=5.0):
+        seen.append(get_correlation_id())
+        return httpx.Response(200)
+
+    monkeypatch.setattr(webhook, "post_webhook", post)
+    monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")
+    with Session(engine) as db, correlation_scope("req-14"):
+        enqueue(db, "http://consumer/cb", {"n": 1})
+        db.commit()
+    with Session(engine) as db:
+        enqueue(db, "http://consumer/cb", {"n": 2})
+        db.commit()
+    assert [r.correlation_id for r in rows(engine)] == ["req-14", None]
+    with correlation_scope("task:outbox-sweep:1"):
+        drain(engine, now=datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=1))
+    assert sorted(s or "" for s in seen) == ["req-14", "task:outbox-sweep:1"]

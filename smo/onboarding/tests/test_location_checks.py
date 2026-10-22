@@ -14,7 +14,7 @@ def fetched(monkeypatch):
     """Replaces the package fetch with a recorder that fails the test's expectations by being called; returns the list of fetched locations."""
     calls = []
 
-    def fake_get(location, timeout=None):
+    def fake_get(location, timeout=None, **kw):
         calls.append(location)
         raise AssertionError("nothing may be fetched for this location")
     monkeypatch.setattr("app.main.httpx.get", fake_get)

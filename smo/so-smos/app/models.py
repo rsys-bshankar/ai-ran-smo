@@ -18,6 +18,7 @@ class ServiceOrder(Base):
     `steps` is a JSON list, each step dict plus `status` (PENDING, RUNNING, COMPLETED with `result`, FAILED with `error`, CANCELLED); submit and cancel replace it with a new list
     (an in-place change to a plain JSON column is not persisted). `homing_decision` is nullable and no route in this module sets it. `rmih_registration` is the label given at submit
     (default `so-smos`) and is stored only. `submitted_by` is the order's `requestedBy` (`smo-gui:<user>` from the console); null on an order submitted before revision 0049.
+    `correlation_id` is the id of the submit request, which every step's call carries too; null before revision 0059.
     """
     __tablename__ = "service_order"
 
@@ -27,3 +28,4 @@ class ServiceOrder(Base):
     homing_decision: Mapped[dict | None] = mapped_column(JSON)
     rmih_registration: Mapped[str] = mapped_column(String, nullable=False)
     submitted_by: Mapped[str | None] = mapped_column(String(200))
+    correlation_id: Mapped[str | None] = mapped_column(String)     # the X-Correlation-ID of the submit request (revision 0059, call flow 14b)
