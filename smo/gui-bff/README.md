@@ -304,7 +304,7 @@ Forced values replace whatever the browser sent. The role split for `POST /aimgf
 
 ### 2.5 Interactions
 
-**Southbound token (`R1Gateway`)**: (1) `GET {R1}/bootstrap` for the `tokenEndPoint` URI (skipped when `SME_URL` is set: `{SME_URL}/oauth2/token`); (2) if `gui_smo_credential` is empty, `POST {sme}/invoker-registrations` with an opaque `apiInvokerPublicKey` and persist the returned `apiInvokerId` + `onboardingSecret`; (3) `POST` the token endpoint with `grant_type=client_credentials`, scope `smo-gui`. If SME answers 400 (invoker unknown, e.g. its DB was reset) the BFF onboards afresh once. The token is cached until `expires_in` minus 30 s (minimum 1 s) under an `asyncio.Lock`. Any `httpx.HTTPError` or non-200 becomes `SmoAuthError`.
+**Southbound token (`R1Gateway`)**: (1) `GET {R1}/bootstrap` (with `X-Bootstrap-Key` when `SMO_BOOTSTRAP_KEY` or `SMO_BOOTSTRAP_KEY_FILE` is set, DOC-CF-3) for the `tokenEndPoint` URI (skipped when `SME_URL` is set: `{SME_URL}/oauth2/token`); (2) if `gui_smo_credential` is empty, `POST {sme}/invoker-registrations` with an opaque `apiInvokerPublicKey` and persist the returned `apiInvokerId` + `onboardingSecret`; (3) `POST` the token endpoint with `grant_type=client_credentials`, scope `smo-gui`. If SME answers 400 (invoker unknown, e.g. its DB was reset) the BFF onboards afresh once. The token is cached until `expires_in` minus 30 s (minimum 1 s) under an `asyncio.Lock`. Any `httpx.HTTPError` or non-200 becomes `SmoAuthError`.
 
 **Proxy call**: `R1Gateway.request()` attaches `Authorization: Bearer`; if R1 answers 401 it fetches a fresh token and retries exactly once. Timeout `GUI_UPSTREAM_TIMEOUT_SECONDS`.
 
@@ -325,6 +325,7 @@ All read in `app/config.py` at import time.
 |---|---|---|
 | `R1_URL` | `http://r1-termination:8000` | R1 Termination base URL |
 | `SME_URL` | unset (discovered via R1 `/bootstrap`) | Override SME base for onboarding and token |
+| `SMO_BOOTSTRAP_KEY` / `SMO_BOOTSTRAP_KEY_FILE` | unset | The gateway's bootstrap key (`R1_BOOTSTRAP_KEY`), sent as `X-Bootstrap-Key` on `/bootstrap` |
 | `GUI_DATABASE_URL` | `sqlite:///./gui-bff.db` | Users, audit, SME credential (compose: `sqlite:////data/gui-bff.db`) |
 | `GUI_JWT_SECRET` | unset: the first instance generates a key and stores it in `gui_setting`; every instance of the database (and every restart) then uses that one (warning logged) | HS256 key. Under RS256 / ES256 it still signs the short login challenge of the one-time-code step (section 2.10), so it stays needed |
 | `GUI_JWT_ALGORITHM` | `HS256` | PR-SEC-5: `HS256` (the shared secret above), `RS256` or `ES256` (the key pair below). Anything else stops the start. Changing it ends every session |

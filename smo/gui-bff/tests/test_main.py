@@ -39,10 +39,13 @@ class FakeSmo:
         self.not_ready: set[str] = set()
         self.without_version: set[str] = set()
         self.next_response: httpx.Response | None = None
+        self.bootstrap_key: str | None = None        # set: R1 runs with R1_BOOTSTRAP_KEY and /bootstrap needs X-Bootstrap-Key
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         url = str(request.url)
         if url == f"{R1}/bootstrap":
+            if self.bootstrap_key is not None and request.headers.get("x-bootstrap-key") != self.bootstrap_key:
+                return httpx.Response(401, json={"title": "UNAUTHORIZED"})
             return httpx.Response(200, json={"apiEndpoints": [{"apiName": "service-apis", "tokenEndPoint": {"uri": f"{SME}/oauth2/token"}}]})
         if url == f"{R1}/health":
             return httpx.Response(200, json={"status": "healthy"})
@@ -873,3 +876,11 @@ def test_an_unsubscribe_says_whether_an_admin_made_it(app, smo, user, expected):
     """Call flow 20c: the `as_admin` of a PM or FM unsubscribe is forced from the signed-in role, so an operator cannot claim it."""
     login(app, user).delete("/api/smo/ran-nf-oam/pm-subscriptions/s-1", params={"as_admin": "true"})
     assert smo.proxied[0].url.params.get_list("as_admin") == [expected]
+
+
+def test_the_bff_presents_the_bootstrap_key_when_the_gateway_asks_for_one(app, smo, monkeypatch):
+    """DOC-CF-3.1: with the gateway run with R1_BOOTSTRAP_KEY, the BFF sends SMO_BOOTSTRAP_KEY on /bootstrap and its calls go through (it sent none, and
+    every proxied call failed)."""
+    smo.bootstrap_key = "k-1"
+    monkeypatch.setenv("SMO_BOOTSTRAP_KEY", "k-1")
+    assert login(app, "operator").get("/api/smo/ran-nf-oam/alarms").status_code == 200

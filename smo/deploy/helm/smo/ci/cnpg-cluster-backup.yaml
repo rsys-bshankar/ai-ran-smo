@@ -1,5 +1,5 @@
 # The CloudNativePG cluster of ci/cnpg-cluster.yaml with continuous WAL archiving and base backups to an S3-compatible bucket (PR-HA-6.2).
-# An example to copy, not used by a CI job: replace the bucket, the endpoint and the credentials. For MinIO keep `endpointURL`; for AWS S3 drop it
+# An example to copy (the drill of .github/workflows/smo-dr.yml runs it against an S3 stand-in): replace the bucket, the endpoint and the credentials. For MinIO keep `endpointURL`; for AWS S3 drop it
 # (and give the credentials by IRSA or a pod identity instead of a Secret).
 #
 #   * barman-cloud-wal-archive ships every finished WAL segment, and `archive_timeout` forces a segment switch on a quiet database, so the newest

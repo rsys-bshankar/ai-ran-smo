@@ -31,6 +31,19 @@ ENROLLMENT_HEADER = "X-SMO-Enrollment"
 ACTING_USER_HEADER = "X-R1-Acting-User"      # smo_shared/invoker.py's header: who is signed in, for the modules that must name a person (SEC-15.8)
 
 
+BOOTSTRAP_KEY_HEADER = "X-Bootstrap-Key"     # smo_shared/roles.py's header: what a gateway run with R1_BOOTSTRAP_KEY asks for on /bootstrap (PR-SEC-9.3)
+
+
+def _bootstrap_key() -> str | None:
+    """PR-SEC-9.3: the key `GET {R1}/bootstrap` needs when the gateway sets `R1_BOOTSTRAP_KEY`, from `SMO_BOOTSTRAP_KEY` or the file named by
+    `SMO_BOOTSTRAP_KEY_FILE`; None when neither is set (nothing is sent). DOC-CF-3.1: the BFF sent none, so with the key set the console reached nothing."""
+    value, path = os.environ.get("SMO_BOOTSTRAP_KEY", ""), os.environ.get("SMO_BOOTSTRAP_KEY_FILE", "")
+    if path and not value:
+        with open(path, encoding="utf-8") as handle:
+            value = handle.read().removesuffix("\n")
+    return value or None
+
+
 def _enrollment_secret() -> str | None:
     """PR-SEC-14: the secret every SMO module mounts, from `SMO_ENROLLMENT_SECRET` or the file named by `SMO_ENROLLMENT_SECRET_FILE`."""
     value, path = os.environ.get("SMO_ENROLLMENT_SECRET", ""), os.environ.get("SMO_ENROLLMENT_SECRET_FILE", "")
@@ -95,7 +108,8 @@ class R1Gateway:
         if self._sme_url_override:
             self._token_endpoint = f"{self._sme_url_override}/oauth2/token"
             return self._token_endpoint
-        resp = await self._client.get(f"{self.r1_url}/bootstrap")
+        key = _bootstrap_key()
+        resp = await self._client.get(f"{self.r1_url}/bootstrap", headers={BOOTSTRAP_KEY_HEADER: key} if key else None)
         if resp.status_code != 200:
             raise SmoAuthError(f"R1 /bootstrap returned {resp.status_code}")
         for ep in resp.json().get("apiEndpoints", []):

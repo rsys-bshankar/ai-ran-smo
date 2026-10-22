@@ -146,6 +146,11 @@ gui:
 ranNfOam:
   vesPasswordSecretRef: {}
 
+# PR-SEC-9.3 (DOC-CF-3.2): the shared key of the gateway's GET /bootstrap, from a Secret of your own ({name: r1-bootstrap, key: bootstrap-key}; the key defaults to
+# bootstrap-key). Set, the gateway gets it as R1_BOOTSTRAP_KEY and asks for it, and every other module and the GUI backend get it as SMO_BOOTSTRAP_KEY and send it;
+# empty (the default) changes nothing. rApps outside the chart need the same value as SMO_BOOTSTRAP_KEY.
+bootstrapKeySecretRef: {}
+
 # Where each module keeps files (Onboarding's packages, the GUI backend's database). With persistence off they are emptyDirs and are lost
 # when the pod goes.
 persistence:

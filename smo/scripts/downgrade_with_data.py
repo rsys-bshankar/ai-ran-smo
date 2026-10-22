@@ -6,7 +6,7 @@
 The database is at head and loaded (`scripts/load_seed.py --database`). For each revision from head to `--to` (default: the oldest that can be reversed, the one above the baseline)
 this runs `scripts/migrate.py --downgrade <the revision below>` and times it; then it upgrades to head again. The row count of every table is taken before the first step
 and after the last: a table that exists in both must hold the same rows (a downgrade that drops a column drops that column's data, but not rows). Exit status 1 when a step fails,
-when the way back up fails, or when a table lost rows. A step that cannot run on data (a constraint the rows break) is the finding: `docs/ROLLBACK.md` says which revision it is.
+when the way back up fails, or when a table lost rows. A step that cannot run on data (a constraint the rows break) is the finding: the report names the revision (call flow 31, `docs/call-flows/31-schema-migration.md`).
 Writes a Markdown table to `--out` and stdout.
 """
 

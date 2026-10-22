@@ -241,6 +241,7 @@ services:
       SMO_DATABASE_URL: postgresql+psycopg://smo_dme@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_dme
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway (DOC-CF-3.1)
 
   # Call flow 12d: the same image, run as a worker. It purges DME data records older than SMO_RETENTION_DME_RECORDS_DAYS (dme/app/tasks.py).
   dme-worker:
@@ -258,6 +259,7 @@ services:
       SMO_DATABASE_URL: postgresql+psycopg://smo_dme@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_dme
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway (DOC-CF-3.1)
       SMO_RETENTION_DME_RECORDS_DAYS: ${SMO_RETENTION_DME_RECORDS_DAYS:-0}
       SMO_RETENTION_WARN_ROWS: ${SMO_RETENTION_WARN_ROWS:-1000000}
 
@@ -279,6 +281,7 @@ services:
       SMO_DATABASE_URL: postgresql+psycopg://smo_onboarding@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo    # the role can use schema `onboarding` and the shared tables it is given, nothing else
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_onboarding
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway (DOC-CF-3.1)
     volumes:
       - smo_packages:/srv/packages   # FileSystem-aaS, SMO Design v1.3 section 3.4
 
@@ -598,6 +601,7 @@ services:
       SMO_DATABASE_URL: postgresql+psycopg://smo_mlmr@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_mlmr
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway (DOC-CF-3.1)
 
   aimgf:
     build: { context: ., args: { <<: *build_info, MODULE: aimgf, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
@@ -680,6 +684,7 @@ services:
       SMO_DATABASE_URL: postgresql+psycopg://smo_mdaf@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_mdaf
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway (DOC-CF-3.1)
 
   # PR-DB-3: the same image, run as a worker. It purges MDAF reports older than SMO_RETENTION_MDAF_REPORTS_DAYS (mdaf/app/tasks.py).
   mdaf-worker:
@@ -697,6 +702,7 @@ services:
       SMO_DATABASE_URL: postgresql+psycopg://smo_mdaf@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_mdaf
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway (DOC-CF-3.1)
       SMO_RETENTION_MDAF_REPORTS_DAYS: ${SMO_RETENTION_MDAF_REPORTS_DAYS:-0}
       SMO_RETENTION_WARN_ROWS: ${SMO_RETENTION_WARN_ROWS:-1000000}
 
@@ -714,6 +720,7 @@ services:
       SMO_DATABASE_URL: postgresql+psycopg://smo_intent_service@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_intent-service
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway (DOC-CF-3.1)
 
   so-smos:
     build: { context: ., args: { <<: *build_info, MODULE: so-smos, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
@@ -763,6 +770,7 @@ services:
       SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       R1_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway (DOC-CF-3.1)
       GUI_DATABASE_URL: sqlite:////data/gui-bff.db
       GUI_INITIAL_PASSWORD_FILE: /data/initial-admin-password
       # Secrets come from the shell / an .env file, never from git. Unset

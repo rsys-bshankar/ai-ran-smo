@@ -18,7 +18,7 @@
 # Needs: psql, pg_restore (at least the server's major version), python3 with the SMO's requirements (scripts/migrate.py and
 # check_migration_matches_models.py run against the restored database), the AWS CLI, and the bucket variables of dr_s3.sh.
 # The RTO printed is the time of this script: fetch, restore, schema checks, smoke. A real recovery adds the time to notice, decide and provision
-# a Postgres and re-point the services (the runbook's steps 1 to 2 and 7 to 9, docs/DISASTER_RECOVERY.md), which the drill cannot measure.
+# a Postgres and re-point the services (the runbook's steps 1 and 2 and 8 to 10, docs/DISASTER_RECOVERY.md), which the drill cannot measure.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

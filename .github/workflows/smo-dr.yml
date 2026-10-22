@@ -11,7 +11,7 @@ name: SMO disaster recovery drill
 # proved in a drill (docs/DISASTER_RECOVERY.md, section 8). moto replaced a MinIO image that could not be pulled.
 # A second job runs the CloudNativePG side (smo/deploy/helm/smo/ci/cnpg-cluster-backup.yaml, never run in CI before): continuous WAL archiving and a base backup to the same kind of S3 stand-in,
 # then a recovery into a NEW cluster to a chosen minute (point-in-time), where the rows before that minute are there and the row after it is not. It also reads the operator's own metrics
-# for the two alerts (SmoBackupLate, SmoWalArchiveLate) from a real instance, so the alert expressions use names the operator exports.
+# for the three alerts (SmoBackupLate, SmoWalArchiveLate, SmoWalArchiveFailing) from a real instance, so the alert expressions use names the operator exports.
 # Not a required check yet.
 
 on:

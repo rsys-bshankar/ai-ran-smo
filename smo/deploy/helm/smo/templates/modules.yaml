@@ -47,7 +47,7 @@ spec:
         {{- include "smo.podLabels" (dict "root" $) | nindent 8 }}
         app.kubernetes.io/name: {{ $name }}
       annotations:
-        {{- /* a changed secret or value that the pod reads at start rolls the pod */}}
+        {{- /* a changed value of the module rolls the pod; a changed Secret does not (its content is not in the template): kubectl rollout restart */}}
         checksum/config: {{ toYaml $m | sha256sum }}
     spec:
       {{- include "smo.pullSecrets" $ | nindent 6 }}
@@ -162,6 +162,13 @@ spec:
             {{- range $k, $v := $m.env }}
             - name: {{ $k }}
               value: {{ $v | quote }}
+            {{- end }}
+            {{- with $.Values.bootstrapKeySecretRef }}
+            {{- if and .name (ne $name "gui") }}
+            # PR-SEC-9.3 (DOC-CF-3.2): the gateway's /bootstrap key from a Secret of your own: the gateway asks for it, every other module (the GUI backend included) sends it
+            - name: {{ if eq $name "r1-termination" }}R1_BOOTSTRAP_KEY{{ else }}SMO_BOOTSTRAP_KEY{{ end }}
+              valueFrom: { secretKeyRef: { name: {{ .name | quote }}, key: {{ .key | default "bootstrap-key" | quote }} } }
+            {{- end }}
             {{- end }}
             {{- if eq $name "ran-nf-oam" }}
             {{- with $.Values.ranNfOam.vesPasswordSecretRef }}
