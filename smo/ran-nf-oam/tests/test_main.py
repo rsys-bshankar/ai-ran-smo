@@ -8,6 +8,7 @@ import datetime
 import uuid
 
 import pytest
+from types import SimpleNamespace
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
@@ -22,6 +23,10 @@ from app.main import app
 from smo_shared.audit import AuditEntry, AuditHead
 from app.models import AlarmComment, AlarmHistory, ElementOnboarding, LifecycleSubscription, OnboardingTemplate, SoftwareCampaign, ApprovalSubscription, RAppActionApproval, RAppApprovalPolicy, RAppDecisionRecord, KpiDefinition, KpiSchedule, RAppKill, SafeguardRefusal, SafeguardSubscription, RAppLimit, ManagedObject, Alarm, CMSchemaCache, CMSnapshot, FMSubscription, FileSubscription, ManagedEntity, MsacAccessRule, MsacIdentity, MsacRole, PMFile, O1AdaptorEndpoint, PMSubscription, SoftwareManagementJob, VendorCapability, WriteConfigJob, WriteConfigSubChange
 
+
+
+# An R1 answer DME accepted (call flow 11a: the producer registration's answer is read now).
+ACCEPTED = SimpleNamespace(status_code=201, json=lambda: {})
 
 @pytest.fixture
 def db_session_factory():
@@ -325,7 +330,7 @@ def test_subscribe_pm_persists_and_returns_granularity_period(client, db_session
     needed by any real PM subscription regardless of wrapper shape.
     """
     calls = []
-    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: calls.append((path, json)))
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: calls.append((path, json)) or ACCEPTED)
 
     resp = client.post("/pm-subscriptions", params={
         "managed_element_ref": "ME-1", "counter_type": "PRB.Usage", "delivery_method": "pull", "granularity_period": 900,
@@ -340,7 +345,7 @@ def test_subscribe_pm_persists_and_returns_granularity_period(client, db_session
 
 def test_subscribe_pm_without_granularity_period_defaults_to_null(client, db_session_factory, monkeypatch, elements):
     """A PM subscription without a granularity period answers null for it."""
-    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: None)
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: ACCEPTED)
 
     resp = client.post("/pm-subscriptions", params={
         "managed_element_ref": "ME-1", "counter_type": "PRB.Usage", "delivery_method": "pull",
@@ -354,7 +359,7 @@ def test_unsubscribe_pm(client, db_session_factory, monkeypatch, elements):
     gap, closed: PMSubscription previously had no DELETE route at all,
     unlike every other subscription-shaped resource in this build.
     """
-    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: None)
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: ACCEPTED)
     sub_id = client.post("/pm-subscriptions", params={
         "managed_element_ref": "ME-1", "counter_type": "PRB.Usage", "delivery_method": "pull",
     }).json()["subscriptionId"]
@@ -378,7 +383,7 @@ def test_subscribe_fm_registers_ran_nf_oam_as_a_dme_producer(client, db_session_
     subscribe_fm mirrors subscribe_pm's own shape exactly.
     """
     calls = []
-    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: calls.append((path, json)))
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: calls.append((path, json)) or ACCEPTED)
 
     resp = client.post("/fm-subscriptions", params={"managed_element_ref": "ME-1", "delivery_method": "push"})
     assert resp.status_code == 200
@@ -401,7 +406,7 @@ def test_subscribe_fm_registers_ran_nf_oam_as_a_dme_producer(client, db_session_
 
 def test_subscribe_fm_unknown_delivery_method_defaults_to_faultmns(client, db_session_factory, monkeypatch, elements):
     """An FM subscription is served by the FaultMnS engine (the test sends `pull`; a method with no mapping also falls back to FaultMnS)."""
-    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: None)
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: ACCEPTED)
 
     resp = client.post("/fm-subscriptions", params={"managed_element_ref": "ME-1", "delivery_method": "pull"})
     assert resp.status_code == 200
@@ -410,7 +415,7 @@ def test_subscribe_fm_unknown_delivery_method_defaults_to_faultmns(client, db_se
 
 def test_list_fm_subscriptions_filters_by_managed_element_ref(client, db_session_factory, monkeypatch, elements):
     """The FM subscription list can be narrowed to one element."""
-    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: None)
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: ACCEPTED)
     client.post("/fm-subscriptions", params={"managed_element_ref": "ME-1", "delivery_method": "push"})
     client.post("/fm-subscriptions", params={"managed_element_ref": "ME-2", "delivery_method": "push"})
 
@@ -423,7 +428,7 @@ def test_list_fm_subscriptions_filters_by_managed_element_ref(client, db_session
 
 def test_unsubscribe_fm(client, db_session_factory, monkeypatch, elements):
     """Deleting an FM subscription is 204 and removes the row."""
-    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: None)
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: ACCEPTED)
     sub_id = client.post("/fm-subscriptions", params={"managed_element_ref": "ME-1", "delivery_method": "push"}).json()["subscriptionId"]
 
     resp = client.delete(f"/fm-subscriptions/{sub_id}")
@@ -657,7 +662,7 @@ def test_query_alarms_filters_by_severity_and_exposes_raised_at(client, db_sessi
 def test_list_pm_subscriptions(client, db_session_factory, monkeypatch):
     """PM subscriptions are listed with their engine and granularity, and can be filtered by element."""
     _make_me(db_session_factory)
-    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: None)
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: ACCEPTED)
     sub = client.post("/pm-subscriptions", params={"managed_element_ref": "ME-1", "counter_type": "DRB.UEThpDl",
                                                     "delivery_method": "push", "granularity_period": 900}).json()
 

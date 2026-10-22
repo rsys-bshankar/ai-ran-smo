@@ -7,6 +7,8 @@ never had a schema OR endpoints in v1.3 at all.
 """
 
 import datetime
+import os
+import time
 import uuid
 
 import httpx
@@ -15,6 +17,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from smo_shared.logconfig import install_logging
@@ -202,21 +205,36 @@ def register_dme_type(body: DMETypeRegistration, request: Request, db: Session =
     # definition by a second producer, or by the first one again, is the join / idempotent re-registration it always was. The check comes before the producer row is touched, so a
     # refusal changes nothing. A new type records its first caller in `registered_by`. Order after that, as before: producer upsert, type upsert, link, `REGISTERED` notice (new
     # type only), one commit.
+    # Call flow 11a (DOC-CF-1.8): a producer that joins a type, or registers a new job callback, is sent the type's current jobs (ICS's startInfoJobs on
+    # registration): `_send_open_jobs`. Two first registrations of the same producer or type at once collide on a key; the loser is retried once, and then finds
+    # the rows the other made (a 500 before).
     _refuse_unless_producer_owner(request, body.producerId, "register a producer")
     if body.sourceDomain is not None and body.sourceDomain not in SOURCE_DOMAINS:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"unknown sourceDomain {body.sourceDomain!r}")
+    try:
+        return _register(db, request, body)
+    except IntegrityError:
+        db.rollback()
+        return _register(db, request, body)
 
+
+def _register(db: Session, request: Request, body: DMETypeRegistration) -> dict:
+    """The body of `register_dme_type` after its input checks: the redefinition check, the producer and type upserts, the link, the notices and the jobs sent
+    to the producer, one commit. Raises `IntegrityError` when a concurrent first registration of the same producer or type committed first."""
     existing = db.scalar(select(DMEType).where(DMEType.namespace == body.namespace, DMEType.name == body.name, DMEType.version == body.version))
     if existing is not None and _redefines(existing, body) and not _may_redefine_type(db, request, existing):
         raise framework_error(DME_TYPE_NOT_OWNER, detail=f"the type {body.namespace}/{body.name}/{body.version} was registered by another producer: only that producer, "
                                                           "an SMO module or the operator may change its definition")
 
     producer = db.get(DMEProducer, body.producerId)
+    callback_changed = False
     if producer is None:
         producer = DMEProducer(producer_id=body.producerId, producer_health_callback_url=body.producerHealthCallbackUrl,
                                 job_callback_url=body.jobCallbackUrl)
         db.add(producer)
     else:
+        callback_changed = producer.job_callback_url != body.jobCallbackUrl
+        _forget_health(producer.producer_health_callback_url)
         producer.producer_health_callback_url = body.producerHealthCallbackUrl
         producer.job_callback_url = body.jobCallbackUrl
 
@@ -232,8 +250,13 @@ def register_dme_type(body: DMETypeRegistration, request: Request, db: Session =
     t.source_context = body.sourceContext
     db.flush()  # populate t.dme_type_id for a brand-new row before the link lookup below
 
-    if db.get(DMEProducerType, (body.producerId, t.dme_type_id)) is None:
+    joined = db.get(DMEProducerType, (body.producerId, t.dme_type_id)) is None
+    if joined:
         db.add(DMEProducerType(producer_id=body.producerId, dme_type_id=t.dme_type_id))
+        db.flush()
+    # A producer that joins is sent the jobs of this type; one whose job callback moved is sent the jobs of every type it serves, at the new address.
+    for type_id in (_type_ids_of(db, body.producerId) if callback_changed else [t.dme_type_id] if joined else []):
+        _send_open_jobs(db, producer, type_id)
     if is_new_type:
         # ICS's own notifyTypeRegistered fires from putInfoType (the
         # type's own declaration), not from a producer joining an
@@ -312,17 +335,29 @@ def deregister_producer(producer_id: str, request: Request, db: Session = Depend
     A caller with the rApp role may deregister only the producer whose id is its own invoker id (403 `DME_PRODUCER_NOT_OWNER`, SEC-15.10b), whether or not that
     producer exists; rApp Management, which tears an instance's registration down, is an SMO module and is not asked.
     """
+    # Call flow 11d (DOC-CF-1.8): the leaving producer is told to stop each job of the types it served (a DELETE per job, in the outbox), and a job whose type
+    # is left with no producer becomes NO_PRODUCER (an `org.oran.smo.data-job.state-changed` event); it is ACTIVE again when a producer joins (11a).
     _refuse_unless_producer_owner(request, producer_id, "deregister a producer")
     p = db.get(DMEProducer, producer_id)
     if p is None:
         return
+    type_ids = _type_ids_of(db, producer_id)
+    for type_id in type_ids:
+        for job in db.scalars(select(DataJob).where(DataJob.dme_type_id == type_id, DataJob.status == "ACTIVE")).all():
+            enqueue(db, f"{p.job_callback_url}/{job.data_job_id}", {}, method="DELETE")
     db.query(DMEProducerType).filter(DMEProducerType.producer_id == producer_id).delete()
+    _forget_health(p.producer_health_callback_url)
     db.delete(p)
+    db.flush()
+    for type_id in type_ids:
+        if not _producers_for_type(db, type_id):
+            for job in db.scalars(select(DataJob).where(DataJob.dme_type_id == type_id, DataJob.status == "ACTIVE")).all():
+                _set_job_status(db, job, "NO_PRODUCER", f"producer {producer_id} deregistered and the type has no other")
     db.commit()
 
 
 @app.delete("/dme-types/{dme_type_id}", status_code=204)
-def delete_dme_type(dme_type_id: uuid.UUID, db: Session = Depends(get_session)):
+def delete_dme_type(dme_type_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
     """ICS's own `DELETE /data-producer/v1/info-types/{infoTypeId}`
     (deleteInfoType) — 409 ("has one or several active producers") if any
     producer still supports it, otherwise deletes it and every dependent
@@ -330,13 +365,22 @@ def delete_dme_type(dme_type_id: uuid.UUID, db: Session = Depends(get_session)):
     unconditionally, now correctly gated on the type actually having zero
     producers left, not merely on ONE producer having left).
     """
+    # Route notes. Call flow 11d (DOC-CF-1.8): 403 `ROLE_NOT_PERMITTED` for an rApp (a type is shared by its producers and its consumers: the console, Admin, or
+    # an SMO module removes it). Each deleted job is announced (`org.oran.smo.data-job.state-changed`, to `DELETED`) and each offer's termination URI is told,
+    # as `terminate_data_offer` does; all in the one transaction.
+    if role_of(request) == ROLE_RAPP:
+        raise framework_error(FrameworkError.ROLE_NOT_PERMITTED, detail="an rApp may not delete a DME type")
     t = db.get(DMEType, dme_type_id)
     if t is None:
         raise framework_error(FrameworkError.DME_TYPE_NOT_FOUND, detail="no such DME type")
     if db.scalar(select(DMEProducerType).where(DMEProducerType.dme_type_id == dme_type_id).limit(1)) is not None:
         raise framework_error(FrameworkError.DME_TYPE_HAS_ACTIVE_PRODUCERS, detail="type has one or several active producers")
-    db.query(DataJob).filter(DataJob.dme_type_id == dme_type_id).delete()
-    db.query(DataOffer).filter(DataOffer.dme_type_id == dme_type_id).delete()
+    for job in db.scalars(select(DataJob).where(DataJob.dme_type_id == dme_type_id)).all():
+        _set_job_status(db, job, "DELETED", "its DME type was deleted")
+        db.delete(job)
+    for offer in db.scalars(select(DataOffer).where(DataOffer.dme_type_id == dme_type_id)).all():
+        enqueue(db, offer.data_offer_termination_notification_uri, {"dataOfferId": str(offer.offer_id)})
+        db.delete(offer)
     schema = t.data_production_schema
     db.delete(t)
     _notify_type_subscribers(db, dme_type_id, schema, "DEREGISTERED")
@@ -510,6 +554,8 @@ def create_data_job(body: DataJobRequest, request: Request, db: Session = Depend
         lifecycle_stage=body.lifecycleStage,
         expected_interval_seconds=body.expectedIntervalSeconds,
     )
+    if not _producers_for_type(db, body.dmeTypeId):
+        job.status = "NO_PRODUCER"     # call flow 11b: nobody serves the type yet; ACTIVE once a producer joins it
     _set_late_after(job)
     db.add(job)
     db.flush()  # the job's id, for the producers' payloads
@@ -696,14 +742,19 @@ def _push_job_to_producers(db: Session, dme_type: DMEType, job: DataJob) -> None
     reference's own onErrorResume-and-continue behavior.
     """
     for producer in _producers_for_type(db, dme_type.dme_type_id):
-        enqueue(db, producer.job_callback_url, {
-            "infoJobIdentity": str(job.data_job_id),
-            "infoTypeIdentity": str(dme_type.dme_type_id),
-            "infoJobData": job.production_job_definition or {},
-            "targetUri": (job.delivery_details or {}).get("targetUri", ""),
-            "owner": job.consumer_id,
-            "lastUpdated": datetime.datetime.now(datetime.UTC).isoformat(),
-        })
+        enqueue(db, producer.job_callback_url, _job_payload(dme_type, job))
+
+
+def _job_payload(dme_type: DMEType, job: DataJob) -> dict:
+    """The job as a producer is sent it (ICS's ProducerJobInfo)."""
+    return {
+        "infoJobIdentity": str(job.data_job_id),
+        "infoTypeIdentity": str(dme_type.dme_type_id),
+        "infoJobData": job.production_job_definition or {},
+        "targetUri": (job.delivery_details or {}).get("targetUri", ""),
+        "owner": job.consumer_id,
+        "lastUpdated": datetime.datetime.now(datetime.UTC).isoformat(),
+    }
 
 
 def _stop_job_at_producers(db: Session, dme_type: DMEType, data_job_id: uuid.UUID) -> None:
@@ -713,6 +764,32 @@ def _stop_job_at_producers(db: Session, dme_type: DMEType, data_job_id: uuid.UUI
     """
     for producer in _producers_for_type(db, dme_type.dme_type_id):
         enqueue(db, f"{producer.job_callback_url}/{data_job_id}", {}, method="DELETE")
+
+
+def _type_ids_of(db: Session, producer_id: str) -> list[uuid.UUID]:
+    """The ids of the types `producer_id` is linked to."""
+    return list(db.scalars(select(DMEProducerType.dme_type_id).where(DMEProducerType.producer_id == producer_id)).all())
+
+
+def _send_open_jobs(db: Session, producer: DMEProducer, dme_type_id: uuid.UUID) -> None:
+    """Call flow 11a: sends `producer` every job of the type that is ACTIVE or NO_PRODUCER (an outbox row each, as `_push_job_to_producers` writes them), and makes
+    the NO_PRODUCER ones ACTIVE again. The caller commits."""
+    dme_type = db.get(DMEType, dme_type_id)
+    if dme_type is None:
+        return
+    for job in db.scalars(select(DataJob).where(DataJob.dme_type_id == dme_type_id, DataJob.status.in_(("ACTIVE", "NO_PRODUCER")))).all():
+        enqueue(db, producer.job_callback_url, _job_payload(dme_type, job))
+        if job.status == "NO_PRODUCER":
+            _set_job_status(db, job, "ACTIVE", f"producer {producer.producer_id} serves the type")
+
+
+def _set_job_status(db: Session, job: DataJob, status: str, reason: str) -> None:
+    """Moves `job` to `status` and publishes `org.oran.smo.data-job.state-changed` (`from`, `to`, `reason`, the consumer and the creator) in the caller's
+    transaction, so the job's owner learns what happened to it from the SMO event feed (docs/EVENTS.md). The caller commits."""
+    smo_events.publish(db, "data-job", "state-changed", "/smo/dme", str(job.data_job_id),
+                       {"dataJobId": str(job.data_job_id), "dmeTypeId": str(job.dme_type_id), "consumerId": job.consumer_id, "createdBy": job.created_by,
+                        "from": job.status, "to": status, "reason": reason})
+    job.status = status
 
 
 def _now() -> datetime.datetime:
@@ -805,9 +882,38 @@ def _computed_type_status(db: Session, t: DMEType) -> str:
     return "ENABLED" if any(_producer_is_healthy(p.producer_health_callback_url) for p in _producers_for_type(db, t.dme_type_id)) else "DISABLED"
 
 
+# Call flow 11c (DOC-CF-1.8): a producer's health answer is remembered for DME_PRODUCER_HEALTH_CACHE_SECONDS (30 s; 0 asks every time), so a list of types
+# asks each producer once, not once per type it serves, and a busy reader (RAN NF OAM lists the types at every PM fan-out) does not call every producer each
+# time. Per process; a re-registration or deregistration forgets the producer's entry.
+_health_cache: dict[str, tuple[float, bool]] = {}
+
+
+def _health_cache_seconds() -> float:
+    """`DME_PRODUCER_HEALTH_CACHE_SECONDS` as a number of seconds (30 when unset or not a number, never below 0)."""
+    try:
+        return max(0.0, float(os.environ.get("DME_PRODUCER_HEALTH_CACHE_SECONDS", "30")))
+    except ValueError:
+        return 30.0
+
+
+def _forget_health(callback_url: str | None) -> None:
+    """Drops the remembered health of `callback_url`."""
+    if callback_url:
+        _health_cache.pop(callback_url, None)
+
+
 def _producer_is_healthy(callback_url: str) -> bool:
+    """Whether the producer's health callback answers below 300 within 2 s (an error or no answer is unhealthy), remembered as `_health_cache` says."""
+    ttl = _health_cache_seconds()
+    now = time.monotonic()
+    cached = _health_cache.get(callback_url)
+    if ttl and cached is not None and cached[0] > now:
+        return cached[1]
     resp = get_webhook(callback_url, timeout=2.0)
-    return resp is not None and resp.status_code < 300
+    healthy = resp is not None and resp.status_code < 300
+    if ttl:
+        _health_cache[callback_url] = (now + ttl, healthy)
+    return healthy
 
 
 # ---------------------------------------------------------------- list reads (GUI pass 2)

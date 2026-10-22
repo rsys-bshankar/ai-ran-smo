@@ -130,7 +130,6 @@ Usage: `sdk = AiRuntimeSdk()` (or `AiRuntimeSdk(r1=R1Client(base_url, bearer_tok
 | `list_producers()` | `GET /dme/production-capabilities` | |
 | `get_producer(producer_id)` | `GET /dme/production-capabilities/{producer_id}` | |
 | `deregister_producer(producer_id)` -> None | `DELETE /dme/production-capabilities?producer_id=` | removes the producer and its type links; types stay if another producer supports them |
-| `delete_type(dme_type_id)` -> None | `DELETE /dme/dme-types/{id}` | 409 `DME_TYPE_HAS_ACTIVE_PRODUCERS` |
 | `query_producer_status(producer_id)` | `GET /dme/production-capabilities/{producer_id}/status` | |
 | `create_data_job(dme_type_id, data_delivery_mode, data_delivery_method, consumer_id, production_job_definition=None, delivery_details=None, lifecycle_stage=None)` | `POST /dme/data-jobs` | `lifecycle_stage` TRAINING / TESTING / EMULATION / INFERENCE / CLOSED_LOOP_FEEDBACK; 422 for a Digital Twin type at INFERENCE |
 | `get_data_job(data_job_id)` | `GET /dme/data-jobs/{id}` | |
@@ -308,7 +307,7 @@ Each test asserts the verb, path, params and body the client sends against a scr
 
 | Test file | Covers | Passed |
 |---|---|---|
-| `tests/test_data.py` | Producer/type registration (with and without provenance; one producer left per callback when the process and instances register),  discovery, deregistration, `delete_type`, status; data jobs (create, get, update, status, terminate, terminate-for-consumer, list); offers and notify (raw body); type subscriptions; record ingest/fetch; `mediate_action`, `get_action`/`list_actions`; RAN inventory reads; 4xx -> `SdkError` | 26 |
+| `tests/test_data.py` | Producer/type registration (with and without provenance; one producer left per callback when the process and instances register),  discovery, deregistration, status; data jobs (create, get, update, status, terminate, terminate-for-consumer, list); offers and notify (raw body); type subscriptions; record ingest/fetch; `mediate_action`, `get_action`/`list_actions`; RAN inventory reads; 4xx -> `SdkError` | 25 |
 | `tests/test_lifecycle.py` | Training (request, status, cancel, suspend/resume, model-metrics raw body); `advance_model_lifecycle` is deprecated and raises 403 with no call, and the gateway policy refuses the advance path while it allows the model routes a rApp uses; inference (request, status, resolve, list); MLMF subscriptions/reports (query plus body split, the ceiling only when given); feature groups (with a DME type, delete); training progress; `deploy_model` raw list body; 4xx | 28 |
 | `tests/test_analytics.py` | Producer registration (with explicit `mda_type`) and deregistration, reports, subscriptions with scope and `thresholdInfo` body, `create_mda_request` dropping unset fields, `publish_mda_report`, `get_prediction` (named PM prediction, none without reports); 4xx | 14 |
 | `tests/test_intent.py` | `create_intent`, `energy_saving_expectation`, get/list/admin-state/delete, reports, RMIH register/deregister/list; 4xx | 12 |

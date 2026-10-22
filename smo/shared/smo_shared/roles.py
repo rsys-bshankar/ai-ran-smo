@@ -95,7 +95,8 @@ RAPP_MAY_CHANGE: dict[str, tuple[tuple[frozenset[str], re.Pattern], ...] | None]
             (("DELETE",), r"^/(production-capabilities|data-jobs)$"),
             (("PUT", "DELETE"), r"^/data-jobs/[^/]+$"),
             (("POST",), r"^/data-jobs/[^/]+/records$"),
-            (("DELETE",), r"^/(dme-types|offers|type-subscriptions)/[^/]+$"),
+            # not /dme-types/{id}: a type is shared by its producers and consumers, and only the console or a module deletes it (call flow 11d)
+            (("DELETE",), r"^/(offers|type-subscriptions)/[^/]+$"),
             (("POST",), r"^/offers/[^/]+/notify$"),
         ),
         "/aimgf": (

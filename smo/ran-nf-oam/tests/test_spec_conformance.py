@@ -257,6 +257,7 @@ def test_replacing_a_role_and_an_identity(client):
 # ---------------------------------------------------------------- SA-RANOAM-8 (file data reporting)
 
 class _Resp:
+    status_code = 200            # an accepted call (call flow 11a reads the producer registration's answer)
     def __init__(self, body):
         self.body = body
 
