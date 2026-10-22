@@ -32,10 +32,10 @@ def _vendor(client, name="acme", **kw):
     return resp.json()
 
 
-def _endpoint(client, me="ME-A", vendor="acme", protocol="NETCONF", **kw):
+def _endpoint(client, me="ME-A", vendor="acme", protocol="NETCONF", headers=None, **kw):
     return client.post("/o1-adaptor-endpoints", json={
         "managedElementRef": me, "adaptorUri": "http://adaptor:9000/edit-config", "protocolSupport": [protocol],
-        "o1Protocol": protocol, "entityType": "O-DU", "vendorName": vendor, **kw})
+        "o1Protocol": protocol, "entityType": "O-DU", "vendorName": vendor, **kw}, headers=headers)
 
 
 def _write(client, me="ME-A", **change):

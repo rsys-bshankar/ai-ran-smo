@@ -153,7 +153,8 @@ rollback order, notifications) is unchanged and described in `ran-nf-oam/README.
 ## Decisions this flow depends on
 
 - **A job names its package and is sent to the element** (DOC-CF-1.8): `remote_file_path` is required, and each phase's RPC is sent to the element's O1
-  adaptor after the commit that made it due, claimed so that it is sent once however many replicas run; the worker sends any a crash left unsent.
+  adaptor after the commit that made it due, claimed so that it is sent once however many replicas run; the worker sends any phase not yet claimed (a crash after the claim and before
+  the send leaves the phase claimed and unsent until the campaign's timeout or an abort, `OPEN_ITEMS.md` OAM-SWM-RESEND).
 - **The element reports, the SMO does not guess**: a phase completes when the element (its adaptor) reports it through `advance`; a refused or unreachable RPC
   fails the job at once with the element's reason.
 - **One job at a time per element, on a registered element** (DOC-CF-1.8): 409 `SOFTWARE_JOB_IN_PROGRESS`, 404 `MANAGED_ENTITY_NOT_FOUND`.

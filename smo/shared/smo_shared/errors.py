@@ -231,6 +231,8 @@ class FrameworkError:
     # multi-vendor capability registry, docs/ARCHITECTURE.md
     O1_SERVICE_NOT_SUPPORTED = ("O1_SERVICE_NOT_SUPPORTED", 409)
     VENDOR_CAPABILITY_NOT_FOUND = ("VENDOR_CAPABILITY_NOT_FOUND", 404)
+    # Call flow 21: deleting a vendor's entry while elements use it switches off their checks (force=true to do it anyway)
+    VENDOR_CAPABILITY_IN_USE = ("VENDOR_CAPABILITY_IN_USE", 409)
     CM_SCHEMA_NOT_FOUND = ("CM_SCHEMA_NOT_FOUND", 404)
     CM_SCHEMA_CONFLICT = ("CM_SCHEMA_CONFLICT", 409)
     MANAGED_ENTITY_NOT_FOUND = ("MANAGED_ENTITY_NOT_FOUND", 404)

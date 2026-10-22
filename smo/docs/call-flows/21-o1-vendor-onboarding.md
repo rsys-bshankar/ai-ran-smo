@@ -1,85 +1,177 @@
-# Call Flow: O1 Vendor Onboarding → Capability-Gated, Schema-Checked CM Write
+# Call Flow 21: O1 vendor onboarding — elements, schemas, the vendor's capability, and the two checks on every O1 operation
 
-RAN NF OAM's vendor capability registry (`ran-nf-oam/app/vendors.py`; see "O1 vendor
-onboarding" in `docs/ARCHITECTURE.md` and Wave 9 in `docs/STANDARDS.md`) makes onboarding a
-RAN vendor (or a Digital Twin) data fed to RAN NF OAM, not new code. The three steps are:
+RAN NF OAM's vendor capability registry (`ran-nf-oam/app/vendors.py`; "O1 vendor onboarding" in `docs/ARCHITECTURE.md`, Wave 9 in `docs/STANDARDS.md`)
+makes onboarding a RAN vendor (or a Digital Twin) data, not code: an element is registered behind its O1 adaptor, the vendor's data-model descriptor is
+loaded, and its capability is declared (by hand, or discovered from a registered adaptor). Two generic checks then read the registry on every O1 operation:
+the **axis-2 presence guard** (does the element's vendor implement this MnS service) and the **axis-3 schema check** (do the class, attribute and value exist in
+the data model the vendor's conformance mode selects). Four diagrams:
 
-1. **Discover** what the vendor's own O1 adaptor declares. The adaptor registers itself first, and discovery reads only that registered adaptor, never a URL supplied in a request.
-2. **Load** the vendor's data-model descriptor.
-3. **Declare** its capability.
+| | Step | Who starts it | Ends with |
+|---|---|---|---|
+| 21a | Registering an element | Operator (GUI), an SMO module | an element behind its adaptor, inside the caller's scope, its services no wider than its vendor's |
+| 21b | Schemas and the vendor's capability | Admin (GUI), an SMO module | a checked descriptor loaded, a capability declared, each change published |
+| 21c | Onboarding from a registered adaptor | Admin (GUI) | the adaptor's declaration read from its registered origin, checked, schemas loaded, the capability declared in one commit |
+| 21d | The two checks on a CM write | an rApp through DME, a module, Operator (GUI) | a write refused before anything is sent, or dispatched |
 
-After that, two generic checks read the registry on every O1 operation:
+**As images:** [21a](images/21-o1-vendor-onboarding/21a-registering-an-element.png) ·
+[21b](images/21-o1-vendor-onboarding/21b-schemas-and-the-vendor-s-capability.png) ·
+[21c](images/21-o1-vendor-onboarding/21c-onboarding-from-a-registered-adaptor.png) ·
+[21d](images/21-o1-vendor-onboarding/21d-the-two-checks-on-a-cm-write.png)
+(PNG, drawn from the diagrams below by `scripts/render_call_flows.py`).
 
-- the **axis-2 presence guard** — does the vendor implement this MnS service at all;
-- the **axis-3 schema check** — does this class, attribute and value exist in the data model the vendor's conformance mode selects.
+**How to read the diagrams.** As in call flow 01: an arrow is one call with the inputs that matter, a box on the receiver says what it does with them,
+an `alt` block is the outcome (success first, then each failure and what the caller gets). Calls reach RAN NF OAM through R1 Termination, which stamps the
+caller's role and scope claim; an rApp may only read the registry (R1's allow-list, and each write route refuses the rApp role itself). Registry changes are
+published on the event feed (`org.oran.smo.vendor-capability.*`, `org.oran.smo.cm-schema.loaded`, `docs/EVENTS.md`).
 
-The vendor's endpoints register through `POST /o1-adaptor-endpoints` (call flow 03).
+## 21a — Registering an element
 
 ```mermaid
 sequenceDiagram
-    actor Admin as Operator (admin)
+    participant C as Operator (GUI) / SMO module
     participant OAM as RAN NF OAM
-    participant Adaptor as Vendor O1 adaptor
-    actor RApp as rApp
-    participant DME as DME
+    participant DB as RAN NF OAM database
 
-    Note over Admin,OAM: one-time, offline: scripts/ingest_cm_schema.py turns the vendor's NRM definitions<br/>into a descriptor of IOC classes, their attributes, types and enums
-    Adaptor->>OAM: POST /ran-nf-oam/o1-adaptor-endpoints (managedElementRef, adaptorUri, vendorName, o1Protocol)
-    OAM-->>Adaptor: endpointId (no capability yet, so nothing is gated)
-    Admin->>OAM: POST /ran-nf-oam/vendor-onboarding<br/>(vendorName, discoverFrom = a registered managedElementRef, conformanceMode, schemas)
-    OAM->>OAM: the ME must exist and belong to vendorName.<br/>Discovery URL = the registered adaptorUri's origin + /capabilities
-    OAM->>Adaptor: GET /capabilities
-    Adaptor-->>OAM: vendorName, supportedServices, supportedVendorModes
-    alt adaptor unreachable
-        OAM-->>Admin: 503 ENDPOINT_UNREACHABLE
-    else adaptor declares a different vendor
-        OAM-->>Admin: 422 SCHEMA_VALIDATION_FAILED
+    C->>OAM: POST /o1-adaptor-endpoints {managedElementRef, adaptorUri, transport, o1Protocol, vendorName?, supportedServices?, region?, tenant?, credentialRef?}
+    alt an rApp
+        OAM-->>C: 403 ROLE_NOT_PERMITTED
+    else region or tenant outside the caller's scope claim (or none given by a scoped caller)
+        OAM-->>C: 403 SCOPE_DENIED
+    else http-mock adaptorUri not an http(s) URL with a host and no credentials, ssh or tls URI that does not parse
+        OAM-->>C: 422
+    else o1Protocol not a mode the vendor declared
+        OAM-->>C: 409 PROTOCOL_NOT_SUPPORTED
+    else an adaptor already registered for the element
+        OAM-->>C: 409 SERVICE_NAME_CONFLICT
+    else supportedServices wider than the vendor's declared ones
+        OAM-->>C: 422
+    else
+        OAM->>DB: endpoint (DISCOVERED), managed entity with its place, containment tree, onboarding (if a template matches), one commit
+        OAM-->>C: 201 {endpointId, managedElementRef, healthStatus, region, tenant}
     end
-    OAM->>OAM: load each schema into cm_schema_cache (an identical one is reused, a different one at the same revision is 409 CM_SCHEMA_CONFLICT)
-    OAM->>OAM: upsert vendor_capability (services, conformance mode, vendor modes,<br/>schemaRef = vendor descriptor, specSchemaRef defaults to the bundled TS 28.541 descriptor)
-    OAM->>OAM: every already-registered endpoint of the vendor must use a declared mode (else 409 PROTOCOL_NOT_SUPPORTED)
-    OAM-->>Admin: discovered, schemasLoaded, capability
-
-    Admin->>OAM: POST /ran-nf-oam/o1-adaptor-endpoints for further MEs (vendorName, o1Protocol, supportedServices?)
-    OAM->>OAM: o1Protocol must be one of the vendor's supportedVendorModes (else 409 PROTOCOL_NOT_SUPPORTED),<br/>endpoint services may narrow the vendor's, never widen them
-    OAM-->>Admin: endpointId
-
-    RApp->>DME: POST /dme/actions (changes with managedElementRef, className or managedFunctionRef IOC=id, attributeChanges)
-    DME->>OAM: POST /ran-nf-oam/config-jobs (className forwarded)
-    OAM->>OAM: pre-check every change: vendor implements PROV,<br/>class, attributes and enum values exist in the selected data model
-    alt service missing
-        OAM-->>DME: 409 O1_SERVICE_NOT_SUPPORTED
-        DME-->>RApp: 409, action recorded REJECTED, nothing dispatched
-    else schema violation
-        OAM-->>DME: 422 SCHEMA_VALIDATION_FAILED (every offending attribute named)
-        DME-->>RApp: 422, action recorded REJECTED, nothing dispatched
-    else valid
-        OAM->>Adaptor: edit-config RPC
-        Adaptor-->>OAM: ok
-        OAM-->>DME: jobId, COMPLETED
-        DME-->>RApp: actionId, forwardedJobId, COMPLETED
-    end
-
-    Note over OAM: the same presence guard refuses FM (alarm ingest, FM subscriptions),<br/>PM subscriptions and SWM jobs for a vendor without that service
-
-    Admin->>OAM: PUT /ran-nf-oam/managed-entities/{me}/cells/{cell}/guards<br/>(cellClass, sectorGroup, incidentZone, neighbourRefs)
-    RApp->>OAM: GET /ran-nf-oam/cell-guards?cell_class=EMERGENCY (or sector_group, incident_zone)
-    OAM-->>RApp: the guarded cells
+    Note over OAM: the services an element is offered are its endpoint's narrowed to its vendor's, read at every operation,<br/>so an endpoint registered before its vendor's entry, or a vendor narrowed later, cannot widen them
 ```
 
-**Key decisions this flow depends on:**
+The element used to be registerable by anyone who reached the route, anywhere (no scope check), at any URL, and its own service list won over its
+vendor's for ever. **Phase 1:** there is no route to deregister or move an endpoint; a re-registration is 409.
 
-- **What conformance mode means.** It decides which descriptor or descriptors the axis-3 check uses:
-  - `SPEC`: the spec descriptor only. By default this is `3gpp-ts28541-nrnrm@19.6.0`, generated from `specs/5G_APIs/TS28541_NrNrm.yaml` and bundled in `ran-nf-oam/app/cm_schemas/`.
-  - `OWN`: the vendor's own descriptor only.
-  - `COMBINED`: the spec descriptor plus the vendor's named augments.
+## 21b — Schemas and the vendor's capability
 
-  Values are checked against `enum`s where the descriptor carries them. For example, `NRCellDU.administrativeState` must be `LOCKED` or `UNLOCKED`.
-- **How a change's class is found.** It comes from `className`. Failing that, it comes from the `managedFunctionRef` prefix (`NRCellDU=1` → `NRCellDU`). A change that names no class has to name attributes that some class in the model defines.
-- **The registry is per vendor; an endpoint may narrow it.** An endpoint can declare a smaller set of `supportedServices` than its vendor, for example an O-RU exposing only FM and HEARTBEAT. It can never claim a service its vendor lacks.
-- **No registry means no check.** A managed element whose vendor has no capability registered skips both checks. This permissive default keeps deployments that register no vendor capability working unchanged.
-- **Discovery never fetches a caller-chosen URL.** The capability declaration is read only from an adaptor already in RAN NF OAM's endpoint registry — the same adaptor CM writes go to — at the fixed path `/capabilities` on its registered origin, through `smo_shared.webhook`'s guard, so a request can never steer discovery to an arbitrary host (CodeQL `py/full-ssrf`).
-- **A refused write never reaches the adaptor.** The pre-check runs before a `WriteConfigJob` is created. DME passes RAN NF OAM's 4xx straight back to the rApp and records the action as `REJECTED`, instead of failing with a 500.
-- **Out of scope:**
-  - a YANG front end for the ingestion script (`pyang`);
-  - transports other than NETCONF (RFC 6241-shaped `edit-config` over HTTP) and RESTCONF (RFC 8040, HISTORY.md OI-1-cm-sync-restconf), and TLS or authentication on either.
+```mermaid
+sequenceDiagram
+    participant A as Admin (GUI) / SMO module
+    participant OAM as RAN NF OAM
+    participant DB as RAN NF OAM database
+
+    A->>OAM: POST /cm-schemas {schemaName, revision, type, location, descriptor {classes {IOC {attribute entry}}}}
+    alt an rApp
+        OAM-->>A: 403 ROLE_NOT_PERMITTED
+    else an entry the leaf checker cannot use (not an object, unknown type, malformed enum, range, length, pattern or fractionDigits)
+        OAM-->>A: 422 SCHEMA_VALIDATION_FAILED naming IOC.attribute
+    else name and revision already loaded or bundled
+        OAM-->>A: 409 CM_SCHEMA_CONFLICT (schemas are immutable)
+    else
+        OAM->>DB: schema, event cm-schema.loaded, one commit
+        OAM-->>A: 201 the schema
+    end
+    A->>OAM: PUT /vendor-capabilities/{vendor} {supportedServices, conformanceMode SPEC|OWN|COMBINED, supportedVendorModes, schemaRef?, specSchemaRef?}
+    alt OWN or COMBINED without schemaRef / a referenced schema not loaded or bundled
+        OAM-->>A: 422 / 404 CM_SCHEMA_NOT_FOUND
+    else a registered element of the vendor uses a mode the declaration drops
+        OAM-->>A: 409 PROTOCOL_NOT_SUPPORTED, nothing kept
+    else
+        Note over OAM: SPEC and COMBINED default specSchemaRef to the bundled 3gpp-ts28541-nrnrm@19.6.0
+        OAM->>DB: capability, event vendor-capability.declared, one commit
+        OAM-->>A: 200 the entry, with unresolvedSchemas
+    end
+    A->>OAM: DELETE /vendor-capabilities/{vendor}?force
+    alt elements use the vendor and no force
+        OAM-->>A: 409 VENDOR_CAPABILITY_IN_USE (n elements would be left unchecked)
+    else
+        OAM->>DB: entry deleted, event vendor-capability.deleted {elementsLeftUnchecked}, one commit
+        OAM-->>A: 204 (also for an unknown vendor, or one outside a scoped caller's elements)
+    end
+```
+
+A malformed descriptor entry used to load and then make every later CM write touching it a 500, with no way to replace the schema; an rApp could load a
+schema under a name an admin would need (`POST /cm-schemas` had no role check, only R1's allow-list); deleting a used entry silently switched off both checks
+for every tenant's elements of the vendor; and no registry change was announced.
+
+## 21c — Onboarding from a registered adaptor
+
+```mermaid
+sequenceDiagram
+    participant A as Admin (GUI)
+    participant OAM as RAN NF OAM
+    participant AD as The vendor's O1 adaptor
+    participant DB as RAN NF OAM database
+
+    A->>OAM: POST /vendor-onboarding {vendorName, discoverFrom = a registered managedElementRef, conformanceMode, schemas[], schemaRef?, supportedServices?}
+    alt an rApp / the element unknown / registered for another vendor / reached over ssh or tls
+        OAM-->>A: 403 / 404 / 422 / 409 PROTOCOL_NOT_SUPPORTED
+    else
+        Note over OAM: the URL is the element's registered adaptorUri origin + /capabilities, never one from the request,<br/>fetched through the SSRF guard (smo_shared.webhook)
+        OAM->>AD: GET /capabilities
+        alt no answer, or not 200
+            OAM-->>A: 503 ENDPOINT_UNREACHABLE
+        else not a JSON object, lists that are not lists, an unknown service or mode
+            OAM-->>A: 502 UPSTREAM_FAILED, nothing declared
+        else the adaptor names another vendor
+            OAM-->>A: 422
+        else
+            Note over OAM: body values win over discovered ones, the listed schemas are loaded (21b checks,<br/>an identical one reused), OWN or COMBINED with one schema takes it as schemaRef
+            OAM->>DB: schemas, capability, events, one commit (a failure at any step keeps nothing)
+            OAM-->>A: 201 {discovered, schemasLoaded, capability}
+        end
+    end
+```
+
+An adaptor answer that was not a JSON object, or named an unknown service or mode, was a 500. An adaptor that omits `vendorName` is taken as the named
+vendor's.
+
+## 21d — The two checks on a CM write
+
+```mermaid
+sequenceDiagram
+    participant R as rApp (through DME) / module / Operator (GUI)
+    participant OAM as RAN NF OAM
+    participant AD as The element's adaptor
+
+    R->>OAM: POST /config-jobs {changes [{managedElementRef, className? or managedFunctionRef IOC=id, attributeChanges}]}
+    Note over OAM: before any job exists, for every change
+    alt axis 2: the element's services (endpoint narrowed to vendor) lack PROV
+        OAM-->>R: 409 O1_SERVICE_NOT_SUPPORTED, nothing sent
+    else axis 3: a schema the vendor names is gone
+        OAM-->>R: 422 SCHEMA_VALIDATION_FAILED (the schema named), nothing sent
+    else axis 3: class, attribute, type, range, length, pattern or enum not in the selected model, or a stored entry the checker cannot use
+        OAM-->>R: 422 SCHEMA_VALIDATION_FAILED, every offending attribute named, nothing sent
+    else no capability entry for the vendor
+        Note over OAM: unchecked (the permissive default), then as valid
+        OAM->>AD: edit-config RPC (call flow 03)
+    else valid
+        OAM->>AD: edit-config RPC (call flow 03)
+        OAM-->>R: 202 the job
+    end
+    Note over OAM: the same presence guard refuses FM (alarm ingest, FM subscriptions, call flow 20), PM subscriptions,<br/>and SWM jobs (call flow 19) for an element without that service
+```
+
+A vendor entry whose schema was missing (a loaded one removed, a bundled one dropped by a later release) was quietly unchecked under SPEC, and refused every
+class under COMBINED; it now refuses with the schema named, and `GET /vendor-capabilities` lists it in `unresolvedSchemas`.
+
+## Decisions this flow depends on
+
+- **What conformance mode means**: `SPEC` the spec descriptor only (default `3gpp-ts28541-nrnrm@19.6.0`, generated from `specs/5G_APIs/TS28541_NrNrm.yaml`),
+  `OWN` the vendor's only, `COMBINED` the spec's with the vendor's named augments; values are checked against the entry's type and constraints
+  (`leafcheck.py`).
+- **How a change's class is found**: `className`, else the last RDN of `managedFunctionRef`; a change naming no class must name attributes some class defines.
+- **The registry is per vendor; an endpoint may only narrow it** (DOC-CF-1.8): the services in force are the endpoint's intersected with the vendor's, at
+  every operation, not only at registration.
+- **No registry, no check**: an element whose vendor has no entry skips both checks, so a deployment that registers none works unchanged; deleting a used
+  entry therefore needs `force` (DOC-CF-1.8).
+- **A schema the registry names is there, or writes stop** (DOC-CF-1.8): fail closed with the schema named rather than unchecked.
+- **Descriptors are checked when loaded** (DOC-CF-1.8), because a loaded schema is immutable.
+- **Only the operator or a module changes the registry or registers an element** (SEC-15.7b, DOC-CF-1.8), inside its scope claim.
+- **Discovery never fetches a caller-chosen URL**, and its answer is checked like any input (DOC-CF-1.8).
+- **A refused write never reaches the adaptor**: the pre-check runs before a `WriteConfigJob` exists, and DME passes the 4xx back to the rApp.
+- **Not taken:** deregistering or moving an endpoint, vetting the adaptor address for CM dispatch beyond its scheme and host (the registrant is the
+  operator or a module), a YANG front end for the ingestion script, and transports beyond NETCONF (HTTP bridge, SSH, TLS) and RESTCONF.

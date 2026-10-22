@@ -25,6 +25,7 @@ import uuid
 
 import httpx
 import sys
+from urllib.parse import urlsplit
 from typing import Any, Literal, NoReturn, cast
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
@@ -478,11 +479,15 @@ class RegisterO1AdaptorEndpointRequest(BaseModel):
             raise ValueError("an ssh:// adaptorUri needs transport ssh")
         elif self.adaptorUri.lower().startswith("tls:"):
             raise ValueError("a tls:// adaptorUri needs transport tls")
+        else:      # call flow 21 (DOC-CF-1.8): CM writes are POSTed here, so it is an http(s) URL with a host and no credentials in it
+            parts = urlsplit(self.adaptorUri)
+            if parts.scheme not in ("http", "https") or not parts.hostname or parts.username or parts.password:
+                raise ValueError("an http-mock adaptorUri is an http(s) URL with a host and no user or password")
         return self
 
 
 @app.post("/o1-adaptor-endpoints", status_code=201)
-def register_o1_adaptor_endpoint(body: RegisterO1AdaptorEndpointRequest, db: Session = Depends(get_session)):
+def register_o1_adaptor_endpoint(body: RegisterO1AdaptorEndpointRequest, request: Request, db: Session = Depends(get_session)):
     """RAN NF OAM LLD section 1's own design intent (Option A,
     `docs/call-flows/03-config-write-with-schema-check.md`: "per ME's O1
     Adaptor registers itself into the MnS Registry NRM") had no concrete
@@ -509,6 +514,12 @@ def register_o1_adaptor_endpoint(body: RegisterO1AdaptorEndpointRequest, db: Ses
     """
     # Wave 9 (W9-04): a registered vendor's endpoint must use a transport
     # (vendor mode) the vendor declared, and can't claim services it lacks.
+    # Call flow 21 (DOC-CF-1.8): an element is registered by the operator or an SMO module, never an rApp (403 ROLE_NOT_PERMITTED), and a caller with a scope
+    # claim registers only inside it (403 SCOPE_DENIED for a region or tenant it does not name, or none): it could place an element anywhere before.
+    if role_of(request) == ROLE_RAPP:
+        raise framework_error(FrameworkError.ROLE_NOT_PERMITTED, detail="an rApp may not register a managed element")
+    if not authz_scope.permits(scoping.request_scope(request), body.region, body.tenant):
+        raise scoping.scope_denied("the element's region or tenant is outside the caller's scope claim")
     if body.credentialRef is not None:
         try:
             if body.transport not in ("ssh", "tls"):

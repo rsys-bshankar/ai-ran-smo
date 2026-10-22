@@ -20,7 +20,8 @@ mentions alarm ids and call flow 11 the many-producers-one-type join; this flow 
 **How to read the diagrams.** As in call flow 01: an arrow is one call with the inputs that matter, a box on the receiver says what it does with them,
 an `alt` block is the outcome (success first, then each failure and what the caller gets). Calls reach RAN NF OAM through R1 Termination, which stamps the
 caller's role, invoker id and scope claim, and for the console the signed-in person (`X-R1-Acting-User`). An rApp may not raise, acknowledge, clear or
-subscribe (R1's allow-list); it reads alarms, and an element's alarms through DME once FM is subscribed. Every alarm change writes a history row and an event
+subscribe (R1's allow-list); it reads alarms. **Phase 1:** an FM subscription registers RAN NF OAM as the producer of `RAN.FaultRecords`, but no alarm is yet
+sent to DME as a record (`OPEN_ITEMS.md` OAM-FM-DME), so a data job on that type receives nothing. Every alarm change writes a history row and an event
 (`org.oran.smo.alarm.*`, `docs/EVENTS.md`) in the same commit.
 
 ## 20a — Raising an alarm

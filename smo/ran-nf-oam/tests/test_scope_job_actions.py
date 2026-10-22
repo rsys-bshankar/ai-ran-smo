@@ -92,14 +92,17 @@ def test_a_software_job_on_an_element_outside_the_scope_cannot_be_advanced(clien
 
 
 def test_a_scoped_operator_deletes_only_the_capability_of_a_vendor_of_its_own_elements(client, vendors):
-    """SEC-15.7: a console user whose scope no element of the vendor matches deletes nothing (204, as for an unknown vendor); the entry of a vendor one of the user's elements uses is deleted; an unscoped caller deletes any."""
+    """SEC-15.7: a console user whose scope no element of the vendor matches deletes nothing (204, as for an unknown vendor); the entry of a vendor one of the user's elements uses is deleted; an unscoped caller deletes any.
+    Call flow 21: an entry still used by elements needs `force=true` (409 VENDOR_CAPABILITY_IN_USE without it)."""
     operator = {**GUI, ACTING_USER_HEADER: "smo-gui:alice", ACTING_USER_SCOPE_HEADER: claim(regions=["eu"])}
     assert client.delete("/vendor-capabilities/other-ran", headers=operator).status_code == 204         # ME-3 is us: not an eu vendor
     assert client.delete("/vendor-capabilities/unused-ran", headers=operator).status_code == 204
     assert client.get("/vendor-capabilities/other-ran").status_code == 200 and client.get("/vendor-capabilities/unused-ran").status_code == 200
-    assert client.delete("/vendor-capabilities/acme-ran", headers=operator).status_code == 204
+    in_use = client.delete("/vendor-capabilities/acme-ran", headers=operator)
+    assert in_use.status_code == 409 and in_use.json()["detail"]["title"] == "VENDOR_CAPABILITY_IN_USE"
+    assert client.delete("/vendor-capabilities/acme-ran", params={"force": True}, headers=operator).status_code == 204
     assert client.get("/vendor-capabilities/acme-ran").status_code == 404
-    assert client.delete("/vendor-capabilities/other-ran", headers=GUI).status_code == 204
+    assert client.delete("/vendor-capabilities/other-ran", params={"force": True}, headers=GUI).status_code == 204
     assert client.get("/vendor-capabilities/other-ran").status_code == 404
 
 
