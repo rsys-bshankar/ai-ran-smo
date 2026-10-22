@@ -321,7 +321,7 @@ No Intent-Service-specific variables.
   as `IS_less_THAN` (5GC `5GSession`) and `S_EQUAL_TO` (radio-service `AssuranceDuration`) that cannot equal any
   value of the `Condition` enum, so those two specialised contexts can never validate.
 - A module may publish a report for any intent, not only those addressed to it: module invoker ids are not tied to an `rmihId`.
-- `rApp Management` is the only cross-module read; the new-intent push is one attempt with no retry.
+- `rApp Management` is the only cross-module read; the new-intent push is an outbox row, retried by the outbox sweep like every other notification.
 - The ON DELETE CASCADE of a deregistered RMIH's autonomy dispatches is verified against PostgreSQL, not in the unit suite.
 
 ## 3. Unit tests

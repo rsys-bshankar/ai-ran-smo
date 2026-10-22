@@ -7,6 +7,8 @@ Run: `cd smo/intent-service && PYTHONPATH=.:../shared python -m pytest tests/tes
 
 import uuid
 
+import httpx
+
 import pytest
 
 from test_main import _capability, _dispatch, _fulfilment, _intent, _register_rmih, client, rapp_mgmt  # noqa: F401  (pytest fixtures)
@@ -162,3 +164,14 @@ def test_an_unknown_dispatch_is_still_404_for_the_operator(client):
     """Call flow 09e: the operator check comes first, then the dispatch lookup (404 AUTONOMY_DISPATCH_NOT_FOUND)."""
     resp = client.post(f"/autonomy-dispatches/{uuid.uuid4()}/resolve", json={"regionScope": {}}, headers=CONSOLE)
     assert resp.status_code == 404
+
+
+def test_a_dispatch_is_503_when_rapp_management_does_not_answer(client, monkeypatch):
+    """DOC-CF-2.5: rApp Management not answering the instance read is 503 ENDPOINT_UNREACHABLE (it was a 500), and nothing is stored."""
+    def down(self, path, **kw):
+        raise httpx.ConnectError("rapp-mgmt down")
+    _register_rmih(client)
+    monkeypatch.setattr("app.main.R1Client.get", down)
+    resp = client.post("/autonomy-dispatches", json=_dispatch(uuid.uuid4()))
+    assert resp.status_code == 503 and resp.json()["detail"]["title"] == "ENDPOINT_UNREACHABLE"
+    assert client.get("/autonomy-dispatches").json()["items"] == []

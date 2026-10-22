@@ -89,7 +89,7 @@ SME calls nothing but subscriber callbacks. It reads no other module's data, and
 | Event delivery goes through the transactional outbox (`smo_shared.outbox`, `PR-MSG-1.6`): a row in the same transaction as the change, sent right after it commits, at least once; a failed first attempt waits for the outbox sweep (MSG-2). | An unreachable subscriber must never fail a publish, and a crash between the commit and the send must not lose the event. |
 | Idempotent deletes: deregistering an unknown or someone else's service, provider, trusted invoker, or subscription is a silent 204 (an unmatched owner is a no-op, nothing is notified). | Same shape as CAPIF core. |
 
-Failure behaviour: SME has no outbound dependency whose failure changes a response. If SME is down, R1 Termination fails closed and every call returns 401.
+Failure behaviour: SME has no outbound dependency whose failure changes a response. If SME is down, R1 Termination fails closed: every proxied call returns 503 `AUTH_SERVICE_UNAVAILABLE` with `Retry-After: 5`, except one whose token answer the gateway still holds in its introspection cache (`R1_INTROSPECTION_CACHE_SECONDS`).
 
 ## 2. Low-level design (LLD)
 
@@ -226,7 +226,7 @@ Matching rule for the last case: the subscriber id is compared with `allowedCons
 - Expired tokens are not purged; a single token cannot be revoked (offboarding the invoker revokes all of its tokens). R1 Termination can cache introspection answers (`R1_INTROSPECTION_CACHE_SECONDS`, off by default): an offboarded invoker's token is then honoured at a gateway replica for at most that many seconds after the offboarding (not at all after it, at the replica the `DELETE` went through), `r1-termination/README.md`.
 - The key-update and offboarding routes do not prove the caller is the invoker; like every other route they sit behind R1 Termination's token check, and the GUI allows them to admins only.
 - `gates_discovery_visibility` is always true; `module_scope` is stored only.
-- No retry for event delivery.
+- Event delivery is retried by the shared outbox sweep (`smo_shared/worker.py`), which the other modules' workers run over the one `notification_outbox` table: no answer or a 5xx is retried with backoff up to 5 attempts (`outbox.MAX_ATTEMPTS`), then the row is DEAD. SME runs no worker of its own.
 - Out of scope: CAPIF Access Control Policy, Auditing, Logging, Routing Info, Open Discover.
 
 ## 3. Unit tests

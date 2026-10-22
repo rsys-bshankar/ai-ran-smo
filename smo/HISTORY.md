@@ -2793,6 +2793,21 @@ with a configuration table and the decisions it depends on, and PNGs beside each
 the follow-up change, and gaps recorded in `OPEN_ITEMS.md` (LIFE-STUCK, SA-REPLAY, UNIQUE-SELECT, SAMPLE-LIFE, FIRST-PAGE, OUTBOX-WORKERLESS, OAM-FM-DME,
 OAM-SWM-RESEND); the bootstrap key some modules are not given goes with DOC-CF-3.
 
+### DOC-CF-2 follow-up — what writing the lifecycle docs found wrong in the code and the READMEs
+
+- `migrations/db_roles.json`: MLMR's shared grants add `audit_log` and `audit_head` (it writes the audit trail through `smo_shared.audit`); a test now
+  checks that every module whose code writes the audit trail has the grant.
+- R1 Termination `_drop_revoked_tokens` also evicts the introspection cache on a secret rotation, so an old token stops working at once rather than at
+  the cache's expiry.
+- rApp Management (`provisioning.py`, the create path and `onboarding_status`), Intent Service (dispatch) and MDAF (`_validate_input_sources`) turn a
+  transport error into 503 `ENDPOINT_UNREACHABLE`, as other modules already do.
+- RAN NF OAM's KPI and PM delivery count a record as delivered only on a 2xx.
+- `gui/nginx.conf` and `edge/nginx.conf`: `proxy_read_timeout 75s`, past the 60 s an rApp Management or NFO call may take.
+- `smo_shared.r1_client._identity_store` answers None when no database is reachable, so a module without one (MLLF) keeps its identity in memory.
+- READMEs and docstrings brought in line (SME 400 `INVOKER_NOT_REGISTERED`, R1 503 `AUTH_SERVICE_UNAVAILABLE`, call flow 18d's two refusals), and
+  `FOCOM_AUTO_REGISTER` described.
+- **Not taken:** a sweep for records left in a working state (LIFE-STUCK), and the other gaps recorded in `OPEN_ITEMS.md` by DOC-CF-2.
+
 ### DOC-CF-1.8 flow 21 — O1 vendor onboarding rewritten from the code: the registry decides at every operation, and only the operator changes it
 
 The nineteenth and last flow of DOC-CF-1.8. The product owner asked for this one to be done on the audit's recommendations without a further review

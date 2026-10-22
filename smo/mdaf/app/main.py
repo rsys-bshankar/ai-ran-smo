@@ -70,11 +70,14 @@ def _validate_input_sources_are_real_dme_artifacts(input_sources: list[uuid.UUID
     """Refuses a report whose inputs are not DME data jobs: one `GET /dme/data-jobs/{id}` over R1 per source.
 
     Raises 422 DME_ARTIFACT_NOT_FOUND for the first source DME does not answer 200 for. Only existence is proven, the data is
-    not fetched. This is the data path of DME, never its O1 action path. A transport error talking to DME is not caught. An
-    empty list passes.
+    not fetched. This is the data path of DME, never its O1 action path. DME not answering is 503 ENDPOINT_UNREACHABLE (DOC-CF-2.4: it was a 500).
+    An empty list passes.
     """
     for source_id in input_sources:
-        resp = _r1.get(f"/dme/data-jobs/{source_id}")
+        try:
+            resp = _r1.get(f"/dme/data-jobs/{source_id}")
+        except httpx.HTTPError as exc:
+            raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"DME did not answer ({type(exc).__name__})") from exc
         if resp.status_code != 200:
             raise framework_error(FrameworkError.DME_ARTIFACT_NOT_FOUND, detail=f"no such DME data job {source_id}")
 

@@ -1772,7 +1772,7 @@
         "summary": "Offboard Invoker"
       },
       "put": {
-        "description": "PutOnboardedInvokersApiInvokerId \u2014 replaces the invoker's public key\n(key rotation). Assertions signed with the old key stop verifying at\nonce. 404 for an unknown invoker. Emits API_INVOKER_UPDATED.",
+        "description": "PutOnboardedInvokersApiInvokerId \u2014 replaces the invoker's public key\n(key rotation). Assertions signed with the old key stop verifying at\nonce. 400 `INVOKER_NOT_REGISTERED` for an unknown invoker. Emits API_INVOKER_UPDATED.",
         "operationId": "update_invoker_invoker_registrations__api_invoker_id__put",
         "parameters": [
           {
@@ -1910,7 +1910,7 @@
     },
     "/invoker-registrations/{api_invoker_id}/authz-scope": {
       "put": {
-        "description": "PR-SEC-10.3: set (or, with `authzScope` null or `{}`, remove) the scope claim of an invoker: which managed elements, by region and tenant, it may touch\n(docs/adr/0005-tenant-region-authorization.md). Replaces the claim. For an operator or an SMO module: an rApp is refused at the gateway (the route\nis in `INTERNAL_ONLY` and not in `RAPP_MAY_CHANGE`). Takes effect on the invoker's next request (R1 Termination reads the claim from the\nintrospection; with its introspection cache on, within `R1_INTROSPECTION_CACHE_SECONDS`). 404 for an unknown invoker, 422 `AUTHZ_SCOPE_INVALID`.",
+        "description": "PR-SEC-10.3: set (or, with `authzScope` null or `{}`, remove) the scope claim of an invoker: which managed elements, by region and tenant, it may touch\n(docs/adr/0005-tenant-region-authorization.md). Replaces the claim. For an operator or an SMO module: an rApp is refused at the gateway (the route\nis in `INTERNAL_ONLY` and not in `RAPP_MAY_CHANGE`). Takes effect on the invoker's next request (R1 Termination reads the claim from the\nintrospection; with its introspection cache on, within `R1_INTROSPECTION_CACHE_SECONDS`). 400 `INVOKER_NOT_REGISTERED` for an unknown invoker, 422 `AUTHZ_SCOPE_INVALID`.",
         "operationId": "set_invoker_authz_scope_invoker_registrations__api_invoker_id__authz_scope_put",
         "parameters": [
           {

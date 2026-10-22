@@ -77,6 +77,15 @@ def test_the_role_of_every_module_that_publishes_events_may_write_the_event_tabl
         assert "smo_event" in ROLES[module]["shared"], module
 
 
+def test_the_role_of_every_module_that_writes_the_audit_trail_may_write_its_tables():
+    """A module whose code records an audit entry (`audit.record`, `write_audit`) writes `audit_log` and `audit_head` in the transaction of its change; its role
+    must list both, or the change fails with "permission denied" (MLMR's model owner change did, found writing `mlmr/docs/lifecycle.md`, DOC-CF-2.4)."""
+    writers = {m for m in ROLES if any("audit.record(" in f.read_text() or "write_audit(" in f.read_text() for f in (SMO_ROOT / m / "app").glob("*.py"))}
+    assert {"mlmr", "ran-nf-oam", "rapp-mgmt"} <= writers
+    for module in writers:
+        assert {"audit_log", "audit_head"} <= set(ROLES[module]["shared"]), module
+
+
 def test_a_role_name_is_derived_from_the_module_and_statements_quote_what_they_are_given():
     """Role names derive from the module name, the password is a quoted literal that cannot break out of the statement, the search path and revokes
     are the module's own, and a module that reads another's table gets SELECT only.

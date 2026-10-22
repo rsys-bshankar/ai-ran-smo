@@ -161,7 +161,7 @@ For RAN NF OAM to accept what is sent, it needs the things a real adaptor would 
 
 ### 2.5 Interactions
 
-Inbound HTTP, and one outbound call per emit trigger (`httpx.post` to RAN NF OAM, 5 s timeout, no retry, nothing kept). No callbacks, no background tasks.
+Inbound HTTP, and one outbound call per emit trigger (`httpx.post` to RAN NF OAM, 5 s timeout, no retry, nothing kept). No callbacks. One background task (`app/keepalive.py`): with `MOCK_O1_HEARTBEAT_SECONDS` above 0, a daemon thread lists RAN NF OAM's endpoints and heartbeats each of this stub's that had its first heartbeat, every that many seconds; a failure is logged and the next tick tries again.
 
 ### 2.6 Configuration
 
@@ -185,7 +185,7 @@ No ProblemDetails on the CM routes; the emit routes answer a ProblemDetails-shap
 
 - **Not NETCONF / RESTCONF.** No SSH / TLS, no YANG, no capability negotiation, no attribute validation, no `create` / `replace` semantics distinct from `merge` (only `delete` / `remove` are special-cased). The RESTCONF side does distinguish `create` (POST, 409 if present), `replace` (PUT) and `merge` (PATCH).
 - **`_applied_changes` is per `ref`**, not per function: a later write to another function of the same ME overwrites the introspection value (the running state in `_object_state` is per function).
-- **Emission is on request only.** There is no periodic heartbeat and no alarm storm: a test or a developer triggers each one. Not emitted at all: streaming data, VES (RAN NF OAM has a receiver for it, `SB-7`, but this stub does not send to it), alarm clear and acknowledge, file-ready notifications; no retry of an emit that failed.
+- **Emission is on request only**, except the periodic heartbeat (`MOCK_O1_HEARTBEAT_SECONDS`, 2.6). There is no alarm storm: a test or a developer triggers each other emit. Not emitted at all: streaming data, VES (RAN NF OAM has a receiver for it, `SB-7`, but this stub does not send to it), alarm clear and acknowledge, file-ready notifications; no retry of an emit that failed.
 - **Emit calls are plain HTTP** (no mutual TLS; 1.5).
 - **Volatile.** All state is process memory.
 - **Open items:** none.

@@ -52,7 +52,10 @@ def provision_instance(db: Session, package_id: uuid.UUID, configuration: dict |
     create leaves no registration holding the package.
     """
     r1 = R1Client()
-    pkg_resp = r1.get(f"/onboarding/packages/{package_id}/onboarding-status")
+    try:
+        pkg_resp = r1.get(f"/onboarding/packages/{package_id}/onboarding-status")
+    except httpx.HTTPError as exc:          # DOC-CF-2.2: Onboarding not answering is a 503, not a 500
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"Onboarding did not answer ({type(exc).__name__})") from exc
     if pkg_resp.status_code == 404:
         raise framework_error(FrameworkError.PACKAGE_NOT_FOUND, detail=f"no such package {package_id}")
     if pkg_resp.status_code != 200 or pkg_resp.json().get("state") not in DEPLOYABLE_PACKAGE_STATES:
@@ -303,8 +306,11 @@ def push_credentials(inst: RAppInstance, secret: str | None) -> bool:
 
 
 def onboarding_status(inst: RAppInstance) -> dict:
-    """What Onboarding says about this instance's package ({} when it cannot say)."""
-    resp = R1Client().get(f"/onboarding/packages/{inst.package_id}/onboarding-status")
+    """What Onboarding says about this instance's package ({} when it cannot say, Onboarding not answering included: DOC-CF-2.2)."""
+    try:
+        resp = R1Client().get(f"/onboarding/packages/{inst.package_id}/onboarding-status")
+    except httpx.HTTPError:
+        return {}
     return resp.json() if resp.status_code == 200 else {}
 
 

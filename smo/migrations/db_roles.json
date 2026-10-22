@@ -10,7 +10,9 @@
  "mlmr": {
   "schema": "mlmr",
   "shared": [
-   "module_identity"
+   "module_identity",
+   "audit_log",
+   "audit_head"
   ]
  },
  "ran-analytics": {

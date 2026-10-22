@@ -6,9 +6,9 @@ gateway behaves exactly as before.
 
 What the cache promises, and what it does not:
 
-  - A token SME said was active is honoured from the cache for at most the TTL, and never past the token's own `exp`. A token revoked at SME (its invoker offboarded) is
+  - A token SME said was active is honoured from the cache for at most the TTL, and never past the token's own `exp`. A token revoked at SME (its invoker offboarded, or its secret renewed) is
     therefore honoured for at most the TTL after the revocation, by any replica of the gateway.
-  - A revocation made through this gateway (`DELETE /sme/invoker-registrations/{id}`, a real `purge-stale`) evicts the entries of that invoker (or all of them) at once, in
+  - A revocation made through this gateway (`DELETE /sme/invoker-registrations/{id}`, `POST .../{id}/secret`, a real `purge-stale`) evicts the entries of that invoker (or all of them) at once, in
     this process, so *this* replica stops honouring the token on the next request. Other replicas do not hear about it: their bound is the TTL.
   - A token SME said was NOT active is remembered for `min(TTL, NEGATIVE_SECONDS)`: enough to take a flood of wrong tokens off SME, short enough that nothing waits long.
   - Only SME's answer is cached. "SME did not answer" (a transport error or a 5xx) is never stored, so an outage is a 503 as before, and a stored answer is never served

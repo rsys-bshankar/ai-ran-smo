@@ -128,8 +128,10 @@ sequenceDiagram
     participant M as The module called
 
     C->>SME: POST /oauth2/token {client_credentials, client_id, client_secret or client_assertion (RFC 7523), scope?}
-    alt unknown client, wrong secret, or an assertion that fails (key, iss/sub, aud, exp within 300 s, jti reused)
+    alt unknown client, or an assertion that fails (key, iss/sub, aud, exp within 300 s, jti reused)
         SME-->>C: 400 invalid_client
+    else wrong secret
+        SME-->>C: 400 unauthorized_client
     else an rApp asking smo-internal / smo-gui, or a 3gpp# scope naming an API not published,<br/>not exposed by that AEF, or not discoverable by the invoker
         SME-->>C: 400 invalid_scope
     else
