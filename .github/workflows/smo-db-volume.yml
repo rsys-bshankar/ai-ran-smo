@@ -96,7 +96,7 @@ jobs:
           { echo; echo "### Upgrade over the data, from $tag ($from), ${ELEMENTS} elements"; echo; } >> "$GITHUB_STEP_SUMMARY"
           python scripts/upgrade_at_volume.py --url "$url" --from-revision "$from" --budget-seconds 300 --out "$RUNNER_TEMP/upgrade.md" | tee -a "$GITHUB_STEP_SUMMARY"
 
-      - name: The whole chain down and up again over the data (V-13)
+      - name: The whole chain down and up again over the data (V-17)
         working-directory: smo
         run: |
           # the database of the step above is at head and holds the volume: every revision is undone in turn (the baseline cannot be), then applied again, and no table may hold fewer rows

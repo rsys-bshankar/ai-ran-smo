@@ -150,10 +150,12 @@ cd smo/ran-analytics && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 ### 3.2 What is covered
 
-| File | Covers | Tests |
-|---|---|---|
-| `tests/test_main.py` | Registration, in-place upsert, separate row per analytics type, SME service publication, list and its filters (type, producer, empty), `mda_type` inference (mapped, unmapped), explicit and invalid `mda_type`, `/health` | 13 |
-| `tests/test_producer_identity.py` | Call flow 08a: an rApp registers only itself, SME refusing or silent stores nothing, one SME service per producer and type, deregistration withdraws the service, another rApp's deregistration refused, SME silent or refusing keeps the producer, a service already gone at SME accepted | 9 |
+Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
+
+| File | Covers |
+|---|---|
+| `tests/test_main.py` | Registration, in-place upsert, separate row per analytics type, SME service publication, list and its filters (type, producer, empty), `mda_type` inference (mapped, unmapped), explicit and invalid `mda_type`, `/health` |
+| `tests/test_producer_identity.py` | Call flow 08a: an rApp registers only itself, SME refusing or silent stores nothing, one SME service per producer and type, deregistration withdraws the service, another rApp's deregistration refused, SME silent or refusing keeps the producer, a service already gone at SME accepted |
 
 ### 3.3 What is not covered here
 

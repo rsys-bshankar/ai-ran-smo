@@ -239,20 +239,21 @@ cd smo/sme && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 ### 3.2 What is covered
 
-| Test file | Covers | Count |
-|---|---|---|
-| `tests/test_main.py` | Service registry and discovery: register, name conflict, same-producer update, authorization gate (hidden / shown / unrestricted), deregistration ownership, `api_name` / `api_version` / AEF / protocol / data-format / comm-type filters | 16 |
-| `tests/test_identity.py` | Call flow 18: an rApp registers, publishes and deregisters only as its own provider; discovers only as itself; subscribes, lists and unsubscribes only as itself, and a refused callback is 422; offboarding removes the invoker's subscriptions and its provider with its services | 4 |
-| | Event subscriptions and notifications: event-type validation, unsubscribe ownership, matching subscribers only, update / unavailable events, `apiIds` filter, visibility respected, unreachable subscriber | 13 |
-| | Provider enrolment and the own-services query | 8 |
-| | Invoker onboarding, token issue and introspection (server-generated id and secret, no cleartext secret or token, bad grant / client / secret, expired and unknown tokens) | 12 |
-| | Trusted invokers: validation, replace, redaction and reveal, update, revocation (by `aefId`, whole record), 404s | 17 |
-| | Registry reads (providers with service count, invokers without secrets, trusted invokers, event subscriptions) and health | 5 |
-| `tests/test_scope.py` | PR-SEC-10.3: an invoker without a claim is unscoped and introspection says nothing of one; the claim at registration is returned sorted by introspection; invalid claims are 422 with a fixed message and register nothing; an operator sets, replaces and removes a claim and it applies to tokens already issued; a scoped caller (or a module acting for a scoped rApp) cannot mint a wider invoker | 16 |
-| `tests/test_security.py` | Scope: unscoped and internal scopes, a `3gpp#` scope over published APIs (and introspection of it), unpublished API, wrong AEF, malformed entries, unknown scope, an API hidden from the invoker | 10 |
-| | Client assertions: RSA and EC keys, one token per assertion, wrong key / audience / issuer, expired, too long-lived, no `jti`, label-only invoker, secret and assertion together, malformed PEM at onboarding, key rotation, offboarding revokes tokens | 14 |
-| | Invoker events and filters: onboarded / updated / offboarded delivery, `apiInvokerIds` filter, `aefIds` filter, a filter of another kind never matches, filters listed, unknown event type | 6 |
-| | Total | [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md) |
+Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
+
+| Test file | Covers |
+|---|---|
+| `tests/test_main.py` | Service registry and discovery: register, name conflict, same-producer update, authorization gate (hidden / shown / unrestricted), deregistration ownership, `api_name` / `api_version` / AEF / protocol / data-format / comm-type filters |
+| `tests/test_identity.py` | Call flow 18: an rApp registers, publishes and deregisters only as its own provider; discovers only as itself; subscribes, lists and unsubscribes only as itself, and a refused callback is 422; offboarding removes the invoker's subscriptions and its provider with its services |
+| | Event subscriptions and notifications: event-type validation, unsubscribe ownership, matching subscribers only, update / unavailable events, `apiIds` filter, visibility respected, unreachable subscriber |
+| | Provider enrolment and the own-services query |
+| | Invoker onboarding, token issue and introspection (server-generated id and secret, no cleartext secret or token, bad grant / client / secret, expired and unknown tokens) |
+| | Trusted invokers: validation, replace, redaction and reveal, update, revocation (by `aefId`, whole record), 404s |
+| | Registry reads (providers with service count, invokers without secrets, trusted invokers, event subscriptions) and health |
+| `tests/test_scope.py` | PR-SEC-10.3: an invoker without a claim is unscoped and introspection says nothing of one; the claim at registration is returned sorted by introspection; invalid claims are 422 with a fixed message and register nothing; an operator sets, replaces and removes a claim and it applies to tokens already issued; a scoped caller (or a module acting for a scoped rApp) cannot mint a wider invoker |
+| `tests/test_security.py` | Scope: unscoped and internal scopes, a `3gpp#` scope over published APIs (and introspection of it), unpublished API, wrong AEF, malformed entries, unknown scope, an API hidden from the invoker |
+| | Client assertions: RSA and EC keys, one token per assertion, wrong key / audience / issuer, expired, too long-lived, no `jti`, label-only invoker, secret and assertion together, malformed PEM at onboarding, key rotation, offboarding revokes tokens |
+| | Invoker events and filters: onboarded / updated / offboarded delivery, `apiInvokerIds` filter, `aefIds` filter, a filter of another kind never matches, filters listed, unknown event type |
 
 ### 3.3 What is not covered here
 

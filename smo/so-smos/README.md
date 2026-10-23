@@ -192,11 +192,13 @@ cd smo/so-smos && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 ### 3.2 What is covered
 
-| File | Covers | Tests |
-|---|---|---|
-| `tests/test_dispatch.py` | `execute_order` (all succeed, first failure halts and leaves `PENDING`, unknown pair), `_ensure_ok` (pass-through, 4xx raises), every dispatcher posts to its own module path (parametrized), inference notification destination as query param (present and absent), every AI/ML step dispatches to its own AIMgF path, model-runtime deploy distinct from workload deploy, `run_step` sends the submitter over anything the step carries | 18 |
-| `tests/test_main.py` | Submit persists and returns executed steps, read, cancel marks only `PENDING` steps, list, `/health`, unknown id 404 and a step without its type 422, `GET /orders?total=false` (no count, `hasMore` on the last page) ; an order keeps the correlation id of its submit (call flow 14b) | 8 |
-| `tests/test_order_execution.py` | Call flow 10: a CONFIG step carries the order's submitter and role (and `so-smos` with none when unnamed), a step naming its own `requestedBy`/`msacRole` is 422, the order readable with the step `RUNNING` while it runs, a crash leaves the step `RUNNING` and earlier results kept, a cancel during the run stops it after the running step, fail-fast, the order status from its steps (parametrized) | 14 |
+Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
+
+| File | Covers |
+|---|---|
+| `tests/test_dispatch.py` | `execute_order` (all succeed, first failure halts and leaves `PENDING`, unknown pair), `_ensure_ok` (pass-through, 4xx raises), every dispatcher posts to its own module path (parametrized), inference notification destination as query param (present and absent), every AI/ML step dispatches to its own AIMgF path, model-runtime deploy distinct from workload deploy, `run_step` sends the submitter over anything the step carries |
+| `tests/test_main.py` | Submit persists and returns executed steps, read, cancel marks only `PENDING` steps, list, `/health`, unknown id 404 and a step without its type 422, `GET /orders?total=false` (no count, `hasMore` on the last page) ; an order keeps the correlation id of its submit (call flow 14b) |
+| `tests/test_order_execution.py` | Call flow 10: a CONFIG step carries the order's submitter and role (and `so-smos` with none when unnamed), a step naming its own `requestedBy`/`msacRole` is 422, the order readable with the step `RUNNING` while it runs, a crash leaves the step `RUNNING` and earlier results kept, a cancel during the run stops it after the running step, fail-fast, the order status from its steps (parametrized) |
 
 ### 3.3 What is not covered here
 

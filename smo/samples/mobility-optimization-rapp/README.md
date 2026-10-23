@@ -14,7 +14,7 @@ A Non-RT RIC rApp that classifies handover failures per neighbour relation and t
 | Operator API | served on `:8000` as `/instances/...`; the instance's base URL is registered at rApp Management (`operatorApiBase` when the instance is created) and R1 Termination reaches it at `/rapps/<instance>/operator/...`. The page the GUI draws for it is declared in `manifest.yaml` (`operatorUi`) |
 | Call flow | [23 Mobility Optimization closed loop](../../docs/call-flows/23-mobility-optimization-closed-loop.md) |
 | Demo runbook | [DEMO_RUNBOOK.md section 25](../../DEMO_RUNBOOK.md) (Demo 00-11) |
-| Unit tests | `tests/, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../../docs/TEST_COUNTS.md)) |
+| Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../../docs/TEST_COUNTS.md)) |
 
 ## What it does
 

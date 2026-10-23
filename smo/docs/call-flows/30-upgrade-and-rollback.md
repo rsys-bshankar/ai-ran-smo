@@ -1,7 +1,7 @@
 # Call Flow 30: Upgrade and rollback — a rolling upgrade, expand and contract, the previous release's code on the new schema, and going back
 
 How the SMO moves from one release to the next while it keeps serving, and how it goes back (`OPEN_ITEMS.md` DOC-CF-3.3; `PR-OPS-3`, `PR-OPS-5`,
-`PR-OPS-10.5`, `PR-V-10`, `PR-V-11`). Every module image, the shared library and the Alembic history are one release (`docs/RELEASES.md`), and the schema
+`PR-OPS-10.5`, `PR-V-10`, `PR-V-11`, `HISTORY.md` OPS-UPGRADE-LANE). Every module image, the shared library and the Alembic history are one release (`docs/RELEASES.md`), and the schema
 is one history applied by one job, never by the services (`docs/adr/0001-schema-migrations.md`). Call flow 31 is the migration and the roles on their own,
 call flow 32 the backup to take before an upgrade. Five diagrams:
 
@@ -68,12 +68,15 @@ is a hook too, so an upgrade from a chart that had no roles finds it before the 
 Postgres pod keeps the labels release 0.4.0 rendered, so an upgrade never restarts the database (`deploy/helm/smo/README.md`, "What restarts on
 `helm upgrade`"). Onboarding and the GUI backend hold a volume and use `Recreate`, so they stop for a moment.
 
-CI proves the failure branch: in "From smo-v0.4.0, upgrade then roll back" (`.github/workflows/smo-upgrade-kind.yml`, V-11) a transaction holds an
-exclusive lock on `nfo.lcm_operation`, the Job runs with `backoffLimit=0` and `activeDeadlineSeconds=60`, and the step checks that `helm upgrade` failed,
-every Deployment kept its generation, the database kept its revision with nothing of `0027`, and the old release's runbook passes; then the same upgrade
-runs to the end under a light load (`scripts/load_run.py`, judged by `scripts/upgrade_load_verdict.py`). The Helm lane in `smo-tests.yml` ("helm upgrade
-rolls every module with the old pods serving, and the database stays") does the same upgrade without the lock. **Phase 1:** the kind lane is nightly and not
-a required check; it starts from `smo-v0.4.0` (gated at two route errors) and `smo-v0.3.0` (report only), not from the newest tag.
+CI proves the failure branch: in "From smo-vX.Y.Z, upgrade then roll back" (`.github/workflows/smo-upgrade-kind.yml`, V-11; X.Y.Z is the newest
+release) a transaction holds an exclusive lock on a table the newest revision alters, the Job runs with `backoffLimit=0` and `activeDeadlineSeconds=60`,
+and the step checks that `helm upgrade` failed, every Deployment kept its generation, the database kept its revision and its columns, indexes and
+constraints, and the old release's runbook passes; then the same upgrade runs to the end under a light load (`scripts/load_run.py`, judged by
+`scripts/upgrade_load_verdict.py`). The lane reads both at run time with `scripts/upgrade_lane_targets.py`: the releases from the newest final `smo-v*`
+tags, as `scripts/check_previous_release_code.sh` does, and the table from the revisions the upgrade runs (the newest revision's first table that the
+database already has). The Helm lane in `smo-tests.yml` ("helm upgrade rolls every module with the old pods serving, and the database stays") does the
+same upgrade without the lock. **Phase 1:** the kind lane runs nightly, by hand and on a pull request that changes its paths, and is not a required
+check; it starts from the newest release (gated at two route errors) and from the one before it (report only).
 
 ## 30b — Expand, then contract
 
@@ -97,7 +100,7 @@ sequenceDiagram
     P->>DB: 0.3.0 names its tables with no schema and reads and writes through the views
     N->>DB: 0.4.0 connects as its own role, search path its schema then public, and finds the tables first
     D->>DB: release 0.5.0, revision 0029: the views dropped (contract), found in the catalogue, not from a list
-    Note over P,N: the previous release is now 0.4.0, which never read the views,<br/>so an upgrade from it and a rollback to it lose nothing
+    Note over P,N: at 0.5.0 the previous release is 0.4.0, which never read the views,<br/>so an upgrade from it and a rollback to it lose nothing
     Note over DB: what stops working: 0.3.0's code, and the owner naming a module table with no schema
 ```
 
@@ -221,9 +224,9 @@ sequenceDiagram
     Note over O,DB: undoing the schema too: modules stopped, a backup taken (call flow 32),<br/>migrate.py --downgrade REVISION (call flow 31e)
 ```
 
-"From smo-v0.4.0, upgrade then roll back" proves the first branch: it installs 0.4.0, upgrades it once with 0.4.0 again (so the history has revision 2),
-upgrades to the checkout, rolls back to 2, and checks that the image is 0.4.0's, every pod is ready, the runbook passes and the audit chain verifies. The
-`smo-v0.3.0` lane upgrades only: rolling back to it is not supported. `smo-role-secrets` keeps the password of a role the newer release removed
+"From smo-vX.Y.Z, upgrade then roll back" (the newest release) proves the first branch: it installs that release, upgrades it once with the same release
+again (so the history has revision 2), upgrades to the checkout, rolls back to 2, and checks that the image is the release's, every pod is ready, the
+runbook passes and the audit chain verifies. The lane of the release before it upgrades only: rolling back to it is not supported. `smo-role-secrets` keeps the password of a role the newer release removed
 (`a1-related`), because the older chart still mounts it.
 
 ## Decisions this flow depends on

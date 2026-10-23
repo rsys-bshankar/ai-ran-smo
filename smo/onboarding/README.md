@@ -243,29 +243,30 @@ cd smo/onboarding && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 ### 3.2 What is covered
 
-| Test file | Covers | Count |
-|---|---|---|
-| `tests/test_main.py` | Onboarding success (descriptor created via NFO, no ACM file needed, identity and ASD descriptor fields resolved, placeholder kept when absent) | 6 |
-| | Call flow 01a/01b (DOC-CF-1.1 review): an uploaded `.csar` onboards with nothing fetched, a file not named `.csar` and a broken zip end `FAILED`, `operatorApi.baseUrl` kept normalised, six bad `operatorApi` declarations fail the package | 10 |
-| | `operatorUi` (GUI-8.2): the ADR's Energy Saving example onboards and is stored, accepted under `rappManifest` too, absent leaves the package unchanged, `x-` keys dropped, 14 refusals each with the place and rule in `failureReason` (unknown kind, a POST source, a GET action, `..` in a route, `%2e%2e`, `..` in a field path, too many panels, duplicate panel and action ids, version 2, unknown key, over the size limit, `readOnly` with actions, not a mapping), 6 `rowDetail` refusals (unknown block kind, too many blocks, a non-GET per-row source, `..`, a `{row.x}` that names no column, nesting), the stored drawer and its per-row read, the refusal logged, a non-declaration failure reporting only its kind | 27 |
-| | Onboarding failures to `FAILED` (NFO refuses, malformed zip, not `.csar`, malformed capabilities YAML, malformed SME JSON, byte-identical duplicate) | 6 |
-| | `manifest.yaml` / `capabilities.yaml`: null when absent, parsed when present, capabilities alone, execution modes and runtime profiles, four invalid-profile cases | 8 |
-| | SME declarations: null when absent, parsed | 2 |
-| | Re-onboarding after delete / failure, live packages still block duplicates | 6 |
-| | Lifecycle: deprecate / cancel-delete, delete (failed, plain, blocked by child, blocked by usage, allowed after stop), prime, deprime (plain, blocked, allowed after stop) | 10 |
-| | Illegal events are 409 naming state and event; delete without an edge | 9 |
-| | Unknown package / registration is 404 on every route | 10 |
-| | Usage: stop idempotent, listing shows what blocks a delete | 2 |
-| | Call flow 06 (DOC-CF-1.2): delete deletes the NFO descriptor and clears it, NFO refusing (409, 500) leaves the package, a guard refusal never calls NFO, a FAILED delete takes its descriptor and stopped registrations, usage/start refuses 4 non-deployable states and takes a PRIMED one, a PRIMED package with a running instance deprecated (and restored AVAILABLE), an unexpected onboarding error ends FAILED and deletable, NFO unreachable on delete (503), release (instance gone or UNDEPLOYED; refused for 4 live states; 503 for no answer and for an error answer; a non-instance consumer without asking; 404) | 23 |
-| | Package list and state filter, identity fields for the GUI, health | 3 |
-| | Package row committed before the NFO call | 1 |
-| `tests/test_statemachine.py` | The FSM alone: success and failure onboarding, deprecate round trip, delete guards (child, usage, after stop), no transition from `FAILED`, prime / deprime round trip and guard, no `ONBOARDING → PRIME`, no `PRIMED → DELETE`, `PRIMED → DEPRECATED` with no guard | 12 |
-| `tests/test_business_metrics.py` | `smo_rapp_packages` counts packages by state with every state of `PackageState` present | 1 |
-| `tests/test_signing.py` | `PR-RAPP-1` on the real route, real CSAR bytes, a trust store directory: nothing set (signed and unsigned package both onboard, `signatureVerified` true); the policy flag alone refuses every package and says why; a trusted publisher; unsigned accepted but unverified, refused when required; tampered, added and removed file each refused whatever the policy; unknown publisher; wrong key under a trusted key id; digest list without a signature; a refused package does not block the next attempt; a key added to the store is seen without a restart; a missing or empty store fails the package with a reason that does not show the path; the four committed samples verify against the demo publisher | 20 |
-| `tests/test_package_validation.py` | The validation module alone: the result of a good package, a `TOSCA.meta` without `Entry-Definitions:` (a validation failure, not a `StopIteration`), the `.csar` name check An unsigned zip bomb (60 MiB from a few kilobytes), too many entries, a file or a total over its limit, a read over the limit, each of the six files the parse reads, the probe for signing entries (`SEC-15.17`) | 14 |
-| `tests/test_location_checks.py` | The location checks before any fetch: a name without `.csar`, and a loopback, link-local or non-http(s) address, are refused with their reason and nothing is fetched | 4 |
-| `tests/test_main.py` (`PR-RAPP-2.1`) | `memory` that is not a Kubernetes quantity refuses the package (3 cases); the NFO descriptor carries `containerResourcesByMode` (requests = limits, millicores, a GPU-only mode left out) and a package without profiles gets the descriptor it always got | 6 |
-| | Total (the listed rows do not add up to the whole: the file also holds the limits and other manifest tests) | [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md) |
+Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
+
+| Test file | Covers |
+|---|---|
+| `tests/test_main.py` | Onboarding success (descriptor created via NFO, no ACM file needed, identity and ASD descriptor fields resolved, placeholder kept when absent) |
+| | Call flow 01a/01b (DOC-CF-1.1 review): an uploaded `.csar` onboards with nothing fetched, a file not named `.csar` and a broken zip end `FAILED`, `operatorApi.baseUrl` kept normalised, six bad `operatorApi` declarations fail the package |
+| | `operatorUi` (GUI-8.2): the ADR's Energy Saving example onboards and is stored, accepted under `rappManifest` too, absent leaves the package unchanged, `x-` keys dropped, 14 refusals each with the place and rule in `failureReason` (unknown kind, a POST source, a GET action, `..` in a route, `%2e%2e`, `..` in a field path, too many panels, duplicate panel and action ids, version 2, unknown key, over the size limit, `readOnly` with actions, not a mapping), 6 `rowDetail` refusals (unknown block kind, too many blocks, a non-GET per-row source, `..`, a `{row.x}` that names no column, nesting), the stored drawer and its per-row read, the refusal logged, a non-declaration failure reporting only its kind |
+| | Onboarding failures to `FAILED` (NFO refuses, malformed zip, not `.csar`, malformed capabilities YAML, malformed SME JSON, byte-identical duplicate) |
+| | `manifest.yaml` / `capabilities.yaml`: null when absent, parsed when present, capabilities alone, execution modes and runtime profiles, four invalid-profile cases |
+| | SME declarations: null when absent, parsed |
+| | Re-onboarding after delete / failure, live packages still block duplicates |
+| | Lifecycle: deprecate / cancel-delete, delete (failed, plain, blocked by child, blocked by usage, allowed after stop), prime, deprime (plain, blocked, allowed after stop) |
+| | Illegal events are 409 naming state and event; delete without an edge |
+| | Unknown package / registration is 404 on every route |
+| | Usage: stop idempotent, listing shows what blocks a delete |
+| | Call flow 06 (DOC-CF-1.2): delete deletes the NFO descriptor and clears it, NFO refusing (409, 500) leaves the package, a guard refusal never calls NFO, a FAILED delete takes its descriptor and stopped registrations, usage/start refuses 4 non-deployable states and takes a PRIMED one, a PRIMED package with a running instance deprecated (and restored AVAILABLE), an unexpected onboarding error ends FAILED and deletable, NFO unreachable on delete (503), release (instance gone or UNDEPLOYED; refused for 4 live states; 503 for no answer and for an error answer; a non-instance consumer without asking; 404) |
+| | Package list and state filter, identity fields for the GUI, health |
+| | Package row committed before the NFO call |
+| `tests/test_statemachine.py` | The FSM alone: success and failure onboarding, deprecate round trip, delete guards (child, usage, after stop), no transition from `FAILED`, prime / deprime round trip and guard, no `ONBOARDING → PRIME`, no `PRIMED → DELETE`, `PRIMED → DEPRECATED` with no guard |
+| `tests/test_business_metrics.py` | `smo_rapp_packages` counts packages by state with every state of `PackageState` present |
+| `tests/test_signing.py` | `PR-RAPP-1` on the real route, real CSAR bytes, a trust store directory: nothing set (signed and unsigned package both onboard, `signatureVerified` true); the policy flag alone refuses every package and says why; a trusted publisher; unsigned accepted but unverified, refused when required; tampered, added and removed file each refused whatever the policy; unknown publisher; wrong key under a trusted key id; digest list without a signature; a refused package does not block the next attempt; a key added to the store is seen without a restart; a missing or empty store fails the package with a reason that does not show the path; the four committed samples verify against the demo publisher |
+| `tests/test_package_validation.py` | The validation module alone: the result of a good package, a `TOSCA.meta` without `Entry-Definitions:` (a validation failure, not a `StopIteration`), the `.csar` name check An unsigned zip bomb (60 MiB from a few kilobytes), too many entries, a file or a total over its limit, a read over the limit, each of the six files the parse reads, the probe for signing entries (`SEC-15.17`) |
+| `tests/test_location_checks.py` | The location checks before any fetch: a name without `.csar`, and a loopback, link-local or non-http(s) address, are refused with their reason and nothing is fetched |
+| `tests/test_main.py` (`PR-RAPP-2.1`) | `memory` that is not a Kubernetes quantity refuses the package; the NFO descriptor carries `containerResourcesByMode` (requests = limits, millicores, a GPU-only mode left out) and a package without profiles gets the descriptor it always got |
 
 
 ### 3.3 What is not covered here

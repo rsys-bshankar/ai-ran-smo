@@ -2020,10 +2020,10 @@ Decided for 0.6.0: both layers. (1) A setting that makes the identity provider t
 
 ### Validation IDs renumbered (`docs/VALIDATION.md`)
 
-Two `V-` IDs had each been given to two different items. The later one of each pair was renumbered and the earlier keeps its ID; the old IDs
-stay valid as aliases where code, workflows and older entries cite them.
+Two `V-` IDs had each been given to two different items. The later one of each pair was renumbered and the earlier keeps its ID; the code,
+the workflows and the call flows now cite the new IDs, and only released `CHANGELOG.md` entries keep the old ones.
 - **V-17** (was V-13, #353): the whole chain of schema revisions downgraded and applied again over data (`scripts/downgrade_with_data.py`; step
-  "The whole chain down and up again over the data (V-13)" of `.github/workflows/smo-db-volume.yml`; `tests_integration/test_migrations.py`,
+  "The whole chain down and up again over the data (V-17)" of `.github/workflows/smo-db-volume.yml`; `tests_integration/test_migrations.py`,
   `test_downgrade_with_data.py`; `CHANGELOG.md` 0.5.0; call flow 31). V-13 remains the GUI browser tests (V-13a to V-13d, `scripts/gui_e2e.py`,
   `.github/workflows/smo-gui-e2e.yml`).
 - **V-18** (was V-16, #405): the code-documentation gate (`scripts/check_code_docs.py`, `scripts/verify_docs_only.py`, job `Code documentation`).
@@ -3938,3 +3938,34 @@ Closed from `OPEN_ITEMS.md` (the owner chose to add them rather than document th
   --require-signed`) passes for the four sample CSARs and both examples (PK-4 runs Onboarding's `_validate_limits`); `tests_integration/test_rapp_conformance.py`,
   `test_rapp_signing.py` and the whole integration suite pass with the rebuilt packages.
 
+### OPS-UPGRADE-LANE — the upgrade lane on kind reads its releases and the table it locks from the repository
+
+Closed from `OPEN_ITEMS.md` (October 2026 stale-items pass). The lane (`.github/workflows/smo-upgrade-kind.yml`) upgraded from `smo-v0.4.0` and
+`smo-v0.3.0`, written into its matrix, and its V-11 step locked `nfo.lcm_operation` and checked for a column and an index of revision `0027`. With the
+newest release at 0.8.0 and the head at `0061`, it no longer started from the previous release, and its lock held a table no pending revision touched.
+
+- **What.** `scripts/upgrade_lane_targets.py` (standard library only, so the runner's own Python runs it before anything is installed) has three
+  sub-commands. `matrix` prints the job matrix: the newest final `smo-v*` tag (rolled back to, load gated at two route errors) and the one before it
+  (upgrade only, load reported), found as `check_previous_release_code.sh` and `check_upgrade_from_previous_release.sh` find it (`git tag --list
+  'smo-v*' --sort=-version:refname`, release candidates left out); no tag exits 1. `head` prints the head revision, found by following
+  `down_revision` from the base (two heads or an unreached revision is an error). `tables --since REV` prints `<revision> <schema.table>` for every
+  existing table a revision after REV alters, newest first: each revision's `upgrade()` runs against a recorder that stands in for `alembic.op`, so a
+  table named through a constant or a loop is found as Alembic sees it (`ALTER TABLE`, `CREATE INDEX ... ON`, and `op.add_column` and its family); a
+  revision that reads the database (`0010`, `0037`) is skipped with a note.
+- **The workflow.** A first job, "Which releases", checks out with tags and writes the matrix; the upgrade job reads it with `fromJSON`. The V-11
+  step reads the database's revision, asks for `tables --since` it and locks the first table that `to_regclass` finds (from 0.8.0, at `0044`:
+  `ran_nf_oam.pm_subscription`, altered by `0061`). "Nothing of the new revisions" is now a digest of every column, index and constraint outside the
+  catalogues, taken before and compared after, instead of one revision's column and index. The upgrade step takes its head from `head`. The script
+  is in the lane's pull-request paths.
+- **Evidence.** `tests_integration/test_upgrade_lane_targets.py` (the matrix and its refusals, release candidates left out, the repository's history
+  is one line with the newest file at its head, two heads refused, tables found through constants, loops, indexes and `op` calls, the `--since`
+  window with a skipped revision, the command's exit codes). The V-11 shell was run locally against Postgres 18: `migrate.py --revision 0044`, the
+  lock on `ran_nf_oam.pm_subscription`, `migrate.py` stopped after 20 s with the revision and the digest unchanged, then the upgrade to `0061` once the
+  lock was gone.
+- **First run on kind (PR #531, run 39956814258).** From `smo-v0.7.0` the lane passed. From `smo-v0.8.0` the load gate (V-10) failed, for two
+  reasons this change exposed rather than caused, both kept open: while `migrate` waited on the held lock for 60 s, reads of RAN NF OAM
+  `/config-jobs` and rApp Management `/instances` stalled for 30 s (the migration is one transaction, so it kept the locks its earlier revisions had
+  taken: `MIGRATE-LOCK-HOLD`); and the gate's 1 % error rate counts the expected 502s of `package list`, the route it exempts from the per-route
+  rule (24 here; 39 of 40 in the nightly run on `main` the same day, from `smo-v0.4.0`, which failed on that alone: `UPGRADE-GATE-EXEMPT`).
+- **Not taken.** Reading the newest tag that is an ancestor of `HEAD` (`git tag --merged`): the other release checks take the newest tag, and the
+  lanes should agree. Docs: call flow 30 (30a and 30e prose, 30b's note dated), `docs/VALIDATION.md` §8.
