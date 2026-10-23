@@ -10,7 +10,11 @@ listed explicitly. Machine-to-machine routes that only an rApp, NF or
 another SMO module should call (SME token/registration APIs, NFO
 Instantiate, usage registrations, heartbeats, ...) are deliberately absent,
 so the GUI can't reach them at all; DME producer registration is listed
-(admin), for an operator standing in for a producer.
+(admin), for an operator standing in for a producer. The TS 28.105
+provisioning writes of call flow 27 (training, update and loading requests,
+training-process progress, inference functions, loading policies) are absent
+too: an rApp or an SMO module makes them, and the console uses the
+training-jobs and validation-jobs routes instead.
 
 Some rules also pin request parameters to the caller's GUI identity rather
 than trusting what the browser sent: who acknowledged or cleared an alarm,
@@ -194,6 +198,7 @@ RULES: list[Rule] = [
     _rule("POST", "/aimgf/emulation-jobs", O),
     _rule("POST", "/aimgf/emulation-jobs/{id}/complete", O),
     _rule("POST", "/aimgf/mlmf/subscriptions", O),    # (POST /aimgf/feature-groups is the rule at the top: the same role, and a second copy of it here was never reached)
+    _rule("DELETE", "/aimgf/mlmf/subscriptions/{id}", O),   # the MLMF tab's Unsubscribe button, the same role as subscribing (call flow 13d)
     _rule("POST", "/aimgf/mlmf/subscriptions/{id}/reports", A),  # test-data injection
 
     # --- RAN NF OAM
@@ -372,6 +377,11 @@ RULES: list[Rule] = [
     _rule("POST", "/mdaf/mda-requests", O),                          # GUI-9.7: asking MDAF for an analysis, and withdrawing the request
     _rule("DELETE", "/mdaf/mda-requests/{id}", O),
     _rule("POST", "/ran-analytics/producers", A),                    # producer side of call flow 08
+    _rule("DELETE", "/ran-analytics/producers/{id}", A),             # call flow 08a: deregistering, the same role as registering
+    # An MDA function is platform configuration, like the other registries: admin (call flow 08). The MDA request form picks from these.
+    _rule("POST", "/mdaf/mda-functions", A),
+    _rule("PUT", "/mdaf/mda-functions/{id}", A),
+    _rule("DELETE", "/mdaf/mda-functions/{id}", A),
     _rule("POST", "/mdaf/reports", A),
 
     # --- SO / SA SMOS

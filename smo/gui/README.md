@@ -98,16 +98,18 @@ Regenerate with `cd smo/gui-bff && PYTHONPATH=. python scripts/export_permission
 The BFF is authoritative. The SPA reads the same table (`GET /api/permissions`)
 to hide what a role can't do, and the BFF re-checks every proxied call anyway.
 A route missing from the table is refused for everyone, admin included (SME
-token/registration APIs, DME producer registration, NFO Instantiate, usage
-registrations, heartbeats: machine-to-machine only).
+token/registration APIs, NFO Instantiate, usage registrations, heartbeats:
+machine-to-machine only; and the TS 28.105 provisioning writes of call flow 27,
+which an rApp or an SMO module makes: the console trains and validates through
+the training and validation jobs).
 
 | | Viewer | Operator | Admin |
 |---|:-:|:-:|:-:|
 | Every read: status, lists, details, alarms, KPIs (feature groups excepted: they carry datalake tokens) | ✓ | ✓ | ✓ |
-| Lifecycle: onboard/prime/deprime/deprecate packages; create, configure, upgrade, recover, bootstrap instances; register, edit, train, advance, deploy models, inference, training-metrics writeback, feature groups; ack/clear alarms; CM writes, PM subscriptions, SW jobs; A1 policies and policy-status subscriptions, intents, analytics subscriptions; DME consumer data jobs and type subscriptions; SME event subscriptions; FOCOM inventory subscriptions; SO orders; SA monitor evaluate / remediate / escalate; NFO heal/scale | | ✓ | ✓ |
+| Lifecycle: onboard/prime/deprime/deprecate packages; create, configure, upgrade, recover, bootstrap instances; register, edit, train, advance, deploy models, inference, training-metrics writeback, feature groups; ack/clear alarms; CM writes, PM subscriptions, SW jobs; A1 policies and policy-status subscriptions, intents, analytics and MLMF subscriptions and their unsubscribe; DME consumer data jobs and type subscriptions; SME event subscriptions; FOCOM inventory subscriptions; SO orders; SA monitor evaluate / remediate / escalate; NFO heal/scale | | ✓ | ✓ |
 | Hard deletes and teardown: delete packages, terminate/delete instances, deprecate/delete models, delete intents, terminate NF deployments, provision/deprovision O-Cloud resources | | | ✓ |
-| Registry administration: SME providers, published service APIs, invoker onboarding (the one-time secret is shown once) and trusted-invoker security contexts; RMIH registration (framework identities only) | | | ✓ |
-| Acting as another party, to exercise a flow: DME producer types and offers, RAN Analytics producers and reports, intent fulfilment reports, O1 heartbeats, and test alarms, rApp perf/faults and MLMF reports; GUI users and the audit log | | | ✓ |
+| Registry administration: SME providers, published service APIs, invoker onboarding (the one-time secret is shown once) and trusted-invoker security contexts; RMIH registration (framework identities only); MDA functions (no form yet: through the BFF's proxy) | | | ✓ |
+| Acting as another party, to exercise a flow: DME producer types and offers, RAN Analytics producers (register; deregister through the BFF's proxy, no button yet) and reports, intent fulfilment reports, O1 heartbeats, and test alarms, rApp perf/faults and MLMF reports; GUI users and the audit log | | | ✓ |
 
 The BFF also pins identity-bearing parameters rather than trusting the
 browser: `ack_user_id` / `clear_user_id` are the GUI user; the
@@ -167,7 +169,7 @@ the admin state of exactly the intents it created).
 | **rApps** (the directory and `/rapps/<instance>`, `PR-GUI-8`) | BFF `GET /api/rapps` (search, `state`, `owner`, `hasPage`, `pinned`), `GET /api/rapps/{instance}`, `/api/rapps/{instance}/operator/...` (only the routes the rApp's package declares), `/api/me/pins`; platform overview of the page: `/rapp-mgmt/instances/{id}` (+ `performance`, `faults`, `safeguards`, `versions`, and the lifecycle buttons); see "The rApp directory and the declared pages" below |
 | **Infrastructure** | `/nfo/deployments` (+ `heal`, `scale`, `resources`, `operations`, `DELETE`), `/nfo/descriptors` · `/focom/resource-pools` (+ `resources`, with each resource's CPU and memory from `/focom/utilisation?resource_ids=`), `resources/{id}/utilisation` (the topology inspector), `resource-types`, `deployment-managers`, `topology`, `resources/provision`, `inventory/subscriptions` · `/ran-nf-oam/o1-adaptor-endpoints` (+ `discover`, `heartbeat`), `config-jobs` (several MEs per job), `software-management-jobs` (+ `advance`) · `/so-smos/orders` (+ `cancel`) |
 | **Data & Exposure** (call flows 01, 08) | `/dme/dme-types`, `production-capabilities`, `data-jobs`, `offers` (+ `notify`), `type-subscriptions` · `/sme/provider-registrations`, `published-apis/v1/{apf}/service-apis`, `invoker-registrations`, `trusted-invokers`, `service-apis/v1/allServiceAPIs`, `capif-events/v1/{subscriber}/subscriptions` |
-| **Admin** | BFF `/api/admin/users`, `/api/admin/audit` (**Export…** starts an audit export job) · RAN access control tab: `/ran-nf-oam/msac/roles`, `/identities`, `/access-rules` (read-only: the BFF has no rule for MSAC writes) |
+| **Admin** | BFF `/api/admin/users`, `/api/admin/audit` (**Export…** starts an audit export job) · RAN access control tab: `/ran-nf-oam/msac/roles`, `/identities`, `/access-rules` (read, create with the **New role** / **New identity** / **New rule** forms, and delete; the BFF's admin rules also allow `PUT`) |
 | **RAN topology** (`/topology`) | `/ran-nf-oam/topology/graph` (the containment tree with each node's open alarms, GUI-3) · `/ran-nf-oam/topology/links` (counts, the focus element's neighbour graph, relations that need attention), `/topology/relation?a&b`, `/topology` (TEIV export), `/managed-entities`, `/cell-guards` |
 | **Configuration** (`/configuration`) | `/ran-nf-oam/config-jobs` (+ `halt`, `continue`, `abort`, `rollback`; `kpi-check` is shown read-only: no BFF rule), `/vendor-capabilities`, `/cm-schemas`, `/o1-adaptor-endpoints/{id}/host-keys` (read-only: no BFF rule for re-pinning), `/onboarding-templates` (admin `PUT`, `DELETE`; `MGT-14.6`), `/element-onboarding` (+ `{me}`, `select`, `apply`), `/lifecycle-subscriptions` (admin `POST`, `DELETE`; `MGT-14.7`) |
 | **Software** (`/software`) | `/ran-nf-oam/software-campaigns` (+ `{id}`, `report`, `continue`, `halt`, `abort`, `rollback`; a new campaign is dry-run first and may set a job timeout and the rollback order, `MGT-15.5` to `15.7`), `/software-management-jobs`, `/lifecycle-subscriptions` |

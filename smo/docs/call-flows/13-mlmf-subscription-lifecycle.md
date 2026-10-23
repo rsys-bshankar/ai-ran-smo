@@ -9,7 +9,7 @@ come from MDAF's drift analysis, from the owner rApp or from an admin; a report 
 | 13a | Subscribe | Operator (GUI), an rApp (SDK) | a subscription with its floors and ceilings |
 | 13b | Report, breach, group retrain | the owner rApp (SDK), Admin (GUI) | a stored report; a breach may retrain the group |
 | 13c | MDAF forwards a drift report | MDAF | one report per subscription of the model |
-| 13d | Delivery, a pull subscriber, unsubscribe | AIMgF's outbox; the subscriber | the push delivered (or retried); the subscription gone |
+| 13d | Delivery, a pull subscriber, unsubscribe | AIMgF's outbox; the subscriber, Operator (GUI) to unsubscribe | the push delivered (or retried); the subscription gone |
 
 **As images:** [13a](images/13-mlmf-subscription-lifecycle/13a-subscribe.png) ·
 [13b](images/13-mlmf-subscription-lifecycle/13b-report-breach-group-retrain.png) ·
@@ -19,7 +19,8 @@ come from MDAF's drift analysis, from the owner rApp or from an admin; a report 
 
 **How to read the diagrams.** As in call flow 01: an arrow is one call with the inputs that matter, a box on the receiver says what it does
 with them, an `alt` block is the outcome (success first, then each failure and what the caller gets). In the console, subscribing and unsubscribing
-need the **operator** role; filing a report by hand is test data and needs **admin**.
+(the MLMF tab's form and its **Unsubscribe** button) need the **operator** role; filing a report by hand is test data and needs **admin**
+(`gui-bff/app/rbac.py`).
 
 **Who may act.** An rApp may subscribe to, read, report on and delete the subscriptions of a model it owns (403 `MODEL_ACCESS_DENIED` otherwise; a
 model with no owner is open). The console, MDAF and the other SMO modules are not asked. A RETIRED model takes no new subscription or report (409,
@@ -129,6 +130,7 @@ sequenceDiagram
     AIM-->>S: 200 [{reportId, metrics, breachedFloor, missingMetrics, reportedAt}] newest first
 
     S->>AIM: DELETE /aimgf/mlmf/subscriptions/{id}
+    Note over S,AIM: or the console's Unsubscribe button (operator role)
     AIM-->>S: 204 (its reports go with it, and a second DELETE is 204 too)
     S->>AIM: POST /aimgf/mlmf/subscriptions/{id}/reports
     AIM-->>S: 404 MLMF_SUBSCRIPTION_NOT_FOUND

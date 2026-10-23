@@ -322,6 +322,12 @@
     "queryMatch": {}
   },
   {
+    "method": "DELETE",
+    "pattern": "^/aimgf/mlmf/subscriptions/[^/]+$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
     "method": "POST",
     "pattern": "^/aimgf/mlmf/subscriptions/[^/]+/reports$",
     "role": "admin",
@@ -930,6 +936,30 @@
   {
     "method": "POST",
     "pattern": "^/ran-analytics/producers$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/ran-analytics/producers/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/mdaf/mda-functions$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "PUT",
+    "pattern": "^/mdaf/mda-functions/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/mdaf/mda-functions/[^/]+$",
     "role": "admin",
     "queryMatch": {}
   },

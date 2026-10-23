@@ -13,7 +13,7 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `dme` | 14 | 170 | 183 |
 | `focom` | 3 | 85 | 85 |
 | `gui` | 50 | 511 | — |
-| `gui-bff` | 17 | 437 | 1341 |
+| `gui-bff` | 17 | 439 | 1600 |
 | `intent-service` | 5 | 84 | 104 |
 | `mdaf` | 4 | 58 | 62 |
 | `mllf` | 1 | 10 | 10 |
@@ -37,4 +37,4 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `sme` | 5 | 121 | 139 |
 | `so-smos` | 3 | 27 | 40 |
 | `tests_integration` | 91 | 704 | 881 |
-| **total** | **412** | **5288** | **7336** (Python) |
+| **total** | **412** | **5290** | **7595** (Python) |
