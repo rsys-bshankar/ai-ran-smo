@@ -179,7 +179,7 @@ RFC 7807 ProblemDetails; the code is in `title`. Conventions: [`../docs/ARCHITEC
 - Real object storage (S3) is out of scope: artifacts are database rows.
 - TS 29.482 limits (1.2): no `anyOf` / forward-compatible enum handling, `accessReqs.location` not enforced, `phaseInfo.phase` is written by AIMgF at training start / success only (not on validation or deployment), no model is created from a profile.
 - Coordination-group member ids are not validated against registered models, and `retrainPropagation` is not validated here (AIMgF raises on unknown values when a breach is reported).
-- `DELETE /models/{id}` does not check lifecycle state or running deployments; the database cascade removes AIMgF's rows for that model.
+- `DELETE /models/{id}` deletes the model's artifacts and profiles (their foreign keys to `aiml_model` also cascade on Postgres); AIMgF's rows about the model stay, naming a model that is gone, since revision 0022 dropped the cross-module foreign keys.
 - `model_change_subscription` is an unused table.
 - A model registered before `SEC-15.3b` has no owner and stays open to every rApp until an operator sets one (`PUT /models/{id}/owner`, the console's Set owner). Refusing an owner-less model outright is `OPEN_ITEMS.md` `SEC-15.3c`.
 - `GET /ml-models/{id}` costs one R1 call to AIMgF per read.
@@ -201,7 +201,7 @@ cd smo/mlmr && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 ### 3.3 What is not covered here
 
-- The database-level cascade into AIMgF's tables and the coordination-group CHECK: Postgres only, not enforced under SQLite.
+- The database-level `ON DELETE CASCADE` / `SET NULL` of MLMR's own foreign keys and the coordination-group CHECK: Postgres only, not enforced under SQLite.
 - The real AIMgF join, and MLMR as called by AIMgF, MLLF flows and the GUI: `tests_integration/test_cross_service.py` and the rApp suites; OpenAPI drift: `tests_integration/test_openapi_specs.py`.
 - `model_change_subscription`: no route.
 

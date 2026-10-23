@@ -65,7 +65,7 @@ def register_analytics_producer(producer_id: str, analytics_type: str, dme_input
 
     HISTORY.md §7's `analytics_type` enum finding: `mda_type`, TS28104's
     own real closed MDAType enum, is optional and additive — a caller may
-    declare one directly (validated against the real 24 values), or, if
+    declare one directly (validated against the real 25 values), or, if
     omitted, `infer_mda_type` derives it for the two shorthand values
     this build already honestly maps; anything else stays `None`, not
     guessed.

@@ -35,7 +35,7 @@ sequenceDiagram
     P->>RA: POST /producers?producer_id, analytics_type, mda_type? {dme_input_types, output_schema}
     alt an rApp naming another producer than itself
         RA-->>P: 403 PRODUCER_IDENTITY_MISMATCH
-    else an mda_type outside the 24 TS 28.104 MDAType values
+    else an mda_type outside the 25 TS 28.104 MDAType values
         RA-->>P: 422 SCHEMA_VALIDATION_FAILED
     else
         RA->>SME: POST /provider-registrations {apfId: producer_id} (an upsert)
@@ -111,8 +111,10 @@ sequenceDiagram
         end
     end
     MDAF->>DME: GET /dme/data-jobs/{id} per input source (the reference is proven, the data is not fetched)
-    alt a source DME does not know
-        MDAF-->>P: 422 DME_ARTIFACT_NOT_FOUND
+    alt DME does not answer
+        MDAF-->>P: 503 ENDPOINT_UNREACHABLE, nothing stored
+    else a source DME does not know
+        MDAF-->>P: 422 DME_ARTIFACT_NOT_FOUND, nothing stored
     else
         Note over MDAF: the report stored with publishedBy (the rApp, smo-gui:<user>, or the module),<br/>each subscriber of the type: thresholds crossed? (state updated), an outbox row for those to tell,<br/>open MDA requests matched (deliveries), all in one transaction
         MDAF->>DB: report, threshold state, outbox rows, deliveries committed
@@ -163,5 +165,5 @@ sequenceDiagram
 - **One SME service per producer and type** (`mdaf.<analyticsType>.<producerId>`): SME service names are unique across producers, so a shared
   `mdaf.<analyticsType>` left a second producer of a type undiscoverable. SME is asked before the producer is stored.
 - **`MDAFProducer`'s key is (producer_id, analytics_type)**: one producer may serve several types; registering the same pair again updates it in place.
-- **`analyticsType` is a free string**; an optional `mdaType` is checked against TS 28.104's 24 values, inferred for the two shorthands with an unambiguous
+- **`analyticsType` is a free string**; an optional `mdaType` is checked against TS 28.104's 25 values, inferred for the two shorthands with an unambiguous
   correspondence, else null, never guessed (HISTORY.md SA-MDA-2).

@@ -4,9 +4,11 @@ Used by `main.py` and `mlr.py`; the schema itself is created by the Alembic revi
 checked against it by `scripts/check_migration_matches_models.py`). Table names are internal storage, not a contract: the
 model table is still called `aiml_model` from before the class was renamed `MLModel`.
 
-Lifecycle state, training jobs and node-group targeting are not here; they are AIMgF's `model_lifecycle` row. Other
-modules hold foreign keys to `aiml_model` and `model_artifact` with `ON DELETE CASCADE`, which is why a model delete here is
-enough to clear their rows on Postgres.
+Lifecycle state, training jobs and node-group targeting are not here; they are AIMgF's `model_lifecycle` row. No other
+module's table has a foreign key into these tables (revision 0022 dropped them; AIMgF's rows name a model by a plain id), so
+deleting a model leaves AIMgF's rows about it. Within this module, `model_artifact`, `ml_model_profile` and
+`model_change_subscription` reference `aiml_model` with `ON DELETE CASCADE` (on Postgres; `DELETE /models/{id}` also deletes the
+artifacts and profiles itself), and a repository delete sets `ml_model_repository_id` to NULL on its models and groups.
 """
 
 import datetime

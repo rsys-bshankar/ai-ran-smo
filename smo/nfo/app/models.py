@@ -37,8 +37,8 @@ class NFDeploymentDescriptor(Base):
 
 class NFDeployment(Versioned, Base):
     """One deployment of a descriptor. `state` holds a `statemachine.DeploymentState` value as text and is changed only through
-    `NFO_FSM`. `name` and the descriptor are each used by at most one deployment, a rule the Instantiate route checks (no unique
-    constraint backs it). `cluster_id` is the O-Cloud id from FOCOM. `workload_ref` and `config_secrets` are not written by any
+    `NFO_FSM`. `name` is used by at most one deployment, a rule the Instantiate route checks (no unique constraint backs it:
+    `UNIQUE-SELECT`); a descriptor may back any number of deployments (call flow 15b). `cluster_id` is the O-Cloud id from FOCOM. `workload_ref` and `config_secrets` are not written by any
     route in this module. Versioned: a stale write raises and becomes a 409.
     """
     __tablename__ = "nf_deployment"

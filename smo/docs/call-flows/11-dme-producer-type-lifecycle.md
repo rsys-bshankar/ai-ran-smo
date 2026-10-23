@@ -9,7 +9,7 @@ serve several types. A consumer's data job is sent to every producer of its type
 | 11a | Registering a producer and type, and joining a type | a producer rApp (SDK), RAN NF OAM (PM, FM, KPI types), Admin (GUI) | the producer linked to the type and sent the type's open jobs, or refused with nothing changed |
 | 11b | Jobs reaching producers | a consumer: an rApp, MDAF, AIMgF, Operator (GUI) | a job sent to every producer of its type, or waiting as NO_PRODUCER |
 | 11c | Producer and type health | Operator (GUI), RAN NF OAM, AIMgF, any reader | ENABLED / DISABLED, asked of the producers at most once per 30 s each |
-| 11d | A producer leaving, a type being deleted | the producer rApp, rApp Management (instance torn down), Admin (GUI) | the producer's jobs stopped and waiting, or the type, its jobs and offers removed with their owners told |
+| 11d | A producer leaving, a type being deleted | the producer rApp, rApp Management (instance torn down), RAN NF OAM (one type), Admin (GUI) | the producer's jobs stopped and waiting, or the type, its jobs and offers removed with their owners told |
 
 **As images:** [11a](images/11-dme-producer-type-lifecycle/11a-registering-a-producer-and-type-and-joining-a-type.png) ·
 [11b](images/11-dme-producer-type-lifecycle/11b-jobs-reaching-producers.png) ·
@@ -82,13 +82,23 @@ sequenceDiagram
     end
     C->>DME: PUT /data-jobs/{id} (same type, consumer and mode)
     DME->>P: POST jobCallbackUrl, the job again
-    C->>DME: DELETE /data-jobs/{id} (or DELETE /data-jobs?consumer_id or created_by)
+    C->>DME: DELETE /data-jobs/{id}
     DME->>DB: job deleted, a stop per producer, one commit
     DME->>P: DELETE jobCallbackUrl/{id}
+    C->>DME: DELETE /data-jobs?consumer_id or created_by
+    alt neither or both given
+        DME-->>C: 422
+    else an rApp naming another creator, or a consumer some of whose jobs are another's
+        DME-->>C: 403 DATA_JOBS_NOT_OWNER, none deleted
+    else
+        DME->>DB: every matching job deleted, a stop per producer per job, one commit (all or none)
+        DME-->>C: 204
+        DME->>P: DELETE jobCallbackUrl/{id} per job
+    end
 ```
 
 A producer that is down is not a failure of the consumer's call: its rows stay in the outbox and are retried (a destination the SSRF guard refuses is
-dropped). **Phase 1:** `DELETE /data-jobs?consumer_id` commits job by job, so a failure part way leaves the rest.
+dropped). `DELETE /data-jobs?consumer_id` (or `created_by`) deletes every matching job in one transaction, so a failure part way deletes none (call flow 12a).
 
 ## 11c — Producer and type health
 
@@ -118,7 +128,7 @@ A producer serving several types is asked once per read, not once per type. A re
 
 ```mermaid
 sequenceDiagram
-    participant A as Producer rApp / rApp Management / Admin (GUI)
+    participant A as Producer rApp / rApp Management / RAN NF OAM / Admin (GUI)
     participant DME as DME
     participant DB as DME database
     participant P as The leaving producer's job callback
@@ -131,6 +141,17 @@ sequenceDiagram
         DME-->>A: 204
     else
         Note over DME: a stop queued per ACTIVE job of each type it served, its links and row removed,<br/>a job whose type has no producer left becomes NO_PRODUCER (event data-job.state-changed)
+        DME->>DB: one commit
+        DME-->>A: 204
+        DME->>P: DELETE jobCallbackUrl/{jobId} per job
+    end
+    A->>DME: DELETE /production-capabilities/{producerId}/types?namespace&name&version (stop serving one type)
+    alt an rApp naming another producer
+        DME-->>A: 403 DME_PRODUCER_NOT_OWNER
+    else the producer or the type is not registered, or the producer does not serve it
+        DME-->>A: 204, nothing changed
+    else
+        Note over DME: a stop queued per ACTIVE job of the type, the link removed (the producer and its other types stay),<br/>the type's jobs become NO_PRODUCER if no producer is left (event data-job.state-changed)
         DME->>DB: one commit
         DME-->>A: 204
         DME->>P: DELETE jobCallbackUrl/{jobId} per job
@@ -151,8 +172,9 @@ sequenceDiagram
 ```
 
 A job's owner learns of `NO_PRODUCER`, `ACTIVE` again and `DELETED` from the SMO event feed (`org.oran.smo.data-job.state-changed`, docs/EVENTS.md); a
-job has no callback of its own. A producer's deregistration never deletes a type: the type stays, `DISABLED`, its jobs waiting, until a producer joins or
-the operator deletes it.
+job has no callback of its own. A producer's deregistration, or its withdrawal from one type, never deletes a type: the type stays (`DISABLED` when no
+producer is left), its jobs waiting, until a producer joins or the operator deletes it. RAN NF OAM withdraws `RAN.PMCounters.<counter>` and
+`RAN.FaultRecords` this way when the last subscription that needs the type goes (call flow 20).
 
 ## Decisions this flow depends on
 
@@ -167,4 +189,6 @@ the operator deletes it.
 - **Health is asked, not assumed, but not at every read** (DOC-CF-1.8): `typeStatus` is ENABLED when any producer answers its health callback, each
   answer remembered for 30 s.
 - **A registration RAN NF OAM depends on is checked** (DOC-CF-1.8): it registers before storing the subscription that needs it.
-- **Not taken:** restricting who may join a type (an open type is how two vendors serve the same data), and a per-link "stop serving this one type" route.
+- **A producer may stop serving one type and keep the others** (DOC-CF-1.8, call flow 20c/20d): `DELETE /production-capabilities/{producerId}/types`
+  removes that one link, with the same stops and `NO_PRODUCER` as a full deregistration.
+- **Not taken:** restricting who may join a type (an open type is how two vendors serve the same data).

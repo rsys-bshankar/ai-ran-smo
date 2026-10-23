@@ -57,7 +57,7 @@ No file under [`../../specs/`](../../specs/README.md) models O2-DMS; the O2-IMS 
 
 ### 1.5 Design decisions
 
-- **Guards before side effects.** Instantiate refuses a missing descriptor (422), a duplicate name (409) and an already-deployed descriptor (409) before anything is created.
+- **Guards before side effects.** Instantiate refuses a missing descriptor (422) and a duplicate name (409) before anything is created; a descriptor may back any number of deployments (call flow 15b).
 - **FOCOM decides placement.** Instantiate places a deployment on the O-Cloud FOCOM's inventory names (`oCloudId`); when FOCOM does not answer, answers an error or names none, Instantiate is 503 `ENDPOINT_UNREACHABLE` and nothing is created (call flow 15b, DOC-CF-1.4).
 - **State changes are events.** Every `NFO_FSM.fire` is given the deployment (`deployment=`), so each transition is published as `org.oran.smo.nf-deployment.state-changed` (`docs/EVENTS.md`), and `_remove_deployment` publishes the end (`to: DELETED`). This is how a workload that breaks (`ABNORMAL`) is seen outside NFO (call flow 15e).
 - **Synchronous by default, asynchronous Terminate on request.** Instantiate and Scale complete within the request (a real Helm install / upgrade is out of scope). Terminate does too by default (`TERMINATING` -> `DELETING` -> removed), because every SMO caller expects the deployment gone and its descriptor free when the call returns. `DELETE ?async_uninstall=true` answers 202 and leaves the deployment `TERMINATING`; the deployment manager (O2 DMS) then reports through `POST /deployments/{id}/dms-notifications`: the uninstall completed (-> `DELETING`) or failed, the deletion completed (removed) or failed, or a running workload broke (`RUNTIME_FAILURE`). A failure leaves the deployment `ABNORMAL` with its reason; Heal recovers it and Terminate retires it (HISTORY.md OI-3-nfo-abnormal).
@@ -91,7 +91,7 @@ No file under [`../../specs/`](../../specs/README.md) models O2-DMS; the O2-IMS 
 
 | Column | Notes |
 |---|---|
-| `nf_deployment_descriptor_id` | FK to the descriptor; at most one deployment per descriptor |
+| `nf_deployment_descriptor_id` | FK to the descriptor; several deployments may share one |
 | `name` | unique in practice (checked before insert) |
 | `cluster_id` | FOCOM `oCloudId` |
 | `state` | `INITIAL` / `INSTANTIATING` / `RUNNING` / `UPDATING` / `TERMINATING` / `ABNORMAL` / `DELETING` (CHECK in Postgres) |

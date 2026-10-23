@@ -21,7 +21,8 @@ changing code here.
 ## Before pushing or opening a PR: run the full verification battery
 
 Most of this is also enforced by CI (`.github/workflows/smo-tests.yml`,
-which runs on every push/PR touching `smo/**`), but run it locally
+which runs on every pull request, on every push to `main` and by hand;
+it has no path filter, because its jobs are required checks), but run it locally
 first — it's faster to iterate on a failure here than to wait on a CI
 run and read its logs, and `scripts/check_migration_matches_models.py`
 needs a real Postgres CI doesn't give you locally unless you start one

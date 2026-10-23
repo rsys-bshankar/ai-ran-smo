@@ -261,15 +261,15 @@ sequenceDiagram
     participant MLMR as MLMR
     participant NFO as NFO
 
-    S->>AIM: POST /aimgf/mlmf/subscriptions {modelId, metricTypes, dmeTypeId, guardKpiFloor?, notificationDestination?}
+    S->>AIM: POST /aimgf/mlmf/subscriptions {modelId, metricTypes, dmeTypeId, guardKpiFloor?, guardKpiCeiling?, notificationDestination?}
     AIM-->>S: 201 {subscriptionId}
 
     P->>AIM: POST /aimgf/mlmf/subscriptions/{id}/reports {metric: value}
-    alt unknown subscription, or another rApp's model
-        AIM-->>P: 404 MLMF_SUBSCRIPTION_NOT_FOUND · 403 MODEL_ACCESS_DENIED
+    alt unknown subscription, another rApp's model, a RETIRED model, or a value that is not a number
+        AIM-->>P: 404 MLMF_SUBSCRIPTION_NOT_FOUND · 403 MODEL_ACCESS_DENIED · 409 LIFECYCLE_ILLEGAL_TRANSITION · 422 SCHEMA_VALIDATION_FAILED
     else
-        Note over AIM: breachedFloor = a guarded metric under its floor (missing counts as 0)<br/>report and the subscriber's push committed first (outbox)
-        AIM-)S: POST notificationDestination {reportId, modelId, metrics, breachedFloor}
+        Note over AIM: breachedFloor = a guarded metric the report carries is under its floor or over its ceiling<br/>missingMetrics = the guarded metrics it does not carry (not a breach)<br/>report and the subscriber's push committed first (outbox)
+        AIM-)S: POST notificationDestination {reportId, modelId, metrics, breachedFloor, missingMetrics}
         opt breached and the model is in a coordination group
             AIM->>MLMR: GET /mlmr/coordination-groups
             Note over AIM: retrainPropagation decides: ANY_MEMBER_TRIGGERS fires on one breach<br/>MAJORITY_TRIGGERS counts this one report, so fires only for a group of one<br/>WEIGHTED_TRIGGERS is reserved and answers 500 (report kept)
@@ -282,11 +282,12 @@ sequenceDiagram
                 end
             end
         end
-        AIM-->>P: 200 {reportId, breachedFloor, groupRetrainTriggered?, retrainedModelIds?, retrainSkipped?}
+        AIM-->>P: 200 {reportId, breachedFloor, missingMetrics, groupRetrainTriggered?, retrainedModelIds?, retrainSkipped?}
     end
 ```
 
-A member that is not PROMOTED (already training, mid-certification) is passed over. A model in no group is not retrained by a breach: the
+A guarded metric the report does not carry does not breach: it is listed in `missingMetrics` (MDAF's drift reports carry only their own outputs, call
+flow 13b). A member that is not PROMOTED (already training, mid-certification) is passed over. A model in no group is not retrained by a breach: the
 subscriber decides. Subscribe, notify and unsubscribe, and the pull-only subscription, are in call flow 13.
 
 **Phase 1:** a retrained model is the same model: while it trains, its serving runtime keeps the version that was certified, and the new one

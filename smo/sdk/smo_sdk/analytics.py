@@ -17,7 +17,7 @@ class AnalyticsClient(BaseClient):
         """Register an analytics producer at RAN Analytics (`POST /ran-analytics/producers`). An rApp registers only itself: `producer_id` is its own invoker id (403
         PRODUCER_IDENTITY_MISMATCH otherwise), and it may publish reports only of the types it is registered for (call flow 08).
 
-        `mda_type` is TS 28.104's closed MDAType enum, optional: omit it to let the route derive one for this build's unambiguous shorthand values (HISTORY.md section 7), or pass one of the 24 spec
+        `mda_type` is TS 28.104's closed MDAType enum, optional: omit it to let the route derive one for this build's unambiguous shorthand values (HISTORY.md section 7), or pass one of the 25 spec
         values for genuine conformance. The query parameters carry the ids and the JSON body carries the input types and the output schema.
         """
         return ensure_ok(self._r1.post(

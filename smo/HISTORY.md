@@ -537,7 +537,7 @@ Large-structural items are confirmed Phase 1 scope cuts unless noted; open ones 
 
 ### MDAF / RAN Analytics vs TS 28.104 (`SA-MDA-n`)
 - **SA-MDA-1** MDAFunction/MDARequest/MDAReport — closed at REST level in W5.
-- **SA-MDA-2** Optional `mda_type` validated against the 24-value enum; inferred for two shorthand
+- **SA-MDA-2** Optional `mda_type` validated against the 25-value enum; inferred for two shorthand
   values, `null` otherwise. (#122)
 - **SA-MDA-3** `ThresholdInfo` conditional reporting with hysteresis and persisted
   `threshold_state`. (#106)
@@ -1987,6 +1987,17 @@ Decided for 0.6.0: both layers. (1) A setting that makes the identity provider t
 - **What it showed.** The gateway is CPU-bound at one core (about 26 ms of CPU per request); SME is the largest module (361 MiB); the other modules peak at 75 to 135 MiB and are nearly idle; Postgres 150 MiB. The chart's old defaults (128Mi request, 512Mi limit) were right for the quiet modules. Changed in the defaults: `sme` 480Mi with a 768Mi limit, `r1-termination` 192Mi. The measured CPU requests (gateway 500m, SME 250m, RAN NF OAM 150m, Postgres 250m) are in the opt-in profile `deploy/helm/smo/values-sized.yaml`: a first version put them in the defaults, which raised the chart's CPU requests from 1.3 to 2.2 cores and the kind upgrade job could no longer schedule Postgres (`Insufficient cpu`); a lab or trial install must still fit a two-core node, and `tests_integration/test_helm_sizing.py` keeps the default total at 1.5 cores or less. No CPU limits.
 - **The first run's table was wrong in one way**: it counted the load generator's container (`friendly_dijkstra`, a core, 167 MiB) as part of the stack; `sizing_report.py` now keeps only containers named `smo-*`.
 - **Not done.** A run with several replicas, with mTLS and tracing on, with the observability stack, and at a million alarms (`docs/SIZING.md`, "What this does not tell you"). The artifact of a run cannot be downloaded from the agent's environment, so the tables are read from the job log.
+
+### Validation IDs renumbered (`docs/VALIDATION.md`)
+
+Two `V-` IDs had each been given to two different items. The later one of each pair was renumbered and the earlier keeps its ID; the old IDs
+stay valid as aliases where code, workflows and older entries cite them.
+- **V-17** (was V-13, #353): the whole chain of schema revisions downgraded and applied again over data (`scripts/downgrade_with_data.py`; step
+  "The whole chain down and up again over the data (V-13)" of `.github/workflows/smo-db-volume.yml`; `tests_integration/test_migrations.py`,
+  `test_downgrade_with_data.py`; `CHANGELOG.md` 0.5.0; call flow 31). V-13 remains the GUI browser tests (V-13a to V-13d, `scripts/gui_e2e.py`,
+  `.github/workflows/smo-gui-e2e.yml`).
+- **V-18** (was V-16, #405): the code-documentation gate (`scripts/check_code_docs.py`, `scripts/verify_docs_only.py`, job `Code documentation`).
+  V-16 remains the observability-profiles lane (#398, job `Tracing and logging profiles`).
 
 ### PR-V-11b — a migration that cannot finish (V-11, second half)
 

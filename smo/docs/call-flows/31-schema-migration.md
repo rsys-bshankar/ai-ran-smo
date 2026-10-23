@@ -1,7 +1,7 @@
 # Call Flow 31: Schema migration on its own — Alembic to head, the wait for the schema, roles and grants, proving a revision, undoing one
 
 What `scripts/migrate.py` and `scripts/db_roles.py` do to the database, whoever runs them (`OPEN_ITEMS.md` DOC-CF-3.4; `PR-OPS-1`, `PR-OPS-3.2`,
-`PR-DB-2.6`, `PR-V-13`). The schema of every module is one Alembic history in `migrations/` (`docs/adr/0001-schema-migrations.md`): revisions written
+`PR-DB-2.6`, `PR-V-17`, called V-13 in the workflow). The schema of every module is one Alembic history in `migrations/` (`docs/adr/0001-schema-migrations.md`): revisions written
 by hand, a baseline `0001` that runs `migrations/001_init.sql` unchanged, no autogenerate. Compose's one-shot `migrate` service and the chart's migrate
 Job run the same command, `python /srv/scripts/migrate.py && python /srv/scripts/db_roles.py`. Call flow 30 puts this inside an upgrade. Five diagrams:
 

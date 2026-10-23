@@ -79,7 +79,7 @@ A second run gave 355 for 358 calls (99.2 per 100) against 3 for 713 (0.4 per 10
 ## Not yet covered
 
 - Cells, managed objects and KPI results are not seeded yet (V-8b seeds managed elements, alarms and performance files).
-- Stress and failure injection beyond the first four scenarios (`scripts/stress_run.py`, `.github/workflows/smo-stress.yml`: limiter burst, oversized body, saturation ramp, Postgres down and back): a slow or dead webhook subscriber, SME down, a full package volume (V-9), and the soak (V-9b).
+- Stress and failure injection beyond what `.github/workflows/smo-stress.yml` runs (`scripts/stress_run.py`: limiter burst, oversized body, saturation ramp, Postgres down and back, SME down and back, and one rate budget across three gateway replicas): a slow or dead webhook subscriber through a running stack (today a unit test of the outbox, `shared/tests/test_outbox.py`), Postgres slow rather than down, and a full package volume (V-9). The soak (V-9b) runs weekly for two hours (`.github/workflows/smo-soak.yml`, `scripts/soak_check.py`); the 24 h and 72 h release-candidate soaks need a runner of our own (GitHub stops a job at 6 h).
 - Baseline numbers per release: the first is below (0.5.0). Per-container CPU and memory from the same run, and what the chart's `resources` are set from, are in `docs/SIZING.md`.
 
 ## Baselines
