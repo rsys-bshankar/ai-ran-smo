@@ -51,7 +51,7 @@ Theme: rApps that could be handed to another party. Core (1 to 3) first, then th
 | 2 | Approval and decision audit | `AI-11` approval queue for rApp actions (timeout, notification, autonomy-mode hook) with the GUI inbox; `AI-13` decision record per rApp config job (inputs, model version, rationale, job id), query route and GUI detail; `AI-12` shadow mode if time allows | Answers "who let the rApp do that, and why". **Built** (`HISTORY.md` PR-AI-11, PR-AI-13): the approval queue, the timeout, the hook for an `ASSIST` instance, the notice, the GUI inbox (`GUI-7.2`) and the decision record, then (follow-ups) an opt-in second approver, the samples' `decision` and a retention for both tables. **Not started:** `AI-12` shadow mode |
 | 3 | Tenant and region authorization | `SEC-10`: `region` and `tenant` on managed elements, a scope claim on the caller, enforced first on `POST /config-jobs` (the pilot, `SEC-10.1` to `10.4`), then config reads, alarms, PM, DME and MLMR reads | The main security gap left before 1.0.0. Scoping axes: both region and tenant. **Built** (`HISTORY.md` PR-SEC-10): `SEC-10.1` to `10.6`, the pilot, config reads, alarms and PM, with both axes; and `10.9` (the rest of RAN NF OAM's reads), `10.11` (job ownership) and the DME action list of `10.7`. **Open:** `SEC-10.7` for the rest of DME and MLMR (they have nothing to match on, see below), `10.8` (OPA), `10.10` (GUI forms) and `10.12` (the console's users) |
 | 4 | rApp SDK in two more languages | `RAPP-4` (Java and Go, decided): a Java SDK and a Go SDK built from `docs/openapi/` (the Java one: hand-written clients held to the specs by a contract test, `HISTORY.md` PR-RAPP-4 Java) with token acquisition and refresh, one example rApp in each, and a CI build for each | Python SDK stays. Each example runs against the stack |
-| 5 | Life-cycle flows (stretch) | `MGT-14` zero-touch onboarding (templates, discovery triggers a template, status FSM); `MGT-15` software campaigns (waves with a health gate, rollback, report) | The wave machinery is `MGT-5`, done. **Built** (`HISTORY.md` PR-MGT-14, PR-MGT-15): the API, the migration (`0033`) and the tests; opt in, nothing changes for an existing user. The GUI tabs, the notices of a failed onboarding, a halted campaign and a failed rollback, a job timeout and a rollback in reverse wave order are built too (`HISTORY.md` PR-MGT-14.6; migration `0035`). **Open:** a real software-management exchange with the element (`MGT-15.8`, needs a vendor decision), the KPI gate (`MGT-15.9`, after `MGT-11`), template placeholders and scope (`MGT-14.8`) and the smaller follow-ups `MGT-14.6a`, `14.7a`, `15.6a` |
+| 5 | Life-cycle flows (stretch) | `MGT-14` zero-touch onboarding (templates, discovery triggers a template, status FSM); `MGT-15` software campaigns (waves with a health gate, rollback, report) | The wave machinery is `MGT-5`, done. **Built** (`HISTORY.md` PR-MGT-14, PR-MGT-15): the API, the migration (`0033`) and the tests; opt in, nothing changes for an existing user. The GUI tabs, the notices of a failed onboarding, a halted campaign and a failed rollback, a job timeout and a rollback in reverse wave order are built too (`HISTORY.md` PR-MGT-14.6; migration `0035`). The real software-management exchange with the element (`MGT-15.8`) is done too (`HISTORY.md` DOC-CF-1.8 flow 19). **Open:** the KPI gate (`MGT-15.9`, after `MGT-11`), template placeholders and scope (`MGT-14.8`) and the smaller follow-ups `MGT-14.6a`, `14.7a`, `15.6a` |
 | 6 | Spec and stub realism (stretch) | `MGT-2` MSAC beyond writes; `SB-7` VES event receiver; `SB-10` first vendor profile on the O1 stub | **Built** (`HISTORY.md` PR-SB-7, PR-SB-10, PR-MGT-2): the VES listener (off until it has a password, which the chart can take from a Secret), MSAC reach (off until `RAN_NF_OAM_MSAC_REACH`), and a vendor profile mechanism with a first profile that is **a stand-in, not a real vendor**. **Open:** `SB-7.6` (needs `MSG-3.4`), the first real vendor profile (`SB-10.5`), and the parts of `MGT-2` named under PR-MGT-2 |
 | 7 | Carry-overs from 0.6.0 | `GUI-8.7` compose browser check; `SEC-5.4` load test and the cache default (`SEC-5.5`); `SEC-2.4` Postgres `verify-full` | Closed here rather than carried into 1.0.0. **Built** (`HISTORY.md` PR-SEC-2.4, PR-SEC-5.4b, PR-GUI-8c): `SEC-2.4` (the compose overlay `docker-compose.pgtls.yml` and the chart's `postgres.tls`; proved against a real Postgres here, the containers and pods by new CI jobs), `SEC-5.4` (measured: the cache cuts SME's introspections by 99 % in the local run, the compose lane `smo-load.yml` repeats it), `GUI-8.7` (`scripts/gui_rapp_pages_e2e.py`, run here against the built GUI, the real backend and the real services; the compose job is CI's). **Decided by the owner:** `SEC-5.5`, the default of the cache, 30 s (`HISTORY.md` PR-SEC-5.5) |
 
@@ -235,10 +235,8 @@ SA-MLMR-8 (`usageReqs`), SA-MLMR-9 (whole-object `filt-criteria` discovery).
 
 ## 4. Test coverage
 
-- **OI-4** — Coverage is uneven. By `def test_` count today the shallowest suites are `mllf` (5),
-  `ran-analytics` (13), `mock-o1-adaptor` (14), `so-smos` (15) and
-  `r1-termination` (18). Approach: add route-level tests to `mllf` first (its routes are the
-  CERTIFIED gate in every rApp deployment); the others were last surveyed as near-complete.
+Nothing open. **OI-4** (uneven coverage) is closed: `HISTORY.md` §4, OI-4 (every module has a coverage floor in
+`coverage_floors.json`, enforced in CI by `scripts/coverage_floor.py`; a test count is not the measure).
 
 ## 5. Production readiness (tier-1 operator deployment)
 
@@ -314,17 +312,7 @@ RAN NF OAM still retries southbound writes with `time.sleep` inside the request 
 
 ### 5.2 Database (`PR-DB`)
 
-#### PR-DB-2 — Per-module schemas and roles
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| DB-2.1 ★ | Table → owning-module map for all tables (≈120) in a checked-in file (done: `migrations/table_owners.json`, which is the count) | File merged | – |
-| DB-2.2 | CI test: every table in the migrated schema is declared by exactly one module's models (done: `tests_integration/test_table_owners.py` and `check_migration_matches_models.py`) | Test fails on an orphan table | DB-2.1 |
-| DB-2.3 | List foreign keys that cross modules; each is a break of "modules talk only through R1" | List with a decision per FK (keep as ID reference without FK, or move) (done: 24, all decided "plain id", in the docstring of revision `0022`) | DB-2.1 |
-| DB-2.4 | Replace cross-module FKs by plain ID columns, one module pair per PR (done in one revision, `0022`: dropping a constraint changes no data, and the pairs share the same reasoning) | Per PR: tests and migration check green | DB-2.3 |
-| DB-2.5 | Pilot: `onboarding` tables in schema `onboarding`; `search_path` set by the service (done: revision `0023`; the search path is the role's own default, so the service sets nothing) | Module works; other modules unaffected | DB-2.2 |
-| DB-2.6 | Pilot role `smo_onboarding` with rights only on its schema (done for compose and the Helm chart: `scripts/db_roles.py`, `tests_integration/test_db_roles.py`, `databaseRoles` in the chart) | Role cannot read another schema (test) | DB-2.5 |
-| DB-2.7 | Repeat DB-2.5/2.6 for each remaining module (done for every module that uses the database: Onboarding, then ten in `0024`, then SME, DME, NFO, RApp Management, A1 Related, FOCOM, AIMgF, RAN NF OAM and R1 Termination in `0025`; MLLF and the mocks have no database) | Per module: runbook replay green | DB-2.6 |
+#### PR-DB-2 — Per-module schemas and roles (all steps done: `HISTORY.md` PR-DB-2)
 
 #### PR-DB-3 — Retention
 
@@ -380,15 +368,12 @@ Done (`HISTORY.md` §10): `smo_shared/outbox.py` (table, `enqueue`, `drain`, inl
 | Step | What | Done when | Needs |
 |---|---|---|---|
 
-#### PR-MSG-2 — Delivery worker
+#### PR-MSG-2 — Delivery worker (open: 2.4 to 2.6; MSG-2.1 to 2.3 done: `HISTORY.md` PR-MSG-2.1 to 2.3)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| MSG-2.1 | `ROLE=worker` entrypoint (same image) and a compose service (done as `smo_shared.worker`, MSG-4; it now also runs the outbox sweep) | Worker starts and idles | MSG-1.2 |
-| MSG-2.2 ★ | Claim rows with `FOR UPDATE SKIP LOCKED` | Two workers never send the same row (test) | MSG-2.1 |
-| MSG-2.3 | Back-off schedule 0 / 5 / 10 / 20 s as in `STANDARDS.md`, then `DEAD` | Fake-clock test | MSG-2.2 |
-| MSG-2.4 | Admin routes: list by status, requeue a `DEAD` row | Route tests | MSG-2.3 |
-| MSG-2.5 | Turn off inline `drain` when a worker is configured | Runbook replay green with worker only | MSG-2.3 |
+| MSG-2.4 | Admin routes: list by status, requeue a `DEAD` row (no route reads or changes `notification_outbox` today) | Route tests | MSG-2.3 |
+| MSG-2.5 | Turn off inline `drain` when a worker is configured (the switch is built: `SMO_OUTBOX_INLINE_DRAIN=false`, `smo_shared/outbox.py`; open: no CI lane replays the runbook with it off) | Runbook replay green with worker only | MSG-2.3 |
 | MSG-2.6 | Counters: sent, failed, dead, queue depth | Visible on `/metrics` | OBS-2.3 |
 
 #### PR-MSG-3 — Event bus
@@ -432,10 +417,7 @@ Postgres table with `NOTIFY` at commit, the feed on DME, the state-machine hook 
 `SECURITY.md` says the build is not hardened. `/bootstrap` and `/health` are unauthenticated (what `/bootstrap` reveals, and the three controls that narrow
 who can ask, are in `r1-termination/README.md` and `HISTORY.md` PR-SEC-9) and service-to-service calls are plain HTTP unless mutual TLS is switched on (`SMO_MTLS`, `docs/ARCHITECTURE.md`; off by default).
 
-#### PR-SEC-1 — TLS at the edge
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
+#### PR-SEC-1 — TLS at the edge (all steps done: `HISTORY.md` PR-SEC-1 and PR-SEC-1.6)
 
 #### PR-SEC-2 — mTLS between services (done: `HISTORY.md` PR-SEC-2 and PR-SEC-2.4)
 
@@ -501,15 +483,10 @@ Done (`HISTORY.md`, PR-SEC-10; decision `docs/adr/0005-tenant-region-authorizati
 | SEC-10.10 | A form in the GUI to set a claim on an invoker or an instance, and the place of an element (today an admin calls `PUT /sme/invoker-registrations/{id}/authz-scope` and `PUT /ran-nf-oam/managed-entities/{ref}/scope` through the API); a scoped rApp's refusals on the Safeguards page already show | Vitest | SEC-10.3 |
 | SEC-10.12 | Scoping the human users (an operator who may act on one tenant only, an approver for one region): the GUI session claim (`GUI-5.1`) and the BFF passing it to the modules | Claim in the session | GUI-5.1 |
 
-#### PR-SEC-11 — Tamper-evident audit
+#### PR-SEC-11 — Tamper-evident audit (open: SEC-11.6; SEC-11.1 to 11.5 done: `HISTORY.md` PR-SEC-11.1 to 11.5)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SEC-11.1 | Audit table in `smo_shared`: actor, action, target, result, correlation id, prev_hash, hash | Migration | – |
-| SEC-11.2 | `audit(...)` helper that chains hashes | Unit test detects an edited row | SEC-11.1 |
-| SEC-11.3 ★ | R1 Termination audits every proxied mutating call | One row per POST/PUT/PATCH/DELETE | SEC-11.2 |
-| SEC-11.4 | `verify_audit` command | Reports the first broken link | SEC-11.2 |
-| SEC-11.5 | Export as JSON lines and syslog | Output sample | SEC-11.2 |
 | SEC-11.6 | BFF audit view merges platform audit | GUI test | SEC-11.3 |
 
 #### PR-SEC-12 — Supply-chain evidence
@@ -519,11 +496,7 @@ Done (`HISTORY.md`, PR-SEC-10; decision `docs/adr/0005-tenant-region-authorizati
 | SEC-12.1 | SBOM generation per image in CI | Artifact attached | – |
 | SEC-12.2 | Image vulnerability scan with a severity gate (built in `image-scan.yml`; not yet shown to fail on a seeded finding in CI: `tests_integration/test_scan_summary.py` shows the gate on Trivy-shaped results) | Gate fails on a seeded finding | – |
 
-#### PR-SEC-13 — Container hardening
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| SEC-13.4 | Same settings in the Helm chart | `kubectl` shows them | OPS-2.2 |
+#### PR-SEC-13 — Container hardening (all steps done: `HISTORY.md` PR-SEC-13, PR-SEC-13.2 and PR-SEC-13.4)
 
 #### PR-SEC-14 — Threat model
 
@@ -625,33 +598,20 @@ Alembic is in place and compose runs it (`docs/adr/0001-schema-migrations.md`, `
 | Step | What | Done when | Needs |
 |---|---|---|---|
 
-#### PR-OPS-2 — Helm chart
+#### PR-OPS-2 — Helm chart (open: the Ingress reached from the kind host, OPS-2.9; the rest done: `HISTORY.md` PR-OPS-2 and PR-OPS-3.1)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OPS-2.1 ★ | Chart skeleton and `values.yaml` | `helm lint` green | – |
-| OPS-2.2 | One generic template looped over modules; `onboarding` first | Pod runs on kind | OPS-2.1 |
-| OPS-2.3 | Config and secret wiring (env, `*_FILE`) | Pod reads DB URL from a Secret | OPS-2.2 |
-| OPS-2.4 | Probes from `/live` and `/ready` | Probes pass | OPS-2.2 |
-| OPS-2.5 | Services, plus Ingress for R1 Termination and the GUI | Reachable from the kind host | OPS-2.2 |
-| OPS-2.6 | NetworkPolicy equal to the compose network rules (removed: the only rule isolated the mock Near-RT RIC; the chart has no `networkPolicy` any more) | – | OPS-2.2 |
-| OPS-2.7 | PodDisruptionBudget and HPA templates (off by default) | `helm template` renders | OPS-2.2 |
-| OPS-2.8 | CI: `helm lint` and a kind install | Job green | OPS-2.5 |
-| OPS-2.9 | Runbook replay against the kind install | Replay green | OPS-2.8 |
+| OPS-2.5 | Services, plus Ingress for R1 Termination and the GUI (the Services are built and used by every CI install; the Ingress is only rendered, `helm template --set ingress.enabled=true` in the `helm` job: no kind job installs an ingress controller or calls through it) | Reachable from the kind host | OPS-2.2 |
+| OPS-2.9 | Runbook replay against the kind install (today the kind jobs run the smoke gate `scripts/compose_e2e.py` and the roles script, not `tests_integration/test_demo_runbook.py`, which needs a callback receiver and package server reachable from the pods) | Replay green | OPS-2.8 |
 
-#### PR-OPS-3 — Migration as a release hook
+#### PR-OPS-3 — Migration as a release hook (open: OPS-3.2; OPS-3.1 done: `HISTORY.md` PR-OPS-2 and PR-OPS-3.1)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OPS-3.1 | Pre-upgrade Helm hook Job runs the migrations once | Upgrade runs it once | OPS-1.5, OPS-2.2 |
-| OPS-3.2 | Services refuse to become ready on an older schema | Test | ST-7.4 |
+| OPS-3.2 | Services refuse to become ready on an older schema. Not met by the chart's `wait-for-schema` init container (`migrate.py --wait`): it holds a new pod back before the process starts, on Helm only, and says nothing once the process runs; `/ready` checks the database connection and SME only (`smo_shared/health.py`), so a process whose database is put back to an older revision (a restore, a downgrade) stays ready | Test | ST-7.4 |
 
-#### PR-OPS-4 — Releases (open: 4.1b, 4.2 onward)
-
-Tag scheme and `CHANGELOG.md` exist (`PR-OPS-4.1`, `HISTORY.md` §10); no tag has been cut.
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
+#### PR-OPS-4 — Releases (all steps done: `HISTORY.md` PR-OPS-4, "`smo-v0.1.0` cut (OPS-4.1b)" and "Image release workflow (OPS-4.2, 4.3, 4.4, ...)"; tags `smo-v0.1.0` to `smo-v0.8.0`)
 
 #### PR-OPS-5 — Rolling upgrade
 
@@ -714,13 +674,7 @@ CI jobs pulled Postgres, Grafana, Loki, Tempo, Fluent Bit, Keycloak, base images
 
 Later by design; each feature assumes the stateless, database and messaging steps it names.
 
-#### PR-HA-1 — Run replicas
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| HA-1.1 | Two replicas per module in compose (`deploy.replicas`) or Helm (done in Helm: `ci/ha-values.yaml`, CI job `helm`; Onboarding, GUI backend and the mocks stay at one) | All start | – |
-| HA-1.2 | Replay the runbook against the replicas (CI job `compose-replicas`: `docker-compose.replicas.yml`, two of each module, callers reach them through Docker's DNS) | Green | HA-1.1 |
-| HA-1.3 | Fix list from failures in HA-1.2, one PR each (done: the replay passed on its first run, so the list is empty; spread of calls over replicas is checked on kind, see `CHANGELOG.md`) | List empty | HA-1.2 |
+#### PR-HA-1 — Run replicas (all steps done: `HISTORY.md` PR-HA-1)
 
 #### PR-HA-2 — Rolling restart
 
@@ -733,7 +687,7 @@ Later by design; each feature assumes the stateless, database and messaging step
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| HA-3.1 | Switchover during a replay (not done: only the unplanned kill is exercised) | Recovery time recorded | DB-7.4 |
+| HA-3.1 | Switchover during a replay (a planned switchover is exercised with a write probe through SME and its recovery time is in the job summary: the `postgres-ha` job of `smo-tests.yml`, step "A planned switchover to a replica"; open: the switchover during a runbook replay) | Recovery time recorded | DB-7.4 |
 | HA-3.2 | Primary kill (unplanned) during a replay (done as DB-7.4: a marker row committed before the kill is on the new primary) | No data loss for committed work | DB-7.4 |
 
 #### PR-HA-4 — Worker failover
@@ -743,11 +697,11 @@ Later by design; each feature assumes the stateless, database and messaging step
 | HA-4.1 | Kill the delivery worker mid-batch (done: the sweep of `MSG-2` was missing and is built here; CI job `helm`) | No lost notification; duplicates only where at-least-once allows | MSG-2.2 |
 | HA-4.2 | Kill the job runner mid-job (done on kind: the worker is scaled to 0 between the waves of a staged job, the job waits, and finishes when the worker is back; CI job `helm`) | Job resumes (`MSG-4.4`) | MSG-4.4 |
 
-#### PR-HA-5 — Placement
+#### PR-HA-5 — Placement (open: HA-5.1b, zones; HA-5.1 on nodes done: `HISTORY.md` PR-HA-5.1)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| HA-5.1 | Anti-affinity and topology spread in the chart (done as topology spread; rendering checked in CI, placement on several nodes not yet: the CI cluster has one node) | Pods land on different nodes | OPS-2.7 |
+| HA-5.1b | Spread over zones (`placement.zoneKey`): rendered and checked as a string in the `helm` job; never run on a cluster with zone labels (the three-node kind cluster of `smo-ha-kind.yml` has none) | Pods land in different zones | OPS-2.7 |
 
 #### PR-HA-6 — Disaster recovery
 
@@ -1013,20 +967,18 @@ MGT-14.1 to 14.5 are built, and the GUI tabs (`MGT-14.6`) and the failed-onboard
 
 #### PR-MGT-15 — Software campaigns (built: `HISTORY.md` PR-MGT-15; follow-ups open)
 
-MGT-15.1 to 15.4 are built, and the GUI tabs (`MGT-15.5`), the halted-campaign and failed-rollback notices (`MGT-15.6`) and the job timeout and reverse-order rollback (`MGT-15.7`) in `HISTORY.md` PR-MGT-14.6. What is left:
+MGT-15.1 to 15.4 are built, and the GUI tabs (`MGT-15.5`), the halted-campaign and failed-rollback notices (`MGT-15.6`) and the job timeout and reverse-order rollback (`MGT-15.7`) in `HISTORY.md` PR-MGT-14.6. The software job as a real exchange with the element (`MGT-15.8`) is done: `HISTORY.md` DOC-CF-1.8 flow 19. What is left:
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | MGT-15.6a | A notice when a gate fails under `onGateFailure: rollback` (the campaign is never `HALTED`, so only a rollback that fails is announced today); and making `rollbackOrder: reverse` the API's default, which changes what a rollback does for a client that sends nothing (a decision for the owner, release-noted) | Notification inventory test | – |
-| MGT-15.8 | The software management job becomes a real exchange with the element (download, install and activate a named version, report each phase); today `POST /software-management-jobs/{id}/advance` is the report, so a campaign orders and gates the jobs but does not tell an element what to install | Mock adaptor receives the version | `SB-10` or the SWM part of the O1 stub |
 | MGT-15.9 | Gate on KPIs (after `MGT-11`) beside the failed-job and alarm gates | Test | `MGT-11` |
 
-#### PR-MGT-16 — Intent and rApp conflict handling
+#### PR-MGT-16 — Intent and rApp conflict handling (MGT-16.2 done: `HISTORY.md` PR-MGT-16.2)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | MGT-16.1 | Target-overlap detection between two intents | Unit tests | – |
-| MGT-16.2 | `priority` field on intents | Migration | – |
 | MGT-16.3 | Conflict record and notification | Test | MGT-16.1 |
 | MGT-16.4 | Arbitration rule (higher priority wins; tie goes to the operator) | Test | MGT-16.2, MGT-16.3 |
 | MGT-16.5 | Same check for two rApps writing one target through config jobs | Test | MGT-16.1 |
@@ -1325,6 +1277,8 @@ Nothing open (GUI-9.10 and GUI-9.11 closed: `HISTORY.md` PR-GUI-9d).
 
 ### 5.14 Standards and compliance (`PR-STD`)
 
+STD-4.6 (`decided_by` and `pinnedBy` pinned to the signed-in GUI user) is done: `HISTORY.md` PR-STD-4.6.
+
 | Feature | Step | What | Done when | Needs |
 |---|---|---|---|---|
 | STD-1 | STD-1.1 | Close the §3 items (`SA-MLMR-1/6/7`, `SA-FOCOM-6/7`, `SA-RANOAM-1/4/8`, `SA-O1-4`); do not duplicate them here | §3 empty | – |
@@ -1333,45 +1287,34 @@ Nothing open (GUI-9.10 and GUI-9.11 closed: `HISTORY.md` PR-GUI-9d).
 | STD-4 | STD-4.2 | Retention per item (the inventory is `docs/PRIVACY.md`; its retention column says "none" for most rows) | Linked to `DB-3` | DB-3.1 |
 | STD-4 | STD-4.4 | Access logging for personal data reads | Rows appear | SEC-11.2 |
 | STD-4 | STD-4.5 | Erasure beyond the account (`docs/PRIVACY.md` section 4): write an opaque per-user id instead of the username in `gui_audit_log` and in the module columns that take `smo-gui:<username>` / `ack_user_id`, so deleting the user severs the link and the rows stay; or a tested SQL procedure per table. Decide first whether the audit rows are kept with a stated period instead | A deleted user's name appears in no table; a test shows it | – |
-| STD-4 | STD-4.6 | Pin `decided_by` (`POST /aimgf/models/{id}/advance`) and `pinnedBy` (O1 host keys) to the signed-in GUI user, as `requestedBy` is: today an operator can attribute either to any name | Test: the stored name is the caller's whatever the request says | – |
 | STD-4 | STD-4.7 | Make `gui_audit_log` tamper-evident: chain it as `smo_shared/audit.py` does, or write GUI actions into the platform chain with the person as `detail` (it is append-only in the ORM only, and a GUI action reaches the platform chain under the GUI's own invoker id) | `verify` detects an edited GUI audit row | SEC-11.6 |
 
 ### 5.15 Quality engineering (`PR-QA`)
 
-#### PR-QA-1 — Load generator and baseline
+#### PR-QA-1 — Load generator and baseline (open: cells in the seed, baselines at 1k and 100k; QA-1.2 and 1.3 done: `HISTORY.md` PR-QA-1.2, 1.3)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| QA-1.1 | Synthetic managed elements, cells, PM and alarms (scale knob) | Script seeds 1k elements | – |
-| QA-1.2 | Seed script for large tables (used by `DB-4.2`) | 1M rows in under 10 minutes | QA-1.1 |
-| QA-1.3 | Load script for the top routes (k6 or locust) | Runs against compose | QA-1.1 |
-| QA-1.4 | Baseline numbers recorded at 1k, 10k and 100k elements | Table in `docs/` | QA-1.3 |
+| QA-1.1 | Synthetic managed elements, cells, PM and alarms (scale knob). Built for elements, alarms and performance files (`scripts/load_seed.py --elements N`); open: cells, managed objects and KPI results are not seeded (`docs/PERFORMANCE.md`, "Not yet covered") | Script seeds 1k elements with their cells | – |
+| QA-1.4 | Baseline numbers recorded at 1k, 10k and 100k elements (recorded at 10k only: `docs/PERFORMANCE.md`, "Baselines", 0.5.0) | Table in `docs/` | QA-1.3 |
 
-#### PR-QA-2 — Contract tests
+#### PR-QA-2 — Contract tests (all steps done: `HISTORY.md` PR-QA-2)
 
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| QA-2.1 | Pilot: schemathesis or similar over one module's `docs/openapi/` file | Runs in CI | – (done: `tests_integration/test_contract_schemathesis.py`, eight modules) |
-| QA-2.2 | Consumer-side checks for cross-module calls made through `R1Client` | Break detected on a seeded change | – (done: `tests_integration/test_r1_consumer_calls.py`, 195 literal-path calls checked, waivers in `r1_consumer_waivers.json`) |
-| QA-2.3 | Roll out to every module | Job covers all | QA-2.1 |
-
-#### PR-QA-3 — Failure injection
+#### PR-QA-3 — Failure injection (QA-3.2 done: `HISTORY.md` PR-QA-3.2)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| QA-3.1 | Kill Postgres during a replay | Clean 503s and recovery | – |
-| QA-3.2 | Kill SME during a replay | Same | – |
+| QA-3.1 | Kill Postgres during a replay. Recovery is checked (`.github/workflows/smo-stress.yml`: Postgres stopped, a database-backed route probed through the gateway, then 200 within 90 s once it is back); open: the invariant there is any 5xx within the deadline, not a clean 503 with `Retry-After`, and the probes run after the load, not during a replay | Clean 503s and recovery | – |
 | QA-3.3 | Slow or dead webhook subscriber | Other calls unaffected | MSG-2.2 |
 | QA-3.4 | Replica kills | See `HA-2` | HA-1.2 |
 
-#### PR-QA-4 to QA-8
+#### PR-QA-4 to QA-8 (QA-6.2 done: `HISTORY.md` PR-QA-6.2)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | QA-4.1 | Upgrade test in CI: previous schema to head, then the replay | Job green | OPS-1.6 |
 | QA-5.1 | 24-hour soak at baseline load | No memory or pool growth | QA-1.4 (OBS-2.4 done) |
 | QA-5.2 | 72-hour soak | Same | QA-5.1 |
-| QA-6.2 | Role matrix test for the GUI BFF (`rbac.py`) | Every rule has a positive and a negative test | – |
 | QA-7.1 | `mllf` route tests (6 tests, 100 % of its 26 statements: raising the count is not needed, see `docs/VALIDATION.md`) | ≥ 20 route-level tests | – |
 | QA-7.2 | Same for `ran-analytics`, `mock-o1-adaptor`, `so-smos`, `r1-termination` | Counts raised, one PR each | – |
 | QA-7.3 | Coverage floor in CI (done: `coverage_floors.json`, `scripts/coverage_floor.py`) | Floor enforced | QA-7.1 |
@@ -1382,7 +1325,7 @@ Nothing open (GUI-9.10 and GUI-9.11 closed: `HISTORY.md` PR-GUI-9d).
 Pick any, or mix them. `Needs` is the only constraint.
 
 1. **Replica-safe foundation (no new infrastructure):** done.
-2. **Safe to expose:** done (SEC-1.6 and SEC-13.2: `HISTORY.md` §10); SEC-13.4 follows the Helm chart.
+2. **Safe to expose:** done (SEC-1.6, SEC-13.2 and SEC-13.4: `HISTORY.md` §10).
 3. **Operable:** done (OBS-1, OBS-2.1–2.3, OPS-1.1–1.5 and 1.7, OPS-4.1); open: OBS-2.8. OPS-1.6 done; OPS-4.1b done (`smo-v0.1.0`).
 4. **Durable notifications:** MSG-1.1–1.10 done (SA SMOS has no destination call to move; the DME stop-job DELETE moved last, as a `DELETE` row).
 5. **First real O1 path:** SB-3, SB-5.1–5.2, SB-1.1–1.2 done; SB-1.3 to 1.9 done (the netopeer2 lab answers the SSH wrapper, the route's read and a model write in CI).
