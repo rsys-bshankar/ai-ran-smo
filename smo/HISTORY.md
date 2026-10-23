@@ -228,6 +228,8 @@ Recurring conventions referred to below:
   write rule; and `GUI_RBAC_GAPS`, one row per route of this decision, the TS 28.105 writes expected to have no rule for any role);
   `gui/src/auth/permissions.fixture.json` regenerated (`gui-bff/scripts/export_permissions.py`). CHANGELOG: `### Added` (the admin rules) and
   `### Fixed` (the Unsubscribe button).
+  Follow-up: GUI-11.2 (below, with the PR-GUI entries) replaced (4): the TS 28.105 requests and the training-process controls now have operator
+  rules, the inference functions, loading policies and policy trigger admin rules, and the progress route still none.
 
 ## 3. Call-flow gaps (former §3)
 
@@ -2447,6 +2449,49 @@ A review of the console listed thirteen defects; three were already gone with th
   the button is drawn for an admin and not for an operator or a viewer; after the confirm it sends the DELETE with the producer in the path and
   `analytics_type` in the query, and the reloaded list no longer has the producer; a declined confirm sends nothing. Call flow 08a's note and
   `gui/README.md` say the console now has the button.
+
+### GUI-11.2 — console pages and BFF rules for the TS 28.105 provisioning resources (call flow 27)
+
+The console read none of AIMgF's TS 28.105 provisioning resources and the BFF had no rule for their writes (`GUI-RBAC-GAPS` (4), §2, decided "no
+console rules now"). This is its follow-up: the owner decided which writes the console makes and with which role, and the rules, the page and call
+flow 27 now say the same. Checked first against `aimgf/app/nrm.py`: all seven resources exist (`/ml-training-requests`, `/ml-training-processes`,
+`/ml-testing-requests`, `/ml-update-requests`, `/ml-model-loading-requests`, `/aiml-inference-functions`, `/ml-model-loading-policies`).
+
+- **The decision, route by route** (`gui-bff/app/rbac.py`, `RULES`, in the AI Platform block):
+  - Reads (list and detail) of all seven: **viewer**, by the module catch-all `GET /aimgf/...`, which already allowed them; no new read rule.
+  - `POST /aimgf/ml-(training|testing|update|model-loading)-requests` and `PATCH` of each `{id}` (the spec's `cancelRequest` / `suspendRequest` flags):
+    **operator**, as `POST /training-jobs`: a training or testing request is the same `TrainingJob` / `ValidationJob`, started by `_start_training` /
+    `_start_validation`.
+  - `PATCH /aimgf/ml-training-processes/{id}`: **operator**. The route exists (`modify_ml_training_process`): `cancelProcess` / `suspendProcess` act on
+    the run exactly like the request's flags, and `priority` / `terminationConditions` are plain writes. Decided with the requests' logic; the page
+    sends only the flags.
+  - `POST /aimgf/aiml-inference-functions`, `PATCH /aimgf/aiml-inference-functions/{id}` (`activationStatus`, `managedActivationScope`, `userLabel`),
+    `POST /aimgf/ml-model-loading-policies` and `POST /aimgf/ml-model-loading-policies/{id}/trigger`: **admin**, platform configuration like the MDA
+    functions. A loading policy has no `PATCH` route (only `POST`, `GET`, `DELETE` and `trigger`), so there is no policy PATCH rule.
+  - `POST /aimgf/ml-training-processes/{id}/progress`: **no rule** (the training runtime's report; every console role is refused).
+  - Not part of the decision and left with no rule: `DELETE /ml-training-requests/{id}` (the page cancels with `PATCH`),
+    `DELETE /aiml-inference-functions/{id}` and `DELETE /ml-model-loading-policies/{id}`.
+- **The console reaches AIMgF as the console.** The BFF calls R1 with its own `smo-gui` identity (role `internal`) and sends no `X-R1-On-Behalf-Of`,
+  so `_acts_for_rapp` is false and the ownership rule (`_owner_may_act`, `_check_job_owner`, `_check_rapp_owns_models`) does not ask it, even on a
+  model an rApp owns. `tests_integration/test_model_ownership.py::test_the_console_makes_the_ts28105_writes_on_an_rapps_model_through_the_mesh`
+  proves it on an rApp-owned model: a training request starts, is suspended, resumed through its process and cancelled; testing, loading and policy
+  trigger reach the lifecycle gate (409, not 403); an update request starts and is cancelled; a function is created and activated; another rApp is
+  still 403.
+- **The page.** A **TS 28.105 provisioning** tab on the AI/ML page (`#provisioning`), not a new top-level page: the page already holds the AIMgF and
+  MLMR resources per tab (training, inference, feature groups, coordination groups, MLMF, registry), and these resources are the same runs and
+  models seen through TS 28.105. `sections/Provisioning.tsx`: a switch between the seven resources, one server-paged table each (`ServerTable`, section
+  `aiml.nrm.<kind>`), a row opens a drawer with every attribute. `sections/NrmControls.tsx`: Suspend / Resume / Cancel through the `PATCH` flags
+  (requests and processes, offered only in a status AIMgF accepts), Activate / Deactivate of a function, Trigger of a policy. `sections/NrmForms.tsx`:
+  the create dialogs with each body's required fields (a model, or one or more models, an inference function; a function's inference name), disabled
+  until filled; requests carry the source `smo-gui`, as the Coordination tab's Retrain does. Every write is an `ActionButton` or behind `Can`, so the
+  permission map hides it from a role without the rule and a viewer sees read-only tables. Strings in `i18n/en/aiml.ts` and `i18n/de/aiml.ts`.
+- **Call flow 27** restated: the console (operator, or admin for functions and policies) is a caller in 27a to 27d, the "Who may act" paragraph has
+  a table of the console's writes and roles, and "Decisions this flow depends on" names this entry; the images re-rendered.
+- Evidence: `gui-bff/tests/test_rbac_matrix.py` (generated cases for every new rule and role; the viewer negative for every write; `GUI_RBAC_GAPS`
+  rows for each route above, the progress route and the three DELETEs with no rule); `gui/src/pages/aiml/__tests__/Provisioning.test.tsx` (lists and
+  a drawer for a viewer with no write button, an operator's training-request and loading-request bodies and the request and process PATCH flags, no
+  admin write for an operator, an admin's activate and trigger); `gui/src/auth/permissions.fixture.json` regenerated
+  (`gui-bff/scripts/export_permissions.py`). CHANGELOG `### Added`.
 
 ### PR-GUI-9 meets PR-SEC-10.9 / PR-MGT-2.6 — what the merge with `main` decided
 

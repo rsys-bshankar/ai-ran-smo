@@ -1,5 +1,5 @@
 /** The AI/ML page (route /aiml, BRIEF §4 AI/ML, handoff `Aiml.dc.html`, SCALE.md "AI/ML"): model registration → training → validation →
- * certification → deployment → inference, per `docs/call-flows/02-aiml-model-train-to-inference.md`. Layout only: the tabs (kept in the URL hash,
+ * certification → deployment → inference, per `docs/call-flows/02-aiml-model-train-to-inference.md`, and (TS 28.105 tab) the provisioning resources of call flow 27. Layout only: the tabs (kept in the URL hash,
  * pre-redesign ids still work) and the sections each tab places; every section owns its data through `data/queries.ts`, and only the visible
  * tab's sections mount, so only its calls run. Sections and budgets: README.md. `Mlmf` is also the KPIs page's "Model KPIs (MLMF)" tab; `ModelActions` and
  * `useModelNames` are also the Approvals inbox's model gates (GUI-7.3). */
@@ -23,6 +23,7 @@ import { ModelDetail } from "./sections/ModelDetail";
 import { RegisterModel } from "./sections/ModelForms";
 import { ModelRuntime } from "./sections/ModelRuntime";
 import { ModelTable } from "./sections/ModelTable";
+import { Provisioning } from "./sections/Provisioning";
 import { ArtifactVersions, Repositories, Storages } from "./sections/Registry";
 import { TrainingNow, WaitingForGovernance } from "./sections/SideCards";
 import { StageBoard } from "./sections/StageBoard";
@@ -34,7 +35,7 @@ export { Mlmf } from "./sections/Mlmf";
 export { useModelNames } from "./data/queries";
 export { ModelActions } from "./sections/ModelActions";        // GUI-7.3: the Approvals inbox decides model gates with the same buttons
 
-const TABS = ["models", "training", "inference", "features", "groups", "mlmf", "registry"] as const;
+const TABS = ["models", "training", "inference", "features", "groups", "mlmf", "registry", "provisioning"] as const;
 
 /** The page. */
 export function Aiml() {
@@ -55,6 +56,7 @@ export function Aiml() {
         { id: "groups", label: t("aiml.tabs.groups") },
         { id: "mlmf", label: t("aiml.tabs.mlmf"), count: breaches || null, tone: breaches ? "bad" : undefined },
         { id: "registry", label: t("aiml.tabs.registry") },
+        { id: "provisioning", label: t("aiml.tabs.provisioning") },
       ]} />
       {tab === "models" && <ModelsTab onTraining={() => setTab("training")} />}
       {tab === "training" && <SectionBoundary id="aiml.training"><TrainingJobs /></SectionBoundary>}
@@ -71,6 +73,7 @@ export function Aiml() {
           <SectionBoundary id="aiml.artifactVersions"><ArtifactVersions /></SectionBoundary>
         </div>
       )}
+      {tab === "provisioning" && <SectionBoundary id="aiml.nrm"><Provisioning /></SectionBoundary>}
       {registering && <RegisterModel onClose={() => setRegistering(false)} />}
     </>
   );

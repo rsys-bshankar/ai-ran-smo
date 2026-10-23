@@ -12,8 +12,8 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `aimgf` | 17 | 283 | 433 |
 | `dme` | 14 | 170 | 183 |
 | `focom` | 3 | 85 | 85 |
-| `gui` | 50 | 514 | — |
-| `gui-bff` | 17 | 439 | 1600 |
+| `gui` | 51 | 519 | — |
+| `gui-bff` | 17 | 439 | 1682 |
 | `intent-service` | 5 | 84 | 104 |
 | `mdaf` | 4 | 58 | 62 |
 | `mllf` | 1 | 10 | 10 |
@@ -36,8 +36,8 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `shared` | 50 | 663 | 1118 |
 | `sme` | 5 | 121 | 139 |
 | `so-smos` | 3 | 27 | 40 |
-| `tests_integration` | 93 | 716 | 893 |
-| **total** | **415** | **5326** | **7643** (Python) |
+| `tests_integration` | 93 | 717 | 894 |
+| **total** | **416** | **5332** | **7726** (Python) |
 
 ## Per test file
 
@@ -98,7 +98,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 
 </details>
 
-<details><summary><code>gui</code>: 50 files</summary>
+<details><summary><code>gui</code>: 51 files</summary>
 
 | file | test functions | collected tests |
 |---|---:|---:|
@@ -121,6 +121,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `src/lib/operatorUi.test.ts` | 25 | — |
 | `src/pages/admin/__tests__/Admin.test.tsx` | 7 | — |
 | `src/pages/aiml/__tests__/Aiml.test.tsx` | 16 | — |
+| `src/pages/aiml/__tests__/Provisioning.test.tsx` | 5 | — |
 | `src/pages/aiml/__tests__/board.test.ts` | 6 | — |
 | `src/pages/alarms/__tests__/Alarms.test.tsx` | 18 | — |
 | `src/pages/approvals/__tests__/Approvals.test.tsx` | 17 | — |
@@ -171,7 +172,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests/test_preferences_summary.py` | 24 | 37 |
 | `tests/test_rapps.py` | 34 | 37 |
 | `tests/test_rbac.py` | 16 | 173 |
-| `tests/test_rbac_matrix.py` | 6 | 893 |
+| `tests/test_rbac_matrix.py` | 6 | 975 |
 | `tests/test_retention.py` | 7 | 7 |
 | `tests/test_scope_claims.py` | 9 | 22 |
 | `tests/test_shared_state.py` | 20 | 23 |
@@ -614,7 +615,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests_integration/test_migrations.py` | 14 | 19 |
 | `tests_integration/test_mirror_images.py` | 31 | 35 |
 | `tests_integration/test_mobility_optimization_rapp.py` | 7 | 7 |
-| `tests_integration/test_model_ownership.py` | 6 | 6 |
+| `tests_integration/test_model_ownership.py` | 7 | 7 |
 | `tests_integration/test_module_isolation.py` | 1 | 14 |
 | `tests_integration/test_msac_credential_through_dme.py` | 3 | 3 |
 | `tests_integration/test_mtls.py` | 24 | 24 |

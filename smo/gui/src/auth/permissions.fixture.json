@@ -334,6 +334,48 @@
     "queryMatch": {}
   },
   {
+    "method": "POST",
+    "pattern": "^/aimgf/ml-(training|testing|update|model-loading)-requests$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "PATCH",
+    "pattern": "^/aimgf/ml-(training|testing|update|model-loading)-requests/[^/]+$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "PATCH",
+    "pattern": "^/aimgf/ml-training-processes/[^/]+$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/aimgf/aiml-inference-functions$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "PATCH",
+    "pattern": "^/aimgf/aiml-inference-functions/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/aimgf/ml-model-loading-policies$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/aimgf/ml-model-loading-policies/[^/]+/trigger$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
     "method": "PATCH",
     "pattern": "^/ran-nf-oam/alarms/[^/]+/ack$",
     "role": "operator",

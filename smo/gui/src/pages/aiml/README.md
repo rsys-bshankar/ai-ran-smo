@@ -4,7 +4,7 @@ Route: `/aiml`    Design: handoff `Aiml.dc.html` (BRIEF §4 AI/ML, §4e features
 
 Model registration → training → validation → certification → deployment → inference
 (`docs/call-flows/02-aiml-model-train-to-inference.md`). Tabs (URL hash): `models` (default), `training`, `inference`, `features`,
-`groups` (coordination), `mlmf`, `registry`. The pre-redesign ids are unchanged. `Mlmf` is also mounted by the KPIs page (`#mlmf`).
+`groups` (coordination), `mlmf`, `registry`, `provisioning` (TS 28.105, call flow 27, GUI-11.2). The pre-redesign ids are unchanged. `Mlmf` is also mounted by the KPIs page (`#mlmf`).
 
 Every word on the page comes from the catalog (`src/i18n/en/aiml.ts`, `de/aiml.ts`; GUI-6.4); its literal count is 0.
 
@@ -28,6 +28,7 @@ Every word on the page comes from the catalog (`src/i18n/en/aiml.ts`, `de/aiml.t
 | aiml.groups | sections/CoordinationGroups.tsx | coordination groups, retrain, create | `/mlmr/coordination-groups` | 15 s | 1 call/page |
 | aiml.mlmf | sections/Mlmf.tsx | MLMF subscriptions, reports of the selected one, subscribe, inject | `/aimgf/mlmf/subscriptions`, `/…/{id}/reports` | 15 s | 1–2 calls |
 | aiml.repositories / storages / artifactVersions | sections/Registry.tsx | MLMR repositories, storages, every model's artifact versions | `/mlmr/ml-model-repositories`, `/mlmr/storages`, `/mlmr/models` | 15 s | 3 calls |
+| aiml.nrm.&lt;kind&gt; | sections/Provisioning.tsx, NrmControls.tsx, NrmForms.tsx | one TS 28.105 resource at a time (training, testing, update, loading requests, training processes, inference functions, loading policies), a drawer with every attribute; Suspend / Resume / Cancel (operator), Activate / Deactivate and Trigger (admin), the create dialogs (requests operator, functions and policies admin) | `/aimgf/ml-training-requests`, `/ml-training-processes`, `/ml-testing-requests`, `/ml-update-requests`, `/ml-model-loading-requests`, `/aiml-inference-functions`, `/ml-model-loading-policies` (+ `/mlmr/models` for names) | 15 s | 2 calls |
 
 First load of the Models tab: 7 calls (summary, stage counts, four board reads, the training card), pinned by `__tests__/Aiml.test.tsx`.
 Selecting a model adds about 7 (detail, lifecycle, guard, governance, jobs). Every other tab: 1–3.
@@ -44,6 +45,9 @@ Selecting a model adds about 7 (detail, lifecycle, guard, governance, jobs). Eve
   linear estimate ((now − started) / epoch × epochs left), not a trainer forecast.
 - **Deprecate / Retire rationale**: AIMgF records a rationale only for governance events (roll back); deprecate and retire appear in the
   lifecycle history, and the rationale typed for them is sent but not stored.
+- **TS 28.105 tab**: a training process's progress (`POST .../progress`) is the training runtime's and has no button; the DELETE routes of these
+  resources have no BFF rule (a request is cancelled with its `PATCH` flag). The forms send only each body's required fields (the spec's optional
+  attributes are left to the API); a training process's `priority` and `terminationConditions` are not edited here.
 - **Registry writes**: the BFF exposes no write on repositories or storages; the Registry tab is read-only. MLMR has no list of a model's
   artifact versions: they are counted from `artifactLocation` when it has the form MLMR writes on upload, `model-artifact:<model id>:<latest>`
   (`data/board.ts` `ARTIFACT_LOCATION_RE`, GUI-10.6); any other location (an external URI) lists no version.

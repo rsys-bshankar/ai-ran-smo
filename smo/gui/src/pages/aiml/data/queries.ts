@@ -10,7 +10,7 @@ import type {
   CertificationRecord, CoordinationGroup, DmeType, InferenceJob, MlmfReport, MlmfSubscription, Model, ModelLifecycle, TrainingJob,
 } from "../../../api/types";
 import { useSummary } from "../../../data/summary";
-import type { LifecycleTransition } from "./types";
+import type { LifecycleTransition, NrmObject } from "./types";
 
 /** MLMR registered models (`model_type` filter). */
 export const MODELS = "/mlmr/models";
@@ -36,6 +36,22 @@ export const STORAGES = "/mlmr/storages";
 export const DME_TYPES = "/dme/dme-types";
 /** AIMgF's count of lifecycle rows per state (GUI-9.8). */
 export const LIFECYCLE_COUNTS = "/aimgf/model-lifecycles/counts";
+/** AIMgF's TS 28.105 provisioning resources (call flow 27, GUI-11.2): each is `{id, attributes}` with the spec's attribute names. */
+export const ML_TRAINING_REQUESTS = "/aimgf/ml-training-requests";
+/** AIMgF MLTrainingProcess (one per training request; read and suspend / resume / cancel). */
+export const ML_TRAINING_PROCESSES = "/aimgf/ml-training-processes";
+/** AIMgF MLTestingRequest (a validation job). */
+export const ML_TESTING_REQUESTS = "/aimgf/ml-testing-requests";
+/** AIMgF MLUpdateRequest (FINE_TUNING runs of several models). */
+export const ML_UPDATE_REQUESTS = "/aimgf/ml-update-requests";
+/** AIMgF MLModelLoadingRequest. */
+export const ML_LOADING_REQUESTS = "/aimgf/ml-model-loading-requests";
+/** AIMgF AIMLInferenceFunction. */
+export const INFERENCE_FUNCTIONS = "/aimgf/aiml-inference-functions";
+/** AIMgF MLModelLoadingPolicy (`/{id}/trigger` loads its models). */
+export const LOADING_POLICIES = "/aimgf/ml-model-loading-policies";
+/** TS 28.105 MLTrainingType values (`aimgf/app/ts28105.py`). */
+export const ML_TRAINING_TYPES = ["INITIAL_TRAINING", "PRE_SPECIALISED_TRAINING", "RE_TRAINING", "FINE_TUNING"] as const;
 /** The backend's MAX_LIMIT: the largest page one read can ask for. */
 export const BOARD_LIMIT = 500;
 /** How many recent MLMF reports the board reads to decide which model's latest report is under its floor. */
@@ -144,4 +160,9 @@ export function useCoordinationGroups() {
 /** DME data types (`enabled`: only fetched once a form needs them). */
 export function useDmeTypes(enabled = true) {
   return useSmo<DmeType[]>(enabled ? DME_TYPES : null);
+}
+
+/** The AI/ML inference functions in one read (≤ BOARD_LIMIT), for the loading forms (`enabled`: only fetched once a form needs them). */
+export function useInferenceFunctions(enabled = true) {
+  return useSmoPage<NrmObject>(enabled ? INFERENCE_FUNCTIONS : null, { limit: BOARD_LIMIT });
 }
