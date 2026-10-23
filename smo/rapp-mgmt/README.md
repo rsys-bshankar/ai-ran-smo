@@ -10,7 +10,7 @@
 | Called by | Operators and GUI BFF; the rApp container itself (`bootstrap-complete`, `performance` and `operator-api`, each for its own instance only, and reads of its own `config`; the gateway refuses an rApp the other changes, `PUT config` and `fault`, which are an operator's); R1 Termination (`GET operator-api`, to resolve `/rapps/{instanceId}/operator/...`); Intent Service (reads an instance's `autonomyMode` and `regionScope`); SA SMOS (`rollback`, `versions`); the reference rApps (read their own instance) |
 | Database tables | `rapp_instance` (versioned), `rapp_instance_version`, `rapp_fault_report`, `rapp_performance_report` |
 | Idempotency | `POST /instances` accept an `Idempotency-Key` header (`smo_shared/idempotency.py`; the `idempotency_key` table is shared, not this module's) |
-| Unit tests | 225 passed (`tests/`, SQLite, standalone) |
+| Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
 | Status | Done. No open item in [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md) names this module; limits in 2.8 |
 | Time-driven behaviour | On request, never on a timer: an overdue upgrade is rolled back the next time either row is touched |
 
@@ -299,7 +299,7 @@ cd smo/rapp-mgmt && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | `tests/test_main.py` (event bus) | `MSG-3.5`: an instance's RECOVER is published as `org.oran.smo.rapp-instance.state-changed` about the instance, from the state machine's one hook | 1 |
 | `tests/test_main.py`, `tests/test_upgrade.py` (call flow 07) | DOC-CF-1.3: a crash keeps the limit and policy and terminate drops them and the stop; a failed bootstrap; a stopped instance's replacement is stopped, an unstopped one is not, an unreadable or refused stop refuses the upgrade (the replacement torn down); the replacement's address; its credentials pushed; its bootstrap commits, its critical fault rolls back; a critical fault before bootstrap | 14 |
 | `tests/test_main.py` (call flow 15) | DOC-CF-1.4: a create NFO refuses or does not answer fails and leaves no usage registration or identity behind; the detail shows the workload as NFO sees it (ABNORMAL with its reason, GONE, UNKNOWN), none without a workload | 8 |
-| | Total (the whole suite, `PYTHONPATH=.:../shared python -m pytest tests/ -q`; some files predate this table and have no row) | 248 |
+| | Total (the whole suite, `PYTHONPATH=.:../shared python -m pytest tests/ -q`; some files predate this table and have no row) | [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md) |
 
 ### 3.3 What is not covered here
 

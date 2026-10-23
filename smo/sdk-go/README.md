@@ -10,7 +10,7 @@
 | Called by | Any rApp written in Go; the example `examples/hello-rapp`. No SMO module imports it |
 | Database tables | None |
 | Retries and idempotency | 4 attempts, 200 ms base doubling to a 5 s cap, equal jitter, `Retry-After` honoured, context-aware; every POST carries a generated `Idempotency-Key` reused by every repeat; a `409 CONCURRENT_MODIFICATION` is repeated once (as `../sdk/smo_sdk/_common.py` does) |
-| Unit tests | 66 passed (`go test -race`: 63 in the library, 3 in the example; 92 % of the library's statements), no network beyond `httptest` |
+| Unit tests | `go test -race`, the library and the example; 92 % of the library's statements; no network beyond `httptest` (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
 | Status | Done for RAPP-4.2 to 4.5 (Go); not run against a live compose stack (see 3.3). The Java SDK is a separate change |
 
 ## 1. High-level design (HLD)
@@ -135,7 +135,7 @@ An rApp token is held to `smo_shared/roles.py`: reads are open, **changes** only
 cd smo/sdk-go && gofmt -l . && go vet ./... && go test -race -count=1 -cover ./...
 ```
 
-### 3.1 What is tested (66 tests)
+### 3.1 What is tested (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md))
 
 | File | Tests |
 |---|---|

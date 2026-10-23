@@ -15,7 +15,7 @@ A Non-RT RIC rApp that predicts sustained low PRB utilisation from O1 PM data, p
 | Operator API | served on `:8000` as `/instances/...`; the instance's base URL is registered at rApp Management (`operatorApiBase` when the instance is created) and R1 Termination reaches it at `/rapps/<instance>/operator/...`. The page the GUI draws for it is declared in `manifest.yaml` (`operatorUi`) |
 | Call flow | [22-energy-saving-closed-loop.md](../../docs/call-flows/22-energy-saving-closed-loop.md) |
 | Demo runbook | [DEMO_RUNBOOK.md](../../DEMO_RUNBOOK.md) section 24 (`demo.py` steps 00-11) |
-| Unit tests | 88 passed |
+| Unit tests | `tests/` (counts: [docs/TEST_COUNTS.md](../../docs/TEST_COUNTS.md)) |
 
 ## What it does
 
@@ -118,7 +118,7 @@ Served on port 8000. R1 Termination reaches it at `/rapps/<instance>/operator/..
 
 ## Run and test
 
-Unit tests (88 passed):
+Unit tests (counts: [docs/TEST_COUNTS.md](../../docs/TEST_COUNTS.md)):
 
 ```bash
 cd smo/samples/energy-saving-rapp && PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q

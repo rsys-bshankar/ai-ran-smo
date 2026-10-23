@@ -9,7 +9,7 @@
 | Depends on (over R1) | AIMgF (`GET /aimgf/ml-models/{id}/nrm-refs`, best-effort) |
 | Called by | AIMgF (`/mlmr/models/{id}`, `/mlmr/coordination-groups`), rApps through the SDK (`/mlmr/coordination-groups`), GUI via the BFF (`/mlmr/models`, artifact upload, coordination groups) |
 | Database tables | `aiml_model`, `model_artifact`, `ml_model_coordination_group`, `ml_model_repository`, `ml_models_storage`, `ml_model_profile`, `model_change_subscription` (declared, unused) |
-| Unit tests | 77 passed (`tests/`, SQLite, standalone) |
+| Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
 | Status | Done for Phase 1. TS 29.482 `MLModel`, storages / profiles, store / discovery requirements and discovery are built (`SA-MLMR-1`, `-6`, `-7`, `-8`, `-9`); limits in [section 2.8](#28-limits-and-open-items). Object storage (S3) is out of scope |
 
 ## 1. High-level design (HLD)

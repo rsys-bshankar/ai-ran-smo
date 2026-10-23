@@ -9,7 +9,7 @@
 | Depends on (over R1) | AIMgF (`GET /aimgf/models/{id}/lifecycle`, `PATCH /aimgf/models/{id}/runtime/node-groups`) |
 | Called by | rApps through the SDK (`sdk/smo_sdk/lifecycle.py`), GUI via the BFF |
 | Database tables | none (stateless) |
-| Unit tests | 6 passed (`tests/`, standalone, AIMgF faked) |
+| Unit tests | `tests/`, standalone, AIMgF faked (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
 | Status | Done. Deliberately thin; test coverage is the shallowest of the AI modules (`OI-4` in [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md)) |
 
 ## 1. High-level design (HLD)

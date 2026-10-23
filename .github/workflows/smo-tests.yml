@@ -218,6 +218,11 @@ jobs:
         working-directory: smo
         run: PYTHONPATH=shared python -m pytest tests_integration/ -v
 
+      # The READMEs link to docs/TEST_COUNTS.md instead of stating hand-typed totals; this fails (with the diff) when tests were added or removed without regenerating it
+      - name: Test counts table is current (docs/TEST_COUNTS.md)
+        working-directory: smo
+        run: python scripts/count_tests.py --check
+
   gui:
     name: Operator GUI (typecheck, Vitest, build)
     runs-on: ubuntu-latest
