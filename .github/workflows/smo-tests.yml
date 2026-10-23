@@ -1717,10 +1717,17 @@ jobs:
       - name: What the cluster says, when it went wrong
         if: failure()
         run: |
-          kubectl -n smo get pods,jobs,cluster,events --sort-by=.lastTimestamp | tail -80 || true
+          kubectl -n smo get pods,jobs,cluster -o wide || true
+          # .lastTimestamp is empty on events.k8s.io events, so sort by creation: a probe failure or a kill of a Postgres instance shows here
+          kubectl -n smo get events --sort-by=.metadata.creationTimestamp | tail -80 || true
           cat smo/probe.log probe.log 2>/dev/null || true
+          # every Postgres instance, ready or not: a stopped primary shows Running with no restart while it shuts down
+          for pod in $(kubectl -n smo get pods -l cnpg.io/cluster=smo-pg --no-headers -o custom-columns=:metadata.name); do
+            echo "::group::$pod"; kubectl -n smo describe pod "$pod" | tail -30; kubectl -n smo logs "$pod" -c postgres --tail=40 || true
+            kubectl -n smo logs "$pod" -c postgres --previous --tail=40 2>/dev/null || true; echo "::endgroup::"
+          done
           for pod in $(kubectl -n smo get pods --no-headers | grep -vE 'Running|Completed' | cut -d' ' -f1); do
             echo "::group::$pod"; kubectl -n smo describe pod "$pod" | tail -40; kubectl -n smo logs "$pod" --all-containers --tail=60 || true; echo "::endgroup::"
           done
           kubectl -n smo logs job/migrate --tail=80 || true
-          kubectl -n cnpg-system logs deploy/cnpg-controller-manager --tail=80 || true
+          kubectl -n cnpg-system logs deploy/cnpg-controller-manager --tail=300 || true

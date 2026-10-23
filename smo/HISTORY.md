@@ -2822,6 +2822,11 @@ with a database has a role), comments in `_helpers.tpl`, `modules.yaml`, `ci/cnp
 every module under autoscaling (OPS-HPA-REPLICAS), waiting for the pooler and a slow first Postgres (OPS-START-ORDER), Postgres published on every
 interface (OPS-PG-BIND), the upgrade lane's fixed tag and revision (OPS-UPGRADE-LANE), and the A1 tables still kept (OPS-A1-DROP).
 
+The CI job `postgres-ha` failed on this change, and once on `main` before it, with the CloudNativePG primary stopped by the kubelet's liveness probe
+while the whole stack started against it on one kind node. The stop was a smart shutdown with the container still Running, so the operator failed over
+before the job's own failover test. `ci/cnpg-cluster.yaml` now gives an instance `livenessProbeTimeout: 120` (default 30 s). The job's failure dump
+sorts events by creation (`.lastTimestamp` had made it fail) and describes every Postgres instance, ready or not.
+
 ### DOC-CF-2 follow-up — what writing the lifecycle docs found wrong in the code and the READMEs
 
 - `migrations/db_roles.json`: MLMR's shared grants add `audit_log` and `audit_head` (it writes the audit trail through `smo_shared.audit`); a test now
