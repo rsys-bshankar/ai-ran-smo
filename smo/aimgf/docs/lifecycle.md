@@ -128,8 +128,9 @@ sequenceDiagram
 
 Activation is AIMgF's own decision (no NFO call). An inference job uses the model's serving deployment and has no workload of its own. The decisions are
 [call flow 26](../../docs/call-flows/26-model-governance-and-end-of-life.md), the runtime [call flow 17](../../docs/call-flows/17-model-runtime-lifecycle.md).
-MLLF writes the node groups (`PATCH /models/{id}/runtime/node-groups`) and MLMR reads the lifecycle before a delete; the lifecycle row is made the first
-time any route asks about a model (`GET /models/{id}/lifecycle` writes).
+MLLF writes the node groups (`PATCH /models/{id}/runtime/node-groups`) for the rApp that asked it, named in `X-R1-On-Behalf-Of`, and the owner rule
+judges that rApp as if it had called (MLLF-NODEGROUP-OWNER; every route the owner rule guards treats a module acting for an rApp so). MLMR reads the
+lifecycle before a delete on its own account; the lifecycle row is made the first time any route asks about a model (`GET /models/{id}/lifecycle` writes).
 
 ## d — MLMF reports and group retrain
 

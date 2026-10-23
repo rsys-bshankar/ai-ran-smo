@@ -174,13 +174,6 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
   Approach: take the previous release's tag and the newest revision's table from the repository at run time.
 - **OPS-A1-DROP** — The A1 tables (`a1_ei_type` and the others) that revision 0029 leaves for 0.4.0's `a1-related` module have no revision that drops
   them, now that no supported release uses them (call flow 31). Approach: the contract revision that drops them, announced under `### Changed`.
-- **MLLF-NODEGROUP-OWNER** — Any rApp can change the node groups of another rApp's certified model: `POST /mllf/models/{id}/deploy` is on the rApp
-  allow-list (`shared/smo_shared/roles.py`, `/mllf`), MLLF checks only the lifecycle state and then calls `PATCH /aimgf/models/{id}/runtime/node-groups`
-  as an SMO module (`mllf/app/main.py`, `request_model_deployment`), and AIMgF's owner rule asks only a caller with the rApp role (`_owner_may_act`,
-  `aimgf/app/main.py`), so the call passes for every model. The rApp's id does reach AIMgF (`X-R1-On-Behalf-Of`, which `R1Client` adds and the gateway
-  forwards for a module), and nothing reads it there. `mllf/tests` has no ownership test. Approach: AIMgF applies the owner rule to an `internal` call
-  that carries `X-R1-On-Behalf-Of` on this route (`invoker_id` already returns that id), or MLLF reads the model's owner from MLMR first and refuses
-  (403 `MODEL_ACCESS_DENIED`); a test that a second rApp is refused and the owner and the console are not.
 - **MLLF-IDENTITY** — Every MLLF process registers an SME invoker of its own: MLLF has no database (`database: false` in the chart, none in compose), so
   `_identity_store` answers None (`shared/smo_shared/r1_client.py`) and each replica and each restart onboards a new invoker; the old ones stay
   at SME until an admin runs `POST /sme/invoker-registrations/purge-stale` (nothing schedules it), and the replicas of one module are different
@@ -201,11 +194,6 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
   `/{id}/trigger` (27d); the console has no page for them (only the `training-jobs` / `validation-jobs` equivalents, which have operator rules): add operator rules (admin for
   the functions and policies, as platform configuration), or restate call flow 27 as rApp and SMO module only. Approach: a decision per route, then
   the rule (and its line in `tests/test_rbac_matrix.py`, which covers every rule) or the call flow's text.
-- **MDA-REQ-OWNER** — Any rApp can withdraw another rApp's MDA request: `DELETE /mdaf/mda-requests/{id}` is on the rApp allow-list
-  (`shared/smo_shared/roles.py`, `/mdaf`) and deletes whatever request it names (`mdaf/app/mda.py`, `delete_mda_request`), and `POST /mda-requests`
-  stores the body's `requestedBy` as sent, so an rApp can also make a request in another's name (`mdaf/README.md` notes the delete). Approach: the
-  maker rule of `DELETE /subscriptions` (`mdaf/app/main.py`, `unsubscribe_analytics`): for role `rapp`, `requestedBy` is the caller's invoker id on
-  create and only the maker may withdraw (403 `SUBSCRIPTION_ACCESS_DENIED` or a new code); the console and SMO modules may withdraw any.
 - **O1-ADAPTOR-ENROL** — How a production O1 adaptor is given an identity is not specified: an adaptor's ingest routes (`POST /ran-nf-oam/alarms/ingest`,
   `/pm-reports`, `/pm-files`, `/o1-adaptor-endpoints/{id}/heartbeat`) are not on the rApp allow-list (`shared/smo_shared/roles.py`, `/ran-nf-oam`
   allows only `config-jobs`), so an adaptor enrolled as an rApp is refused at the gateway; enrolled as an SMO module (the enrollment secret) it gets the

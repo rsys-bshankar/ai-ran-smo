@@ -96,7 +96,14 @@ ownership summary.
 - **A subscription belongs to its maker.** An rApp's `requested_by` is its own invoker id whatever it sent, and it may
   delete only its own subscriptions (403 `SUBSCRIPTION_ACCESS_DENIED`), so it cannot silence another consumer, an SA SMOS
   monitor's among them; the console and SMO modules may delete any.
-- **Drift forwarding never fails the publish.** Any exception talking to AIMgF is swallowed per model.
+- **An MDA request belongs to its maker** (`MDA-REQ-OWNER`). The same rule as a subscription: on `POST /mda-requests` an
+  rApp's `requestedBy` is its own invoker id whatever the body says, and on `DELETE /mda-requests/{id}` an rApp withdraws
+  only its own (403 `MDA_REQUEST_ACCESS_DENIED`); the console and SMO modules name who a request is for (the body's
+  `requestedBy` is stored as sent) and may withdraw any. A request stored before the rule keeps the `requestedBy` its body
+  named, so an rApp withdraws it only if that is its own invoker id; the console or a module removes the others.
+- **Drift forwarding never fails the publish.** Any exception talking to AIMgF is swallowed per model. MDAF forwards on its
+  own account (no `X-R1-On-Behalf-Of`): the publisher is often not the model's owner, and AIMgF's owner rule judges a module
+  acting for an rApp as that rApp (`MLLF-NODEGROUP-OWNER`).
 - **Security.** Every route is declared bearer-protected in the OpenAPI contract (`apply_r1_gateway_security`) and enforced
   by R1 Termination, which stamps the caller's role and invoker id that the two rules above read. The GUI BFF RBAC rule table lists
   `/mdaf/subscriptions` (operator) and `/mdaf/reports` (admin); see `../gui-bff/app/rbac.py`.
@@ -174,9 +181,9 @@ TS 28.104 resources (`{"id", "attributes"}`; bodies reject unknown fields)
 |---|---|---|---|
 | POST / GET | `/mda-functions` | Create / list MDAFunction | |
 | GET / PUT / DELETE | `/mda-functions/{function_id}` | Read, replace, delete | 404 `NRM_OBJECT_NOT_FOUND` (GET, PUT) |
-| POST | `/mda-requests` | Create MDARequest | 422 `SCHEMA_VALIDATION_FAILED` (empty `requestedMDAOutputs`; `NOTIFICATION`/`FILE` without `reportingTarget`; `stopTime` not after `startTime`), 422 `MDA_CAPABILITY_NOT_SUPPORTED` (type not in the named function's capabilities), 404 unknown function |
+| POST | `/mda-requests` | Create MDARequest; an rApp's `requestedBy` is its own invoker id | 422 `SCHEMA_VALIDATION_FAILED` (empty `requestedMDAOutputs`; `NOTIFICATION`/`FILE` without `reportingTarget`; `stopTime` not after `startTime`), 422 `MDA_CAPABILITY_NOT_SUPPORTED` (type not in the named function's capabilities), 404 unknown function |
 | GET | `/mda-requests` | List (`requested_by`, paging); each view carries `active` | |
-| GET / DELETE | `/mda-requests/{request_id}` | Read / withdraw (no further matching) | 404 on GET |
+| GET / DELETE | `/mda-requests/{request_id}` | Read / withdraw (no further matching; 204 also for an unknown id); an rApp withdraws only its own | 404 on GET; 403 `MDA_REQUEST_ACCESS_DENIED` on DELETE |
 | POST | `/mda-reports` | Publish a typed report: `mDAOutputs[]`, optional `mDARequestRef`, `mDAFunctionRef`, `managedEntitiesScope[]`, `inputSources[]`, `reportKind` | 422 empty `mDAOutputs` or a typed list that does not match its `mDAType`; 422 `DME_ARTIFACT_NOT_FOUND`; 404 unknown request or function ref; 403 `PRODUCER_NOT_REGISTERED` / 502 as for `/reports` (the type is the first `mDAType`) |
 | GET | `/mda-reports` | List, newest first. Filters `mda_type`, `report_kind`, `mda_request_id`, `managed_entity`, paging | |
 | GET | `/mda-reports/{report_id}` | Read | 404 |
@@ -232,6 +239,7 @@ The worker (`python -m smo_shared.worker`, `app/tasks.py`) has one task, `purge-
 | `DME_ARTIFACT_NOT_FOUND` | 422 | An `input_sources` / `inputSources` id is not a DME DataJob |
 | `PRODUCER_NOT_REGISTERED` | 403 | An rApp publishing a type it is not a registered producer of |
 | `SUBSCRIPTION_ACCESS_DENIED` | 403 | An rApp deleting another consumer's subscription |
+| `MDA_REQUEST_ACCESS_DENIED` | 403 | An rApp withdrawing an MDA request another made |
 | `MDAF_REPORT_NOT_FOUND` | 404 | `GET /reports/{id}` for an unknown report |
 | `UPSTREAM_FAILED` | 502 | RAN Analytics could not answer the producer check |
 | `SCHEMA_VALIDATION_FAILED` | 422 | Unknown subscription `thresholdDirection`; invalid MDARequest / empty `mDAOutputs` (see 2.4) |
@@ -249,7 +257,6 @@ The worker (`python -m smo_shared.worker`, `app/tasks.py`) has one task, `purge-
 - `/mda-reports` list filters `managed_entity` in Python after loading all rows matching the SQL filters.
 - Legacy `POST /reports` does not accept `reportKind` or `mdaType`; those exist only on `/mda-reports`.
 - A report's `output` is not checked against its producer's `outputSchema` (`../OPEN_ITEMS.md` `MDA-SCHEMA`).
-- `DELETE /mda-requests/{id}` is not yet limited to the request's maker (`../OPEN_ITEMS.md` `MDA-REQ-OWNER`).
 
 ## 3. Unit tests
 
@@ -264,8 +271,8 @@ cd smo/mdaf && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | File | Covers | Tests |
 |---|---|---|
 | `tests/test_main.py` | Publish/query, scope persistence, subscribe/unsubscribe/list and filters, notification delivery (with, without, other type, unreachable destination), DME input validation, `ThresholdInfo` (validation, fires on first crossing, no refire, refire after reset, DOWN, missing IE, no-threshold subscription), a report read back by its id and 404, `/health` | 29 |
-| `tests/test_publisher_and_ownership.py` | Call flows 08b and 08c: an rApp publishes only what it is a registered producer of (legacy and typed reports), `publishedBy` recorded for an rApp, the console and a module, 502 when RAN Analytics cannot say, an rApp's subscription is its own, an rApp removes only its own subscription | 7 |
-| `tests/test_mda.py` | MDAFunction capability gating, request validation, typed output validation per `mDAType`, NOTIFICATION matching, edge-triggered IE thresholds, `filterValue` and `timeOut`, FILE method and download, report answering one request and legacy-report matching, DRIFT forwarding to MLMF, 404s | 10 `GET /mda-reports?total=false`: no `total`, `hasMore` set correctly. |
+| `tests/test_publisher_and_ownership.py` | Call flows 08b and 08c: an rApp publishes only what it is a registered producer of (legacy and typed reports), `publishedBy` recorded for an rApp, the console and a module, 502 when RAN Analytics cannot say, an rApp's subscription is its own, an rApp removes only its own subscription; `MDA-REQ-OWNER`: an rApp's MDA request is its own whatever the body says, the console, a module and a call with no role store the body's `requestedBy`, an rApp withdraws only its own (403 `MDA_REQUEST_ACCESS_DENIED`), the console and a module withdraw any, also a request stored before the rule | [counts](../docs/TEST_COUNTS.md) |
+| `tests/test_mda.py` | MDAFunction capability gating, request validation, typed output validation per `mDAType`, NOTIFICATION matching, edge-triggered IE thresholds, `filterValue` and `timeOut`, FILE method and download, report answering one request and legacy-report matching, DRIFT forwarding to MLMF (on MDAF's own account), 404s | 10 `GET /mda-reports?total=false`: no `total`, `hasMore` set correctly. |
 
 ### 3.3 What is not covered here
 

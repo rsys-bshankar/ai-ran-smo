@@ -1,5 +1,6 @@
 """Tests of call flows 08b and 08c (DOC-CF-1.8): an rApp publishes only the analytics types it is a registered producer of (asked of RAN Analytics), every report
 records who published it, and a subscription belongs to who made it: an rApp's `requestedBy` is its own id and it removes only its own subscriptions.
+MDA-REQ-OWNER: an MDA request belongs to its maker the same way (`POST` / `DELETE /mda-requests`, 403 `MDA_REQUEST_ACCESS_DENIED`).
 
 Fixtures come from `test_main.py` (the app on SQLite); the RAN Analytics answer is scripted per test. Run: `cd smo/mdaf && PYTHONPATH=.:../shared python -m pytest
 tests/test_publisher_and_ownership.py -q`.
@@ -113,3 +114,46 @@ def test_an_rapp_removes_only_its_own_subscription(client, producers):
     assert client.delete(f"/subscriptions/{module_sub}", headers=CONSOLE).status_code == 204
     assert client.delete(f"/subscriptions/{own}", headers=OTHER).status_code == 204
     assert client.get("/subscriptions").json()["items"] == []
+
+
+# ---------------------------------------------------------------- MDA-REQ-OWNER: MDA requests belong to their maker
+
+def _mda_request(client, headers, requested_by):
+    """Creates a STREAMING MDA request for PM data naming `requested_by` in the body, as `headers`' caller; returns the response."""
+    return client.post("/mda-requests", headers=headers, json={"reportingMethod": "STREAMING", "requestedMDAOutputs": [{"mDAType": PM}],
+                                                               "requestedBy": requested_by})
+
+
+def test_an_rapps_mda_request_is_its_own_whatever_it_claims(client):
+    """`requestedBy` of an rApp's MDA request is its own invoker id even when the body names another, so it cannot make a request in another's name."""
+    resp = _mda_request(client, RAPP, "other-rapp")
+    assert resp.status_code == 201 and resp.json()["attributes"]["requestedBy"] == "kpi-rapp"
+
+
+@pytest.mark.parametrize("headers", [CONSOLE, {"X-R1-Role": "internal", "X-R1-Invoker-Id": "sa-smos"}, None], ids=["console", "module", "no-role"])
+def test_the_console_and_modules_name_who_a_request_is_for(client, headers):
+    """The console, an SMO module and a call with no role make a request for whoever they name: the body's `requestedBy` is stored as sent."""
+    resp = _mda_request(client, headers, "sa-smos:monitor/7")
+    assert resp.status_code == 201 and resp.json()["attributes"]["requestedBy"] == "sa-smos:monitor/7"
+
+
+def test_an_rapp_withdraws_only_its_own_mda_request(client):
+    """Another rApp's withdrawal is 403 MDA_REQUEST_ACCESS_DENIED and the request stays; the maker withdraws its own; an unknown id is 204 for anyone."""
+    own = _mda_request(client, RAPP, None).json()["id"]
+    refused = client.delete(f"/mda-requests/{own}", headers=OTHER)
+    assert refused.status_code == 403 and refused.json()["detail"]["title"] == "MDA_REQUEST_ACCESS_DENIED"
+    assert client.get(f"/mda-requests/{own}").status_code == 200
+    assert client.delete(f"/mda-requests/{own}", headers=RAPP).status_code == 204
+    assert client.get(f"/mda-requests/{own}").status_code == 404
+    assert client.delete(f"/mda-requests/{own}", headers=OTHER).status_code == 204
+
+
+@pytest.mark.parametrize("headers", [CONSOLE, {"X-R1-Role": "internal", "X-R1-Invoker-Id": "sa-smos"}], ids=["console", "module"])
+def test_the_console_and_modules_withdraw_any_mda_request(client, headers):
+    """The console and an SMO module may withdraw an rApp's request, and also one stored before the maker rule whose `requestedBy` names nobody's id."""
+    rapps = _mda_request(client, RAPP, None).json()["id"]
+    legacy = _mda_request(client, None, "whatever-the-body-said").json()["id"]
+    assert client.delete(f"/mda-requests/{legacy}", headers=RAPP).status_code == 403
+    for request_id in (rapps, legacy):
+        assert client.delete(f"/mda-requests/{request_id}", headers=headers).status_code == 204
+        assert client.get(f"/mda-requests/{request_id}").status_code == 404

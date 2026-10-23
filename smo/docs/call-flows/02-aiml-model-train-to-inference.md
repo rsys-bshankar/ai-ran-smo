@@ -31,7 +31,9 @@ registered the model (`sdk.models.register_model`, `sdk.lifecycle.start_training
 on a running job of (complete, report progress or metrics, suspend, resume, cancel, and the same through the TS 28.105 request and process
 resources), or file a performance report for, only a model it owns; another rApp is **403 `MODEL_ACCESS_DENIED`** and nothing changes. A
 coordination-group job needs every member MLMR knows to be the caller's. A model with no owner, or one MLMR no longer knows, is open to any
-rApp. The console, the SMO modules and a call with no role are not asked. An rApp never fires a governance decision (403 `ROLE_NOT_PERMITTED`).
+rApp. An SMO module that passes an rApp's request on (MLLF's node-group placement, with the rApp in `X-R1-On-Behalf-Of`) is asked as that rApp, and
+MLLF passes the 403 on (MLLF-NODEGROUP-OWNER). The console, an SMO module on its own account (MDAF's drift forwarding, SA SMOS's group retrain) and a
+call with no role are not asked. An rApp never fires a governance decision (403 `ROLE_NOT_PERMITTED`).
 
 ## Model states
 
@@ -221,7 +223,13 @@ sequenceDiagram
     participant NFO as NFO
 
     R->>AIM: POST /aimgf/models/{id}/runtime/deploy, then /runtime/activate
-    Note over AIM: CERTIFIED or PROMOTED only, NFO workload created (call flow 17a, 17b)<br/>runtime ACTIVE: inference is accepted
+    alt the owner rApp, a model with no owner, or the console
+        Note over AIM: CERTIFIED or PROMOTED only, NFO workload created (call flow 17a, 17b)<br/>runtime ACTIVE: inference is accepted
+        AIM-->>R: 201 / 200 {runtimeLifecycleState}
+    else another rApp's model
+        AIM-->>R: 403 MODEL_ACCESS_DENIED, nothing deployed
+    end
+    Note over R,AIM: the node-group placement through MLLF (POST /mllf/models/{id}/deploy, 17b)<br/>has the same owner check: another rApp is 403 MODEL_ACCESS_DENIED
 
     C->>AIM: POST /aimgf/models/{id}/inference-jobs?notification_destination&timeout_seconds
     AIM->>NFO: GET /nfo/deployments/{nfDeploymentId}

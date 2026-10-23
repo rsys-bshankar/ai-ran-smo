@@ -199,6 +199,8 @@ class FrameworkError:
     PRODUCER_NOT_REGISTERED = ("PRODUCER_NOT_REGISTERED", 403)
     PRODUCER_NOT_FOUND = ("PRODUCER_NOT_FOUND", 404)
     SUBSCRIPTION_ACCESS_DENIED = ("SUBSCRIPTION_ACCESS_DENIED", 403)
+    # MDA-REQ-OWNER: an rApp withdraws only the MDA requests it made (`DELETE /mdaf/mda-requests/{id}`)
+    MDA_REQUEST_ACCESS_DENIED = ("MDA_REQUEST_ACCESS_DENIED", 403)
     PUBLISHING_FUNCTION_NOT_FOUND = ("PUBLISHING_FUNCTION_NOT_FOUND", 404)
     # DOC-CF-1.8 flow 09: an rApp manages only its own intents and dispatches only for its own instance; a handler with intents is not removed under them
     INTENT_ACCESS_DENIED = ("INTENT_ACCESS_DENIED", 403)

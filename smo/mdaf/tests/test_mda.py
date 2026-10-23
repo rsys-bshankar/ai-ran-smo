@@ -182,6 +182,37 @@ def test_drift_report_is_forwarded_to_the_models_mlmf_subscriptions(client, monk
     assert posted == [("/aimgf/mlmf/subscriptions/sub-1/reports", {"accuracy": 0.61})]
 
 
+def test_drift_forwarding_is_on_mdafs_own_account(client, monkeypatch):
+    """MDAF forwards a drift signal for nobody (no `X-R1-On-Behalf-Of`), even when the report came for an rApp: the publisher often does not own the model, and
+    AIMgF's owner rule (MLLF-NODEGROUP-OWNER) would otherwise refuse the forwarding."""
+    from smo_shared.invoker import get_originator
+    model_id = str(uuid.uuid4())
+    originators = []
+
+    class Resp:
+        def __init__(self, status_code, payload=None):
+            self.status_code, self._payload = status_code, payload
+
+        def json(self):
+            return self._payload
+
+    def fake_get(self, path, **kw):
+        # Records who each AIMgF call would be made for; any other read (DME data jobs) answers 200.
+        if path == "/aimgf/mlmf/subscriptions":
+            originators.append(get_originator())
+            return Resp(200, {"items": [{"subscriptionId": "sub-1"}]})
+        return Resp(200)
+
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: originators.append(get_originator()) or Resp(200))
+    headers = {"X-R1-Role": "internal", "X-R1-Invoker-Id": "some-module", "X-R1-On-Behalf-Of": "analytics-rapp"}
+    report = client.post("/mda-reports", headers=headers, json={"reportKind": "DRIFT", "mDAOutputs": [{
+        "mDAType": "CORRELATION_ANALYTICS_TRAINING_DATA_ANALYSIS",
+        "mDAOutputList": [{"mDAOutputIEName": "mLModelRef", "mDAOutputIEValue": model_id}, {"mDAOutputIEName": "accuracy", "mDAOutputIEValue": 0.5}]}]})
+    assert report.status_code == 201, report.text
+    assert originators == [None, None]
+
+
 def test_unknown_objects_404(client):
     """Unknown functions, requests and reports, and a report naming an unknown request, are 404 NRM_OBJECT_NOT_FOUND."""
     for path in ("mda-functions", "mda-requests", "mda-reports"):

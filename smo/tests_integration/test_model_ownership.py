@@ -38,6 +38,20 @@ def test_the_registering_rapp_owns_the_model_and_another_rapp_is_refused(mesh):
     assert mesh["aimgf"].patch(f"/models/{model_id}/runtime/node-groups", headers=SMO, json={"clearedNodeGroups": ["ng2"]}).status_code == 200
 
 
+def test_mllf_places_a_model_only_for_its_owner_through_the_mesh(mesh):
+    """MLLF-NODEGROUP-OWNER: rApp B's deploy request at MLLF on rApp A's model is 403 `MODEL_ACCESS_DENIED` (MLLF calls AIMgF as an SMO module, `R1Client` names B in
+    `X-R1-On-Behalf-Of`, AIMgF's owner rule refuses B and MLLF passes the 403 on); the owner and the console get past the owner rule, to the lifecycle gate (409
+    `MODEL_NOT_CERTIFIED`, the model is only registered). No node groups are written for B.
+    """
+    model_id = _register(mesh, ES)
+    refused = mesh["mllf"].post(f"/models/{model_id}/deploy", headers=OTHER, json=["ng1"])
+    assert refused.status_code == 403 and refused.json()["detail"]["title"] == "MODEL_ACCESS_DENIED", refused.text
+    for headers in (ES, SMO):
+        gated = mesh["mllf"].post(f"/models/{model_id}/deploy", headers=headers, json=["ng1"])
+        assert gated.status_code == 409 and gated.json()["detail"]["title"] == "MODEL_NOT_CERTIFIED", gated.text
+    assert mesh["aimgf"].get(f"/models/{model_id}/lifecycle", headers=SMO).json()["clearedNodeGroups"] == []
+
+
 def test_a_model_an_smo_module_registers_stays_open_to_any_rapp(mesh):
     """A model registered by an SMO module without an owner is unowned, and any rApp passes the ownership check on it; one registered for a named rApp is that rApp's alone."""
     open_model = _register(mesh, SMO)

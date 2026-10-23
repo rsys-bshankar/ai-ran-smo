@@ -777,3 +777,20 @@ def test_a_model_is_not_deleted_when_aimgf_cannot_say(client, monkeypatch, failu
 
     assert client.delete(f"/models/{model_id}").status_code == 503
     assert client.get(f"/models/{model_id}").status_code == 200
+
+
+def test_the_live_runtime_read_is_made_on_mlmrs_own_account(client, monkeypatch):
+    """MLMR asks AIMgF for the runtime for nobody (no `X-R1-On-Behalf-Of`), also when an rApp deletes its model: the route judged ownership already, and AIMgF's
+    owner rule (MLLF-NODEGROUP-OWNER) must not turn the safety read into a refusal that reads as "AIMgF did not answer"."""
+    from smo_shared.invoker import get_originator
+    model_id = _register_for(client, _RAPP)
+    originators = []
+
+    def recording_get(self, path, **kw):
+        """AIMgF does not know the model (404), and the originator the call would carry is recorded."""
+        originators.append(get_originator())
+        return type("A", (), {"status_code": 404, "json": lambda self: {}})()
+    monkeypatch.setattr("app.main.R1Client.get", recording_get)
+
+    assert client.delete(f"/models/{model_id}", headers=_RAPP).status_code == 204
+    assert originators == [None]

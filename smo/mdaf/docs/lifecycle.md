@@ -71,14 +71,21 @@ sequenceDiagram
     else
         MD-->>C: 204 (also for an unknown id)
     end
-    C->>MD: POST /mda-requests {requestedMDAOutputs, reportingMethod, reportingTarget?, mDAFunctionRef?, startTime?, stopTime?}
+    C->>MD: POST /mda-requests {requestedMDAOutputs, reportingMethod, reportingTarget?, mDAFunctionRef?, startTime?, stopTime?, requestedBy?}
     alt empty outputs, NOTIFICATION or FILE without a target, stop not after start
         MD-->>C: 422 SCHEMA_VALIDATION_FAILED
     else unknown function, or a type it does not support
         MD-->>C: 404 NRM_OBJECT_NOT_FOUND / 422 MDA_CAPABILITY_NOT_SUPPORTED
     else
+        Note over MD: for an rApp, requestedBy is its own invoker id whatever it sent
         MD->>DB: MDA request, one commit
         MD-->>C: 201 the MDARequest
+    end
+    C->>MD: DELETE /mda-requests/{id}
+    alt an rApp withdrawing another's request
+        MD-->>C: 403 MDA_REQUEST_ACCESS_DENIED
+    else
+        MD-->>C: 204 (also for an unknown id)
     end
 ```
 
@@ -123,7 +130,7 @@ sequenceDiagram
 ```
 
 The report and every notification it causes are one transaction (PR-MSG-1.8): nothing is sent for a report that did not commit. The drift forwarding
-runs after the commit and is best effort: AIMgF down skips it and never fails the publish ([call flow 13c](../../docs/call-flows/13-mlmf-subscription-lifecycle.md)).
+runs after the commit, on MDAF's own account (no `X-R1-On-Behalf-Of`, so AIMgF's owner rule does not judge the publisher), and is best effort: AIMgF down skips it and never fails the publish ([call flow 13c](../../docs/call-flows/13-mlmf-subscription-lifecycle.md)).
 Publishing is [call flow 08c](../../docs/call-flows/08-ran-analytics-data-production.md). DME not answering is 503 `ENDPOINT_UNREACHABLE`, with nothing
 stored. **Phase 1:** STREAMING has no transport.
 

@@ -32,7 +32,7 @@ from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared import audit
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
-from smo_shared.invoker import acting_user, invoker_id
+from smo_shared.invoker import acting_user, invoker_id, on_own_account
 from smo_shared.roles import ROLE_RAPP, role_of
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.r1_client import R1Client
@@ -380,11 +380,15 @@ _LIVE_RUNTIME_STATES = frozenset({"DEPLOYMENT_REQUESTED", "DEPLOYED", "ACTIVATIN
 def _check_no_live_runtime(model_id: uuid.UUID) -> None:
     """Raises 409 `MODEL_IN_USE` when AIMgF reports the model's serving runtime in a live state, and 503 `ENDPOINT_UNREACHABLE` when AIMgF gives no answer.
 
-    Asks `GET /aimgf/models/{id}/lifecycle` over R1 as an SMO module (not held to the ownership rule). A 404 from AIMgF (it does not know the model) passes;
-    any other answer than 200 or 404, or a transport error, refuses the delete, since deleting on a guess could leave a workload nobody can stop (call flow 26e).
+    Asks `GET /aimgf/models/{id}/lifecycle` over R1 as an SMO module on its own account (`on_own_account`: no `X-R1-On-Behalf-Of`, so AIMgF's ownership rule does not
+    apply; the delete route has already judged ownership itself). A 404 from AIMgF (it does not know the model) passes; any other answer than 200 or 404, or a transport
+    error, refuses the delete, since deleting on a guess could leave a workload nobody can stop (call flow 26e).
     """
     try:
-        resp = _r1.get(f"/aimgf/models/{model_id}/lifecycle")
+        # MLMR's own safety read, not an act for the rApp: without this block AIMgF would judge the deleting rApp's ownership a second time
+        # (MLLF-NODEGROUP-OWNER), and a 403 there would read as "AIMgF did not answer" (503).
+        with on_own_account():
+            resp = _r1.get(f"/aimgf/models/{model_id}/lifecycle")
     except Exception as exc:  # noqa: BLE001 — any transport failure: AIMgF cannot say, so nothing is deleted
         raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail="AIMgF did not answer: cannot tell whether the model still serves") from exc
     if resp.status_code == 404:
