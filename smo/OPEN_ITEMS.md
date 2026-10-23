@@ -1281,11 +1281,10 @@ Nothing open (GUI-9.10 and GUI-9.11 closed: `HISTORY.md` PR-GUI-9d).
 #### PR-GUI-11 — Console pages for routes the BFF already allows
 
 Recorded when the BFF's permission table was decided route by route (`HISTORY.md` GUI-RBAC-GAPS). The BFF rules are in `gui-bff/app/rbac.py`; what is
-missing is the page or the button.
+missing is the page or the button. GUI-11.1 (Deregister on the KPIs page's producer list) is done: `HISTORY.md` PR-GUI-11.
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| GUI-11.1 | A **Deregister** button on the KPIs page's producer list (`gui/src/pages/kpis`): `DELETE /ran-analytics/producers/{id}?analytics_type`, admin, the same role as the register form beside it (call flow 08a). Today an admin deregisters only through the BFF's proxy (`/api/smo/...`) or the SDK | The button, shown to an admin only, with a Vitest case; the producer leaves the list | – |
 | GUI-11.2 | Console pages for the TS 28.105 provisioning resources (call flow 27): training, testing, update and loading requests, training processes, inference functions and loading policies. The console reads none of them today and the BFF has no rule for their writes (the console trains and validates through `/training-jobs` and `/validation-jobs`). Decide first which writes the console makes and with which role, then add those rules (each with its line in `gui-bff/tests/test_rbac_matrix.py`) and restate call flow 27 | The pages, the rules and call flow 27 agree | – |
 
 ### 5.14 Standards and compliance (`PR-STD`)

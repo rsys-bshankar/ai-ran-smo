@@ -3,7 +3,7 @@
  * reason for one that is not defined), the tiles follow the top bar's scope, the chart draws each KPI over time with its own region filter and
  * saves and loads the user's layouts (GUI-4.1 to 4.3), the worst-10 list is ranked lowest first, the escalations callout carries the true count, the range
  * reaches the KPI calls, the MDA request form is read-only for a viewer and sends a TS 28.104 body for an operator (feature 9), a request can be cancelled,
- * MDA reports filter by kind and offer the file, and the pre-redesign tab ids (MLMF, Definitions) still work. `fetch` is stubbed by
+ * MDA reports filter by kind and offer the file, an admin (only) deregisters a RAN Analytics producer (GUI-11.1), and the pre-redesign tab ids (MLMF, Definitions) still work. `fetch` is stubbed by
  * `testing/bff.tsx` `fakeBff` with `auth/permissions.fixture.json`; no BFF runs. Run: `npx vitest run src/pages/kpis` from smo/gui. */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -13,6 +13,7 @@ import { ScopeContext } from "../../../data/scope";
 import { fakeBff, mountWith, type Call } from "../../../testing/bff";
 import { byText, cleanup, click, pick, settle, type } from "../../../testing/dom";
 import { Kpis } from "../index";
+import { Producers } from "../sections/AnalyticsLegacy";
 import { PmSubscriptions } from "../sections/PmSubscriptions";
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
@@ -266,5 +267,62 @@ describe("PM subscriptions", () => {
     await settle(6);
     expect(viewer.container.querySelector("tbody")!.textContent).toContain("du-01");
     expect(byText(viewer.container, "button", "Unsubscribe")).toBeNull();
+  });
+});
+
+describe("RAN Analytics producers (GUI-11.1)", () => {
+  const prod = (producerId: string, analyticsType: string) => ({ producerId, analyticsType, mdaType: null, dmeInputTypes: [], outputSchema: { type: "object" } });
+  /** A fake BFF whose producer list loses a producer once it is deregistered. */
+  const producers = (role: string) => {
+    let list = [prod("rapp-mdaf-1", "coverage-issue-analysis"), prod("rapp-mdaf-2", "energy-analysis")];
+    return fakeBff({
+      "GET /me": { username: "ana", role, csrfToken: "c", local: true }, "GET /permissions": { role, rules: fixture },
+      "GET /smo/ran-analytics/producers": () => ({ items: list, total: list.length, limit: 50, offset: 0 }),
+      "DELETE /smo/ran-analytics/producers/*": (c: Call) => {
+        list = list.filter((p) => !(`/smo/ran-analytics/producers/${p.producerId}` === c.path && p.analyticsType === c.query.get("analytics_type")));
+        return { status: 204 };
+      },
+    });
+  };
+  const mountProducers = async () => { const m = await mountWith(<AuthProvider><Producers /></AuthProvider>); await settle(6); return m; };
+
+  // The BFF allows DELETE /ran-analytics/producers/{id} to an admin only (call flow 08a): an operator and a viewer see the list without the button.
+  it("draws Deregister for an admin only", async () => {
+    for (const role of ["operator", "viewer"]) {
+      producers(role);
+      const m = await mountProducers();
+      expect(m.container.querySelector("tbody")!.textContent).toContain("rapp-mdaf-1");
+      expect(byText(m.container, "button", "Deregister")).toBeNull();
+      cleanup();
+    }
+    producers("admin");
+    const admin = await mountProducers();
+    expect(admin.container.querySelectorAll("tbody button.danger")).toHaveLength(2);
+  });
+
+  // After the confirm, Deregister sends DELETE with the producer in the path and its analytics type as the query; the reloaded list no longer has it.
+  it("deregisters a producer and drops it from the list", async () => {
+    const asked: string[] = [];
+    vi.stubGlobal("confirm", (msg: string) => { asked.push(msg); return true; });
+    const calls = producers("admin");
+    const { container } = await mountProducers();
+    const row = [...container.querySelectorAll("tbody tr")].find((r) => r.textContent!.includes("rapp-mdaf-1")) as HTMLElement;
+    await click(byText(row, "button", "Deregister")!);
+    await settle(6);
+    expect(asked[0]).toContain("rapp-mdaf-1");
+    const del = calls.find((c) => c.method === "DELETE")!;
+    expect([del.path, del.query.get("analytics_type")]).toEqual(["/smo/ran-analytics/producers/rapp-mdaf-1", "coverage-issue-analysis"]);
+    expect(container.querySelector("tbody")!.textContent).not.toContain("rapp-mdaf-1");
+    expect(container.querySelector("tbody")!.textContent).toContain("rapp-mdaf-2");
+  });
+
+  // Declining the confirm sends nothing.
+  it("sends nothing when the confirm is declined", async () => {
+    vi.stubGlobal("confirm", () => false);
+    const calls = producers("admin");
+    const { container } = await mountProducers();
+    await click(byText(container, "button", "Deregister")!);
+    await settle();
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
   });
 });

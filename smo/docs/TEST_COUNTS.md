@@ -12,7 +12,7 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `aimgf` | 17 | 283 | 433 |
 | `dme` | 14 | 170 | 183 |
 | `focom` | 3 | 85 | 85 |
-| `gui` | 50 | 511 | — |
+| `gui` | 50 | 514 | — |
 | `gui-bff` | 17 | 439 | 1600 |
 | `intent-service` | 5 | 84 | 104 |
 | `mdaf` | 4 | 58 | 62 |
@@ -37,7 +37,7 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `sme` | 5 | 121 | 139 |
 | `so-smos` | 3 | 27 | 40 |
 | `tests_integration` | 93 | 716 | 893 |
-| **total** | **415** | **5323** | **7643** (Python) |
+| **total** | **415** | **5326** | **7643** (Python) |
 
 ## Per test file
 
@@ -137,7 +137,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `src/pages/infrastructure/__tests__/Topology.test.tsx` | 9 | — |
 | `src/pages/intents/__tests__/Intents.test.tsx` | 10 | — |
 | `src/pages/intents/__tests__/intent.test.ts` | 5 | — |
-| `src/pages/kpis/__tests__/Kpis.test.tsx` | 15 | — |
+| `src/pages/kpis/__tests__/Kpis.test.tsx` | 18 | — |
 | `src/pages/login/__tests__/Login.test.tsx` | 11 | — |
 | `src/pages/preferences/__tests__/Preferences.test.tsx` | 2 | — |
 | `src/pages/rapp-detail/__tests__/RappDetail.test.tsx` | 7 | — |

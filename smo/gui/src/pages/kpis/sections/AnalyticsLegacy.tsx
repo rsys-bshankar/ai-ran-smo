@@ -1,6 +1,6 @@
 /** Sections `kpis.analyticsReports`, `kpis.producers` and `kpis.analyticsSubs` (RAN Analytics tab): the pre-TS 28.104 MDAF analytics, kept as
  * they were. Analytics reports as a server-paged table filtered by analytics type on the server (a click shows the output); the RAN Analytics
- * producers; and the poll-based analytics subscriptions with a role-gated Subscribe and Unsubscribe. */
+ * producers with an admin-only Deregister (GUI-11.1); and the poll-based analytics subscriptions with a role-gated Subscribe and Unsubscribe. */
 import { useState } from "react";
 
 import type { AnalyticsProducer, AnalyticsReport, AnalyticsSubscription } from "../../../api/types";
@@ -33,7 +33,8 @@ export function AnalyticsReports() {
   );
 }
 
-/** RAN Analytics producers. */
+/** RAN Analytics producers. Deregister (`DELETE /ran-analytics/producers/{id}?analytics_type`, call flow 08a) is drawn only for the role the
+ * BFF allows it (admin, the same as registering); after a confirm it withdraws the producer's SME service and the list reloads without it. */
 export function Producers() {
   const t = useT();
   return (
@@ -42,6 +43,12 @@ export function Producers() {
         { header: t("kpis.analytics.producers.producer"), render: (p) => p.producerId }, { header: t("kpis.common.type"), render: (p) => p.analyticsType },
         { header: t("kpis.analytics.producers.mdaType"), render: (p) => p.mdaType ?? <span className="muted">—</span> },
         { header: t("kpis.analytics.producers.dmeInputs"), render: (p) => p.dmeInputTypes.length },
+        { header: "", className: "actions", render: (p) => {
+          const names = { producer: p.producerId, type: p.analyticsType };
+          return <ActionButton tone="danger" label={t("kpis.analytics.producers.deregister")} confirm={t("kpis.analytics.producers.deregister.confirm", names)} action={{
+            method: "DELETE", path: `${PRODUCERS}/${encodeURIComponent(p.producerId)}`, query: { analytics_type: p.analyticsType }, success: t("kpis.analytics.producers.deregistered", names),
+          }} />;
+        } },
       ]} />
     </Card>
   );

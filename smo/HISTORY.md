@@ -2433,6 +2433,21 @@ Closed from `OPEN_ITEMS.md`.
 
 A review of the console listed thirteen defects; three were already gone with the redesign (the Safeguards dialogs inside a `<tr>`, the Dashboard counting a first page with a hard-coded module total, a test title that disagreed with its assertion). The other ten are fixed, each with a test: BFF rules for creating and deleting FM subscriptions and deleting PM subscriptions, so the form and both Unsubscribe buttons appear for operators; the package drawer says what Onboarding reports (verified against its trust store, or accepted unsigned) instead of "verified (dev cert)"; a blank or whitespace-only "Regression allowed, %" and a whitespace-only declared number are refused or left out instead of read as 0; the role matrix is computed from the live permission table and the audit filter reads `GET /api/admin/audit/actions` (a BFF test fails when the list and the actions the code writes drift); `lib/domain.ts`'s `StepStatus` is `PipelineStepStatus`; artifact versions are read only from MLMR's documented `model-artifact:<id>:<n>` form; a failed sign-out, a refused clipboard copy and unmounted toasts are handled; `useHashTab` subscribes once.
 
+### PR-GUI-11 — console pages for routes the BFF already allows
+
+- **GUI-11.1 — Deregister on the KPIs page's producer list.** The BFF already allowed `DELETE /ran-analytics/producers/{id}` to an admin
+  (`gui-bff/app/rbac.py`, the same role as `POST /ran-analytics/producers`; GUI-RBAC-GAPS), and RAN Analytics takes the producer in the path and
+  `analytics_type` as a required query parameter (`ran-analytics/app/main.py`, `deregister_analytics_producer`). The RAN Analytics tab's producer
+  table (`gui/src/pages/kpis/sections/AnalyticsLegacy.tsx`, `Producers`) has a last column with a **Deregister** `ActionButton` (`tone="danger"`,
+  with a confirm naming the producer and type, as the admin page's MSAC deletes do) that sends `DELETE /ran-analytics/producers/{id}?analytics_type`
+  for its row. `ActionButton` draws itself only when the permission table (`/api/permissions`) allows the call, so an operator and a viewer see the
+  list without it; nothing in the page checks a role by name. On success the action invalidates the RAN Analytics queries, so the table reloads
+  without the producer. The strings are in `i18n/en/kpis.ts` and `i18n/de/kpis.ts`. `auth/permissions.fixture.json` already had the rule, so the
+  fixture and the BFF/GUI parity test needed no change. Tests (`gui/src/pages/kpis/__tests__/Kpis.test.tsx`, "RAN Analytics producers (GUI-11.1)"):
+  the button is drawn for an admin and not for an operator or a viewer; after the confirm it sends the DELETE with the producer in the path and
+  `analytics_type` in the query, and the reloaded list no longer has the producer; a declined confirm sends nothing. Call flow 08a's note and
+  `gui/README.md` say the console now has the button.
+
 ### PR-GUI-9 meets PR-SEC-10.9 / PR-MGT-2.6 — what the merge with `main` decided
 
 The console redesign and `main`'s scope and MSAC work (#400) changed the same RAN NF OAM reads. Merged by keeping both rules on every route:

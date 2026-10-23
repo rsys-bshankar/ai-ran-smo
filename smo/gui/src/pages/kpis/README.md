@@ -21,7 +21,7 @@ Network performance, the monitors that watch it, and what was done when a thresh
 | kpis.rapp | sections/RappPerformance.tsx | one instance's self-reported metrics | `/rapp-mgmt/instances`, `/…/{id}/performance?limit=100` | 15 s | 2 calls |
 | kpis.mdaRequest | sections/MdaRequestForm.tsx | request an analysis (operator and up; a viewer sees a note) | `/mdaf/mda-functions` (form only), `POST /mdaf/mda-requests` | — | 0–1 call |
 | kpis.mdaFunctions / mdaRequests / mdaReports | sections/MdaLists.tsx | TS 28.104 functions, requests (Cancel: `DELETE /mdaf/mda-requests/{id}`), reports (kind filter, file download) | `/mdaf/mda-functions`, `/mda-requests`, `/mda-reports?report_kind=` | 15 s | 3 calls |
-| kpis.analyticsReports / producers / analyticsSubs | sections/AnalyticsLegacy.tsx | legacy MDAF reports, producers, subscriptions | `/mdaf/reports`, `/ran-analytics/producers`, `/mdaf/subscriptions` | 15 s | 3–4 calls |
+| kpis.analyticsReports / producers / analyticsSubs | sections/AnalyticsLegacy.tsx | legacy MDAF reports, producers (Deregister, admin: BFF rule `DELETE /ran-analytics/producers/{id}`, call flow 08a, GUI-11.1), subscriptions | `/mdaf/reports`, `/ran-analytics/producers` (`DELETE …/{id}?analytics_type`), `/mdaf/subscriptions` | 15 s | 3–4 calls |
 | kpis.producerTools | sections/ProducerTools.tsx | admin: register a producer, publish a report | `/dme/dme-types` | — | 1 call |
 | kpis.newMonitor | sections/RegisterMonitor.tsx | register a monitor (operator+) | `/so-smos/orders`, `/mlmr/coordination-groups`, `/rapp-mgmt/instances` | 15 s | 3 calls |
 | kpis.actions | sections/RemedialActions.tsx | remedial actions, `outcome` filter | `/sa-smos/remedial-actions`, `/sa-smos/monitors?limit=500` | 15–60 s | 2 calls |
