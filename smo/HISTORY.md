@@ -246,6 +246,13 @@ Recurring conventions referred to below:
   (`UpdatePolicy`), a1-related, onboarding and sme. Bugs found on the way: SO SMOS `CancelOrder`
   never persisted (in-place JSON mutation), RAN Analytics producer re-registration crashed.
   Residual note in OPEN_ITEMS OI-4.
+- **OI-4 closed (October 2026).** The residual note counted `def test_` per module; a test count is not coverage
+  (`docs/VALIDATION.md`, V-1: the "shallow" suites by count were at 100 % of their statements). Coverage is now held per module instead:
+  every suite runs under coverage (`scripts/run_unit_suite.sh`), and the step "Coverage against the floors (PR-V-1)" of the
+  `unit-and-integration` job (`.github/workflows/smo-tests.yml`) runs `scripts/coverage_floor.py`, which fails a module below its floor in
+  `coverage_floors.json` (every module, the shared library, the SDK, the GUI backend and the sample rApps: 91 to 100 %) or more than 3 points above it
+  (`QA-7.3`). The counts the note gave were stale anyway (today: `r1-termination` 152 test functions, `mock-o1-adaptor` 84, `so-smos` 27,
+  `ran-analytics` 19, `mllf` 6).
 
 ## 5. O-RAN-SC completeness gaps (former §5)
 
@@ -1178,7 +1185,7 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   extension per database); `EXPLAIN` of the ten busiest list routes against a large table (DB-4.2, needs `QA-1.2` seed data), the
   indexes they show are missing (DB-4.3), and keyset pagination (DB-4.4, DB-4.5).
 
-### PR-QA-6 — Authorisation matrix (QA-6.1; 6.2 open)
+### PR-QA-6 — Authorisation matrix (QA-6.1; 6.2 in PR-QA-6.2 below)
 
 - **The walk (QA-6.1).** No backend checks a token; R1 Termination is the one enforcement point, so "is any route open?" is a question about the
   gateway. `tests_integration/test_authz_walk.py` answers it from the apps' real route tables: (1) the gateway's explicit routes are exactly
@@ -1195,7 +1202,7 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
 - **Not taken, still open.** QA-6.2 (the GUI BFF's role matrix). An unknown prefix is answered 404 `NO_ROUTE` before the token check, which tells an
   unauthenticated caller which prefixes exist (they are public in `/bootstrap`-adjacent docs); the walk does not treat that as open since no backend is reached.
 
-### PR-SEC-13 — Container hardening (13.1, 13.2, 13.3; 13.4 open)
+### PR-SEC-13 — Container hardening (13.1, 13.2, 13.3; 13.4 in PR-SEC-13.4 below)
 
 - **Non-root (SEC-13.1).** Checked first: every service built from the shared `Dockerfile` ran as root. The image now creates user `smo`
   (uid/gid 10001) and ends with `USER 10001:10001`, a numeric id so a runtime policy can verify it. `/srv` (code, the editable shared
@@ -1340,7 +1347,7 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
 - **Not taken, still open.** SEC-4.4 and 4.5 (the GUI passwords and session key, and the module invoker secret, through the same helper), 4.6 (adaptor
   credentials as references), 4.7 (External Secrets / Vault manifest, needs the chart), 4.8 (a rotation tried for each secret).
 
-### PR-SEC-1 — TLS at the edge (1.1–1.5; 1.6 open)
+### PR-SEC-1 — TLS at the edge (1.1–1.5; 1.6 in PR-SEC-1.6 below)
 
 - **Development certificates (SEC-1.1).** `scripts/make_dev_certs.sh [--force] [DIR]` makes a development CA (10 years) and a server certificate (365 days) with
   ECDSA P-256 keys, for `localhost`, `127.0.0.1`, `::1`, `r1-termination`, `gui` and any `SMO_TLS_NAMES` (DNS names or IPs). The server certificate is a
@@ -3708,3 +3715,97 @@ Decision (option A, taken by the user): the registry is global, so the module mu
 - **What.** `_vet_resolution` looks the name up once and returns the verdict with the distinct addresses, in the resolver's order. While the call is made, `_pinned_to` sets a context variable `(host, port) -> addresses`; `connect_tcp` of httpcore's `SyncBackend` and `AnyIOBackend` is wrapped once at import (`_install_pinned_connect`) and, for a pinned `(host, port)`, connects to each vetted address in turn (a connect error or timeout moves to the next; the last failure is raised). Only the socket changes: the request URL, `Host`, the TLS server name and the certificate check keep the name, because httpcore starts TLS on the connected stream with the origin's host. A literal IP is not pinned (nothing to look up). A name that did not resolve is pinned to no address, so a record that appears between the check and the connect is not followed (the connect fails with `ConnectError`). `_resolves_to_blocked_address` and `_resolved_addresses` keep their signatures and meaning. The gateway's async call uses the same pin under the anyio backend; the lookup runs in a thread as before.
 - **Design not taken.** A transport passed to the client (`HTTPTransport` subclass, or `sni_hostname` with the URL rewritten to the IP): the callers and about a hundred tests across the modules call and patch the module-level `httpx.post`/`get`/`delete` with fixed signatures (`lambda url, json=None, timeout=None`) and `httpx.AsyncClient(**client_kwargs)`, which take no transport, so a transport would have meant either changing every call and test or branching on whether the function was patched. Rewriting the URL to the IP was rejected for the same reason and because it changes what a stub sees as the URL. **Not taken:** following a redirect (httpx does not by default, so no second host is ever connected to); **a limit stated:** a proxy in the environment is connected to by its own name and resolves the destination itself (the proxy is part of the deployment's trusted network); the pin is process-wide in the sense that httpcore's backend classes are wrapped, but it acts only inside a send, per thread or task (context variable).
 - **Tests.** `shared/tests/test_webhook_pinned.py` (46; one needs an IPv6 loopback and is skipped where there is none) runs real requests against local plain and TLS servers with a resolver stub that answers differently the second time: a public answer then loopback is never connected to; the connection goes to the vetted address with the name in `Host` and as the SNI, and a certificate for another name is refused; several records are tried in order; IPv6; a literal IP; a name that did not resolve; a redirect; the three verbs and the forwarded call; and the pieces. Without the pin 19 of them fail. The module stays in the mutation gate (`scripts/mutation_pilot.sh`).
+
+### PR-DB-2 — Per-module schemas and roles (DB-2.1 to 2.7)
+
+Closed from `OPEN_ITEMS.md` (October 2026 reconciliation; the decisions are the "Per-module schemas" and "Helm adopts the roles" entries above, and PR-DB-2c).
+
+- **DB-2.1, 2.2.** `migrations/table_owners.json` (the table → module map, generated from each module's models); `tests_integration/test_table_owners.py` (every module owns exactly the tables the map says, no table has two owners, the map covers every declared table) and `scripts/check_migration_matches_models.py` against a real Postgres.
+- **DB-2.3, 2.4.** The 24 cross-module foreign keys, each decided "plain id" in the docstring of revision `0022_drop_cross_module_foreign_keys.py`, dropped in that revision.
+- **DB-2.5 to 2.7.** Onboarding's schema in `0023`, ten modules in `0024`, the other nine in `0025` (MLLF and the mocks have no database); the compatibility views went in `0029`. Roles: `migrations/db_roles.json`, `scripts/db_roles.py`, `databaseRoles` in `deploy/helm/smo/values.yaml`. Tests: `tests_integration/test_db_roles.py` (every role works in its own schema and is refused everywhere else, on Postgres). CI: the compose job's step "Every module with a role runs as it, and each role can use its schema and nothing else (PR-DB-2.6, 2.7)" after the runbook replay, and the same check on kind in the `helm` job (`.github/workflows/smo-tests.yml`).
+
+### PR-MSG-2.1 to 2.3 — the delivery sweep in the worker; 2.4 to 2.6 open
+
+Closed from `OPEN_ITEMS.md` (October 2026 reconciliation). The decisions are "The outbox sweep was missing (PR-MSG-2 as part of PR-HA-4.1)" above.
+
+- **MSG-2.1.** The worker of `smo_shared.worker` (same image, `kind: worker` in the chart, a `*-worker` service in compose) runs the delivery sweep, `outbox-sweep` (`outbox_sweep_task`, one claim for the whole database, every `SMO_OUTBOX_SWEEP_SECONDS`, default 5).
+- **MSG-2.2, as decided.** The claim is an atomic `UPDATE` with a 60 s lease (`outbox._claim`), not `FOR UPDATE SKIP LOCKED`; it meets the step's "Done when" on SQLite and Postgres: `shared/tests/test_outbox.py::test_two_drains_never_send_the_same_row_twice`. Killing both worker pods mid-batch loses nothing: the `helm` job's step for PR-HA-4.1.
+- **MSG-2.3, as decided.** The back-off is 5 s / 30 s / 2 min / 10 min (`outbox._BACKOFF_SECONDS`), not the plan's 0/5/10/20 s, then `DEAD` after `MAX_ATTEMPTS`; the clock is passed in (`drain(..., now=)`): `test_an_unreachable_destination_is_retried_with_backoff_and_then_dead`, `test_a_5xx_is_retried_and_a_4xx_is_not`.
+- **Open.** MSG-2.4 (no route lists or requeues outbox rows), MSG-2.5 (the switch `SMO_OUTBOX_INLINE_DRAIN=false` exists; no lane replays the runbook with it), MSG-2.6 (the gauges `smo_outbox_rows{status}` and `smo_outbox_oldest_pending_age_seconds` exist; no counter of failed attempts).
+
+### PR-SEC-13.4 — the container hardening in the Helm chart
+
+Closed from `OPEN_ITEMS.md` (October 2026 reconciliation).
+
+- **Settings.** `deploy/helm/smo/values.yaml`: `podSecurityContext` (`runAsNonRoot: true`, uid/gid 10001, `seccompProfile: RuntimeDefault`) and `containerSecurityContext` (`allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true`, `capabilities.drop: [ALL]`), applied to every module pod, its `wait-for-schema` init container and the migrate Job (`templates/modules.yaml`, `templates/migrate.yaml`); the GUI's nginx overrides the pod context only.
+- **Proof.** `tests_integration/test_helm_chart.py` checks every Deployment's container for the read-only root and dropped capabilities, and the observability pods for `runAsNonRoot`; the `helm` job of `.github/workflows/smo-tests.yml` installs the chart on kind and every pod becomes ready under these settings (the kubelet refuses to start a container that would run as root with `runAsNonRoot`).
+
+### PR-OPS-2 and PR-OPS-3.1 — the Helm chart and the migration as a release hook (OPS-2.1 to 2.4, 2.6 to 2.8, OPS-3.1); 2.5 in part, 2.9 and 3.2 open
+
+Closed from `OPEN_ITEMS.md` (October 2026 reconciliation). The choices are "The Helm chart: choices (PR-OPS-2/3, v0.3)" above.
+
+- **OPS-2.1, 2.8.** `deploy/helm/smo/`; the `helm` job of `.github/workflows/smo-tests.yml` runs `helm lint` (step "helm lint, and the chart renders with its options on") and installs on kind ("helm install (the migration Job runs, every pod waits for the schema, every pod becomes ready)").
+- **OPS-2.2 to 2.4.** One template over the module map (`templates/modules.yaml`); the database password from a Secret file (`SMO_DATABASE_PASSWORD_FILE`, `smo.dbEnv` in `_helpers.tpl`), the rest by `*_FILE`; startup, readiness and liveness probes on `/live` and `/ready`; a Service per module. `tests_integration/test_helm_chart.py` pins the chart to `docker-compose.yml`.
+- **OPS-2.6** removed (the only rule isolated the mock Near-RT RIC). **OPS-2.7** `templates/pdb-hpa.yaml`, off by default; PodDisruptionBudgets on in `smo-ha-kind.yml` and the autoscaler exercised under load there (job `hpa`).
+- **OPS-3.1.** `templates/migrate.yaml`: a plain Job on install, a `pre-upgrade` hook on upgrade (`test_install_runs_the_migration_as_a_job_and_upgrade_as_a_pre_upgrade_hook`); the `helm` job's step "helm upgrade rolls every module with the old pods serving, and the database stays", and `.github/workflows/smo-upgrade-kind.yml` (an upgrade from the previous release, and a failing hook that aborts the upgrade with no Deployment touched).
+- **Open.** OPS-2.5: the Ingress is rendered only, never reached from the kind host. OPS-2.9: the kind jobs run the smoke gate `scripts/compose_e2e.py`, not the runbook replay. OPS-3.2: the `wait-for-schema` init container (`migrate.py --wait`) holds a new pod back on Helm; it is not a readiness check of the running process (`ST-7.4`).
+
+### PR-HA-1 — Run replicas (HA-1.1 to 1.3)
+
+Closed from `OPEN_ITEMS.md` (October 2026 reconciliation). The choices are "Replicas on kind, and what the first probe measures (PR-HA-1/2)" above.
+
+- **HA-1.1.** Two replicas of every module that can have them: in Helm `deploy/helm/smo/ci/ha-values.yaml` (the `helm` job's step "Two replicas of every module that can have them, and the stack still answers (PR-HA-1)", and `.github/workflows/smo-ha-kind.yml` on three nodes); in compose `docker-compose.replicas.yml`. Onboarding, the GUI backend and the mocks stay at one.
+- **HA-1.2.** The CI job `compose-replicas` of `smo-tests.yml` replays the runbook (`tests_integration/test_demo_runbook.py`) against two of each module.
+- **HA-1.3.** The fix list is empty: the replay passed on its first run.
+
+### PR-HA-5.1 — pods spread over nodes, checked on three nodes; zones open
+
+Closed from `OPEN_ITEMS.md` (October 2026 reconciliation). The choice (topology spread, `soft` by default, `hard` for a cluster that has the nodes) is "Placement (PR-HA-5.1)" above; its "not done" (a multi-node run) is now done.
+
+- **Proof.** `.github/workflows/smo-ha-kind.yml` (V-12): a three-node kind cluster, the chart installed with `placement.mode=hard` and PodDisruptionBudgets; the step "Every replicated deployment has its pods on different nodes" fails a deployment whose running pods are not on two nodes, before and after a node is drained.
+- **Open (`HA-5.1b` in `OPEN_ITEMS.md`).** Spread over zones (`placement.zoneKey`) is rendered and checked as a string only; no CI cluster has zone labels.
+
+### PR-MGT-16.2 — `intentPriority` on intents
+
+Closed from `OPEN_ITEMS.md` (October 2026 reconciliation): found already built, with TS 28.312 (W6).
+
+- **What.** `Intent.intent_priority` (`intent-service/app/models.py`), a column of the baseline schema (`migrations/001_init.sql`: `intent_priority INTEGER NOT NULL DEFAULT 1 CHECK (intent_priority BETWEEN 1 AND 100)`), taken as `intentPriority` on `POST /intents` (1 to 100, default 1) and returned by every intent view; an autonomy dispatch carries `priority` the same way (`AutonomyDispatch.priority`).
+- **Tests.** `intent-service/tests/test_main.py`: an intent created with `intentPriority=5` reads it back, and `intentPriority: 0` is refused.
+- **Open.** What uses it: the arbitration rule (`MGT-16.4`) and the rest of `PR-MGT-16`.
+
+### PR-STD-4.6 — `decided_by` and `pinnedBy` are the signed-in GUI user
+
+Closed from `OPEN_ITEMS.md` (October 2026 reconciliation).
+
+- **What.** The GUI backend's permission table forces both, as it does `requestedBy`: every `POST /aimgf/models/{id}/advance` rule carries `query_overrides=_decider`, which sets `decided_by` to `smo-gui:<username>` (`gui-bff/app/rbac.py`, `_decider`), and `PUT /ran-nf-oam/o1-adaptor-endpoints/{id}/host-keys` carries `json_overrides` setting `pinnedBy` to `smo-gui:<username>`; the proxy applies an override after the browser's body or query (`gui-bff/app/main.py`), so what the browser sent is replaced.
+- **Tests.** `gui-bff/tests/test_main.py::test_a_model_decision_is_recorded_under_the_gui_user` (the request that reaches the module carries the signed-in user whatever `decided_by` the browser sent) and `gui-bff/tests/test_rbac.py::test_a_host_key_pin_is_attributed_to_the_gui_user`.
+- **Not covered.** A caller that bypasses the GUI (a module token at R1) still names the decider itself; the step was about the console.
+
+### PR-QA-1.2, 1.3 — the seed for large tables and the load script; 1.1 (cells) and 1.4 (baselines at 1k and 100k) open
+
+Closed from `OPEN_ITEMS.md` (October 2026 reconciliation).
+
+- **QA-1.2.** `scripts/load_seed.py --elements N`: N managed elements, 10 alarms and 5 performance files each, by `COPY`; 100 000 elements are 1 000 000 alarms and 500 000 performance files. `.github/workflows/smo-db-volume.yml` (weekly) seeds that volume, times the seed in its job summary ("Migrate to head (timed), then seed (timed)") and runs `scripts/db_volume_check.py` on it (`docs/PERFORMANCE.md`, "The upgrade over data").
+- **QA-1.3.** `scripts/load_run.py` (a closed-loop Python load generator, not k6 or locust) against compose, nightly and on demand in `.github/workflows/smo-load.yml`, after the seed (`docs/PERFORMANCE.md`, V-8a and V-8b).
+- **Open.** QA-1.1: cells, managed objects and KPI results are not seeded. QA-1.4: one baseline is recorded (0.5.0, 10 000 elements, `docs/PERFORMANCE.md` "Baselines"); 1k and 100k are not.
+
+### PR-QA-2 — Contract tests (QA-2.1 to 2.3)
+
+Closed from `OPEN_ITEMS.md` (October 2026 reconciliation).
+
+- **QA-2.1, 2.3.** `tests_integration/test_contract_schemathesis.py`: schemathesis over each module's live OpenAPI, in process on the integration mesh, for all seventeen modules with a document in `docs/openapi/` (`MODULES`; the sample rApps are not modules); deliberate exceptions in `tests_integration/contract_waivers.json` (a waiver that matches nothing fails). It runs in the step "Run cross-service integration tests" of the `unit-and-integration` job of `.github/workflows/smo-tests.yml`, so it gates (`docs/VALIDATION.md`, V-3).
+- **QA-2.2.** `tests_integration/test_r1_consumer_calls.py`, waivers in `r1_consumer_waivers.json` (V-4).
+
+### PR-QA-3.2 — SME down; QA-3.1 open
+
+Closed from `OPEN_ITEMS.md` (October 2026 reconciliation).
+
+- **QA-3.2.** `.github/workflows/smo-stress.yml` (nightly): SME is stopped with the gateway's introspection cache off, `scripts/stress_run.py probe --expect down --down-status 503` requires exactly 503 with `Retry-After` within the deadline, and `--expect up --wait 90` requires 200 within 90 s after SME is started again (`docs/VALIDATION.md`, V-9). The probes run after the load, not during a runbook replay.
+- **Open (QA-3.1).** The same lane stops Postgres, but the invariant there is any 5xx within the deadline (not a clean 503), then recovery.
+
+### PR-QA-6.2 — the GUI BFF's role matrix
+
+Closed from `OPEN_ITEMS.md` (October 2026 reconciliation).
+
+- **What.** `gui-bff/tests/test_rbac_matrix.py` (V-13b) is generated from `RULES` in `gui-bff/app/rbac.py`: for every rule a concrete request is built from its pattern (each alternative its own request), and for each of the three roles the rule must be the one that decides (a shadowed rule fails), allow its minimum role and every role above, and refuse every role below; a rule with a query condition must not decide without it; requests no rule names are refused for every role. Runs in the GUI backend's suite in the `unit-and-integration` job.
+- **Limit.** Of 163 rules, 162 have a role they refuse; the one viewer rule (the read catch-all `GET /<module>/...`) is allowed to every role, so its negative case is the near-miss and no-rule refusals, and the 401 of a request without a session (`/api/me` in `gui-bff/tests/test_main.py`).
