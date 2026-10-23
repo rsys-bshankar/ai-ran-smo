@@ -47,7 +47,7 @@ The cross-module AI/ML responsibility matrix is in [`../aimgf/README.md`](../aim
 - **Gate against AIMgF's truth.** The state is read from AIMgF's `model_lifecycle` row, not from MLMR, because lifecycle never belonged to MLMR.
 - **Decision here, storage there.** MLLF decides the node groups; AIMgF owns the row, so there is one lifecycle record per model.
 - **Stateless.** No table; every call re-reads the lifecycle. The `PATCH` replaces the whole list (re-calling with a different list overwrites it; there is no merge).
-- **Failure behaviour.** A 404 from AIMgF becomes `404 MODEL_NOT_FOUND` and a 403 becomes `403 MODEL_ACCESS_DENIED` with AIMgF's text, on the read and on the `PATCH`. Any other non-200 is not inspected and surfaces as an unhandled error (see 2.8). The read and write are not atomic: the state can change between them.
+- **Failure behaviour.** A 404 from AIMgF becomes `404 MODEL_NOT_FOUND` and a 403 becomes `403 MODEL_ACCESS_DENIED` with AIMgF's text (MLLF's own when the body is not JSON), on the read and on the `PATCH`. Any other non-200 is not inspected and surfaces as an unhandled error (see 2.8). The read and write are not atomic: the state can change between them.
 - **Idempotency.** Safe to repeat; the result is the list last written.
 - **Security.** Authentication is R1 Termination's bearer introspection. The gateway's change allow-list lets an rApp call this route (`smo_shared/roles.py`), and the GUI BFF requires the operator role for it (`gui-bff/app/rbac.py`). The module itself has no RBAC and judges no owner: its two calls to AIMgF go through `R1Client`, which names the calling rApp in `X-R1-On-Behalf-Of`, so AIMgF's owner rule judges that rApp and another rApp's model is refused (`MLLF-NODEGROUP-OWNER`). The console's call names no rApp and is not asked.
 
@@ -127,7 +127,7 @@ AIMgF is replaced by a fake R1 client.
 
 | Test file | Covers | Count |
 |---|---|---|
-| `tests/test_main.py` | refusal unless `CERTIFIED` / `PROMOTED`, refusal for `DEPRECATED`, node groups stamped and returned, `PROMOTED` accepted, unknown model 404, health; ownership (`MLLF-NODEGROUP-OWNER`): MLLF calls AIMgF for the calling rApp, a second rApp is 403 `MODEL_ACCESS_DENIED` with nothing written (on the read and on the write), the owner and the console pass | [counts](../docs/TEST_COUNTS.md) |
+| `tests/test_main.py` | refusal unless `CERTIFIED` / `PROMOTED`, refusal for `DEPRECATED`, node groups stamped and returned, `PROMOTED` accepted, unknown model 404, health; ownership (`MLLF-NODEGROUP-OWNER`): MLLF calls AIMgF for the calling rApp, a second rApp is 403 `MODEL_ACCESS_DENIED` with nothing written (on the read and on the write, and with MLLF's own text when AIMgF's 403 has no JSON body), the owner and the console pass | [counts](../docs/TEST_COUNTS.md) |
 
 ### 3.3 What is not covered here
 

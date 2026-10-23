@@ -160,3 +160,18 @@ def test_a_refused_write_is_passed_through_as_403(client, monkeypatch):
     monkeypatch.setattr("app.main.R1Client.patch", lambda self, path, json=None, **kw: FakeResponse(403, {"detail": {"title": "MODEL_ACCESS_DENIED"}}))
     resp = client.post(f"/models/{model_id}/deploy", json=["ng1"], headers={"X-R1-Role": "rapp", "X-R1-Invoker-Id": "rapp-b"})
     assert resp.status_code == 403 and resp.json()["detail"]["title"] == "MODEL_ACCESS_DENIED"
+
+
+class _NotJsonResponse(FakeResponse):
+    """A response whose body is not JSON: `json()` raises ValueError, as httpx does."""
+    def json(self):
+        raise ValueError("not JSON")
+
+
+def test_a_403_without_a_json_body_is_still_403_with_mllf_own_text(client, monkeypatch):
+    """A 403 from AIMgF whose body cannot be read as JSON still reaches the rApp as 403 `MODEL_ACCESS_DENIED`, with MLLF's own explanation."""
+    model_id = uuid.uuid4()
+    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: _NotJsonResponse(403, None))
+    resp = client.post(f"/models/{model_id}/deploy", json=["ng1"], headers={"X-R1-Role": "rapp", "X-R1-Invoker-Id": "rapp-b"})
+    assert resp.status_code == 403 and resp.json()["detail"]["title"] == "MODEL_ACCESS_DENIED"
+    assert "only its owner may place it" in resp.json()["detail"]["detail"]
