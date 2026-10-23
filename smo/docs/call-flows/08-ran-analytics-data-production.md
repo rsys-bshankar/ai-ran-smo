@@ -65,8 +65,8 @@ sequenceDiagram
     end
 ```
 
-In the console both calls need the **admin** role (`gui-bff/app/rbac.py`). The KPIs page's producer tools register a producer; the console has no
-deregister button yet (`OPEN_ITEMS.md` GUI-11.1), so an admin deregisters through the BFF's proxy (`DELETE /api/smo/ran-analytics/producers/{id}`).
+In the console both calls need the **admin** role (`gui-bff/app/rbac.py`). The KPIs page's producer tools register a producer; each row of its
+producer list has a **Deregister** button (admin only, after a confirm), which sends `DELETE /ran-analytics/producers/{id}?analytics_type` for that row.
 
 **Phase 1:** `dme_input_types` are stored as given, not looked up at DME, and `output_schema` is not checked against the reports the producer publishes
 (open item `MDA-SCHEMA`). A producer registered before revision 0056 has no `smeServiceId`; its deregistration withdraws nothing at SME.
