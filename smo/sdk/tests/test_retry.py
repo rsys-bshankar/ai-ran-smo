@@ -7,6 +7,8 @@ otherwise). The tests at the end use the real `R1Client` with `httpx`'s function
 is repeated inside an SDK call and not inside a module's.
 """
 
+from typing import Any
+
 import httpx
 import pytest
 
@@ -17,7 +19,7 @@ from smo_sdk.platform import PlatformClient
 from smo_shared import r1_client
 from smo_shared.r1_client import R1Client, _ModuleIdentity
 
-CONFLICT = (409, {}, {"detail": {"title": "CONCURRENT_MODIFICATION", "status": 409}})
+CONFLICT: tuple[int, dict, dict] = (409, {}, {"detail": {"title": "CONCURRENT_MODIFICATION", "status": 409}})
 
 
 class Scripted:
@@ -27,12 +29,13 @@ class Scripted:
     every request is answered 200 `{}`.
     """
 
-    def __init__(self, *answers):
-        self.answers, self.requests = list(answers), []
+    def __init__(self, *answers: Any):
+        self.answers: list[Any] = list(answers)
+        self.requests: list[httpx.Request] = []
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
-        answer = self.answers.pop(0) if self.answers else 200
+        answer: Any = self.answers.pop(0) if self.answers else 200
         if isinstance(answer, type) and issubclass(answer, httpx.TransportError):
             raise answer("scripted failure", request=request)
         if isinstance(answer, int):
@@ -73,7 +76,7 @@ class MockR1:
 @pytest.fixture
 def waits(monkeypatch):
     """Replaces the sleep with a recorder (the list it returns holds each wait in seconds) and makes the jitter return the top of its range."""
-    recorded = []
+    recorded: list[float] = []
     monkeypatch.setattr(_retry, "_sleep", recorded.append)
     monkeypatch.setattr(_retry, "_uniform", lambda low, high: high)
     return recorded
@@ -187,8 +190,14 @@ def test_a_transport_error_left_after_the_last_attempt_is_raised(waits):
 
 def test_the_backoff_doubles_from_200_ms_and_is_capped_at_5_s_with_jitter(monkeypatch):
     """Before jitter the waits are 0.2, 0.4, 0.8, 1.6, 3.2, 5, 5 s; the jitter draws between half of each and all of it ("equal jitter")."""
-    ranges = []
-    monkeypatch.setattr(_retry, "_uniform", lambda low, high: ranges.append((low, high)) or low)
+    ranges: list[tuple[float, float]] = []
+
+    def _record(low: float, high: float) -> float:
+        # records the jitter range and draws its bottom
+        ranges.append((low, high))
+        return low
+
+    monkeypatch.setattr(_retry, "_uniform", _record)
     policy = RetryPolicy()
     assert [policy.wait(n) for n in range(1, 8)] == pytest.approx([0.1, 0.2, 0.4, 0.8, 1.6, 2.5, 2.5])
     assert ranges == pytest.approx([(0.1, 0.2), (0.2, 0.4), (0.4, 0.8), (0.8, 1.6), (1.6, 3.2), (2.5, 5.0), (2.5, 5.0)])
