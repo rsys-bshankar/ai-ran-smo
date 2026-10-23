@@ -18,11 +18,9 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .secretfile import read_secret
 
-# All fourteen modules share ONE Postgres instance, partitioned by moduleScope
-# per Requirements v0.1 section 3 — not one DB per module. Each module's models set
-# module_scope on write; queries are expected to filter by it explicitly rather
-# than relying on schema-level isolation, matching the pattern already used for
-# SME/DME/Onboarding/rApp Mgmt in the HLD.
+# The modules share ONE Postgres database, not one per module. Each module with tables has its own schema and its own role
+# (revisions 0023 to 0025, `migrations/db_roles.json`, `scripts/db_roles.py`): the role's search path is `<schema>, public`, so a
+# model names its table without the schema, and the shared tables (outbox, audit, identities) stay in `public` (OPEN_ITEMS DB-2.7).
 #
 # There is no default URL (PR-DB-1): a default would put a known database password in every image and
 # let a service that lost its configuration quietly talk to whatever answers on `postgres:5432`.

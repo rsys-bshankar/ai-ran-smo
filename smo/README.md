@@ -7,8 +7,12 @@ Management and Orchestration (SMO) platform. It is built from the design of
 seventeen SMO modules, each documented in its own `README.md`, and checked
 against the 3GPP and O-RAN specifications in
 [`../specs/`](../specs/README.md) and the O-RAN-SC reference repositories.
-Each module is a Python 3.11 / FastAPI / SQLAlchemy service with its own
-state machines and unit tests, and all modules share one Postgres schema.
+Each module is a Python / FastAPI / SQLAlchemy service with its own
+state machines and unit tests (the images run Python 3.14; the code supports
+Python 3.11 and later, and CI tests it on 3.11). All modules share one Postgres
+database, and every module that has tables keeps them in a schema of its own
+and connects as a role of its own (`migrations/db_roles.json`, revisions
+`0023` to `0025`); the few tables every module uses stay in `public`.
 They talk to each other only through the R1 Termination gateway. On top of
 the platform sit an operator GUI with a backend-for-frontend, an AI Runtime
 SDK, and four reference rApps (Energy Saving, Mobility Optimization,

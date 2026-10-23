@@ -201,7 +201,7 @@ to change too (`src/data/keys.ts`, `CROSS_MODULE`: a rApp instantiation also cha
 
 The sidebar has one **rApps** entry and, under it, the rApps the signed-in user **pinned** (at most five, kept by the BFF in `gui_rapp_pin`, so they follow the user to any browser). **rApps** opens the *Directory* tab: every rApp instance with its name, version, owner (the package's vendor), state, autonomy mode and whether it declares a page; search (after a 250 ms pause) by name, owner, version or id; filters for state, owner, "declares a page" and "pinned only"; paging by 25; a star pins or unpins. *Packages* and *Instances* are the other two tabs (onboarding, deploying, upgrading), unchanged; the Deploy dialog has an optional *Operator API base URL*.
 
-A row opens `/rapps/<instance>`. It shows, first, **the page the rApp's package declares** and, under *Platform overview*, what every rApp has: lifecycle (with its buttons), the KPIs it reported, safeguards, faults and version history. The declaration is `operatorUi` in the package's `manifest.yaml` (`../docs/adr/0004-operator-ui-declaration.md` has the format and its limits; `../docs/RAPP_PACKAGING.md` an example; `smo_sdk.operator_ui` writes one). The renderer is `src/components/OperatorUi.tsx` over `src/lib/operatorUi.ts` (pure, tested in `operatorUi.test.ts`), so **a rApp onboarded at run time shows its page with no GUI build** and nothing a rApp ships runs in the browser (no JavaScript, no iframe).
+A row opens `/rapps/<instance>`. It shows, under the header and KPI tiles, *Platform overview*: what every rApp has (lifecycle with its buttons, the KPIs it reported, safeguards, faults and version history); then, below it, under *Operator page*, **the page the rApp's package declares**. The declaration is `operatorUi` in the package's `manifest.yaml` (`../docs/adr/0004-operator-ui-declaration.md` has the format and its limits; `../docs/RAPP_PACKAGING.md` an example; `smo_sdk.operator_ui` writes one). The renderer is `src/components/OperatorUi.tsx` over `src/lib/operatorUi.ts` (pure, tested in `operatorUi.test.ts`), so **a rApp onboarded at run time shows its page with no GUI build** and nothing a rApp ships runs in the browser (no JavaScript, no iframe).
 
 | Declared | Drawn as |
 |---|---|
@@ -326,7 +326,7 @@ Each table: the page's tabs first, then the lifecycle screens for that module.
 
 | Screen | What it shows |
 |---|---|
-| [Energy Saving page](docs/screenshots/pages/rapp-page-energy-saving.png) | The page declared in the package: instance, closed-loop buttons, cells with sparklines and row actions, then the platform overview |
+| [Energy Saving page](docs/screenshots/pages/rapp-page-energy-saving.png) | The platform overview, then below it the page declared in the package: instance, closed-loop buttons, cells with sparklines and row actions |
 | [Mobility page](docs/screenshots/pages/rapp-page-mobility.png) | The same renderer on another package, as an admin |
 | [Mobility page, as a viewer](docs/screenshots/pages/rapp-page-mobility-viewer.png) | No change button, and a sentence saying why |
 | [Mobility: relation drawer](docs/screenshots/pages/rapp-drawer-mobility.png) | The drawer of a row: trend chart, the latest execution as JSON, the history fetched for that row |

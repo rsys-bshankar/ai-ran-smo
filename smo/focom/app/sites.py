@@ -5,7 +5,7 @@ What it is: the routes `/locations`, `/o-cloud-sites` and `POST` / `DELETE /reso
 
 Owns: the referential rules of the three kinds: a site names an existing location, a pool names an existing site, ids are unique, and a parent that still
 has children cannot be deleted. All of these answer 422 `SCHEMA_VALIDATION_FAILED`; an unknown id on get answers 404 `NRM_OBJECT_NOT_FOUND`.
-Does not own: which pool `POST /resources/provision` uses (always `pool-0`, in `main.py`), or any authorization (R1 Termination decides who may call).
+Does not own: which pool `POST /resources/provision` uses (its body's `resourcePoolId`, else `pool-0`; in `main.py`), or any authorization (R1 Termination decides who may call).
 
 Before editing: every object created here gets the single Phase 1 `oCloudId` (`PHASE1_CLUSTER_ID`); there is no way to create a second O-Cloud. The
 seeded `loc-0`, `site-0` and `pool-0` are ordinary rows and can be deleted once empty, but `ensure_phase1_topology` seeds them again on the next read.

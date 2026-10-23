@@ -89,26 +89,42 @@ What is in place, so you can judge what counts as a vulnerability:
   the GUI (`:3000`) and Postgres (`:5432`) publish host ports.
   The optional `tls` profile adds an nginx edge on `:3443` (GUI) and `:8443` (R1)
   with TLS 1.2+ and HSTS; the plain ports stay open until a deployment removes them.
-  Services behind the edge speak HTTP on the compose network, unless mutual TLS between services is switched on
-  (`SMO_MTLS=on`, `docker-compose.mtls.yml` or the chart's `mtls.enabled`; off by default, `docs/ARCHITECTURE.md`, "Mutual TLS between
-  services"). With it every service requires a client certificate from one CA and every module's calls present one. The development CA of
-  `scripts/mtls_certs.py` is for trials: its key must stay off the hosts that run the stack, and a deployment brings its own CA. Not covered: the
-  certificate name is not used for identity (the token check at the gateway is unchanged), Postgres has no TLS (`PR-SEC-2.4`), `mock-o1-adaptor`,
-  the GUI's nginx and the GUI backend's own port stay plain HTTP, and a server loads its certificate at start (renewal needs a restart).
+- **Encryption between services.** Services behind the edge speak HTTP on the compose network, unless mutual TLS between services is switched on
+  (`SMO_MTLS=on`, `docker-compose.mtls.yml` or the chart's `mtls.enabled`; off by default, `PR-SEC-2` in [`smo/HISTORY.md`](smo/HISTORY.md),
+  `smo/docs/ARCHITECTURE.md`, "Mutual TLS between services"). With it every service requires a client certificate from one CA and every module's
+  calls present one. The development CA of `scripts/mtls_certs.py` is for trials: its key must stay off the hosts that run the stack, and a
+  deployment brings its own CA. Not covered: the certificate name is not used for identity (the token check at the gateway is unchanged),
+  `mock-o1-adaptor`, the GUI's nginx and the GUI backend's own port stay plain HTTP, and a server loads its certificate at start (renewal needs a
+  restart).
+- **Database connections.** Postgres can serve TLS only, with every client checking the chain and the host name (`sslmode=verify-full`):
+  `docker-compose.pgtls.yml` or the chart's `postgres.tls.enabled`, off by default (`PR-SEC-2.4`). A plain connection from the network is then
+  refused by the server. Not covered: the connection from a service to the optional PgBouncer pooler stays plain, and the database does not ask
+  clients for a certificate (the role password is the credential). Each module that has tables connects as a role of its own that can reach only
+  its own schema and the shared tables it uses (`smo/migrations/db_roles.json`).
+- **O1 southbound.** An O1 endpoint can be registered with `transport: ssh` (NETCONF over SSH, host keys pinned, no trust on first use) or
+  `transport: tls` (NETCONF over TLS with a client certificate, the server's certificate checked), each with a credential per endpoint named by
+  reference (`PR-SB-1`, `PR-SB-2`). The default `http-mock` transport and RESTCONF are plain HTTP without authentication.
 - **Operator GUI.** Session JWT in an `HttpOnly; Secure; SameSite=Strict`
   cookie, CSRF double-submit on unsafe methods, role checks (viewer / operator /
   admin) re-read on every request, account lockout after repeated failures, an
   append-only audit log (append-only in the application; not hash-chained, `STD-4.7`), a strict CSP, and a proxy that never forwards browser
   credentials to R1. Optional OIDC sign-in (`GUI_OIDC_ENABLED`, off by default): authorization code with PKCE, the ID token validated
   against the provider's JWKS (signature, issuer, audience, expiry, nonce; asymmetric algorithms only), the state held in the database and tied to the
-  browser by a cookie, roles from a configured group map with no role as the default (refused), and the same session as a password login; the
-  provider enforces multi-factor, and the local admin stays as the break-glass account (`GUI_LOCAL_LOGIN_ENABLED=false` removes it).
+  browser by a cookie, roles from a configured group map with no role as the default (refused), and the same session as a password login.
+  Multi-factor (`PR-SEC-7`): a one-time code (TOTP, RFC 6238) for local accounts, with recovery codes, required for admins when
+  `GUI_ADMIN_MFA_REQUIRED` is set; `GUI_LOGIN_MODE=oidc` makes the identity provider (and its MFA) the only login except for a break-glass
+  account, which needs password and one-time code. All of it is off by default. A user can carry a region and tenant scope that the modules
+  apply to everything the console does for them (`GUI-5.1`, `GUI-5.2`).
   Details: [`smo/gui/README.md`](smo/gui/README.md#security), [`smo/gui-bff/README.md`](smo/gui-bff/README.md) section 2.9.
 - **Outbound callbacks.** Any caller-supplied callback URL is called through
   one helper (`smo_shared.webhook`); RAN NF OAM vendor discovery never fetches a
   URL taken from a request body.
 - **Platform audit.** Every authenticated change through R1 Termination is recorded in a hash-chained,
   numbered audit table (`python -m smo_shared.audit verify` and `export`); the request body is never recorded.
+- **What an rApp may do.** R1 Termination forwards the role SME recorded for the caller (`internal` for an SMO module, `rapp` otherwise) and
+  refuses an rApp on internal-only routes and on any change outside an allow-list (403 `ROLE_NOT_PERMITTED`, `PR-SEC-14`), and on everything
+  once it is stopped by the kill switch. An rApp can also carry a region and tenant scope claim; the module that owns a managed element refuses,
+  hides or filters what lies outside it (`SEC-10`, `smo/docs/adr/0005-tenant-region-authorization.md`). No claim means unscoped.
 - **Secrets.** The GUI admin password is generated at first start when
   `GUI_ADMIN_PASSWORD` is unset and written to a `0600` file; `GUI_JWT_SECRET`,
   when unset, is generated once and stored in the GUI database so every instance
@@ -124,11 +140,12 @@ declined, but a way to exploit one in a surprising way is welcome.
 - The compose file publishes Postgres on `:5432` (its password is generated per
   checkout by `scripts/init_secrets.sh`, but the port is still reachable from the
   host's network). Unpublish the port for anything beyond a laptop demo.
-- **No TLS** is terminated inside the stack except by the optional `tls` profile's
-  edge. The GUI cookie is marked `Secure`, so put a TLS-terminating proxy (or that
-  edge) in front of it; R1 Termination at `:8080` is plain HTTP.
-- Module-to-module traffic on the compose network is unauthenticated apart from
-  the R1 token check at the gateway; there is no mTLS between services.
+- **TLS is off by default.** The default stack terminates no TLS: the edge (`tls`
+  profile), mutual TLS between services and Postgres TLS are each switched on by a
+  deployment. The GUI cookie is marked `Secure`, so put a TLS-terminating proxy (or
+  the edge) in front of it; R1 Termination at `:8080` is plain HTTP.
+- Without mutual TLS, module-to-module traffic on the compose network is
+  unauthenticated apart from the R1 token check at the gateway.
 - OAuth2 tokens are opaque and introspected. SME checks a token's `scope`
   against the published APIs when it issues the token, but R1 Termination
   checks only that a token is active, not what its scope allows. An invoker
@@ -146,15 +163,18 @@ declined, but a way to exploit one in a surprising way is welcome.
   are signed with a demo key whose private half is committed under
   `smo/samples/demo-signing/`: never trust it in production
   (`smo/docs/RAPP_PACKAGING.md` section 8).
-- The O1 transports are not hardened: RAN NF OAM speaks RFC 6241-shaped
-  NETCONF `edit-config` and RFC 8040 RESTCONF over plain HTTP, without TLS or
-  authentication, to the adaptor, and the stack has not been run against a real
-  RAN.
-- OIDC login: one provider, no LDAP, no back-channel logout, no native MFA (the provider's), and the ID token is not kept, so the end-session
+- The default O1 transport (`http-mock`, used by the mock adaptor) and RESTCONF
+  are plain HTTP without TLS or authentication; NETCONF over SSH or TLS has to be
+  chosen per endpoint. The stack has been run against a NETCONF lab server
+  (Netopeer2, the `netconf-lab` profile), not against a real RAN.
+- OIDC login: one provider, no LDAP, no back-channel logout, and the ID token is not kept, so the end-session
   request has no `id_token_hint` and the provider may ask the person to confirm. A user's role is set from the token at each sign-in, so a role an admin sets by hand on an
   OIDC user lasts until that user's next sign-in. Tested against a fake provider in unit tests and against Keycloak in CI, not against any other provider.
-- Backend RBAC exists only in `gui-bff`; R1 service APIs authenticate callers
-  but do not authorise per resource.
+- Roles for people (viewer, operator, admin) exist only in `gui-bff`. Behind R1,
+  the gateway's role policy separates SMO modules from rApps, and the scope claim
+  limits which managed elements a caller may touch; there is no other
+  authorisation per resource. DME and MLMR data carry no region or tenant and are
+  not scoped (`SEC-10.7` in `smo/OPEN_ITEMS.md`).
 - Personal data (GUI users and the names written next to operator actions) is inventoried in
   [`smo/docs/PRIVACY.md`](smo/docs/PRIVACY.md). Deleting a GUI user removes the account, its
   sessions and its failed-login counter; the audit rows and module records that name the user

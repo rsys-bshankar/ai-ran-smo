@@ -6,6 +6,8 @@ Every word on the page comes from the catalog (`src/i18n/en/rapp-detail.ts`, `de
 
 ## Sections
 
+Order on the page (`index.tsx`): header, KPI tiles, *Platform overview* (flows, history, decisions and KPIs reported on the left; lifecycle, safeguards, faults and cells on the right), then the declared *Operator page* below it.
+
 | id | file | what it shows | API (via data/queries.ts) | refresh | budget |
 | --- | --- | --- | --- | --- | --- |
 | rapp.header | sections/Header.tsx | name, version, owner, state, autonomy (read-only), Pin, Stop rApp (reason, confirm) / Resume, Re-send credentials (admin, when the rApp has an operator API: call flow 01e) | `/api/rapps/<id>`, `/api/me/pins`, `/rapp-mgmt/instances/<id>/safeguards`; `PUT\|DELETE …/kill`, `POST …/credentials/renew`, `PUT\|DELETE /api/me/pins/<id>` | 15 s | 3 calls (shared) |

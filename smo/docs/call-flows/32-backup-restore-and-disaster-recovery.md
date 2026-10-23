@@ -59,7 +59,7 @@ sequenceDiagram
 
 The worst-case loss is the interval plus `backupSeconds` plus the upload: 600 s leaves 300 s inside the 15 minutes. Two failed runs in a row breach the
 RPO and nothing alerts on it yet: watch `docker compose logs db-backup`. The image (`backup/Dockerfile`) is Postgres 18's plus the AWS CLI, so `pg_dump`
-is never older than the server; the script is mounted, not copied. **Phase 1:** the chart has no backup CronJob and the backup image is not published,
+is never older than the server; the script is mounted, not copied. **Phase 1:** the chart has no backup CronJob (the backup image is published with each release as `smo-backup`, without the script),
 so the bundled single-pod Postgres or a non-CloudNativePG external one on Kubernetes is backed up by running `dr_backup.sh` from a host or a job of the
 operator's; the GUI's SQLite on a PVC is not copied on Kubernetes at all. Onboarded packages (`smo_packages`) are not in Postgres and not in the set.
 

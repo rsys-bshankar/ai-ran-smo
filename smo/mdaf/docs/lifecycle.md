@@ -106,7 +106,9 @@ sequenceDiagram
         MD-->>P: 403 PRODUCER_NOT_REGISTERED / 502 UPSTREAM_FAILED
     else
         MD->>DME: GET /dme/data-jobs/{id} for each input source
-        alt a source DME does not answer 200 for
+        alt DME does not answer (a transport error)
+            MD-->>P: 503 ENDPOINT_UNREACHABLE, nothing stored
+        else a source DME does not answer 200 for
             MD-->>P: 422 DME_ARTIFACT_NOT_FOUND, nothing stored
         else
             Note over MD: subscribers of the type matched (a threshold fires on a crossing, re-armed past the hysteresis),<br/>active MDA requests matched by scope, output type and its filters and thresholds
@@ -122,8 +124,8 @@ sequenceDiagram
 
 The report and every notification it causes are one transaction (PR-MSG-1.8): nothing is sent for a report that did not commit. The drift forwarding
 runs after the commit and is best effort: AIMgF down skips it and never fails the publish ([call flow 13c](../../docs/call-flows/13-mlmf-subscription-lifecycle.md)).
-Publishing is [call flow 08c](../../docs/call-flows/08-ran-analytics-data-production.md). **Phase 1:** a transport error talking to DME is not caught
-(a 500), and STREAMING has no transport.
+Publishing is [call flow 08c](../../docs/call-flows/08-ran-analytics-data-production.md). DME not answering is 503 `ENDPOINT_UNREACHABLE`, with nothing
+stored. **Phase 1:** STREAMING has no transport.
 
 ## d — The worker
 

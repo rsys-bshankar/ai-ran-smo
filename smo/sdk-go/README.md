@@ -200,7 +200,7 @@ docker compose logs -f hello-go-rapp          # "registered with SME...", "opera
 #    /rapp-mgmt/instances/{instanceId}/terminate as the operator to retire the instance
 ```
 
-Leave `HELLO_INVOKER_*` empty to let the example enroll its own invoker (the credentials of step 2 are then not needed, but `PUT .../operator-api` is refused for it: only the instance's own invoker may register for the instance, so leave `HELLO_INSTANCE_ID` empty too and no page is drawn). `bootstrap-complete` is not sent by the example because an rApp cannot send it through R1 (2.5).
+Leave `HELLO_INVOKER_*` empty to let the example enroll its own invoker (the credentials of step 2 are then not needed, but `PUT .../operator-api` is refused for it: only the instance's own invoker may register for the instance, so leave `HELLO_INSTANCE_ID` empty too and no page is drawn). The example does not send `bootstrap-complete` itself, so step 4 is done as the runbook does it. An rApp may send it through R1 for its own instance (`RAppClient.BootstrapComplete`, allowed since `PR-SEC-10`, 2.5); with a self-enrolled invoker rApp Management refuses it (403 `NOT_THIS_INSTANCE`), as it does `PUT .../operator-api`.
 
 ### 4.2 Package it as a CSAR
 

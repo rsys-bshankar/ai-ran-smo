@@ -76,8 +76,9 @@ and attribute names. It realises no TS 28.312 expectation semantics beyond `IS_E
 - **Dispatch is chosen by target, then by action type.** A coordination-group monitor ignores `actionType` and
   always triggers a retrain of the group via AIMgF, because NF-oriented actions have no meaning for a model group.
 - **ROLLBACK needs a version history.** Only rApp Management keeps one, so ROLLBACK is dispatched only for an
-  rApp-instance-scoped monitor; any other monitor is refused (409 `ROLLBACK_HISTORY_UNAVAILABLE`) rather than
-  pretending.
+  rApp-instance-scoped monitor; an order-scoped or untargeted monitor is refused (409 `ROLLBACK_HISTORY_UNAVAILABLE`)
+  rather than pretending. A coordination-group monitor is not refused: like any action on it, ROLLBACK retrains the
+  group (recorded `RETRAIN`).
 - **A downstream refusal is an outcome, not an error.** If the target module answers non-2xx, the action is
   recorded `ESCALATED` (with the refusal reason in `detail` for rollback) and the call returns 201.
 - **RECONNECT means heal.** The NFO deployment is resolved from the order's completed `DEPLOY` step
@@ -231,11 +232,12 @@ a JSON string `{"actions": [...]}` carrying the DME action ids and forwarded RAN
 | Remedial action | See the dispatch table | Non-2xx recorded as `ESCALATED` with the reason; no answer recorded `ESCALATED` (outcome unknown) |
 | Registration with `analytics_type` | `POST /mdaf/subscriptions?analytics_type&requested_by=sa-smos:monitor/{id}` `{notificationDestination: <SA_SMOS_REPORTS_URL>/monitors/{id}/reports}` | Non-2xx or no answer → 502, nothing stored |
 | A pushed report | `GET /mdaf/reports/{reportId}` | 404 → `IGNORED`; other failure → 503 (the outbox retries) |
-| Registration | `DELETE` then `POST /intent-service/intent-handling-functions` with `notificationDestination = SA_SMOS_O1_CM_HANDLER_URL` | Non-201 → 422 |
+| Registration | One `POST /intent-service/intent-handling-functions` with `notificationDestination = SA_SMOS_O1_CM_HANDLER_URL`; Intent Service updates an existing registration in place, so the intents addressed to `sa-smos` stay | Non-201 → 422 |
 | `enact_intent` | `GET /intent-service/intents/{id}`; `GET /intent-service/intent-handling-functions` (CM targets); `POST /dme/actions` per expectation with `{requestedBy, changes, actionId, sourceContext {intentId, expectationId, rmioId}}`; `POST /intent-service/intent-reports` | A DME status other than 200/202 becomes `HTTP_<code>` and degrades the report; if the report publish fails the enactment is still recorded with a null `intent_report_id` |
 
-Inbound: Intent Service pushes one `POST /o1-cm-handler/intents` per new intent (best-effort on its side, no
-retry). No background tasks.
+Inbound: Intent Service pushes one `POST /o1-cm-handler/intents` per new intent through its notification outbox: a row
+committed with the intent, retried with backoff on no answer or a 5xx (DEAD after five attempts; a 4xx is not retried).
+A retried push can enact an intent twice (`SA-REPLAY` in `../OPEN_ITEMS.md`). No background tasks.
 
 ### 2.6 Configuration
 
@@ -252,7 +254,7 @@ retry). No background tasks.
 | Code | HTTP | When |
 |---|---|---|
 | `ASSURANCE_MONITOR_NOT_FOUND` | 404 | Unknown monitor on any monitor route |
-| `ROLLBACK_HISTORY_UNAVAILABLE` | 409 | `ROLLBACK` for a monitor that is not rApp-instance-scoped |
+| `ROLLBACK_HISTORY_UNAVAILABLE` | 409 | `ROLLBACK` for an order-scoped or untargeted monitor (a coordination-group monitor retrains instead) |
 | `REMEDIAL_ACTION_IN_PROGRESS` | 409 / 503 | Another remedial action of the monitor runs (409 to a person, 503 to MDAF's push so it is sent again) |
 | `UPSTREAM_FAILED` | 502 / 503 | MDAF refused or did not answer the subscription (502), or the report read (503 to the push) |
 | `COORDINATION_GROUP_MISMATCH` | 422 | More than one target on a monitor; unknown `actionType`; RETRAIN on a monitor without a group (the code is reused) |
@@ -272,7 +274,8 @@ retry). No background tasks.
 - `auto_execution_scope_config` is never read or written by a route.
 - The O1-CM handler enacts only `IS_EQUAL_TO` targets on `RAN_SUBNETWORK` objects; other conditions are reported
   unsupported.
-- No `../OPEN_ITEMS.md` entry is specific to SA SMOS.
+- `../OPEN_ITEMS.md` entries for SA SMOS: `SA-LIFE` (no monitor deletion, no escalation lifecycle), `SA-REPLAY` (a re-pushed
+  intent or re-delivered report can do the work twice) and `FIRST-PAGE` (the handler reads only the first page of RMIHs).
 
 ## 3. Unit tests
 

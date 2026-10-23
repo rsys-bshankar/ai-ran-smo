@@ -89,7 +89,7 @@ Onboarding calls rApp Management only to release an orphaned usage registration 
 | Instances may be created from `AVAILABLE` or `PRIMED` packages only. rApp Management checks it, and `usage/start` refuses any other state (`PACKAGE_NOT_DEPLOYABLE`). | Priming is optional. The second check closes the race with a deprecate or delete after rApp Management read the state, and keeps registrations off a `FAILED` package. |
 | Deleting a package deletes its NF deployment descriptor at NFO first; a refusal (a deployment still uses it, or NFO unreachable) leaves the package unchanged. | A deleted package leaves nothing deployable behind (call flow 06c). |
 | A usage registration can be released only when its instance is gone or `UNDEPLOYED`; Onboarding asks rApp Management. | The console must not be able to lift the guard while an instance runs (call flow 06c). |
-| Any error while onboarding ends the package `FAILED`, never in `ONBOARDING`. | A package stuck in `ONBOARDING` could not be deleted (call flow 06d). |
+| Any error raised while onboarding ends the package `FAILED`, never in `ONBOARDING` (a crash of the process itself can still leave it there: `LIFE-STUCK`, 2.8). | A package stuck in `ONBOARDING` could not be deleted (call flow 06d). |
 
 Idempotency: usage stop is idempotent (an already stopped registration keeps its first `stoppedAt`). Onboarding the same location twice is refused by the duplicate check, not deduplicated.
 
@@ -229,7 +229,9 @@ The reasons a package becomes `FAILED` are not HTTP errors; they are listed in 2
 - ASD identity is a line scan of flat `key: value` lines, not a YAML parse.
 - Package bytes are not stored; `access_url` points back into the original location.
 - `models.PACKAGE_STATES` is stale (see 2.3).
-- No open item in [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md) names this module.
+- Open items in [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md) that name this module: `LIFE-STUCK` (a crash after the `ONBOARDING` row is
+  committed, or a slow onboarding that outlasts the graceful stop, leaves the package `ONBOARDING` with no sweep to end it) and
+  `UNIQUE-SELECT` (the duplicate content-hash check is a read before the insert, not a unique index, so two replicas can both pass).
 
 ## 3. Unit tests
 

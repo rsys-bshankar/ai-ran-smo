@@ -261,7 +261,7 @@ Autonomy dispatches
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
-| POST | `/autonomy-dispatches` | Request a dispatch `{instanceId, modelId?, expectations[], priority, rmihId, intentMgmtPurpose, intentHandlingScope?, notificationDestination?, userLabel?}` (201) | 404 `RAPP_INSTANCE_NOT_FOUND`; 403 `INSTANCE_IDENTITY_MISMATCH` (an rApp, not the instance's `oauthClientId`); 404 `INTENT_HANDLING_FUNCTION_NOT_FOUND`; 422 `RMIH_CAPABILITY_MISMATCH`; 422 expectation schema; 422 `SCHEMA_VALIDATION_FAILED` when the region scope excludes the expectation |
+| POST | `/autonomy-dispatches` | Request a dispatch `{instanceId, modelId?, expectations[], priority, rmihId, intentMgmtPurpose, intentHandlingScope?, notificationDestination?, userLabel?}` (201) | 503 `ENDPOINT_UNREACHABLE` (rApp Management did not answer); 404 `RAPP_INSTANCE_NOT_FOUND`; 403 `INSTANCE_IDENTITY_MISMATCH` (an rApp, not the instance's `oauthClientId`); 404 `INTENT_HANDLING_FUNCTION_NOT_FOUND`; 422 `RMIH_CAPABILITY_MISMATCH`; 422 expectation schema; 422 `SCHEMA_VALIDATION_FAILED` when the region scope excludes the expectation |
 | GET | `/autonomy-dispatches` | List (`instance_id`, `status`, newest first) | |
 | GET | `/autonomy-dispatches/{dispatch_id}` | Read | 404 `AUTONOMY_DISPATCH_NOT_FOUND` |
 | POST | `/autonomy-dispatches/{dispatch_id}/resolve` | `{regionScope}` for an ASSIST dispatch | 403 `ROLE_NOT_PERMITTED` (an rApp, or no console user); 404; 409 `AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE` |
@@ -277,7 +277,7 @@ and, when the dispatch has one, `reportRecipientAddress = notificationDestinatio
 |---|---|---|
 | Intent created (any path) | POST to the RMIH's `notificationDestination`: `{intentId, expectationObjectTypes, intentPriority, rmioId, intentMgmtPurpose}`. The RMIH reads the intent back over R1. | Outbox row, committed with the intent; unreachable RMIH never fails create |
 | Any report written (initial, admin-state, published) | For each `intentReportControl` with a `reportRecipientAddress` whose `expectedReportTypes` (all when empty) intersect the report: POST `{notificationType: "notifyIntentReport", ...report view}` | Outbox row, committed with the report |
-| Autonomy dispatch | `GET /rapp-mgmt/instances/{id}` for `autonomyMode` and `regionScope` | Non-200 → 404 `RAPP_INSTANCE_NOT_FOUND` |
+| Autonomy dispatch | `GET /rapp-mgmt/instances/{id}` for `autonomyMode` and `regionScope` | No answer (connection error or timeout) → 503 `ENDPOINT_UNREACHABLE`; non-200 → 404 `RAPP_INSTANCE_NOT_FOUND` |
 | Autonomy dispatch / resolve / reject | POST dispatch summary to `notificationDestination` | Outbox row, committed with the dispatch; none sent when no destination; non-http(s) schemes are refused by the SSRF guard (`smo_shared.webhook`) at enqueue and at send |
 
 All notifications are sent through `smo_shared.webhook.post_webhook` (by the outbox), which blocks non-http(s) schemes and loopback,
@@ -310,6 +310,7 @@ No Intent-Service-specific variables.
 | `INSTANCE_IDENTITY_MISMATCH` | 403 | An rApp dispatching for an instance whose `oauthClientId` is not its invoker id |
 | `INTENT_HANDLING_FUNCTION_IN_USE` | 409 | Deregistering an RMIH that intents are still addressed to |
 | `RAPP_INSTANCE_NOT_FOUND` | 404 | Autonomy dispatch for an unknown instance |
+| `ENDPOINT_UNREACHABLE` | 503 | Autonomy dispatch when rApp Management does not answer the instance lookup |
 | `AUTONOMY_DISPATCH_NOT_FOUND` | 404 | Unknown dispatch id |
 | `AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE` | 409 | Resolve or reject outside `AWAITING_SCOPE` |
 | FastAPI validation (`HTTPValidationError`, 422) | 422 | Any body that fails the strict spec models (unknown field, bad enum, family-rule violation, empty required list) |

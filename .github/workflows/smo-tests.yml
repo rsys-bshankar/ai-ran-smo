@@ -46,7 +46,7 @@ jobs:
           pip install --require-hashes -r requirements/runtime.txt
           cd shared && mypy
 
-      # PR-V-2d: the modules that have no finding are type checked too (smo/scripts/run_mypy.sh lists them; the rest are counted there).
+      # PR-V-2d: every module is type checked too (smo/scripts/run_mypy.sh lists them).
       - name: mypy (modules)
         working-directory: smo
         run: scripts/run_mypy.sh
