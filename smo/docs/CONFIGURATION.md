@@ -344,6 +344,15 @@ compose and the chart use the file form (`docs/SECRETS.md` lists each secret, it
 |---|---|---|---|---|
 | `SMO_DB_ROLE_PASSWORD_DIR` | `/run/secrets` |  | `scripts/db_roles.py` | Directory `db_roles.py` (the `migrate` service) reads each module's database password file `db_password_<module>` from (default `/run/secrets`). A path, not a secret. |
 
+### `sdk`
+
+| Variable | Default | Secret | Read in | What it does |
+|---|---|---|---|---|
+| `SMO_SDK_RETRY` | `on` |  | `sdk/smo_sdk/_retry.py` | Python SDK (`smo_sdk`) in an rApp: `off` sends every SDK call once (no repeat after a transport error or a 429/502/503/504); `on` (the default) repeats them per the policy in `sdk/README.md`. Any other value stops the rApp at start. SMO modules do not read it. The Go and Java SDKs have no such variable (their policy is set in code). |
+| `SMO_SDK_RETRY_BASE_DELAY_MS` | `200` |  | `sdk/smo_sdk/_retry.py` | Python SDK: milliseconds of the first wait before a repeat (default 200); each following wait doubles, up to `SMO_SDK_RETRY_MAX_DELAY_MS`, with jitter between half and all of it. A whole number of at least 1. |
+| `SMO_SDK_RETRY_MAX_ATTEMPTS` | `4` |  | `sdk/smo_sdk/_retry.py` | Python SDK: how many times in all a call is sent when it keeps failing for a transient reason (default 4, the first send included; 1 means never repeat). A whole number of at least 1. |
+| `SMO_SDK_RETRY_MAX_DELAY_MS` | `5000` |  | `sdk/smo_sdk/_retry.py` | Python SDK: the longest wait between two sends, in milliseconds (default 5000), before jitter. A server's `Retry-After` may make one wait longer, up to 30 s. At least `SMO_SDK_RETRY_BASE_DELAY_MS`. |
+
 ### `sme`
 
 | Variable | Default | Secret | Read in | What it does |

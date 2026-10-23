@@ -11,6 +11,7 @@ by name (`from smo_sdk import operator_ui`), not through `AiRuntimeSdk`. Per-met
 from smo_shared.r1_client import R1Client
 
 from ._common import SdkError
+from ._retry import RetryPolicy
 from .analytics import AnalyticsClient
 from .data import DataClient
 from .intent import IntentClient
@@ -18,18 +19,24 @@ from .lifecycle import LifecycleClient
 from .models import ModelsClient
 from .platform import PlatformClient
 
-__all__ = ["AiRuntimeSdk", "SdkError", "DataClient", "AnalyticsClient", "ModelsClient", "LifecycleClient", "IntentClient", "PlatformClient"]
+__all__ = ["AiRuntimeSdk", "SdkError", "RetryPolicy", "DataClient", "AnalyticsClient", "ModelsClient", "LifecycleClient", "IntentClient", "PlatformClient"]
 
 
 class AiRuntimeSdk:
     """The six namespaces from the layered architecture diagram, one client each, sharing one `R1Client` and so one cached SME token (see `smo_shared/r1_client.py` on per-process token caching)."""
 
-    def __init__(self, r1: R1Client | None = None):
-        """Build the six clients over `r1`, or over a new `R1Client()` (which onboards its SME invoker on first use) when none is given; tests pass a fake."""
+    def __init__(self, r1: R1Client | None = None, retry: RetryPolicy | None = None):
+        """Build the six clients over `r1`, or over a new `R1Client()` (which onboards its SME invoker on first use) when none is given; tests pass a fake.
+
+        `retry` is the retry policy of every call (SDK-PY-RETRY); None reads it once from the environment (`RetryPolicy.from_env()`:
+        `SMO_SDK_RETRY`, `SMO_SDK_RETRY_MAX_ATTEMPTS`, `SMO_SDK_RETRY_BASE_DELAY_MS`, `SMO_SDK_RETRY_MAX_DELAY_MS`), which raises `ValueError`
+        for a value it cannot use. `RetryPolicy.off()` sends every call once.
+        """
         r1 = r1 or R1Client()
-        self.data = DataClient(r1)
-        self.analytics = AnalyticsClient(r1)
-        self.models = ModelsClient(r1)
-        self.lifecycle = LifecycleClient(r1)
-        self.intent = IntentClient(r1)
-        self.platform = PlatformClient(r1)
+        retry = retry if retry is not None else RetryPolicy.from_env()
+        self.data = DataClient(r1, retry)
+        self.analytics = AnalyticsClient(r1, retry)
+        self.models = ModelsClient(r1, retry)
+        self.lifecycle = LifecycleClient(r1, retry)
+        self.intent = IntentClient(r1, retry)
+        self.platform = PlatformClient(r1, retry)

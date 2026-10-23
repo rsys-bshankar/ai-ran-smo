@@ -1,15 +1,19 @@
-"""The plumbing every namespace client shares: `SdkError`, `ensure_ok`, the retry-on-conflict wrapper and `BaseClient`.
+"""The plumbing every namespace client shares: `SdkError`, `ensure_ok`, the retrying wrapper and `BaseClient`.
 
 Golden rule 6 (`docs/ARCHITECTURE.md`): the SDK is a thin client over the same R1 Termination path as every other cross-module call. Each client class wraps `R1Client` with one typed
-method per platform route; this file is the one place where a response becomes either a return value or an `SdkError`, and where a write that lost a race is repeated. A transport
-error (`httpx.HTTPError`) is not caught anywhere: only an HTTP answer becomes `SdkError`. Change `ensure_ok` or `_RetryOnConflict` with care, because every method of all six clients
-goes through them; `tests/test_retry_on_conflict.py` and the per-client tests pin their behaviour.
+method per platform route; this file is the one place where a response becomes either a return value or an `SdkError`, where a call is repeated per the retry policy (`_retry.py`,
+SDK-PY-RETRY) and where a write that lost a race is repeated. A transport error (`httpx.HTTPError`) that is left when the retries are spent is not caught: only an HTTP answer becomes
+`SdkError`. Change `ensure_ok` or `_RetryOnConflict` with care, because every method of all six clients goes through them; `tests/test_retry_on_conflict.py`, `tests/test_retry.py` and
+the per-client tests pin their behaviour.
 """
 
 import uuid
 from typing import Any
 
 from smo_shared.r1_client import R1Client
+from smo_shared.r1_client import token_flow_sender as r1_token_flow_sender
+
+from ._retry import RetryPolicy, is_safe, send_with_retry, token_flow_sender
 
 
 class SdkError(Exception):
@@ -76,48 +80,73 @@ def _is_concurrent_modification(resp) -> bool:
 
 
 class _RetryOnConflict:
-    """Wraps an R1 client so a mutating call that lost a write race (409 CONCURRENT_MODIFICATION,
-    PR-ST-2) is sent once more. The platform rolled the first attempt back and reloads the row for
-    the second, so the repeat either succeeds or is refused for what it now is (for example an
-    illegal transition because the other writer already made the same move); a second conflict is
-    returned as is. Reads are never retried, nor are calls that carry `files` (a consumed stream
-    cannot be resent). Side effects a route performs before its commit, such as a call to another
-    module, can run twice; the real remedy for that is an idempotency key (PR-ST-3), which every POST
-    made through this wrapper carries: the first attempt's key is reused by the repeat, so the platform
-    answers the repeat from the stored first answer if the first attempt did complete."""
+    """Wraps an R1 client so every SDK call follows the retry policy (`_retry.py`, SDK-PY-RETRY) and a mutating call that lost a write race
+    (409 CONCURRENT_MODIFICATION, PR-ST-2) is sent once more.
 
+    The layers, outermost first: the 409 repeat (once, so a call is sent at most twice for it); under each of those sends, the retry policy
+    (up to `max_attempts` sends on a transport error or 429/502/503/504, see `send_with_retry` for which calls); under each of those, `R1Client`'s
+    own one repeat with a fresh token on a 401. A lost write race gets a fresh retry budget, as in the Go SDK, and the 401 renewal is not counted
+    as an attempt. The token flow `R1Client` runs inside a call (bootstrap, invoker registration, grant) uses the same policy through
+    `smo_shared.r1_client.token_flow_sender`; the registration is repeated only on 429/503.
+
+    The 409 repeat: the platform rolled the first attempt back and reloads the row for the second, so the repeat either succeeds or is refused
+    for what it now is (for example an illegal transition because the other writer already made the same move); a second conflict is returned as
+    is. Reads are never repeated for a 409. A call that carries `files` is never repeated at all (a consumed stream cannot be resent). Side effects
+    a route performs before its commit, such as a call to another module, can run twice; the remedy for that is an idempotency key (PR-ST-3),
+    which every POST made through this wrapper carries: the first attempt's key is reused by every repeat, so the platform answers a repeat from
+    the stored first answer if the first attempt did complete.
+    """
+
+    _VERBS = ("get", "post", "put", "patch", "delete")
     _MUTATING = ("post", "put", "patch", "delete")
 
-    def __init__(self, r1):
-        """Wrap `r1`, the R1 client whose verbs (get, post, put, patch, delete) the namespace clients call."""
+    def __init__(self, r1, retry: RetryPolicy | None = None):
+        """Wrap `r1`, the R1 client whose verbs (get, post, put, patch, delete) the namespace clients call; `retry` is the policy (None: `RetryPolicy.from_env()`)."""
         self._r1 = r1
+        self._retry = retry if retry is not None else RetryPolicy.from_env()
 
     def __getattr__(self, name):
-        """The R1 client's attribute `name`; for a mutating verb, a function that sends the call and repeats it once on a 409 CONCURRENT_MODIFICATION.
+        """The R1 client's attribute `name`; for a verb, a function that sends the call per the retry policy and, for a mutating verb, repeats it
+        once on a 409 CONCURRENT_MODIFICATION.
 
-        A POST without `files` gets an `Idempotency-Key` header (a caller's own key is kept) that the repeat reuses; PUT, PATCH and DELETE carry none. A call with `files` is neither keyed nor
-        repeated, because the uploaded stream is consumed by the first attempt. Reads and every other attribute are passed through untouched.
+        A POST without `files` gets an `Idempotency-Key` header (a caller's own key is kept) that every repeat reuses; PUT, PATCH and DELETE carry
+        none. A call with `files` is neither keyed nor repeated, because the uploaded stream is consumed by the first attempt. Every other
+        attribute is passed through untouched.
         """
         attr = getattr(self._r1, name)
-        if name not in self._MUTATING:
+        if name not in self._VERBS:
             return attr
+        policy = self._retry
 
         def call(path, *args, **kwargs):
-            if name == "post" and kwargs.get("files") is None:
-                # one key per SDK call, reused by the repeat below (PR-ST-3); a caller's own key wins
+            if kwargs.get("files") is not None:
+                return attr(path, *args, **kwargs)        # a consumed upload stream cannot be sent again: one send, no repeat of any kind
+            if name == "post":
+                # one key per SDK call, reused by every repeat below (PR-ST-3); a caller's own key wins
                 headers = dict(kwargs.get("headers") or {})
                 headers.setdefault("Idempotency-Key", uuid.uuid4().hex)
                 kwargs["headers"] = headers
-            resp = attr(path, *args, **kwargs)
+            safe = is_safe(name, kwargs.get("headers"))
+
+            def send():
+                # one attempt; the token flow R1Client may run inside it is repeated by the same policy (SDK only, modules unchanged)
+                with r1_token_flow_sender(token_flow_sender(policy)):
+                    return attr(path, *args, **kwargs)
+
+            resp = send_with_retry(send, policy, safe=safe, what=f"{name.upper()} {path}")
             # Repeated once, not in a loop: a second conflict is returned to the caller as it is (PR-ST-2).
-            if kwargs.get("files") is None and _is_concurrent_modification(resp):
-                resp = attr(path, *args, **kwargs)
+            if name in self._MUTATING and _is_concurrent_modification(resp):
+                resp = send_with_retry(send, policy, safe=safe, what=f"{name.upper()} {path}")
             return resp
 
         return call
 
 
 class BaseClient:
-    """Base of the six namespace clients: holds `self._r1`, the given `R1Client` (or a new one) wrapped so that a write that lost a race is repeated once (`_RetryOnConflict`)."""
-    def __init__(self, r1: R1Client | None = None):
-        self._r1 = _RetryOnConflict(r1 or R1Client())
+    """Base of the six namespace clients: holds `self._r1`, the given `R1Client` (or a new one) wrapped by `_RetryOnConflict`, so every call follows
+    the retry policy and a write that lost a race is repeated once."""
+    def __init__(self, r1: R1Client | None = None, retry: RetryPolicy | None = None):
+        """Wrap `r1` (None: a new `R1Client()`) with `retry` (None: `RetryPolicy.from_env()`); an already wrapped client is kept as it is, so its
+        calls are not retried twice over."""
+        r1 = r1 or R1Client()
+        self._r1 = r1 if isinstance(r1, _RetryOnConflict) else _RetryOnConflict(r1, retry)
