@@ -50,8 +50,11 @@ def test_the_gateway_settings_this_change_adds_are_the_same_in_compose_and_the_c
     env = COMPOSE["services"]["r1-termination"]["environment"]
     assert env["R1_RATE_STORE"] == "${R1_RATE_STORE:-memory}" and VALUES["modules"]["r1-termination"]["env"]["R1_RATE_STORE"] == "memory"
     assert env["R1_BOOTSTRAP_KEY"] == "${R1_BOOTSTRAP_KEY:-}"                          # empty: off
-    callers = [name for name, service in _compose_services().items() if "R1_GATEWAY_URL" in (service.get("environment") or {})]
-    assert callers
+    # DOC-CF-3.1: a module reaches the gateway through R1Client's default URL without naming R1_GATEWAY_URL, and the GUI BFF through its own client, so
+    # every service that is an SMO module (it mounts the enrollment secret) is a caller too, but SME and FOCOM, which never ask /bootstrap
+    callers = [name for name, service in _compose_services().items()
+               if {"R1_GATEWAY_URL", "SMO_ENROLLMENT_SECRET_FILE"} & set(service.get("environment") or {}) and name not in ("sme", "focom", "r1-termination")]
+    assert {"dme", "dme-worker", "onboarding", "mlmr", "mdaf", "mdaf-worker", "intent-service", "gui-bff"} <= set(callers)
     for name in callers:                                                                  # every module and rApp that calls the gateway can present the key
         assert COMPOSE["services"][name]["environment"]["SMO_BOOTSTRAP_KEY"] == "${R1_BOOTSTRAP_KEY:-}", name
 
@@ -107,3 +110,21 @@ def test_the_shared_limiter_setting_reaches_the_gateway_pod():
     docs = _render("--set", "modules.r1-termination.env.R1_RATE_STORE=postgres")
     r1 = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == "r1-termination")
     assert {"name": "R1_RATE_STORE", "value": "postgres"} in r1["spec"]["template"]["spec"]["containers"][0]["env"]
+
+
+@helm
+def test_the_bootstrap_key_from_a_secret_reaches_the_gateway_and_every_caller():
+    """DOC-CF-3.2: with `bootstrapKeySecretRef` set, the gateway gets R1_BOOTSTRAP_KEY and every other module (the GUI backend and the workers included) gets
+    SMO_BOOTSTRAP_KEY, both from that Secret; the chart passed it to nothing before. Needs helm."""
+    docs = _render("--set", "bootstrapKeySecretRef.name=r1-bootstrap")
+    envs = _envs_of(docs)
+    assert envs["r1-termination"]["R1_BOOTSTRAP_KEY"]["valueFrom"]["secretKeyRef"] == {"name": "r1-bootstrap", "key": "bootstrap-key"}
+    for name in ("dme", "dme-worker", "onboarding", "mlmr", "mdaf", "intent-service", "gui-bff"):
+        assert envs[name]["SMO_BOOTSTRAP_KEY"]["valueFrom"]["secretKeyRef"]["name"] == "r1-bootstrap", name
+    assert not any("SMO_BOOTSTRAP_KEY" in e for e in _envs_of(_render()).values())
+
+
+def _envs_of(docs) -> dict[str, dict]:
+    """Deployment name -> its containers' environment by variable name."""
+    return {d["metadata"]["name"]: {e["name"]: e for c in d["spec"]["template"]["spec"]["containers"] for e in c.get("env") or []}
+            for d in docs if d and d["kind"] == "Deployment"}

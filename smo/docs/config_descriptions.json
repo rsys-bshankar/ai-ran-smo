@@ -165,7 +165,7 @@
   "SMO_BACKUP_S3_ENDPOINT": "Endpoint URL of an S3-compatible store that is not AWS (MinIO: `http://minio:9000`). Empty: AWS S3.",
   "SMO_BACKUP_S3_PREFIX": "Key prefix inside the bucket (default `smo`); each backup is a directory `<prefix>/<UTC timestamp>/` and `<prefix>/latest.json` names the newest.",
   "SMO_BACKUP_S3_SSE": "Server-side encryption requested on each upload: `AES256` or `aws:kms`. Empty: the bucket's own default applies.",
-  "SMO_BOOTSTRAP_KEY": "The key `R1Client` sends as `X-Bootstrap-Key` when it discovers the gateway's endpoints; must equal the gateway's `R1_BOOTSTRAP_KEY`. Unset: nothing is sent.",
+  "SMO_BOOTSTRAP_KEY": "The key `R1Client` (and the GUI backend's own client) sends as `X-Bootstrap-Key` when it discovers the gateway's endpoints; must equal the gateway's `R1_BOOTSTRAP_KEY`. Unset: nothing is sent.",
   "SMO_BOOTSTRAP_KEY_FILE": "Path of a file holding `SMO_BOOTSTRAP_KEY` (a mounted Secret). Give this or `SMO_BOOTSTRAP_KEY`, not both.",
   "SMO_BUILD_SHA": "Git commit of the build, baked into the image (`SMO_BUILD_SHA` build argument; compose reads it from your environment). Answered by `GET /version` and shown in the GUI. `unknown` when not given.",
   "SMO_BUILT_AT": "UTC time of the build (ISO 8601), baked into the image like `SMO_BUILD_SHA` and answered by `GET /version`. `unknown` when not given.",

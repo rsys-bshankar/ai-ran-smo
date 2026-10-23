@@ -18,6 +18,11 @@ spec:
   instances: 3
   imageName: ghcr.io/cloudnative-pg/postgresql:17.4@sha256:3c0ba08ea353c9705a755c113e4ae395be76553e0ed68076e5410cb09b9d17d9
   primaryUpdateStrategy: unsupervised
+  # Two minutes of unanswered liveness probes before the kubelet stops an instance (default 30 s, three probes 10 s apart). On the CI's one kind node the
+  # whole stack starts against this cluster during `helm install`, and an instance manager starved for 30 s was stopped: the primary went into a smart
+  # shutdown ("the database system is shutting down") with its container still Running, and the operator failed over before the job's own failover test
+  # (#521). A production cluster on its own nodes keeps the default.
+  livenessProbeTimeout: 120
   storage:
     size: 2Gi
   postgresql:

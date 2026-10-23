@@ -1,7 +1,11 @@
 The AI-RAN SMO {{ include "smo.tag" . }} is installing into the namespace {{ .Release.Namespace }}.
 
   kubectl -n {{ .Release.Namespace }} get pods                         every module, and the migration Job
-  kubectl -n {{ .Release.Namespace }} logs job/{{ ternary "migrate" (printf "migrate-%d" .Release.Revision) .Release.IsInstall }}   what it did to the database
+{{- if .Release.IsInstall }}
+  kubectl -n {{ .Release.Namespace }} logs job/migrate                 what it did to the database
+{{- else }}
+  kubectl -n {{ .Release.Namespace }} logs job/migrate-{{ .Release.Revision }}   why the migration failed (a hook Job that succeeded is deleted)
+{{- end }}
 
 The operator GUI: kubectl -n {{ .Release.Namespace }} port-forward svc/gui 3000:8080   then http://localhost:3000
 The R1 gateway:   kubectl -n {{ .Release.Namespace }} port-forward svc/r1-termination 8080:8000   then GET /bootstrap

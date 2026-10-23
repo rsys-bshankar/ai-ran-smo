@@ -294,7 +294,7 @@ smo/
     PRIVACY.md              personal-data inventory and the GUI user erasure procedure
     DATA_RESIDENCY.md       where data lives and what leaves a site
     CONTROL_MATRIX.md       ISO 27001 Annex A and NESAS/SCAS themes against what exists
-    call-flows/             27 Mermaid sequence diagrams of end-to-end journeys (each module's own lifecycle: <module>/docs/lifecycle.md)
+    call-flows/             32 Mermaid sequence diagrams of end-to-end journeys (28-32: deployment and operations) (each module's own lifecycle: <module>/docs/lifecycle.md)
     openapi/                committed OpenAPI spec per service, checked against the live schema
 ```
 
@@ -306,7 +306,7 @@ smo/
 | `<module>/README.md` | Per-module HLD, LLD and unit tests; linked from the module tables above |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Layers, golden rules, R1 conventions, standards per service |
 | [`docs/RAPP_PACKAGING.md`](docs/RAPP_PACKAGING.md) | How an rApp is packaged, each manifest / capabilities parameter, and what each sample declares |
-| [`docs/call-flows/`](docs/call-flows/) | One Mermaid sequence diagram per end-to-end journey (01–27) |
+| [`docs/call-flows/`](docs/call-flows/) | One Mermaid sequence diagram per end-to-end journey (01–27), and deployment and operations (28 compose, 29 Helm, 30 upgrade and rollback, 31 schema migration, 32 backup, restore and DR) |
 | [`docs/openapi/`](docs/openapi/) | Generated OpenAPI spec per service |
 | [`gui/README.md`](gui/README.md) | Operator GUI: running it, roles, security, pages, screenshots |
 | [`OPEN_ITEMS.md`](OPEN_ITEMS.md) | Items still open, and deliberate scope cuts |

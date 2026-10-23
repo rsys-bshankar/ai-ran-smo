@@ -158,6 +158,23 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
 - **OUTBOX-WORKERLESS** — SME, FOCOM and Intent Service have no worker of their own: their notification retries are done by the database-wide outbox
   sweep that other modules' workers run, so a deployment without those workers never retries them (and a row DEAD after five attempts is never resent).
   Approach: state the dependency in the chart (one sweep is required), or give each module the sweep.
+- **OPS-ARGO** — The chart assumes `helm install` / `helm upgrade`: rendered by Argo CD (or `helm template`), `lookup` sees nothing, so `smo-secrets` and
+  `smo-role-secrets` are generated anew on every sync, and the migration's `pre-upgrade` hook never runs as one (call flow 29e). Approach: name the
+  Secrets (`existingSecret`) under GitOps and map the hook to a sync wave (`argocd.argoproj.io/hook: PreSync`); say so in the overlays' README.
+- **OPS-HPA-REPLICAS** — With `autoscaling.enabled`, the Deployments' `replicas` is left out for every module, not only those an autoscaler is made for,
+  so a module without one runs at the Deployment default of one (call flow 29b). Approach: leave `replicas` out only where a HorizontalPodAutoscaler is
+  rendered.
+- **OPS-START-ORDER** — Compose's modules do not wait for PgBouncer's health under the pooler profile, and the migrate Job's `backoffLimit` /
+  `activeDeadlineSeconds` can give up on a Postgres that is slow to come up on a first install (call flows 28a, 29a). Approach: `depends_on` the
+  pooler's healthcheck; a wait for the database in the migrate Job before it counts attempts.
+- **OPS-PG-BIND** — Compose publishes Postgres on every interface of the host (`5432:5432`), with the demo password, so on a host with a public address
+  the database is reachable from outside (call flow 28a). Approach: bind to `127.0.0.1` by default, an override for anything wider.
+- **OPS-UPGRADE-LANE** — The upgrade lane (`smo-upgrade-kind.yml`) upgrades from a fixed older tag and its lock step names revision 0027, so it no longer
+  holds a lock on the table the newest revision alters (call flow 30).
+  Approach: take the previous release's tag and the newest revision's table from the repository at run time.
+- **OPS-A1-DROP** — The A1 tables (`a1_ei_type` and the others) that revision 0029 leaves for 0.4.0's `a1-related` module have no revision that drops
+  them, now that no supported release uses them (call flow 31). Approach: the contract revision that drops them, announced under `### Changed`.
+
 - **OI-7-config-push** — An instance's configuration change does not reach its rApp: `PUT /rapp-mgmt/instances/{id}/config` only stores
   it, and the rApp reads it when it starts the instance (call flow 07e). Approach: push it to the rApp's operator API as the credentials are
   (`POST /rapps/{id}/operator/instances/{id}/config`, through R1 Termination), with a declared schema checked first; the SDK applies it.
@@ -1414,11 +1431,11 @@ and how it stops and recovers. Same diagram format.
 
 | ID | Flow | State |
 |---|---|---|
-| DOC-CF-3.1 | Docker compose: start-up order, `migrate`, secrets, readiness, profiles (tracing, logging, mTLS, PgBouncer, replicas) | open |
-| DOC-CF-3.2 | Kubernetes with the Helm chart: install, readiness, secrets, the GitOps overlays | open |
-| DOC-CF-3.3 | Upgrade: rolling upgrade, expand/contract migrations, the previous release's code on the new schema | open |
-| DOC-CF-3.4 | Schema migration on its own (Alembic, roles and grants) | open |
-| DOC-CF-3.5 | Backup, restore and disaster recovery drill | open |
+| DOC-CF-3.1 | Docker compose: start-up order, `migrate`, secrets, readiness, profiles (tracing, logging, mTLS, PgBouncer, replicas) | done: call flow 28, `HISTORY.md` DOC-CF-3 |
+| DOC-CF-3.2 | Kubernetes with the Helm chart: install, readiness, secrets, the GitOps overlays | done: call flow 29, `HISTORY.md` DOC-CF-3 |
+| DOC-CF-3.3 | Upgrade: rolling upgrade, expand/contract migrations, the previous release's code on the new schema | done: call flow 30, `HISTORY.md` DOC-CF-3 |
+| DOC-CF-3.4 | Schema migration on its own (Alembic, roles and grants) | done: call flow 31, `HISTORY.md` DOC-CF-3 |
+| DOC-CF-3.5 | Backup, restore and disaster recovery drill | done: call flow 32, `HISTORY.md` DOC-CF-3 |
 
 ## v0.5.0 validation inventory (started)
 - **Every CHECK constraint on a status/enum column against the code that writes it: done (V-5).** `tests_integration/test_check_constraints.py` covers all 97 single-column lists (ten state-machine columns by enum, the rest by assigned literals); computed values and multi-column checks are not covered.

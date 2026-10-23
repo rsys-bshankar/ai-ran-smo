@@ -2793,6 +2793,40 @@ with a configuration table and the decisions it depends on, and PNGs beside each
 the follow-up change, and gaps recorded in `OPEN_ITEMS.md` (LIFE-STUCK, SA-REPLAY, UNIQUE-SELECT, SAMPLE-LIFE, FIRST-PAGE, OUTBOX-WORKERLESS, OAM-FM-DME,
 OAM-SWM-RESEND); the bootstrap key some modules are not given goes with DOC-CF-3.
 
+### DOC-CF-3 — Deployment and operations flows, and the bootstrap key given to every caller
+
+Five call flows, written from the compose file, the chart, the scripts and the CI lanes: 28 docker compose (start-up order, `migrate`, secrets,
+readiness and the bootstrap key, the profiles, the TLS edge), 29 Kubernetes with the Helm chart (install, readiness and rollout, secrets generated,
+your own or from Vault, ingress and NetworkPolicies, the GitOps overlays and Argo CD), 30 upgrade and rollback (a rolling upgrade, the previous
+release's code on the new schema, `helm rollback`, compose), 31 schema migration (Alembic, expand and contract, the roles and grants, the checks), and
+32 backup, restore and disaster recovery (the scheduled dump, the drill, CloudNativePG WAL archiving and point-in-time recovery), each split into
+diagrams with every outcome and the decisions it depends on, and drawn as PNGs.
+
+Writing 28c and 29c found that `R1_BOOTSTRAP_KEY` (PR-SEC-9.3) could not be turned on: compose did not pass `SMO_BOOTSTRAP_KEY` to `dme`, `onboarding`,
+`mlmr`, `mdaf`, `intent-service` and the `dme` and `mdaf` workers, the GUI backend's own client sent no key at all, and the chart passed it to nothing
+(the README's `_FILE` advice had no way to mount the Secret). Built:
+
+- `docker-compose.yml`: `SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}` on those seven services and on `gui-bff`.
+- `gui-bff/app/smo_client.py`: `_bootstrap_key()` (`SMO_BOOTSTRAP_KEY` or `SMO_BOOTSTRAP_KEY_FILE`) sent as `X-Bootstrap-Key` when the BFF discovers
+  SME's token endpoint; a unit test against a gateway that asks for it.
+- The chart: `bootstrapKeySecretRef` (`name`, `key` default `bootstrap-key`) passes the key from a Secret of your own, `R1_BOOTSTRAP_KEY` to R1
+  Termination and `SMO_BOOTSTRAP_KEY` to every other module, worker and the GUI backend (not to the static GUI), by `secretKeyRef`, so it is in neither
+  the values nor the Deployments.
+- `tests_integration/test_helm_bootstrap.py`: every compose service that mounts the enrollment secret (an SMO caller of `/bootstrap`) and `gui-bff` is
+  given the key, and a render with `bootstrapKeySecretRef` gives it to the gateway and every caller, and without it to none.
+
+Also corrected while writing them: the chart README and `NOTES.txt` (a `pre-upgrade` migrate Job that succeeded is deleted, so its log is gone; which
+modules have a database role; a changed Secret does not roll a pod), `docs/ARCHITECTURE.md` (the workers' periodic tasks), `docs/SECRETS.md` (every module
+with a database has a role), comments in `_helpers.tpl`, `modules.yaml`, `ci/cnpg-cluster-backup.yaml`, `smo-dr.yml`, `scripts/dr_drill.sh` and
+`scripts/downgrade_with_data.py`. **Not taken** (recorded in `OPEN_ITEMS.md`): Argo CD rendering (`lookup` and the hook, OPS-ARGO), `replicas` left out for
+every module under autoscaling (OPS-HPA-REPLICAS), waiting for the pooler and a slow first Postgres (OPS-START-ORDER), Postgres published on every
+interface (OPS-PG-BIND), the upgrade lane's fixed tag and revision (OPS-UPGRADE-LANE), and the A1 tables still kept (OPS-A1-DROP).
+
+The CI job `postgres-ha` failed on this change, and once on `main` before it, with the CloudNativePG primary stopped by the kubelet's liveness probe
+while the whole stack started against it on one kind node. The stop was a smart shutdown with the container still Running, so the operator failed over
+before the job's own failover test. `ci/cnpg-cluster.yaml` now gives an instance `livenessProbeTimeout: 120` (default 30 s). The job's failure dump
+sorts events by creation (`.lastTimestamp` had made it fail) and describes every Postgres instance, ready or not.
+
 ### DOC-CF-2 follow-up — what writing the lifecycle docs found wrong in the code and the READMEs
 
 - `migrations/db_roles.json`: MLMR's shared grants add `audit_log` and `audit_head` (it writes the audit trail through `smo_shared.audit`); a test now

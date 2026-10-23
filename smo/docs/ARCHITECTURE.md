@@ -145,9 +145,10 @@ back-off (`PR-ST-9`).
 
 ### How time-driven behaviour starts
 
-No module needs a periodic tick today. Everything that looks scheduled is
-evaluated lazily on a request or pushed by an external caller, so there is
-nothing to elect a leader for yet.
+Periodic work runs in a module's worker (below): RAN NF OAM, rApp Management,
+AIMgF, DME, MDAF and the sample rApps have one (`app/tasks.py`), and each
+worker also sweeps the database-wide outbox. What is in the table below is
+evaluated lazily on a request or pushed by an external caller instead.
 
 | Behaviour | Module | How it is triggered |
 |---|---|---|
@@ -165,8 +166,8 @@ collector, a drift check) must not add a thread or `create_task`: it lists the
 task in its module's `app/tasks.py` (`Task(name, interval_seconds, fn)`) and the
 worker (`python -m smo_shared.worker`, a separate process of the same image,
 `PR-MSG-4`) runs it through the single-runner claim of `PR-ST-8`: at most once per
-interval across any number of workers. RAN NF OAM is the first user
-(`ran-nf-oam/app/tasks.py`).
+interval across any number of workers (`ran-nf-oam/app/tasks.py` and the
+others named above).
 
 ## Service map
 

@@ -93,7 +93,7 @@ imagePullSecrets:
 {{- end }}
 {{- end -}}
 
-{{/* The environment of a container that talks to the database: the URL, the password file and (when it has one) the enrollment secret file. */}}
+{{/* The environment of a container that talks to the database: the URL and the password file of its role (the owner's when it has none). */}}
 {{- define "smo.dbEnv" -}}
 - name: SMO_DATABASE_URL
   value: {{ include "smo.databaseUrl" (dict "root" .root "role" .role) | quote }}
