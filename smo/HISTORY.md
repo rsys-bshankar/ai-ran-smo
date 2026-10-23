@@ -3969,3 +3969,155 @@ newest release at 0.8.0 and the head at `0061`, it no longer started from the pr
   rule (24 here; 39 of 40 in the nightly run on `main` the same day, from `smo-v0.4.0`, which failed on that alone: `UPGRADE-GATE-EXEMPT`).
 - **Not taken.** Reading the newest tag that is an ancestor of `HEAD` (`git tag --merged`): the other release checks take the newest tag, and the
   lanes should agree. Docs: call flow 30 (30a and 30e prose, 30b's note dated), `docs/VALIDATION.md` §8.
+
+### PR-SEC-9 — Bootstrap exposure: nothing left open
+
+Closed from `OPEN_ITEMS.md` (October 2026 reconciliation). The feature had three steps, all described above under "PR-SEC-9 — Bootstrap exposure (9.1, 9.2, 9.3)";
+its `OPEN_ITEMS.md` heading still carried an empty table. Checked against the code: `R1_BOOTSTRAP_KEY` in `r1-termination/app/main.py`, `SMO_BOOTSTRAP_KEY` in
+`smo_shared/r1_client.py`, `deploy/helm/smo/templates/networkpolicy.yaml`, `ingress.r1.bootstrapAllowedSourceRanges` in `values.yaml`, and the tests
+`r1-termination/tests/test_bootstrap_key_and_shared_limiter.py`, `tests_integration/test_helm_bootstrap.py` and `sdk/tests/test_bootstrap_key.py`. What stays open is
+a CI lane that starts the stack with the key set (`BOOTSTRAP-KEY-LANE`, `OPEN_ITEMS.md` section 4).
+
+### PR-MSG-1 and PR-OPS-1 — nothing left open
+
+Closed from `OPEN_ITEMS.md` (October 2026 reconciliation); both headings had an empty table.
+
+- **PR-MSG-1.** Every step is above (PR-MSG-1, 1.5 to 1.9 and 1.10). The `OPEN_ITEMS.md` text still named the DME stop-job `DELETE` as left inline; PR-MSG-1.10 moved
+  it (`enqueue(..., method="DELETE")` in `dme/app/main.py`, revision `0005`). The two class-C reads (`_producer_is_healthy` in `dme/app/main.py`, `onboard_vendor` in
+  `ran-nf-oam/app/vendors.py`) stay inline by design: the caller needs the answer (`docs/NOTIFICATIONS.md`, held by `test_notification_inventory.py`).
+- **PR-OPS-1.** OPS-1.1 to 1.3 ("PR-OPS-1 — Alembic baseline"), 1.4, 1.5 and 1.7 ("PR-OPS-1 (continued)") and 1.6 ("PR-OPS-1.6") are above. The rule is
+  `CLAUDE.md`, "Schema changes are revisions".
+
+### PR-DB-5 — Connection pooler (DB-5.1 to 5.3)
+
+Closed from `OPEN_ITEMS.md` (October 2026 reconciliation). The choices are "PgBouncer in a compose profile (PR-DB-5)" above.
+
+- **DB-5.1.** The compose service `pgbouncer` in the profile `pooler` (`docker-compose.yml`, `pgbouncer/entrypoint.sh`). The CI job `compose-pooler` of
+  `.github/workflows/smo-tests.yml` ("Stack behind PgBouncer (transaction pooling) replays the runbook") starts every module through it and runs the step
+  "Replay DEMO_RUNBOOK §2-§27 against the live stack, through PgBouncer (PR-DB-5.1)".
+- **DB-5.2.** `SMO_DB_POOLER` and `SMO_DB_PREPARE_THRESHOLD` in `smo_shared/db.py` (behind a transaction pooler the services turn psycopg's server-side prepared
+  statements off and stop sending `options`); `scripts/pooler_check.py`. The same job's step "The modules are connected to PgBouncer, and prepared statements do
+  not break (PR-DB-5.2)" checks that SME's URL names `pgbouncer:6432`, runs the check script in SME, and fails on "prepared statement ... does not exist" or
+  "unsupported startup parameter" in PgBouncer's log.
+- **DB-5.3.** `README.md`, "Connection pooling and pool sizing": the sum of the pools over replicas against `max_connections`, and the pooler's limit per role.
+- **Not covered.** The chart has no pooler (the operator's own serves, for example CloudNativePG's `Pooler`); PgBouncer failover is not tested.
+
+### PR-DB-7 — Postgres HA (DB-7.1 to 7.4)
+
+Closed from `OPEN_ITEMS.md` (October 2026 reconciliation). The choices are "Postgres HA lab (PR-DB-7.2 to 7.4, PR-HA-3.2)" above.
+
+- **DB-7.1.** `docs/adr/0003-postgres-ha.md`: an operator (CloudNativePG) behind `postgres.external.*`; the one-pod Postgres of the chart stays a lab default.
+- **DB-7.2.** The CI job `postgres-ha` of `.github/workflows/smo-tests.yml`: CloudNativePG 1.25.1 on kind, step "A three-instance cluster, one primary and two
+  replicas streaming from it (PR-DB-7.2)"; the stack's checks run on it ("The stack answers on it, and the roles hold").
+- **DB-7.3.** `postgres.external.targetSessionAttrs` and a comma-separated `postgres.external.host` (`deploy/helm/smo/values.yaml`, `smo.dbEnv` in
+  `templates/_helpers.tpl`). The job installs with the replicas first in the list and `read-write`, and the services reconnect after the step
+  "A planned switchover to a replica; writes go on, and nothing committed is lost (PR-HA-3.1)".
+- **DB-7.4.** Step "Kill the primary while writes go through SME; the stack recovers and nothing committed is lost (PR-DB-7.4, PR-HA-3)": the primary pod is
+  force-deleted while `scripts/k8s_failover_probe.py` writes through SME every 250 ms; then a new primary and three ready instances, writes back within 90 s, the
+  marker row committed before the kill present on the new primary, the audit chain verifying; the longest write gap is in the job summary.
+- **Moved to `HA-3.1`.** DB-7.4 asked for the failover during the runbook replay; the job runs the smoke gate `scripts/compose_e2e.py` and the roles script before and
+  after the kill instead. That remainder is the same as the switchover's, so it is tracked once, under `HA-3.1` (which needs the replay on kind, `OPS-2.9`).
+
+### PR-HA-3.2 — primary kill during a replay
+
+Closed from `OPEN_ITEMS.md` (October 2026 reconciliation): the same CI step as DB-7.4 above (the marker row committed before the kill is on the new primary:
+"no data loss for committed work"). The kill during a runbook replay, rather than around the smoke gate, is open under `HA-3.1`.
+
+### PR-HA-4 — Worker failover (HA-4.1, 4.2)
+
+Closed from `OPEN_ITEMS.md` (October 2026 reconciliation). The choices are "The outbox sweep was missing (PR-MSG-2 as part of PR-HA-4.1)" and "Staged CM jobs and the
+status constraints (revision 0026)" above.
+
+- **HA-4.1.** The `helm` job of `.github/workflows/smo-tests.yml`, step "Kill the delivery workers in the middle of a batch; no notification is lost (PR-HA-4.1)":
+  100 rows due now for a sink that takes 0.3 s each (`scripts/k8s_delivery_sink.py`), the `ran-nf-oam-worker` pods force-deleted once ten have arrived (the step
+  fails if the batch was already done), then all 100 `SENT` and 100 distinct notifications received; duplicates are counted and allowed.
+- **HA-4.2.** Same job, step "A staged CM job waits for the job runner while it is gone, and finishes when it is back (PR-HA-4.2)" (`scripts/k8s_staged_job_failover.py`):
+  a three-wave job with a 20 s pause, the worker scaled to 0 after wave 1, the job still stalled 30 s later, then finished once the worker is back.
+- **Limits.** In HA-4.2 the worker is stopped between waves (scaled to 0), not killed while a wave is being sent. A job whose lease another worker takes over is the
+  generic job table's own test (`MSG-4.4`, "Kill-the-worker test"), which does not exist yet.
+
+### PR-MSG-6 — SSRF check at send time (MSG-6.1 to 6.3)
+
+Closed from `OPEN_ITEMS.md` (October 2026 reconciliation): done by the hardening of the shared library (`CHANGELOG.md`, "Hardening of the shared library") and by
+SEC-15.16 above.
+
+- **MSG-6.1.** `smo_shared/webhook.py`: `_send` and `forward_to_destination` call `_vet_resolution`, which resolves the host once (`_resolved_addresses`,
+  `socket.getaddrinfo`) and refuses the call when any address is blocked (loopback, link-local and the metadata address, multicast, unspecified, reserved).
+  Tests: `shared/tests/test_webhook.py::test_a_name_that_resolves_to_loopback_is_not_called`, `test_one_blocked_address_among_several_blocks_the_name` and
+  `test_forward_to_destination_refuses_a_name_that_resolves_to_loopback`; `shared/tests/test_webhook_exact.py` for the resolver calls.
+- **MSG-6.2.** SEC-15.16: the connect is pinned to the vetted addresses, with the name kept for `Host`, SNI and the certificate check; `shared/tests/test_webhook_pinned.py`
+  (a public answer then loopback is never connected to; without the pin a second lookup reaches the other address).
+- **MSG-6.3, met without a flag.** A name that does not resolve is not blocked, so the fictional names of the unit tests (`http://consumer/cb`) reach the
+  (patched) client as before: `test_a_name_that_does_not_resolve_is_still_attempted`. `is_safe_webhook_destination` (also used at enqueue) does no lookup.
+  With the pin, a name that did not resolve at the check is connected to no address, so outside a patched client the call fails as an unreachable one does.
+
+### PR-DB-4.2, 4.3 — the first plans and the index they showed; the rest open
+
+Recorded from `OPEN_ITEMS.md` (October 2026 reconciliation); both steps stay open, narrowed.
+
+- **Built.** `scripts/db_volume_check.py`, run by `.github/workflows/smo-db-volume.yml` (weekly, on demand, and on a pull request that changes it) after
+  `scripts/load_seed.py --elements 100000`: `EXPLAIN (ANALYZE, FORMAT JSON)` of ten queries over `ran_nf_oam.alarm`, `pm_file` and `managed_entity` (by element,
+  by severity, the first and a deep page, the page totals). A case that must use an index fails on a `Seq Scan` (the alarms of one element and their count, the
+  performance files of one element); a case with a budget fails when slower; the others are reported. The table of scan types and times goes to the job summary.
+- **DB-4.3 for that set.** It found the performance files of one element scanning the table: revision `0027_pm_file_element_index.py` adds
+  `ix_pm_file_managed_element_ref` (the alarm's `idx_alarm_me` was in the baseline).
+- **Open.** The other modules' list routes; the SQL the routes send (the cases are written by hand, without the primary-key `ORDER BY` that `smo_shared.pagination`
+  adds or a scope filter); the plans kept as a file; the indexes that wider set shows.
+
+### PR-QA-3.3 — a dead subscriber in the outbox; "other calls" at the API open
+
+Recorded from `OPEN_ITEMS.md` (October 2026 reconciliation); the step stays open, narrowed.
+
+- **Built.** `smo_shared/outbox.py` sends the claimed rows of a drain concurrently (`SMO_OUTBOX_SEND_CONCURRENCY`, default 8) with a 2 s timeout; a row without an
+  answer is retried at 5 s / 30 s / 2 min / 10 min, then `DEAD`. Tests: `shared/tests/test_outbox.py::test_a_destination_that_does_not_answer_does_not_hold_up_the_others`
+  (eight dead rows and one healthy row: the healthy one is delivered before three timeouts have passed) and
+  `test_an_unreachable_destination_is_retried_with_backoff_and_then_dead`.
+- **Why it is not closed.** The acceptance is "other calls unaffected". The inline drain runs in the committing thread (the `after_commit` listener), so the request
+  that enqueued a notification for a hanging subscriber waits for that send before it answers; and no test measures the other routes of a running service while a
+  subscriber hangs. Both are what remains of `QA-3.3`.
+
+### PR-QA-4.1 — the upgrade test in CI; the replay of this release's runbook after it open
+
+Recorded from `OPEN_ITEMS.md` (October 2026 reconciliation); the step stays open, narrowed.
+
+- **Built.** Two jobs of `.github/workflows/smo-tests.yml`, run on every push to `main` and on a pull request that changes `smo/migrations`: "Upgrade from the previous
+  release keeps its data" (`scripts/check_upgrade_from_previous_release.sh`: the previous release installed and filled by its own runbook, this commit's `migrate`
+  service on the same volume, a seeded migration that breaks on data refused first, then row counts, packages and instances by id, `check_migration_matches_models.py`,
+  `compose_e2e.py` and the roles script) and "Previous release's code runs on the new schema" (`scripts/check_previous_release_code.sh`: the previous release's runbook
+  replayed on this commit's schema, with a control). On kind, `.github/workflows/smo-upgrade-kind.yml` (nightly) upgrades from the previous release and the one before
+  it under a light load. Details: "The upgrade lane (OPS-10.5, v0.2)" and "The previous release's code on the new schema (OPS-5.1, 5.2)" above.
+- **Open.** After the upgrade, this release's runbook (`tests_integration/test_demo_runbook.py`) is not replayed: it onboards a package the previous release's
+  runbook already left, and the duplicate-content check refuses it. The jobs run the smoke gate instead.
+
+### PR-QA-7 — Coverage (QA-7.1 to 7.3)
+
+Closed from `OPEN_ITEMS.md` (October 2026 reconciliation).
+
+- **QA-7.3.** `scripts/coverage_floor.py` against `coverage_floors.json`, in the step "Coverage against the floors (PR-V-1)" of the `unit-and-integration` job: a module
+  below its floor, or more than 3 points above it, fails (see "OI-4 closed" in section 4).
+- **QA-7.1, 7.2, dropped.** They asked to raise the test counts of `mllf`, `ran-analytics`, `mock-o1-adaptor`, `so-smos` and `r1-termination`. `docs/VALIDATION.md` (V-1)
+  measured them: a low count was not low coverage, and the per-module test-raising work is dropped. Their floors: `mllf`, `ran-analytics` and `so-smos` 100,
+  `mock-o1-adaptor` 98, `r1-termination` 91 (coverage.py under-reports its async proxy path, V-1).
+
+### PR-SEC-12.1 — an SBOM per release image; a file on the release open
+
+Recorded from `OPEN_ITEMS.md` (October 2026 reconciliation); the step stays open, narrowed.
+
+- **Built.** `.github/workflows/release-images.yml`, step "Build and push (by tag and digest, with provenance)": `docker buildx build --provenance=mode=max --sbom=true` on a
+  `docker-container` builder, so every image pushed to GHCR carries BuildKit's SBOM attestation beside it (`docs/RELEASES.md`). The workflow ran green for every tag from
+  `smo-v0.4.0` to `smo-v0.8.0`.
+- **Open.** Nothing reads the attestation back, and no SBOM file is attached to the GitHub release or kept as a workflow artifact; pull-request and `main` runs produce
+  none (only a release does).
+
+### PR-SEC-10.12 — the console user's claim; the rApp-action approver open
+
+Recorded from `OPEN_ITEMS.md` (October 2026 reconciliation); the step stays open, narrowed.
+
+- **Built (GUI-5.1, 5.2 above).** `gui_user.scope` in the session, set by an admin or from the identity provider (`GUI_OIDC_SCOPE_CLAIM`); the BFF sends it as
+  `X-R1-Acting-User-Scope` beside `X-R1-Acting-User` (`gui-bff/app/scoping.py`); R1 Termination forwards it only from an `internal` caller with an acting user
+  (`r1-termination/app/main.py`); `smo_shared.scope.scope_of` narrows the console's claim by it. The step's "Done when", the claim in the session, is met. A config
+  job's change-window decisions (`POST /config-jobs/{id}/approve|reject`) go through `_job_in_reach`, which reads that scope.
+- **Found open.** The rApp-action approvals of RAN NF OAM do not read it: `list_approvals` (`GET /rapp-approvals`) takes no request, and `approve_action` checks the
+  requester's stored claim (`requester_scope`) but not the decider's. Checked with a throw-away test on the unit fixtures of `ran-nf-oam/tests/test_scope.py`: a request
+  of an rApp limited to `eu` was listed for, and approved by, a console person limited to `us` (200, the write made). `docs/adr/0005-tenant-region-authorization.md`
+  section 6 says the decision is narrowed by the person's claim. Kept as `SEC-10.12`.

@@ -366,18 +366,12 @@ RAN NF OAM still retries southbound writes with `time.sleep` inside the request 
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| DB-4.2 | Script: `EXPLAIN` the ten most used list routes against a seeded large table | Plans recorded | QA-1.2 |
-| DB-4.3 | Add the missing indexes | No sequential scan on those routes at 1M rows | DB-4.2 |
+| DB-4.2 | `EXPLAIN` the ten most used list routes against a seeded large table. Built for three tables of RAN NF OAM (`scripts/db_volume_check.py` in `smo-db-volume.yml`, `HISTORY.md` PR-DB-4.2, 4.3); open: the list routes of the other modules (none is seeded at volume), the SQL a route really sends (the cases are hand-written: no `ORDER BY` of `smo_shared.pagination`, no scope filter), and the plans kept as a file (today the job summary holds a table of scan types and times) | Plans recorded for ten routes, from the routes' own SQL | QA-1.1 (QA-1.2 done) |
+| DB-4.3 | Add the indexes the wider set of DB-4.2 shows missing (the one the first set showed, `pm_file.managed_element_ref`, is revision `0027`; the alarm severity filter is reported, not gated) | No sequential scan on those routes at 1M rows | DB-4.2 |
 | DB-4.4 | Keyset (cursor) pagination option in `pagination.py` (`?after=`), `LIMIT/OFFSET` stays default | Unit tests; one route adopts it | – |
 | DB-4.5 | Adopt keyset on alarms, PM records, audit | Same | DB-4.4 |
 
-#### PR-DB-5 — Connection pooler
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| DB-5.1 | PgBouncer service in a compose profile (done: profile `pooler`, CI job `compose-pooler`) | Runbook replay green through it | – |
-| DB-5.2 | Check psycopg 3 prepared statements with transaction pooling; set the needed flag (done: `SMO_DB_POOLER`, `SMO_DB_PREPARE_THRESHOLD`, `scripts/pooler_check.py`) | No "prepared statement does not exist" errors | DB-5.1 |
-| DB-5.3 | Document pool sizing across replicas (done: README section) | Section in README | – |
+#### PR-DB-5 — Connection pooler (all steps done: `HISTORY.md` PR-DB-5)
 
 #### PR-DB-6 — Backup and restore
 
@@ -387,26 +381,15 @@ RAN NF OAM still retries southbound writes with `time.sleep` inside the request 
 | DB-6.4 | Restore drill checklist with timings (the runbook and drill log are in `docs/DISASTER_RECOVERY.md`, one script-level line filled; open: a drill of the runbook on a real stack at representative size, same as `HA-6.3`) | Checklist filled once on a real stack | HA-6.3 |
 (`DB-6.3` and `DB-6.5` are done, `HISTORY.md` PR-DB-6.)
 
-#### PR-DB-7 — Postgres HA
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| DB-7.1 | ADR: Patroni vs Postgres operator vs managed service (done: `docs/adr/0003-postgres-ha.md`, operator route) | ADR merged | – |
-| DB-7.2 | Three-node lab deployment (done: the CI job `postgres-ha`, CloudNativePG 1.25.1 on kind) | `pg_isready` on the primary; two replicas streaming | DB-7.1, OPS-2.1 |
-| DB-7.3 | Connection string with multiple hosts and `target_session_attrs=read-write` (done: `postgres.external.targetSessionAttrs` and a host list in the chart) | Services reconnect after a switchover | DB-7.2 |
-| DB-7.4 | Failover test during the runbook replay (done with writes through SME and the e2e checks around the kill, not the full runbook replay) | Data intact; recovery time recorded | DB-7.3 |
+#### PR-DB-7 — Postgres HA (all steps done: `HISTORY.md` PR-DB-7; the runbook replay during a failover is `HA-3.1`)
 
 ### 5.3 Messaging and jobs (`PR-MSG`)
 
-Webhooks go out best-effort and inline through `smo_shared/webhook.py` (0 retries for notifications, 3 for others per
-`STANDARDS.md`). A restart or an unreachable subscriber loses events.
+Every notification to a caller-registered destination is a row of the transactional outbox (`smo_shared/outbox.py`), sent after the commit and swept by
+the worker until it is delivered or `DEAD`; the send goes through the SSRF guard of `smo_shared/webhook.py`. Only the two reads whose answer the caller needs
+stay inline (`docs/NOTIFICATIONS.md`, class C).
 
-#### PR-MSG-1 — Transactional outbox (done except two inline leftovers)
-
-Done (`HISTORY.md` §10): `smo_shared/outbox.py` (table, `enqueue`, `drain`, inline drain after commit), the call-site inventory `docs/NOTIFICATIONS.md`, and every class-A notification in every module goes through it. Left inline on purpose: the DME stop-job `DELETE` (an outbox row carries only a POST body: a method column would move it) and the two reads whose answer the caller needs.
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
+#### PR-MSG-1 — Transactional outbox (all steps done: `HISTORY.md` PR-MSG-1 to PR-MSG-1.10)
 
 #### PR-MSG-2 — Delivery worker (open: 2.4 to 2.6; MSG-2.1 to 2.3 done: `HISTORY.md` PR-MSG-2.1 to 2.3)
 
@@ -444,13 +427,7 @@ Postgres table with `NOTIFY` at commit, the feed on DME, the state-machine hook 
 | MSG-5.2 | HMAC-SHA256 header over the body | Receiver-side example verifies | MSG-5.1 |
 | MSG-5.3 | `GET` delivery history per subscription from the outbox | Route test | MSG-1.4 |
 
-#### PR-MSG-6 — SSRF check at send time
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| MSG-6.1 | Resolve the hostname at send and apply the existing blocked-address rules to every result | Test with a hostname that resolves to loopback is refused | – |
-| MSG-6.2 | Connect to the checked address (pinned transport), keep the original `Host` | Rebinding test cannot switch addresses | MSG-6.1 (done, `SEC-15.16`, `HISTORY.md`) |
-| MSG-6.3 | Flag so fictional hostnames in unit tests keep working | Existing tests green | MSG-6.1 |
+#### PR-MSG-6 — SSRF check at send time (all steps done: `HISTORY.md` PR-MSG-6)
 
 ### 5.4 Security (`PR-SEC`)
 
@@ -507,10 +484,7 @@ Done (`HISTORY.md`, PR-SEC-7: SEC-7.1 to 7.8). Not built, and not planned unless
 | SEC-8.4 | Limits per route class (read, write, upload) from config | Config test | – |
 | SEC-8.6 | Same limiter on the BFF login route | Brute-force test | – |
 
-#### PR-SEC-9 — Bootstrap exposure
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
+#### PR-SEC-9 — Bootstrap exposure (all steps done: `HISTORY.md` PR-SEC-9; a CI lane with the key turned on is `BOOTSTRAP-KEY-LANE`, section 4)
 
 #### PR-SEC-10 — Tenant / region authorization
 
@@ -521,7 +495,7 @@ Done (`HISTORY.md`, PR-SEC-10; decision `docs/adr/0005-tenant-region-authorizati
 | SEC-10.7 | Same on rApp-facing DME and MLMR reads. **Built:** `GET /dme/actions` and `/dme/actions/{id}` (an action names an element; DME asks RAN NF OAM which elements the claim covers). **Open, with a reason:** nothing else in either module's data has a managed element, a region or a tenant to match (DME types, producers, offers, jobs and records; MLMR models and repositories), so a scoped rApp still reads all of it, until someone decides what a tenant of a data type or of a model is (a column on `dme_type` and `ml_model`, set by the producer or the registrant, or derived from the producer's scope). `POST /dme/actions` is held to the rApp's scope at RAN NF OAM (`tests_integration/test_tenant_region_scope.py`) | 403 test | SEC-10.3 |
 | SEC-10.8 | OPA sidecar as an alternative decision point (optional; the seam is `smo_shared/scope.py`) | Same tests pass with it | SEC-10.1 |
 | SEC-10.10 | A form in the GUI to set a claim on an invoker or an instance, and the place of an element (today an admin calls `PUT /sme/invoker-registrations/{id}/authz-scope` and `PUT /ran-nf-oam/managed-entities/{ref}/scope` through the API); a scoped rApp's refusals on the Safeguards page already show | Vitest | SEC-10.3 |
-| SEC-10.12 | Scoping the human users (an operator who may act on one tenant only, an approver for one region): the GUI session claim (`GUI-5.1`) and the BFF passing it to the modules | Claim in the session | GUI-5.1 |
+| SEC-10.12 | An approver for one region. The claim of a console user and its passing to the modules are done (`HISTORY.md` GUI-5.1, 5.2, SEC-10.12), and the change-window decisions of a config job are narrowed by it (`_job_in_reach`). Open: RAN NF OAM's approval inbox for rApp actions does not read it: `GET /rapp-approvals` lists every request and `POST /rapp-approvals/{id}/approve` or `/reject` lets a person limited to one region decide a request whose elements are all in another (checked: 200 and the write made). `docs/adr/0005-tenant-region-authorization.md` section 6 says the decision is narrowed | The list holds the person's requests only; a decision outside the claim is 403 `SCOPE_DENIED` | – |
 
 #### PR-SEC-11 — Tamper-evident audit (open: SEC-11.6; SEC-11.1 to 11.5 done: `HISTORY.md` PR-SEC-11.1 to 11.5)
 
@@ -533,7 +507,7 @@ Done (`HISTORY.md`, PR-SEC-10; decision `docs/adr/0005-tenant-region-authorizati
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SEC-12.1 | SBOM generation per image in CI | Artifact attached | – |
+| SEC-12.1 | SBOM per image. Built: every release image carries BuildKit's SBOM attestation in the registry (`release-images.yml`, `--sbom=true`, `HISTORY.md` PR-SEC-12.1). Open: a file someone can download without a registry tool (attached to the GitHub release or kept as a workflow artifact), and a step that reads the attestation back so a release without one fails | SBOM file per image on the release; the release fails without it | – |
 | SEC-12.2 | Image vulnerability scan with a severity gate (built in `image-scan.yml`; not yet shown to fail on a seeded finding in CI: `tests_integration/test_scan_summary.py` shows the gate on Trivy-shaped results) | Gate fails on a seeded finding | – |
 
 #### PR-SEC-13 — Container hardening (all steps done: `HISTORY.md` PR-SEC-13, PR-SEC-13.2 and PR-SEC-13.4)
@@ -631,12 +605,7 @@ Done: packages, rApp instances and intents by state, the outbox backlog and its 
 
 ### 5.6 Packaging, migrations and release (`PR-OPS`)
 
-#### PR-OPS-1 — Real migrations (all steps done: `HISTORY.md` §10)
-
-Alembic is in place and compose runs it (`docs/adr/0001-schema-migrations.md`, `HISTORY.md` §10): baseline `0001` is `001_init.sql`, revision `0002` is the notification outbox, `scripts/migrate.py` upgrades, stamps or downgrades, and the `migrate` service runs before the modules.
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
+#### PR-OPS-1 — Real migrations (all steps done: `HISTORY.md` PR-OPS-1, PR-OPS-1 (continued) and PR-OPS-1.6)
 
 #### PR-OPS-2 — Helm chart (open: the Ingress reached from the kind host, OPS-2.9; the rest done: `HISTORY.md` PR-OPS-2 and PR-OPS-3.1)
 
@@ -723,19 +692,13 @@ Later by design; each feature assumes the stateless, database and messaging step
 | HA-2.1 | Restart one replica at a time during a replay (done with a health probe, not yet the runbook: `scripts/k8s_rolling_probe.py`) | No failed calls beyond retries | HA-1.2 |
 | HA-2.2 | Same for the gateway | Same | HA-2.1 |
 
-#### PR-HA-3 — Database failover
+#### PR-HA-3 — Database failover (HA-3.2 done: `HISTORY.md` PR-HA-3.2)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| HA-3.1 | Switchover during a replay (a planned switchover is exercised with a write probe through SME and its recovery time is in the job summary: the `postgres-ha` job of `smo-tests.yml`, step "A planned switchover to a replica"; open: the switchover during a runbook replay) | Recovery time recorded | DB-7.4 |
-| HA-3.2 | Primary kill (unplanned) during a replay (done as DB-7.4: a marker row committed before the kill is on the new primary) | No data loss for committed work | DB-7.4 |
+| HA-3.1 | Switchover and primary kill during a runbook replay. Both run in the `postgres-ha` job of `smo-tests.yml` with a write probe through SME, a marker row and the recovery time in the job summary (`HISTORY.md` PR-DB-7, PR-HA-3.2); open: either one while `tests_integration/test_demo_runbook.py` runs in the cluster (the job runs the smoke gate `scripts/compose_e2e.py` and the roles script before and after instead; the replay on kind is `OPS-2.9`) | Replay green across the switchover and across the kill; recovery time recorded | OPS-2.9 |
 
-#### PR-HA-4 — Worker failover
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| HA-4.1 | Kill the delivery worker mid-batch (done: the sweep of `MSG-2` was missing and is built here; CI job `helm`) | No lost notification; duplicates only where at-least-once allows | MSG-2.2 |
-| HA-4.2 | Kill the job runner mid-job (done on kind: the worker is scaled to 0 between the waves of a staged job, the job waits, and finishes when the worker is back; CI job `helm`) | Job resumes (`MSG-4.4`) | MSG-4.4 |
+#### PR-HA-4 — Worker failover (all steps done: `HISTORY.md` PR-HA-4; a lease taken over by another worker is `MSG-4.4`'s own test)
 
 #### PR-HA-5 — Placement (open: HA-5.1b, zones; HA-5.1 on nodes done: `HISTORY.md` PR-HA-5.1)
 
@@ -755,7 +718,7 @@ Later by design; each feature assumes the stateless, database and messaging step
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | HA-7.1 | ADR: active/standby design | ADR merged | HA-6.3 |
-| HA-7.2 | Cross-site replication | Standby lags by less than the RPO | HA-7.1, DB-7.2 |
+| HA-7.2 | Cross-site replication | Standby lags by less than the RPO | HA-7.1 (DB-7.2 done) |
 | HA-7.3 | Controlled failover and failback drill | Drill report | HA-7.2 |
 
 
@@ -1355,19 +1318,16 @@ STD-4.6 (`decided_by` and `pinnedBy` pinned to the signed-in GUI user) is done: 
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | QA-3.1 | Kill Postgres during a replay. Recovery is checked (`.github/workflows/smo-stress.yml`: Postgres stopped, a database-backed route probed through the gateway, then 200 within 90 s once it is back); open: the invariant there is any 5xx within the deadline, not a clean 503 with `Retry-After`, and the probes run after the load, not during a replay | Clean 503s and recovery | – |
-| QA-3.3 | Slow or dead webhook subscriber | Other calls unaffected | MSG-2.2 |
+| QA-3.3 | Slow or dead webhook subscriber. The outbox side is done (`HISTORY.md` PR-QA-3.3): a drain sends its rows concurrently, so a dead destination holds up only its own rows, and they are retried with backoff, then `DEAD`. Open: "other calls" at the API. The inline drain runs in the request thread after the commit, so a request whose commit enqueued a notification for a subscriber that does not answer waits up to the 2 s send timeout per row before it answers (unless `SMO_OUTBOX_INLINE_DRAIN=false`, `MSG-2.5`); and no test against a running service measures other routes while a subscriber hangs | With a subscriber that hangs, the latency of other routes is unchanged and the request that notifies it is held at most a stated time; a test against the running stack or the integration mesh | – (MSG-2.2 done) |
 | QA-3.4 | Replica kills | See `HA-2` | HA-1.2 |
 
-#### PR-QA-4 to QA-8 (QA-6.2 done: `HISTORY.md` PR-QA-6.2)
+#### PR-QA-4 to QA-8 (QA-6.2 and QA-7 done: `HISTORY.md` PR-QA-6.2, PR-QA-7; QA-4.1 in part: `HISTORY.md` PR-QA-4.1)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| QA-4.1 | Upgrade test in CI: previous schema to head, then the replay | Job green | OPS-1.6 |
+| QA-4.1 | This release's runbook replayed on the upgraded database. The upgrade test runs in CI (the jobs "Upgrade from the previous release keeps its data" and "Previous release's code runs on the new schema" of `smo-tests.yml`, and `smo-upgrade-kind.yml`); after the upgrade they run the smoke gate `scripts/compose_e2e.py`, not `tests_integration/test_demo_runbook.py` (it onboards a package the previous release's runbook already left in the database) | The runbook replay green on the upgraded stack | – (OPS-1.6 done) |
 | QA-5.1 | 24-hour soak at baseline load | No memory or pool growth | QA-1.4 (OBS-2.4 done) |
 | QA-5.2 | 72-hour soak | Same | QA-5.1 |
-| QA-7.1 | `mllf` route tests (6 tests, 100 % of its 26 statements: raising the count is not needed, see `docs/VALIDATION.md`) | ≥ 20 route-level tests | – |
-| QA-7.2 | Same for `ran-analytics`, `mock-o1-adaptor`, `so-smos`, `r1-termination` | Counts raised, one PR each | – |
-| QA-7.3 | Coverage floor in CI (done: `coverage_floors.json`, `scripts/coverage_floor.py`) | Floor enforced | QA-7.1 |
 | QA-8.1 | Nightly lane: NETCONF server | Job green | SB-1.9 |
 
 ### 5.16 Suggested first slices
