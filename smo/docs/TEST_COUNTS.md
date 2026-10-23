@@ -9,19 +9,19 @@ CI runs `--check` and fails when this file no longer matches the code.
 
 | suite | files | test functions | collected tests |
 |---|---:|---:|---:|
-| `aimgf` | 16 | 279 | 419 |
+| `aimgf` | 17 | 283 | 433 |
 | `dme` | 14 | 170 | 183 |
 | `focom` | 3 | 85 | 85 |
 | `gui` | 50 | 511 | — |
 | `gui-bff` | 17 | 437 | 1341 |
 | `intent-service` | 5 | 84 | 104 |
-| `mdaf` | 4 | 53 | 54 |
-| `mllf` | 1 | 6 | 6 |
-| `mlmr` | 2 | 79 | 85 |
+| `mdaf` | 4 | 58 | 62 |
+| `mllf` | 1 | 10 | 10 |
+| `mlmr` | 2 | 80 | 86 |
 | `mock-o1-adaptor` | 6 | 84 | 108 |
 | `nfo` | 2 | 43 | 48 |
 | `onboarding` | 6 | 126 | 212 |
-| `r1-termination` | 10 | 152 | 347 |
+| `r1-termination` | 10 | 152 | 350 |
 | `ran-analytics` | 2 | 19 | 22 |
 | `ran-nf-oam` | 55 | 823 | 1229 |
 | `rapp-mgmt` | 11 | 201 | 286 |
@@ -36,5 +36,5 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `shared` | 50 | 662 | 1117 |
 | `sme` | 5 | 121 | 139 |
 | `so-smos` | 3 | 27 | 40 |
-| `tests_integration` | 91 | 703 | 880 |
-| **total** | **411** | **5273** | **7305** (Python) |
+| `tests_integration` | 91 | 704 | 881 |
+| **total** | **412** | **5288** | **7336** (Python) |

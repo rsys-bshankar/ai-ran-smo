@@ -214,6 +214,8 @@ def test_an_rapp_may_not_change_what_it_does_not_use(gateway, method, path):
     ("POST", "/aimgf/models/m/runtime/scale"), ("POST", "/aimgf/models/m/runtime/terminate"),
     ("POST", "/aimgf/ml-training-requests"), ("PATCH", "/intent-service/intents/i/admin-state"), ("POST", "/sme/oauth2/token"),
     ("POST", "/mlmr/models/m/artifact"), ("DELETE", "/mdaf/subscriptions/s"), ("PUT", "/rapp-mgmt/instances/i/operator-api"), ("DELETE", "/rapp-mgmt/instances/i/operator-api"),
+    # the deploy request and the MDA requests are open to an rApp at the gateway; the owner is judged behind it (AIMgF on MLLF's call, MLLF-NODEGROUP-OWNER; MDAF, MDA-REQ-OWNER)
+    ("POST", "/mllf/models/m/deploy"), ("POST", "/mdaf/mda-requests"), ("DELETE", "/mdaf/mda-requests/r"),
     ("POST", "/rapp-mgmt/instances/i/bootstrap-complete"), ("POST", "/rapp-mgmt/instances/i/performance"),
 ])
 def test_an_rapp_may_change_what_it_uses(gateway, method, path):

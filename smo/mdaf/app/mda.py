@@ -10,7 +10,10 @@ the open MDA requests and delivered per each request's `reportingMethod`:
   STREAMING     a delivery row is recorded and nothing is sent; this build has no TS 28.532 streaming transport (OPEN_ITEMS.md §3)
 
 A DRIFT report that names a model (`mLModelRef` output) is also forwarded to that model's AIMgF MLMF subscriptions as a
-performance report, so AIMgF's guard-KPI floor decides whether retraining fires.
+performance report, so AIMgF's guard-KPI floor decides whether retraining fires. MDAF forwards it on its own account, not for the publisher.
+
+An MDA request belongs to who made it (MDA-REQ-OWNER): for an rApp, `requestedBy` is its own invoker id, and only that rApp, the console or an SMO module
+may withdraw it.
 
 Before editing: `_deliver` commits (it ends the publish transaction that `main.py` started); the request matching in
 `_request_matches` mutates each request's `threshold_state`, which is committed with the report. The docstrings of routes and
@@ -28,6 +31,8 @@ from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
+from smo_shared.invoker import invoker_id, on_own_account
+from smo_shared.roles import ROLE_RAPP, role_of
 from smo_shared.timeutil import as_utc
 from smo_shared.pagination import PageLimit, PageOffset, paginate, paginate_list
 from smo_shared.outbox import enqueue
@@ -155,7 +160,7 @@ class MDARequestBody(_Body):
     performanceThresholdInfo: list[ts28104.ThresholdInfo] | None = None
     analysisRequirements: ts28104.AnalysisRequirement | None = None
     thresholdMonitorRefList: list[str] | None = None
-    # Not a spec attribute — who asked, as on /subscriptions.
+    # Not a spec attribute — who asked, as on /subscriptions. From an rApp it is ignored: the caller's own invoker id is stored (MDA-REQ-OWNER).
     requestedBy: str | None = None
 
 
@@ -177,14 +182,17 @@ def _is_active(r: MDARequest, now: datetime.datetime) -> bool:
 
 
 @router.post("/mda-requests", status_code=201)
-def create_mda_request(body: MDARequestBody, db: Session = Depends(get_session)):
+def create_mda_request(body: MDARequestBody, request: Request, db: Session = Depends(get_session)):
     """A request names the MDA outputs it wants. When it is addressed to an
     MDAFunction, every requested mDAType must be one of that function's
     supportedMDACapabilities. NOTIFICATION and FILE delivery need a
-    reportingTarget."""
+    reportingTarget. A request belongs to who made it: for an rApp,
+    `requestedBy` is its own invoker id whatever it sent."""
     # Creates a request (201). 422 SCHEMA_VALIDATION_FAILED for empty `requestedMDAOutputs`, NOTIFICATION or FILE without a `reportingTarget`, or a
     # `stopTime` not after the `startTime`; 404 NRM_OBJECT_NOT_FOUND for an unknown `mDAFunctionRef`; 422 MDA_CAPABILITY_NOT_SUPPORTED for a type the
-    # function does not support. All checks run before anything is written; times are stored as UTC.
+    # function does not support. All checks run before anything is written; times are stored as UTC. MDA-REQ-OWNER: for a caller with the rApp role the
+    # stored `requested_by` is its gateway-stamped invoker id (the body's value is ignored), as `POST /subscriptions` does, so an rApp cannot make a request in
+    # another's name; the console and SMO modules (role `internal`) and a call with no role name whoever they make it for, and their value is stored as sent.
     if not body.requestedMDAOutputs:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="requestedMDAOutputs must not be empty")
     if body.reportingMethod in ("NOTIFICATION", "FILE") and not body.reportingTarget:
@@ -199,7 +207,10 @@ def create_mda_request(body: MDARequestBody, db: Session = Depends(get_session))
         if unsupported:
             raise framework_error(FrameworkError.MDA_CAPABILITY_NOT_SUPPORTED,
                                    detail=f"MDAFunction {function.mda_function_id} does not support {unsupported}")
-    r = MDARequest(mda_function_id=body.mDAFunctionRef, requested_by=body.requestedBy,
+    requested_by = body.requestedBy
+    if role_of(request) == ROLE_RAPP:
+        requested_by = invoker_id(request) or requested_by
+    r = MDARequest(mda_function_id=body.mDAFunctionRef, requested_by=requested_by,
                    requested_mda_outputs=ts28104.dump(body.requestedMDAOutputs), reporting_method=body.reportingMethod,
                    reporting_target=body.reportingTarget, analytics_scope=ts28104.dump(body.analyticsScope),
                    start_time=_aware(body.startTime), stop_time=_aware(body.stopTime),
@@ -230,12 +241,19 @@ def get_mda_request(request_id: uuid.UUID, db: Session = Depends(get_session)):
 
 
 @router.delete("/mda-requests/{request_id}", status_code=204)
-def delete_mda_request(request_id: uuid.UUID, db: Session = Depends(get_session)):
-    """Withdraws the request: no further reports are matched to it."""
+def delete_mda_request(request_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
+    """Withdraws the request: no further reports are matched to it. An rApp withdraws only the requests it made
+    (403 MDA_REQUEST_ACCESS_DENIED); the console and SMO modules may withdraw any."""
+    # An unknown id is 204 as well (idempotent). MDA-REQ-OWNER: the maker rule of `DELETE /subscriptions` (`unsubscribe_analytics`): a caller with the
+    # rApp role must be the request's `requested_by`, else 403 and nothing is deleted. A request stored before the rule (its `requested_by` whatever the body
+    # said, or none) can be withdrawn by an rApp only if that value is its invoker id; the console or an SMO module removes the others.
     r = db.get(MDARequest, request_id)
-    if r is not None:
-        db.delete(r)
-        db.commit()
+    if r is None:
+        return
+    if role_of(request) == ROLE_RAPP and r.requested_by != invoker_id(request):
+        raise framework_error(FrameworkError.MDA_REQUEST_ACCESS_DENIED, detail=f"MDA request {request_id} belongs to {r.requested_by}")
+    db.delete(r)
+    db.commit()
 
 
 # ================================================================ MDAReport
@@ -401,7 +419,18 @@ def _forward_drift_to_mlmf(report: MDAFReport) -> list[str]:
     """Passes a DRIFT report's numeric outputs to the AIMgF MLMF subscriptions of the model named by `mLModelRef`, as performance
     report metrics, and returns the subscription ids it reached. Best-effort: any error (AIMgF down, non-200) skips that output
     and never fails the publish. Runs after the report is committed.
+
+    MDAF forwards on its own account (`on_own_account`: no `X-R1-On-Behalf-Of`): routing a drift signal to the model's subscriptions is the platform's act, not the
+    publishing rApp's, and the publisher is often an analytics rApp that does not own the model, which AIMgF's owner rule would otherwise refuse
+    (MLLF-NODEGROUP-OWNER). Who may publish a DRIFT report at all is `check_publisher`'s rule.
     """
+    with on_own_account():
+        return _forward_drift_to_subscriptions(report)
+
+
+def _forward_drift_to_subscriptions(report: MDAFReport) -> list[str]:
+    """The body of `_forward_drift_to_mlmf`: for each output with `mLModelRef`, reads the model's MLMF subscriptions and posts the numeric IEs to each; returns
+    the subscription ids reached. Every error is swallowed per output."""
     forwarded = []
     for values in _flat_entries(report).values():
         model_ref = values.get("mLModelRef")

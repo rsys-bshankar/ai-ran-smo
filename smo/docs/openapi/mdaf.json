@@ -2635,7 +2635,7 @@
         "summary": "List Mda Requests"
       },
       "post": {
-        "description": "A request names the MDA outputs it wants. When it is addressed to an\nMDAFunction, every requested mDAType must be one of that function's\nsupportedMDACapabilities. NOTIFICATION and FILE delivery need a\nreportingTarget.",
+        "description": "A request names the MDA outputs it wants. When it is addressed to an\nMDAFunction, every requested mDAType must be one of that function's\nsupportedMDACapabilities. NOTIFICATION and FILE delivery need a\nreportingTarget. A request belongs to who made it: for an rApp,\n`requestedBy` is its own invoker id whatever it sent.",
         "operationId": "create_mda_request_mda_requests_post",
         "requestBody": {
           "content": {
@@ -2762,7 +2762,7 @@
     },
     "/mda-requests/{request_id}": {
       "delete": {
-        "description": "Withdraws the request: no further reports are matched to it.",
+        "description": "Withdraws the request: no further reports are matched to it. An rApp withdraws only the requests it made\n(403 MDA_REQUEST_ACCESS_DENIED); the console and SMO modules may withdraw any.",
         "operationId": "delete_mda_request_mda_requests__request_id__delete",
         "parameters": [
           {

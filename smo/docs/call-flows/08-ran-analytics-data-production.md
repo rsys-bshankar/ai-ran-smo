@@ -3,14 +3,14 @@
 How RAN behaviour analytics (TS 28.104 MDA, not a model's own performance, which is MLMF's, call flow 02) go from a producer to its consumers
 (RAN Analytics LLD sections 1–2). Two services share the flow: **RAN Analytics** keeps the producer registry and enrols each producer in SME;
 **MDAF** stores the reports, holds the subscriptions and delivers to them. An rApp is a producer only for itself, publishes only what it is registered
-for, and a subscription belongs to who made it. Four diagrams:
+for, and a subscription or an MDA request belongs to who made it. Four diagrams:
 
 | | Step | Who starts it | Ends with |
 |---|---|---|---|
 | 08a | Registering (and deregistering) a producer | Owner rApp (SDK), Admin (GUI) | a producer discoverable in SME, or refused with nothing stored |
-| 08b | Subscribing, with thresholds | a consumer: an rApp, SA SMOS (call flow 04), Operator (GUI) | a subscription that is the consumer's own |
+| 08b | Subscribing, with thresholds | a consumer: an rApp, SA SMOS (call flow 04), Operator (GUI) | a subscription (or a TS 28.104 MDA request) that is the consumer's own |
 | 08c | Publishing a report and delivering it | Owner rApp (SDK), Admin (GUI) | the report stored with its publisher and pushed to each subscriber that should hear of it, or refused |
-| 08d | Querying, unsubscribing and retention | a consumer, the worker | reports read, a subscription removed, old reports purged |
+| 08d | Querying, unsubscribing and retention | a consumer, the worker | reports read, a subscription or an MDA request removed, old reports purged |
 
 **As images:** [08a](images/08-ran-analytics-data-production/08a-registering-and-deregistering-a-producer.png) ·
 [08b](images/08-ran-analytics-data-production/08b-subscribing-with-thresholds.png) ·
@@ -84,11 +84,20 @@ sequenceDiagram
         MDAF->>DB: subscription committed
         MDAF-->>C: 201 {subscriptionId}
     end
+    C->>MDAF: POST /mda-requests {requestedMDAOutputs, reportingMethod, reportingTarget?, requestedBy?, ...}
+    alt invalid outputs, target or time window, or an unknown or unable MDA function
+        MDAF-->>C: 422 SCHEMA_VALIDATION_FAILED / MDA_CAPABILITY_NOT_SUPPORTED · 404 NRM_OBJECT_NOT_FOUND
+    else
+        Note over MDAF: an rApp's requestedBy is its own invoker id, whatever it sent<br/>(the console and SMO modules name who it is for)
+        MDAF->>DB: MDA request committed
+        MDAF-->>C: 201 {id, attributes}
+    end
 ```
 
 Without `notificationDestination` a subscription is pull-only (08d). With `thresholdInfo` it is notified only when a report crosses a threshold
 (edge-triggered: a crossing fires once, a value back beyond the hysteresis band re-arms it; a metric missing from the report is skipped); without, it is
 notified of every report of its type. A destination is checked when a notification is queued (08c): an unsafe one is dropped, the subscription stays.
+A TS 28.104 MDA request names the MDA outputs it wants: each report published is matched against the open requests and delivered by their `reportingMethod` (08c).
 
 ## 08c — Publishing a report and delivering it
 
@@ -147,6 +156,12 @@ sequenceDiagram
     else its own, or the console or a module, or an unknown id
         MDAF-->>C: 204
     end
+    C->>MDAF: DELETE /mda-requests/{id}
+    alt an rApp withdrawing another's MDA request
+        MDAF-->>C: 403 MDA_REQUEST_ACCESS_DENIED, the request stays
+    else its own, or the console or a module, or an unknown id
+        MDAF-->>C: 204, no further report is matched to it
+    end
     loop every hour (purge-reports)
         W->>MDAF: reports older than SMO_RETENTION_MDAF_REPORTS_DAYS deleted (0, the default: kept)
     end
@@ -161,7 +176,9 @@ sequenceDiagram
 - **A producer is who it says it is** (DOC-CF-1.8): an rApp registers, deregisters and publishes only as itself, for the types it is registered for. A report
   can trigger an automatic configuration write (call flow 04), so an unregistered rApp's report is refused, not stored.
 - **A subscription belongs to its maker** (DOC-CF-1.8): an rApp's `requested_by` is its own id and it removes only its own; the console and SMO modules may
-  remove any.
+  remove any. An MDA request follows the same rule (MDA-REQ-OWNER): an rApp's `requestedBy` is its own id, it withdraws only its own (403
+  `MDA_REQUEST_ACCESS_DENIED`), and the console and SMO modules may withdraw any. A request stored before this rule keeps the `requestedBy` its body
+  named; an rApp withdraws it only if that is its own id.
 - **One SME service per producer and type** (`mdaf.<analyticsType>.<producerId>`): SME service names are unique across producers, so a shared
   `mdaf.<analyticsType>` left a second producer of a type undiscoverable. SME is asked before the producer is stored.
 - **`MDAFProducer`'s key is (producer_id, analytics_type)**: one producer may serve several types; registering the same pair again updates it in place.

@@ -3809,3 +3809,60 @@ Closed from `OPEN_ITEMS.md` (October 2026 reconciliation).
 
 - **What.** `gui-bff/tests/test_rbac_matrix.py` (V-13b) is generated from `RULES` in `gui-bff/app/rbac.py`: for every rule a concrete request is built from its pattern (each alternative its own request), and for each of the three roles the rule must be the one that decides (a shadowed rule fails), allow its minimum role and every role above, and refuse every role below; a rule with a query condition must not decide without it; requests no rule names are refused for every role. Runs in the GUI backend's suite in the `unit-and-integration` job.
 - **Limit.** Of 163 rules, 162 have a role they refuse; the one viewer rule (the read catch-all `GET /<module>/...`) is allowed to every role, so its negative case is the near-miss and no-rule refusals, and the 401 of a request without a session (`/api/me` in `gui-bff/tests/test_main.py`).
+
+### MLLF-NODEGROUP-OWNER — AIMgF judges the rApp an SMO module acts for, so a deploy request through MLLF is the owner's
+
+Closed from `OPEN_ITEMS.md` (October 2026). Any rApp could change the node groups of another rApp's certified model: `POST /mllf/models/{id}/deploy` is on the
+rApp allow-list, MLLF checked only the lifecycle state, and its `PATCH /aimgf/models/{id}/runtime/node-groups` reached AIMgF as an SMO module, which the owner
+rule did not ask. Verified before the change: `_owner_may_act` returned True for every role but `rapp` (`aimgf/app/main.py`), and nothing in AIMgF read
+`X-R1-On-Behalf-Of`.
+
+- **The rule.** AIMgF's `_acts_for_rapp(request)` is True for a caller with the rApp role and for an `internal` caller that carries `X-R1-On-Behalf-Of`; the
+  owner rule then judges `invoker_id(request)`, which is that rApp. It replaces the `role_of(request) == ROLE_RAPP` test in `_owner_may_act` and in every
+  gate built on it (`_check_rapp_owns`, `_check_rapp_owns_if_known`, `_check_rapp_owns_models`, `_check_job_owner`, `_check_inference_resolver`,
+  `_visible_model_ids`), so the rule is the same on every route it guards, not only on node-groups; an inference job a module requests records that rApp as
+  `requested_by`. A module on its own account, the console and a call with no role are not asked, as before. The approach of reading the owner from MLMR in
+  MLLF was not taken: AIMgF already holds the rule, and one place for it keeps MLLF without ownership logic.
+- **Why the header names an rApp.** `R1Client` stamps `get_originator()`, which `apply_invoker_context` sets from the inbound headers: the gateway-stamped
+  `X-R1-Invoker-Id` of a caller with the rApp role, or the `X-R1-On-Behalf-Of` an `internal` caller already carried (a chain of modules), or nothing. R1
+  Termination drops any inbound value and forwards the header from an `internal` caller only (`_forwarded_headers`), so an rApp cannot set it, and the GUI
+  BFF never sets it. The gateway does not check the value against SME: modules are trusted, as for the kill switch and scope that key on the same header
+  (RAN NF OAM has the same rule for the MSAC credential, SEC-15.6b).
+- **MLLF.** `request_model_deployment` passes AIMgF's answer on through `_refuse_on_aimgf_answer`: 404 `MODEL_NOT_FOUND` and 403 `MODEL_ACCESS_DENIED` with
+  AIMgF's text, on the lifecycle read and on the `PATCH` (before, a 403 would have raised inside the handler as a 500).
+- **Module calls that carry the header, checked one by one.** MLLF (lifecycle read, node-group write): now judged, intended. MLMR's `_check_no_live_runtime`
+  (the lifecycle read before `DELETE /mlmr/models/{id}`): now `on_own_account()`, since the route has already applied MLMR's own owner rule and a 403 there
+  would read as "AIMgF did not answer" (503). MDAF's drift forwarding (`_forward_drift_to_mlmf`, `GET /aimgf/mlmf/subscriptions` and `POST .../reports`):
+  now `on_own_account()`, since the publisher of a DRIFT report is often an analytics rApp that does not own the model and the forwarding is the platform's
+  signal, not the rApp's act. MLMR's `nrm-refs` read is not owner-guarded. SO SMOS (only the console orders) and SA SMOS (a background loop) carry no
+  originator. rApp Management, Intent Service and Onboarding make no call to AIMgF.
+- **Tests.** `aimgf/tests/test_on_behalf_owner.py` (a module acting for another rApp is 403 on node-groups with nothing written, and on every route of the
+  `SEC-15.3c` table; acting for the owner or for nobody passes; `requested_by` of a module's inference job); `mllf/tests/test_main.py` (a second rApp is 403
+  `MODEL_ACCESS_DENIED` with nothing written, the owner and the console pass, a 403 on the write is passed on);
+  `tests_integration/test_model_ownership.py::test_mllf_places_a_model_only_for_its_owner_through_the_mesh` (the full path through the mesh);
+  `mlmr/tests/test_main.py::test_the_live_runtime_read_is_made_on_mlmrs_own_account`; `mdaf/tests/test_mda.py::test_drift_forwarding_is_on_mdafs_own_account`;
+  `POST /mllf/models/{id}/deploy` in the allow-list table of `r1-termination/tests/test_roles.py`.
+- **Documents.** Call flows 02 (who may act, 02d) and 17 (17b: the owner check and the 403 branch), `mllf/docs/lifecycle.md` (b), `aimgf/docs/lifecycle.md`,
+  `mdaf/docs/lifecycle.md`, and the AIMgF, MLLF, MLMR and MDAF READMEs.
+
+### MDA-REQ-OWNER — an MDA request belongs to its maker
+
+Closed from `OPEN_ITEMS.md` (October 2026). Any rApp could withdraw another rApp's MDA request (`DELETE /mdaf/mda-requests/{id}` deleted whatever it named),
+and `POST /mdaf/mda-requests` stored the body's `requestedBy` as sent, so an rApp could also make a request in another's name. Verified in
+`mdaf/app/mda.py` (`create_mda_request`, `delete_mda_request`) before the change.
+
+- **Create.** For a caller with the rApp role the stored `requested_by` is its gateway-stamped invoker id, whatever the body says (as `POST /subscriptions`
+  does). The console, an SMO module (role `internal`) and a call with no role name whoever the request is for, and the body's value is stored as sent: SA
+  SMOS and the console make requests for others, as they do subscriptions.
+- **Withdraw.** The maker rule of `unsubscribe_analytics`: a caller with the rApp role must be the request's `requested_by`, else 403
+  `MDA_REQUEST_ACCESS_DENIED` (a new code in `smo_shared/errors.py`, beside `SUBSCRIPTION_ACCESS_DENIED`, which it does not reuse) and nothing is deleted.
+  The console and SMO modules withdraw any; an unknown id is still 204. Only the rApp role is judged, not an `internal` caller acting for an rApp, as for
+  subscriptions.
+- **Rows stored before the change.** No migration: a request made before keeps the `requestedBy` its body named (or none). An rApp withdraws such a request
+  only when that value is its own invoker id; the console or a module removes the others. Said in the CHANGELOG entry.
+- **Tests.** `mdaf/tests/test_publisher_and_ownership.py` (an rApp's request is its own whatever the body says; the console, a module and a call with no
+  role store the body's value; another rApp is 403 `MDA_REQUEST_ACCESS_DENIED` and the request stays, the maker withdraws, an unknown id is 204; the console
+  and a module withdraw any, also a request stored before the rule); `POST` and `DELETE /mdaf/mda-requests` in the allow-list table of
+  `r1-termination/tests/test_roles.py`.
+- **Documents.** Call flow 08 (08b create, 08d withdraw, the decision), `mdaf/docs/lifecycle.md` (b), `mdaf/README.md`, `shared/README.md` (the 403 codes),
+  `docs/openapi/mdaf.json` (the route docstrings).

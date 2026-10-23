@@ -47,8 +47,8 @@ from smo_shared.runtime_resources import QUANTITY_PATTERN, container_resources
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
-from smo_shared.invoker import invoker_id
-from smo_shared.roles import ROLE_RAPP, role_of
+from smo_shared.invoker import ON_BEHALF_OF_HEADER, invoker_id
+from smo_shared.roles import ROLE_INTERNAL, ROLE_RAPP, role_of
 from smo_shared.secretfile import read_secret
 from smo_shared.statemachine import IllegalTransition
 from smo_shared.openapi_security import apply_r1_gateway_security
@@ -115,8 +115,8 @@ def _owned_model(request: Request, model_id: uuid.UUID, action: str, *, inferenc
     """Returns MLMR's JSON for a model the caller may act on, or raises 404 `MODEL_NOT_FOUND` / 403 `MODEL_ACCESS_DENIED` (SEC-15.3, SEC-15.3b).
 
     The existence and ownership half of `_serving_model`, and the whole check of the routes that act on a model's runtime without serving it (scale, terminate, node-groups) and of the
-    model-loading routes. Ownership is judged for a caller with the rApp role only, on the id the gateway stamped (`X-R1-Invoker-Id`); the operator's console, an SMO module and a call with
-    no role are trusted as elsewhere in this module. A model whose `owner` is unset is nobody's, so it is not refused on that ground (MLMR stamps the owner of a model an rApp registers,
+    model-loading routes. Ownership is judged for a caller with the rApp role, on the id the gateway stamped (`X-R1-Invoker-Id`), and for an SMO module acting for an rApp, on the rApp
+    named in `X-R1-On-Behalf-Of` (`_acts_for_rapp`); the operator's console, a module on its own account and a call with no role are trusted as elsewhere in this module. A model whose `owner` is unset is nobody's, so it is not refused on that ground (MLMR stamps the owner of a model an rApp registers,
     so only a model registered before SEC-15.3b, or by an SMO module that named no owner, is in that state). An rApp that is not the owner may still run inference, as MLMR lets it download the
     model, when `inference` is set and the model's `storeDiscReqs.accessReqs` is PUBLICLY_AVAILABLE or RESTRICTED with the caller named in `valServerIds` / `valClientIds`; every other action
     changes the serving runtime, which only the owner may.
@@ -126,13 +126,26 @@ def _owned_model(request: Request, model_id: uuid.UUID, action: str, *, inferenc
     return model
 
 
+def _acts_for_rapp(request: Request) -> bool:
+    """Returns whether the ownership rule applies to this caller: one with the rApp role, or an SMO module (role `internal`) acting for an rApp (`X-R1-On-Behalf-Of`).
+
+    The rule then judges `invoker_id(request)`, which is that rApp's id. MLLF-NODEGROUP-OWNER: a module that passes an rApp's request on (MLLF's deploy request, for one)
+    is the rApp asking, as at RAN NF OAM (SEC-15.6b). The header names an rApp: `R1Client` stamps the originator of the request it handles, which is the gateway-stamped
+    invoker id of a caller with the rApp role (or the header such a chain already carried), and R1 Termination forwards the header from an `internal` caller only. The
+    operator's console and a module on its own account carry none, so they are not asked; a call with no role did not come through the gateway and is not asked either.
+    """
+    role = role_of(request)
+    return role == ROLE_RAPP or (role == ROLE_INTERNAL and bool(request.headers.get(ON_BEHALF_OF_HEADER)))
+
+
 def _owner_may_act(request: Request, model: dict, *, inference: bool = False) -> bool:
     """Returns whether the caller passes the ownership rule for a model MLMR returned (`_owned_model` without the lookup and without raising).
 
-    True for every caller but one with the rApp role, and for an rApp when the model has no `owner`, the `owner` is the caller's invoker id, or (`inference` only) the model's
-    `accessReqs` let the caller use it. The one place the rule is written.
+    True for every caller the rule does not apply to (`_acts_for_rapp`: the console, an SMO module on its own account, a call with no role), and for an rApp (or a module
+    acting for one) when the model has no `owner`, the `owner` is that rApp's invoker id, or (`inference` only) the model's `accessReqs` let it use the model. The one
+    place the rule is written.
     """
-    if role_of(request) != ROLE_RAPP:
+    if not _acts_for_rapp(request):
         return True
     caller, owner = invoker_id(request), model.get("owner")
     access = (model.get("storeDiscReqs") or {}).get("accessReqs") or {}
@@ -149,26 +162,27 @@ def _refuse_unless_owner(request: Request, model: dict, model_id: uuid.UUID, act
 
 
 def _check_rapp_owns(request: Request, model_id: uuid.UUID, action: str) -> None:
-    """For a caller with the rApp role only, runs `_owned_model` (404 `MODEL_NOT_FOUND`, 403 `MODEL_ACCESS_DENIED`); every other caller is not asked and MLMR is not called.
+    """For a caller the ownership rule applies to (`_acts_for_rapp`), runs `_owned_model` (404 `MODEL_NOT_FOUND`, 403 `MODEL_ACCESS_DENIED`); every other caller is not asked
+    and MLMR is not called.
 
     For the MLMF subscription routes and the lifecycle history, which have never required the model to exist for the console or an SMO module.
     """
-    if role_of(request) == ROLE_RAPP:
+    if _acts_for_rapp(request):
         _owned_model(request, model_id, action)
 
 
 def _check_rapp_owns_if_known(request: Request, model_id: uuid.UUID, action: str) -> None:
     """Like `_check_rapp_owns`, but a model MLMR no longer knows passes (an rApp may still remove or read what was recorded against a deleted model)."""
-    if role_of(request) == ROLE_RAPP:
+    if _acts_for_rapp(request):
         model = _get_model_or_none(model_id)
         if model is not None:
             _refuse_unless_owner(request, model, model_id, action)
 
 
 def _check_rapp_owns_models(request: Request, model_ids, action: str) -> None:
-    """For a caller with the rApp role only: raises 403 `MODEL_ACCESS_DENIED` unless it may act on every model in `model_ids` that MLMR still knows (`_owner_may_act`; a model
+    """For a caller the ownership rule applies to (`_acts_for_rapp`): raises 403 `MODEL_ACCESS_DENIED` unless it may act on every model in `model_ids` that MLMR still knows (`_owner_may_act`; a model
     MLMR no longer knows passes, so a run of a deleted model can still be ended). Every other caller is not asked and MLMR is not called."""
-    if role_of(request) != ROLE_RAPP:
+    if not _acts_for_rapp(request):
         return
     for model_id in model_ids:
         model = _get_model_or_none(model_id)
@@ -186,8 +200,9 @@ def _group_member_ids(group_id: uuid.UUID) -> list[uuid.UUID]:
 
 def _check_job_owner(request: Request, job, action: str) -> None:
     """Call flow 02 (DOC-CF-1.6): an rApp may act on a running job (complete, report progress or metrics, suspend, resume, cancel) only when it owns the job's model, or, for a
-    coordination-group job, every member MLMR knows; 403 `MODEL_ACCESS_DENIED` otherwise. The console, SMO modules and a call with no role are not asked (`_check_rapp_owns_models`)."""
-    if role_of(request) != ROLE_RAPP:
+    coordination-group job, every member MLMR knows; 403 `MODEL_ACCESS_DENIED` otherwise. A module acting for an rApp is asked as that rApp; the console, a module on its own
+    account and a call with no role are not asked (`_acts_for_rapp`, `_check_rapp_owns_models`)."""
+    if not _acts_for_rapp(request):
         return
     if job.model_id is not None:
         _check_rapp_owns_models(request, [job.model_id], action)
@@ -197,19 +212,20 @@ def _check_job_owner(request: Request, job, action: str) -> None:
 
 def _check_inference_resolver(request: Request, job) -> None:
     """Call flow 02 (DOC-CF-1.6): an rApp may resolve an inference job only when it requested it (`requested_by`) or owns the job's model; 403 `MODEL_ACCESS_DENIED`
-    otherwise. The console, SMO modules and a call with no role are not asked. A job requested before the column existed has no `requested_by`, so only the owner may."""
-    if role_of(request) != ROLE_RAPP or (job.requested_by is not None and invoker_id(request) == job.requested_by):
+    otherwise. A module acting for an rApp is asked as that rApp; the console, a module on its own account and a call with no role are not asked (`_acts_for_rapp`). A job
+    requested before the column existed has no `requested_by`, so only the owner may."""
+    if not _acts_for_rapp(request) or (job.requested_by is not None and invoker_id(request) == job.requested_by):
         return
     _check_rapp_owns_models(request, [job.model_id], "resolve an inference job it did not request")
 
 
 def _visible_model_ids(request: Request, db: Session) -> list[uuid.UUID] | None:
-    """Returns the ids of the models with an MLMF subscription that the caller may see, or None when the caller is not restricted (any caller but one with the rApp role).
+    """Returns the ids of the models with an MLMF subscription that the caller may see, or None when the caller is not restricted (any caller the ownership rule does not apply to, `_acts_for_rapp`).
 
     For an rApp: each distinct subscribed model is looked up in MLMR once, and one the caller owns, one with no owner, or one MLMR no longer knows is kept. Used to keep a listing from
     showing another rApp's subscriptions and reports.
     """
-    if role_of(request) != ROLE_RAPP:
+    if not _acts_for_rapp(request):
         return None
     ids = db.execute(select(MLMFSubscription.model_id).distinct()).scalars().all()
     visible = []
@@ -1694,6 +1710,8 @@ def update_node_groups(request: Request, model_id: uuid.UUID, body: UpdateNodeGr
     against AIMgF's own storage now instead of MLMR's).
     """
     # Route notes: `_owned_model` first (404 `MODEL_NOT_FOUND`, 403 `MODEL_ACCESS_DENIED` for an rApp that is not the owner; SEC-15.3b), so only a model MLMR knows gets a lifecycle row.
+    # MLLF calls this as an SMO module with the deploying rApp in `X-R1-On-Behalf-Of`, so the owner rule judges that rApp (MLLF-NODEGROUP-OWNER); the console and a module on
+    # its own account are not asked.
     # The list replaces the stored `cleared_node_groups` and is not validated. One commit; answers the lifecycle view.
     _owned_model(request, model_id, "change the node groups of")
     lifecycle = _get_or_create_lifecycle(db, model_id)
@@ -1754,7 +1772,7 @@ def request_inference(request: Request, model_id: uuid.UUID, notification_destin
     job = InferenceJob(model_id=model_id, status=InferenceState.RUNNING, notification_destination=notification_destination,
                         nf_deployment_id=lifecycle.nf_deployment_id, aiml_inference_function_id=aiml_inference_function_id,
                         consumer_ref=consumer_ref, timeout_seconds=_timeout_for("INFERENCE", timeout_seconds),
-                        requested_by=invoker_id(request) if role_of(request) == ROLE_RAPP else None)   # call flow 02: who may resolve it
+                        requested_by=invoker_id(request) if _acts_for_rapp(request) else None)   # call flow 02: who may resolve it
     db.add(job)
     db.commit()
     return {"inferenceJobId": str(job.inference_job_id)}

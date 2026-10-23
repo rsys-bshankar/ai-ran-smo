@@ -13,7 +13,8 @@ diagrams:
 
 **How to read the diagrams.** As in the call flows: an arrow is one call with the inputs that matter, a box on the receiver says what it does with them,
 an `alt` block is the outcome (success first, then each failure and what the caller gets). Calls reach MLLF through R1 Termination; MLLF's two calls to
-AIMgF go back through R1 with MLLF's own token (`R1Client`), as an SMO module, so AIMgF's ownership check does not apply to them (open item `MLLF-NODEGROUP-OWNER`).
+AIMgF go back through R1 with MLLF's own token (`R1Client`), as an SMO module that acts for the caller: `R1Client` names the calling rApp in
+`X-R1-On-Behalf-Of`, so AIMgF's ownership check judges that rApp (MLLF-NODEGROUP-OWNER). A call from the console names nobody and is not asked.
 
 ## a — Starting and becoming ready
 
@@ -51,14 +52,16 @@ sequenceDiagram
     participant A as AIMgF
 
     C->>L: POST /models/{id}/deploy ["ng-a", "ng-b"]
-    L->>A: GET /aimgf/models/{id}/lifecycle
+    L->>A: GET /aimgf/models/{id}/lifecycle (X-R1-On-Behalf-Of: the calling rApp)
     alt AIMgF answers 404
         L-->>C: 404 MODEL_NOT_FOUND
+    else AIMgF answers 403 (another rApp's model)
+        L-->>C: 403 MODEL_ACCESS_DENIED with AIMgF's text
     else modelLifecycleState not CERTIFIED or PROMOTED
         L-->>C: 409 MODEL_NOT_CERTIFIED naming the state
     else
-        L->>A: PATCH /aimgf/models/{id}/runtime/node-groups {clearedNodeGroups}
-        Note over A: the whole list replaced, not merged, on AIMgF's model_lifecycle row
+        L->>A: PATCH /aimgf/models/{id}/runtime/node-groups {clearedNodeGroups} (same X-R1-On-Behalf-Of)
+        Note over A: owner rule again, then the whole list replaced, not merged, on AIMgF's model_lifecycle row<br/>(a 404 or 403 here reaches the caller as above)
         A-->>L: the lifecycle view
         L-->>C: 200 {modelId, clearedNodeGroups as AIMgF stored them}
     end
@@ -66,8 +69,8 @@ sequenceDiagram
 
 The caller then deploys the runtime at AIMgF (`POST /aimgf/models/{id}/runtime/deploy`, [call flow 17](../../docs/call-flows/17-model-runtime-lifecycle.md)).
 The read and the write are two calls, so the state can change between them; a repeated request writes the same list again. **Phase 1:** an AIMgF answer
-other than 200 or 404 on the read, and the answer to the `PATCH`, are not checked (an AIMgF error surfaces as a 500 from MLLF), and the node-group
-names are not checked against any inventory.
+other than 200, 403 or 404, on the read or the `PATCH`, is not checked (an AIMgF error surfaces as a 500 from MLLF), and the node-group names are not
+checked against any inventory.
 
 ## c — Stopping, crashing and recovering
 
