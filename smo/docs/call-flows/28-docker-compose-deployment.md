@@ -143,7 +143,7 @@ uses (call flow 29b).
 `intent-service` and the `dme` and `mdaf` workers included since DOC-CF-3), the four sample rApps, and `gui-bff`, whose client
 (`gui-bff/app/smo_client.py`) sends it when it discovers SME's token endpoint. SME and FOCOM do not discover through `/bootstrap` and need none. A service
 given a wrong key gets 401, no token, and its `/ready` stays 503. With the key unset (the default) the header is not asked for. **Phase 1:** no CI job
-starts the stack with the key set; `tests_integration/test_helm_bootstrap.py` checks that every service that mounts the enrollment secret (every SMO
+starts the stack with the key set (open item `BOOTSTRAP-KEY-LANE`); `tests_integration/test_helm_bootstrap.py` checks that every service that mounts the enrollment secret (every SMO
 caller of `/bootstrap`) and `gui-bff` are given it, in compose and in the chart.
 
 ## 28d — The profiles: tracing, logging, pooler, tls

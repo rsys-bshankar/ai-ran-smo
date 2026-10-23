@@ -13,7 +13,7 @@ diagrams:
 
 **How to read the diagrams.** As in the call flows: an arrow is one call with the inputs that matter, a box on the receiver says what it does with them,
 an `alt` block is the outcome (success first, then each failure and what the caller gets). Calls reach MLLF through R1 Termination; MLLF's two calls to
-AIMgF go back through R1 with MLLF's own token (`R1Client`), as an SMO module, so AIMgF's ownership check does not apply to them.
+AIMgF go back through R1 with MLLF's own token (`R1Client`), as an SMO module, so AIMgF's ownership check does not apply to them (open item `MLLF-NODEGROUP-OWNER`).
 
 ## a — Starting and becoming ready
 
@@ -37,11 +37,10 @@ sequenceDiagram
 ```
 
 The only readiness check is SME: MLLF needs a token for its calls to AIMgF and has no database (compose and the chart give it none, `database: false`).
-It registers nothing at SME but its invoker. **Known gap:** the shared identity store (`module_identity`, PR-ST-4) is used whenever `MODULE` is set
-and `SMO_MODULE_IDENTITY_STORE` is not `off` (`shared/smo_shared/r1_client.py`). MLLF has no `SMO_DATABASE_URL`, so the first token lookup of each
-process raises `MissingDatabaseUrl` (that `/ready` is 503, or that request a 500); from the next lookup on the process registers an identity of its
-own at SME, so MLLF adds one registration per replica and per restart. `SMO_MODULE_IDENTITY_STORE=off` gives the same per-process identity without
-the first failure.
+It registers nothing at SME but its invoker. **Known gap** (open item `MLLF-IDENTITY`): the shared identity store (`module_identity`, PR-ST-4) is used whenever `MODULE` is set
+and `SMO_MODULE_IDENTITY_STORE` is not `off` (`shared/smo_shared/r1_client.py`). MLLF has no `SMO_DATABASE_URL`, so the store cannot be opened and
+each process registers an identity of its own at SME (`_identity_store` logs a warning and answers None, as with `SMO_MODULE_IDENTITY_STORE=off`):
+MLLF adds one registration per replica and per restart, and the old ones stay until an admin purges stale invokers at SME.
 
 ## b — A deploy request
 

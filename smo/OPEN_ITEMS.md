@@ -174,6 +174,57 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
   Approach: take the previous release's tag and the newest revision's table from the repository at run time.
 - **OPS-A1-DROP** — The A1 tables (`a1_ei_type` and the others) that revision 0029 leaves for 0.4.0's `a1-related` module have no revision that drops
   them, now that no supported release uses them (call flow 31). Approach: the contract revision that drops them, announced under `### Changed`.
+- **MLLF-NODEGROUP-OWNER** — Any rApp can change the node groups of another rApp's certified model: `POST /mllf/models/{id}/deploy` is on the rApp
+  allow-list (`shared/smo_shared/roles.py`, `/mllf`), MLLF checks only the lifecycle state and then calls `PATCH /aimgf/models/{id}/runtime/node-groups`
+  as an SMO module (`mllf/app/main.py`, `request_model_deployment`), and AIMgF's owner rule asks only a caller with the rApp role (`_owner_may_act`,
+  `aimgf/app/main.py`), so the call passes for every model. The rApp's id does reach AIMgF (`X-R1-On-Behalf-Of`, which `R1Client` adds and the gateway
+  forwards for a module), and nothing reads it there. `mllf/tests` has no ownership test. Approach: AIMgF applies the owner rule to an `internal` call
+  that carries `X-R1-On-Behalf-Of` on this route (`invoker_id` already returns that id), or MLLF reads the model's owner from MLMR first and refuses
+  (403 `MODEL_ACCESS_DENIED`); a test that a second rApp is refused and the owner and the console are not.
+- **MLLF-IDENTITY** — Every MLLF process registers an SME invoker of its own: MLLF has no database (`database: false` in the chart, none in compose), so
+  `_identity_store` answers None (`shared/smo_shared/r1_client.py`) and each replica and each restart onboards a new invoker; the old ones stay
+  at SME until an admin runs `POST /sme/invoker-registrations/purge-stale` (nothing schedules it), and the replicas of one module are different
+  invokers to the gateway's per-invoker controls and audit (`mllf/docs/lifecycle.md`, a and c). `SMO_INVOKER_ID` / `SMO_INVOKER_SECRET` avoid it but
+  neither compose nor the chart sets them. Approach: give MLLF the shared `module_identity` path (a database role with only that table, as every other
+  module has) or a pre-provisioned identity from a Secret in compose and the chart.
+- **GUI-RBAC-GAPS** — The GUI BFF's permission table (`gui-bff/app/rbac.py`, `RULES`) has no rule, so every console role is refused, for routes the
+  call flows give to a console user. Per route, a decision is needed: (1) `DELETE /ran-analytics/producers/{id}`: call flow 08a shows an admin
+  deregistering; only `POST /ran-analytics/producers` (admin) is listed and the console has no deregister button: add an admin rule, or drop the
+  console from 08a's deregistration. (2) `POST`, `PUT`, `DELETE /mdaf/mda-functions(/{id})`: no call flow shows the console writing them, and the
+  rApp allow-list leaves them out too, yet the console's MDA request form picks from the functions that exist: decide who creates an MDA function
+  (an admin rule, as for other platform configuration, or say in call flow 08 that only an SMO module or a seed does). (3)
+  `DELETE /aimgf/mlmf/subscriptions/{id}`: call flow 13 says unsubscribing needs the operator role, and the console's MLMF table shows an
+  **Unsubscribe** button (`gui/src/pages/aiml/sections/Mlmf.tsx`) that the BFF refuses for every role: a missing rule (operator, as the
+  `POST` beside it). (4) The TS 28.105 writes of call flow 27, which shows an operator in the console for each: `POST`, `PATCH
+  /aimgf/ml-training-requests(/{id})` (27a, 27b), `POST /aimgf/ml-training-processes/{id}/progress` (27a), `POST`, `PATCH
+  /aimgf/ml-update-requests(/{id})` (27c), `POST`, `PATCH /aimgf/aiml-inference-functions(/{id})` and `POST /aimgf/ml-model-loading-policies` and
+  `/{id}/trigger` (27d); the console has no page for them (only the `training-jobs` / `validation-jobs` equivalents, which have operator rules): add operator rules (admin for
+  the functions and policies, as platform configuration), or restate call flow 27 as rApp and SMO module only. Approach: a decision per route, then
+  the rule (and its line in `tests/test_rbac_matrix.py`, which covers every rule) or the call flow's text.
+- **MDA-REQ-OWNER** — Any rApp can withdraw another rApp's MDA request: `DELETE /mdaf/mda-requests/{id}` is on the rApp allow-list
+  (`shared/smo_shared/roles.py`, `/mdaf`) and deletes whatever request it names (`mdaf/app/mda.py`, `delete_mda_request`), and `POST /mda-requests`
+  stores the body's `requestedBy` as sent, so an rApp can also make a request in another's name (`mdaf/README.md` notes the delete). Approach: the
+  maker rule of `DELETE /subscriptions` (`mdaf/app/main.py`, `unsubscribe_analytics`): for role `rapp`, `requestedBy` is the caller's invoker id on
+  create and only the maker may withdraw (403 `SUBSCRIPTION_ACCESS_DENIED` or a new code); the console and SMO modules may withdraw any.
+- **O1-ADAPTOR-ENROL** — How a production O1 adaptor is given an identity is not specified: an adaptor's ingest routes (`POST /ran-nf-oam/alarms/ingest`,
+  `/pm-reports`, `/pm-files`, `/o1-adaptor-endpoints/{id}/heartbeat`) are not on the rApp allow-list (`shared/smo_shared/roles.py`, `/ran-nf-oam`
+  allows only `config-jobs`), so an adaptor enrolled as an rApp is refused at the gateway; enrolled as an SMO module (the enrollment secret) it gets the
+  `internal` role and every module's trust; and the mock adaptor posts to RAN NF OAM directly with no credential (`mock-o1-adaptor/README.md`), which
+  RAN NF OAM trusts as a call with no role and which `SMO_MTLS` refuses (`docker-compose.mtls.yml`: its emits answer 502). Only the VES listener has
+  an adaptor credential of its own (HTTP Basic, `SB-7`). Approach: decide the path (an `adaptor` role at the gateway limited to the ingest routes,
+  or a documented direct path with a client certificate per adaptor), document it in `ran-nf-oam/README.md` and the O1 conformance kit, and test it
+  with the gateway and with mTLS on.
+- **SAMPLE-LIMITS** — The sample packages do not show two declarations a package may carry: none of the four `samples/*/manifest.yaml` declares
+  `limits` (AI-10.1, read by `onboarding/app/package_validation.py`), and the Java example package (`sdk-java/examples/hello-rapp/package`) has no
+  `capabilities.yaml` (the Go example's has one). Approach: add them (the four CSARs are rebuilt and re-signed with `samples/build_csar.py`,
+  and the conformance pack and `tests_integration/test_rapp_signing.py` re-run), or say in `docs/RAPP_PACKAGING.md` that the samples leave them out
+  on purpose. The owner decides, since the sample packages change.
+- **SDK-PY-RETRY** — The Python SDK does not retry with back-off: `smo_sdk` repeats a write once on `409 CONCURRENT_MODIFICATION`
+  (`sdk/smo_sdk/_common.py`, `_RetryOnConflict`) and `R1Client` once on a 401, and nothing else (429, 502, 503, 504 and transport errors reach the
+  caller), while the Go SDK (`sdk-go/retry.go`) and the Java SDK (`RetryPolicy`) make 4 attempts, 200 ms doubling to 5 s with jitter, `Retry-After`
+  honoured. `HISTORY.md` (RAPP-4.3) records the difference, not a decision to keep it. Approach: the same policy in `smo_sdk` (only safe calls
+  repeated after a transport error or 502/504, every POST already carries an `Idempotency-Key`, the invoker registration only on 429/503),
+  with its tests; or record that the Python SDK leaves retries to the caller.
 
 - **OI-7-config-push** — An instance's configuration change does not reach its rApp: `PUT /rapp-mgmt/instances/{id}/config` only stores
   it, and the rApp reads it when it starts the instance (call flow 07e). Approach: push it to the rApp's operator API as the credentials are
@@ -213,8 +264,10 @@ Closed in this wave: SA-FOCOM-2 (Location, OCloudSite, pool links, inline resour
 - **SA-MLMR-6 (location)** — `accessReqs.location` is stored, not enforced: no requester location exists.
   Approach: take a location from the invoker's registration if the platform ever models one.
 - **SA-MLMR-7 (phases)** — AIMgF writes `phaseInfo.phase` at training start (`IN_TRAINING` /
-  `IN_RETRAINING`) and success (`TRAINED`) only; validation and deployment do not write `VALIDATED` /
-  `DEPLOYED`. Approach: write the phase from the lifecycle FSM transitions in `_fire_model_event`.
+  `IN_RETRAINING`) and success (`TRAINED`) only; a deployment does not write `DEPLOYED`. TS 29.482's `MLModelPhase` has no validation
+  phase (`NOT_TRAINED`, `IN_TRAINING`, `TRAINED`, `IN_RETRAINING`, `DEPLOYED`: `specs/5G_APIs/TS29482_MLR_MLModelManagement.yaml`,
+  `MLModelPhase`; MLMR's `Phase`, `mlmr/app/mlr.py`, is the same list), so validation stays AIMgF's lifecycle state (`VALIDATED`) and is not
+  written to MLMR. Approach: write `DEPLOYED` when the model's serving runtime is deployed (call flow 17), and back to `TRAINED` when it is terminated.
 - **SA-MLMR-1 (spec edges)** — the `MLModel` `anyOf` and the forward-compatible free-string enum
   values are not honoured; a model cannot be created from a profile (no type / version in
   `mlModelInfo`).
@@ -235,8 +288,24 @@ SA-MLMR-8 (`usageReqs`), SA-MLMR-9 (whole-object `filt-criteria` discovery).
 
 ## 4. Test coverage
 
-Nothing open. **OI-4** (uneven coverage) is closed: `HISTORY.md` §4, OI-4 (every module has a coverage floor in
+**OI-4** (uneven coverage) is closed: `HISTORY.md` §4, OI-4 (every module has a coverage floor in
 `coverage_floors.json`, enforced in CI by `scripts/coverage_floor.py`; a test count is not the measure).
+
+- **DB-ROLE-RUNTIME** — No test fails when a module's database role lacks a grant on a path the tests do not happen to take (how 0.8.0 shipped
+  `mdaf-worker` failing every tick on `periodic_run`). What is covered: `tests_integration/test_db_roles.py` derives three grants from the code
+  without a database (a module with a `smo_shared.worker` service in compose lists `periodic_run`, `notification_outbox` and `smo_event`; one whose
+  `app/*.py` uses the event bus lists `smo_event`; one whose `app/*.py` calls `audit.record(` / `write_audit(` lists `audit_log` and `audit_head`), and on
+  Postgres that each role can `SELECT` from its own tables and the shared tables it lists, is refused every other table and cannot create one (one
+  `INSERT` / `DELETE`, Onboarding's); the `compose-e2e` job replays `DEMO_RUNBOOK.md` with every module connected as its role and checks only that each
+  role connected and is refused other tables. Not covered: the grants on `notification_outbox` (outside a worker), `idempotency_key` and
+  `module_identity`, and the `read` grants, are not derived from the code; no `INSERT` / `UPDATE` / `DELETE` on a shared table is tried as the role;
+  a route or a worker task the replay does not reach never runs as its role, and a worker task that fails on a grant is only logged. Approach: a
+  Postgres test that, per module, runs its routes (the in-process mesh) and each worker task once under its own role, and fails on any
+  `InsufficientPrivilege`; or, cheaper, the compose job fails on `permission denied` in any service's log after the replay.
+- **BOOTSTRAP-KEY-LANE** — No CI job starts the stack with `R1_BOOTSTRAP_KEY` set: only render tests check that every caller of `/bootstrap` is
+  given the key (`tests_integration/test_helm_bootstrap.py`, compose and chart), so a service that discovers through `/bootstrap` and does not send
+  `X-Bootstrap-Key` would be found only when an operator turns the key on (call flow 28c, Phase 1). Approach: run the compose lane (or the kind lane)
+  once with the key set, every service `/ready`, and a call without the key refused 401.
 
 ## 5. Production readiness (tier-1 operator deployment)
 
@@ -1208,7 +1277,7 @@ Closed (`HISTORY.md` PR-RAPP-3): the offline validator, the runtime checks and t
 
 RAPP-4.1 decided (both languages) and RAPP-4.2 to 4.5 are done for Go (`sdk-go/`) and for Java (`sdk-java/`); `HISTORY.md`, PR-RAPP-4 (Go) and PR-RAPP-4 (Java).
 
-Open, not steps: a run of either example against the compose stack (CI builds, unit-tests and image-builds them, it does not start the stack), mTLS configured from the environment in the Java SDK, and the Python namespaces (analytics, lifecycle, intent) that neither SDK covers.
+Open, not steps: a run of either example against the compose stack (CI builds, unit-tests and image-builds them, it does not start the stack), mTLS configured from the environment in the Java SDK, and the Python namespaces (analytics, lifecycle, intent) that neither SDK covers. The Python SDK's missing retry back-off, which both have, is `SDK-PY-RETRY` (section 2).
 
 #### PR-RAPP-5 — Developer portal
 

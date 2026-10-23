@@ -249,7 +249,7 @@ The worker (`python -m smo_shared.worker`, `app/tasks.py`) has one task, `purge-
 - `/mda-reports` list filters `managed_entity` in Python after loading all rows matching the SQL filters.
 - Legacy `POST /reports` does not accept `reportKind` or `mdaType`; those exist only on `/mda-reports`.
 - A report's `output` is not checked against its producer's `outputSchema` (`../OPEN_ITEMS.md` `MDA-SCHEMA`).
-- `DELETE /mda-requests/{id}` is not yet limited to the request's maker.
+- `DELETE /mda-requests/{id}` is not yet limited to the request's maker (`../OPEN_ITEMS.md` `MDA-REQ-OWNER`).
 
 ## 3. Unit tests
 
