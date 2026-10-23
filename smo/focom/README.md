@@ -196,11 +196,13 @@ cd smo/focom && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 ### 3.2 What is covered
 
-| Test file | Covers | Count |
-|---|---|---|
-| `tests/test_o2ims_conformance.py` | Sites, locations and pools (links, inline resources, guarded deletes), `AlarmEventRecord` fields and validation, ack / clear / change and filtered notifications, performance records / jobs / subscriptions and reports, node utilisation (newest CPU and memory record whatever the arrival order, suspect / other-resource / other-measurement records ignored, nulls not 404, the batched read's order, duplicates and 1-100 bound, the 0-100 ingest check), artifact / cluster / infrastructure resources and their references, provisioning requests, closed and registrable resource types | 27 |
-| `tests/test_main.py` | `/inventory` shape, seeded types / manager / location / site, `resource_type` filtering; subscriptions (create, `consumerSubscriptionId`, delete idempotent, list); notifications on provision / deprovision (match, filtered out, delete regardless of filter, real type on delete, unreachable subscriber, id pass-through); provision / deprovision (incl. unknown id, new fields, auto-registered type); resource types, pools, pool resources, deployment managers (list, get, 404, spec-field exposure); alarms and performance (ingest, filter, empty); `/topology` entities and relationships; `/resources/{id}/status`; `/health` ; a resource's status follows its active alarms, an unknown resource 404, an unknown deprovision notifies nobody (call flow 16) | 54 |
-| `tests/test_inventory_lifecycle.py` | Call flow 16: a subscription with a refused callback or an unknown type refused; a notification is an O2-IMS inventory event and the change is on the event feed; a typed provision body and a pool; a resource still named by a cluster, infrastructure or child resource is not deprovisioned | 4 |
+Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
+
+| Test file | Covers |
+|---|---|
+| `tests/test_o2ims_conformance.py` | Sites, locations and pools (links, inline resources, guarded deletes), `AlarmEventRecord` fields and validation, ack / clear / change and filtered notifications, performance records / jobs / subscriptions and reports, node utilisation (newest CPU and memory record whatever the arrival order, suspect / other-resource / other-measurement records ignored, nulls not 404, the batched read's order, duplicates and 1-100 bound, the 0-100 ingest check), artifact / cluster / infrastructure resources and their references, provisioning requests, closed and registrable resource types |
+| `tests/test_main.py` | `/inventory` shape, seeded types / manager / location / site, `resource_type` filtering; subscriptions (create, `consumerSubscriptionId`, delete idempotent, list); notifications on provision / deprovision (match, filtered out, delete regardless of filter, real type on delete, unreachable subscriber, id pass-through); provision / deprovision (incl. unknown id, new fields, auto-registered type); resource types, pools, pool resources, deployment managers (list, get, 404, spec-field exposure); alarms and performance (ingest, filter, empty); `/topology` entities and relationships; `/resources/{id}/status`; `/health` ; a resource's status follows its active alarms, an unknown resource 404, an unknown deprovision notifies nobody (call flow 16) |
+| `tests/test_inventory_lifecycle.py` | Call flow 16: a subscription with a refused callback or an unknown type refused; a notification is an O2-IMS inventory event and the change is on the event feed; a typed provision body and a pool; a resource still named by a cluster, infrastructure or child resource is not deprovisioned |
 
 Subscriber callbacks are intercepted by patching `httpx.post`.
 

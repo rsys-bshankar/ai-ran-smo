@@ -134,7 +134,7 @@
   "29-kubernetes-helm-deployment/29d-reaching-it-ingress-and-the-networkpolicies.png": "e95d8635a58621b9ca5383fcf14933e5cc69ba9411be9898af706d8490a1c8ca",
   "29-kubernetes-helm-deployment/29e-the-gitops-overlays-and-argo-cd.png": "e2cd6e0d8f5a157070414b8c0536a0f3720e8410cb64d1c488c1173aaf5ac0ce",
   "30-upgrade-and-rollback/30a-a-rolling-upgrade-with-helm.png": "1c628235fe7ea7bc82be4c2c779d7c56e4882e466d6c7b60ffd6eb62bc9b28d1",
-  "30-upgrade-and-rollback/30b-expand-then-contract.png": "0db79cf35fcbffd5b11c6c0c553a7ea479eef79986f920682a019aab7f6413b3",
+  "30-upgrade-and-rollback/30b-expand-then-contract.png": "7ccb2123aaf8751a665a1ca0afbdf8314a3bf540429e5f5e80d4c76be0332134",
   "30-upgrade-and-rollback/30c-the-previous-release-s-code-on-the-new-schema.png": "a89cc1257f976cce281ef476412f505225620f9058cccf52563b4c95f5a878a9",
   "30-upgrade-and-rollback/30d-an-upgrade-that-keeps-the-data.png": "fe2feb64e626e9d8da6cc99c4d795219047546218abc975be661c41668934c9b",
   "30-upgrade-and-rollback/30e-rolling-back.png": "e843dad86b0d9f44c2ac3b060faf95cdd4914745f518d2becd42b4ff9b8ca261",

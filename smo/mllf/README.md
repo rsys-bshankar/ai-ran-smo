@@ -125,9 +125,11 @@ cd smo/mllf && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 AIMgF is replaced by a fake R1 client.
 
-| Test file | Covers | Count |
-|---|---|---|
-| `tests/test_main.py` | refusal unless `CERTIFIED` / `PROMOTED`, refusal for `DEPRECATED`, node groups stamped and returned, `PROMOTED` accepted, unknown model 404, health; ownership (`MLLF-NODEGROUP-OWNER`): MLLF calls AIMgF for the calling rApp, a second rApp is 403 `MODEL_ACCESS_DENIED` with nothing written (on the read and on the write, and with MLLF's own text when AIMgF's 403 has no JSON body), the owner and the console pass | [counts](../docs/TEST_COUNTS.md) |
+Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
+
+| Test file | Covers |
+|---|---|
+| `tests/test_main.py` | refusal unless `CERTIFIED` / `PROMOTED`, refusal for `DEPRECATED`, node groups stamped and returned, `PROMOTED` accepted, unknown model 404, health; ownership (`MLLF-NODEGROUP-OWNER`): MLLF calls AIMgF for the calling rApp, a second rApp is 403 `MODEL_ACCESS_DENIED` with nothing written (on the read and on the write, and with MLLF's own text when AIMgF's 403 has no JSON body), the owner and the console pass |
 
 ### 3.3 What is not covered here
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Walks a database that holds data down the whole revision chain, one revision at a time, and back up (PR-V-13, rollback of the schema with data in it).
+"""Walks a database that holds data down the whole revision chain, one revision at a time, and back up (PR-V-17, rollback of the schema with data in it).
 
     scripts/downgrade_with_data.py --url postgresql+psycopg://... [--to 0002] [--out summary.md]
 

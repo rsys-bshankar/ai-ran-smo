@@ -21,9 +21,13 @@ section 4 defines them:
   remove  -> DELETE (an absent target is fine, RFC 6241's remove)
 and read-after-write is a GET of the same resource.
 
-Like netconf_client.py: plain HTTP, no TLS/auth (this build's all-HTTP
-pragmatism), one exchange bounded at 30 s, and an EditResult whose reason
-says whether a failure is worth retrying. A RESTCONF error reply
+Each request goes to the ME's adaptor_uri as given: plain HTTP for an
+`http://` root, HTTPS with httpx's default server-certificate check for an
+`https://` one. No client credentials are sent (no HTTP authentication, no
+client certificate), so a RESTCONF server that requires them is not
+reachable from here; NETCONF over SSH or TLS is netconf_ssh.py. As in
+netconf_client.py, one exchange is bounded at 30 s and the result is an
+EditResult whose reason says whether a failure is worth retrying. A RESTCONF error reply
 (`ietf-restconf:errors`) is a definite answer, never retried, whatever its
 status code; a timeout, 502/503, or a 5xx without an errors body is
 transient.

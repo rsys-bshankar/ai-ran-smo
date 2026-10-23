@@ -230,7 +230,7 @@ def test_wait_returns_when_the_schema_is_current_and_fails_when_it_is_not(databa
     assert waited.returncode == 0 and "current" in waited.stdout
 
 
-# --- PR-V-13: the whole chain down and up again with data in it --------------------------------------------------------------------------
+# --- PR-V-17: the whole chain down and up again with data in it --------------------------------------------------------------------------
 
 @needs_postgres
 def test_a_row_naming_something_that_does_not_exist_stops_the_downgrade_across_0022_and_leaves_the_database_where_it_was(databases):

@@ -196,10 +196,12 @@ cd smo/nfo && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 ### 3.2 What is covered
 
-| Test file | Covers | Count |
-|---|---|---|
-| `tests/test_main.py` | Descriptor create (with and without a package), list and delete (idempotent; refused while deployed, allowed after Terminate); Instantiate (FOCOM cluster resolution, refused with nothing created when FOCOM names no O-Cloud: error, no id, no answer; resource link, unknown descriptor, duplicate name, one descriptor backing two deployments); the state changes on the event bus, removal included; Terminate (removal, resource link and operation history deleted, after scale, repeat on `TERMINATING`, `DELETING` -> `ABNORMAL`, unknown id idempotent); Heal (from `ABNORMAL`, idempotent when `RUNNING`, refused mid-instantiate, unknown 404); Scale (`RUNNING` round trip, refused when not running, unknown 404); operation status, placement, resources, list filters, `/health` | 35 |
-| `tests/test_dms_lifecycle.py` | Asynchronous Terminate through `DELETING` to removal; the descriptor's delete refused until then; uninstall / delete failure -> `ABNORMAL` with its reason, then Terminate retries; runtime failure -> `ABNORMAL`, Heal recovers; repeat Terminate while uninstalling; events a state can't take; unknown event / deployment; default Terminate still synchronous | 11 |
+Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
+
+| Test file | Covers |
+|---|---|
+| `tests/test_main.py` | Descriptor create (with and without a package), list and delete (idempotent; refused while deployed, allowed after Terminate); Instantiate (FOCOM cluster resolution, refused with nothing created when FOCOM names no O-Cloud: error, no id, no answer; resource link, unknown descriptor, duplicate name, one descriptor backing two deployments); the state changes on the event bus, removal included; Terminate (removal, resource link and operation history deleted, after scale, repeat on `TERMINATING`, `DELETING` -> `ABNORMAL`, unknown id idempotent); Heal (from `ABNORMAL`, idempotent when `RUNNING`, refused mid-instantiate, unknown 404); Scale (`RUNNING` round trip, refused when not running, unknown 404); operation status, placement, resources, list filters, `/health` |
+| `tests/test_dms_lifecycle.py` | Asynchronous Terminate through `DELETING` to removal; the descriptor's delete refused until then; uninstall / delete failure -> `ABNORMAL` with its reason, then Terminate retries; runtime failure -> `ABNORMAL`, Heal recovers; repeat Terminate while uninstalling; events a state can't take; unknown event / deployment; default Terminate still synchronous |
 
 FOCOM is replaced by a monkeypatched `R1Client.get`.
 

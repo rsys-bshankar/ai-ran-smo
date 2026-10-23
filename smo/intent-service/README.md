@@ -335,14 +335,16 @@ cd smo/intent-service && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 ### 3.2 What is covered
 
-`tests/test_ts28312_datatypes.py` (17 tests): good and bad values for each datatype and as lists, `ValueRangeType` forms, `ReportingCondition`, and the same checks through `POST /intents` (contexts, guarantee periods, generic values, `intentReportControl`).
+`tests/test_ts28312_datatypes.py`: good and bad values for each datatype and as lists, `ValueRangeType` forms, `ReportingCondition`, and the same checks through `POST /intents` (contexts, guarantee periods, generic values, `intentReportControl`).
 
-| File | Covers | Tests |
-|---|---|---|
-| `tests/test_main.py` | Create/query/delete intents, admin-state (creator only, SUSPENDED report), RMIH registration (external-caller rejection, capability validation, list, deregister), scope and capability matching, dispatch to the named RMIH (and unreachable callback), strict spec shapes and family constraints, feasibility (reject vs report), purpose/negotiation gating, initial report and conflicts, report-control delivery, all report kinds, negotiation feedback, utility formula IOC, autonomy dispatch (AUTONOMOUS, ASSIST resolve/reject, SHADOW, up-front RMIH validation, operator notification and its SSRF scheme guard, unknown instance/RMIH, list/get, region-scope folding and bounding), `/health` | 56 |
-| `tests/test_intent_identity.py` | Call flow 09 (DOC-CF-1.8): an rApp's intent is its own (rmioId, owner), another rApp's admin-state / delete / feedback is refused, the console deletes with the reports, the console's requesterId check; an rApp registers no handler and publishes no report, re-registration in place keeps the intents; dispatch only for the caller's own instance (no fallback), `dispatchedBy` and the intent's owner; ASSIST decided only by a console user, recorded as `resolvedBy` / `rejectedBy` | 13 |
-| `tests/test_business_metrics.py` | `smo_intents` counts intents by admin state, both states present at zero | 1 |
-| `tests/test_fulfilment_and_conflict.py` | `GUI-9.8`: a new intent is 0 % and not in conflict, the percent follows the newest fulfilment report, a handler's conflict report sets `inConflict` and an empty one clears it, a conflict found at creation shows, deactivation resets the percent, the `fulfilled` / `in_conflict` list filters both ways, and the percent rule on six report shapes | 12 |
+Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
+
+| File | Covers |
+|---|---|
+| `tests/test_main.py` | Create/query/delete intents, admin-state (creator only, SUSPENDED report), RMIH registration (external-caller rejection, capability validation, list, deregister), scope and capability matching, dispatch to the named RMIH (and unreachable callback), strict spec shapes and family constraints, feasibility (reject vs report), purpose/negotiation gating, initial report and conflicts, report-control delivery, all report kinds, negotiation feedback, utility formula IOC, autonomy dispatch (AUTONOMOUS, ASSIST resolve/reject, SHADOW, up-front RMIH validation, operator notification and its SSRF scheme guard, unknown instance/RMIH, list/get, region-scope folding and bounding), `/health` |
+| `tests/test_intent_identity.py` | Call flow 09 (DOC-CF-1.8): an rApp's intent is its own (rmioId, owner), another rApp's admin-state / delete / feedback is refused, the console deletes with the reports, the console's requesterId check; an rApp registers no handler and publishes no report, re-registration in place keeps the intents; dispatch only for the caller's own instance (no fallback), `dispatchedBy` and the intent's owner; ASSIST decided only by a console user, recorded as `resolvedBy` / `rejectedBy` |
+| `tests/test_business_metrics.py` | `smo_intents` counts intents by admin state, both states present at zero |
+| `tests/test_fulfilment_and_conflict.py` | `GUI-9.8`: a new intent is 0 % and not in conflict, the percent follows the newest fulfilment report, a handler's conflict report sets `inConflict` and an empty one clears it, a conflict found at creation shows, deactivation resets the percent, the `fulfilled` / `in_conflict` list filters both ways, and the percent rule on six report shapes |
 
 ### 3.3 What is not covered here
 

@@ -287,11 +287,13 @@ cd smo/sa-smos && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 ### 3.2 What is covered
 
-| File | Covers | Tests |
-|---|---|---|
-| `tests/test_main.py` | Monitor registration and the single-target rule, threshold evaluation, CONFIG_CHANGE, SCALE escalation, ROLLBACK (409 without an rApp target, dispatch, rApp Management refusal escalated), RECONNECT (order, rApp-scoped, escalations), coordination-group retrain and its escalation, unknown monitor 404, escalate, list/get, remedial-action filters, `/health` | 21 |
-| `tests/test_assurance_loop.py` | Call flow 04: the MDAF subscription at registration (and its refusal), threshold validation, missing metrics and maximums, a pushed report read back and evaluated, a breach escalated once or running the automatic action, duplicates and ignored reports, 503 for MDAF unreadable or the monitor busy, the lock, the remedy and the automatic action's rules, how CONFIG_CHANGE / RETRAIN / RECONNECT end and why, escalation with its reason | 42 |
-| `tests/test_o1cm.py` | Registration (one POST, no delete first) and declared CM targets, deregistration passing on Intent Service's 409 and 502 otherwise, per-cell enactment and FULFILLED report, failed config job reported DEGRADED, unenactable targets reported not written, DEACTIVATED / foreign / unknown intents, replay with the same action id, CIO on each relation, tilt and power per cell | 15 |
+Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
+
+| File | Covers |
+|---|---|
+| `tests/test_main.py` | Monitor registration and the single-target rule, threshold evaluation, CONFIG_CHANGE writing the remedy, SCALE always escalated, ROLLBACK (409 without an rApp instance target, dispatch to rApp Management, its refusal escalated with the reason), RECONNECT (through the order, rApp-scoped, escalated with no order or no completed DEPLOY step), coordination-group retrain and its escalation, 404 for an unknown monitor (evaluation and remedial action), escalate to the operator, list and get, remedial-action filters, `/health` |
+| `tests/test_assurance_loop.py` | Call flow 04: the MDAF subscription at registration (502 and no monitor when MDAF refuses), threshold validation, an analytics type and a subscription reference refused together, missing metrics and maximums, the report read back from MDAF rather than taken from the push, a breach escalated once or running the automatic action, duplicates and ignored reports, 503 when MDAF cannot be read or another action holds the monitor (409 for an action by hand), the row lock (Postgres's `55P03` becomes 409), the remedy and the automatic action's rules, how CONFIG_CHANGE / RETRAIN / RECONNECT end and why, escalation with its reason and who asked |
+| `tests/test_o1cm.py` | Registration (one POST, no delete first) and the declared CM targets (a name without a `.` is 422), deregistration (Intent Service's 409 passed on, a gone handler 204, another failure 502), per-cell enactment and the FULFILLED report, a failed DME action reported DEGRADED, unenactable targets reported and not written, DEACTIVATED / foreign / unknown intents, a re-push replaying the same action id, CIO on each named relation, tilt and power per named cell |
 
 ### 3.3 What is not covered here
 

@@ -268,11 +268,13 @@ cd smo/mdaf && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 ### 3.2 What is covered
 
-| File | Covers | Tests |
-|---|---|---|
-| `tests/test_main.py` | Publish/query, scope persistence, subscribe/unsubscribe/list and filters, notification delivery (with, without, other type, unreachable destination), DME input validation, `ThresholdInfo` (validation, fires on first crossing, no refire, refire after reset, DOWN, missing IE, no-threshold subscription), a report read back by its id and 404, `/health` | 29 |
-| `tests/test_publisher_and_ownership.py` | Call flows 08b and 08c: an rApp publishes only what it is a registered producer of (legacy and typed reports), `publishedBy` recorded for an rApp, the console and a module, 502 when RAN Analytics cannot say, an rApp's subscription is its own, an rApp removes only its own subscription; `MDA-REQ-OWNER`: an rApp's MDA request is its own whatever the body says, the console, a module and a call with no role store the body's `requestedBy`, an rApp withdraws only its own (403 `MDA_REQUEST_ACCESS_DENIED`), the console and a module withdraw any, also a request stored before the rule | [counts](../docs/TEST_COUNTS.md) |
-| `tests/test_mda.py` | MDAFunction capability gating, request validation, typed output validation per `mDAType`, NOTIFICATION matching, edge-triggered IE thresholds, `filterValue` and `timeOut`, FILE method and download, report answering one request and legacy-report matching, DRIFT forwarding to MLMF (on MDAF's own account), 404s | 10 `GET /mda-reports?total=false`: no `total`, `hasMore` set correctly. |
+Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
+
+| File | Covers |
+|---|---|
+| `tests/test_main.py` | Publish/query, scope persistence, subscribe/unsubscribe/list and filters, notification delivery (with, without, other type, unreachable destination), DME input validation, `ThresholdInfo` (validation, fires on first crossing, no refire, refire after reset, DOWN, missing IE, no-threshold subscription), a report read back by its id and 404, `/health` |
+| `tests/test_publisher_and_ownership.py` | Call flows 08b and 08c: an rApp publishes only what it is a registered producer of (legacy and typed reports), `publishedBy` recorded for an rApp, the console and a module, 502 when RAN Analytics cannot say, an rApp's subscription is its own, an rApp removes only its own subscription; `MDA-REQ-OWNER`: an rApp's MDA request is its own whatever the body says, the console, a module and a call with no role store the body's `requestedBy`, an rApp withdraws only its own (403 `MDA_REQUEST_ACCESS_DENIED`), the console and a module withdraw any, also a request stored before the rule |
+| `tests/test_mda.py` | MDAFunction capability gating, request validation, typed output validation per `mDAType`, NOTIFICATION matching, edge-triggered IE thresholds, `filterValue` and `timeOut`, FILE method and download, report answering one request and legacy-report matching, DRIFT forwarding to MLMF (on MDAF's own account), 404s, `GET /mda-reports?total=false` (no `total`, `hasMore` set correctly) |
 
 ### 3.3 What is not covered here
 

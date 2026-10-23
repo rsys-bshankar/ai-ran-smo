@@ -4,7 +4,7 @@
 
 This directory holds a reference implementation of an O-RAN Service
 Management and Orchestration (SMO) platform. It is built from the design of
-seventeen SMO modules, each documented in its own `README.md`, and checked
+the SMO modules listed under [Stack and modules](#stack-and-modules), each documented in its own `README.md`, and checked
 against the 3GPP and O-RAN specifications in
 [`../specs/`](../specs/README.md) and the O-RAN-SC reference repositories.
 Each module is a Python / FastAPI / SQLAlchemy service with its own

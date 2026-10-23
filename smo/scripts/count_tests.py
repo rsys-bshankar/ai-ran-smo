@@ -18,7 +18,11 @@ The suites, found by walking `smo/` (a new module's `tests/` is picked up withou
   * The Go SDK (`sdk-go`): `*_test.go` files and their `func Test*` functions. The Java SDK (`sdk-java`): `src/test/**/*.java` files and their `@Test`
     annotations. Neither has a "collected" number.
 
-The output is deterministic (rows sorted by suite, no timestamps), so `--check` can compare it byte for byte.
+Below the table of suites the file has one collapsible block per suite listing each test file with its test functions and, for a Python suite, the
+tests pytest collects from it (counted from the node ids of the same `--collect-only` run). The module READMEs describe what a test file covers and
+link here for its numbers, instead of typing a count per file.
+
+The output is deterministic (rows sorted by suite, files sorted by path, no timestamps), so `--check` can compare it byte for byte.
 """
 
 import argparse
@@ -39,6 +43,8 @@ NOT_PYTHON = "—"
 # pytest's last line under --collect-only -q: "212 tests collected in 1.71s", "1 test collected in 0.1s", "5/9 tests collected (4 deselected) in ..."
 # or "no tests collected in ...". The first number of an "N/M" form is the one that would run.
 COLLECTED = re.compile(r"^(?:(?P<n>\d+)(?:/\d+)?|no) tests? collected\b", re.MULTILINE)
+# a collected test's node id under --collect-only -q: "tests/test_x.py::test_y[case]" or "tests/test_x.py::TestZ::test_y"; the file is the part before "::"
+NODE_ID = re.compile(r"^(?P<file>[^\s:]+\.py)::", re.MULTILINE)
 # a Vitest case opens a line: `it(`, `test(`, `it.each(...)(`, `test.skip(`; a `describe(` block is not a test, and `re.test(` is preceded by a dot
 GUI_CASE = re.compile(r"^\s*(?:it|test)(?:\.\w+)*\s*\(", re.MULTILINE)
 GO_TEST = re.compile(r"^func Test\w*\(", re.MULTILINE)
@@ -46,12 +52,21 @@ JAVA_TEST = re.compile(r"@Test\b")
 
 
 @dataclass(frozen=True)
+class FileRow:
+    """One test file of a suite: its path relative to the suite's directory, its test functions, and its collected tests (None when not Python)."""
+    path: str
+    functions: int
+    collected: int | None
+
+
+@dataclass(frozen=True)
 class Row:
-    """One suite of the table: its name (the path under smo/), test files, test functions, and collected tests (None when not Python)."""
+    """One suite of the table: its name (the path under smo/), test files, test functions, collected tests (None when not Python), and its files."""
     suite: str
     files: int
     functions: int
     collected: int | None
+    per_file: tuple[FileRow, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -98,10 +113,18 @@ def _test_functions(tree: ast.AST) -> int:
     return count
 
 
-def collect(suite: PySuite) -> int:
-    """Runs `pytest --collect-only -q` for one suite and returns the number of tests it collected.
+def collected_per_file(output: str) -> dict[str, int]:
+    """The tests collected from each file, read from the node ids that `pytest --collect-only -q` prints (paths as pytest prints them)."""
+    counts: dict[str, int] = {}
+    for path in NODE_ID.findall(output):
+        counts[path] = counts.get(path, 0) + 1
+    return counts
 
-    The environment is the caller's with PYTHONPATH replaced by the suite's own and SMO_ALLOW_SQLITE_FALLBACK=1 (the opt-in every conftest
+
+def collect(suite: PySuite) -> tuple[int, dict[str, int]]:
+    """Runs `pytest --collect-only -q` for one suite and returns the number of tests it collected, and that number per file.
+
+    The per-file numbers are keyed by the path pytest prints, relative to the directory it ran in. The environment is the caller's with PYTHONPATH replaced by the suite's own and SMO_ALLOW_SQLITE_FALLBACK=1 (the opt-in every conftest
     also sets); the pytest cache is not written. Raises SystemExit with the suite name and the end of pytest's output when it fails to collect.
     """
     env = {**os.environ, "PYTHONPATH": suite.pythonpath, "SMO_ALLOW_SQLITE_FALLBACK": "1", "PYTHONDONTWRITEBYTECODE": "1"}
@@ -113,21 +136,33 @@ def collect(suite: PySuite) -> int:
         tail = "\n".join((proc.stdout + proc.stderr).strip().splitlines()[-30:])
         raise SystemExit(f"count_tests: suite {suite.name!r} failed to collect (exit {proc.returncode}):\n{tail}")
     last = found[-1]
-    return int(last) if last else 0
+    return (int(last) if last else 0), collected_per_file(proc.stdout)
 
 
-def python_row(suite: PySuite, collected: int) -> Row:
-    """The table row of a Python suite: files and `def test_*` functions from the source, and the collected count given."""
+def python_row(suite: PySuite, collected: int, per_file: dict[str, int] | None = None) -> Row:
+    """The table row of a Python suite: files and `def test_*` functions from the source, the collected count given, and each file's numbers.
+
+    `per_file` maps a path relative to the suite's directory (as pytest prints it) to the tests collected from it; a file it does not name
+    collected none. Raises SystemExit when the per-file numbers do not add up to `collected`, since the file table would then be wrong.
+    """
+    per_file = per_file or {}
     files = _python_test_files(suite.cwd / suite.target)
-    functions = sum(_test_functions(ast.parse(f.read_text(encoding="utf-8"), filename=str(f))) for f in files)
-    return Row(suite.name, len(files), functions, collected)
+    rows = []
+    for f in files:
+        path = f.relative_to(suite.cwd).as_posix()
+        rows.append(FileRow(path, _test_functions(ast.parse(f.read_text(encoding="utf-8"), filename=str(f))), per_file.get(path, 0)))
+    if per_file and sum(r.collected or 0 for r in rows) != collected:
+        raise SystemExit(f"count_tests: suite {suite.name!r}: the tests collected per file add up to {sum(r.collected or 0 for r in rows)}, "
+                         f"not the {collected} pytest reported (a test outside the suite's test files?)")
+    return Row(suite.name, len(files), sum(r.functions for r in rows), collected, tuple(rows))
 
 
-def _regex_row(name: str, files: list[Path], pattern: re.Pattern[str]) -> Row | None:
-    """A non-Python suite's row: its files and the matches of `pattern` in them; None when the suite has no test files."""
+def _regex_row(name: str, root: Path, files: list[Path], pattern: re.Pattern[str]) -> Row | None:
+    """A non-Python suite's row: its files (paths relative to `root`) and the matches of `pattern` in them; None when the suite has no test files."""
     if not files:
         return None
-    return Row(name, len(files), sum(len(pattern.findall(f.read_text(encoding="utf-8"))) for f in files), None)
+    rows = tuple(FileRow(f.relative_to(root).as_posix(), len(pattern.findall(f.read_text(encoding="utf-8"))), None) for f in files)
+    return Row(name, len(rows), sum(r.functions for r in rows), None, rows)
 
 
 def other_rows() -> list[Row]:
@@ -135,7 +170,8 @@ def other_rows() -> list[Row]:
     gui = sorted(p for p in (SMO_ROOT / "gui" / "src").rglob("*.test.ts*") if p.suffix in (".ts", ".tsx"))
     go = sorted((SMO_ROOT / "sdk-go").rglob("*_test.go"))
     java = sorted(p for p in (SMO_ROOT / "sdk-java").rglob("*.java") if "/src/test/" in p.as_posix())
-    rows = [_regex_row("gui", gui, GUI_CASE), _regex_row("sdk-go", go, GO_TEST), _regex_row("sdk-java", java, JAVA_TEST)]
+    rows = [_regex_row("gui", SMO_ROOT / "gui", gui, GUI_CASE), _regex_row("sdk-go", SMO_ROOT / "sdk-go", go, GO_TEST),
+            _regex_row("sdk-java", SMO_ROOT / "sdk-java", java, JAVA_TEST)]
     return [r for r in rows if r is not None]
 
 
@@ -144,12 +180,12 @@ def count(jobs: int) -> list[Row]:
     suites = python_suites()
     with ThreadPoolExecutor(max_workers=jobs) as pool:
         collected = list(pool.map(collect, suites))
-    rows = [python_row(s, n) for s, n in zip(suites, collected)] + other_rows()
+    rows = [python_row(s, n, per_file) for s, (n, per_file) in zip(suites, collected)] + other_rows()
     return sorted(rows, key=lambda r: r.suite)
 
 
 def render(rows: list[Row]) -> str:
-    """The Markdown of docs/TEST_COUNTS.md for these rows, with a total row."""
+    """The Markdown of docs/TEST_COUNTS.md for these rows: the table of suites with a total row, then one collapsible block per suite listing its files."""
     lines = [
         "# Test counts",
         "",
@@ -169,6 +205,13 @@ def render(rows: list[Row]) -> str:
     total_functions = sum(r.functions for r in rows)
     total_collected = sum(r.collected for r in rows if r.collected is not None)
     lines.append(f"| **total** | **{total_files}** | **{total_functions}** | **{total_collected}** (Python) |")
+    lines += ["", "## Per test file", "", "Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration` from `smo/`)."]
+    for r in rows:
+        # a blank line after <summary> and before </details>, or GitHub does not render the Markdown table inside the block
+        lines += ["", f"<details><summary><code>{r.suite}</code>: {r.files} file{'' if r.files == 1 else 's'}</summary>", "",
+                  "| file | test functions | collected tests |", "|---|---:|---:|"]
+        lines += [f"| `{f.path}` | {f.functions} | {NOT_PYTHON if f.collected is None else f.collected} |" for f in r.per_file]
+        lines += ["", "</details>"]
     return "\n".join(lines) + "\n"
 
 

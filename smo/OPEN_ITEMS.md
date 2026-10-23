@@ -169,9 +169,17 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
   pooler's healthcheck; a wait for the database in the migrate Job before it counts attempts.
 - **OPS-PG-BIND** — Compose publishes Postgres on every interface of the host (`5432:5432`), with the demo password, so on a host with a public address
   the database is reachable from outside (call flow 28a). Approach: bind to `127.0.0.1` by default, an override for anything wider.
-- **OPS-UPGRADE-LANE** — The upgrade lane (`smo-upgrade-kind.yml`) upgrades from a fixed older tag and its lock step names revision 0027, so it no longer
-  holds a lock on the table the newest revision alters (call flow 30).
-  Approach: take the previous release's tag and the newest revision's table from the repository at run time.
+- **MIGRATE-LOCK-HOLD** — A migration that cannot finish stalls the release that is running: `scripts/migrate.py` applies every pending revision in
+  one transaction with no `lock_timeout`, so while one revision waits on a lock it keeps the locks the earlier revisions took on other modules' tables.
+  The kind upgrade lane's V-11 step showed it from `smo-v0.8.0`: with `ran_nf_oam.pm_subscription` held (altered by `0061`), RAN NF OAM
+  `GET /config-jobs` and rApp Management `GET /instances` answered after 30 s with a database error, and the RAN NF OAM and MDAF workers' tasks failed,
+  until the migrate Job's deadline killed it (`HISTORY.md` OPS-UPGRADE-LANE, call flow 30). Approach: a `lock_timeout` in `migrate.py`, so a revision
+  that cannot take its lock fails at once and the Job retries, and/or one transaction per revision (Alembic `transaction_per_migration`); the lane's
+  V-10 gate then holds.
+- **UPGRADE-GATE-EXEMPT** — The upgrade lane's load gate (`scripts/upgrade_load_verdict.py`) exempts `package list` from the per-route rule
+  (onboarding rolls with Recreate, so it has a gap) but counts its errors in the 1 % error rate, so the expected gap alone can fail the run: the
+  nightly run on `main` of 23 October, from `smo-v0.4.0`, failed with 40 errors in 3743 calls, 39 of them `package list` (0.03 % without it).
+  Approach: leave the routes of `--allow-errors-on` out of the rate (and report them on their own line).
 - **OPS-A1-DROP** — The A1 tables (`a1_ei_type` and the others) that revision 0029 leaves for 0.4.0's `a1-related` module have no revision that drops
   them, now that no supported release uses them (call flow 31). Approach: the contract revision that drops them, announced under `### Changed`.
 - **MLLF-IDENTITY** — Every MLLF process registers an SME invoker of its own: MLLF has no database (`database: false` in the chart, none in compose), so
