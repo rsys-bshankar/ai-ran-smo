@@ -1,5 +1,6 @@
 """SEC-15.3b, SEC-15.3c and SEC-15.3d (MLMR delete, artifact, phase-info and groups) through the mesh: the rApp that registers a model at MLMR owns it, and AIMgF refuses another rApp's scale, terminate, node-groups and model-loading calls on it
 (SEC-15.3b), its training, validation, emulation and update requests, its lifecycle reads and its MLMF subscriptions (SEC-15.3c); MLMR keeps an rApp from setting or changing the owner (SEC-15.3c) and from deleting, uploading to, downloading from, phasing or grouping a model it does not own (SEC-15.3d).
+ The console's TS 28.105 writes (GUI-11.2) are not asked by the owner rule.
 
 The in-process mesh has no gateway, so the headers R1 Termination would stamp on the inbound call (`X-R1-Role`, `X-R1-Invoker-Id`) are sent by hand, as `test_on_behalf_of.py` does.
 AIMgF's own onward call to MLMR goes through the mesh as an SMO module's. Run with `cd smo && PYTHONPATH=shared python -m pytest tests_integration/test_model_ownership.py -q`.
@@ -160,3 +161,43 @@ def _mlmf_dme_type(mesh, name: str) -> str:
         "namespace": "RAN", "name": name, "version": "1.0.0", "typeName": f"RAN.{name}", "producerId": "ran-nf-oam",
         "dataProductionSchema": {"type": "object"}, "producerHealthCallbackUrl": "http://ran-nf-oam:8000/health",
         "jobCallbackUrl": "http://ran-nf-oam:8000/dme-jobs"}).json()["registrationId"]
+
+
+def test_the_console_makes_the_ts28105_writes_on_an_rapps_model_through_the_mesh(mesh):
+    """GUI-11.2 (call flow 27): the console's TS 28.105 writes reach AIMgF as the console does (role internal, no `X-R1-On-Behalf-Of`), so the owner rule
+    does not ask them, even on a model an rApp owns: a training request starts and is suspended, resumed (through its process) and cancelled; the testing,
+    loading and policy-trigger calls get past the owner rule to the lifecycle gate (409, not 403); an update request starts and is cancelled; an inference
+    function is created and activated. Another rApp is still 403 on the same model's requests.
+    """
+    model_id = _register(mesh, ES)
+    aimgf = mesh["aimgf"]
+    created = aimgf.post("/ml-training-requests", headers=SMO, json={"mLModelRef": model_id, "trainingRequestSource": "smo-gui"})
+    assert created.status_code == 201, created.text
+    request_id = created.json()["id"]
+    assert aimgf.patch(f"/ml-training-requests/{request_id}", headers=SMO, json={"suspendRequest": True}).json()["attributes"]["requestStatus"] == "SUSPENDED"
+    process_id = next(p["id"] for p in aimgf.get("/ml-training-processes", params={"limit": 500}).json()["items"]
+                      if p["attributes"]["trainingRequestRef"] == [request_id])
+    resumed = aimgf.patch(f"/ml-training-processes/{process_id}", headers=SMO, json={"suspendProcess": False})
+    assert resumed.status_code == 200 and resumed.json()["attributes"]["progressStatus"]["status"] == "RUNNING", resumed.text
+    assert aimgf.patch(f"/ml-training-requests/{request_id}", headers=OTHER, json={"cancelRequest": True}).status_code == 403
+    cancelled = aimgf.patch(f"/ml-training-requests/{request_id}", headers=SMO, json={"cancelRequest": True})
+    assert cancelled.json()["attributes"]["requestStatus"] == "CANCELLED", cancelled.text
+
+    function = aimgf.post("/aiml-inference-functions", headers=SMO, json={"aIMLInferenceName": "console-fn"})
+    assert function.status_code == 201
+    function_id = function.json()["id"]
+    activated = aimgf.patch(f"/aiml-inference-functions/{function_id}", headers=SMO, json={"activationStatus": "ACTIVATED"})
+    assert activated.json()["attributes"]["activationStatus"] == "ACTIVATED"
+    policy = aimgf.post("/ml-model-loading-policies", headers=SMO, json={"aIMLInferenceFunctionRef": function_id, "mLModelRef": [model_id]})
+    assert policy.status_code == 201
+    gated = [
+        aimgf.post("/ml-testing-requests", headers=SMO, json={"mLModelRef": model_id, "requestSource": "smo-gui"}),
+        aimgf.post("/ml-model-loading-requests", headers=SMO, json={"aIMLInferenceFunctionRef": function_id, "mLModelToLoadRef": [model_id]}),
+        aimgf.post(f"/ml-model-loading-policies/{policy.json()['id']}/trigger", headers=SMO),
+    ]
+    assert [r.status_code for r in gated] == [409] * len(gated), [r.text for r in gated]     # the model is FAILED (the cancel): not TRAINED, not CERTIFIED
+    update = aimgf.post("/ml-update-requests", headers=SMO, json={"mLModelRefList": [model_id], "requestSource": "smo-gui"})
+    assert update.status_code == 201, update.text                                            # FAILED is trainable: one FINE_TUNING run starts
+    assert aimgf.patch(f"/ml-update-requests/{update.json()['id']}", headers=SMO, json={"cancelRequest": True}).status_code == 200
+    refused = aimgf.post("/ml-model-loading-requests", headers=OTHER, json={"aIMLInferenceFunctionRef": function_id, "mLModelToLoadRef": [model_id]})
+    assert refused.status_code == 403

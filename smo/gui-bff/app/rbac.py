@@ -10,11 +10,13 @@ listed explicitly. Machine-to-machine routes that only an rApp, NF or
 another SMO module should call (SME token/registration APIs, NFO
 Instantiate, usage registrations, heartbeats, ...) are deliberately absent,
 so the GUI can't reach them at all; DME producer registration is listed
-(admin), for an operator standing in for a producer. The TS 28.105
-provisioning writes of call flow 27 (training, update and loading requests,
-training-process progress, inference functions, loading policies) are absent
-too: an rApp or an SMO module makes them, and the console uses the
-training-jobs and validation-jobs routes instead.
+(admin), for an operator standing in for a producer. Of the TS 28.105
+provisioning writes of call flow 27, the requests (training, testing, update,
+loading) and a training process's suspend, resume and cancel are operator, as
+`/training-jobs` is; the inference functions, the loading policies and a
+policy's trigger are admin, platform configuration like the other registries.
+A training process's progress report is the training runtime's and is absent
+(GUI-11.2).
 
 Some rules also pin request parameters to the caller's GUI identity rather
 than trusting what the browser sent: who acknowledged or cleared an alarm,
@@ -200,6 +202,17 @@ RULES: list[Rule] = [
     _rule("POST", "/aimgf/mlmf/subscriptions", O),    # (POST /aimgf/feature-groups is the rule at the top: the same role, and a second copy of it here was never reached)
     _rule("DELETE", "/aimgf/mlmf/subscriptions/{id}", O),   # the MLMF tab's Unsubscribe button, the same role as subscribing (call flow 13d)
     _rule("POST", "/aimgf/mlmf/subscriptions/{id}/reports", A),  # test-data injection
+    # call flow 27 (GUI-11.2): the TS 28.105 requests start and drive the same runs as /training-jobs and /validation-jobs, so they are an operator's
+    # like those; PATCH is their suspend / resume / cancel flags (and a training process's priority and termination conditions). A process's
+    # POST .../progress is the training runtime's report and has no rule. An inference function, a loading policy and its trigger (which loads
+    # the policy's models) are platform configuration, like the MDA functions: admin. The DELETE routes of these resources have no rule.
+    _rule("POST", "/aimgf/ml-(training|testing|update|model-loading)-requests", O),
+    _rule("PATCH", "/aimgf/ml-(training|testing|update|model-loading)-requests/{id}", O),
+    _rule("PATCH", "/aimgf/ml-training-processes/{id}", O),
+    _rule("POST", "/aimgf/aiml-inference-functions", A),
+    _rule("PATCH", "/aimgf/aiml-inference-functions/{id}", A),
+    _rule("POST", "/aimgf/ml-model-loading-policies", A),
+    _rule("POST", "/aimgf/ml-model-loading-policies/{id}/trigger", A),
 
     # --- RAN NF OAM
     _rule("PATCH", "/ran-nf-oam/alarms/{id}/ack", O,

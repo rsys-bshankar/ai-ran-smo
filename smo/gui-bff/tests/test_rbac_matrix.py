@@ -10,7 +10,7 @@ per module), and for each of the three roles the decision must be
 
 A viewer may only read: every request built from a rule that changes something is refused to a viewer, as a test of its own (the role test above also
 refuses a viewer for an operator or admin rule, but would allow one for a write rule given the viewer role by mistake). The decisions of the open item
-GUI-RBAC-GAPS (HISTORY.md) are pinned route by route at the end: a new rule is still tested by the generated cases the day it is added.
+GUI-RBAC-GAPS and GUI-11.2 (HISTORY.md) are pinned route by route at the end: a new rule is still tested by the generated cases the day it is added.
 """
 
 import pytest
@@ -136,7 +136,7 @@ def test_a_viewer_is_refused_every_change(index, path):
     assert decision.allowed is False and decision.required_role in (Role.OPERATOR, Role.ADMIN)
 
 
-# The decisions of GUI-RBAC-GAPS (HISTORY.md), one row per route: the minimum role, or None for a route the console must not reach at all. Each row is
+# The decisions of GUI-RBAC-GAPS and GUI-11.2 (HISTORY.md), one row per route: the minimum role, or None for a route the console must not reach at all. Each row is
 # checked for all three roles, so the viewer is refused every one of them.
 GUI_RBAC_GAPS = [
     ("DELETE", "/ran-analytics/producers/p1", Role.ADMIN),          # deregistering a producer, as registering it (call flow 08a)
@@ -144,16 +144,26 @@ GUI_RBAC_GAPS = [
     ("PUT", "/mdaf/mda-functions/f1", Role.ADMIN),
     ("DELETE", "/mdaf/mda-functions/f1", Role.ADMIN),
     ("DELETE", "/aimgf/mlmf/subscriptions/s1", Role.OPERATOR),       # the MLMF tab's Unsubscribe button, as subscribing (call flow 13d)
-    # call flow 27: an rApp or an SMO module makes the TS 28.105 provisioning writes; the console uses /training-jobs and /validation-jobs
-    ("POST", "/aimgf/ml-training-requests", None),
-    ("PATCH", "/aimgf/ml-training-requests/r1", None),
-    ("POST", "/aimgf/ml-training-processes/p1/progress", None),
-    ("POST", "/aimgf/ml-update-requests", None),
-    ("PATCH", "/aimgf/ml-update-requests/r1", None),
-    ("POST", "/aimgf/aiml-inference-functions", None),
-    ("PATCH", "/aimgf/aiml-inference-functions/f1", None),
-    ("POST", "/aimgf/ml-model-loading-policies", None),
-    ("POST", "/aimgf/ml-model-loading-policies/p1/trigger", None),
+    # call flow 27 (GUI-11.2): the TS 28.105 requests are an operator's, as /training-jobs; the inference functions and loading policies an admin's
+    ("POST", "/aimgf/ml-training-requests", Role.OPERATOR),
+    ("PATCH", "/aimgf/ml-training-requests/r1", Role.OPERATOR),
+    ("POST", "/aimgf/ml-testing-requests", Role.OPERATOR),
+    ("PATCH", "/aimgf/ml-testing-requests/r1", Role.OPERATOR),
+    ("POST", "/aimgf/ml-update-requests", Role.OPERATOR),
+    ("PATCH", "/aimgf/ml-update-requests/r1", Role.OPERATOR),
+    ("POST", "/aimgf/ml-model-loading-requests", Role.OPERATOR),
+    ("PATCH", "/aimgf/ml-model-loading-requests/r1", Role.OPERATOR),
+    ("PATCH", "/aimgf/ml-training-processes/p1", Role.OPERATOR),     # suspend / resume / cancel, as the request's own flags
+    ("POST", "/aimgf/ml-training-processes/p1/progress", None),      # the training runtime's report, never the console's
+    ("POST", "/aimgf/aiml-inference-functions", Role.ADMIN),
+    ("PATCH", "/aimgf/aiml-inference-functions/f1", Role.ADMIN),
+    ("POST", "/aimgf/ml-model-loading-policies", Role.ADMIN),
+    ("POST", "/aimgf/ml-model-loading-policies/p1/trigger", Role.ADMIN),
+    ("DELETE", "/aimgf/ml-training-requests/r1", None),              # not part of the decision: the console cancels with PATCH
+    ("DELETE", "/aimgf/aiml-inference-functions/f1", None),
+    ("DELETE", "/aimgf/ml-model-loading-policies/p1", None),
+    ("GET", "/aimgf/ml-training-processes", Role.VIEWER),             # every read of these resources is a viewer's (the module catch-all)
+    ("GET", "/aimgf/ml-model-loading-policies/p1", Role.VIEWER),
     ("POST", "/aimgf/training-jobs", Role.OPERATOR),                 # what the console uses instead
     ("POST", "/aimgf/validation-jobs", Role.OPERATOR),
 ]
@@ -162,7 +172,7 @@ GUI_RBAC_GAPS = [
 @pytest.mark.parametrize("method, path, minimum", GUI_RBAC_GAPS)
 @pytest.mark.parametrize("role", list(Role))
 def test_the_gui_rbac_gaps_decisions(method, path, minimum, role):
-    """Each route of the GUI-RBAC-GAPS decision has the role it was given (or no rule at all), and the allow or refuse follows it for every role."""
+    """Each route of the GUI-RBAC-GAPS and GUI-11.2 decisions has the role it was given (or no rule at all), and the allow or refuse follows it for every role."""
     decision = decide(method, path, {}, role)
     assert decision.required_role == minimum
     assert decision.allowed is (minimum is not None and RANK[role] >= RANK[minimum])
