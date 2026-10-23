@@ -148,5 +148,12 @@
   "32-backup-restore-and-disaster-recovery/32c-wal-archiving-and-base-backups-on-cloudnativepg.png": "93c20bd0d54a4b8aa7067b9a2d3c6fff425942eb0effb4cd1e04dbb64c6a323c",
   "32-backup-restore-and-disaster-recovery/32d-recovering-a-new-cluster-to-a-chosen-minute.png": "f065a7d8d6fe078c403b4cb21137535ff407a44ed2ef6e8112f4a95ab0b8ca26",
   "32-backup-restore-and-disaster-recovery/32e-the-drill.png": "a3d5742aba610c09a4afd83c6db3ec786c9cf4ceccd7b20d879ad741fe148ab5",
-  "32-backup-restore-and-disaster-recovery/32f-a-primary-failover.png": "976a5c5880488f17e368596c7f61c5df31b953c7747ce80c9f5f8be56280d2c3"
+  "32-backup-restore-and-disaster-recovery/32f-a-primary-failover.png": "976a5c5880488f17e368596c7f61c5df31b953c7747ce80c9f5f8be56280d2c3",
+  "33-intent-driven-ai-ran-tier-1/33a-capabilities-packages-declare-the-orchestrator-registers.png": "56e84379bf1433ec0d48687e55e460e90f07c18235e1cad2b08c790b4c7e5c5a",
+  "33-intent-driven-ai-ran-tier-1/33b-creating-a-tier-1-intent-classify-select-check.png": "44d9c0e27fa3d4e4f23ff2eaf85ef4081c2c139c0184f264e759b0fc13987e94",
+  "33-intent-driven-ai-ran-tier-1/33c-loading-the-plan-becomes-an-order.png": "254823513610ebaa4caf0481ca4676d3ee8042e6f4ae15735c5ca82012e0f959",
+  "33-intent-driven-ai-ran-tier-1/33d-running-passes-inside-the-guarantee-windows.png": "0e7335faed6b03eb4f9f314f6ef2892bd009c2ec9c6f7896147372b0fcc355b0",
+  "33-intent-driven-ai-ran-tier-1/33e-assurance-fulfilment-per-observation-period-retrain-on-b.png": "42f7f0ca6919f31708afd12f0b1bc9f4652c9fa701fb446a0077a97f5521ff91",
+  "33-intent-driven-ai-ran-tier-1/33f-conflict-between-two-tier-1-intents.png": "55fa64923653385ede02eca44f168b9adf24dfc532878f5e376f6f9f827e41a6",
+  "33-intent-driven-ai-ran-tier-1/33g-deactivate-delete-unload.png": "66b4fe5464d4df432f9a0b9f0cff65ca6fe5c5b85fc4cbafc745d8bfe3986e84"
 }
