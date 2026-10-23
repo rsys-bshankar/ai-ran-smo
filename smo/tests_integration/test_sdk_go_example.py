@@ -40,7 +40,7 @@ def _package() -> dict[str, bytes]:
 
 def test_the_example_package_is_a_csar_onboarding_accepts():
     """The example's package has the six expected files including the signing files, an entry definition, the application descriptor keys, a valid
-    manifest whose runtime profiles name declared execution modes, and a capability that consumes the `data` namespace, which are the things
+    manifest whose runtime profiles name declared execution modes and whose limits are the smallest Onboarding accepts, and a capability that consumes the `data` namespace, which are the things
     Onboarding checks.
     """
     files = _package()
@@ -55,6 +55,8 @@ def test_the_example_package_is_a_csar_onboarding_accepts():
     for mode in manifest["runtimeProfiles"]:                                      # Onboarding's _validate_runtime_profiles
         assert mode in manifest["executionModes"] and manifest["runtimeProfiles"][mode]["cpu"] >= 0
     assert yaml.safe_load(files["capabilities.yaml"])["capabilities"]["consumes"][0]["namespace"] == "data"
+    # the example writes no configuration, so it declares the smallest limits Onboarding accepts (AI-10.1/10.3)
+    assert manifest["limits"] == {"configJobsPerHour": 1, "maxElementsPerJob": 1}
 
 
 def test_the_rebuild_is_byte_identical_like_the_samples():

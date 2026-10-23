@@ -52,6 +52,15 @@ runtimeProfiles:
     memory: 2Gi
     gpu: 0
 
+# AI-10.1/10.3: the most one instance of this rApp may do on the network; rApp Management puts it in force at RAN NF OAM when the instance
+# bootstraps. The arithmetic is in README.md ("Limits the package declares").
+# configJobsPerHour: at most 2 cells move in a pass, each one job plus up to two rollback sends, so 6 a pass whatever the size of the cluster;
+# at most 60 passes an hour (`evaluateEverySeconds` is at least 60): 360, doubled for headroom. maxElementsPerJob: an instance names one managed
+# element and every write is to it. No maxChangePercent: a baseline tilt of 0 could never move, and a value the NF cannot read is refused.
+limits:
+  configJobsPerHour: 720
+  maxElementsPerJob: 1
+
 # The page the operator console draws for this rApp (PR-GUI-8, docs/adr/0004-operator-ui-declaration.md): the routes below are this rApp's own API,
 # read and changed only through the GUI backend, which allows exactly these routes. The page needs no code in the console.
 # Call flow 01b: where this rApp's operator API is reached (its service in docker-compose.yml and the chart). rApp Management pushes an instance's

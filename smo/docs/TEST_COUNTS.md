@@ -30,11 +30,11 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `samples/energy-saving-rapp` | 6 | 74 | 88 |
 | `samples/mobility-optimization-rapp` | 6 | 67 | 85 |
 | `samples/traffic-steering-rapp` | 6 | 68 | 92 |
-| `sdk` | 14 | 163 | 177 |
+| `sdk` | 14 | 164 | 178 |
 | `sdk-go` | 9 | 66 | — |
 | `sdk-java` | 8 | 58 | — |
 | `shared` | 50 | 662 | 1117 |
 | `sme` | 5 | 121 | 139 |
 | `so-smos` | 3 | 27 | 40 |
 | `tests_integration` | 91 | 704 | 881 |
-| **total** | **412** | **5290** | **7595** (Python) |
+| **total** | **412** | **5291** | **7596** (Python) |

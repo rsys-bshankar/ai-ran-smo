@@ -51,6 +51,16 @@ runtimeProfiles:
     memory: 2Gi
     gpu: 0
 
+# AI-10.1/10.3: the most one instance of this rApp may do on the network; rApp Management puts it in force at RAN NF OAM when the instance
+# bootstraps. The arithmetic is in README.md ("Limits the package declares").
+# configJobsPerHour: at most 3 config jobs a relation in a pass (a CIO change plus up to two rollback sends); the demo topology has 4 relations,
+# so 12 a pass, and at most 60 passes an hour (`evaluateEverySeconds` is at least 60): 720, doubled for headroom (1440), plus room for the DMRO
+# bounds writes. Over 4 relations: 360 a relation. maxElementsPerJob: an instance names one managed element and every write is to it.
+# No maxChangePercent: the default baseline CIO is 0 dB, which could never move.
+limits:
+  configJobsPerHour: 1500
+  maxElementsPerJob: 1
+
 # The page the operator console draws for this rApp (PR-GUI-8, docs/adr/0004-operator-ui-declaration.md): the routes below are this rApp's own API,
 # read and changed only through the GUI backend, which allows exactly these routes. The page needs no code in the console.
 # Call flow 01b: where this rApp's operator API is reached (its service in docker-compose.yml and the chart). rApp Management pushes an instance's

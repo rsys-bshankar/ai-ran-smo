@@ -100,6 +100,7 @@ and tools, and nothing branches on it.
 | `runtimeProfiles.<MODE>.cpu` | CPU cores for that execution runtime | **Consumed by AIMgF**: sizes the transient NFO runtime for a Training / Validation / Emulation request that names the package (`packageId`); an explicit `runtimeProfile` in the request wins. It reaches the NFO descriptor twice: as written (`workloadTemplate.resources`) and as Kubernetes requests and limits (`workloadTemplate.containerResources`, §3.2) | 8 / 4 / 4 / 2 | 4 / 2 / 2 / 1 | 4 / 2 / 2 / 1 | 4 / 2 / 2 / 1 |
 | `runtimeProfiles.<MODE>.memory` | Memory (string, e.g. `16Gi`) | as `cpu` | 16Gi / 8Gi / 8Gi / 4Gi | 8Gi / 4Gi / 4Gi / 2Gi | same as MO | same as MO |
 | `runtimeProfiles.<MODE>.gpu` | GPUs | as `cpu` | 0 in every mode | 0 | 0 | 0 |
+| `limits` | The most one instance of the rApp may do on the network (§3.4): `configJobsPerHour`, `maxElementsPerJob`, `maxChangePercent`. Under `rappManifest` or at the top level | **Validated** by Onboarding (an unknown name or a bad value fails the package) and stored in `aiCapabilities.limits`; rApp Management puts them in force at RAN NF OAM when an instance bootstraps, which refuses a job past them | `configJobsPerHour: 600`, `maxElementsPerJob: 1` | `1500`, `1` | `720`, `1` | `1440`, `1` |
 | `name`, `version`, `vendor`, `ownerTeam`, `description`, `useCase`, `domain`, `deploymentModel` | Package description from the Wave 10 package proposal | Descriptive. Identity is taken from the ASD (§2), not from here. | set; `useCase: Energy Saving`, `deploymentModel: NonRT-RIC` | set | set | set |
 
 The profile values in the `runtimeProfiles` row are listed in the order
@@ -202,6 +203,35 @@ field `authzScope`), not claimed by the author of the package. (The `limits` of 
 them.) So the package does not change; the same package can be run unscoped in one deployment and scoped to a tenant in another. A rApp that runs scoped should expect, from
 RAN NF OAM, `403 SCOPE_DENIED` for a write that names an element outside its scope (the whole job is refused), the same for a read of such an element's configuration, an empty or shorter
 list where it used to see every element, and `404` for an alarm, job or file by id that belongs to another region or tenant.
+
+### 3.4 `limits`: what the rApp may do on the network (AI-10.1, AI-10.3)
+
+Optional; every sample declares it. A mapping of limit name to a positive number, checked by `_validate_limits` (`onboarding/app/package_validation.py`): an unknown name,
+a value that is not a number (a boolean is not one), one out of range, or a fraction where a whole number is needed fails the package, because a limit the platform cannot
+enforce must not look as if it were. rApp Management pushes the limits to RAN NF OAM when an instance bootstraps (`PUT /rapp-limits/{invokerId}`, under the instance's own
+identity, before it goes RUNNING; the push fails closed), so they hold per instance, and they are removed when the instance is terminated.
+
+| Limit | Meaning | Range | What RAN NF OAM does |
+|---|---|---|---|
+| `configJobsPerHour` | config (CM write) jobs the instance may start in any hour, counted on a rolling hour in the database | whole, 1 to 100 000 | 429 `RAPP_RATE_LIMITED` with `Retry-After` past it |
+| `maxElementsPerJob` | distinct managed elements one job may name (blast radius) | whole, 1 to 10 000 | 403 `RAPP_BLAST_RADIUS_EXCEEDED` |
+| `maxChangePercent` | how far a numeric value may move in one write, in percent of its current value (magnitude) | above 0, at most 10 000 | 403 `RAPP_MAGNITUDE_EXCEEDED`; a current value of 0 allows only 0, and a value that cannot be read is refused |
+
+A job the rApp asks DME for counts (`POST /dme/actions`; DME passes on who it acts for, `X-R1-On-Behalf-Of`), and so does a rollback or revert the rApp sends itself as a
+new action; RAN NF OAM's own rollback of a job and its automatic reverts are not limited. Whether a write enacted through an Intent counts depends on every module on the way
+passing the rApp on; the samples' arithmetic counts those writes anyway, so their limits hold either way. A dry run is not counted, but the blast-radius and magnitude
+checks apply to it.
+
+**Choosing the numbers: the samples are the worked example.** Take the most config jobs one pass of the rApp can start, times the most passes an hour, and double it.
+[`samples/energy-saving-rapp/manifest.yaml`](../samples/energy-saving-rapp/manifest.yaml) declares `configJobsPerHour: 600` and `maxElementsPerJob: 1`, and its README
+([`samples/energy-saving-rapp/README.md`](../samples/energy-saving-rapp/README.md), "Limits the package declares") shows the arithmetic: a pass runs at most every 60 s
+(`evaluateEverySeconds` has no default and is at least 60) and starts at most 5 jobs (one LOCK of all its cells, two rollback sends, two wake sends), so 300 an hour,
+doubled. Coverage Optimization moves at most 2 cells a pass (720). Mobility Optimization and Traffic Steering act per relation or per cell, so their worst case grows with
+the network: they state the topology the number assumes (the demo's 4 relations or cells) and the rule for a bigger one (360 per relation or cell), which an operator
+applies by raising the number, rebuilding and re-signing the package. Every sample instance names one managed element, so `maxElementsPerJob` is 1 for all four. None
+declares `maxChangePercent`: Energy Saving writes state names, not numbers, and the CIO of the other three starts at 0 dB by default (a tilt may too), which could then
+never move. The Go and Java SDK examples write no configuration and declare the smallest limits Onboarding accepts (`configJobsPerHour: 1`, `maxElementsPerJob: 1`; 0 is
+not a limit).
 
 ## 4. `capabilities.yaml`
 
@@ -322,7 +352,8 @@ The CSAR does not start the process (§2), so the language of the workload is ou
 | Where it is reached | operator API base registered at rApp Management | `PUT /rapp-mgmt/instances/{id}/operator-api` made by the rApp at start; `HELLO_OPERATOR_API_BASE` is the address the gateway reaches the container at |
 | Health | `/live`, `/ready` | the same two routes, on the JDK's built-in HTTP server |
 
-The manifest of the Java package has `executionModes: [INFERENCE]` and a small `runtimeProfiles.INFERENCE` (the example trains nothing); its `operatorUi` is the
+The manifest of the Java package has `executionModes: [INFERENCE]`, a small `runtimeProfiles.INFERENCE` (the example trains nothing) and the smallest `limits` (it writes no configuration, §3.4);
+its `capabilities.yaml` consumes `data` and `models`, the two namespaces the example reads; its `operatorUi` is the
 three-panel page `sdk-java/README.md` describes, and `sdk/tests/test_java_example_package.py` checks it with the code Onboarding runs. The example is not in the Helm chart.
 
 ## 8. Signing a package (PR-RAPP-1)

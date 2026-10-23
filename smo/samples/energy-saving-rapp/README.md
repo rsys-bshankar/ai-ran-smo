@@ -87,6 +87,18 @@ Layout and field semantics: [RAPP_PACKAGING.md](../../docs/RAPP_PACKAGING.md).
 - `build_csar.py` leaves out `tests/` and this README. Rebuild only after editing the package files.
 - The committed `energy-saving-rapp.csar` is **signed** with the demo publisher's key (`TOSCA-Metadata/DIGESTS.sha256` and `.sig`, `../README.md`): a rebuild with the demo key is byte-identical. The key is public on purpose; never trust it in production.
 
+### Limits the package declares
+
+`manifest.yaml` declares `limits: {configJobsPerHour: 600, maxElementsPerJob: 1}`.
+
+- **Cadence.** `evaluateEverySeconds` has no default (absent: a pass runs only on "Evaluate now"); the smallest value accepted is 60, so the worker runs at most 60 passes an hour.
+- **Config jobs a pass.** A pass sends all its LOCKs as one change (one Intent expectation, one job), and all its wakes as one: at most 1 LOCK job, 2 rollback sends of it (`_restore` sends again once when the read-back disagrees), and 2 wake sends, so **5**, whatever the number of cells. In ASSIST the LOCK job is made when the operator resolves the dispatch, and a pass makes at most one dispatch, so the count per pass holds.
+- **Arithmetic.** 5 × 60 = 300 jobs an hour at most; doubled for headroom (operator overrides, a manual pass on top of the schedule): **600**.
+- **Elements.** An instance names one `managedElementRef` and every write is to it: `maxElementsPerJob: 1`.
+- **Not declared.** `maxChangePercent`: the rApp writes state names (`LOCKED`, `UNLOCKED`), which the magnitude limit does not measure.
+
+rApp Management puts the limits in force at RAN NF OAM when an instance bootstraps, per instance (`AI-10.1`/`10.3`); a job past the hourly limit is refused with 429 `RAPP_RATE_LIMITED`, one naming more elements with 403 `RAPP_BLAST_RADIUS_EXCEEDED`. Rollbacks RAN NF OAM makes of a job are not counted. The field meanings: [RAPP_PACKAGING.md](../../docs/RAPP_PACKAGING.md) §3.4.
+
 ## Service API
 
 Served on port 8000. R1 Termination reaches it at `/rapps/<instance>/operator/...` once the instance has registered its base URL (`operatorApiBase` in `POST /rapp-mgmt/instances`; `demo.py` and the integration environments pass it). The GUI draws its page from the `operatorUi` at the end of `manifest.yaml` (the worked example of `docs/adr/0004-operator-ui-declaration.md`): the instance block, Evaluate now and Reconcile approvals, and the cells table with a per-cell Override and a drawer (PRB chart, the latest execution, the last 20 decisions), then the cell-state history of the last 24 hours as a chart (one line per cell: 2 serving, 1 pre-sleep, 0 sleep) and a table of the changes (GUI-9.8b), then the instance's scheduled passes (`evaluateEverySeconds`, the last pass's time, trigger and result; call flow 22e). The first three panels are the ADR's worked example verbatim. Last comes **Demo / simulation (admin)**: the demo's steps as admin-only buttons (`role: admin`): `demo/prepare`, `demo/history`, `lifecycle/train`, `lifecycle/validate`, `demo/emulate`, `lifecycle/deploy`, `demo/live` (`docs/GUI_DEMO_GUIDE.md`). Only those routes are reachable from the GUI; `start` (by itself) and `sim-producer/*` are API calls.

@@ -1,0 +1,14 @@
+# HelloJava_rApp capabilities: the SDK namespaces the rApp uses (io.smo.example.HelloRapp). The namespace is the platform area the call
+# belongs to, as in the Go example (sdk-go/examples/hello-rapp/package/capabilities.yaml). The calls every instance makes about itself to
+# rApp Management (register and clear its operator API, report its heartbeat through sdk.instances()) are not one of these namespaces.
+capabilities:
+  consumes:
+    - namespace: data
+      description: Reads the DME type catalogue (GET /dme/dme-types) on every run, via the Java SDK's data().listTypes.
+    - namespace: models
+      description: Reads the models MLMR holds (GET /mlmr/models) on every run, via the Java SDK's models().listModels.
+  provides: []
+
+consumedServices:
+  - sdk.data
+  - sdk.models
