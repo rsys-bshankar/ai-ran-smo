@@ -34,7 +34,8 @@ def _csar() -> bytes:
 def test_the_package_has_the_files_onboarding_reads_and_rebuilds_byte_identically():
     """The CSAR has exactly the files Onboarding reads, the ASD names the rApp, and two builds of the same sources are byte-identical."""
     with zipfile.ZipFile(io.BytesIO(_csar())) as z:
-        assert sorted(z.namelist()) == ["Definitions/asd.yaml", "TOSCA-Metadata/DIGESTS.sha256", "TOSCA-Metadata/DIGESTS.sha256.sig", "TOSCA-Metadata/TOSCA.meta", "manifest.yaml"]
+        assert sorted(z.namelist()) == ["Definitions/asd.yaml", "TOSCA-Metadata/DIGESTS.sha256", "TOSCA-Metadata/DIGESTS.sha256.sig", "TOSCA-Metadata/TOSCA.meta", "capabilities.yaml",
+                                        "manifest.yaml"]
         assert "Entry-Definitions: Definitions/asd.yaml" in z.read("TOSCA-Metadata/TOSCA.meta").decode()
         asd = z.read("Definitions/asd.yaml").decode()
     for key in ("application_name: HelloJava_rApp", "application_version: \"1.0.0\"", "provider:", "descriptor_id:", "descriptor_invariant_id:", "schema_version"):
@@ -58,3 +59,15 @@ def test_the_samples_own_build_is_unchanged_by_the_source_dir_option():
     """Adding the `source` option to `build_bytes` did not change how a sample is built: the energy-saving sample still equals its committed CSAR."""
     builder = _builder()
     assert builder.build_bytes("energy-saving-rapp") == (SMO / "samples" / "energy-saving-rapp.csar").read_bytes()
+
+
+def test_the_package_declares_the_namespaces_the_java_rapp_calls_and_the_smallest_limits():
+    """`capabilities.yaml` consumes exactly `data` and `models` (the example calls `data().listTypes` and `models().listModels`) and provides nothing, and the manifest's
+    `limits` are the smallest Onboarding accepts, because the example writes no configuration."""
+    with zipfile.ZipFile(io.BytesIO(_csar())) as z:
+        capabilities = yaml.safe_load(z.read("capabilities.yaml"))["capabilities"]
+        manifest = yaml.safe_load(z.read("manifest.yaml"))
+    assert [c["namespace"] for c in capabilities["consumes"]] == ["data", "models"] and capabilities["provides"] == []
+    source = (SMO / "sdk-java" / "examples" / "hello-rapp" / "src" / "main" / "java" / "io" / "smo" / "example" / "HelloRapp.java").read_text()
+    assert "sdk.data().listTypes" in source and "sdk.models().listModels" in source and "mediateAction" not in source
+    assert manifest["limits"] == {"configJobsPerHour": 1, "maxElementsPerJob": 1}

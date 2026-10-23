@@ -136,7 +136,7 @@ What it does, with the platform route in brackets:
 5. Serves `/live`, `/ready` and the three operator routes of its `operatorUi` (`GET /instances/{id}/status`, `GET /instances/{id}/runs`, `POST /instances/{id}/run`).
 6. On SIGTERM: last heartbeat, `DELETE .../operator-api`, deregister a self-enrolled invoker. It takes no action on the network.
 
-Files: `src/main/java/io/smo/example/{HelloRapp,OperatorServer}.java`; `package/` (`TOSCA-Metadata/TOSCA.meta`, `Definitions/asd.yaml`, `manifest.yaml` with the `operatorUi` block, generated with `smo_sdk.operator_ui` and checked by `sdk/tests/test_java_example_package.py`); `Dockerfile`; `docker-compose.java-rapp.yml`.
+Files: `src/main/java/io/smo/example/{HelloRapp,OperatorServer}.java`; `package/` (`TOSCA-Metadata/TOSCA.meta`, `Definitions/asd.yaml`, `manifest.yaml` with the `operatorUi` block, generated with `smo_sdk.operator_ui`, and its `limits`; `capabilities.yaml`; all checked by `sdk/tests/test_java_example_package.py`); `Dockerfile`; `docker-compose.java-rapp.yml`.
 
 Environment of the example: `SMO_INSTANCE_ID` (required), `HELLO_OPERATOR_API_BASE` (required: the address the gateway reaches the container at, not loopback), `PORT` (8000), `HELLO_HEARTBEAT_SECONDS` (30), plus the SDK's.
 
@@ -182,7 +182,7 @@ Then `GET /rapp-mgmt/instances/<instanceId>/performance` shows the heartbeats, t
 
 ### Packaging a Java rApp as a CSAR, and what a Java rApp needs in the manifest and compose
 
-The CSAR is the same as any other (`../docs/RAPP_PACKAGING.md`, §7.2 for the Java differences): `TOSCA-Metadata/TOSCA.meta`, `Definitions/asd.yaml`, `manifest.yaml`, optional `capabilities.yaml`. It carries no code and does not start the process, so nothing in it is Java-specific; the runtime profile is whatever the workload needs (`runtimeProfiles`, JVM heap is sized from the container limit with `-XX:MaxRAMPercentage=75`). A Java rApp needs a container image (the example's `Dockerfile` is a template: multi-stage, digest-pinned Maven and Temurin base images (the image build uses the Maven image, not the wrapper), uid 10001) and a compose service (or Helm values) with `SMO_IDENTITY_KIND=rapp`, `R1_GATEWAY_URL`, the bootstrap key if the gateway has one, and the instance's identity. The example's compose service is an override file, so the stack's own service list, and the Helm chart that must match it, are untouched.
+The CSAR is the same as any other (`../docs/RAPP_PACKAGING.md`, §7.2 for the Java differences): `TOSCA-Metadata/TOSCA.meta`, `Definitions/asd.yaml`, `manifest.yaml`, optional `capabilities.yaml`. The example's `capabilities.yaml` consumes `data` and `models` (the two namespaces `HelloRapp.run` reads), and its manifest declares `limits: {configJobsPerHour: 1, maxElementsPerJob: 1}`: the example writes no configuration, so it needs zero config jobs, and 1 is the smallest limit Onboarding accepts (`../docs/RAPP_PACKAGING.md` §3.4). It carries no code and does not start the process, so nothing in it is Java-specific; the runtime profile is whatever the workload needs (`runtimeProfiles`, JVM heap is sized from the container limit with `-XX:MaxRAMPercentage=75`). A Java rApp needs a container image (the example's `Dockerfile` is a template: multi-stage, digest-pinned Maven and Temurin base images (the image build uses the Maven image, not the wrapper), uid 10001) and a compose service (or Helm values) with `SMO_IDENTITY_KIND=rapp`, `R1_GATEWAY_URL`, the bootstrap key if the gateway has one, and the instance's identity. The example's compose service is an override file, so the stack's own service list, and the Helm chart that must match it, are untouched.
 
 ## 4. Tests
 
@@ -197,7 +197,7 @@ The CSAR is the same as any other (`../docs/RAPP_PACKAGING.md`, §7.2 for the Ja
 | `MsacCredentialTest` (6) | `SEC-15.6b`: `mediateAction` sends `X-MSAC-Credential` on `POST /dme/actions` only when given a credential; not in the body (unset optional fields left out); not in an `SdkException` or a `toString`; the same credential and `Idempotency-Key` on the repeat after a 503 and after `CONCURRENT_MODIFICATION`; a null value refused; the header name is declared by `docs/openapi/dme.json` |
 | `RoutesContractTest` (5) | every route exists in `docs/openapi`, query parameters declared, required body properties sent and none invented, a missing route is caught, path expansion and encoding |
 | `HelloRappTest` (6, example) | start registers the operator API and heartbeats, a run reads DME and MLMR and the page sees it, other instances and wrong methods refused, platform failure is a 502, close clears the operator API and deregisters, settings |
-| `../sdk/tests/test_java_example_package.py` (3) | the package builds byte-identically, its manifest and `operatorUi` pass Onboarding's check and name exactly the routes the Java server serves, the sample CSARs are unchanged by the new build option |
+| `../sdk/tests/test_java_example_package.py` | the package builds byte-identically, its manifest and `operatorUi` pass Onboarding's check and name exactly the routes the Java server serves, `capabilities.yaml` names the two namespaces the example calls and the manifest the smallest `limits`, the sample CSARs are unchanged by the new build option |
 
 ### Not tested
 

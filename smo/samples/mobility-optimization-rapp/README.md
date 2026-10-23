@@ -85,6 +85,19 @@ Package layout and field meanings are in [RAPP_PACKAGING.md](../../docs/RAPP_PAC
 - `README.md` is not part of the CSAR (`../build_csar.py` excludes it).
 - The committed `mobility-optimization-rapp.csar` is **signed** with the demo publisher's key (`../README.md`); the key is public on purpose, never trust it in production.
 
+### Limits the package declares
+
+`manifest.yaml` declares `limits: {configJobsPerHour: 1500, maxElementsPerJob: 1}`.
+
+- **Cadence.** `evaluateEverySeconds` has no default (absent: a pass runs only on "Evaluate now"); the smallest value accepted is 60, so the worker runs at most 60 passes an hour.
+- **Config jobs a pass.** Per relation at most 3: a CIO change (one Intent expectation, one job) and up to 2 rollback sends (`_restore` sends again once when the read-back disagrees); a KPI revert is at most 2. The worst case grows with the relations: the demo topology (`demo.py`) has **4**, so 12.
+- **Arithmetic.** 12 × 60 = 720 jobs an hour at most; doubled for headroom, 1440; plus room for the DMRO bounds writes (one at deploy and one per "Apply DMRO bounds"): **1500**.
+- **A bigger network.** An instance with R relations needs `configJobsPerHour` of at least 3 × R × 60 × 2 = 360 × R (and a little for DMRO). Raise it in `manifest.yaml`, rebuild and re-sign the package (`python3 samples/build_csar.py mobility-optimization-rapp`, or with your own key) and onboard it again.
+- **Elements.** An instance names one `managedElementRef` and every write is to it: `maxElementsPerJob: 1`.
+- **Not declared.** `maxChangePercent`: the default baseline CIO is 0 dB, and a current value of 0 allows no change at all.
+
+rApp Management puts the limits in force at RAN NF OAM when an instance bootstraps, per instance (`AI-10.1`/`10.3`); a job past the hourly limit is refused with 429 `RAPP_RATE_LIMITED`, one naming more elements with 403 `RAPP_BLAST_RADIUS_EXCEEDED`. Rollbacks RAN NF OAM makes of a job are not counted. The field meanings: [RAPP_PACKAGING.md](../../docs/RAPP_PACKAGING.md) §3.4.
+
 ## Service API
 
 Paths are relative to the service root; through R1 Termination they sit under `/mobility-optimization-rapp`.

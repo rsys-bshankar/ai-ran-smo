@@ -84,6 +84,18 @@ Package layout and field meanings are in [RAPP_PACKAGING.md](../../docs/RAPP_PAC
 - `README.md` is not part of the CSAR (`../build_csar.py` excludes it).
 - The committed `coverage-optimization-rapp.csar` is **signed** with the demo publisher's key (`../README.md`); the key is public on purpose, never trust it in production.
 
+### Limits the package declares
+
+`manifest.yaml` declares `limits: {configJobsPerHour: 720, maxElementsPerJob: 1}`.
+
+- **Cadence.** `evaluateEverySeconds` has no default (absent: a pass runs only on "Evaluate now"); the smallest value accepted is 60, so the worker runs at most 60 passes an hour.
+- **Config jobs a pass.** A change set moves at most 2 cells (`MAX_CELLS_PER_PASS`, `app/model/CoverageModel.py`), one Intent expectation and so one job each, and each may be rolled back with up to 2 sends (`_restore` sends again once when the read-back disagrees): **6**, whatever the size of the cluster. A KPI revert (at most 2 cells × 2 sends) runs in a pass that plans nothing.
+- **Arithmetic.** 6 × 60 = 360 jobs an hour at most; doubled for headroom: **720**. In practice a change set is observed for an hour before the next one, so a normal hour has a handful.
+- **Elements.** An instance names one `managedElementRef` and every write is to it: `maxElementsPerJob: 1`.
+- **Not declared.** `maxChangePercent`: a baseline tilt of 0 is allowed and could then never move (a current value of 0 allows only 0), and a value the NF cannot read back would refuse the write.
+
+rApp Management puts the limits in force at RAN NF OAM when an instance bootstraps, per instance (`AI-10.1`/`10.3`); a job past the hourly limit is refused with 429 `RAPP_RATE_LIMITED`, one naming more elements with 403 `RAPP_BLAST_RADIUS_EXCEEDED`. Rollbacks RAN NF OAM makes of a job are not counted. The field meanings: [RAPP_PACKAGING.md](../../docs/RAPP_PACKAGING.md) §3.4.
+
 ## Service API
 
 Paths are relative to the service root; through R1 Termination they sit under `/coverage-optimization-rapp`.

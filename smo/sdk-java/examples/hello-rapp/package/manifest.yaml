@@ -30,6 +30,13 @@ runtimeProfiles:
     memory: 256Mi
     gpu: 0
 
+# AI-10.1/10.3: the most one instance may do on the network, put in force at RAN NF OAM when the instance bootstraps. The example writes no
+# configuration at all (it reads DME types and MLMR models), so it declares the smallest limits Onboarding accepts (0 is not a limit): any config
+# job past one an hour, or one that names more than one managed element, is something this rApp does not do.
+limits:
+  configJobsPerHour: 1
+  maxElementsPerJob: 1
+
 # The operator page (docs/adr/0004-operator-ui-declaration.md). The routes are served by
 # io.smo.example.OperatorServer under the operator API base the instance registers.
 operatorUi:

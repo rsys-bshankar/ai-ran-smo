@@ -132,6 +132,19 @@ This package declares:
   because the rApp reads no MDAF prediction and derives features from the DME
   datasets itself. There is no A1, Near-RT RIC, xApp or E2 use.
 
+### Limits the package declares
+
+`manifest.yaml` declares `limits: {configJobsPerHour: 1440, maxElementsPerJob: 1}`.
+
+- **Cadence.** `evaluateEverySeconds` has no default (absent: a pass runs only on "Evaluate now"); the smallest value accepted is 60, so the worker runs at most 60 passes an hour.
+- **Config jobs a pass.** Per source cell at most 3: a steering or release step (one Intent expectation, one job) and up to 2 rollback sends (`_restore` sends again once when the read-back disagrees); a KPI revert is at most 2. The worst case grows with the cells: the demo topology (`app/producer.py`, `LAYERS`) has **4**, so 12.
+- **Arithmetic.** 12 × 60 = 720 jobs an hour at most; doubled for headroom: **1440**.
+- **A bigger network.** An instance with C cells needs `configJobsPerHour` of at least 3 × C × 60 × 2 = 360 × C. Raise it in `manifest.yaml`, rebuild and re-sign the package (`python3 samples/build_csar.py traffic-steering-rapp`, or with your own key) and onboard it again.
+- **Elements.** An instance names one `managedElementRef` and every write is to it: `maxElementsPerJob: 1`.
+- **Not declared.** `maxChangePercent`: the default baseline CIO is 0 dB, and a current value of 0 allows no change at all.
+
+rApp Management puts the limits in force at RAN NF OAM when an instance bootstraps, per instance (`AI-10.1`/`10.3`); a job past the hourly limit is refused with 429 `RAPP_RATE_LIMITED`, one naming more elements with 403 `RAPP_BLAST_RADIUS_EXCEEDED`. Rollbacks RAN NF OAM makes of a job are not counted. The field meanings: [RAPP_PACKAGING.md](../../docs/RAPP_PACKAGING.md) §3.4.
+
 ## Service API
 
 | Route | Purpose |

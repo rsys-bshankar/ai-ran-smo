@@ -3889,3 +3889,39 @@ and `POST /mdaf/mda-requests` stored the body's `requestedBy` as sent, so an rAp
   `r1-termination/tests/test_roles.py`.
 - **Documents.** Call flow 08 (08b create, 08d withdraw, the decision), `mdaf/docs/lifecycle.md` (b), `mdaf/README.md`, `shared/README.md` (the 403 codes),
   `docs/openapi/mdaf.json` (the route docstrings).
+
+### SAMPLE-LIMITS — the sample packages declare `limits`, and the Java example has `capabilities.yaml`
+
+Closed from `OPEN_ITEMS.md` (the owner chose to add them rather than document their absence).
+
+- **What was missing.** None of the four `samples/*/manifest.yaml` declared `limits` (AI-10.1/10.3), so a sample instance ran with no rate, blast-radius or magnitude
+  limit at RAN NF OAM, and the packages did not show an author how to choose one; the Java SDK example package (`sdk-java/examples/hello-rapp/package`) had no
+  `capabilities.yaml` while the Go example's had one.
+- **How the numbers were chosen.** `evaluateEverySeconds` has no default (absent: a pass runs only on "Evaluate now") and is at least 60 (`EVALUATE_EVERY_MIN_SECONDS` in
+  each sample's `app/main.py`), so at most 60 scheduled passes an hour. The most config jobs one pass can start was read from each sample's code, counting every write
+  the rApp makes, also through an Intent (one DME action per expectation, `sa-smos/app/o1cm.py`), and every resend of its own `_restore` (it sends once more when the
+  read-back disagrees). Then doubled.
+  - Energy Saving: one LOCK job for all its cells, 2 rollback sends, 2 wake sends: 5 a pass whatever the number of cells; 5 × 60 × 2 = **600**.
+  - Coverage Optimization: at most 2 cells a pass (`MAX_CELLS_PER_PASS`), one job and 2 rollback sends each: 6; 6 × 60 × 2 = **720**.
+  - Mobility Optimization: 3 a relation (a CIO change and 2 rollback sends; a revert is 2); the demo's 4 relations give 12; 12 × 60 × 2 = 1440, plus room for the DMRO bounds
+    writes: **1500**. A bigger network: 360 a relation.
+  - Traffic Steering: 3 a source cell; the demo's 4 cells give 12; 12 × 60 × 2 = **1440**. A bigger network: 360 a cell.
+  - `maxElementsPerJob: 1` for all four: an instance's configuration names one `managedElementRef` and every write (direct, or the Intent's `objectInstance`) is to it.
+  - The Go and Java SDK examples write no configuration (they read DME types, and the Java one MLMR models): `configJobsPerHour: 1`, `maxElementsPerJob: 1`, the smallest
+    Onboarding accepts (a limit of 0 is refused).
+- **Not taken.** `maxChangePercent` is declared by none: Energy Saving writes state names, which the magnitude check skips, and the CIO of Mobility and Traffic Steering
+  starts at 0 dB by default (Coverage's tilt may be configured at 0), where RAN NF OAM allows no change at all; RAN NF OAM also refuses a write whose current value it cannot
+  read back, which would stop a demo element that has never been written. A tighter `configJobsPerHour` from the rApps' pacing (a change is observed for an hour before the
+  next) was not used either: the limit is set at what the code can do at its fastest schedule, so a normal hour is far below it and a runaway is still stopped.
+- **Java `capabilities.yaml`.** Modelled on the Go example's: consumes `data` (`data().listTypes`) and `models` (`models().listModels`), the two calls `HelloRapp.run` makes;
+  provides nothing. The instance's own calls to rApp Management (operator API, heartbeat) are not one of the namespaces, as in the Go file.
+- **Files.** The four `samples/*/manifest.yaml` (a commented `limits` block) and their READMEs ("Limits the package declares", with the arithmetic and, for Mobility and
+  Traffic Steering, the topology assumed and what an operator does for a bigger network); the four `.csar` rebuilt and re-signed with the demo key
+  (`python3 samples/build_csar.py <name>`); `sdk-go/examples/hello-rapp/package/manifest.yaml`, `sdk-java/examples/hello-rapp/package/{manifest,capabilities}.yaml` (those two
+  CSARs are build products, not committed); `docs/RAPP_PACKAGING.md` (a `limits` row in the manifest table and §3.4, with the Energy Saving sample as the worked example);
+  `docs/GUI_DEMO_GUIDE.md`, `sdk-go/README.md`, `sdk-java/README.md`, `sdk/README.md`.
+- **Tests.** `sdk/tests/test_java_example_package.py` (the CSAR now holds `capabilities.yaml`; a new test checks its two namespaces against the Java source and the
+  manifest's limits) and `tests_integration/test_sdk_go_example.py` (the limits). The conformance pack (`python -m conformance.rapp package ... --trust samples/demo-signing
+  --require-signed`) passes for the four sample CSARs and both examples (PK-4 runs Onboarding's `_validate_limits`); `tests_integration/test_rapp_conformance.py`,
+  `test_rapp_signing.py` and the whole integration suite pass with the rebuilt packages.
+

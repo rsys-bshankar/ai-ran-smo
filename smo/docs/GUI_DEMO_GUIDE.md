@@ -93,7 +93,8 @@ rApp never writes to the network itself: it states an Intent, and the platform's
    The instance is **DEPLOYING**: the SMO has made it its own identity at SME and handed that to the rApp (call flow 01b, 01c).
 3. Open the instance (**rApps** → its row) → **Operator page** → **Demo / simulation (admin)** → **1 · Prepare and start**: the rApp
    registers its Digital Twin data producer, starts on the instance (it subscribes to its datasets in DME) and reports it up **as the
-   instance**: the instance goes **RUNNING**, with its limits and approval policy in force (call flow 01d).
+   instance**: the instance goes **RUNNING**, with its limits and approval policy in force (call flow 01d). The limits are the package's own
+   (`limits` in its manifest: at most 600 config jobs an hour and one managed element a job; `samples/energy-saving-rapp/README.md`).
 
 **Show** the package's details: signature verified, the AI capabilities it declares (execution modes, autonomy modes), the datasets it
 needs. Then the instance's page: RUNNING, AUTONOMOUS, the region it may write, **Stop rApp**; the Instance panel now shows the element and

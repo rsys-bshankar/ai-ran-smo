@@ -188,11 +188,6 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
   an adaptor credential of its own (HTTP Basic, `SB-7`). Approach: decide the path (an `adaptor` role at the gateway limited to the ingest routes,
   or a documented direct path with a client certificate per adaptor), document it in `ran-nf-oam/README.md` and the O1 conformance kit, and test it
   with the gateway and with mTLS on.
-- **SAMPLE-LIMITS** — The sample packages do not show two declarations a package may carry: none of the four `samples/*/manifest.yaml` declares
-  `limits` (AI-10.1, read by `onboarding/app/package_validation.py`), and the Java example package (`sdk-java/examples/hello-rapp/package`) has no
-  `capabilities.yaml` (the Go example's has one). Approach: add them (the four CSARs are rebuilt and re-signed with `samples/build_csar.py`,
-  and the conformance pack and `tests_integration/test_rapp_signing.py` re-run), or say in `docs/RAPP_PACKAGING.md` that the samples leave them out
-  on purpose. The owner decides, since the sample packages change.
 - **SDK-PY-RETRY** — The Python SDK does not retry with back-off: `smo_sdk` repeats a write once on `409 CONCURRENT_MODIFICATION`
   (`sdk/smo_sdk/_common.py`, `_RetryOnConflict`) and `R1Client` once on a 401, and nothing else (429, 502, 503, 504 and transport errors reach the
   caller), while the Go SDK (`sdk-go/retry.go`) and the Java SDK (`RetryPolicy`) make 4 attempts, 200 ms doubling to 5 s with jitter, `Retry-After`
