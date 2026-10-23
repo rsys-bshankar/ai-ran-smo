@@ -9,7 +9,7 @@
 | Depends on (over R1) | DME (`GET /dme/data-jobs/{id}`, validates report inputs); AIMgF (`/aimgf/mlmf/subscriptions`, drift forwarding) |
 | Called by | Analytics producers (rApps, via `sdk.analytics`) publish reports; consumers (rApps, SA SMOS, GUI) subscribe, query and create MDA requests; ran-analytics is a separate producer registry, not an MDAF client: no code-level call either way |
 | Database tables | `mdaf_report`, `mda_subscription`, `mda_function`, `mda_request`, `mda_report_delivery` |
-| Unit tests | 53 passed (`tests/`, SQLite, standalone) |
+| Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
 | Status | Done. `STREAMING` reporting is recorded, not streamed (see 2.8) |
 | Time-driven behaviour | Push on publish: subscribers are notified when a report is stored; no timer |
 

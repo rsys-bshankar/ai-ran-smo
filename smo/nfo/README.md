@@ -10,7 +10,7 @@
 | Called by | AIMgF (runtime create / scale / terminate, per model runtime and per training / validation / emulation run), rApp Management (`POST /nfo/deployments`, `DELETE /nfo/deployments/{id}`), SO SMOS (`POST /nfo/deployments`), SA SMOS (`POST /nfo/deployments/{id}/heal`), Onboarding (`POST /nfo/descriptors`, `DELETE /nfo/descriptors/{id}` when its package is deleted), GUI / GUI BFF |
 | Database tables | `nf_deployment_descriptor`, `nf_deployment` (versioned), `nf_ocloud_resource`, `lcm_operation` |
 | Idempotency | `POST /deployments` and `.../scale` accept an `Idempotency-Key` header (`smo_shared/idempotency.py`; the `idempotency_key` table is shared, not this module's) |
-| Unit tests | 45 passed (`tests/`, SQLite, standalone) |
+| Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
 | Status | Done for the Phase 1 scope (single O-Cloud; synchronous by default, asynchronous Terminate on request). Scale takes no target size (see `OI-7-nfo-scale-size` in [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md)) |
 
 ## 1. High-level design (HLD)

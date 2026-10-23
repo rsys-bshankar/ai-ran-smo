@@ -9,7 +9,7 @@
 | Depends on (over R1) | rApp Management (`GET /rapp-mgmt/instances/{id}`, autonomy dispatch only); outbound webhooks to RMIHs, report recipients and operator destinations |
 | Called by | rApps via `sdk.intent`; GUI BFF (intents, autonomy dispatches); SA SMOS O1-CM handler (reads intents, publishes reports, registers as RMIH `sa-smos`, see [`../sa-smos/README.md`](../sa-smos/README.md)); SO SMOS identity may register as an RMIH |
 | Database tables | `intent`, `intent_utility_formula`, `intent_report`, `intent_handling_function`, `autonomy_dispatch` |
-| Unit tests | 89 passed (`tests/`, SQLite, standalone) |
+| Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
 | Status | Done. The 8 value datatypes are checked by structure (`SA-INTENT-partial`, closed); `GeoArea` is the one `ValueRangeType` alternative with a documented simplification (1.2) |
 
 ## 1. High-level design (HLD)

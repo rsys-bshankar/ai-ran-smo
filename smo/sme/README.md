@@ -9,7 +9,7 @@
 | Depends on (over R1) | Caller-registered event callback URLs only; no other module |
 | Called by | R1 Termination (`/oauth2/introspect` on every proxied request); every module's `R1Client` (invoker onboarding and `/oauth2/token`); rApps and producers (publish, discover, subscribe); rApp Management (registers a package's declared providers and service APIs per instance); RAN Analytics (producer registration creates a service); GUI BFF |
 | Database tables | `service_profile`, `service_authz_policy`, `provider_registration`, `invoker_registration`, `issued_access_token`, `used_client_assertion`, `trusted_invoker`, `service_event_subscription` |
-| Unit tests | 134 passed (`tests/`, SQLite, standalone) |
+| Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
 | Status | Done for the subset in 1.2 |
 
 ## 1. High-level design (HLD)
@@ -252,7 +252,7 @@ cd smo/sme && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | `tests/test_security.py` | Scope: unscoped and internal scopes, a `3gpp#` scope over published APIs (and introspection of it), unpublished API, wrong AEF, malformed entries, unknown scope, an API hidden from the invoker | 10 |
 | | Client assertions: RSA and EC keys, one token per assertion, wrong key / audience / issuer, expired, too long-lived, no `jti`, label-only invoker, secret and assertion together, malformed PEM at onboarding, key rotation, offboarding revokes tokens | 14 |
 | | Invoker events and filters: onboarded / updated / offboarded delivery, `apiInvokerIds` filter, `aefIds` filter, a filter of another kind never matches, filters listed, unknown event type | 6 |
-| | Total | 101 |
+| | Total | [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md) |
 
 ### 3.3 What is not covered here
 

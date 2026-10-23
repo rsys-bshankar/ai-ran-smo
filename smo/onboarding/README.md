@@ -9,7 +9,7 @@
 | Depends on (over R1) | NFO (`POST /nfo/descriptors`, `DELETE /nfo/descriptors/{id}` on delete); rApp Management (`GET /rapp-mgmt/instances/{id}`, only to release an orphaned usage registration); the package location itself (plain HTTP GET, not over R1) |
 | Called by | rApp Management (`onboarding-status`, `usage/start`, `usage/stop`: the only writer of usage registrations); AIMgF (`onboarding-status`, for `aiCapabilities.runtimeProfiles`); GUI BFF (operator and admin actions, `usage/{id}/release` for an admin); operators |
 | Database tables | `application_package` (versioned), `artifact`, `package_usage_registration` |
-| Unit tests | 212 passed (`tests/`, SQLite, standalone) |
+| Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
 | Status | Done. Package signatures are verified against an operator-held trust store when one is configured (`PR-RAPP-1`; off by default, see 1.5, 2.6, 2.8) |
 
 ## 1. High-level design (HLD)
@@ -265,7 +265,7 @@ cd smo/onboarding && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | `tests/test_package_validation.py` | The validation module alone: the result of a good package, a `TOSCA.meta` without `Entry-Definitions:` (a validation failure, not a `StopIteration`), the `.csar` name check An unsigned zip bomb (60 MiB from a few kilobytes), too many entries, a file or a total over its limit, a read over the limit, each of the six files the parse reads, the probe for signing entries (`SEC-15.17`) | 14 |
 | `tests/test_location_checks.py` | The location checks before any fetch: a name without `.csar`, and a loopback, link-local or non-http(s) address, are refused with their reason and nothing is fetched | 4 |
 | `tests/test_main.py` (`PR-RAPP-2.1`) | `memory` that is not a Kubernetes quantity refuses the package (3 cases); the NFO descriptor carries `containerResourcesByMode` (requests = limits, millicores, a GPU-only mode left out) and a package without profiles gets the descriptor it always got | 6 |
-| | Total (the listed rows do not add up to the whole: the file also holds the limits and other manifest tests) | 177 |
+| | Total (the listed rows do not add up to the whole: the file also holds the limits and other manifest tests) | [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md) |
 
 
 ### 3.3 What is not covered here

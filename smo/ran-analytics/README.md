@@ -9,7 +9,7 @@
 | Depends on (over R1) | SME (`/sme/provider-registrations`, `/sme/published-apis/v1/{apfId}/service-apis`) |
 | Called by | Analytics producer rApps via `sdk.analytics` (`register_producer`, `deregister_producer`, `list_producers`); GUI BFF (`POST /ran-analytics/producers`, admin); MDAF (`GET /producers`, to check an rApp publisher, call flow 08c) |
 | Database tables | `mdaf_producer` |
-| Unit tests | 22 passed (`tests/`, SQLite, standalone) |
+| Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
 | Status | Done. Coverage is the thinnest in the repo by count (`../OPEN_ITEMS.md` OI-4) |
 
 ## 1. High-level design (HLD)

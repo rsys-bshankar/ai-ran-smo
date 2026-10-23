@@ -16,7 +16,7 @@ cell individual offset.
 | Operator API | served on `:8000` as `/instances/...`; the instance's base URL is registered at rApp Management (`operatorApiBase` when the instance is created) and R1 Termination reaches it at `/rapps/<instance>/operator/...`. The page the GUI draws for it is declared in `manifest.yaml` (`operatorUi`) |
 | Call flow | [25 Traffic Steering closed loop](../../docs/call-flows/25-traffic-steering-closed-loop.md) |
 | Demo runbook | [DEMO_RUNBOOK.md section 27](../../DEMO_RUNBOOK.md) (Demo 00-11) |
-| Unit tests | 92 passed (`tests/`, SQLite, standalone; 99 % of `app/`) |
+| Unit tests | `tests/`, SQLite, standalone; 99 % of `app/` (counts: [docs/TEST_COUNTS.md](../../docs/TEST_COUNTS.md)) |
 
 ## What it does
 
@@ -154,7 +154,7 @@ This package declares:
 ## Run and test
 ```bash
 cd traffic-steering-rapp
-PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # 92 passed
+PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # counts: docs/TEST_COUNTS.md
 ```
 Demo, run inside the compose network (e.g. from `r1-termination`):
 ```bash

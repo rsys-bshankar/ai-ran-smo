@@ -9,7 +9,7 @@
 | Depends on (over R1) | RAN NF OAM, NFO, FOCOM, AIMgF (one per dispatch-table entry) |
 | Called by | GUI BFF (operators submit and cancel orders); SA SMOS reads orders (`GET /so-smos/orders/{id}`) to resolve a monitor's deployment; any R1 consumer with the route |
 | Database tables | `service_order` |
-| Unit tests | 39 passed (`tests/`, SQLite, standalone) |
+| Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
 | Status | Done for Phase 1: no compensation, no waiting for a job a step started, no resume (see 2.8) |
 
 ## 1. High-level design (HLD)

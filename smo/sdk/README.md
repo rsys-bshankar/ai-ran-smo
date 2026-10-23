@@ -11,7 +11,7 @@
 | Called by | The four sample rApps (`../samples/{energy-saving,mobility-optimization,coverage-optimization,traffic-steering}-rapp/app/main.py`); any rApp author. No SMO module imports it |
 | Database tables | None |
 | Retries and idempotency | Every POST carries a generated `Idempotency-Key`; a mutating call that lost a write race (`409 CONCURRENT_MODIFICATION`) is sent once more with the same key (`smo_sdk/_common.py`) |
-| Unit tests | 178 passed (`tests/`, no network: a recording fake `R1Client`) |
+| Unit tests | `tests/`, no network: a recording fake `R1Client` (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
 | Status | Done. No OPEN_ITEMS ids |
 
 ## 1. High-level design (HLD)

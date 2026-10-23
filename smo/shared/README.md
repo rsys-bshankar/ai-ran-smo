@@ -9,7 +9,7 @@
 | Depends on (over R1) | `R1Client` calls R1 Termination (`/bootstrap`) and SME (`/invoker-registrations`, `/oauth2/token`) for its own token; no other module |
 | Called by | Every backend module (imports); the SDK (`sdk/`) and the four sample rApps via `R1Client`. Not imported by `gui-bff` |
 | Database tables | None. Provides `Base`, the engine and sessions that modules' `models.py` use |
-| Unit tests | 948 passed (`tests/`; 64 more are skipped without `SMO_TEST_POSTGRES_URL`) |
+| Unit tests | `tests/`; the Postgres-only ones are skipped without `SMO_TEST_POSTGRES_URL` (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
 | Status | Done. No OPEN_ITEMS ids |
 
 ## 1. High-level design (HLD)

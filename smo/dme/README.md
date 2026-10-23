@@ -9,7 +9,7 @@
 | Depends on (over R1) | RAN NF OAM (`POST /ran-nf-oam/config-jobs`, action path only); caller-registered callback URLs (producers, type subscribers, offer termination) |
 | Called by | rApps and the SDK `data` namespace; MDAF (checks `input_sources` against `GET /dme/data-jobs/{id}`); RAN NF OAM (registers PM types, ingests records into jobs); SA SMOS O1-CM handler (`POST /dme/actions`); rApp Management (producer deregistration); GUI BFF |
 | Database tables | `dme_producer`, `dme_type`, `dme_producer_type`, `dme_type_subscription`, `dme_delivery_schema`, `data_job`, `data_offer`, `data_record`, `dme_action_record` |
-| Unit tests | 137 passed (`tests/`, SQLite, standalone) |
+| Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
 | Status | Done. `dme_delivery_schema` is defined but unused (see 2.8) |
 
 ## 1. High-level design (HLD)
@@ -329,7 +329,7 @@ cd smo/dme && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | `tests/test_tasks.py` | Call flow 12d (4): `purge-records` keeps everything at 0, deletes only records older than the retention and never the job, the task list, the retention-off gauge |
 | `tests/test_data_job_owner.py` | OI-7-rapp-data-jobs-teardown (4): a job records the gateway's invoker id (null without one); `created_by` deletes exactly that invoker's jobs, whatever their consumer id; an rApp may delete only its own; neither or both filters is a 422 | 4 |
 | `tests/test_delivery_health.py` | `GUI-9.8` delivery health: no interval means no verdict, LATE two intervals after the last delivery and on time again after the next, a job that never delivered turns LATE, PUT declares or drops the interval, the `late` list filter both ways, a non-positive interval is 422 | 6 |
-| | Total | 144 |
+| | Total | [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md) |
 
 ### 3.3 What is not covered here
 

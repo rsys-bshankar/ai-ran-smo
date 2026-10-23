@@ -9,7 +9,7 @@
 | Depends on (over R1) | none. It calls RAN NF OAM directly (not over R1) when an `/emit/...` route is triggered, at `MOCK_O1_OAM_URL` |
 | Called by | RAN NF OAM (`POST /edit-config` for both `edit-config` and `get-config`, `/restconf/data/...` for a RESTCONF ME, `GET /capabilities` for vendor discovery); tests and demos (introspection, fault and emit routes); the O1 conformance kit (`/capabilities`, the CM routes, the emit routes) |
 | Database tables | none (in-memory dicts) |
-| Unit tests | 95 passed (`tests/`, standalone), among them the emitter, the vendor profile and the O1 conformance kit's CM checks run against this mock and against faulty fakes; the emitting checks against the real RAN NF OAM app are in `tests_integration/test_o1_conformance_emit.py` |
+| Unit tests | `tests/`, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)), among them the emitter, the vendor profile and the O1 conformance kit's CM checks run against this mock and against faulty fakes; the emitting checks against the real RAN NF OAM app are in `tests_integration/test_o1_conformance_emit.py` |
 | Status | Done (NETCONF and RESTCONF, `OI-1-cm-sync-restconf`; the emitting side, `SB-9.8`; a vendor profile, `SB-10`: `example-du`, a stand-in, not a real vendor). Deliberately not a NETCONF / RESTCONF / YANG implementation (see [section 2.8](#28-limits-and-open-items)) |
 
 ## 1. High-level design (HLD)
