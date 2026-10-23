@@ -76,7 +76,8 @@ constraints, and the old release's runbook passes; then the same upgrade runs to
 tags, as `scripts/check_previous_release_code.sh` does, and the table from the revisions the upgrade runs (the newest revision's first table that the
 database already has). The Helm lane in `smo-tests.yml` ("helm upgrade rolls every module with the old pods serving, and the database stays") does the
 same upgrade without the lock. **Phase 1:** the kind lane runs nightly, by hand and on a pull request that changes its paths, and is not a required
-check; it starts from the newest release (gated at two route errors) and from the one before it (report only).
+check; it starts from the newest release (gated: at most 1 % errors on the routes that stay up and two on any one of them, the package list, which rolls
+with Recreate, at most 25 % of its own calls) and from the one before it (report only).
 
 ## 30b — Expand, then contract
 

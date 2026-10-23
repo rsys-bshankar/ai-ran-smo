@@ -36,8 +36,8 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `shared` | 50 | 663 | 1118 |
 | `sme` | 5 | 121 | 139 |
 | `so-smos` | 3 | 27 | 40 |
-| `tests_integration` | 93 | 717 | 894 |
-| **total** | **416** | **5332** | **7726** (Python) |
+| `tests_integration` | 93 | 723 | 900 |
+| **total** | **416** | **5338** | **7732** (Python) |
 
 ## Per test file
 
@@ -649,7 +649,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests_integration/test_traffic_steering_rapp.py` | 10 | 10 |
 | `tests_integration/test_upgrade_at_volume.py` | 8 | 8 |
 | `tests_integration/test_upgrade_lane_targets.py` | 8 | 8 |
-| `tests_integration/test_upgrade_load_verdict.py` | 7 | 7 |
+| `tests_integration/test_upgrade_load_verdict.py` | 13 | 13 |
 | `tests_integration/test_validation_echo.py` | 1 | 1 |
 | `tests_integration/test_vendor_profile.py` | 7 | 7 |
 
