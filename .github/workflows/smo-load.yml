@@ -14,7 +14,7 @@ on:
     inputs:
       duration:
         description: "Seconds under load (after a 5 s warm-up)"
-        default: "60"
+        default: "30"
       concurrency:
         description: "Calls in flight"
         default: "20"
