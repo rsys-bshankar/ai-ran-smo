@@ -305,3 +305,21 @@ def test_acting_instance_is_the_instance_the_context_acts_for():
         with r1_client.acting_for(None):
             assert r1_client.acting_instance() is None
     assert r1_client.acting_instance() is None
+
+
+def test_the_token_flow_goes_through_a_sender_only_inside_its_block(net):
+    """SDK-PY-RETRY: inside `token_flow_sender(s)` the bootstrap, registration and grant go through `s` (the registration marked not safe to
+    repeat); outside it, as for every SMO module, each is sent once directly."""
+    seen = []
+
+    def sender(send, safe):
+        # records whether each token-flow call was marked safe, then sends it once
+        seen.append(safe)
+        return send()
+
+    with r1_client.token_flow_sender(sender):
+        assert R1Client(R1).get("/focom/inventory").status_code == 200
+    assert seen == [True, False, True]
+    r1_client._identity.token = None              # the next call runs the grant again, outside the block
+    R1Client(R1).get("/focom/inventory")
+    assert seen == [True, False, True] and net.grants == ["api-invoker-1", "api-invoker-1"]

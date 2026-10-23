@@ -67,6 +67,34 @@ log = logging.getLogger(__name__)
 
 _EXPIRY_MARGIN_SECONDS = 30
 
+# SDK-PY-RETRY: who sends the token flow's own three calls (GET /bootstrap, POST /invoker-registrations, the client_credentials grant). None,
+# the default and what every SMO module has, sends each once, as this client always has. The Python SDK sets a sender around the calls it
+# makes (`smo_sdk/_retry.py`), so an rApp's token flow is repeated by the SDK's retry policy and no module's behaviour changes. A context
+# variable, not a process setting, because the identity is per process: a sample rApp's own direct R1Client calls keep the old behaviour too.
+TokenFlowSender = Callable[[Callable[[], httpx.Response], bool], httpx.Response]
+_token_flow_sender: contextvars.ContextVar[TokenFlowSender | None] = contextvars.ContextVar("smo_token_flow_sender", default=None)
+
+
+@contextlib.contextmanager
+def token_flow_sender(sender: TokenFlowSender | None):
+    """`with token_flow_sender(s):` the token flow's calls made inside the block go through `s(send, safe)` instead of `send()`.
+
+    `send` makes the one HTTP call and returns its response (or raises httpx's transport error); `safe` is False only for the invoker
+    registration, after which a lost answer may have left an invoker at SME (every registration mints a new one), so a sender must not repeat
+    it after a transport error or a 502/504. The SDK is the only caller; None restores the default inside the block.
+    """
+    token = _token_flow_sender.set(sender)
+    try:
+        yield
+    finally:
+        _token_flow_sender.reset(token)
+
+
+def _send_token_flow(send: Callable[[], httpx.Response], safe: bool) -> httpx.Response:
+    """One call of the token flow: through the sender `token_flow_sender` set for this context, else sent once."""
+    sender = _token_flow_sender.get()
+    return send() if sender is None else sender(send, safe)
+
 
 def identity_kind() -> str:
     """`rapp` for a process that is an rApp, else `module` (an SMO service)."""
@@ -107,7 +135,8 @@ class _ModuleIdentity:
         if self.token_endpoint is None:
             # PR-SEC-9.3: a gateway that sets R1_BOOTSTRAP_KEY asks for it here; unset (the default) nothing is sent
             key = read_secret("SMO_BOOTSTRAP_KEY")
-            resp = httpx.get(f"{base_url}/bootstrap", headers={BOOTSTRAP_KEY_HEADER: key} if key else None, timeout=5.0, **mtls.client_kwargs(base_url))
+            resp = _send_token_flow(lambda: httpx.get(f"{base_url}/bootstrap", headers={BOOTSTRAP_KEY_HEADER: key} if key else None, timeout=5.0,
+                                                      **mtls.client_kwargs(base_url)), safe=True)
             resp.raise_for_status()
             uris = [(ep.get("tokenEndPoint") or {}).get("uri") for ep in resp.json().get("apiEndpoints", [])]
             self.token_endpoint = next(u for u in uris if u)
@@ -146,7 +175,9 @@ class _ModuleIdentity:
         enrollment = read_secret("SMO_ENROLLMENT_SECRET") if kind == "module" else None
         if enrollment:
             headers[ENROLLMENT_HEADER] = enrollment
-        resp = httpx.post(f"{sme}/invoker-registrations", json={"apiInvokerPublicKey": label}, headers=headers, timeout=5.0, **mtls.client_kwargs(sme))
+        # not safe to repeat after a lost answer: every registration mints a new invoker (the SDK's sender repeats it only on 429/503)
+        resp = _send_token_flow(lambda: httpx.post(f"{sme}/invoker-registrations", json={"apiInvokerPublicKey": label}, headers=headers, timeout=5.0,
+                                                   **mtls.client_kwargs(sme)), safe=False)
         resp.raise_for_status()
         body = resp.json()
         return body["apiInvokerId"], body["onboardingSecret"]
@@ -200,10 +231,14 @@ class _ModuleIdentity:
             log.warning("could not offboard the duplicate invoker %s: %r", invoker_id, exc)
 
     def _grant(self, token_endpoint: str) -> httpx.Response:
-        return httpx.post(token_endpoint, json={
+        """Asks SME's token endpoint for a client-credentials token for this identity and returns the raw answer.
+
+        Sent through the token-flow sender, so the SDK may repeat it: a grant has no side effect worth guarding.
+        """
+        return _send_token_flow(lambda: httpx.post(token_endpoint, json={
             "grant_type": "client_credentials", "client_id": self.invoker_id,
             "client_secret": self.invoker_secret, "scope": RAPP_SCOPE if self.pinned or identity_kind() == "rapp" else "smo-internal",
-        }, timeout=5.0, **mtls.client_kwargs(token_endpoint))
+        }, timeout=5.0, **mtls.client_kwargs(token_endpoint)), safe=True)
 
     def token_for(self, base_url: str, refresh: bool = False) -> str | None:
         """Returns a bearer token for SME's token endpoint, from the cache unless `refresh` is set or it is within 30 s of expiring; None when none can

@@ -40,6 +40,7 @@ sequenceDiagram
         else nothing stored, or the store off or unreachable
             SDK->>SME: POST /invoker-registrations {apiInvokerPublicKey smo-rapp:MODULE:random}<br/>(a module adds X-SMO-Enrollment)
             SME-->>SDK: 201 {apiInvokerId, onboardingSecret}
+            Note over SDK: inside an SDK call, repeated only on 429 or 503 (SME did not run it),<br/>never after a 502, 504 or a lost connection (a second invoker)
             SDK->>Store: insert (another replica stored first: ours deleted at SME, theirs adopted)
         end
     end
@@ -75,7 +76,11 @@ sequenceDiagram
     M-->>R1: answer
     R1-->>SDK: answer
     opt 401 and no bearer_token of the caller's own
-        SDK->>R1: the same call with a fresh token (once)
+        SDK->>R1: the same call with a fresh token (once, inside the same attempt)
+    end
+    loop 429 or 503, or for a call safe to repeat 502, 504 or a transport error, at most 4 sends in all
+        Note over SDK: wait 200 ms doubling to 5 s, equal jitter,<br/>longer when Retry-After says so (at most 30 s), SMO_SDK_RETRY off disables it
+        SDK->>R1: the same call, the same Idempotency-Key
     end
     opt 409 CONCURRENT_MODIFICATION on a POST, PUT, PATCH or DELETE without files
         SDK->>R1: the same call once more, with the same Idempotency-Key
@@ -89,12 +94,12 @@ sequenceDiagram
     else
         SDK-->>App: the JSON body as it is
     end
-    Note over App,SDK: a transport error (timeout, connection refused) is raised as the httpx error, never repeated
+    Note over App,SDK: a transport error left after the last attempt<br/>(timeout, connection refused) is raised as the httpx error
 ```
 
 The SDK adds no validation and no business rule: the module's refusal is the answer, as `SdkError` with its real status and body. The 409 repeat is
 safe because the platform rolled the first attempt back, and the shared key lets a module that did complete the first attempt answer the repeat from
-it (PR-ST-2, PR-ST-3). There is no backoff and no retry of a 5xx: an rApp that wants one writes it. The unwrapped list drops `total`, so a caller
+it (PR-ST-2, PR-ST-3). Transient failures are repeated with backoff, the Go and Java SDKs' policy (SDK-PY-RETRY, [`../README.md`](../README.md) 2.5): safe calls (GET, PUT, DELETE, a keyed POST) after a transport error or 502/504, every call after 429/503, a call with `files` never; the 409 repeat gets its own retry budget. The unwrapped list drops `total`, so a caller
 cannot see that a list was cut at the route's default limit.
 
 ## c — Acting for an instance
@@ -205,8 +210,8 @@ the SDK cannot repair is an instance identity SME no longer accepts; only rApp M
 
 **Parity with the Go and Java SDKs.** `sdk-go` ([README](../../sdk-go/README.md)) and `sdk-java` ([README](../../sdk-java/README.md)) follow the same
 road: `/bootstrap` with the bootstrap key, registration at SME, a `client_credentials` token refreshed before expiry and once on a 401, an
-`Idempotency-Key` on every POST reused by its repeats, one repeat of a `409 CONCURRENT_MODIFICATION`, and the module's error as one error type. They
-differ in three ways: they also repeat transient failures with backoff (4 attempts); they have typed helpers for fewer routes (Java has no `analytics`,
+`Idempotency-Key` on every POST reused by its repeats, one repeat of a `409 CONCURRENT_MODIFICATION`, and the module's error as one error type. All three repeat transient failures with the same backoff (4 attempts, 200 ms doubling to 5 s, `Retry-After` up to 30 s; this SDK follows
+Go's equal jitter, and only this SDK reads its policy from the environment, `SMO_SDK_RETRY*`). They differ in two ways: they have typed helpers for fewer routes (Java has no `analytics`,
 `lifecycle` or `intent` yet); and they hold one identity per process, either pinned by `SMO_INVOKER_ID` / `SMO_INVOKER_SECRET` (the instance's, never
 replaced on a 400, where this SDK's process identity is) or enrolled by the process, with no credentials route and no switching between instances.
 

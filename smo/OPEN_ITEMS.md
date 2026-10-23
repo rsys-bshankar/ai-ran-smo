@@ -188,12 +188,6 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
   an adaptor credential of its own (HTTP Basic, `SB-7`). Approach: decide the path (an `adaptor` role at the gateway limited to the ingest routes,
   or a documented direct path with a client certificate per adaptor), document it in `ran-nf-oam/README.md` and the O1 conformance kit, and test it
   with the gateway and with mTLS on.
-- **SDK-PY-RETRY** — The Python SDK does not retry with back-off: `smo_sdk` repeats a write once on `409 CONCURRENT_MODIFICATION`
-  (`sdk/smo_sdk/_common.py`, `_RetryOnConflict`) and `R1Client` once on a 401, and nothing else (429, 502, 503, 504 and transport errors reach the
-  caller), while the Go SDK (`sdk-go/retry.go`) and the Java SDK (`RetryPolicy`) make 4 attempts, 200 ms doubling to 5 s with jitter, `Retry-After`
-  honoured. `HISTORY.md` (RAPP-4.3) records the difference, not a decision to keep it. Approach: the same policy in `smo_sdk` (only safe calls
-  repeated after a transport error or 502/504, every POST already carries an `Idempotency-Key`, the invoker registration only on 429/503),
-  with its tests; or record that the Python SDK leaves retries to the caller.
 
 - **OI-7-config-push** — An instance's configuration change does not reach its rApp: `PUT /rapp-mgmt/instances/{id}/config` only stores
   it, and the rApp reads it when it starts the instance (call flow 07e). Approach: push it to the rApp's operator API as the credentials are
@@ -1246,7 +1240,7 @@ Closed (`HISTORY.md` PR-RAPP-3): the offline validator, the runtime checks and t
 
 RAPP-4.1 decided (both languages) and RAPP-4.2 to 4.5 are done for Go (`sdk-go/`) and for Java (`sdk-java/`); `HISTORY.md`, PR-RAPP-4 (Go) and PR-RAPP-4 (Java).
 
-Open, not steps: a run of either example against the compose stack (CI builds, unit-tests and image-builds them, it does not start the stack), mTLS configured from the environment in the Java SDK, and the Python namespaces (analytics, lifecycle, intent) that neither SDK covers. The Python SDK's missing retry back-off, which both have, is `SDK-PY-RETRY` (section 2).
+Open, not steps: a run of either example against the compose stack (CI builds, unit-tests and image-builds them, it does not start the stack), mTLS configured from the environment in the Java SDK, and the Python namespaces (analytics, lifecycle, intent) that neither SDK covers. The Python SDK now has the same retry policy as both (`HISTORY.md`, SDK-PY-RETRY, a RAPP-4.3 follow-up).
 
 #### PR-RAPP-5 — Developer portal
 

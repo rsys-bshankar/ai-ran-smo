@@ -10,7 +10,7 @@
 | Depends on (over R1) | R1 Termination, for routes of SME, DME, RAN NF OAM (read-only inventory), MLMR, AIMgF, MLLF, MDAF, RAN Analytics, Intent Service. Through `smo_shared.r1_client.R1Client` |
 | Called by | The four sample rApps (`../samples/{energy-saving,mobility-optimization,coverage-optimization,traffic-steering}-rapp/app/main.py`); any rApp author. No SMO module imports it |
 | Database tables | None |
-| Retries and idempotency | Every POST carries a generated `Idempotency-Key`; a mutating call that lost a write race (`409 CONCURRENT_MODIFICATION`) is sent once more with the same key (`smo_sdk/_common.py`) |
+| Retries and idempotency | The Go and Java SDKs' policy (`smo_sdk/_retry.py`, 2.5): 4 attempts, 200 ms doubling to 5 s with jitter, `Retry-After` honoured up to 30 s, on a transport error or 429/502/503/504, only for calls safe to repeat; off or tuned by `SMO_SDK_RETRY*` (2.6). Every POST carries a generated `Idempotency-Key`; a mutating call that lost a write race (`409 CONCURRENT_MODIFICATION`) is sent once more with the same key (`smo_sdk/_common.py`) |
 | Unit tests | `tests/`, no network: a recording fake `R1Client` (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
 | Status | Done. No OPEN_ITEMS ids |
 
@@ -58,7 +58,8 @@ It never calls a module directly and never touches a database.
 |---|---|
 | One `R1Client` shared by all six clients (`AiRuntimeSdk(r1=None)` builds it) | One SME invoker and one cached token per process. |
 | `ensure_ok(resp)`: status >= 400 raises `SdkError(status_code, body)`; 204 or empty body returns `None`; a JSON object with a list-valued `items` is unwrapped to that list | Every paginated route answers `{items, total, limit, offset}`; unwrapping at the one shared response boundary keeps every `list_*`/`query_*`/`discover_*` returning a plain list. Consequence: `total`, `limit` and `offset` are discarded, so a caller cannot see whether a list was truncated at the route's default `limit` of 100. |
-| Transport errors (`httpx.HTTPError`) are not caught | Only an HTTP answer becomes `SdkError`; connection failures propagate. |
+| Transient failures are repeated with the Go and Java SDKs' policy (SDK-PY-RETRY, 2.5) | One behaviour for an rApp in any of the three languages. A transport error left when the attempts are spent is not caught: only an HTTP answer becomes `SdkError`; connection failures propagate as `httpx` exceptions. |
+| The retry lives in the SDK, not in `R1Client` | `R1Client` is every SMO module's client too; a retry there would change every cross-module call. The SDK wraps the calls it makes, and the token flow `R1Client` runs inside one is repeated through a context-scoped hook (`smo_shared.r1_client.token_flow_sender`) that only the SDK sets, so modules, and a sample rApp's own direct `R1Client` calls, are unchanged. |
 | Unset optional query filters are dropped by `httpx` (a `None` param is omitted); where a typed filter would reject an empty value the method drops `None` explicitly (`query_cell_guards`, `query_mda_reports`) | Avoids 422 on enum/UUID-typed filters. |
 | Some routes take a raw (unwrapped) body: `update_training_job_model_metrics`, `report_performance`, `notify_data_available`, `deploy_model` (a plain list) | Mirrors the route signature; each is pinned by a test. |
 | Idempotency | `execute_action(action_id=...)` forwards DME's idempotency key: resending a recorded id is answered `IGNORED`, never applied twice. `store_model` and `get_dataset` reuse an existing model / data job instead of creating duplicates. Nothing else is deduplicated. |
@@ -70,8 +71,9 @@ It never calls a module directly and never touches a database.
 
 | File | Responsibility |
 |---|---|
-| `smo_sdk/__init__.py` | `AiRuntimeSdk` (attributes `data`, `analytics`, `models`, `lifecycle`, `intent`, `platform`); re-exports `SdkError` and the six client classes |
-| `smo_sdk/_common.py` | `SdkError`, `ensure_ok`, `BaseClient` |
+| `smo_sdk/__init__.py` | `AiRuntimeSdk(r1=None, retry=None)` (attributes `data`, `analytics`, `models`, `lifecycle`, `intent`, `platform`); re-exports `SdkError`, `RetryPolicy` and the six client classes |
+| `smo_sdk/_common.py` | `SdkError`, `ensure_ok`, `_RetryOnConflict` (the wrapper every call goes through: `Idempotency-Key`, the retry policy, the 409 repeat), `BaseClient` |
+| `smo_sdk/_retry.py` | `RetryPolicy` (defaults, `off()`, `from_env()`, `wait`), `send_with_retry`, `is_safe`, `retry_after_seconds`, and the sender for `R1Client`'s token flow |
 | `smo_sdk/data.py` | `DataClient` |
 | `smo_sdk/analytics.py` | `AnalyticsClient` |
 | `smo_sdk/models.py` | `ModelsClient` |
@@ -272,13 +274,40 @@ Module function `energy_saving_expectation(object_instance, cells=None, max_ener
 
 ### 2.5 Interactions
 
-Every call is one synchronous HTTP request through `R1Client`: `Authorization: Bearer <process token>` (obtained from SME the way an rApp does, see [`../shared/README.md`](../shared/README.md)) and `X-Correlation-ID` when called inside a request handler that applied the correlation middleware (the sample rApps do). No callbacks are received by the SDK; callback URLs it passes (`notification_destination`, `callback_uri`, job callback URLs) are called later by the owning module through `smo_shared.webhook`. No background tasks, retries or timeouts of its own: a 401 is retried once by `R1Client`; `get_dataset` makes several sequential calls with no atomicity (a concurrent caller can create a second data job).
+Every call is one synchronous HTTP request through `R1Client`: `Authorization: Bearer <process token>` (obtained from SME the way an rApp does, see [`../shared/README.md`](../shared/README.md)) and `X-Correlation-ID` when called inside a request handler that applied the correlation middleware (the sample rApps do). No callbacks are received by the SDK; callback URLs it passes (`notification_destination`, `callback_uri`, job callback URLs) are called later by the owning module through `smo_shared.webhook`. No background tasks or timeouts of its own; `get_dataset` makes several sequential calls with no atomicity (a concurrent caller can create a second data job).
+
+**Retries (SDK-PY-RETRY; the policy of `sdk-go/retry.go` and the Java SDK's `RetryPolicy`).** Every call goes through `_RetryOnConflict` (`smo_sdk/_common.py`), which applies `RetryPolicy` (`smo_sdk/_retry.py`):
+
+| Rule | Behaviour |
+|---|---|
+| Attempts and waits | 4 sends in all; the wait after attempt n is 200 ms × 2^(n-1), at most 5 s, with equal jitter (a random value between half of it and all of it) |
+| `Retry-After` | In whole seconds, it lengthens the wait (never shortens it), up to 30 s; the HTTP-date form is ignored (as in Go and Java) |
+| Repeated for every call | 429 and 503: the server did not run the call |
+| Repeated only for a call safe to repeat | A transport error (`httpx.TransportError`: refused, dropped, timed out) and 502, 504, after which the call may have run. Safe: GET, HEAD, OPTIONS, PUT, DELETE, and a POST that carries an `Idempotency-Key`, which the SDK adds to every POST without `files` (a caller's own is kept and reused by every repeat, so the platform answers a repeat of a completed POST from its stored first answer, PR-ST-3). PATCH is not safe (no key, not idempotent): it is repeated only on 429/503 |
+| Never repeated | A call with `files` (its stream is consumed by the first send); any other status, a 4xx in particular |
+| The token flow inside a call | `R1Client`'s `GET /bootstrap` and token grant are repeated as safe calls; the invoker registration (`POST /sme/invoker-registrations`) only on 429/503, because a lost answer may have minted an invoker and a repeat would mint a second (`SEC-15.13`) |
+| When it gives up | The last answer is returned (and raised as `SdkError` by the namespace method), or the last transport error raised. Each repeat is logged at INFO by `smo_sdk._retry` |
+
+How it composes with the two older repeats. Outermost is the **409** repeat: a mutating call answered `CONCURRENT_MODIFICATION` is sent once more, with the same key, and that second send gets a fresh retry budget (as in Go, where the 409 repeat is around `roundTrip`). Under each send is the retry policy. Under each attempt is `R1Client`'s **401** renewal: a fresh token and one repeat inside the same attempt, not counted as an attempt (in Go and Java the 401 renewal is outside the retry loop; the effect is the same: one renewal per 401, and a 503 after it is still repeated). So the most sends one SDK call can make is 2 × 4 × 2.
+
+Two choices where Go and Java differ: the jitter (Go: equal jitter; Java: full jitter, 0 to the delay) and `Retry-After` (Go: the longer of it and the backoff; Java: it replaces the backoff). This SDK follows Go in both, so a server's hint never makes the SDK retry faster than its own backoff. Neither Go nor Java reads its policy from the environment; this SDK does (2.6).
 
 **MSAC credential (`SEC-15.6b`).** An rApp that names, in `requested_by`, an MSAC Identity that has a credential must present it (RAN NF OAM answers 403 `MSAC_ACCESS_DENIED` otherwise, `ran-nf-oam/README.md` 2.5). `execute_action` and `mediate_action`, the two methods that lead to a configuration job, take `msac_credential=None`, keyword only. Given, the SDK sends it in the `X-MSAC-Credential` header of the `POST /dme/actions` and in nothing else: not in the body, not in a log line, not in an exception or a `repr`; the SDK reads no environment variable for it, so the rApp passes in the secret it holds from wherever it keeps secrets. Not given (or None), the call is made exactly as before. DME declares the header on `POST /actions` and passes it on to RAN NF OAM's `POST /config-jobs` (only when sent), which asks for it of an SMO module that passes an rApp's request on (`X-R1-On-Behalf-Of`) as of an rApp itself, so this works end to end.
 
 ### 2.6 Configuration
 
-None in the SDK. Behaviour is configured through `R1Client`: `R1_GATEWAY_URL` (default `http://r1-termination:8000`), `SMO_INVOKER_ID`, `SMO_INVOKER_SECRET`, `MODULE`, or by passing `R1Client(base_url=..., bearer_token=...)` to `AiRuntimeSdk`.
+The retry policy, read once when `AiRuntimeSdk` (or a namespace client given no `retry`) is built; `AiRuntimeSdk(retry=RetryPolicy(...))` or `RetryPolicy.off()` sets it in code instead. A value that cannot be used raises `ValueError` naming the variable, so the rApp stops at start instead of running with a policy nobody asked for.
+
+| Variable | Default | What it changes |
+|---|---|---|
+| `SMO_SDK_RETRY` | `on` | `off`: every SDK call is sent once (the 409 repeat and `R1Client`'s 401 renewal stay) |
+| `SMO_SDK_RETRY_MAX_ATTEMPTS` | `4` | Sends in all, the first included; `1` never repeats |
+| `SMO_SDK_RETRY_BASE_DELAY_MS` | `200` | The first wait; each next one doubles |
+| `SMO_SDK_RETRY_MAX_DELAY_MS` | `5000` | The longest wait before jitter (at least the base); `Retry-After` may go to 30 s |
+
+The Go and Java SDKs have no environment variables for their policy (Go: `Config.Retry`; Java: `SmoConfig.withRetry`), so these names are new; they follow Go's field names (`MaxAttempts`, `BaseDelay`, `MaxDelay`) under the `SMO_SDK_` prefix, ready for those SDKs to read too.
+
+Everything else is configured through `R1Client`: `R1_GATEWAY_URL` (default `http://r1-termination:8000`), `SMO_INVOKER_ID`, `SMO_INVOKER_SECRET`, `MODULE`, or by passing `R1Client(base_url=..., bearer_token=...)` to `AiRuntimeSdk`.
 
 ### 2.7 Error codes
 
@@ -315,6 +344,7 @@ Each test asserts the verb, path, params and body the client sends against a scr
 | `tests/test_alarm_scope.py` | Which cell an alarm is about (cell IOCs, relation IOCs, element-level functions, no ref); a cell alarm holds that cell only; an element alarm holds every cell; only critical alarms hold; `query_critical_alarms` | 16 |
 | `tests/test_platform.py` | Provider register/deregister, publish/list/unpublish service, discover, event subscribe (with every CAPIFEventFilter)/list/unsubscribe; 4xx | 11 |
 | `tests/test_operator_ui.py` | Builders drop unset fields; a mistake is raised where it is written (`..`, a GET action, a sparkline without `y`); block-style YAML round trip; `add_to_manifest` keeps comments, creates the file, refuses a second declaration and writes nothing when the check fails; a table with a row detail builds and its per-row source is a declared read, a `{row.x}` naming no column is refused; the minimal example (with a row drawer) builds a byte-identical package whose declaration passes; the ADR example loads | 12 |
+| `tests/test_retry.py` | `SDK-PY-RETRY`, one test per rule, over an `httpx.MockTransport` with the sleep and the jitter replaced (no real waiting): a transport error on a GET repeated; 502/503/504 repeated for GET, PUT, DELETE; a 4xx final; a POST without an `Idempotency-Key` not repeated after a 502 or a timeout; a POST with `files` sent once; a keyed POST repeated with one key; PATCH only on 503; the invoker registration repeated on 429/503 and not on 502/504 or a transport error; `Retry-After` honoured, capped at 30 s, its date form ignored; 4 attempts at most, then `SdkError` or the transport error; the backoff's doubling, cap and jitter range; the 409 repeat with its own budget; `SMO_SDK_RETRY=off`; the other variables, and a bad value refused. With the real `R1Client` and a fake platform: an SDK call repeats its token flow's registration, a module's own `R1Client` call does not, and the 401 renewal runs inside an attempt | [counts](../docs/TEST_COUNTS.md) |
 | `tests/test_msac_credential.py` | `SEC-15.6b`: `msac_credential` is sent as `X-MSAC-Credential` by `execute_action` and `mediate_action` and not in the body; no headers when it is None or left out; keyword only; the header survives the retry wrapper next to `Idempotency-Key`, on the repeat too; the value is not in an `SdkError`, a `repr`, the return value or the log; no environment fallback; the header name equals RAN NF OAM's | 7 |
 | `tests/test_wave10_wrappers.py` | `get_dataset` (reuses the consumer's job, pages records by the `before` cursor and returns them oldest first; creates a job; 404 for unknown dataset), `store_model` (registers once, then adds artifact versions), the `start_*`/`complete_*` wrappers, `execute_action`, `read_config`, autonomy dispatch | 5 |
 
@@ -322,7 +352,8 @@ Each test asserts the verb, path, params and body the client sends against a scr
 
 - Behaviour of the real routes: the SDK tests use a fake client. The SDK's use against the live schema is exercised by the sample-rApp suites (`cd samples/<name> && PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q`) and `../tests_integration/` (`test_*_rapp.py`), which run the samples over the in-process mesh.
 - Methods without a dedicated test: `AiRuntimeSdk` construction itself, `list_*` helpers beyond those named above, and the full route-existence check. Every path used in `smo_sdk/` was checked against `../docs/openapi/*.json` when this README was written, but no test enforces it.
-- Transport failures (`httpx` exceptions) are not wrapped or tested.
+- Transport failures that are left when the retries are spent are raised as `httpx` exceptions, not wrapped (tested in `tests/test_retry.py`).
+- The retry policy against a real gateway under load (`Retry-After` from a real 429, a real dropped connection): only the fakes above.
 
 ## 4. References
 
