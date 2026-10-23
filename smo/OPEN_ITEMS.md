@@ -180,6 +180,16 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
   (onboarding rolls with Recreate, so it has a gap) but counts its errors in the 1 % error rate, so the expected gap alone can fail the run: the
   nightly run on `main` of 23 October, from `smo-v0.4.0`, failed with 40 errors in 3743 calls, 39 of them `package list` (0.03 % without it).
   Approach: leave the routes of `--allow-errors-on` out of the rate (and report them on their own line).
+- **REPLICAS-PG-SLOTS** — The CI job "Two replicas of every module replay the runbook" (`compose-replicas`, `docker-compose.replicas.yml`) sometimes
+  runs Postgres out of connection slots (`FATAL: remaining connection slots are reserved for roles with the SUPERUSER attribute`). Compose starts
+  Postgres with its default `max_connections` (100) and no pooler, and every process may hold `SMO_DB_POOL_SIZE` + `SMO_DB_MAX_OVERFLOW` (5 + 10)
+  connections (`shared/smo_shared/db.py`), so two replicas of every module and their workers can ask for more than there are. Seen twice on
+  23 October in `test_demo_runbook.py::test_traffic_steering_demo_00_to_11_runs_end_to_end`: on `main` (run 39956676536, the model reached
+  FAILED after an emulation of zeros) and on PR #534 (run 39987316288, intent-service's `GET /intents/{id}` answered 500, its notification to the
+  O1-CM handler was answered 404 and is not retried, so the decision got no DME action); both passed on a re-run. Approach: size the replicas
+  stack to its limit (`-c max_connections` in the replicas override, or smaller `SMO_DB_POOL_SIZE` / `SMO_DB_MAX_OVERFLOW` there, from the README's
+  N x W x (pool + overflow) rule); and SA SMOS answering the notification with a 5xx, not 404, when its own read of the intent failed, so a passing
+  database error is retried rather than final.
 - **OPS-A1-DROP** — The A1 tables (`a1_ei_type` and the others) that revision 0029 leaves for 0.4.0's `a1-related` module have no revision that drops
   them, now that no supported release uses them (call flow 31). Approach: the contract revision that drops them, announced under `### Changed`.
 - **MLLF-IDENTITY** — Every MLLF process registers an SME invoker of its own: MLLF has no database (`database: false` in the chart, none in compose), so
