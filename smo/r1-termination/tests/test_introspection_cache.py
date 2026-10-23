@@ -307,12 +307,12 @@ def test_a_short_ttl_also_shortens_the_negative_answer(sme, gateway, monkeypatch
 def test_a_positive_answer_never_outlives_the_token(sme, gateway, monkeypatch, clock):
     """A cached positive answer ends at the token's own `exp`; a token already past it is not stored at all."""
     monkeypatch.setenv("R1_INTROSPECTION_CACHE_SECONDS", "300")
-    sme.add("short", exp_in=10)
+    sme.add("short", exp_in=10)                                    # `exp` is whole seconds, so the answer lives between 9 and 10 s from now
     assert call(gateway, "short").status_code == 200
-    clock.advance(9)
+    clock.advance(8)
     assert call(gateway, "short").status_code == 200
     assert len(sme.introspections) == 1
-    clock.advance(1.5)                                             # the token's own `exp` has passed: SME is asked again (and says it expired)
+    clock.advance(2.5)                                             # the token's own `exp` has passed: SME is asked again (and says it expired)
     sme.tokens.pop("short")
     assert call(gateway, "short").status_code == 401
     assert len(sme.introspections) == 2
