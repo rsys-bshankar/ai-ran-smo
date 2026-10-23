@@ -7,7 +7,7 @@
 | Standards basis | Custom: no 3GPP IOC, no O-RAN-specified interface (SMO-ARCH §4.1 NOTE 1 excludes a RAN Analytics SMOS). Not the TS 28.104 MDAF, which is `../mdaf/` |
 | R1 route / port | `/ran-analytics` via R1 Termination (container :8000) |
 | Depends on (over R1) | SME (`/sme/provider-registrations`, `/sme/published-apis/v1/{apfId}/service-apis`) |
-| Called by | Analytics producer rApps via `sdk.analytics` (`register_producer`, `deregister_producer`, `list_producers`); GUI BFF (`POST /ran-analytics/producers`, admin); MDAF (`GET /producers`, to check an rApp publisher, call flow 08c) |
+| Called by | Analytics producer rApps via `sdk.analytics` (`register_producer`, `deregister_producer`, `list_producers`); GUI BFF (`POST` and `DELETE /ran-analytics/producers(/{id})`, admin; the console has a register form, no deregister button yet: `OPEN_ITEMS.md` GUI-11.1); MDAF (`GET /producers`, to check an rApp publisher, call flow 08c) |
 | Database tables | `mdaf_producer` |
 | Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
 | Status | Done. Coverage is the thinnest in the repo by count (`../OPEN_ITEMS.md` OI-4) |
@@ -68,7 +68,7 @@ resolved.
   its invoker id, else 403 `PRODUCER_IDENTITY_MISMATCH`); the console and SMO modules may name any producer. MDAF relies on
   this registry to refuse a report from an rApp that is not a producer of its type.
 - **Security.** Bearer protection is declared in the OpenAPI contract and enforced by R1 Termination, which stamps the
-  caller's role. GUI BFF RBAC allows producer registration for admin only.
+  caller's role. GUI BFF RBAC allows producer registration and deregistration for admin only.
 
 ## 2. Low-level design (LLD)
 

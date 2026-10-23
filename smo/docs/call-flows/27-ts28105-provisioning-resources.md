@@ -7,10 +7,10 @@ route a caller takes. Five diagrams:
 
 | | Step | Who starts it | Ends with |
 |---|---|---|---|
-| 27a | Training request, process and report | the owner rApp (SDK), Operator (GUI) | a run IN_PROGRESS, then FINISHED or FAILED with its report |
-| 27b | Suspend, resume, cancel | the owner rApp, Operator (GUI) | the run SUSPENDED, IN_PROGRESS again, or CANCELLED |
-| 27c | ML update (fine-tuning several models) | the owner rApp, Operator (GUI) | one FINE_TUNING run per model, then an update report |
-| 27d | Model loading, by request or policy | the owner rApp (request); Operator (GUI) or an SMO module (policy) | each model's runtime ACTIVE and on the inference function |
+| 27a | Training request, process and report | the owner rApp (SDK), an SMO module | a run IN_PROGRESS, then FINISHED or FAILED with its report |
+| 27b | Suspend, resume, cancel | the owner rApp, an SMO module | the run SUSPENDED, IN_PROGRESS again, or CANCELLED |
+| 27c | ML update (fine-tuning several models) | the owner rApp, an SMO module | one FINE_TUNING run per model, then an update report |
+| 27d | Model loading, by request or policy | the owner rApp (request); an SMO module (function, policy) | each model's runtime ACTIVE and on the inference function |
 | 27e | Execution timeouts | the AIMgF worker; any job read | every overdue run FAILED, its runtime gone |
 
 **As images:** [27a](images/27-ts28105-provisioning-resources/27a-training-request-process-and-report.png) ·
@@ -24,8 +24,11 @@ route a caller takes. Five diagrams:
 with them, an `alt` block is the outcome (success first, then each failure and what the caller gets).
 
 **Who may act.** An rApp may create and act on requests only for models it owns (403 `MODEL_ACCESS_DENIED`, call flow 02): training, testing, update and
-loading requests, their cancel and suspend, and the inference reports it posts. The gateway does not let an rApp reach the inference functions, the
-loading policies or the processes; the console and the SMO modules do.
+loading requests, their cancel and suspend, and the inference reports it posts. The gateway does not let an rApp write the inference functions, the
+loading policies or the processes (`shared/smo_shared/roles.py`, `/aimgf`); an SMO module does. The console makes none of these writes: the BFF has
+no rule for them (`gui-bff/app/rbac.py`), so every console role is refused (any role may read them through the BFF; no console page shows them).
+An operator trains and validates from the console through `POST /aimgf/training-jobs` and `/validation-jobs` (operator, call flow 02), which start
+the same runs. Console pages for these resources are `OPEN_ITEMS.md` GUI-11.2.
 
 **Status words (from the code):**
 
@@ -41,7 +44,7 @@ loading policies or the processes; the console and the SMO modules do.
 
 ```mermaid
 sequenceDiagram
-    participant R as Owner rApp (SDK) / Operator (GUI)
+    participant R as Owner rApp (SDK) / SMO module
     participant AIM as AIMgF
     participant DME as DME
     participant NFO as NFO
@@ -61,8 +64,9 @@ sequenceDiagram
         end
     end
 
-    R->>AIM: POST /aimgf/ml-training-processes/{id}/progress {progressPercentage, progressStateInfo?}
-    Note over AIM: only while RUNNING (409 otherwise)
+    R->>AIM: POST /aimgf/training-jobs/{id}/progress {step?, epoch?, totalEpochs?}
+    Note over R,AIM: an SMO module may also write POST /ml-training-processes/{id}/progress {progressPercentage, progressStateInfo?}<br/>(the gateway refuses it to an rApp)
+    Note over AIM: only while the run is IN_PROGRESS, the process RUNNING (409 otherwise)
     R->>AIM: POST /aimgf/training-jobs/{id}/complete {succeeded, metrics, report fields}
     Note over AIM: runtime removed, TRAINED or FAILED, process FINISHED or FAILED<br/>MLTrainingReport (lastTrainingRef chains to the previous one), the requester told (outbox)
     R->>AIM: GET /aimgf/ml-training-processes/{id}, /ml-training-reports?model_id
@@ -76,12 +80,12 @@ attribute for runtime sizing or a timeout, so the request takes the same vendor 
 
 ```mermaid
 sequenceDiagram
-    participant R as Owner rApp (SDK) / Operator (GUI)
+    participant R as Owner rApp (SDK) / SMO module
     participant AIM as AIMgF
     participant NFO as NFO
 
     R->>AIM: PATCH /aimgf/ml-training-requests/{id} {suspendRequest: true}
-    Note over R,AIM: or PATCH /ml-training-processes/{id} {suspendProcess: true}, or POST /training-jobs/{id}/suspend
+    Note over R,AIM: or POST /training-jobs/{id}/suspend, or (an SMO module only) PATCH /ml-training-processes/{id} {suspendProcess: true}
     alt IN_PROGRESS and the caller's model
         Note over AIM: IN_PROGRESS → SUSPENDED, process SUSPENDED<br/>no NFO call: the runtime stays up, the model stays TRAINING, the clock stops
         AIM-->>R: 200
@@ -93,7 +97,7 @@ sequenceDiagram
     Note over AIM: SUSPENDED → IN_PROGRESS, startedAt reset: the timeout clock starts again
 
     R->>AIM: PATCH /aimgf/ml-training-requests/{id} {cancelRequest: true}
-    Note over R,AIM: or {cancelProcess: true} on the process, DELETE /ml-training-requests/{id}, DELETE /training-jobs/{id}
+    Note over R,AIM: or DELETE /ml-training-requests/{id}, DELETE /training-jobs/{id}, or (an SMO module only) {cancelProcess: true} on the process
     alt IN_PROGRESS or SUSPENDED
         AIM->>NFO: DELETE /nfo/deployments/{id}, then the descriptor
         Note over AIM: job and process CANCELLED (the row stays as history)<br/>TRAINING_FAILED → model FAILED, only when this run is the model's current one
@@ -109,7 +113,7 @@ A testing request is suspended, resumed and cancelled the same way through `PATC
 
 ```mermaid
 sequenceDiagram
-    participant R as Owner rApp (SDK) / Operator (GUI)
+    participant R as Owner rApp (SDK) / SMO module
     participant AIM as AIMgF
     participant NFO as NFO
 
@@ -141,7 +145,7 @@ An update request takes no runtime profile or timeout, so its runs are unsized a
 ```mermaid
 sequenceDiagram
     participant R as Owner rApp (SDK)
-    participant Op as Operator (GUI) / SMO module
+    participant Op as SMO module
     participant AIM as AIMgF
     participant NFO as NFO
 
@@ -179,7 +183,7 @@ sequenceDiagram
 
 A loading request is cancelled or suspended with `PATCH /ml-model-loading-requests/{id}`; an rApp only for its own models (403). Loading uses AIMgF's own
 runtime steps (call flow 17), not MLLF, so no node groups are set and no runtime profile is sent. **Phase 1:** there is no unload: cancelling a request
-does not remove what it loaded (`OPEN_ITEMS.md` AIML-UNLOAD), and nothing in the platform evaluates a loading policy; the console or an SMO module triggers it.
+does not remove what it loaded (`OPEN_ITEMS.md` AIML-UNLOAD), and nothing in the platform evaluates a loading policy; an SMO module triggers it.
 
 ## 27e — Execution timeouts
 
@@ -218,4 +222,6 @@ inference 5. Before the worker, only a job read swept, so a run nobody read neve
 - An update is checked whole before any run starts, then finishes when every run has ended; its report lists only the models that succeeded.
 - Loading is checked whole before any runtime moves, and a run that fails part-way releases what it deployed (DOC-CF-1.8).
 - Timeouts are enforced by the AIMgF worker on a schedule, and by every job read (DOC-CF-1.8).
+- The TS 28.105 writes are for an rApp and the SMO modules, not the console: the console's training and validation go through `/training-jobs` and
+  `/validation-jobs`, the same runs (HISTORY.md GUI-RBAC-GAPS).
 - The ownership rule covers every request an rApp can reach, their cancel and suspend, and the inference reports it posts (DOC-CF-1.6, DOC-CF-1.8).

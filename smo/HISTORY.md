@@ -205,6 +205,29 @@ Recurring conventions referred to below:
   requests return 409 naming the state; every resume path restarts the timeout clock; the NRM read
   routes run the lazy timeout sweep; NRM training/testing requests accept optional `packageId`,
   `runtimeProfile` and `timeoutSeconds`. Call flow 27.
+- **GUI-RBAC-GAPS** — The BFF's permission table (`gui-bff/app/rbac.py`, `RULES`) had no rule, so every console role was refused, for routes the call
+  flows gave to a console user. Decided route by route (October 2026), each checked against the module's route and the rApp allow-list
+  (`shared/smo_shared/roles.py`):
+  (1) `DELETE /ran-analytics/producers/{id}` (`ran-analytics/app/main.py`, `@app.delete("/producers/{producer_id}")`): an **admin** rule, the same
+  as `POST /ran-analytics/producers`. Call flow 08a already showed an admin deregistering and stays as it was; it now says the console has no
+  deregister button, recorded as `OPEN_ITEMS.md` GUI-11.1.
+  (2) `POST`, `PUT`, `DELETE /mdaf/mda-functions(/{id})` (`mdaf/app/mda.py`): **admin** rules. An MDA function is platform configuration, like the
+  other registries; no module or seed creates one and the rApp allow-list leaves them out, so without a rule nobody in the console could make the
+  functions the MDA request form picks from. Call flow 08 says so under "Decisions this flow depends on".
+  (3) `DELETE /aimgf/mlmf/subscriptions/{id}` (`aimgf/app/main.py`, `unsubscribe_performance_monitoring`): an **operator** rule, the same as the
+  `POST` beside it. A bug: the MLMF tab's **Unsubscribe** button (`gui/src/pages/aiml/sections/Mlmf.tsx`, an `ActionButton`) is drawn only where
+  the permission table allows the call, so with no rule no role ever saw it, and a call through the proxy was 403 `FORBIDDEN`. Call flow 13 already
+  said unsubscribing needs the operator role; 13d now shows the console's button.
+  (4) The TS 28.105 writes of call flow 27 (`aimgf/app/nrm.py`: `POST`, `PATCH /ml-training-requests(/{id})`, `POST /ml-training-processes/{id}/progress`,
+  `POST`, `PATCH /ml-update-requests(/{id})`, `POST`, `PATCH /aiml-inference-functions(/{id})`, `POST /ml-model-loading-policies` and `/{id}/trigger`):
+  **no console rule**. Call flow 27 (27a to 27d) is restated so an rApp or an SMO module makes these calls (an rApp only the requests, the gateway
+  refuses it the processes, the functions and the policies), and the console trains and validates through `POST /aimgf/training-jobs` and
+  `/validation-jobs`, which have operator rules and start the same runs. Console pages for these resources are `OPEN_ITEMS.md` GUI-11.2.
+  Not taken: operator rules for the TS 28.105 writes (the console has no page that would use them), and dropping the console from 08a.
+  Evidence: `gui-bff/tests/test_rbac_matrix.py` (every rule for every role, generated from `RULES`; a viewer refused every request built from a
+  write rule; and `GUI_RBAC_GAPS`, one row per route of this decision, the TS 28.105 writes expected to have no rule for any role);
+  `gui/src/auth/permissions.fixture.json` regenerated (`gui-bff/scripts/export_permissions.py`). CHANGELOG: `### Added` (the admin rules) and
+  `### Fixed` (the Unsubscribe button).
 
 ## 3. Call-flow gaps (former §3)
 

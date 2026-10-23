@@ -65,6 +65,9 @@ sequenceDiagram
     end
 ```
 
+In the console both calls need the **admin** role (`gui-bff/app/rbac.py`). The KPIs page's producer tools register a producer; the console has no
+deregister button yet (`OPEN_ITEMS.md` GUI-11.1), so an admin deregisters through the BFF's proxy (`DELETE /api/smo/ran-analytics/producers/{id}`).
+
 **Phase 1:** `dme_input_types` are stored as given, not looked up at DME, and `output_schema` is not checked against the reports the producer publishes
 (open item `MDA-SCHEMA`). A producer registered before revision 0056 has no `smeServiceId`; its deregistration withdraws nothing at SME.
 
@@ -182,5 +185,10 @@ sequenceDiagram
 - **One SME service per producer and type** (`mdaf.<analyticsType>.<producerId>`): SME service names are unique across producers, so a shared
   `mdaf.<analyticsType>` left a second producer of a type undiscoverable. SME is asked before the producer is stored.
 - **`MDAFProducer`'s key is (producer_id, analytics_type)**: one producer may serve several types; registering the same pair again updates it in place.
+- **An MDA function is platform configuration** (TS 28.104 `MDAFunction`, `POST`, `PUT`, `DELETE /mdaf/mda-functions(/{id})`): an admin writes it
+  through the console's BFF (the **admin** role, `gui-bff/app/rbac.py`), as for the other registries, or a caller with the SMO module role does; the
+  gateway does not let an rApp write one (`shared/smo_shared/roles.py`, `/mdaf`), and nothing seeds one. The console lists them (KPIs page) and has no form
+  to write one; an admin calls the BFF's proxy. An MDA request (`POST /mdaf/mda-requests`, operator in the console) may name one in `mDAFunctionRef` (404
+  `NRM_OBJECT_NOT_FOUND` for an unknown one); the console's request form picks from those that exist.
 - **`analyticsType` is a free string**; an optional `mdaType` is checked against TS 28.104's 25 values, inferred for the two shorthands with an unambiguous
   correspondence, else null, never guessed (HISTORY.md SA-MDA-2).

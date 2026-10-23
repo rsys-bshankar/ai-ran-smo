@@ -180,20 +180,6 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
   invokers to the gateway's per-invoker controls and audit (`mllf/docs/lifecycle.md`, a and c). `SMO_INVOKER_ID` / `SMO_INVOKER_SECRET` avoid it but
   neither compose nor the chart sets them. Approach: give MLLF the shared `module_identity` path (a database role with only that table, as every other
   module has) or a pre-provisioned identity from a Secret in compose and the chart.
-- **GUI-RBAC-GAPS** — The GUI BFF's permission table (`gui-bff/app/rbac.py`, `RULES`) has no rule, so every console role is refused, for routes the
-  call flows give to a console user. Per route, a decision is needed: (1) `DELETE /ran-analytics/producers/{id}`: call flow 08a shows an admin
-  deregistering; only `POST /ran-analytics/producers` (admin) is listed and the console has no deregister button: add an admin rule, or drop the
-  console from 08a's deregistration. (2) `POST`, `PUT`, `DELETE /mdaf/mda-functions(/{id})`: no call flow shows the console writing them, and the
-  rApp allow-list leaves them out too, yet the console's MDA request form picks from the functions that exist: decide who creates an MDA function
-  (an admin rule, as for other platform configuration, or say in call flow 08 that only an SMO module or a seed does). (3)
-  `DELETE /aimgf/mlmf/subscriptions/{id}`: call flow 13 says unsubscribing needs the operator role, and the console's MLMF table shows an
-  **Unsubscribe** button (`gui/src/pages/aiml/sections/Mlmf.tsx`) that the BFF refuses for every role: a missing rule (operator, as the
-  `POST` beside it). (4) The TS 28.105 writes of call flow 27, which shows an operator in the console for each: `POST`, `PATCH
-  /aimgf/ml-training-requests(/{id})` (27a, 27b), `POST /aimgf/ml-training-processes/{id}/progress` (27a), `POST`, `PATCH
-  /aimgf/ml-update-requests(/{id})` (27c), `POST`, `PATCH /aimgf/aiml-inference-functions(/{id})` and `POST /aimgf/ml-model-loading-policies` and
-  `/{id}/trigger` (27d); the console has no page for them (only the `training-jobs` / `validation-jobs` equivalents, which have operator rules): add operator rules (admin for
-  the functions and policies, as platform configuration), or restate call flow 27 as rApp and SMO module only. Approach: a decision per route, then
-  the rule (and its line in `tests/test_rbac_matrix.py`, which covers every rule) or the call flow's text.
 - **O1-ADAPTOR-ENROL** — How a production O1 adaptor is given an identity is not specified: an adaptor's ingest routes (`POST /ran-nf-oam/alarms/ingest`,
   `/pm-reports`, `/pm-files`, `/o1-adaptor-endpoints/{id}/heartbeat`) are not on the rApp allow-list (`shared/smo_shared/roles.py`, `/ran-nf-oam`
   allows only `config-jobs`), so an adaptor enrolled as an rApp is refused at the gateway; enrolled as an SMO module (the enrollment secret) it gets the
@@ -332,7 +318,7 @@ and HA much later).
 | Northbound | `PR-NB` | NB-1 alarm forwarding · NB-2 inventory export · NB-3 TS 28.532 facade · NB-4 slicing · NB-5 TM Forum · NB-6 ONAP · NB-7 federation |
 | AI/ML | `PR-AI` | AI-1 executor protocol · AI-2 K8s training executor · AI-3 MLflow bridge · AI-4 serving adaptor · AI-5 feature store · AI-6 data sink · AI-7 drift · AI-8 weighted triggers · AI-9 runtime gate · AI-10 action safeguards · AI-11 approvals · AI-12 shadow mode · AI-13 decision audit |
 | rApp ecosystem | `PR-RAPP` | RAPP-1 signing (done) · RAPP-2 sandbox (RAPP-2.2 open) · RAPP-3 conformance pack (done) · RAPP-4 Java and Go SDK · RAPP-5 portal · RAPP-6 metering · RAPP-7 new-rApp recipe |
-| GUI | `PR-GUI` | GUI-1 live updates (done) · GUI-2 alarm console (done) · GUI-3 topology (done) · GUI-4 KPI dashboards (done) · GUI-5 scoped views (done) · GUI-6 a11y/i18n (done) · GUI-7 approval inbox (done) · GUI-9/10 console redesign (done) |
+| GUI | `PR-GUI` | GUI-1 live updates (done) · GUI-2 alarm console (done) · GUI-3 topology (done) · GUI-4 KPI dashboards (done) · GUI-5 scoped views (done) · GUI-6 a11y/i18n (done) · GUI-7 approval inbox (done) · GUI-9/10 console redesign (done) · GUI-11 console pages for routes the BFF already allows |
 | Standards / compliance | `PR-STD` | STD-1 close §3 items · STD-2 spec currency · STD-3 O-RAN test plan · STD-4 privacy · STD-5 assurance mapping · STD-6 residency |
 | Quality | `PR-QA` | QA-1 load · QA-2 contract tests · QA-3 failure injection · QA-4 upgrade test · QA-5 soak · QA-6 authz matrix · QA-7 coverage · QA-8 simulator lane |
 
@@ -1331,6 +1317,16 @@ Nothing open.
 #### PR-GUI-9 and PR-GUI-10 — console redesign and its review findings (done: `HISTORY.md` PR-GUI-9a, 9b, 9c and PR-GUI-10)
 
 Nothing open (GUI-9.10 and GUI-9.11 closed: `HISTORY.md` PR-GUI-9d).
+
+#### PR-GUI-11 — Console pages for routes the BFF already allows
+
+Recorded when the BFF's permission table was decided route by route (`HISTORY.md` GUI-RBAC-GAPS). The BFF rules are in `gui-bff/app/rbac.py`; what is
+missing is the page or the button.
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| GUI-11.1 | A **Deregister** button on the KPIs page's producer list (`gui/src/pages/kpis`): `DELETE /ran-analytics/producers/{id}?analytics_type`, admin, the same role as the register form beside it (call flow 08a). Today an admin deregisters only through the BFF's proxy (`/api/smo/...`) or the SDK | The button, shown to an admin only, with a Vitest case; the producer leaves the list | – |
+| GUI-11.2 | Console pages for the TS 28.105 provisioning resources (call flow 27): training, testing, update and loading requests, training processes, inference functions and loading policies. The console reads none of them today and the BFF has no rule for their writes (the console trains and validates through `/training-jobs` and `/validation-jobs`). Decide first which writes the console makes and with which role, then add those rules (each with its line in `gui-bff/tests/test_rbac_matrix.py`) and restate call flow 27 | The pages, the rules and call flow 27 agree | – |
 
 ### 5.14 Standards and compliance (`PR-STD`)
 
