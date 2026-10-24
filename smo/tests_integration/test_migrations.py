@@ -7,6 +7,7 @@ import importlib.util
 import os
 import subprocess
 import sys
+import time
 import uuid
 from pathlib import Path
 
@@ -272,3 +273,143 @@ def test_downgrading_0017_keeps_every_rapp_limit_row_including_one_without_an_ho
     assert _run(MIGRATE, url).returncode == 0                                                  # and it goes up again
     assert _run(MIGRATE, url, "--current").stdout.strip() == HEAD
     engine.dispose()
+
+
+# --- MIGRATE-LOCK-HOLD: a revision that cannot take its lock gives up its locks and is tried again -----------------------------------------
+
+class _LockTimeout(Exception):
+    """What psycopg raises when Postgres refuses a lock after `lock_timeout` (SQLSTATE 55P03)."""
+    sqlstate = "55P03"
+
+
+class _FakeConnection:
+    """Records what `_with_lock_retries` does to a connection: the statements it runs, its commits and its rollbacks."""
+
+    def __init__(self, dialect: str = "postgresql"):
+        self.dialect = type("Dialect", (), {"name": dialect})()
+        self.calls: list[str] = []
+
+    def exec_driver_sql(self, sql: str) -> None:
+        self.calls.append(sql)
+
+    def commit(self) -> None:
+        self.calls.append("commit")
+
+    def rollback(self) -> None:
+        self.calls.append("rollback")
+
+    def in_transaction(self) -> bool:
+        return True
+
+
+def _failing(times: int, error: Exception):
+    """A stand-in for one Alembic upgrade that raises `error` the first `times` calls and then succeeds; it counts its calls."""
+    calls = {"n": 0}
+
+    def run() -> None:
+        calls["n"] += 1
+        if calls["n"] <= times:
+            raise error
+    return run, calls
+
+
+def _dbapi(orig: Exception):
+    from sqlalchemy.exc import DBAPIError
+    return DBAPIError("ALTER TABLE ...", {}, orig)
+
+
+def test_a_lock_timeout_rolls_back_and_is_tried_again_after_a_growing_pause(monkeypatch):
+    """The lock timeout is set and committed before the run; each lock timeout rolls back and pauses 1, 2, 4 s; the fourth try succeeds."""
+    monkeypatch.delenv("SMO_MIGRATE_LOCK_TIMEOUT_MS", raising=False)
+    monkeypatch.delenv("SMO_MIGRATE_LOCK_ATTEMPTS", raising=False)
+    connection, pauses = _FakeConnection(), []
+    run, calls = _failing(3, _dbapi(_LockTimeout()))
+    _migrate_module()._with_lock_retries(connection, run, sleep=pauses.append)
+    assert calls["n"] == 4 and pauses == [1.0, 2.0, 4.0]
+    assert connection.calls == ["SET lock_timeout = 5000", "commit", "rollback", "rollback", "rollback"]
+
+
+def test_the_last_lock_timeout_is_raised_and_the_pause_stops_growing_at_10_s(monkeypatch):
+    """With every try refused, the error of the last of `SMO_MIGRATE_LOCK_ATTEMPTS` tries ends the run; the pause is capped at 10 s."""
+    monkeypatch.setenv("SMO_MIGRATE_LOCK_ATTEMPTS", "7")
+    monkeypatch.setenv("SMO_MIGRATE_LOCK_TIMEOUT_MS", "250")
+    connection, pauses = _FakeConnection(), []
+    run, calls = _failing(99, _dbapi(_LockTimeout()))
+    with pytest.raises(Exception, match="ALTER TABLE"):
+        _migrate_module()._with_lock_retries(connection, run, sleep=pauses.append)
+    assert calls["n"] == 7 and pauses == [1.0, 2.0, 4.0, 8.0, 10.0, 10.0]
+    assert connection.calls[0] == "SET lock_timeout = 250"
+
+
+def test_any_other_database_error_is_raised_at_once(monkeypatch):
+    """An error that is not a lock timeout (here a syntax error, SQLSTATE 42601) is not retried."""
+    monkeypatch.delenv("SMO_MIGRATE_LOCK_ATTEMPTS", raising=False)
+    other = type("Syntax", (Exception,), {"sqlstate": "42601"})()
+    run, calls = _failing(1, _dbapi(other))
+    with pytest.raises(Exception, match="ALTER TABLE"):
+        _migrate_module()._with_lock_retries(_FakeConnection(), run, sleep=lambda _: None)
+    assert calls["n"] == 1
+
+
+def test_another_database_runs_once_with_no_lock_timeout():
+    """SQLite (the unit tests' database) runs the upgrade once and is sent no `SET lock_timeout`."""
+    connection = _FakeConnection("sqlite")
+    run, calls = _failing(0, RuntimeError())
+    _migrate_module()._with_lock_retries(connection, run)
+    assert calls["n"] == 1 and connection.calls == []
+
+
+@pytest.mark.parametrize("value", ["soon", "-1"])
+def test_a_bad_lock_setting_is_refused_with_the_variable_named(monkeypatch, value):
+    """A lock timeout that is not a whole number of 0 or more stops the migration with a message naming the variable."""
+    monkeypatch.setenv("SMO_MIGRATE_LOCK_TIMEOUT_MS", value)
+    with pytest.raises(SystemExit, match="SMO_MIGRATE_LOCK_TIMEOUT_MS"):
+        _migrate_module()._with_lock_retries(_FakeConnection(), lambda: None)
+
+
+def _hold_lock(url: str, table: str):
+    """Opens a session that holds an ACCESS EXCLUSIVE lock on `table` (as V-11 of the upgrade lane does); returns its connection and engine."""
+    engine = create_engine(url)
+    connection = engine.connect()
+    connection.execute(text(f"LOCK TABLE {table} IN ACCESS EXCLUSIVE MODE"))
+    return connection, engine
+
+
+@needs_postgres
+def test_a_held_lock_makes_the_migration_give_up_and_change_nothing(databases):
+    """With a table the pending revision alters locked by another session, the migration fails after its tries, each short, and the database stays
+    at the previous revision. Needs Postgres.
+    """
+    url, previous = databases["fresh"], _scripts().get_revision(HEAD).down_revision
+    assert _run(MIGRATE, url, "--revision", previous).returncode == 0
+    holder, engine = _hold_lock(url, "ran_nf_oam.pm_subscription")
+    try:
+        env = {"SMO_MIGRATE_LOCK_TIMEOUT_MS": "200", "SMO_MIGRATE_LOCK_ATTEMPTS": "2"}
+        blocked = subprocess.run([sys.executable, str(MIGRATE)], env={**os.environ, "SMO_DATABASE_URL": url, **env},
+                                 capture_output=True, text=True, timeout=60)
+    finally:
+        holder.rollback()
+        holder.close()
+        engine.dispose()
+    assert blocked.returncode != 0 and "LockNotAvailable" in blocked.stderr
+    assert "attempt 1 of 2" in blocked.stdout
+    assert _run(MIGRATE, url, "--current").stdout.strip() == previous
+
+
+@needs_postgres
+def test_a_lock_released_while_the_migration_waits_lets_a_later_try_succeed(databases):
+    """The lock is let go while the migration pauses between tries: a later try takes it and the database reaches the head. Needs Postgres."""
+    url, previous = databases["fresh"], _scripts().get_revision(HEAD).down_revision
+    assert _run(MIGRATE, url, "--revision", previous).returncode == 0
+    holder, engine = _hold_lock(url, "ran_nf_oam.pm_subscription")
+    env = {**os.environ, "SMO_DATABASE_URL": url, "SMO_MIGRATE_LOCK_TIMEOUT_MS": "200", "SMO_MIGRATE_LOCK_ATTEMPTS": "5"}
+    process = subprocess.Popen([sys.executable, str(MIGRATE)], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        time.sleep(1.5)                                       # the first try has timed out; the migration is pausing
+    finally:
+        holder.rollback()
+        holder.close()
+        engine.dispose()
+    stdout, stderr = process.communicate(timeout=60)
+    assert process.returncode == 0, stderr
+    assert "attempt 1 of 5" in stdout and f"upgraded to {HEAD}" in stdout
