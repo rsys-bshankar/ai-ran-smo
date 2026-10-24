@@ -192,6 +192,12 @@ record adds the rule that governance events must carry a console user (`X-R1-Act
   rules. Sharing an instance between intents is Q4.
 - **Unload**: DEACTIVATED keeps the instance and its runtime (warm) and stops inference (the binding's `active: false`); deletion of the intent, or
   DEACTIVATED for longer than `IDM_WARM_HOURS` (default 24), runs `TERMINATE`. What happens to CM values the loop wrote is per package (Q5).
+- **How the orchestrator learns of a change of admin state or a deletion.** Today it cannot: Intent Service pushes an intent to its RMIH only when it is
+  created (`_create_intent_row`); `PATCH /intents/{id}/admin-state` writes and delivers a report to the intent's report recipients and tells the RMIH
+  nothing, and `DELETE /intents/{id}` tells no one (`HISTORY.md` SA-REPLAY). Report delivery is not a substitute: the recipients are whoever the
+  intent's owner named. This record therefore **needs** the open item `INTENT-LIFECYCLE-PUSH`: Intent Service also pushes `{intentId, event
+  ADMIN_STATE_CHANGED | INTENT_DELETED, adminState}` to the RMIH's `notificationDestination` through the outbox. As a backstop the orchestrator's
+  `idm-evaluate` pass reads each planned intent back and acts on a state it missed.
 - **Failure**: SO SMOS has no rollback (`PR-MGT-17`). Until MGT-17.3 lands, the orchestrator runs the compensation itself from the order's executed
   steps (terminate the instance it created, cancel jobs), and reports `NOT_FULFILLED` with the failed step. MGT-17 is a `Needs` of slice 4.
 
@@ -237,7 +243,9 @@ On create, modify and every re-plan, in addition to Intent Service's target conf
   instances' recorded writes (`MGT-16.5`).
 - **Resolution, in order**: the consumer's handling guideline, given as the generic context `conflictHandlingGuideline` [O]
   (`PREFER_HIGHER_PRIORITY`, `REJECT_NEW`, `ASK_OPERATOR`); then `intentPriority` with `intentPreemptionCapability` [N] (the new intent preempts only if
-  it may and is strictly higher; the preempted one is DEACTIVATED and reported, never deleted); then a proposed later guarantee window; then refusal.
+  it may and is strictly higher; the preempted one keeps its admin state, which is its owner's alone (call flow 09b: a module's `requesterId` must be
+  the intent's `rmioId`): the orchestrator suspends its loop through the binding, reports it NOT_FULFILLED with the reason, and resumes it when the
+  preempting intent ends; never deleted); then a proposed later guarantee window; then refusal.
   Ties go to the operator (`MGT-16.4`).
 - Reported as `IntentConflictReport` [N] on both intents, naming the intent, expectation and target that collide.
 
@@ -316,7 +324,7 @@ images; `docs/STANDARDS.md` (TR 28.912 rows, [O] tags); `docs/config_description
 | 1 | Package declarations | `intentCapabilities` validated by Onboarding; the four sample manifests declare theirs. No behaviour. | – |
 | 2 | Orchestrator skeleton | Module, RMIH `ai-ran-ih` registration from the capability union, classification, selection, feasibility (no loading), conflict detection, reports; Type-1 children to `sa-smos` with traceability; the Intent Service rApp refusal | 1 |
 | 3 | Autonomy | Derivation, ceilings, admin routes and GUI list; Q3 | 2 |
-| 4 | Loading | SO SMOS `INSTANTIATE`/`TERMINATE`; orders from plans; `SEC-15.1c`; compensation until MGT-17 | 2, MGT-17.1/17.2 |
+| 4 | Loading | SO SMOS `INSTANTIATE`/`TERMINATE`; orders from plans; `SEC-15.1c`; compensation until MGT-17 | 2, MGT-17.1/17.2, INTENT-LIFECYCLE-PUSH |
 | 5 | Binding | `intentBinding`, SDK helpers in three languages, the four samples | 4 |
 | 6 | Assurance | `idm-evaluate`, fulfilment reports with achieved values, decomposition traceability, retrain rule, Q7 | 5, MGT-11 KPI names |
 | 7 | Round trip | Compose script and CI job (not required at first), call flow 33 images | 6 |

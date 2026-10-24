@@ -242,8 +242,8 @@ sequenceDiagram
     alt conflictHandlingGuideline context on B [O]
         Note over IO: REJECT_NEW → B refused, PREFER_HIGHER_PRIORITY → as below, ASK_OPERATOR → both held for a person
     else B preempts (intentPreemptionCapability true and strictly higher intentPriority)
-        IO->>IS: PATCH /intents/A/admin-state {DEACTIVATED, requesterId ai-ran-ih} (33g, warm)
-        IO->>IS: POST /intent-reports for A and B {intentConflictReports naming A, B, the expectations and targets}
+        Note over IO: A's admin state is its owner's, not the handler's (09b), so A stays ACTIVATED<br/>the orchestrator suspends A's loop itself (binding inactive, 33g warm path)
+        IO->>IS: POST /intent-reports for A {fulfilment NOT_FULFILLED, preempted by B} and for A and B<br/>{intentConflictReports naming A, B, the expectations and targets}
     else a later guarantee window frees the cells
         IO->>IS: POST /intent-reports for B {feasibility INFEASIBLE now, recommended guaranteePeriods start}
     else equal priority
@@ -251,7 +251,8 @@ sequenceDiagram
     end
 ```
 
-A preempted intent is deactivated and reported, never deleted, so its owner can reactivate it when the other ends.
+A preempted intent keeps its owner's admin state and is never deleted: the orchestrator only suspends its loop and reports why, and resumes it when B ends
+or is deactivated. Only the owner (or the console acting as the owner) changes an intent's admin state (call flow 09b).
 
 ## 33g — Deactivate, delete, unload
 
@@ -265,18 +266,20 @@ sequenceDiagram
     participant OAM as RAN NF OAM
 
     OP->>IS: PATCH /intents/{id}/admin-state {DEACTIVATED}
-    IS->>IO: report SUSPENDED delivered (09b)
+    IS->>IO: POST notificationDestination {intentId, event ADMIN_STATE_CHANGED, adminState DEACTIVATED}<br/>(INTENT-LIFECYCLE-PUSH, needed: Intent Service pushes only at create today)
     IO->>RM: PUT /rapp-mgmt/instances/{id}/config {intentBinding.active false}
     Note over IO: the instance and its runtime stay warm, no passes run (33d not due)
     alt reactivated within IDM_WARM_HOURS
+        OP->>IS: PATCH /intents/{id}/admin-state {ACTIVATED}
+        IS->>IO: POST notificationDestination {intentId, event ADMIN_STATE_CHANGED, adminState ACTIVATED}
         IO->>RM: PUT config {intentBinding.active true}
-    else deleted, or deactivated longer than IDM_WARM_HOURS
+    else deleted (IS->>IO event INTENT_DELETED, same push), or deactivated longer than IDM_WARM_HOURS
         opt package declares onIntentRelease ROLLBACK (ADR 0007 Q5)
             IO->>OAM: POST /config-jobs/{id}/rollback for every job the instance wrote
         end
         IO->>SO: POST /orders {steps TERMINATE×RAPP_MGMT}
         SO->>RM: DELETE /rapp-mgmt/instances/{id}
-        Note over IO: plan closed, the last report of a deleted intent goes with it (09b)
+        Note over IO: plan closed, the last report of a deleted intent goes with it (09b)<br/>a missed push is caught by the idm-evaluate pass, which reads each planned intent back
     end
 ```
 
