@@ -2181,6 +2181,17 @@ def _approval_or_404(db: Session, approval_id: uuid.UUID, lock: bool = False) ->
     return row
 
 
+def _approval_in_reach(db: Session, request: Request, approval_id: uuid.UUID, lock: bool = False) -> RAppActionApproval:
+    """SEC-10.12: the approval request by id (`_approval_or_404`) when every element it touches (`managed_elements`) is inside the caller's scope, the console user's
+    claim included (`X-R1-Acting-User-Scope`, ADR 0005 section 11). A request with an element outside, or one that is not registered, is answered exactly as an unknown id:
+    404 `APPROVAL_NOT_FOUND`, the same detail (ADR 0005 section 5), so a person limited to one region learns nothing of another's requests. Asked before anything about the
+    request's state, and before anything is written. An unscoped caller is asked nothing."""
+    row = _approval_or_404(db, approval_id, lock=lock)
+    if scoping.denied_refs(db, scoping.request_scope(request), row.managed_elements or []):
+        raise framework_error(FrameworkError.APPROVAL_NOT_FOUND, detail=f"no approval request {approval_id}")
+    return row
+
+
 def _lapse_if_due(db: Session, row: RAppActionApproval, now: datetime.datetime | None = None) -> bool:
     """AI-11.3: a PENDING request past `expires_at` becomes EXPIRED or REJECTED (the policy it was parked under), decided by `system:timeout`, with a
     decision record and a notice to the approvers. Flushes, does not commit. True when it lapsed."""
@@ -2223,13 +2234,15 @@ def expire_due_approvals(db: Session = Depends(get_session)):
 
 
 @app.get("/rapp-approvals")
-def list_approvals(status: Literal["PENDING", "APPROVED", "REJECTED", "EXPIRED", "REFUSED"] | None = None,
+def list_approvals(request: Request, status: Literal["PENDING", "APPROVED", "REJECTED", "EXPIRED", "REFUSED"] | None = None,
                    invoker_id_: str | None = Query(default=None, alias="invoker_id"), since: datetime.datetime | None = None,
                    region: str | None = scoping.RegionFilter, site_cluster: str | None = scoping.SiteClusterFilter,
                    limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
     """AI-11.2: the approval queue, newest first. `status=PENDING` is the inbox. Requests whose time has passed are lapsed first. Names other rApps'
     actions: internal-only at R1 (an rApp reads its own request by id). PR-GUI-9.3: `region` and `site_cluster` keep the requests whose change
-    touches at least one element of that place (`managedElements`, recorded when the request was parked)."""
+    touches at least one element of that place (`managedElements`, recorded when the request was parked). SEC-10.12: a scoped caller (the console acting for a person
+    with a claim, `X-R1-Acting-User-Scope`) sees only the requests all of whose elements are inside its scope (an unregistered element counts as outside; a request with
+    no element is shown); `total` counts only those."""
     lapse_due_approvals(db)
     stmt = select(RAppActionApproval).order_by(RAppActionApproval.created_at.desc(), RAppActionApproval.approval_id)
     if status:
@@ -2241,6 +2254,9 @@ def list_approvals(status: Literal["PENDING", "APPROVED", "REJECTED", "EXPIRED",
     in_place = scoping.json_refs_in_place(db, RAppActionApproval.managed_elements, region, site_cluster)
     if in_place is not None:
         stmt = stmt.where(in_place)
+    inside = scoping.json_refs_inside_scope(db, RAppActionApproval.managed_elements, scoping.request_scope(request))
+    if inside is not None:                                       # SEC-10.12: only the requests all of whose elements the caller may touch
+        stmt = stmt.where(inside)
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [_approval_view(r) for r in page["items"]]}
 
@@ -2248,8 +2264,8 @@ def list_approvals(status: Literal["PENDING", "APPROVED", "REJECTED", "EXPIRED",
 @app.get("/rapp-approvals/{approval_id}")
 def read_approval(approval_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
     """One request with the changes it asks for. The rApp that made it polls this for the outcome (`jobId` once approved). PR-SEC-10.11: an rApp with a scope claim reads
-    only its own."""
-    row = _approval_or_404(db, approval_id)
+    only its own. SEC-10.12: a request with an element outside the caller's scope is a 404, as an unknown id (`_approval_in_reach`)."""
+    row = _approval_in_reach(db, request, approval_id)
     owner = _job_owner_filter(request)
     if owner is not False and row.invoker_id != owner:           # PR-SEC-10.11: another rApp's request is not the caller's to read: 404, as if it did not exist
         raise framework_error(FrameworkError.APPROVAL_NOT_FOUND, detail=f"no approval request {approval_id}")
@@ -2291,12 +2307,13 @@ def _decider(request: Request, claimed: str | None) -> str:
 
 
 def _decidable(db: Session, approval_id: uuid.UUID, request: Request, body: ApprovalDecisionRequest) -> RAppActionApproval:
-    """The request to decide, locked: 404, 403 for an rApp (it can never decide, whatever it is deciding), for an unverifiable or mismatching decider (`_decider`) or for the
-    requester itself, and 409 when it is no longer pending (decided, or lapsed just now). Sets `body.decidedBy` to the verified decider, which the route then records."""
+    """The request to decide, locked: 404 (unknown, or, SEC-10.12, with an element outside the decider's scope: `_approval_in_reach`, asked before the requester and the
+    state so nothing about the request is told), 403 for an rApp (it can never decide, whatever it is deciding), for an unverifiable or mismatching decider (`_decider`) or for
+    the requester itself, and 409 when it is no longer pending (decided, or lapsed just now). Sets `body.decidedBy` to the verified decider, which the route then records."""
     if role_of(request) == ROLE_RAPP:
         raise framework_error(FrameworkError.ROLE_NOT_PERMITTED, detail="an rApp cannot decide an approval request")
     body.decidedBy = _decider(request, body.decidedBy)       # from here the field is the verified person: the vote, the record and the self-decision test below read it
-    row = _approval_or_404(db, approval_id, lock=True)
+    row = _approval_in_reach(db, request, approval_id, lock=True)
     if body.decidedBy in (row.invoker_id, row.requested_by) or invoker_id(request) == row.invoker_id or (
             row.required_approvals > 1 and (_same_person(body.decidedBy, row.invoker_id) or _same_person(body.decidedBy, row.requested_by))):
         raise framework_error(FrameworkError.APPROVAL_SELF_DECISION, detail="the requester of an action cannot decide it")
@@ -2619,7 +2636,7 @@ def reject_configuration_job(job_id: uuid.UUID, body: ApprovalDecisionRequest, r
 def approve_action(approval_id: uuid.UUID, body: ApprovalDecisionRequest, request: Request, db: Session = Depends(get_session)):
     """AI-11.2: approve a waiting request. The safeguards are checked again now (a kill switch thrown while it waited refuses it: 403 `RAPP_KILLED`, the
     request is closed REFUSED), then MSAC, the schema check and the dispatch run as for any write, and the job is made from the request as the rApp
-    sent it. 200 with the request (now APPROVED, `jobId`) and the job's status. 404, 403 (an rApp, or the requester), 409 (not pending).
+    sent it. 200 with the request (now APPROVED, `jobId`) and the job's status. 404 (unknown, or, SEC-10.12, an element outside the decider's scope: the same answer), 403 (an rApp, or the requester), 409 (not pending).
 
     A request parked under a policy of `requiredApprovals: 2` needs two different people: the first approval is recorded and the request stays PENDING (200,
     `jobStatus` null, the approvals so far in `approvals`), a second approval by the same person is 409 `APPROVAL_ALREADY_GIVEN`, and the second person's approval

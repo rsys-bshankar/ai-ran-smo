@@ -385,6 +385,8 @@ ABOUT_ELEMENTS = {
     "/topology/links/counts",
     # MGT-8.2 / 8.3: an alarm's history and comments, read as the alarm itself is
     "/alarms/{alarm_id}/history", "/alarms/{alarm_id}/comments",
+    # SEC-10.12: the approval inbox, narrowed for the console's person with a claim (tests/test_console_scope.py)
+    "/rapp-approvals",
 }
 NOT_ABOUT_ELEMENTS = {            # route: why a claim has nothing to match on (a new read route must be put in one of the two sets, with its reason)
     "/health": "probe", "/live": "probe", "/ready": "probe", "/version": "build information",
@@ -394,7 +396,7 @@ NOT_ABOUT_ELEMENTS = {            # route: why a claim has nothing to match on (
     "/msac/identities": "access-control administration (internal)", "/msac/identities/{identity_id}": "access-control administration (internal)",
     "/msac/roles": "access-control administration (internal)", "/msac/roles/{role_id}": "access-control administration (internal)",
     "/rapp-approval-policy/{invoker_id_}": "a safeguard setting named by an invoker id", "/rapp-kill": "internal-only at R1", "/rapp-kill/{invoker_id_}": "a safeguard setting named by an invoker id",
-    "/rapp-limits/{invoker_id_}": "a safeguard setting named by an invoker id", "/rapp-approvals": "internal-only at R1", "/decision-records": "internal-only at R1",
+    "/rapp-limits/{invoker_id_}": "a safeguard setting named by an invoker id", "/decision-records": "internal-only at R1",
     "/safeguard-refusals": "internal-only at R1", "/safeguard-subscriptions": "internal-only at R1", "/approval-subscriptions": "internal-only at R1",
     "/lifecycle-subscriptions": "internal-only at R1", "/decision-records/export.csv": "internal-only at R1 (the list's rows, as CSV)",
 }
