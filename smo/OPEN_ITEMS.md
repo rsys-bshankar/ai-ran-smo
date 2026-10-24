@@ -169,17 +169,6 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
   pooler's healthcheck; a wait for the database in the migrate Job before it counts attempts.
 - **OPS-PG-BIND** — Compose publishes Postgres on every interface of the host (`5432:5432`), with the demo password, so on a host with a public address
   the database is reachable from outside (call flow 28a). Approach: bind to `127.0.0.1` by default, an override for anything wider.
-- **MIGRATE-LOCK-HOLD** — A migration that cannot finish stalls the release that is running: `scripts/migrate.py` applies every pending revision in
-  one transaction with no `lock_timeout`, so while one revision waits on a lock it keeps the locks the earlier revisions took on other modules' tables.
-  The kind upgrade lane's V-11 step showed it from `smo-v0.8.0`: with `ran_nf_oam.pm_subscription` held (altered by `0061`), RAN NF OAM
-  `GET /config-jobs` and rApp Management `GET /instances` answered after 30 s with a database error, and the RAN NF OAM and MDAF workers' tasks failed,
-  until the migrate Job's deadline killed it (`HISTORY.md` OPS-UPGRADE-LANE, call flow 30). Approach: a `lock_timeout` in `migrate.py`, so a revision
-  that cannot take its lock fails at once and the Job retries, and/or one transaction per revision (Alembic `transaction_per_migration`); the lane's
-  V-10 gate then holds.
-- **UPGRADE-GATE-EXEMPT** — The upgrade lane's load gate (`scripts/upgrade_load_verdict.py`) exempts `package list` from the per-route rule
-  (onboarding rolls with Recreate, so it has a gap) but counts its errors in the 1 % error rate, so the expected gap alone can fail the run: the
-  nightly run on `main` of 23 October, from `smo-v0.4.0`, failed with 40 errors in 3743 calls, 39 of them `package list` (0.03 % without it).
-  Approach: leave the routes of `--allow-errors-on` out of the rate (and report them on their own line).
 - **REPLICAS-PG-SLOTS** — The CI job "Two replicas of every module replay the runbook" (`compose-replicas`, `docker-compose.replicas.yml`) sometimes
   runs Postgres out of connection slots (`FATAL: remaining connection slots are reserved for roles with the SUPERUSER attribute`). Compose starts
   Postgres with its default `max_connections` (100) and no pooler, and every process may hold `SMO_DB_POOL_SIZE` + `SMO_DB_MAX_OVERFLOW` (5 + 10)

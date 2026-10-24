@@ -4220,6 +4220,54 @@ Recorded from `OPEN_ITEMS.md` (October 2026 reconciliation); the step stays open
   of an rApp limited to `eu` was listed for, and approved by, a console person limited to `us` (200, the write made). `docs/adr/0005-tenant-region-authorization.md`
   section 6 says the decision is narrowed by the person's claim. Kept as `SEC-10.12`.
 
+### UPGRADE-GATE-EXEMPT — the upgrade load gate judges the route that may have a gap apart from the others
+
+Closed from `OPEN_ITEMS.md` (October 2026). `scripts/upgrade_load_verdict.py` exempted the routes in `--allow-errors-on` (default `package list`:
+onboarding keeps its package store on a volume only one pod may hold and rolls with Recreate) from the per-route rule, but counted their errors in
+the 1 % whole-run error rate. The nightly upgrade lane on `main` of 23 October (run 39932939882, from `smo-v0.4.0`) failed with 40 errors in 3743
+calls, 39 of them on the package list (415 calls, 9.4 %); the other routes had 1 error in 3328 calls (0.03 %).
+
+- **What.** `verdict()` now judges three things apart:
+  - **`--min-calls`** (2000) still counts every call, exempt routes included.
+  - **The whole-run rate** (`--max-error-rate`, 1 %) is the errors of the routes that stay up over their own calls: the exempt routes are left out
+    of both. `--max-route-errors` still bounds each of them.
+  - **Each exempt route** is held to a new `--max-allowed-route-error-rate` (default 0.25) over its own calls, so a gap passes and an outage of that
+    route still fails. Each route row of `load_run.py`'s result already carries its own `requests`, so `load_run.py` is unchanged.
+- **The default, checked against the runs.** On 23 October the package list's rate was 9.4 % in the nightly run (39 of 415) and 13.8 % in the
+  `smo-v0.8.0` job of PR #531 (24 of 174; that job also failed on `MIGRATE-LOCK-HOLD`). 25 % passes both with room and fails a route that is down
+  for a quarter of the run or more; the earlier runs in `docs/PERFORMANCE.md` (10, 14 and 12 errors on that route in about 3000 calls) are far
+  below it.
+- **The report.** `exempt_lines()` gives one line per exempt route (errors, calls, rate, statuses), printed by `main()` whether the run passes or
+  not, so the gap is visible in the job log.
+- **Evidence.** `tests_integration/test_upgrade_load_verdict.py`: the 23 October shape passes with the lane's arguments (`--max-route-errors 2`); a
+  package list at 100 % fails (and passes with the ceiling raised to 1.0); one error on a route that stays up still fails; the rate leaves the
+  exempt route out of errors and calls; `--min-calls` counts every route; the report line is printed. No workflow argument changed: the lanes use
+  the defaults. Docs: call flow 30, `docs/VALIDATION.md` (V-10 and the HA lane), `docs/PERFORMANCE.md`.
+- **The HA lane's probe pinned.** On this PR's second run the node-drain lane (`smo-ha-kind.yml`) failed before any SMO pod moved: `kubectl run
+  probe` (no controller) had been scheduled on the worker the drain picked, and `kubectl drain` refuses such a pod without `--force`. The probe is now
+  started on the Postgres node with `--overrides` `nodeName`, as the load generator already was; the drain never picks that node.
+
+### MIGRATE-LOCK-HOLD — a migration that cannot take a lock lets go of the ones it holds
+
+Closed from `OPEN_ITEMS.md` (October 2026). `scripts/migrate.py` applies every pending revision in one transaction (`migrations/env.py`) with no
+`lock_timeout`, so while one revision waited on a lock another session held, it kept the locks the earlier revisions had taken on other modules' tables.
+The kind upgrade lane's V-11 step showed it from `smo-v0.8.0` (PR #531 and PR #537): with `ran_nf_oam.pm_subscription` held (altered by `0061`), RAN NF
+OAM `GET /config-jobs` and rApp Management `GET /instances` answered after 30 s with a database error until the migrate Job's 60 s deadline killed it,
+and the V-10 gate counted those errors (1962 calls, under its 2000).
+
+- **What.** On Postgres, `migrate.py` sets the session's `lock_timeout` to `SMO_MIGRATE_LOCK_TIMEOUT_MS` (default 5000; `0` leaves it unset) before the
+  upgrade or downgrade. A revision that cannot get a lock in time fails with SQLSTATE 55P03; the transaction rolls back, which releases every lock it
+  held and changes nothing, and `_with_lock_retries()` runs the upgrade again after a pause of 1 s doubling to 10 s, up to `SMO_MIGRATE_LOCK_ATTEMPTS`
+  (default 10) tries; the last error ends the process. Any other error is raised at once. SQLite runs once, as before.
+- **Why not one transaction per revision.** It would release the locks sooner, but a Job that dies half way would leave the database at a revision
+  between the two releases; V-11 checks that a failed upgrade leaves the revision and the schema as they were, and the one transaction keeps that.
+- **What V-11 still sees.** With the lock held for the whole step, every try fails after 5 s, so the Job runs into its 60 s deadline as before: `helm
+  upgrade` fails and the revision, the schema and the Deployments stay. The running release's reads now wait at most about 5 s at a time.
+- **Evidence.** `tests_integration/test_migrations.py`: the retries, their pauses and the rollback on a fake connection; the last lock timeout raised;
+  another error not retried; SQLite not touched; a bad setting refused with the variable named; and on Postgres a held lock on the table `0061` alters
+  makes the migration fail after its tries and stay at `0060`, and a lock released between tries lets a later try reach the head. Docs: call flow
+  30, `deploy/helm/smo/README.md`, `docs/CONFIGURATION.md` (generated).
+
 ### PR-SEC-10.12 (closed) — the rApp-action approval inbox narrowed by the person's claim
 
 Closed from `OPEN_ITEMS.md` (`SEC-10.12`). No migration, no setting; the rule of `smo_shared/scope.py` is unchanged. Decision: `docs/adr/0005-tenant-region-authorization.md`
