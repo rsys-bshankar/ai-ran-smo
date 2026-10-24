@@ -103,7 +103,10 @@ jobs:
       - name: Drain a node, and kill pods, while the services are probed
         working-directory: smo
         run: |
-          kubectl -n smo run probe --image=local/smo-sme:ci --image-pull-policy=Never --restart=Never -- python3 -c "$(cat scripts/k8s_rolling_probe.py)"
+          # pinned like the load generator: a pod without a controller cannot be drained, so it must not land on the node the drain picks
+          pg_node=$(kubectl -n smo get pod postgres-0 -o jsonpath='{.spec.nodeName}')
+          kubectl -n smo run probe --image=local/smo-sme:ci --image-pull-policy=Never --restart=Never \
+            --overrides="{\"apiVersion\":\"v1\",\"spec\":{\"nodeName\":\"$pg_node\"}}" -- python3 -c "$(cat scripts/k8s_rolling_probe.py)"
           kubectl -n smo wait --for=condition=Ready pod/probe --timeout=120s
           # a worker that holds neither Postgres nor a single pod with a volume
           keep=$(for p in postgres-0 $(kubectl -n smo get pods -o name | grep -E '/(onboarding|gui-bff)-' | cut -d/ -f2); do kubectl -n smo get pod "$p" -o jsonpath='{.spec.nodeName}{"\n"}'; done | sort -u)

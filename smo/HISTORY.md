@@ -4205,6 +4205,9 @@ calls, 39 of them on the package list (415 calls, 9.4 %); the other routes had 1
   package list at 100 % fails (and passes with the ceiling raised to 1.0); one error on a route that stays up still fails; the rate leaves the
   exempt route out of errors and calls; `--min-calls` counts every route; the report line is printed. No workflow argument changed: the lanes use
   the defaults. Docs: call flow 30, `docs/VALIDATION.md` (V-10 and the HA lane), `docs/PERFORMANCE.md`.
+- **The HA lane's probe pinned.** On this PR's second run the node-drain lane (`smo-ha-kind.yml`) failed before any SMO pod moved: `kubectl run
+  probe` (no controller) had been scheduled on the worker the drain picked, and `kubectl drain` refuses such a pod without `--force`. The probe is now
+  started on the Postgres node with `--overrides` `nodeName`, as the load generator already was; the drain never picks that node.
 
 ### MIGRATE-LOCK-HOLD — a migration that cannot take a lock lets go of the ones it holds
 
