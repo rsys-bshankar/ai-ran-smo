@@ -1,5 +1,6 @@
 """Tests of MDAF's producer-push surface: publishing and querying reports, subscriptions, subscriber notification through the
-outbox, DME source validation and threshold-gated notification. The TS 28.104 resources are in `test_mda.py` and the retention
+outbox, DME source validation, threshold-gated notification and the `Idempotency-Key` replay of both create routes
+(SDK-RETRY-IDEMPOTENCY). The TS 28.104 resources are in `test_mda.py` and the retention
 task in `test_tasks.py`.
 
 Run: `cd smo/mdaf && PYTHONPATH=.:../shared python -m pytest tests -q`. No Postgres: the tables, including the outbox table,
@@ -18,6 +19,7 @@ from sqlalchemy.orm import sessionmaker
 
 from smo_shared import outbox
 from smo_shared.db import Base, get_session
+from smo_shared.idempotency import IdempotencyKey
 from smo_shared.outbox import NotificationOutbox
 from smo_shared.testing import make_test_engine
 
@@ -27,7 +29,7 @@ from app.models import MDAFReport, MDASubscription
 
 @pytest.fixture
 def db_session_factory():
-    """Creates every MDAF table and the outbox table on an in-memory SQLite engine and returns a session factory."""
+    """Creates every MDAF table, the outbox table and the idempotency-key table on an in-memory SQLite engine and returns a session factory."""
     engine = make_test_engine()
     from app import models as mdaf_models
     Base.metadata.create_all(engine, tables=[
@@ -35,6 +37,7 @@ def db_session_factory():
         if isinstance(cls, type) and issubclass(cls, Base) and cls is not Base and cls.__module__ == mdaf_models.__name__
     ])
     NotificationOutbox.__table__.create(engine)
+    IdempotencyKey.__table__.create(engine)
     return sessionmaker(bind=engine)
 
 
@@ -425,3 +428,43 @@ def test_publish_report_is_503_when_dme_does_not_answer(client, monkeypatch):
     resp = client.post("/reports", params={"analytics_type": "resource-utilization"},
                        json={"output": {"utilization": 0.7}, "input_sources": [str(uuid.uuid4())]})
     assert resp.status_code == 503 and resp.json()["detail"]["title"] == "ENDPOINT_UNREACHABLE"
+
+
+# ---------------------------------------------------------------- SDK-RETRY-IDEMPOTENCY: a repeat with the same Idempotency-Key is replayed
+
+def assert_replayed_once(client, db_session_factory, model, path, other, key="k-1", **request):
+    """Posts `request` (params / json) to `path` twice under one Idempotency-Key, then `other` (a different request) under the same key.
+
+    Asserts one `model` row more than before, the second answer replayed (same status and body, `Idempotent-Replayed: true`), and the reused
+    key refused 422 IDEMPOTENCY_KEY_REUSED without a further row. `test_mda.py` uses it too.
+    """
+    def count():
+        with db_session_factory() as session:
+            return session.query(model).count()
+    before = count()
+    first = client.post(path, headers={"Idempotency-Key": key}, **request)
+    again = client.post(path, headers={"Idempotency-Key": key}, **request)
+    assert first.status_code == again.status_code == 201, first.text
+    assert again.json() == first.json() and again.headers["Idempotent-Replayed"] == "true"
+    assert count() == before + 1
+    reused = client.post(path, headers={"Idempotency-Key": key}, **other)
+    assert reused.status_code == 422 and reused.json()["detail"]["title"] == "IDEMPOTENCY_KEY_REUSED"
+    assert count() == before + 1
+
+
+def test_a_repeated_report_with_the_same_key_is_stored_and_announced_once(client, db_session_factory):
+    """An SDK retry of POST /reports after a lost answer gets the first reportId back; no second report and no second notification."""
+    client.post("/subscriptions", params={"analytics_type": "cell-kpi", "requested_by": "c"}, json={"notificationDestination": "http://c/n"})
+    source = str(uuid.uuid4())
+    assert_replayed_once(client, db_session_factory, MDAFReport, "/reports",
+                         {"params": {"analytics_type": "cell-kpi"}, "json": {"output": {"rrc": 1}, "input_sources": [source]}},
+                         params={"analytics_type": "cell-kpi"}, json={"output": {"rrc": 97}, "input_sources": [source]})
+    with db_session_factory() as session:
+        assert session.query(NotificationOutbox).count() == 1
+
+
+def test_a_repeated_subscription_with_the_same_key_subscribes_once(client, db_session_factory):
+    """An SDK retry of POST /subscriptions gets the first subscriptionId back instead of a second subscription that would double every notification."""
+    params = {"analytics_type": "cell-kpi", "requested_by": "consumer-1"}
+    assert_replayed_once(client, db_session_factory, MDASubscription, "/subscriptions",
+                         {"params": {**params, "requested_by": "consumer-2"}, "json": {}}, params=params, json={})

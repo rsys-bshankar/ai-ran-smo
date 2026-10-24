@@ -1,13 +1,16 @@
 """Tests of MDAF's TS 28.104 resources (`app/mda.py`): MDA functions, requests with their filters and thresholds, spec-shaped
-reports and their delivery per reporting method, drift forwarding and paging.
+reports and their delivery per reporting method, drift forwarding, paging, and the `Idempotency-Key` replay of the request and report
+creates (SDK-RETRY-IDEMPOTENCY).
 
 Run: `cd smo/mdaf && PYTHONPATH=.:../shared python -m pytest tests/test_mda.py -q`. Uses the `client` and `db_session_factory`
-fixtures of `test_main.py` (SQLite, no Postgres) and its autouse DME stub. Webhooks are captured with `_capture_webhooks`.
+fixtures of `test_main.py` (SQLite, no Postgres), its autouse DME stub and its `assert_replayed_once` helper. Webhooks are captured with `_capture_webhooks`.
 """
 
 import datetime
 import uuid
 
+from app.models import MDAFReport, MDARequest
+from test_main import assert_replayed_once
 from test_main import client, db_session_factory  # noqa: F401  (pytest fixtures)
 
 ES = "MDA_ASSISTED_ENERGY_SAVING_ENERGY_SAVING_ANALYSIS"
@@ -257,3 +260,19 @@ def test_a_filter_time_out_without_a_zone_is_read_as_utc(client, monkeypatch):
     assert client.post("/mda-reports", json={"mDAOutputs": [{"mDAType": ES, "mDAOutputList": [
         {"mDAOutputIEName": "decision", "mDAOutputIEValue": "SLEEP"}]}]}).status_code == 201
     assert [url for url, _ in calls] == ["http://future/mda"]
+
+
+def test_a_repeated_mda_request_with_the_same_key_creates_one_request(client, db_session_factory):
+    """An SDK retry of POST /mda-requests after a lost answer gets the first request back, not a second request that is delivered every report again."""
+    body = {"reportingMethod": "STREAMING", "requestedMDAOutputs": [{"mDAType": PM}]}
+    assert_replayed_once(client, db_session_factory, MDARequest, "/mda-requests",
+                         {"json": {**body, "requestedMDAOutputs": [{"mDAType": ES}]}}, json=body)
+
+
+def test_a_repeated_mda_report_with_the_same_key_is_stored_and_delivered_once(client, db_session_factory, monkeypatch):
+    """An SDK retry of POST /mda-reports gets the first report back; the report is stored once and its NOTIFICATION request is sent it once."""
+    calls = _capture_webhooks(monkeypatch)
+    client.post("/mda-requests", json={"reportingMethod": "NOTIFICATION", "reportingTarget": "http://consumer/mda",
+                                       "requestedMDAOutputs": [{"mDAType": PM}]})
+    assert_replayed_once(client, db_session_factory, MDAFReport, "/mda-reports", {"json": _pm_report(9.9)}, json=_pm_report(3.2))
+    assert [url for url, _ in calls] == ["http://consumer/mda"]

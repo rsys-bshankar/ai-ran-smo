@@ -32,6 +32,7 @@ from smo_shared.metrics import install_metrics
 from smo_shared.health import database_check, install_health, sme_token_check
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
+from smo_shared.idempotency import idempotent
 from smo_shared.invoker import acting_user, invoker_id
 from smo_shared.r1_client import R1Client
 from smo_shared.roles import ROLE_RAPP, role_of
@@ -104,6 +105,7 @@ def check_publisher(request: Request, analytics_type: str) -> str | None:
 
 
 @app.post("/reports", status_code=201)
+@idempotent("mdaf", status_code=201)
 def publish_report(analytics_type: str, output: dict, input_sources: list[uuid.UUID], request: Request, scope: dict | None = None,
                    db: Session = Depends(get_session)):
     # Stores a report from a producer (201 `{reportId}`; 403 PRODUCER_NOT_REGISTERED for an rApp that is not a registered producer of the type; 422
@@ -199,6 +201,7 @@ class SubscribeAnalyticsRequest(BaseModel):
 
 
 @app.post("/subscriptions", status_code=201)
+@idempotent("mdaf", status_code=201)
 def subscribe_analytics(analytics_type: str, requested_by: str, request: Request,
                          body: SubscribeAnalyticsRequest = SubscribeAnalyticsRequest(), db: Session = Depends(get_session)):
     """SubscribeAnalytics. A subscription belongs to who made it: for an rApp, `requested_by` is its own invoker id whatever it sent (call flow 08b)."""

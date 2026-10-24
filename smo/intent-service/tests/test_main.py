@@ -1,8 +1,9 @@
 """Tests of the Intent Service routes: intents and their lifecycle, RMIH registration and capability / scope matching, strict TS 28.312 shapes and family
 constraints, feasibility and conflict reports, report delivery per report control, all report kinds, negotiation feedback, utility formulas, the rApp
-autonomy dispatch modes (AUTONOMOUS, ASSIST, SHADOW) with region scope, `/health`, and the transactional outbox behind every notification (PR-MSG-1.9).
+autonomy dispatch modes (AUTONOMOUS, ASSIST, SHADOW) with region scope, `/health`, the transactional outbox behind every notification (PR-MSG-1.9), and
+the `Idempotency-Key` replay of the three create routes (SDK-RETRY-IDEMPOTENCY).
 
-Fixtures: `client` builds a SQLite database with the module's tables plus the outbox table and a `TestClient` whose `get_session` uses it (the engine is
+Fixtures: `client` builds a SQLite database with the module's tables plus the outbox and idempotency-key tables and a `TestClient` whose `get_session` uses it (the engine is
 kept on `app.state.test_engine`); `rapp_mgmt` replaces `R1Client.get` with an in-memory `FakeRappMgmt`; `webhooks` records callbacks by patching
 `httpx.post`. The builders `_intent`, `_expectation`, `_capability`, `_register_rmih`, `_dispatch` make spec-valid bodies; every intent test registers a
 handling function first, because an intent must name one (`rmihId`). `test_ts28312_datatypes.py` imports several of them.
@@ -19,6 +20,7 @@ from sqlalchemy.orm import sessionmaker
 
 from smo_shared import outbox
 from smo_shared.db import Base, get_session
+from smo_shared.idempotency import IdempotencyKey
 from smo_shared.outbox import NotificationOutbox
 from smo_shared.testing import make_test_engine
 
@@ -28,7 +30,8 @@ from app.main import app
 
 @pytest.fixture
 def client():
-    """A `TestClient` of the Intent Service app on a fresh SQLite database (the module's tables and the outbox table); `get_session` is overridden to use it.
+    """A `TestClient` of the Intent Service app on a fresh SQLite database (the module's tables, the outbox table and the idempotency-key table);
+    `get_session` is overridden to use it.
 
     The engine is stored on `app.state.test_engine` so a test can read the outbox or drain it. The override is removed after the test.
     """
@@ -38,6 +41,7 @@ def client():
         if isinstance(cls, type) and issubclass(cls, Base) and cls is not Base and cls.__module__ == intent_models.__name__
     ])
     NotificationOutbox.__table__.create(engine)
+    IdempotencyKey.__table__.create(engine)
     TestSession = sessionmaker(bind=engine)
     app.state.test_engine = engine
 
@@ -851,3 +855,50 @@ def test_nothing_is_announced_and_no_intent_is_stored_when_the_create_does_not_c
     assert resp.status_code == 500
     assert calls == [] and _outbox_rows() == []
     assert client.get("/intents").json()["total"] == 0
+
+
+# ---------------------------------------------------------------- SDK-RETRY-IDEMPOTENCY: a repeat with the same Idempotency-Key is replayed
+
+def _count(model) -> int:
+    """Returns the number of rows of `model` in the test database, read through a new session on the test engine."""
+    with sessionmaker(bind=app.state.test_engine)() as db:
+        return db.query(model).count()
+
+
+def _assert_replayed_once(client, path, body, other_body, model, before, key="k-1"):
+    """Posts `body` twice under one Idempotency-Key and `other_body` once under the same key; asserts one new `model` row (counted from
+    `before`), the second answer replayed with the same status and body, and the reused key refused 422 IDEMPOTENCY_KEY_REUSED."""
+    first = client.post(path, json=body, headers={"Idempotency-Key": key})
+    again = client.post(path, json=body, headers={"Idempotency-Key": key})
+    assert first.status_code == again.status_code == 201, first.text
+    assert again.json() == first.json() and again.headers["Idempotent-Replayed"] == "true"
+    assert "Idempotent-Replayed" not in first.headers
+    assert _count(model) == before + 1
+    reused = client.post(path, json=other_body, headers={"Idempotency-Key": key})
+    assert reused.status_code == 422 and reused.json()["detail"]["title"] == "IDEMPOTENCY_KEY_REUSED"
+    assert _count(model) == before + 1
+
+
+def test_a_repeated_create_intent_with_the_same_key_creates_one_intent(client):
+    """An SDK retry of CreateIntent after a lost answer gets the first answer back and adds no second intent (nor a second RMIH push)."""
+    _register_rmih(client)
+    _assert_replayed_once(client, "/intents", _intent(), _intent(userLabel="another intent"), intent_models.Intent, before=0)
+
+
+def test_a_repeated_intent_report_with_the_same_key_stores_one_report(client):
+    """An SDK retry of PublishIntentReport gets the first answer back and stores and delivers the report once."""
+    _register_rmih(client)
+    intent_id = client.post("/intents", json=_intent()).json()["intentId"]
+    before = _count(intent_models.IntentReport)
+    body = {"intentReference": intent_id, "intentFulfilmentReport": _fulfilment()}
+    other = {"intentReference": intent_id, "intentFulfilmentReport": _fulfilment("NOT_FULFILLED")}
+    _assert_replayed_once(client, "/intent-reports", body, other, intent_models.IntentReport, before=before)
+
+
+def test_a_repeated_autonomy_dispatch_with_the_same_key_dispatches_once(client, rapp_mgmt):
+    """An SDK retry of RequestAutonomyDispatch gets the first answer back: one dispatch and, in AUTONOMOUS mode, one intent, not two."""
+    _register_rmih(client)
+    instance_id = rapp_mgmt.add_instance(autonomy_mode="AUTONOMOUS", region_scope={})
+    _assert_replayed_once(client, "/autonomy-dispatches", _dispatch(instance_id), _dispatch(instance_id, priority=7),
+                          intent_models.AutonomyDispatch, before=0)
+    assert _count(intent_models.Intent) == 1

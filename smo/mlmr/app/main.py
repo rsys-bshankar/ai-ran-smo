@@ -208,6 +208,8 @@ def register_model(request: Request, body: RegisterModelRequest, db: Session = D
     domain/customDomain/vendors (Wave 3, HISTORY.md §7's MLMR section):
     TS29482_MLR_MLModelManagement.yaml's own MLModel schema.
     """
+    # Not @idempotent (SDK-RETRY-IDEMPOTENCY, class c): (modelType, version) is unique, so a repeat is refused 409 MODEL_ALREADY_REGISTERED and creates no
+    # second model.
     # Registers a model. 201 `{modelId}`; 422 for an unknown domain, 404 when a referenced repository or source model does not
     # exist, 409 MODEL_ALREADY_REGISTERED when (modelType, version) already exists.
     # Ordering: validation and reference checks run before the row is added; the duplicate is detected from the database's unique

@@ -86,6 +86,15 @@ def test_the_role_of_every_module_that_writes_the_audit_trail_may_write_its_tabl
         assert {"audit_log", "audit_head"} <= set(ROLES[module]["shared"]), module
 
 
+def test_the_role_of_every_module_with_an_idempotent_route_may_write_the_idempotency_key_table():
+    """A module with an `@idempotent` route (`smo_shared.idempotency`) reserves and stores keys in `idempotency_key` before and after the route runs; its role must
+    list the table, or every request that carries an `Idempotency-Key` (every SDK POST does) fails with "permission denied" (SDK-RETRY-IDEMPOTENCY)."""
+    users = {m for m in ROLES if any("@idempotent(" in f.read_text() for f in (SMO_ROOT / m / "app").glob("*.py"))}
+    assert {"aimgf", "intent-service", "mdaf", "nfo", "ran-nf-oam", "rapp-mgmt"} <= users
+    for module in users:
+        assert "idempotency_key" in ROLES[module]["shared"], module
+
+
 def test_a_role_name_is_derived_from_the_module_and_statements_quote_what_they_are_given():
     """Role names derive from the module name, the password is a quoted literal that cannot break out of the statement, the search path and revokes
     are the module's own, and a module that reads another's table gets SELECT only.

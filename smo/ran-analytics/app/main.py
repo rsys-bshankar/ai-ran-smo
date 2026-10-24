@@ -70,6 +70,7 @@ def register_analytics_producer(producer_id: str, analytics_type: str, dme_input
     this build already honestly maps; anything else stays `None`, not
     guessed.
     """
+    # Not @idempotent (SDK-RETRY-IDEMPOTENCY, class c): an upsert on (producer_id, analytics_type), so a repeat updates the same row.
     # Registers or re-registers a producer for an analytics type. 201 `{status: "registered", smeServiceId}`; 403 PRODUCER_IDENTITY_MISMATCH for an rApp naming
     # another producer; 422 SCHEMA_VALIDATION_FAILED for an `mda_type` outside the TS 28.104 list; 502 UPSTREAM_FAILED when SME refuses or does not answer (nothing
     # stored). The query carries `producer_id`, `analytics_type` and `mda_type`; `dme_input_types` and `output_schema` are body fields. The DME input type ids are

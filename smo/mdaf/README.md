@@ -66,6 +66,7 @@ to check that an rApp publishing a report is a registered producer of its type (
 | Analytics subscriptions with `ThresholdInfo` edge-triggered `UP` / `DOWN` / `UP_AND_DOWN` crossings and hysteresis | Data storage → DME |
 | TS 28.104 `MDAFunction`, `MDARequest`, `MDAReport`, request matching and delivery (`app/mda.py`) | Use-case analytics production (traffic / energy / coverage) → RAN Analytics (`../ran-analytics/README.md`) |
 | Drift → retrain signal: a `DRIFT` report naming `mLModelRef` is forwarded to that model's AIMgF MLMF subscriptions | Retrain decision (guard-KPI floor) → AIMgF |
+| Its rows of the shared `idempotency_key` table (module `mdaf`) | The table and the decorator → `smo_shared.idempotency` (PR-ST-3) |
 
 The RAN Analytics / MDAF line is a product-organization choice, not a TS 28.104 requirement (TS 28.104's
 `MDAType` already spans these use cases). See [ARCHITECTURE.md](../docs/ARCHITECTURE.md) for the platform-wide
@@ -190,6 +191,12 @@ TS 28.104 resources (`{"id", "attributes"}`; bodies reject unknown fields)
 | GET | `/mda-reports/{report_id}/file` | Report as a downloadable JSON file (`FILE` method) | 404 |
 | GET | `/health` | Liveness probe | |
 
+**Repeats (SDK-RETRY-IDEMPOTENCY).** `POST /reports`, `/subscriptions`, `/mda-requests` and `/mda-reports` are `@idempotent("mdaf", status_code=201)`
+(`smo_shared.idempotency`, PR-ST-3): a repeat with the same `Idempotency-Key` (every SDK POST carries one, and repeats it after a transport error,
+502 or 504) is answered with the first answer and `Idempotent-Replayed: true`. It stores no second report, subscription or request, queues no second
+notification or delivery, and forwards a drift report once. The same key with another request is 422 `IDEMPOTENCY_KEY_REUSED`; a repeat while the
+first still runs is 409 `IDEMPOTENCY_KEY_IN_PROGRESS`. `POST /mda-functions` is not called by the SDKs and is not decorated.
+
 `reportKind` is inferred when omitted: `PREDICTION` if any output's `mDAType` is in `PREDICTION_MDA_TYPES`
 (`PREDICTIONS_PM_DATA`, `MDA_ASSISTED_FAULT_MANAGEMENT_FAILURE_PREDICTION`,
 `SLS_ANALYSIS_TRAFFIC_CONGESTION_PREDICTION_ANALYSIS`), else `ANALYTICS`. `DRIFT` is never inferred; it must be
@@ -245,6 +252,7 @@ The worker (`python -m smo_shared.worker`, `app/tasks.py`) has one task, `purge-
 | `SCHEMA_VALIDATION_FAILED` | 422 | Unknown subscription `thresholdDirection`; invalid MDARequest / empty `mDAOutputs` (see 2.4) |
 | `MDA_CAPABILITY_NOT_SUPPORTED` | 422 | Request names an `mDAType` its `mDAFunctionRef` does not support |
 | `NRM_OBJECT_NOT_FOUND` | 404 | Unknown MDAFunction / MDARequest / MDAReport id, including a bad `mDARequestRef` / `mDAFunctionRef` |
+| `IDEMPOTENCY_KEY_REUSED` / `IDEMPOTENCY_KEY_IN_PROGRESS` / `IDEMPOTENCY_KEY_INVALID` | 422 / 409 / 422 | `Idempotency-Key` on a create route: used for another request, the first request still running, or not 1 to 255 printable characters (`smo_shared.idempotency`) |
 | FastAPI validation (`HTTPValidationError`, 422) | 422 | Pydantic rejection of spec-typed bodies: unknown field, `mDAType` outside the enum, malformed typed output |
 
 ### 2.8 Limits and open items
@@ -272,9 +280,9 @@ Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
 
 | File | Covers |
 |---|---|
-| `tests/test_main.py` | Publish/query, scope persistence, subscribe/unsubscribe/list and filters, notification delivery (with, without, other type, unreachable destination), DME input validation, `ThresholdInfo` (validation, fires on first crossing, no refire, refire after reset, DOWN, missing IE, no-threshold subscription), a report read back by its id and 404, `/health` |
+| `tests/test_main.py` | Publish/query, scope persistence, subscribe/unsubscribe/list and filters, notification delivery (with, without, other type, unreachable destination), DME input validation, `ThresholdInfo` (validation, fires on first crossing, no refire, refire after reset, DOWN, missing IE, no-threshold subscription), a report read back by its id and 404, `/health`, the `Idempotency-Key` replay of `POST /reports` and `/subscriptions` (one row and one notification on a keyed repeat, `Idempotent-Replayed`, 422 `IDEMPOTENCY_KEY_REUSED`) |
 | `tests/test_publisher_and_ownership.py` | Call flows 08b and 08c: an rApp publishes only what it is a registered producer of (legacy and typed reports), `publishedBy` recorded for an rApp, the console and a module, 502 when RAN Analytics cannot say, an rApp's subscription is its own, an rApp removes only its own subscription; `MDA-REQ-OWNER`: an rApp's MDA request is its own whatever the body says, the console, a module and a call with no role store the body's `requestedBy`, an rApp withdraws only its own (403 `MDA_REQUEST_ACCESS_DENIED`), the console and a module withdraw any, also a request stored before the rule |
-| `tests/test_mda.py` | MDAFunction capability gating, request validation, typed output validation per `mDAType`, NOTIFICATION matching, edge-triggered IE thresholds, `filterValue` and `timeOut`, FILE method and download, report answering one request and legacy-report matching, DRIFT forwarding to MLMF (on MDAF's own account), 404s, `GET /mda-reports?total=false` (no `total`, `hasMore` set correctly) |
+| `tests/test_mda.py` | MDAFunction capability gating, request validation, typed output validation per `mDAType`, NOTIFICATION matching, edge-triggered IE thresholds, `filterValue` and `timeOut`, FILE method and download, report answering one request and legacy-report matching, DRIFT forwarding to MLMF (on MDAF's own account), 404s, `GET /mda-reports?total=false` (no `total`, `hasMore` set correctly), the `Idempotency-Key` replay of `POST /mda-requests` and `/mda-reports` (one row and one delivery on a keyed repeat) |
 
 ### 3.3 What is not covered here
 

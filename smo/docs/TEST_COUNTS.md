@@ -14,8 +14,8 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `focom` | 3 | 85 | 85 |
 | `gui` | 51 | 519 | — |
 | `gui-bff` | 17 | 439 | 1682 |
-| `intent-service` | 5 | 84 | 104 |
-| `mdaf` | 4 | 58 | 62 |
+| `intent-service` | 5 | 87 | 107 |
+| `mdaf` | 4 | 62 | 66 |
 | `mllf` | 1 | 10 | 10 |
 | `mlmr` | 2 | 80 | 86 |
 | `mock-o1-adaptor` | 6 | 84 | 108 |
@@ -36,8 +36,8 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `shared` | 50 | 663 | 1118 |
 | `sme` | 5 | 121 | 139 |
 | `so-smos` | 3 | 27 | 40 |
-| `tests_integration` | 94 | 731 | 909 |
-| **total** | **417** | **5351** | **7746** (Python) |
+| `tests_integration` | 95 | 737 | 915 |
+| **total** | **418** | **5364** | **7759** (Python) |
 
 ## Per test file
 
@@ -187,7 +187,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests/test_business_metrics.py` | 1 | 1 |
 | `tests/test_fulfilment_and_conflict.py` | 7 | 12 |
 | `tests/test_intent_identity.py` | 13 | 15 |
-| `tests/test_main.py` | 52 | 59 |
+| `tests/test_main.py` | 55 | 62 |
 | `tests/test_ts28312_datatypes.py` | 11 | 17 |
 
 </details>
@@ -196,8 +196,8 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 
 | file | test functions | collected tests |
 |---|---:|---:|
-| `tests/test_main.py` | 30 | 30 |
-| `tests/test_mda.py` | 14 | 14 |
+| `tests/test_main.py` | 32 | 32 |
+| `tests/test_mda.py` | 16 | 16 |
 | `tests/test_publisher_and_ownership.py` | 10 | 14 |
 | `tests/test_tasks.py` | 4 | 4 |
 
@@ -555,7 +555,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 
 </details>
 
-<details><summary><code>tests_integration</code>: 94 files</summary>
+<details><summary><code>tests_integration</code>: 95 files</summary>
 
 | file | test functions | collected tests |
 |---|---:|---:|
@@ -583,7 +583,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests_integration/test_dast_gateway_spec.py` | 2 | 2 |
 | `tests_integration/test_database_credentials.py` | 5 | 5 |
 | `tests_integration/test_db_backup_restore.py` | 6 | 6 |
-| `tests_integration/test_db_roles.py` | 10 | 10 |
+| `tests_integration/test_db_roles.py` | 11 | 11 |
 | `tests_integration/test_demo_runbook.py` | 5 | 5 |
 | `tests_integration/test_dme_data_ownership.py` | 1 | 1 |
 | `tests_integration/test_dme_producer_lifecycle.py` | 2 | 2 |
@@ -637,6 +637,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests_integration/test_runbook_over_ssh.py` | 1 | 1 |
 | `tests_integration/test_scan_summary.py` | 5 | 5 |
 | `tests_integration/test_sdk_go_example.py` | 8 | 8 |
+| `tests_integration/test_sdk_post_routes_idempotent.py` | 5 | 5 |
 | `tests_integration/test_sizing_report.py` | 6 | 12 |
 | `tests_integration/test_slow_query_log.py` | 2 | 4 |
 | `tests_integration/test_soak_check.py` | 5 | 5 |

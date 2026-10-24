@@ -77,6 +77,7 @@ bare UUIDs.
 | `Intent` with structured `IntentExpectation`s, `IntentReport`, `IntentHandlingFunction` (RMIH), `IntentUtilityFormula` | – |
 | Intent resolution and assurance: feasibility, conflict, fulfilment and negotiation reports, report delivery | O1 enactment of CM intents → SA SMOS O1-CM handler (an RMIH), see [`../sa-smos/README.md`](../sa-smos/README.md) |
 | `AutonomyDispatch` (rApp autonomy modes) | `autonomyMode` / `regionScope` on the rApp instance → rApp Management |
+| Its rows of the shared `idempotency_key` table (module `intent-service`) | The table and the decorator → `smo_shared.idempotency` (PR-ST-3) |
 
 Platform-wide ownership summary: [ARCHITECTURE.md](../docs/ARCHITECTURE.md).
 
@@ -268,6 +269,13 @@ Autonomy dispatches
 | POST | `/autonomy-dispatches/{dispatch_id}/reject` | `{rejectedBy, reason?}` (`rejectedBy` is replaced by the console user) | 403 `ROLE_NOT_PERMITTED`; 404; 409 `AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE` |
 | GET | `/health` | Liveness probe | |
 
+**Repeats (SDK-RETRY-IDEMPOTENCY).** `POST /intents`, `/intent-reports` and `/autonomy-dispatches` are `@idempotent("intent-service", status_code=201)`
+(`smo_shared.idempotency`, PR-ST-3): a repeat with the same `Idempotency-Key` (every SDK POST carries one, and repeats it after a transport error,
+502 or 504) is answered with the first answer and `Idempotent-Replayed: true`, and creates no second intent, report or dispatch and no second
+notification. The same key with another body is 422 `IDEMPOTENCY_KEY_REUSED`; a repeat while the first still runs is 409
+`IDEMPOTENCY_KEY_IN_PROGRESS`. `POST /intent-handling-functions` is not decorated: a repeat upserts the same row by `rmihId`. The other POSTs are not
+called by the SDKs and are not decorated.
+
 An intent created from a dispatch carries `rmioId = instanceId`, is owned by the rApp that dispatched, and has a report control with a 60 s observation period
 and, when the dispatch has one, `reportRecipientAddress = notificationDestination`.
 
@@ -313,6 +321,7 @@ No Intent-Service-specific variables.
 | `ENDPOINT_UNREACHABLE` | 503 | Autonomy dispatch when rApp Management does not answer the instance lookup |
 | `AUTONOMY_DISPATCH_NOT_FOUND` | 404 | Unknown dispatch id |
 | `AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE` | 409 | Resolve or reject outside `AWAITING_SCOPE` |
+| `IDEMPOTENCY_KEY_REUSED` / `IDEMPOTENCY_KEY_IN_PROGRESS` / `IDEMPOTENCY_KEY_INVALID` | 422 / 409 / 422 | `Idempotency-Key` on a create route: used for another body, the first request still running, or not 1 to 255 printable characters (`smo_shared.idempotency`) |
 | FastAPI validation (`HTTPValidationError`, 422) | 422 | Any body that fails the strict spec models (unknown field, bad enum, family-rule violation, empty required list) |
 
 ### 2.8 Limits and open items
@@ -341,7 +350,7 @@ Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
 
 | File | Covers |
 |---|---|
-| `tests/test_main.py` | Create/query/delete intents, admin-state (creator only, SUSPENDED report), RMIH registration (external-caller rejection, capability validation, list, deregister), scope and capability matching, dispatch to the named RMIH (and unreachable callback), strict spec shapes and family constraints, feasibility (reject vs report), purpose/negotiation gating, initial report and conflicts, report-control delivery, all report kinds, negotiation feedback, utility formula IOC, autonomy dispatch (AUTONOMOUS, ASSIST resolve/reject, SHADOW, up-front RMIH validation, operator notification and its SSRF scheme guard, unknown instance/RMIH, list/get, region-scope folding and bounding), `/health` |
+| `tests/test_main.py` | Create/query/delete intents, admin-state (creator only, SUSPENDED report), RMIH registration (external-caller rejection, capability validation, list, deregister), scope and capability matching, dispatch to the named RMIH (and unreachable callback), strict spec shapes and family constraints, feasibility (reject vs report), purpose/negotiation gating, initial report and conflicts, report-control delivery, all report kinds, negotiation feedback, utility formula IOC, autonomy dispatch (AUTONOMOUS, ASSIST resolve/reject, SHADOW, up-front RMIH validation, operator notification and its SSRF scheme guard, unknown instance/RMIH, list/get, region-scope folding and bounding), `/health`, the outbox transaction, and the `Idempotency-Key` replay of `POST /intents`, `/intent-reports` and `/autonomy-dispatches` (one row on a keyed repeat, `Idempotent-Replayed`, 422 `IDEMPOTENCY_KEY_REUSED`) |
 | `tests/test_intent_identity.py` | Call flow 09 (DOC-CF-1.8): an rApp's intent is its own (rmioId, owner), another rApp's admin-state / delete / feedback is refused, the console deletes with the reports, the console's requesterId check; an rApp registers no handler and publishes no report, re-registration in place keeps the intents; dispatch only for the caller's own instance (no fallback), `dispatchedBy` and the intent's owner; ASSIST decided only by a console user, recorded as `resolvedBy` / `rejectedBy` |
 | `tests/test_business_metrics.py` | `smo_intents` counts intents by admin state, both states present at zero |
 | `tests/test_fulfilment_and_conflict.py` | `GUI-9.8`: a new intent is 0 % and not in conflict, the percent follows the newest fulfilment report, a handler's conflict report sets `inConflict` and an empty one clears it, a conflict found at creation shows, deactivation resets the percent, the `fulfilled` / `in_conflict` list filters both ways, and the percent rule on six report shapes |

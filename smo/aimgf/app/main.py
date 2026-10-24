@@ -933,6 +933,8 @@ def complete_training(training_job_id: uuid.UUID, request: Request, body: Comple
     training run completes: `POST /models/{id}/advance` refuses the
     job-driven events (OI-2-governance-bypass).
     """
+    # Not @idempotent (SDK-RETRY-IDEMPOTENCY, class b): a repeat after the first completion finds the job FINISHED or FAILED and is refused 409
+    # TRAINING_JOB_ILLEGAL_TRANSITION before anything is written, so no second report or notification.
     # Route notes. After the sweep: 404 `TRAINING_JOB_NOT_FOUND`; 409 `TRAINING_JOB_ILLEGAL_TRANSITION` unless the job is IN_PROGRESS or SUSPENDED, which also
     # refuses a run the sweep has just failed. `metrics` replace `model_metrics`. Order: the NFO runtime is deleted first, then (model-targeted jobs only)
     # TRAINING_COMPLETE or TRAINING_FAILED fires with `_fire_model_event`, so a model that is no longer TRAINING makes the call answer 409
@@ -1049,6 +1051,7 @@ def suspend_training(training_job_id: uuid.UUID, request: Request, db: Session =
     legal from IN_PROGRESS, matching the reference's own request-flag
     semantics (a suspend request only makes sense against an in-flight job).
     """
+    # Not @idempotent (SDK-RETRY-IDEMPOTENCY, class b): a repeat finds the job SUSPENDED and is refused 409, changing nothing.
     # Route notes: no sweep. 404 `TRAINING_JOB_NOT_FOUND`; 409 `TRAINING_JOB_ILLEGAL_TRANSITION` unless IN_PROGRESS. Sets SUSPENDED and keeps the process in
     # step. The NFO runtime is left running; the deadline is paused because the sweep scans only IN_PROGRESS runs, and `resume` restarts the clock from the
     # resume time. One commit; answers `{trainingJobId, status}`.
@@ -1068,6 +1071,7 @@ def suspend_training(training_job_id: uuid.UUID, request: Request, db: Session =
 
 @app.post("/training-jobs/{training_job_id}/resume")
 def resume_training(training_job_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
+    # Not @idempotent (SDK-RETRY-IDEMPOTENCY, class b): a repeat finds the job no longer SUSPENDED and is refused 409, changing nothing.
     # Route notes: no sweep. 404 `TRAINING_JOB_NOT_FOUND`; 409 `TRAINING_JOB_ILLEGAL_TRANSITION` unless SUSPENDED. `_resume_training_job` restarts the timeout
     # clock. One commit.
     job = db.get(TrainingJob, training_job_id)
@@ -1096,6 +1100,7 @@ def report_training_progress(training_job_id: uuid.UUID, request: Request, body:
     `etaSeconds`, (now - startedAt) / epoch x (totalEpochs - epoch) while
     the run is IN_PROGRESS. 422 for an epoch beyond the total.
     """
+    # Not @idempotent (SDK-RETRY-IDEMPOTENCY, class b): the step only moves forward; the same report again rewrites the same step and epoch.
     # Route notes: the read first runs `_expire_overdue_jobs`, which fails every overdue run (and commits) before the answer is built. So a run that has just
     # timed out is already FAILED and gets the 409. 404 `TRAINING_JOB_NOT_FOUND`; 409 `TRAINING_JOB_ILLEGAL_TRANSITION` unless the job is IN_PROGRESS, or for a
     # step behind the current one. Skipping ahead (DATA_EXTRACTION straight to TRAINED_MODEL) is accepted. Only `current_step` changes; the MLTrainingProcess
@@ -1159,6 +1164,7 @@ def update_training_job_model_metrics(training_job_id: uuid.UUID, request: Reque
     POST /training-jobs/update-model-metrics/<id> (trainingjob_controller.py)
     replaces model_metrics wholesale, not a merge — same here.
     """
+    # Not @idempotent (SDK-RETRY-IDEMPOTENCY, class b): the metrics replace `model_metrics` wholesale, so a repeat writes the same value.
     # Route notes: no sweep and no status check, so metrics can be written to a job in any status, including after it ended. The whole JSON object in the body
     # replaces `model_metrics`. 404 `TRAINING_JOB_NOT_FOUND`; one commit. GUI-9.8: a whole-number `epoch` and/or `totalEpochs` key in the metrics is also
     # recorded as the run's progress (`_record_epoch`, 422 for an epoch beyond the total); any other value of those keys is kept as a metric only.
@@ -1269,6 +1275,8 @@ def query_validation_job_status(validation_job_id: uuid.UUID, db: Session = Depe
 
 @app.post("/validation-jobs/{validation_job_id}/complete")
 def complete_validation(validation_job_id: uuid.UUID, request: Request, body: CompleteJobRequest, db: Session = Depends(get_session)):
+    # Not @idempotent (SDK-RETRY-IDEMPOTENCY, class b): a repeat finds the job COMPLETED or FAILED and is refused 409 before the MLTestingReport is written
+    # again.
     # Route notes. After the sweep: 404 `VALIDATION_JOB_NOT_FOUND`; 409 `TRAINING_JOB_ILLEGAL_TRANSITION` (the code used for every job kind) unless RUNNING or
     # SUSPENDED. Status becomes COMPLETED or FAILED. As with training, the NFO runtime is deleted before VALIDATION_COMPLETE / VALIDATION_FAILED fires on a
     # model-targeted job, so a model that is no longer VALIDATING gives 409 `LIFECYCLE_ILLEGAL_TRANSITION` with nothing committed and the runtime already
@@ -1366,6 +1374,7 @@ def query_emulation_job_status(emulation_job_id: uuid.UUID, db: Session = Depend
 
 @app.post("/emulation-jobs/{emulation_job_id}/complete")
 def complete_emulation(emulation_job_id: uuid.UUID, request: Request, body: CompleteJobRequest, db: Session = Depends(get_session)):
+    # Not @idempotent (SDK-RETRY-IDEMPOTENCY, class b): a repeat finds the job no longer RUNNING and is refused 409 before anything is written.
     # Route notes. After the sweep: 404 `EMULATION_JOB_NOT_FOUND`; 409 `TRAINING_JOB_ILLEGAL_TRANSITION` unless RUNNING. The NFO runtime is deleted, then
     # EMULATION_COMPLETE or EMULATION_FAILED fires (always, an emulation job always has a model): 409 `LIFECYCLE_ILLEGAL_TRANSITION` and nothing committed if
     # the model is no longer EMULATING, with the runtime already deleted. A successful run writes an AIMLInferenceReport (its emulation function reference is
@@ -1581,6 +1590,7 @@ def deploy_model_runtime(request: Request, model_id: uuid.UUID, package_id: uuid
     duplicate deploy attempt (already DEPLOYMENT_REQUESTED-or-later)
     never touches NFO at all.
     """
+    # Not @idempotent (SDK-RETRY-IDEMPOTENCY, class b): a repeat finds the runtime DEPLOYED; REQUEST_DEPLOYMENT is refused 409 before any NFO call.
     # Route notes. 201 with the lifecycle view. Order: `_serving_model` (404 `MODEL_NOT_FOUND`; 403 `MODEL_ACCESS_DENIED` for an rApp that is not the model's owner; 409
     # `LIFECYCLE_ILLEGAL_TRANSITION` for a model that MLMR shows as NOT_TRAINED or IN_TRAINING; SEC-15.3), the package or profile resolves (404 `PACKAGE_NOT_FOUND`, so this
     # precedes the certification check), then `_deploy_runtime` (409 `MODEL_NOT_CERTIFIED`, 409 `LIFECYCLE_ILLEGAL_TRANSITION` for a runtime that is not
@@ -1645,6 +1655,7 @@ def activate_model_runtime(request: Request, model_id: uuid.UUID, db: Session = 
     decision about whether traffic should be sent yet, not a further NFO
     call. Refused (409) for a DEPRECATED/RETIRED model.
     """
+    # Not @idempotent (SDK-RETRY-IDEMPOTENCY, class b): a repeat finds the runtime ACTIVE and is refused 409; there is no NFO call.
     # Route notes: `_serving_model` first (404 `MODEL_NOT_FOUND`, 403 `MODEL_ACCESS_DENIED` for an rApp that is not the owner, 409 for a phase that cannot serve; SEC-15.3), then
     # 409 `LIFECYCLE_ILLEGAL_TRANSITION` for an end-of-life model or a runtime that is not DEPLOYED. One commit; no NFO call.
     _serving_model(request, model_id, "activate")
@@ -1692,6 +1703,7 @@ def _terminate_runtime(db: Session, model_id: uuid.UUID) -> ModelLifecycle:
 
 @app.post("/models/{model_id}/runtime/terminate")
 def terminate_model_runtime(request: Request, model_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Not @idempotent (SDK-RETRY-IDEMPOTENCY, class b): a repeat finds the runtime TERMINATED and is refused 409 before the NFO delete.
     # Route notes: `_owned_model` first (404 `MODEL_NOT_FOUND`, 403 `MODEL_ACCESS_DENIED` for an rApp that is not the owner; SEC-15.3b). Then 409 `LIFECYCLE_ILLEGAL_TRANSITION` unless the runtime is DEPLOYMENT_REQUESTED, DEPLOYED or ACTIVE; one
     # commit after the NFO delete and the descriptor's (502/503 when NFO does not terminate it, and the runtime stays as it was). A TERMINATED runtime is deployed
     # again through `runtime/deploy` (call flow 17d). An rApp may call it for a model it owns.
@@ -1794,6 +1806,8 @@ def query_inference_status(inference_job_id: uuid.UUID, db: Session = Depends(ge
 @app.post("/inference-jobs/{inference_job_id}/resolve")
 def resolve_inference(inference_job_id: uuid.UUID, succeeded: bool, request: Request, body: ResolveInferenceRequest | None = None,
                       db: Session = Depends(get_session)):
+    # Not @idempotent (SDK-RETRY-IDEMPOTENCY, class b): a repeat finds the job no longer RUNNING and is refused 409, so the AIMLInferenceReport is not written
+    # twice.
     # Route notes: `succeeded` is a required query parameter and the body is optional. After the sweep: 404 `INFERENCE_JOB_NOT_FOUND`; 409
     # `TRAINING_JOB_ILLEGAL_TRANSITION` unless RUNNING (so a job that already timed out refuses a late result). COMPLETE or FAIL fires on the job FSM; a
     # successful resolve writes an AIMLInferenceReport and answers its id, a failed one writes none. The job's `notification_destination` is not notified here,
@@ -2231,6 +2245,8 @@ def create_feature_group(body: CreateFeatureGroupRequest, response: Response, db
     answer never contains the token: it shows `tokenSet` and, for a reference, `tokenRef`. A call that sends `token` is answered with a `Deprecation: true` header
     and a `warnings` entry, and the field is dropped in a later minor release.
     """
+    # Not @idempotent (SDK-RETRY-IDEMPOTENCY, class c): `featureGroupName` is unique, so a repeat is refused 409 FEATURE_GROUP_ALREADY_REGISTERED and creates no
+    # second group.
     # Route notes. 201 with the group, without its token (`tokenSet`, `tokenRef`). Checks in order: the credential (422 `SCHEMA_VALIDATION_FAILED`: both or neither of
     # `token` and `tokenRef`, or a `tokenRef` that is not a secret name; the message never repeats the value), the name pattern and length (400 `FEATURE_GROUP_NAME_INVALID`), a
     # group of that name already exists (409 `FEATURE_GROUP_ALREADY_REGISTERED`), `enableDme` without `dmeTypeId` (422 `FEATURE_GROUP_DME_JOB_REFUSED`), then
