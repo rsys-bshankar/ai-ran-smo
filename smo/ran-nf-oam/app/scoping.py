@@ -29,13 +29,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql import ColumnElement, Select
 
 from smo_shared.errors import FrameworkError, framework_error
-from smo_shared.scope import Scope, filter_statement, permits, request_scope
+from smo_shared.scope import Scope, denied_condition, filter_statement, permits, request_scope
 
 from .models import ManagedEntity, WriteConfigJob
 
 __all__ = ["Scope", "request_scope", "element_permitted", "denied_refs", "require_elements", "visible_elements", "scoped_to_elements", "scope_denied",
            "visible_vendor_names", "owned_jobs", "job_owned_by",
-           "RegionFilter", "SiteClusterFilter", "place_refs", "narrowed_to_place", "json_refs_in_place"]
+           "RegionFilter", "SiteClusterFilter", "place_refs", "narrowed_to_place", "json_refs_in_place", "json_refs_inside_scope"]
 
 MAX_LISTED = 10
 
@@ -149,8 +149,24 @@ def json_refs_in_place(db: Session, list_column, region: str | None, site_cluste
     refs = place_refs(region, site_cluster)
     if refs is None:
         return None
-    if db.get_bind().dialect.name == "postgresql":
-        items = func.json_array_elements_text(list_column).table_valued("value").render_derived(name="place_ref")
-    else:
-        items = func.json_each(list_column).table_valued("value")
+    items = _json_refs(db, list_column, "place_ref")
     return exists(select(items.c.value).where(items.c.value.in_(refs)))
+
+
+def _json_refs(db: Session, list_column, name: str):
+    """The JSON list of references in `list_column` expanded as a table-valued function with one column, `value` (see `json_refs_in_place` for the two dialects)."""
+    if db.get_bind().dialect.name == "postgresql":
+        return func.json_array_elements_text(list_column).table_valued("value").render_derived(name=name)
+    return func.json_each(list_column).table_valued("value")
+
+
+def json_refs_inside_scope(db: Session, list_column, scope: Scope | None) -> ColumnElement | None:
+    """SEC-10.12: a condition true when every element reference in the JSON list `list_column` (for example `rapp_action_approval.managed_elements`) is one the
+    caller may touch, by the rule of `denied_refs` (an unregistered reference counts as outside); `None` for an unscoped caller (no filter). An empty list has nothing
+    outside the scope, so it matches. Computed in SQL as a NOT EXISTS over the expanded list, so `total` and the page agree with what the caller may see."""
+    if scope is None:
+        return None
+    items = _json_refs(db, list_column, "scope_ref")
+    outside = (select(items.c.value).outerjoin(ManagedEntity, ManagedEntity.managed_element_ref == items.c.value)
+               .where(ManagedEntity.managed_element_ref.is_(None) | denied_condition(scope, ManagedEntity.region, ManagedEntity.tenant)))
+    return ~exists(outside)

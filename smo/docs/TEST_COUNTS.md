@@ -23,7 +23,7 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `onboarding` | 6 | 126 | 212 |
 | `r1-termination` | 10 | 152 | 350 |
 | `ran-analytics` | 2 | 19 | 22 |
-| `ran-nf-oam` | 55 | 823 | 1229 |
+| `ran-nf-oam` | 55 | 828 | 1234 |
 | `rapp-mgmt` | 11 | 201 | 286 |
 | `sa-smos` | 3 | 51 | 78 |
 | `samples/coverage-optimization-rapp` | 6 | 61 | 80 |
@@ -36,8 +36,8 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `shared` | 50 | 663 | 1118 |
 | `sme` | 5 | 121 | 139 |
 | `so-smos` | 3 | 27 | 40 |
-| `tests_integration` | 93 | 717 | 894 |
-| **total** | **416** | **5332** | **7726** (Python) |
+| `tests_integration` | 94 | 718 | 895 |
+| **total** | **417** | **5338** | **7732** (Python) |
 
 ## Per test file
 
@@ -294,7 +294,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests/test_change_windows.py` | 9 | 9 |
 | `tests/test_cm_history.py` | 12 | 12 |
 | `tests/test_console_reads.py` | 22 | 23 |
-| `tests/test_console_scope.py` | 2 | 2 |
+| `tests/test_console_scope.py` | 7 | 7 |
 | `tests/test_decision_records.py` | 17 | 17 |
 | `tests/test_dispatch_persistence.py` | 4 | 5 |
 | `tests/test_dispatch_reliability.py` | 16 | 20 |
@@ -555,7 +555,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 
 </details>
 
-<details><summary><code>tests_integration</code>: 93 files</summary>
+<details><summary><code>tests_integration</code>: 94 files</summary>
 
 | file | test functions | collected tests |
 |---|---:|---:|
@@ -573,6 +573,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests_integration/test_compose_enrollment.py` | 3 | 3 |
 | `tests_integration/test_compose_replicas.py` | 3 | 3 |
 | `tests_integration/test_config_reference.py` | 14 | 14 |
+| `tests_integration/test_console_approval_scope.py` | 1 | 1 |
 | `tests_integration/test_container_hardening.py` | 6 | 6 |
 | `tests_integration/test_contract_schemathesis.py` | 1 | 18 |
 | `tests_integration/test_count_tests.py` | 4 | 4 |

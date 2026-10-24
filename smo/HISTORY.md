@@ -4181,3 +4181,41 @@ Recorded from `OPEN_ITEMS.md` (October 2026 reconciliation); the step stays open
   requester's stored claim (`requester_scope`) but not the decider's. Checked with a throw-away test on the unit fixtures of `ran-nf-oam/tests/test_scope.py`: a request
   of an rApp limited to `eu` was listed for, and approved by, a console person limited to `us` (200, the write made). `docs/adr/0005-tenant-region-authorization.md`
   section 6 says the decision is narrowed by the person's claim. Kept as `SEC-10.12`.
+
+### PR-SEC-10.12 (closed) — the rApp-action approval inbox narrowed by the person's claim
+
+Closed from `OPEN_ITEMS.md` (`SEC-10.12`). No migration, no setting; the rule of `smo_shared/scope.py` is unchanged. Decision: `docs/adr/0005-tenant-region-authorization.md`
+sections 5, 6 and 11 (amended).
+
+- **The decision on the status: 404, not 403 (the owner's).** The item's "Done when" said a decision outside the claim is 403 `SCOPE_DENIED`. An approval request is
+  addressed by an id the system minted, and ADR 0005 section 5 answers such an item as if it did not exist; `GET /config-jobs/{id}` and the software campaigns already
+  do. So every route of the inbox answers a request outside the scope exactly as an unknown id: 404 `APPROVAL_NOT_FOUND`, `detail` "no approval request {id}", the same
+  shape. A 403 would confirm the request exists.
+- **The list.** `GET /rapp-approvals` (`list_approvals`, `ran-nf-oam/app/main.py`) now takes the request and keeps only the requests all of whose elements
+  (`rapp_action_approval.managed_elements`, recorded when the request was parked) are inside the caller's scope. The filter is SQL
+  (`scoping.json_refs_inside_scope`): a NOT EXISTS over the expanded JSON list, outer-joined to `managed_entity`, true for a reference that is not registered or that
+  `denied_condition` refuses; the expansion is the one `json_refs_in_place` uses (`json_each` on SQLite, `json_array_elements_text` on Postgres), now shared as
+  `_json_refs`. So the page, `total` and `total=false` keep the shape they had and count only what the caller may see. A request with no element has nothing outside the
+  scope and is shown (in practice every request names at least one: `managed_elements` is derived from the changes). Unscoped: no condition is added.
+- **By id.** `_approval_in_reach` loads the request (`_approval_or_404`, locked for a decision) and answers 404 when `scoping.denied_refs` finds an element outside.
+  `read_approval` asks it before the timeout is applied (a read that lapsed a request would otherwise write); `_decidable` (approve and reject) asks it after the
+  checks that do not depend on the request (an rApp never decides, the verified decider) and before the self-decision test, the timeout and the state, so a person
+  outside learns neither who asked nor whether it is still pending, and nothing is written: no state change, no vote, no decision record, no audit row, no refusal
+  row, no outbox event (a decision by someone outside the scope is not a safeguard refusal of an rApp).
+- **Two checks, two scopes.** The decider's scope is asked when the request is looked up; the requester's stored claim (`requester_scope`, `PR-SEC-10.4`) is still
+  asked when an approved action is run, and an element moved out of it closes the request `REFUSED` / `SCOPE_DENIED` as before. The existing test of that path
+  (`test_scope.py`, an unscoped approver) is unchanged; a new one has a person whose claim covers both regions approve such a request and get the refusal.
+- **Who it reaches.** The scope is `scoping.request_scope`, so the console's person (`X-R1-Acting-User-Scope`, `GUI-5`) and a scoped rApp alike: a scoped rApp polling
+  its own request (`GET /rapp-approvals/{id}`) after one of its elements moved out of its claim now gets 404, as it does for such a config job. The list is
+  internal-only at the gateway, so only SMO modules and the console read it.
+- **The GUI backend.** The console's pending-approvals count (`gui-bff/app/summary.py`, `APPROVALS`, and the attention group `approvals`) and the event stream that
+  pushes them are narrowed as a consequence. Checked that no answer is shared across claims: the summary cache is keyed by `(page, region, site_cluster, claim)`
+  and the attention cache by the claim too; the event hub keys a topic by the subscriber's claim (`Topic.hub_key`); the reads are made with
+  `scoping.shared_headers(claim)`. Nothing changed there.
+- **Not done.** The change-window decisions of a config job (`_job_in_reach`) answer 403 `SCOPE_DENIED` for a job outside the scope, while this inbox and
+  `GET /config-jobs/{id}` answer 404: recorded as `SEC-10.13`.
+- **Tests.** `ran-nf-oam/tests/test_console_scope.py`: the list and `total` of a person limited to one region; read, approve and reject of another region's request
+  compared with an unknown id field by field and nothing written (approval rows, decision records, outbox, refusals, audit chain, jobs, edits); a request split across
+  two regions; an unscoped person; the requester's re-check. `ran-nf-oam/tests/test_scope_reads.py`: `/rapp-approvals` moved from "internal-only, not about
+  elements" to the routes a claim filters. `tests_integration/test_console_approval_scope.py`: the real R1 gateway, a token introspected at the real SME, the
+  person's claim forwarded to the real RAN NF OAM.

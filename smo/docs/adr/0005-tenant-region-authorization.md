@@ -97,8 +97,8 @@ elements a region and a tenant; until then that rApp sees nothing, which is the 
 |---|---|---|
 | a write that names targets (`POST /config-jobs`, also `dryRun`; `POST /config-jobs/{id}/rollback`; subscribing to PM/FM for an element) | **403 `SCOPE_DENIED`** for the whole request: one element outside refuses all of it, nothing is checked, recorded or sent first | the caller named the targets; refusing is the honest answer |
 | a read that names an element by reference (`GET /managed-entities/{ref}`, `.../config`, `.../config-history`, `.../diff`) | **403 `SCOPE_DENIED`** | likewise |
-| an item addressed by an id the system minted (`GET /config-jobs/{id}`, `PATCH /alarms/{id}/ack|clear`, `GET /pm-files/{id}/file`) | **404** (`CONFIG_JOB_NOT_FOUND`, `ALARM_NOT_FOUND`, `NRM_OBJECT_NOT_FOUND`) as if it did not exist | the id was not the caller's to know; a 403 would confirm it exists |
-| a list (alarms, PM and FM subscriptions, files, jobs, managed elements, endpoints, cell guards, software jobs; a KPI is computed over the permitted elements only) | **filtered** to what the caller may touch; `total` counts what it may see; never refused | a page of someone else's rows is the leak; a refused list would make an empty scope an error |
+| an item addressed by an id the system minted (`GET /config-jobs/{id}`, `PATCH /alarms/{id}/ack|clear`, `GET /pm-files/{id}/file`; `GET /rapp-approvals/{id}` and its `approve` and `reject`, section 11) | **404** (`CONFIG_JOB_NOT_FOUND`, `ALARM_NOT_FOUND`, `NRM_OBJECT_NOT_FOUND`, `APPROVAL_NOT_FOUND`) as if it did not exist | the id was not the caller's to know; a 403 would confirm it exists |
+| a list (alarms, PM and FM subscriptions, files, jobs, rApp-action approval requests, managed elements, endpoints, cell guards, software jobs; a KPI is computed over the permitted elements only) | **filtered** to what the caller may touch; `total` counts what it may see; never refused | a page of someone else's rows is the leak; a refused list would make an empty scope an error |
 | `DELETE` of a subscription by id | **204**, nothing removed | idempotent delete already answers 204 for an id that is not there |
 | a managed object addressed by its DN (`GET /managed-objects/{dn}` and below, `GET /topology/relation`) | **404** `MANAGED_OBJECT_NOT_FOUND`, the same answer as for a DN that is not in the tree (section 10) | a DN names an object, not an element: a 403 beside a 404 would tell the caller which DNs exist |
 
@@ -117,7 +117,8 @@ A request is checked when it is made (a request outside the scope is refused at 
 of the claim, not a lookup of the rApp's current claim at approval, because RAN NF OAM does not hold claims (SME does) and a synchronous call to SME in the approve path would add a dependency to a
 decision that must not depend on it. Consequence: narrowing a claim does not reach a request already parked; rejecting it, or stopping the rApp (the kill switch is checked again at
 approval), does. Scoping the human approvers themselves (a GUI user who may decide only for one tenant) is the console user's claim (section 11): the decision is
-narrowed by it like every other call of that person.
+narrowed by it like every other call of that person. The two checks are separate: the decider's scope is asked first, when the request is looked up (outside it, the
+request is a 404 and nothing is written); the requester's claim is asked after, when the approved action is run (outside it, `REFUSED` with `SCOPE_DENIED`).
 
 ### 7. Rollback, revert and the staged job
 
@@ -162,6 +163,12 @@ Decided with the owner after the first step shipped; the same rule (`smo_shared/
   with the acting user. `scope_of` reads it in that case and **narrows** the caller's own claim by it (per axis, the values both list), so a person can never
   widen what the console itself is allowed. It is not `X-R1-On-Behalf-Scope`: that header comes with `X-R1-On-Behalf-Of`, which makes the request the rApp's for
   ownership and the safeguards, and a person is not an rApp (they keep seeing every job, as an operator does).
+- **The approval inbox for rApp actions (`SEC-10.12`).** RAN NF OAM narrows it by the same scope as every other read: `GET /rapp-approvals` keeps only the
+  requests all of whose elements (`rapp_action_approval.managed_elements`) are inside it, filtered in SQL so `total` counts what the person may see (an
+  unregistered element counts as outside; a request with no element has nothing outside and is shown); `GET /rapp-approvals/{id}`, `POST .../approve` and
+  `POST .../reject` answer a request with any element outside exactly as an unknown id (404 `APPROVAL_NOT_FOUND`, section 5), asked before the requester, the
+  state and the timeout, so nothing about the request is told and nothing is written. A request split across two regions needs a person whose claim covers both.
+  The change-window decisions of a config job (`_job_in_reach`) answer 403 `SCOPE_DENIED` instead; that difference is open (`OPEN_ITEMS.md`, `SEC-10.13`).
 - **What the backend computes for many users** (the summary counts, the event stream's pages, the typeahead, a background export) is asked with the claim and
   cached under it, so two users with different claims never share an answer; an export reads as the person who asked, with their claim as it is when it runs.
 - **What it does not narrow**, as for a scoped rApp (section 9): the modules with nothing to match (rApp Management, AIMgF, MLMR, DME's types), and the GUI
