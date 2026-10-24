@@ -1,4 +1,4 @@
-"""The SO SMOS routes (`app/main.py`): submit, read, cancel, list and the health probe.
+"""The SO SMOS routes (`app/main.py`): submit, read, cancel, list and the health probe, and that an intent push to it is a 404 (INTENT-LIFECYCLE-PUSH).
 
 Fixture `client`: the app over an in-memory SQLite with only the `service_order` table, `get_session` overridden to it. `run_step` is replaced by a lambda in most tests, so no
 R1 call is made; the dispatch semantics are tested in `test_dispatch.py`. Run: `cd smo/so-smos && PYTHONPATH=.:../shared python -m pytest tests/test_main.py -q`.
@@ -114,3 +114,14 @@ def test_list_orders_total_false_skips_the_count_and_reports_has_more(client, mo
     assert "total" not in page and len(page["items"]) == 2 and page["hasMore"] is True
     last = client.get("/orders", params={"limit": 2, "offset": 2, "total": "false"}).json()
     assert len(last["items"]) == 1 and last["hasMore"] is False
+
+
+# One push of each event Intent Service sends an RMIH (INTENT-LIFECYCLE-PUSH), and one it may add later.
+@pytest.mark.parametrize("event", ["INTENT_CREATED", "ADMIN_STATE_CHANGED", "INTENT_DELETED", "SOMETHING_NEW"])
+def test_an_intent_push_to_so_smos_is_404_and_changes_nothing(client, event):
+    """SO SMOS has no intent-handler route: a push to the `/intents/notify` an RMIH named `so-smos` may register is 404, which Intent Service's outbox
+    counts as delivered (no retry), and no order is made. A handler route added here must answer an unknown event 2xx and do nothing."""
+    body = {"intentId": "00000000-0000-0000-0000-000000000001", "event": event, "adminState": "ACTIVATED",
+            "expectationObjectTypes": ["RAN_SUBNETWORK"], "rmioId": "rapp-1"}
+    assert client.post("/intents/notify", json=body).status_code == 404
+    assert client.get("/orders").json()["items"] == []

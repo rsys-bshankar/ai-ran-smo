@@ -14,7 +14,7 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `focom` | 3 | 85 | 85 |
 | `gui` | 51 | 519 | — |
 | `gui-bff` | 17 | 439 | 1682 |
-| `intent-service` | 5 | 87 | 107 |
+| `intent-service` | 5 | 92 | 112 |
 | `mdaf` | 4 | 62 | 66 |
 | `mllf` | 1 | 10 | 10 |
 | `mlmr` | 2 | 81 | 87 |
@@ -25,7 +25,7 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `ran-analytics` | 2 | 19 | 22 |
 | `ran-nf-oam` | 55 | 828 | 1234 |
 | `rapp-mgmt` | 11 | 204 | 289 |
-| `sa-smos` | 3 | 56 | 85 |
+| `sa-smos` | 3 | 62 | 91 |
 | `samples/coverage-optimization-rapp` | 6 | 61 | 80 |
 | `samples/energy-saving-rapp` | 6 | 74 | 88 |
 | `samples/mobility-optimization-rapp` | 6 | 67 | 85 |
@@ -35,9 +35,9 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `sdk-java` | 8 | 58 | — |
 | `shared` | 50 | 663 | 1118 |
 | `sme` | 5 | 122 | 140 |
-| `so-smos` | 3 | 27 | 40 |
-| `tests_integration` | 95 | 739 | 917 |
-| **total** | **418** | **5391** | **7788** (Python) |
+| `so-smos` | 3 | 28 | 44 |
+| `tests_integration` | 95 | 740 | 918 |
+| **total** | **418** | **5404** | **7804** (Python) |
 
 ## Per test file
 
@@ -187,7 +187,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests/test_business_metrics.py` | 1 | 1 |
 | `tests/test_fulfilment_and_conflict.py` | 7 | 12 |
 | `tests/test_intent_identity.py` | 13 | 15 |
-| `tests/test_main.py` | 55 | 62 |
+| `tests/test_main.py` | 60 | 67 |
 | `tests/test_ts28312_datatypes.py` | 11 | 17 |
 
 </details>
@@ -367,7 +367,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 |---|---:|---:|
 | `tests/test_assurance_loop.py` | 24 | 46 |
 | `tests/test_main.py` | 21 | 22 |
-| `tests/test_o1cm.py` | 11 | 17 |
+| `tests/test_o1cm.py` | 17 | 23 |
 
 </details>
 
@@ -550,7 +550,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | file | test functions | collected tests |
 |---|---:|---:|
 | `tests/test_dispatch.py` | 11 | 18 |
-| `tests/test_main.py` | 8 | 8 |
+| `tests/test_main.py` | 9 | 12 |
 | `tests/test_order_execution.py` | 8 | 14 |
 
 </details>
@@ -578,7 +578,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests_integration/test_contract_schemathesis.py` | 1 | 18 |
 | `tests_integration/test_count_tests.py` | 4 | 4 |
 | `tests_integration/test_coverage_optimization_rapp.py` | 10 | 10 |
-| `tests_integration/test_cross_service.py` | 18 | 18 |
+| `tests_integration/test_cross_service.py` | 19 | 19 |
 | `tests_integration/test_dast_baseline.py` | 7 | 7 |
 | `tests_integration/test_dast_gateway_spec.py` | 2 | 2 |
 | `tests_integration/test_database_credentials.py` | 5 | 5 |

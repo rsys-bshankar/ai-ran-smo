@@ -1,7 +1,8 @@
 """Tests of the Intent Service routes: intents and their lifecycle, RMIH registration and capability / scope matching, strict TS 28.312 shapes and family
 constraints, feasibility and conflict reports, report delivery per report control, all report kinds, negotiation feedback, utility formulas, the rApp
 autonomy dispatch modes (AUTONOMOUS, ASSIST, SHADOW) with region scope, `/health`, the transactional outbox behind every notification (PR-MSG-1.9), and
-the `Idempotency-Key` replay of the three create routes (SDK-RETRY-IDEMPOTENCY).
+the `Idempotency-Key` replay of the three create routes (SDK-RETRY-IDEMPOTENCY), and the pushes to the RMIH on an admin-state change and a delete
+(INTENT-LIFECYCLE-PUSH).
 
 Fixtures: `client` builds a SQLite database with the module's tables plus the outbox and idempotency-key tables and a `TestClient` whose `get_session` uses it (the engine is
 kept on `app.state.test_engine`); `rapp_mgmt` replaces `R1Client.get` with an in-memory `FakeRappMgmt`; `webhooks` records callbacks by patching
@@ -902,3 +903,80 @@ def test_a_repeated_autonomy_dispatch_with_the_same_key_dispatches_once(client, 
     _assert_replayed_once(client, "/autonomy-dispatches", _dispatch(instance_id), _dispatch(instance_id, priority=7),
                           intent_models.AutonomyDispatch, before=0)
     assert _count(intent_models.Intent) == 1
+
+
+# ---------------------------------------------------------------- INTENT-LIFECYCLE-PUSH: the RMIH hears of an admin-state change and a delete
+
+RMIH_URL = "http://so-smos:8000/intents/notify"
+
+
+def _rmih_pushes(webhooks):
+    """The bodies pushed to the default RMIH's callback, in order."""
+    return [body for url, body in webhooks if url == RMIH_URL]
+
+
+def test_the_create_push_names_its_event_and_keeps_its_fields(client, webhooks):
+    """The create push carries `event` INTENT_CREATED and the admin state beside every field it had before (a handler of an earlier release reads them)."""
+    _register_rmih(client)
+    intent_id = client.post("/intents", json=_intent(intentAdminState="DEACTIVATED")).json()["intentId"]
+    assert _rmih_pushes(webhooks) == [{"intentId": intent_id, "event": "INTENT_CREATED", "adminState": "DEACTIVATED",
+                                       "expectationObjectTypes": ["RAN_SUBNETWORK"], "rmioId": "rapp-1", "intentPriority": 1,
+                                       "intentMgmtPurpose": "FULFILMENT_WITHOUT_NEGOTIATION"}]
+
+
+def test_each_admin_state_change_is_pushed_to_the_rmih_and_a_no_op_is_not(client, webhooks):
+    """Deactivating and activating again each push ADMIN_STATE_CHANGED with the new state; a PATCH to the state the intent already has pushes nothing."""
+    _register_rmih(client)
+    intent_id = client.post("/intents", json=_intent()).json()["intentId"]
+    for state in ("DEACTIVATED", "DEACTIVATED", "ACTIVATED", "ACTIVATED"):
+        assert client.patch(f"/intents/{intent_id}/admin-state", json={"newState": state, "requesterId": "rapp-1"}).status_code == 200
+    pushes = _rmih_pushes(webhooks)
+    assert [(p["event"], p["adminState"]) for p in pushes] == [("INTENT_CREATED", "ACTIVATED"), ("ADMIN_STATE_CHANGED", "DEACTIVATED"),
+                                                               ("ADMIN_STATE_CHANGED", "ACTIVATED")]
+    assert pushes[1] == {"intentId": intent_id, "event": "ADMIN_STATE_CHANGED", "adminState": "DEACTIVATED",
+                         "expectationObjectTypes": ["RAN_SUBNETWORK"], "rmioId": "rapp-1"}
+
+
+def test_a_delete_pushes_everything_the_handler_needs_and_an_unknown_delete_pushes_nothing(client, webhooks):
+    """INTENT_DELETED carries the intent's id, admin state, object types and RMIO, because the handler can no longer read it back; deleting an id that does
+    not exist is 204 and pushes nothing."""
+    _register_rmih(client)
+    intent_id = client.post("/intents", json=_intent()).json()["intentId"]
+    client.patch(f"/intents/{intent_id}/admin-state", json={"newState": "DEACTIVATED", "requesterId": "rapp-1"})
+    assert client.delete(f"/intents/{intent_id}").status_code == 204
+    assert _rmih_pushes(webhooks)[-1] == {"intentId": intent_id, "event": "INTENT_DELETED", "adminState": "DEACTIVATED",
+                                          "expectationObjectTypes": ["RAN_SUBNETWORK"], "rmioId": "rapp-1"}
+    count = len(webhooks)
+    assert client.delete(f"/intents/{intent_id}").status_code == 204
+    assert client.delete(f"/intents/{uuid.uuid4()}").status_code == 204
+    assert len(webhooks) == count
+
+
+def test_the_lifecycle_pushes_are_outbox_rows_of_the_change_they_announce(client, monkeypatch):
+    """The admin-state push and the delete push are outbox rows written in the transaction of the change (PR-MSG-1.9): with the inline send off, the
+    rows are there after the change and nothing went out; a refused change (another rApp's PATCH) leaves no row."""
+    monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")
+    _register_rmih(client)
+    intent_id = client.post("/intents", json=_intent()).json()["intentId"]
+    assert client.patch(f"/intents/{intent_id}/admin-state", json={"newState": "DEACTIVATED", "requesterId": "rapp-2"}).status_code == 403
+    client.patch(f"/intents/{intent_id}/admin-state", json={"newState": "DEACTIVATED", "requesterId": "rapp-1"})
+    client.delete(f"/intents/{intent_id}")
+    events = [r.payload.get("event") for r in _outbox_rows() if r.destination == RMIH_URL]
+    assert events == ["INTENT_CREATED", "ADMIN_STATE_CHANGED", "INTENT_DELETED"]
+    assert {r.status for r in _outbox_rows()} == {"PENDING"}
+
+
+def test_a_failed_commit_of_an_admin_state_change_pushes_nothing(client, monkeypatch, webhooks):
+    """When the admin-state change does not commit, its push is rolled back with it: the RMIH is never told of a change that did not happen."""
+    _register_rmih(client)
+    intent_id = client.post("/intents", json=_intent()).json()["intentId"]
+    before = len(webhooks)
+
+    def fail(self):
+        raise RuntimeError("database went away")
+    monkeypatch.setattr("sqlalchemy.orm.Session.commit", fail)
+    with pytest.raises(RuntimeError):
+        client.patch(f"/intents/{intent_id}/admin-state", json={"newState": "DEACTIVATED", "requesterId": "rapp-1"})
+    monkeypatch.undo()
+    assert len(webhooks) == before
+    assert [r.payload.get("event") for r in _outbox_rows() if r.destination == RMIH_URL] == ["INTENT_CREATED"]

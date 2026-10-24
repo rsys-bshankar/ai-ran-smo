@@ -58,8 +58,24 @@
         "type": "object"
       },
       "IntentNotification": {
-        "description": "What Intent Service pushes to a handling function on CreateIntent.",
+        "description": "What Intent Service pushes to a handling function: on CreateIntent (`event` INTENT_CREATED, the default), on a change of the intent's\nadmin state (ADMIN_STATE_CHANGED) and on its deletion (INTENT_DELETED).",
         "properties": {
+          "adminState": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adminstate"
+          },
+          "event": {
+            "default": "INTENT_CREATED",
+            "title": "Event",
+            "type": "string"
+          },
           "intentId": {
             "format": "uuid",
             "title": "Intentid",
@@ -2121,7 +2137,7 @@
     },
     "/o1-cm-handler/intents": {
       "post": {
-        "description": "Intent Service's push for a new Intent addressed to this handler.",
+        "description": "Intent Service's push for an Intent addressed to this handler: created, its admin state changed, or deleted.",
         "operationId": "enact_intent_o1_cm_handler_intents_post",
         "requestBody": {
           "content": {

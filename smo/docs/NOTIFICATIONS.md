@@ -45,6 +45,7 @@ After the move, a notification is sent after the transaction that caused it comm
 | `mdaf/app/main.py` | `_notify_report_subscribers` | `enqueue` | A | Analytics subscribers: a report crossed their threshold | moved (MSG-1.8) |
 | `mdaf/app/mda.py` | `_deliver` | `enqueue` | A | An MDA request's reporting target: a report, or a report file, is ready (two call sites). `delivery.notified` is set whatever the answer was; after the move it means "enqueued" | moved (MSG-1.8) |
 | `intent-service/app/main.py` | `_create_intent_row` | `enqueue` | A | The RMIH's notification destination: an intent was created | moved (MSG-1.9) |
+| `intent-service/app/main.py` | `_push_to_rmih` | `enqueue` | A | The RMIH's notification destination: an intent's admin state changed or it was deleted (`event` ADMIN_STATE_CHANGED / INTENT_DELETED) | new (INTENT-LIFECYCLE-PUSH, outbox from the start) |
 | `intent-service/app/main.py` | `_deliver_report` | `enqueue` | A | Each report recipient of an intent: a report is available | moved (MSG-1.9) |
 | `intent-service/app/main.py` | `_notify_autonomy_operator` | `enqueue` | A | The operator's destination: an autonomy dispatch outcome | moved (MSG-1.9) |
 | `ran-nf-oam/app/main.py` | `_refuse` | `enqueue` | A | Safeguard subscribers: an rApp's request was refused (one per subscriber, in the same commit as the refusal record; throttled per invoker and code) | moved (AI-10.6) |

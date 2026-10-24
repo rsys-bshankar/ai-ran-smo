@@ -25,12 +25,20 @@ When Intent Service pushes a new Intent here, the handler:
      applied, otherwise NOT_FULFILLED / DEGRADED, with the DME action and
      RAN NF OAM job references in `additionalFulfilmentInfo` (W6-04).
 
-Each enactment is recorded (`GET /o1-cm-handler/enactments`), once per intent (SA-REPLAY): Intent Service pushes an intent only when it is
-created, and its outbox sends that push again when it got no answer in time, so a push for an intent already enacted is answered with the
-recorded enactment (`replayed: true`) and nothing is written or reported again. A unique index on `intent_id` (revision 0062) settles two pushes
-that arrive at once: the one whose row is second rolls back and answers the first one's.
+Each enactment is recorded (`GET /o1-cm-handler/enactments`), once per intent (SA-REPLAY): Intent Service's outbox sends a push again when it got
+no answer in time, so a push for an intent already enacted is answered with the recorded enactment (`replayed: true`) and nothing is written or
+reported again. A unique index on `intent_id` (revision 0062) settles two pushes that arrive at once: the one whose row is second rolls back and
+answers the first one's.
+
+Intent Service pushes an intent on create (`event` INTENT_CREATED, or no `event` from a release before it), on an admin-state change
+(ADMIN_STATE_CHANGED) and on a delete (INTENT_DELETED), INTENT-LIFECYCLE-PUSH. An admin-state change reads the intent back and acts on the state it
+has now, not on the push's `adminState`, so a push delivered late or out of order cannot undo a later one: ACTIVATED enacts an intent that has no
+enactment yet (one created DEACTIVATED) and otherwise answers the enactment; DEACTIVATED records `deactivated_at` on the enactment. A delete records
+`deleted_at` (the intent cannot be read back). Neither writes anything to the network: a CM value stays as written. An event this handler does not know
+is answered 200 `IGNORED`, so Intent Service can add one without a release of this module.
 """
 
+import datetime
 import json
 import os
 import uuid
@@ -93,10 +101,18 @@ class RegistrationBody(BaseModel):
     intentHandlingScope: list[str] = ["RAN"]
 
 
-# What Intent Service pushes to this handler for a new Intent: only the intent id. The intent itself is read back from Intent Service.
+# The `event` values of Intent Service's push (INTENT-LIFECYCLE-PUSH); any other value is answered IGNORED.
+INTENT_CREATED, ADMIN_STATE_CHANGED, INTENT_DELETED = "INTENT_CREATED", "ADMIN_STATE_CHANGED", "INTENT_DELETED"
+
+
+# What Intent Service pushes to this handler. Only `intentId` and `event` are read; the intent itself is read back from Intent Service. `event` and
+# `adminState` are plain strings, not enums, so a value added later is answered 200 IGNORED and not 422. Other fields are ignored (pydantic's default).
 class IntentNotification(BaseModel):
-    """What Intent Service pushes to a handling function on CreateIntent."""
+    """What Intent Service pushes to a handling function: on CreateIntent (`event` INTENT_CREATED, the default), on a change of the intent's
+    admin state (ADMIN_STATE_CHANGED) and on its deletion (INTENT_DELETED)."""
     intentId: uuid.UUID
+    event: str = INTENT_CREATED
+    adminState: str | None = None
 
 
 def _cm_targets_from_registration() -> dict[str, list[str]]:
@@ -212,16 +228,23 @@ def _changes_for(expectation: dict, cm_targets: dict[str, list[str]]) -> tuple[l
 
 @router.post("/o1-cm-handler/intents")
 def enact_intent(body: IntentNotification, db: Session = Depends(get_session)):
-    """Intent Service's push for a new Intent addressed to this handler."""
-    # Maintainer notes (not published). Intent Service's push. Answers the enactment view with `replayed` (false for the push that enacted); {status: SKIPPED} (nothing recorded, no
-    # report) for a DEACTIVATED intent; 404 INTENT_NOT_FOUND when Intent Service does not know the intent; 422 RMIH_CAPABILITY_MISMATCH when it is addressed to another handler.
-    # SA-REPLAY: an intent already enacted is answered from its record with `replayed: true`, before anything is read, written or reported.
-    # For every expectation: derive the changes, post one DME action (if there are any), then build the fulfilment result. After the loop the enactment row is flushed first, so the
-    # unique index on intent_id decides a concurrent push before a second report goes out: the loser (IntegrityError) rolls back and answers the winner's record, replayed. Then one
-    # IntentReport is published and its id (null when the publish failed) committed with the row. A transport exception from R1Client is not caught: the request is a 500 and no
-    # enactment is recorded, so Intent Service's retry enacts it again (the DME action ids are the same, and DME ignores the repeat).
+    """Intent Service's push for an Intent addressed to this handler: created, its admin state changed, or deleted."""
+    # Maintainer notes (not published). Which event decides the branch (INTENT-LIFECYCLE-PUSH):
+    # - INTENT_DELETED: `deleted_at` set on the enactment (once) and the enactment answered, `replayed: true`; no enactment: {status: SKIPPED}. Nothing is read
+    #   back (the intent is gone) and nothing is sent anywhere.
+    # - INTENT_CREATED (or no event, a push from a release before INTENT-LIFECYCLE-PUSH) and ADMIN_STATE_CHANGED: SA-REPLAY, a created push for an intent
+    #   already enacted is answered from its record with `replayed: true` before anything is read, written or reported. Otherwise the intent is read back:
+    #   404 INTENT_NOT_FOUND when Intent Service does not know it, 422 RMIH_CAPABILITY_MISMATCH when it is addressed to another handler. An enacted intent
+    #   whose state changed gets `deactivated_at` set (DEACTIVATED) or cleared (ACTIVATED), from the state read back, and its enactment answered, replayed.
+    #   An intent not enacted yet is {status: SKIPPED} while DEACTIVATED, and is enacted when ACTIVATED (`_enact`): an intent created DEACTIVATED is enacted
+    #   when it is activated.
+    # - any other event: 200 {status: IGNORED}, nothing read or written (a handler must not refuse an event added after it).
+    if body.event == INTENT_DELETED:
+        return _record_deleted(db, body.intentId)
+    if body.event not in (INTENT_CREATED, ADMIN_STATE_CHANGED):
+        return {"intentId": str(body.intentId), "status": "IGNORED", "reason": f"event {body.event!r} is not one this handler acts on"}
     recorded = _enactment_of(db, body.intentId)
-    if recorded is not None:
+    if recorded is not None and body.event == INTENT_CREATED:
         return {**_enactment_view(recorded), "replayed": True}
     resp = _r1.get(f"/intent-service/intents/{body.intentId}")
     if resp.status_code != 200:
@@ -229,9 +252,54 @@ def enact_intent(body: IntentNotification, db: Session = Depends(get_session)):
     intent = resp.json()
     if intent["rmihId"] != RMIH_ID:
         raise framework_error(FrameworkError.RMIH_CAPABILITY_MISMATCH, detail="intent is addressed to another handler")
+    if recorded is not None:
+        return _record_admin_state(db, recorded, intent["intentAdminState"])
     if intent["intentAdminState"] != "ACTIVATED":
         return {"intentId": str(body.intentId), "status": "SKIPPED", "reason": "intent is DEACTIVATED"}
+    return _enact(db, body.intentId, intent)
 
+
+def _record_deleted(db: Session, intent_id: uuid.UUID) -> dict:
+    """Records that the intent was deleted: `deleted_at` is set on its enactment the first time and kept on a repeat. Commits when it set it.
+
+    Returns the enactment view with `replayed: true`, or {status: SKIPPED} when the intent was never enacted here. Writes nothing to the network: the CM
+    values the intent set stay as written.
+    """
+    recorded = _enactment_of(db, intent_id)
+    if recorded is None:
+        return {"intentId": str(intent_id), "status": "SKIPPED", "reason": "intent was not enacted by this handler"}
+    if recorded.deleted_at is None:
+        recorded.deleted_at = datetime.datetime.now(datetime.UTC)
+        db.commit()
+    return {**_enactment_view(recorded), "replayed": True}
+
+
+def _record_admin_state(db: Session, recorded: O1CmEnactment, admin_state: str) -> dict:
+    """Records the intent's current admin state on its enactment: DEACTIVATED sets `deactivated_at` (kept on a repeat), ACTIVATED clears it. Commits when
+    it changed something.
+
+    `admin_state` is the state read back from Intent Service, so a late or repeated push changes nothing. The intent is not enacted again on
+    reactivation (HISTORY.md INTENT-LIFECYCLE-PUSH): the enactment is keyed on the intent (SA-REPLAY), and a value another writer changed since is not this
+    handler's to overwrite. Returns the enactment view with `replayed: true`.
+    """
+    if admin_state == "DEACTIVATED" and recorded.deactivated_at is None:
+        recorded.deactivated_at = datetime.datetime.now(datetime.UTC)
+        db.commit()
+    elif admin_state == "ACTIVATED" and recorded.deactivated_at is not None:
+        recorded.deactivated_at = None
+        db.commit()
+    return {**_enactment_view(recorded), "replayed": True}
+
+
+def _enact(db: Session, intent_id: uuid.UUID, intent: dict) -> dict:
+    """Enacts an ACTIVATED intent that has no enactment yet: one DME action per expectation, the enactment row, then one IntentReport. Commits.
+
+    For every expectation: derive the changes, post one DME action (if there are any), then build the fulfilment result. After the loop the enactment row
+    is flushed first, so the unique index on intent_id decides a concurrent push before a second report goes out: the loser (IntegrityError) rolls back and
+    answers the winner's record, replayed. Then one IntentReport is published and its id (null when the publish failed) committed with the row. A transport
+    exception from R1Client is not caught: the request is a 500 and no enactment is recorded, so Intent Service's retry enacts it again (the DME action ids
+    are the same, and DME ignores the repeat). Returns the enactment view with `replayed: false`.
+    """
     # Read from Intent Service on every push, so a registration with other targets is honoured without a restart.
     cm_targets = _cm_targets_from_registration()
     actions, unsupported, expectation_results = [], [], []
@@ -245,8 +313,8 @@ def enact_intent(body: IntentNotification, db: Session = Depends(get_session)):
             # which DME ignores — instead of writing the change twice.
             action = _r1.post("/dme/actions", json={
                 "requestedBy": REQUESTED_BY, "changes": changes,
-                "actionId": str(uuid.uuid5(ACTION_ID_NAMESPACE, f"{body.intentId}:{expectation['expectationId']}")),
-                "sourceContext": {"intentId": str(body.intentId), "expectationId": expectation["expectationId"],
+                "actionId": str(uuid.uuid5(ACTION_ID_NAMESPACE, f"{intent_id}:{expectation['expectationId']}")),
+                "sourceContext": {"intentId": str(intent_id), "expectationId": expectation["expectationId"],
                                   "rmioId": intent["rmioId"]},
             })
             # Only a 200 or 202 answer is read as an action body; any other status is recorded as HTTP_<code>.
@@ -275,7 +343,7 @@ def enact_intent(body: IntentNotification, db: Session = Depends(get_session)):
     # The intent is FULFILLED only when every expectation is.
     fulfilled = all(r["expectationFulfilmentInfo"]["fulfilmentStatus"] == "FULFILLED" for r in expectation_results)
     status = "FULFILLED" if fulfilled else "NOT_FULFILLED"
-    report = {"intentReference": str(body.intentId), "intentFulfilmentReport": {
+    report = {"intentReference": str(intent_id), "intentFulfilmentReport": {
         "intentFulfilmentInfo": {"fulfilmentStatus": "FULFILLED"} if fulfilled else {
             "fulfilmentStatus": "NOT_FULFILLED", "notFullfilledState": "DEGRADED",
             "notFulfilledReasons": [f"{u['targetName']}: {u['reason']}" for u in unsupported]
@@ -283,14 +351,14 @@ def enact_intent(body: IntentNotification, db: Session = Depends(get_session)):
         "expectationFulfilmentResult": expectation_results,
         "additionalFulfilmentInfo": json.dumps({"actions": actions}),
     }}
-    enactment = O1CmEnactment(intent_id=body.intentId, status=status, actions=actions, unsupported_targets=unsupported)
+    enactment = O1CmEnactment(intent_id=intent_id, status=status, actions=actions, unsupported_targets=unsupported)
     db.add(enactment)
     try:
         db.flush()
     except IntegrityError:
         # another push of the same intent recorded its enactment first (Postgres makes this insert wait for it): answer that one, report nothing
         db.rollback()
-        winner = _enactment_of(db, body.intentId)
+        winner = _enactment_of(db, intent_id)
         if winner is None:          # the violation was not the per-intent index: not a lost race
             raise
         return {**_enactment_view(winner), "replayed": True}
@@ -308,10 +376,12 @@ def _enactment_of(db: Session, intent_id: uuid.UUID) -> O1CmEnactment | None:
 
 
 def _enactment_view(e: O1CmEnactment) -> dict:
-    """The JSON view of an enactment record, with ids as strings and `createdAt` in ISO 8601."""
+    """The JSON view of an enactment record, with ids as strings and `createdAt`, `deactivatedAt` and `deletedAt` (null when not set) in ISO 8601."""
     return {"enactmentId": str(e.enactment_id), "intentId": str(e.intent_id), "status": e.status, "actions": e.actions,
             "unsupportedTargets": e.unsupported_targets,
-            "intentReportId": str(e.intent_report_id) if e.intent_report_id else None, "createdAt": e.created_at.isoformat()}
+            "intentReportId": str(e.intent_report_id) if e.intent_report_id else None, "createdAt": e.created_at.isoformat(),
+            "deactivatedAt": e.deactivated_at.isoformat() if e.deactivated_at else None,
+            "deletedAt": e.deleted_at.isoformat() if e.deleted_at else None}
 
 
 @router.get("/o1-cm-handler/enactments")

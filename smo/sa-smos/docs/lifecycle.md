@@ -155,17 +155,24 @@ sequenceDiagram
     else
         SA-->>A: 201 {rmihId, cmTargets, notificationDestination} (again: updated in place, intents kept)
     end
-    IS->>SA: POST /o1-cm-handler/intents {intentId} (Intent Service's outbox)
-    SA->>DB: the enactment of intentId?
-    alt already enacted (the outbox pushed again)
+    IS->>SA: POST /o1-cm-handler/intents {intentId, event, adminState, ...} (Intent Service's outbox)
+    alt event INTENT_DELETED
+        SA->>DB: deletedAt on the enactment, unless set (commit)
+        SA-->>IS: 200 the enactment {replayed true}, or {status SKIPPED} when never enacted, nothing written to the network
+    else an event it does not know
+        SA-->>IS: 200 {status IGNORED}, nothing read or written
+    else event INTENT_CREATED (or none) for an intent already enacted (the outbox pushed again)
         SA-->>IS: 200 the recorded enactment {replayed true}, nothing read, written or reported
-    else
+    else INTENT_CREATED or ADMIN_STATE_CHANGED
         SA->>IS: GET /intent-service/intents/{intentId}
         alt not 200 / addressed to another handler
             SA-->>IS: 404 INTENT_NOT_FOUND / 422 RMIH_CAPABILITY_MISMATCH, not sent again
+        else enacted already (an admin-state change)
+            SA->>DB: deactivatedAt set (state read is DEACTIVATED) or cleared (ACTIVATED), when it changes (commit)
+            SA-->>IS: 200 the enactment {replayed true}, nothing written to the network
         else DEACTIVATED
             SA-->>IS: 200 {status SKIPPED}, nothing recorded
-        else
+        else ACTIVATED, not enacted (a new intent, or one created DEACTIVATED and activated since)
             SA->>IS: GET /intent-service/intent-handling-functions (its CM targets, defaults if this fails)
             loop each expectation with supported targets
                 SA->>DME: POST /dme/actions {actionId uuid5(intentId, expectationId), changes, sourceContext}
@@ -186,8 +193,10 @@ sequenceDiagram
     SA-->>A: 204 / 409 INTENT_HANDLING_FUNCTION_IN_USE (intents still addressed to it) / 502 UPSTREAM_FAILED
 ```
 
-Intent Service pushes an intent once, when it is created, and its outbox delivers at least once, so the enactment is keyed on the intent (SA-REPLAY): a push
-for an intent already enacted is answered from its enactment and does nothing again, and two pushes at once keep one row through the unique index on
+Intent Service pushes an intent when it is created, when its admin state changes and when it is deleted (INTENT-LIFECYCLE-PUSH), and its outbox delivers
+each at least once, so the enactment is keyed on the intent (SA-REPLAY): a create push for an intent already enacted is answered from its enactment and does
+nothing again, an admin-state push acts on the state read back (so a late one cannot undo a later one), and a delete or deactivation is recorded on the
+enactment once and writes nothing to the network, and two pushes at once keep one row through the unique index on
 `intent_id`, the loser answering the winner's. The action id is derived from the intent and the expectation, so a push enacted twice (two at once, or after
 a crash before the commit) writes the change once: DME answers the replay IGNORED and the first outcome decides the report. A transport error to Intent
 Service or DME is not caught: the push answers 500, nothing is recorded, and Intent Service's outbox sends it again. Flow in

@@ -3,8 +3,9 @@ dispatches, served at `/intent-service` behind R1 Termination.
 
 What it is: every route of the service and the helpers behind them. An intent owner (an rApp or the GUI, the RMIO) addresses an intent to one RMIH it
 chose by `rmihId`; this module validates it, checks it against what that RMIH declares it can handle, stores it with an initial report, queues a push to
-the RMIH, and delivers every later report to the recipients named in the intent's report control. An autonomy dispatch (`HISTORY.md` OI-6.3) is the
-record that turns an AI/ML inference outcome into an intent according to the rApp instance's autonomy mode. Enactment belongs to the RMIH, not here.
+the RMIH (again when its admin state changes and when it is deleted, INTENT-LIFECYCLE-PUSH), and delivers every later report to the recipients named in
+the intent's report control. An autonomy dispatch (`HISTORY.md` OI-6.3) is the record that turns an AI/ML inference outcome into an intent according
+to the rApp instance's autonomy mode. Enactment belongs to the RMIH, not here.
 Design record: `intent-service/README.md`; SMO Design v1.3 section 3.12 and Policy Mgmt LLD sections 1-3 (this module was Policy Management & Info SMOS
 before it was renamed; `docs/ARCHITECTURE.md`, Intent Service).
 
@@ -349,8 +350,8 @@ def _create_intent_row(db: Session, body: CreateIntentRequest, owner: str | None
 
     A FEASIBILITYCHECK* intent with infeasible targets is accepted and its initial report carries the INFEASIBLE feasibility report. Target conflicts are
     added to the report, not refused. Side effects: an `Intent` row, an `IntentReport` row (fulfilment NOT_FULFILLED / RECEIVED, plus the conflict and
-    feasibility reports when present) that becomes `intent_report_reference`, one outbox row pushing the new intent to the RMIH, and one outbox row per
-    matching report recipient (`_deliver_report`). The caller commits; a rollback discards all of them.
+    feasibility reports when present) that becomes `intent_report_reference`, one outbox row pushing the new intent to the RMIH (`event` INTENT_CREATED),
+    and one outbox row per matching report recipient (`_deliver_report`). The caller commits; a rollback discards all of them.
     """
     fn = db.get(IntentHandlingFunction, body.rmihId)
     if fn is None:
@@ -397,11 +398,34 @@ def _create_intent_row(db: Session, body: CreateIntentRequest, owner: str | None
     # Outbox rows in the caller's transaction (PR-MSG-1.9): this function no longer commits, its caller does, and the
     # notifications are sent once that commit has happened.
     enqueue(db, fn.notification_destination, {
-        "intentId": str(intent.intent_id), "expectationObjectTypes": sorted(_requested_expectation_object_types(expectations)),
-        "intentPriority": intent.intent_priority, "rmioId": intent.rmio_id, "intentMgmtPurpose": intent.intent_mgmt_purpose,
+        **_lifecycle_push(intent, INTENT_CREATED),
+        "intentPriority": intent.intent_priority, "intentMgmtPurpose": intent.intent_mgmt_purpose,
     })
     _deliver_report(db, intent, report)
     return intent
+
+
+# The `event` of a push to an intent's RMIH (INTENT-LIFECYCLE-PUSH). A handler answers an event it does not know with 2xx and does nothing, so a new
+# event can be added here without breaking a handler that predates it.
+INTENT_CREATED, ADMIN_STATE_CHANGED, INTENT_DELETED = "INTENT_CREATED", "ADMIN_STATE_CHANGED", "INTENT_DELETED"
+
+
+def _lifecycle_push(intent: Intent, event: str) -> dict:
+    """Returns the body every push to an intent's RMIH carries: `intentId`, `event`, the `adminState` the intent has now, its `expectationObjectTypes` and
+    `rmioId`. A handler can act on an INTENT_DELETED push from this alone: the intent cannot be read back once it is deleted."""
+    return {"intentId": str(intent.intent_id), "event": event, "adminState": intent.intent_admin_state,
+            "expectationObjectTypes": sorted(_requested_expectation_object_types(intent.intent_expectations or [])), "rmioId": intent.rmio_id}
+
+
+def _push_to_rmih(db: Session, intent: Intent, event: str) -> None:
+    """Adds an outbox row to `db`'s transaction that pushes `event` for `intent` to its RMIH's `notificationDestination`; the caller commits.
+
+    Nothing is added when the RMIH is no longer registered (its deregistration is refused while it has intents, so only a database edited by hand gets
+    here) or when the SSRF guard refuses its destination (`enqueue` drops it with a warning).
+    """
+    fn = db.get(IntentHandlingFunction, intent.rmih_id)
+    if fn is not None:
+        enqueue(db, fn.notification_destination, _lifecycle_push(intent, event))
 
 
 def _requested_expectation_object_types(expectations: list[dict]) -> set[str]:
@@ -534,8 +558,8 @@ def update_intent_admin_state(intent_id: uuid.UUID, body: AdminStateRequest, req
     RECEIVED again until the handler reports otherwise."""
     # Route notes (the docstring above is published): 404 `INTENT_NOT_FOUND`; 403 `INTENT_ACCESS_DENIED` when an rApp does not own the intent (its `requesterId`
     # is not read), or when the console or a module names a `requesterId` that is not the intent's `rmioId` (call flow 09b). A change to the state it already has
-    # does nothing and writes no report. Otherwise: state changed, a new fulfilment report (SUSPENDED when deactivated, RECEIVED when activated) becomes the
-    # current report and is delivered, one commit. Returns the intent view.
+    # does nothing, writes no report and pushes nothing. Otherwise: state changed, a new fulfilment report (SUSPENDED when deactivated, RECEIVED when activated)
+    # becomes the current report and is delivered, and the RMIH is pushed ADMIN_STATE_CHANGED (INTENT-LIFECYCLE-PUSH), one commit. Returns the intent view.
     intent = db.get(Intent, intent_id)
     if intent is None:
         raise framework_error(FrameworkError.INTENT_NOT_FOUND, detail="no such intent")
@@ -552,6 +576,7 @@ def update_intent_admin_state(intent_id: uuid.UUID, body: AdminStateRequest, req
         intent.intent_report_reference = report.id
         _apply_report(intent, report)
         _deliver_report(db, intent, report)
+        _push_to_rmih(db, intent, ADMIN_STATE_CHANGED)
         db.commit()
     return _intent_view(intent)
 
@@ -561,10 +586,13 @@ def delete_intent(intent_id: uuid.UUID, request: Request, db: Session = Depends(
     """HISTORY.md §7 item 5: an RMIO retracts an Intent it created.
     Idempotent."""
     # Route notes: idempotent, 204 for an unknown id; 403 `INTENT_ACCESS_DENIED` when an rApp does not own the intent (call flow 09b). The intent's reports are
-    # deleted with it, in the same transaction (explicitly, so SQLite matches PostgreSQL's ON DELETE CASCADE). Nothing is sent to the RMIH.
+    # deleted with it, in the same transaction (explicitly, so SQLite matches PostgreSQL's ON DELETE CASCADE). The RMIH is pushed INTENT_DELETED in the same
+    # transaction (INTENT-LIFECYCLE-PUSH), with the intent's id, admin state, object types and RMIO, because it cannot read the intent back; an unknown id
+    # pushes nothing.
     intent = db.get(Intent, intent_id)
     if intent is not None:
         _check_intent_owner(request, intent)
+        _push_to_rmih(db, intent, INTENT_DELETED)   # built before the row is deleted: the push carries what the handler can no longer read
         intent.intent_report_reference = None
         db.flush()
         for report in db.scalars(select(IntentReport).where(IntentReport.intent_id == intent_id)):
