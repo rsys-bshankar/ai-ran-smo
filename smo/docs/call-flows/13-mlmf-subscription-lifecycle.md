@@ -74,9 +74,9 @@ sequenceDiagram
         Note over AIM: breached = a guarded metric the report carries is below its floor or above its ceiling<br/>missingMetrics = the guarded metrics it does not carry (not a breach)<br/>report and the subscriber's push committed together (13d)
         opt breached and the model is in a coordination group
             AIM->>MLMR: GET /mlmr/coordination-groups
-            Note over AIM: retrainPropagation decides, then each PROMOTED member retrained on its own (call flow 02e)
+            Note over AIM: retrainPropagation decides, then each PROMOTED member retrained on its own (call flow 02e)<br/>a failure here is groupRetrainError {code, detail}, the report kept
         end
-        AIM-->>P: 200 {reportId, breachedFloor, missingMetrics, groupRetrainTriggered?, retrainedModelIds?, retrainSkipped?}
+        AIM-->>P: 200 {reportId, breachedFloor, missingMetrics, groupRetrainTriggered?, retrainedModelIds?, retrainSkipped?, groupRetrainError?}
     end
 ```
 
