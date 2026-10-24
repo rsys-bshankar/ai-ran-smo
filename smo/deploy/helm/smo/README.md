@@ -66,6 +66,7 @@ The schema is brought to the release's by one Job (`scripts/migrate.py`, the sam
 
 * **install**: a plain Job `migrate`. The bundled database is part of the same release, so a pre-install hook would run before it exists.
 * **upgrade**: a `pre-upgrade` hook Job, so it has finished, once, before any Deployment is touched; if it fails the upgrade is aborted and every old pod keeps serving, and `kubectl -n smo logs job/migrate-<revision>` says why. A hook Job that succeeded is deleted (`hook-succeeded`), so its log is gone with it; the install's plain Job `migrate` stays.
+* **locks**: on Postgres every lock the migration takes waits at most `SMO_MIGRATE_LOCK_TIMEOUT_MS` (5000 ms). A revision that cannot get one rolls the whole migration back, releasing the locks it held on other tables so the running release's reads do not stall, and the Job tries again (pause 1 s doubling to 10 s, `SMO_MIGRATE_LOCK_ATTEMPTS` tries, default 10). Its log prints a line for each try (MIGRATE-LOCK-HOLD).
 
 Every module that uses the database has an init container, `wait-for-schema`, that blocks until the database is at (or past) the head revision of its own image. A new pod never serves on an older schema, and a rolling update (`maxUnavailable: 0`) leaves the old pods in service until the new ones are ready. Because schema changes follow the expand/contract rule (`smo/CLAUDE.md`), the old pods run on the new schema in between.
 

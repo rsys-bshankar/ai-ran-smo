@@ -36,8 +36,8 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `shared` | 50 | 663 | 1118 |
 | `sme` | 5 | 121 | 139 |
 | `so-smos` | 3 | 27 | 40 |
-| `tests_integration` | 94 | 718 | 895 |
-| **total** | **417** | **5338** | **7732** (Python) |
+| `tests_integration` | 94 | 731 | 909 |
+| **total** | **417** | **5351** | **7746** (Python) |
 
 ## Per test file
 
@@ -613,7 +613,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests_integration/test_load_run.py` | 8 | 8 |
 | `tests_integration/test_logging_adoption.py` | 2 | 2 |
 | `tests_integration/test_metrics_adoption.py` | 2 | 2 |
-| `tests_integration/test_migrations.py` | 14 | 19 |
+| `tests_integration/test_migrations.py` | 21 | 27 |
 | `tests_integration/test_mirror_images.py` | 31 | 35 |
 | `tests_integration/test_mobility_optimization_rapp.py` | 7 | 7 |
 | `tests_integration/test_model_ownership.py` | 7 | 7 |
@@ -650,7 +650,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests_integration/test_traffic_steering_rapp.py` | 10 | 10 |
 | `tests_integration/test_upgrade_at_volume.py` | 8 | 8 |
 | `tests_integration/test_upgrade_lane_targets.py` | 8 | 8 |
-| `tests_integration/test_upgrade_load_verdict.py` | 7 | 7 |
+| `tests_integration/test_upgrade_load_verdict.py` | 13 | 13 |
 | `tests_integration/test_validation_echo.py` | 1 | 1 |
 | `tests_integration/test_vendor_profile.py` | 7 | 7 |
 

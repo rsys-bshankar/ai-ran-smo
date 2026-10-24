@@ -63,7 +63,11 @@ sequenceDiagram
 ```
 
 The migrate Job is a hook only on upgrade. On `helm install` it is a plain Job named `migrate` (the bundled database is part of the same release, so a
-pre-install hook would run before it exists) and the pods wait for it in `wait-for-schema` (`deploy/helm/smo/templates/migrate.yaml`). The role Secret
+pre-install hook would run before it exists) and the pods wait for it in `wait-for-schema` (`deploy/helm/smo/templates/migrate.yaml`). On Postgres
+every lock the migration takes waits at most `SMO_MIGRATE_LOCK_TIMEOUT_MS` (5 s by default; MIGRATE-LOCK-HOLD): a revision that cannot get one fails,
+the transaction rolls back and lets go of the locks the earlier revisions took on other modules' tables, and the Job tries again after a pause of 1 s
+doubling to 10 s, up to `SMO_MIGRATE_LOCK_ATTEMPTS` (10) times. So a lock another session holds slows the running release's reads by a few seconds
+at a time instead of stalling them until the Job's deadline. The role Secret
 is a hook too, so an upgrade from a chart that had no roles finds it before the Job mounts it. Only pods whose template changes restart: the bundled
 Postgres pod keeps the labels release 0.4.0 rendered, so an upgrade never restarts the database (`deploy/helm/smo/README.md`, "What restarts on
 `helm upgrade`"). Onboarding and the GUI backend hold a volume and use `Recreate`, so they stop for a moment.
@@ -76,7 +80,8 @@ constraints, and the old release's runbook passes; then the same upgrade runs to
 tags, as `scripts/check_previous_release_code.sh` does, and the table from the revisions the upgrade runs (the newest revision's first table that the
 database already has). The Helm lane in `smo-tests.yml` ("helm upgrade rolls every module with the old pods serving, and the database stays") does the
 same upgrade without the lock. **Phase 1:** the kind lane runs nightly, by hand and on a pull request that changes its paths, and is not a required
-check; it starts from the newest release (gated at two route errors) and from the one before it (report only).
+check; it starts from the newest release (gated: at most 1 % errors on the routes that stay up and two on any one of them, the package list, which rolls
+with Recreate, at most 25 % of its own calls) and from the one before it (report only).
 
 ## 30b — Expand, then contract
 

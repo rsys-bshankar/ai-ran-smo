@@ -343,6 +343,8 @@ compose and the chart use the file form (`docs/SECRETS.md` lists each secret, it
 | Variable | Default | Secret | Read in | What it does |
 |---|---|---|---|---|
 | `SMO_DB_ROLE_PASSWORD_DIR` | `/run/secrets` |  | `scripts/db_roles.py` | Directory `db_roles.py` (the `migrate` service) reads each module's database password file `db_password_<module>` from (default `/run/secrets`). A path, not a secret. |
+| `SMO_MIGRATE_LOCK_ATTEMPTS` | `"" (empty)` |  | `scripts/migrate.py` | Postgres only: how many times `scripts/migrate.py` tries an upgrade or downgrade that hit `SMO_MIGRATE_LOCK_TIMEOUT_MS` (default 10), pausing 1 s, doubling to at most 10 s, between tries; then the error ends the Job. |
+| `SMO_MIGRATE_LOCK_TIMEOUT_MS` | `"" (empty)` |  | `scripts/migrate.py` | Postgres only: milliseconds `scripts/migrate.py` waits for any lock a revision takes (default 5000; `0`: no limit). On a timeout the whole upgrade rolls back, releasing every lock it held, and is tried again (MIGRATE-LOCK-HOLD). |
 
 ### `sdk`
 
