@@ -19,13 +19,13 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `mllf` | 1 | 10 | 10 |
 | `mlmr` | 2 | 81 | 87 |
 | `mock-o1-adaptor` | 6 | 84 | 108 |
-| `nfo` | 2 | 43 | 48 |
+| `nfo` | 2 | 44 | 49 |
 | `onboarding` | 6 | 126 | 212 |
 | `r1-termination` | 10 | 152 | 350 |
 | `ran-analytics` | 2 | 19 | 22 |
 | `ran-nf-oam` | 55 | 828 | 1234 |
-| `rapp-mgmt` | 11 | 203 | 288 |
-| `sa-smos` | 3 | 51 | 78 |
+| `rapp-mgmt` | 11 | 204 | 289 |
+| `sa-smos` | 3 | 56 | 85 |
 | `samples/coverage-optimization-rapp` | 6 | 61 | 80 |
 | `samples/energy-saving-rapp` | 6 | 74 | 88 |
 | `samples/mobility-optimization-rapp` | 6 | 67 | 85 |
@@ -36,8 +36,8 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `shared` | 50 | 663 | 1118 |
 | `sme` | 5 | 122 | 140 |
 | `so-smos` | 3 | 27 | 40 |
-| `tests_integration` | 95 | 737 | 915 |
-| **total** | **418** | **5382** | **7777** (Python) |
+| `tests_integration` | 95 | 739 | 917 |
+| **total** | **418** | **5391** | **7788** (Python) |
 
 ## Per test file
 
@@ -238,7 +238,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | file | test functions | collected tests |
 |---|---:|---:|
 | `tests/test_dms_lifecycle.py` | 8 | 11 |
-| `tests/test_main.py` | 35 | 37 |
+| `tests/test_main.py` | 36 | 38 |
 
 </details>
 
@@ -351,7 +351,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests/test_business_metrics.py` | 1 | 1 |
 | `tests/test_global_stop_and_latest_kpi.py` | 13 | 15 |
 | `tests/test_instance_safeguards.py` | 6 | 11 |
-| `tests/test_main.py` | 74 | 96 |
+| `tests/test_main.py` | 75 | 97 |
 | `tests/test_operator_api.py` | 14 | 30 |
 | `tests/test_own_instance_checks.py` | 2 | 2 |
 | `tests/test_rapp_limits.py` | 19 | 22 |
@@ -365,9 +365,9 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 
 | file | test functions | collected tests |
 |---|---:|---:|
-| `tests/test_assurance_loop.py` | 21 | 41 |
+| `tests/test_assurance_loop.py` | 24 | 46 |
 | `tests/test_main.py` | 21 | 22 |
-| `tests/test_o1cm.py` | 9 | 15 |
+| `tests/test_o1cm.py` | 11 | 17 |
 
 </details>
 
@@ -578,7 +578,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests_integration/test_contract_schemathesis.py` | 1 | 18 |
 | `tests_integration/test_count_tests.py` | 4 | 4 |
 | `tests_integration/test_coverage_optimization_rapp.py` | 10 | 10 |
-| `tests_integration/test_cross_service.py` | 17 | 17 |
+| `tests_integration/test_cross_service.py` | 18 | 18 |
 | `tests_integration/test_dast_baseline.py` | 7 | 7 |
 | `tests_integration/test_dast_gateway_spec.py` | 2 | 2 |
 | `tests_integration/test_database_credentials.py` | 5 | 5 |
@@ -613,7 +613,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests_integration/test_load_run.py` | 8 | 8 |
 | `tests_integration/test_logging_adoption.py` | 2 | 2 |
 | `tests_integration/test_metrics_adoption.py` | 2 | 2 |
-| `tests_integration/test_migrations.py` | 21 | 27 |
+| `tests_integration/test_migrations.py` | 22 | 28 |
 | `tests_integration/test_mirror_images.py` | 31 | 35 |
 | `tests_integration/test_mobility_optimization_rapp.py` | 7 | 7 |
 | `tests_integration/test_model_ownership.py` | 7 | 7 |

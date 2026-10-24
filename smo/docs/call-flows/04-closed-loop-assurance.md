@@ -105,7 +105,8 @@ sequenceDiagram
                 SA->>DB: lastEvaluation committed
                 SA-->>MDAF: 200 EVALUATED {breaches, missing}
             else a new breach and an automatic action
-                SA->>M: the automatic action (04c), requested by sa-smos
+                SA->>M: the automatic action (04c), requested by sa-smos, actionId uuid5(monitor, report, action type)
+                Note over SA,M: a delivery of this report again after a crash before the commit below sends the same Idempotency-Key,<br/>and the module that acts answers with its first answer
                 SA->>DB: lastEvaluation and the action {autoExecuted true, reportId, detail "breach of ... in report ..."} committed together
                 SA-->>MDAF: 200 EVALUATED {breaches, action}
             else a new breach and no automatic action
@@ -148,7 +149,7 @@ sequenceDiagram
         alt no remedy set
             Note over SA: ESCALATED "no remedy is set", nothing written
         else
-            SA->>OAM: POST /config-jobs {requestedBy sa-smos, changes: the remedy} · Idempotency-Key sa-smos-action:{actionId}
+            SA->>OAM: POST /config-jobs {requestedBy sa-smos, changes: the remedy}
             Note over SA: COMPLETED is RESOLVED {jobId, status}, held for approval is ESCALATED naming the approval,<br/>PARTIAL_SUCCESS / FAILED is ESCALATED naming the job, a refusal is ESCALATED with its reason
         end
     else SCALE
@@ -169,6 +170,7 @@ sequenceDiagram
             Note over SA: RESOLVED {nfDeploymentId}, or ESCALATED with NFO's refusal
         end
     end
+    Note over SA: every POST above carries Idempotency-Key sa-smos-action:{actionId} and every target is @idempotent<br/>(a new uuid4 by hand, so asking again acts again)
     Note over SA: no answer from the module that acts is ESCALATED "its outcome is unknown", recorded, never a 500
     SA-->>C: 201 {actionId, actionType, outcome, autoExecuted, requestedBy, createdAt, detail?, result?, reportId?}
 ```

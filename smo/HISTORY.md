@@ -2331,6 +2331,66 @@ count the breach again).
 - **Docs.** `aimgf/README.md` (the gap sentence removed, `groupRetrainError` in the route table and the propagation paragraph, the tests), call flows
   02e and 13b and `aimgf/docs/lifecycle.md` (the 500 replaced by `groupRetrainError`; images redrawn), `docs/VALIDATION.md`, `CHANGELOG.md`.
 
+### SA-REPLAY — SA SMOS enacts an intent once and runs a report's remedial action once
+
+The item: Intent Service's outbox re-push of a slow enactment recorded a second O1-CM enactment and published a second IntentReport, and a remedial action's
+`Idempotency-Key` was made from a new action id on every run, so a report MDAF re-delivered after a crash ran the action again.
+
+- **Why an intent's enactment is keyed on `intent_id` alone.** Intent Service pushes an intent to its RMIH in one place, `_create_intent_row`
+  (`intent-service/app/main.py`), used by `POST /intents`, the AUTONOMOUS autonomy dispatch and the ASSIST resolve: one outbox row per new intent. The
+  admin-state route (DEACTIVATED / ACTIVATED) writes and delivers a report to the intent's report recipients but pushes nothing to the RMIH; a
+  re-registration of the RMIH updates it in place and pushes nothing; a delete pushes nothing; there is no route that changes an intent's expectations.
+  So every push for one intent id carries the same content, and the only repeat is the outbox sending the same row again (no answer within its 2 s timeout,
+  or a 5xx; a 4xx counts as delivered). A content hash would never differ, so it was not taken. A consequence, unchanged: an intent created DEACTIVATED
+  is SKIPPED and never pushed again when it is activated.
+- **The handler (`sa-smos/app/o1cm.py`, `enact_intent`).** First it looks for the intent's enactment (`_enactment_of`); one found is answered with
+  `replayed: true` before anything is read, written or reported. Otherwise it enacts as before, then flushes the enactment row before it publishes the
+  IntentReport, so the unique index decides two pushes at once before a second report goes out: the loser's insert raises `IntegrityError` (on Postgres it
+  waits for the winner's commit), it rolls back and answers the winner's enactment, replayed. The report id is set on the row and committed after the
+  publish. The answer of the push that enacted carries `replayed: false`. The DME action ids stay uuid5(intent, expectation) (W10-18), so the two pushes
+  of a race, or a push enacted again after a crash before the commit, write the change once.
+- **Revision 0062 (`migrations/versions/0062_o1_cm_enactment_once_per_intent.py`).** `UNIQUE INDEX ux_o1_cm_enactment_intent_id ON sa_smos.o1_cm_enactment
+  (intent_id)`, declared on the model too (`Index(..., unique=True)`, so the SQLite unit tests have it). A database may already hold duplicates from this
+  bug, so the revision first takes `LOCK TABLE ... IN SHARE ROW EXCLUSIVE MODE` (no replica of the previous release can insert between the dedupe and the
+  index), deletes every row whose `row_number() OVER (PARTITION BY intent_id ORDER BY created_at, enactment_id)` is above 1 (the oldest is kept: the
+  enactment whose report Intent Service got first), and creates the index `IF NOT EXISTS`. Downgrade drops the index; the deleted duplicates are not
+  restored. Expand only. The previous release's code on the new schema: it reads, lists and records a first push as before; its repeat of a push for an
+  intent already enacted publishes a second report as it always did and then fails at the insert, which the shared IntegrityError handler answers 409
+  `RESOURCE_ALREADY_EXISTS` (so Intent Service's outbox stops), where it used to store a duplicate. `tests_integration/test_migrations.py`: `HEAD` is
+  0062, the lock tests hold `HEAD_TABLE` (the table the head revision changes, now named once beside `HEAD`), and a new test seeds three enactments of one
+  intent and one of another at 0061, upgrades, and finds the oldest of the three and the single one kept, the index unique on `intent_id`, and a further
+  duplicate refused.
+- **`scripts/check_upgrade_from_previous_release.sh`.** It installs the previous release, runs its demo runbook, upgrades the database with this commit's
+  `migrate` and fails when any table has fewer rows than before (`LOST`). The dedupe deletes rows only where an intent has more than one enactment. The
+  previous release's runbook (smo-v0.8.0 `test_full_runbook_sequence_succeeds`) never pushes an intent to the O1-CM handler: its `sa-smos` RMIH points at
+  `/intents/notify`, and its one intent for `sa-smos` is refused (scope CN), so `o1_cm_enactment` is empty before and after and nothing is reported lost. On
+  a real database with duplicates the table does lose rows, the duplicates, which is the point; the CHANGELOG says so. The seeded control migration of the
+  script is unaffected: it fails on `onboarding.application_package`.
+- **Remedial actions (`sa-smos/app/main.py`, `_run`, `_dispatch`).** An action a report ran (`report_id` given) has the id
+  uuid5(`REPORT_ACTION_NAMESPACE`, `"<monitor>:<report>:<action type>"`); an action asked by hand keeps uuid4, so asking again acts again. An action already
+  recorded under the derived id is returned and nothing is sent (a report evaluated again after a later report, whose action committed). Every POST
+  `_dispatch` makes now carries `Idempotency-Key: sa-smos-action:<actionId>`, not only the config job. The targets: RETRAIN `POST /aimgf/training-jobs`
+  (`@idempotent("aimgf", 201)` since PR-ST-3; SA SMOS sent it no key before), CONFIG_CHANGE `POST /ran-nf-oam/config-jobs` (`@idempotent("ran-nf-oam",
+  202)`), ROLLBACK `POST /rapp-mgmt/instances/{id}/rollback` and RECONNECT `POST /nfo/deployments/{id}/heal`. The last two were not decorated (#539/#540
+  covered the routes the SDKs call; SA SMOS is not an SDK caller): a repeated rollback was 409 while the replacement was pending and, once it was resolved,
+  rolled back one version further; a repeated heal recorded a second HEAL operation. Both are now `@idempotent` with their own 200 (each gained a
+  `request: Request` parameter, which FastAPI does not publish, so the OpenAPI documents are unchanged); `rapp-mgmt` and `nfo` already list
+  `idempotency_key` in `migrations/db_roles.json`. A keyed repeat is answered from the first answer within the key's TTL (24 h).
+- **Tests.** `sa-smos/tests/test_o1cm.py`: a re-push answered from the enactment (one DME action, one report, one row, the rest of the view equal); two
+  pushes that both pass the lookup keep one row, the loser answering the winner's enactment without a report, both with the same action id; a DME replay
+  judged by its first status (the former re-push test, which now exercises a push enacted again). `sa-smos/tests/test_assurance_loop.py`: a report whose
+  first delivery's commit fails is delivered again and the config job is asked twice with the same key, uuid5 of the report, and one action is recorded;
+  a manual action gets a new key each time; RETRAIN, ROLLBACK and RECONNECT each send their key. `rapp-mgmt/tests/test_main.py` and
+  `nfo/tests/test_main.py`: a keyed rollback and heal replayed (one replacement, one HEAL operation). `tests_integration/test_cross_service.py`: the
+  first push through the mesh is delivered but its answer lost, Intent Service's delivery sweep pushes again, and there is one enactment, no further
+  IntentReport and one config job. The SA SMOS tests fail on the code before the change; the integration test does too (three reports, not two).
+  `tests_integration/test_energy_saving_rapp.py` TC29 now expects the re-push it makes to be answered `replayed` with no new DME action (it
+  asserted the DME replay before).
+- **Docs.** `sa-smos/README.md` (handler decisions, the dispatch table's keys, the push answer, the index, the open items, the tests),
+  `sa-smos/docs/lifecycle.md` (the handler's replay and race branches, the crash notes; images redrawn), call flow 04 (04b, 04c; images redrawn), the
+  prose of call flow 22b, `rapp-mgmt/README.md`, `nfo/README.md`, `docs/ARCHITECTURE.md` (the covered routes), `docs/VALIDATION.md`, `CHANGELOG.md`.
+  `intent-service/README.md` is unchanged: it already says one push per new intent through the outbox.
+
 ### PR-MGT-14, PR-MGT-15 — zero-touch onboarding and software campaigns (MGT-14.1 to 14.5, MGT-15.1 to 15.4); the GUI, notifications and a real software exchange open
 
 Release 0.7.0 scope row 5 (stretch). One module owns both (RAN NF OAM: managed elements, config jobs, software jobs), so the code is `ran-nf-oam/app/lifecycle.py` (a router, like `vendors.py`), three tables and four nullable columns in revision `0033`, and the existing routes with a few lines each. The rule for both: **opt in, nothing changes for an existing user until they act.**

@@ -572,7 +572,8 @@ def _version_view(v) -> dict:
 
 
 @app.post("/instances/{instance_id}/rollback")
-def rollback_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+@idempotent("rapp-mgmt")
+def rollback_instance(instance_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
     """RollbackInstance (OI-1-sa-rollback) — an upgrade back to the newest
     version in this instance's history that has not been rolled back
     already, restoring the package, configuration, autonomy mode and region
@@ -591,6 +592,9 @@ def rollback_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)
     instance is not RUNNING; 404/409 from provisioning when the earlier
     package is gone or no longer deployable.
     """
+    # `@idempotent("rapp-mgmt")`: SA SMOS's ROLLBACK remedial action sends `Idempotency-Key: sa-smos-action:<id>`, the id derived from the MDAF report
+    # (SA-REPLAY), so a report re-delivered after a crash gets the first rollback's answer back; without it a repeat walks one more version back once the
+    # first rollback is committed. A call with no key behaves as before.
     current = _resolve_current(db, instance_id)
     try:
         started = start_rollback(db, current)

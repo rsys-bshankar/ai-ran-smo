@@ -165,6 +165,62 @@ def test_a_report_delivered_twice_is_evaluated_once(client, downstream):
     assert len(_actions(client, monitor_id)) == 1
 
 
+def test_a_report_re_delivered_after_a_crash_before_the_commit_sends_the_same_key(client, downstream, monkeypatch):
+    """SA-REPLAY: the action of a report-driven breach is named uuid5(monitor, report, action type). The commit of the first delivery fails (the replica died),
+    MDAF's outbox delivers the report again, and the config job is asked with the same Idempotency-Key, so RAN NF OAM replays its first job."""
+    from fastapi.testclient import TestClient
+    from sqlalchemy.orm import Session as OrmSession
+    from app.models import RemedialAction
+    downstream["answers"][("post", "/ran-nf-oam/config-jobs")] = FakeR1Response(201, {"jobId": "11111111-1111-1111-1111-111111111111", "status": "COMPLETED"})
+    monitor_id = _watching(client, downstream)
+    client.put(f"/monitors/{monitor_id}/remedy", json={"changes": REMEDY})
+    client.put(f"/monitors/{monitor_id}/automation", json={"autoAction": "CONFIG_CHANGE"})
+    report_id = _report(downstream, {"rrcSetupSuccess": 90})
+    real_commit, crashed = OrmSession.commit, []
+
+    def commit(self):
+        # the first commit that carries the remedial action fails, as if the process died after the dispatch
+        if not crashed and any(isinstance(o, RemedialAction) for o in self.identity_map.values()):
+            crashed.append(True)
+            self.rollback()
+            raise RuntimeError("the replica died")
+        return real_commit(self)
+    monkeypatch.setattr(OrmSession, "commit", commit)
+    assert TestClient(main.app, raise_server_exceptions=False).post(
+        f"/monitors/{monitor_id}/reports", json={"reportId": report_id, "analyticsType": "cell-kpi"}).status_code == 500
+    assert _actions(client, monitor_id) == []
+    action = _push(client, monitor_id, report_id).json()["action"]
+    expected = uuid.uuid5(main.REPORT_ACTION_NAMESPACE, f"{monitor_id}:{report_id}:CONFIG_CHANGE")
+    keys = [c[4]["Idempotency-Key"] for c in downstream["calls"] if c[1] == "/ran-nf-oam/config-jobs"]
+    assert keys == [f"sa-smos-action:{expected}"] * 2 and action["actionId"] == str(expected)
+    assert len(_actions(client, monitor_id)) == 1
+
+
+def test_a_manual_action_gets_a_new_key_every_time(client, downstream):
+    """A remedial action asked by hand is a new request each time: a new action id and a new Idempotency-Key, so asking again acts again."""
+    monitor_id = client.post("/monitors", json={}).json()["monitorId"]
+    client.put(f"/monitors/{monitor_id}/remedy", json={"changes": REMEDY})
+    ids = [client.post(f"/monitors/{monitor_id}/remedial-actions", params={"action_type": "CONFIG_CHANGE"}).json()["actionId"] for _ in range(2)]
+    keys = [c[4]["Idempotency-Key"] for c in downstream["calls"] if c[1] == "/ran-nf-oam/config-jobs"]
+    assert ids[0] != ids[1] and keys == [f"sa-smos-action:{i}" for i in ids]
+
+
+# One row per action type that calls another module, with the monitor's target and the route it posts to.
+@pytest.mark.parametrize("action, target, path", [
+    ("RETRAIN", "target_coordination_group_id", "/aimgf/training-jobs"),
+    ("ROLLBACK", "target_rapp_instance_id", "/rapp-mgmt/instances/{target}/rollback"),
+    ("RECONNECT", "target_rapp_instance_id", "/nfo/deployments/nf-1/heal"),
+])
+def test_every_dispatched_action_carries_its_idempotency_key(client, downstream, action, target, path):
+    """Not only CONFIG_CHANGE: the retrain, the rollback and the heal are sent with `Idempotency-Key: sa-smos-action:<actionId>` too, so each target replays a repeat."""
+    target_id = str(uuid.uuid4())
+    downstream["answers"][("get", f"/rapp-mgmt/instances/{target_id}/versions")] = FakeR1Response(200, {"workloadRef": "nf-1"})
+    monitor_id = client.post("/monitors", params={target: target_id}, json={}).json()["monitorId"]
+    action_id = client.post(f"/monitors/{monitor_id}/remedial-actions", params={"action_type": action}).json()["actionId"]
+    [call] = [c for c in downstream["calls"] if c[0] == "post" and c[1] == path.format(target=target_id)]
+    assert call[4] == {"Idempotency-Key": f"sa-smos-action:{action_id}"}
+
+
 def test_a_report_the_monitor_does_not_watch_is_ignored(client, downstream):
     """Call flow 04b: a report of another analytics type, one MDAF no longer has, or one for a monitor watching nothing, is IGNORED and changes nothing."""
     monitor_id = _watching(client, downstream)

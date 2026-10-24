@@ -331,7 +331,8 @@ def get_deployment(nf_deployment_id: uuid.UUID, db: Session = Depends(get_sessio
 
 
 @app.post("/deployments/{nf_deployment_id}/heal")
-def heal(nf_deployment_id: uuid.UUID, db: Session = Depends(get_session)):
+@idempotent("nfo")
+def heal(nf_deployment_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
     """HISTORY.md §5: previously a pure stub with no state
     transition of any kind. Self-healing recovery isn't modeled by the
     reference at all (no Heal command exists there); this closes the
@@ -342,7 +343,8 @@ def heal(nf_deployment_id: uuid.UUID, db: Session = Depends(get_session)):
     """
     # Recovers an ABNORMAL deployment to RUNNING (or accepts a RUNNING one as already healthy). 404 NFDEPLOYMENT_NOT_FOUND; 409
     # NFDEPLOYMENT_ILLEGAL_OPERATION from any other state. Clears `abnormalReason` and records a HEAL operation as COMPLETED; no
-    # workload is touched. One commit, and the versioned row gives a concurrent writer a 409 CONCURRENT_MODIFICATION.
+    # workload is touched. One commit, and the versioned row gives a concurrent writer a 409 CONCURRENT_MODIFICATION. `@idempotent("nfo")`: SA SMOS's RECONNECT
+    # remedial action sends an Idempotency-Key derived from the MDAF report (SA-REPLAY), so its repeat gets the first answer and records no second HEAL operation.
     d = db.get(NFDeployment, nf_deployment_id)
     if d is None:
         raise framework_error(FrameworkError.NFDEPLOYMENT_NOT_FOUND, detail="no such NfDeployment")

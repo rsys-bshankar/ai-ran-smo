@@ -1185,6 +1185,18 @@ def test_repeated_rollbacks_walk_back_instead_of_flip_flopping(client, monkeypat
     assert all(v["rolledBackByVersionId"] for v in history["versions"] if v["kind"] == "UPGRADE")
 
 
+def test_a_rollback_with_an_idempotency_key_is_replayed_and_starts_one_replacement(client, monkeypatch):
+    """SA SMOS's ROLLBACK sends a key derived from the MDAF report (SA-REPLAY): the repeat gets the first answer, the same replacement, instead of the 409 of an
+    instance already UPGRADING (or, once the first rollback is committed, a rollback one version further back)."""
+    created = _running_instance(client, monkeypatch)
+    v2_id = _commit_upgrade(client, created["instanceId"], str(uuid.uuid4()))
+    first = client.post(f"/instances/{v2_id}/rollback", headers={"Idempotency-Key": "sa-smos-action:1"})
+    again = client.post(f"/instances/{v2_id}/rollback", headers={"Idempotency-Key": "sa-smos-action:1"})
+    assert first.status_code == again.status_code == 200, first.text
+    assert again.json() == first.json() and again.headers["Idempotent-Replayed"] == "true"
+    assert client.post(f"/instances/{v2_id}/rollback").status_code == 409            # without the key a repeat is refused, as before
+
+
 def test_an_upgrade_after_a_rollback_can_itself_be_rolled_back(client, monkeypatch):
     """An upgrade made after a rollback is a version like any other and rolls back to the package before it."""
     created = _running_instance(client, monkeypatch)

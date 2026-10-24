@@ -7,7 +7,7 @@ References to other modules' rows (orders, coordination groups, rApp instances, 
 import datetime
 import uuid
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, JSON, String, Uuid
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, JSON, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -77,9 +77,11 @@ class O1CmEnactment(Base):
     """One record per Intent the generic O1-CM intent handler enacted (HISTORY.md W8-07, decision D-1): the DME actions it issued (and so the RAN NF OAM config jobs), the targets it could not
     enact, and the id of the IntentReport it published.
 
-    `status` is FULFILLED or NOT_FULFILLED. `intent_report_id` is null when the report could not be published.
+    `status` is FULFILLED or NOT_FULFILLED. `intent_report_id` is null when the report could not be published. One row per intent: the unique index on
+    `intent_id` (revision 0062, SA-REPLAY) is what makes a second push of the intent a replay, also when two arrive at once.
     """
     __tablename__ = "o1_cm_enactment"
+    __table_args__ = (Index("ux_o1_cm_enactment_intent_id", "intent_id", unique=True),)
 
     enactment_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     intent_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)  # -> intent (Intent Service), bare cross-module ref

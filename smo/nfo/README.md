@@ -9,7 +9,7 @@
 | Depends on (over R1) | FOCOM (`GET /focom/inventory`, to resolve the cluster / O-Cloud id) |
 | Called by | AIMgF (runtime create / scale / terminate, per model runtime and per training / validation / emulation run), rApp Management (`POST /nfo/deployments`, `DELETE /nfo/deployments/{id}`), SO SMOS (`POST /nfo/deployments`), SA SMOS (`POST /nfo/deployments/{id}/heal`), Onboarding (`POST /nfo/descriptors`, `DELETE /nfo/descriptors/{id}` when its package is deleted), GUI / GUI BFF |
 | Database tables | `nf_deployment_descriptor`, `nf_deployment` (versioned), `nf_ocloud_resource`, `lcm_operation` |
-| Idempotency | `POST /deployments` and `.../scale` accept an `Idempotency-Key` header (`smo_shared/idempotency.py`; the `idempotency_key` table is shared, not this module's) |
+| Idempotency | `POST /deployments`, `.../scale` and `.../heal` accept an `Idempotency-Key` header (`smo_shared/idempotency.py`; the `idempotency_key` table is shared, not this module's) |
 | Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
 | Status | Done for the Phase 1 scope (single O-Cloud; synchronous by default, asynchronous Terminate on request). Scale takes no target size (see `OI-7-nfo-scale-size` in [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md)) |
 
@@ -139,7 +139,7 @@ All routes are under `/nfo` through R1. Lists return `{items, total, limit, offs
 | GET | `/deployments/{id}` | One deployment, same shape; 404 `NFDEPLOYMENT_NOT_FOUND` |
 | DELETE | `/deployments/{id}?async_uninstall=` | Terminate: 204 once gone (default); with `async_uninstall=true`, 202 `{nfDeploymentId, state}` and the DMS completes it. Unknown id is a no-op |
 | POST | `/deployments/{id}/dms-notifications` | The deployment manager's report, body `{event, detail?}`: `UNINSTALL_COMPLETE`, `UNINSTALL_FAILED`, `DELETE_COMPLETE` (answers `state: DELETED`), `DELETE_FAILED`, `RUNTIME_FAILURE`. 404 `NFDEPLOYMENT_NOT_FOUND`, 409 `NFDEPLOYMENT_ILLEGAL_OPERATION`, 422 unknown event |
-| POST | `/deployments/{id}/heal` | Heal; 404 `NFDEPLOYMENT_NOT_FOUND`, 409 `NFDEPLOYMENT_ILLEGAL_OPERATION` |
+| POST | `/deployments/{id}/heal` | Heal; 404 `NFDEPLOYMENT_NOT_FOUND`, 409 `NFDEPLOYMENT_ILLEGAL_OPERATION`. `@idempotent("nfo")`: SA SMOS's RECONNECT sends a key derived from the MDAF report (SA-REPLAY), so its repeat is the first answer and no second HEAL operation |
 | POST | `/deployments/{id}/scale` | Scale (no target size argument); same errors |
 | GET | `/deployments/{id}/placement` | `{nfDeploymentId, clusterId}`; 404 `NFDEPLOYMENT_NOT_FOUND` for an unknown id |
 | GET | `/deployments/{id}/resources` | Resource links (`resourceLinkId`, `resourceRef`, `vresourceType`); empty list for an unknown id; a bare list, not paginated |
@@ -200,7 +200,7 @@ Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
 
 | Test file | Covers |
 |---|---|
-| `tests/test_main.py` | Descriptor create (with and without a package), list and delete (idempotent; refused while deployed, allowed after Terminate); Instantiate (FOCOM cluster resolution, refused with nothing created when FOCOM names no O-Cloud: error, no id, no answer; resource link, unknown descriptor, duplicate name, one descriptor backing two deployments); the state changes on the event bus, removal included; Terminate (removal, resource link and operation history deleted, after scale, repeat on `TERMINATING`, `DELETING` -> `ABNORMAL`, unknown id idempotent); Heal (from `ABNORMAL`, idempotent when `RUNNING`, refused mid-instantiate, unknown 404); Scale (`RUNNING` round trip, refused when not running, unknown 404); operation status, placement, resources, list filters, `/health` |
+| `tests/test_main.py` | Descriptor create (with and without a package), list and delete (idempotent; refused while deployed, allowed after Terminate); Instantiate (FOCOM cluster resolution, refused with nothing created when FOCOM names no O-Cloud: error, no id, no answer; resource link, unknown descriptor, duplicate name, one descriptor backing two deployments); the state changes on the event bus, removal included; Terminate (removal, resource link and operation history deleted, after scale, repeat on `TERMINATING`, `DELETING` -> `ABNORMAL`, unknown id idempotent); Heal (from `ABNORMAL`, idempotent when `RUNNING`, refused mid-instantiate, unknown 404, a keyed repeat replayed with one HEAL operation); Scale (`RUNNING` round trip, refused when not running, unknown 404); operation status, placement, resources, list filters, `/health` |
 | `tests/test_dms_lifecycle.py` | Asynchronous Terminate through `DELETING` to removal; the descriptor's delete refused until then; uninstall / delete failure -> `ABNORMAL` with its reason, then Terminate retries; runtime failure -> `ABNORMAL`, Heal recovers; repeat Terminate while uninstalling; events a state can't take; unknown event / deployment; default Terminate still synchronous |
 
 FOCOM is replaced by a monkeypatched `R1Client.get`.

@@ -479,6 +479,16 @@ def test_instantiate_and_scale_with_an_idempotency_key_run_once(client, monkeypa
         assert session.query(LCMOperation).filter_by(operation_type="SCALE").count() == 1
 
 
+def test_a_heal_with_an_idempotency_key_is_replayed_and_records_one_operation(client, monkeypatch, db_session_factory):
+    """SA SMOS's RECONNECT sends a key derived from the MDAF report (SA-REPLAY): its repeat gets the first answer and records no second HEAL operation."""
+    deployment_id = _instantiate(client, monkeypatch).json()["nfDeploymentId"]
+    first = client.post(f"/deployments/{deployment_id}/heal", headers={"Idempotency-Key": "sa-smos-action:1"})
+    again = client.post(f"/deployments/{deployment_id}/heal", headers={"Idempotency-Key": "sa-smos-action:1"})
+    assert first.status_code == again.status_code == 200 and again.json() == first.json() and again.headers["Idempotent-Replayed"] == "true"
+    with db_session_factory() as session:
+        assert session.query(LCMOperation).filter_by(operation_type="HEAL").count() == 1
+
+
 def test_an_unknown_operation_is_404(client):
     """An operation id that does not exist is a 404."""
     assert client.get("/operations/e3e70682-c209-1cac-a29f-6fbed82c07cd").status_code == 404
