@@ -187,6 +187,7 @@ def register_provider(body: ProviderRegistrationRequest, request: Request, db: S
     domain/function-id collision detection doesn't apply here, since
     this build has no separate provider-domain concept to collide on.
     """
+    # Not @idempotent (SDK-RETRY-IDEMPOTENCY, class c): an upsert by `apfId`, so a repeat updates the same row.
     # Route notes (kept out of the docstring because FastAPI publishes it): upsert, so 201 is returned for a re-registration too and the response is only `{"apfId"}`.
     # Call flow 18a: an rApp registers only its own invoker id as apfId (403 `PROVIDER_IDENTITY_MISMATCH`); the console and modules register any. No event.
     _require_own(request, body.apfId, FrameworkError.PROVIDER_IDENTITY_MISMATCH, "apfId")
@@ -843,6 +844,8 @@ def register_service(apf_id: str, body: ServiceRegistration, request: Request, d
     otherwise) is now real, backed by ProviderRegistration —
     register_provider above.
     """
+    # Not @idempotent (SDK-RETRY-IDEMPOTENCY, class c): the same producer and serviceName update the profile in place and keep its serviceId (a repeat publishes
+    # one more SERVICE_API_UPDATE event).
     # Route notes. Errors: 403 `APF_NOT_REGISTERED` (no provider enrolment for the path's `apf_id`), 409 `SERVICE_NAME_CONFLICT` (name held by another producer). Answers 201 with
     # `{serviceId}` for an update too. The body's `producerId` is ignored; the path's `apf_id` is stored. Transaction: profile, policy and outbox rows commit together.
     # Re-registration replaces every field including `allowedConsumers` and publishes SERVICE_API_UPDATE. Call flow 18a: an rApp publishes only under its own invoker id

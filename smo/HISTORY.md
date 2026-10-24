@@ -2225,6 +2225,44 @@ RAPP-4.3 gave the Go and Java SDKs a retry policy and recorded that the Python S
 - **Docs.** `sdk/README.md` (header, 1.5, 2.1, the rules and the composition in 2.5, the variables in 2.6, 3.2, 3.3), `sdk/docs/lifecycle.md` (diagrams a and b, the parity paragraph; images redrawn), `shared/README.md` (the hook). Removed from `OPEN_ITEMS.md`.
 - **Not taken.** Retrying in `R1Client` for every module (a behaviour change across the platform nobody asked for; modules have their own retry rules where they need them, for example RAN NF OAM's NETCONF dispatch). Parsing the HTTP-date form of `Retry-After` (neither Go nor Java does). Teaching Go and Java the `SMO_SDK_RETRY*` variables (a change to those SDKs, not asked for here).
 
+### SDK-RETRY-IDEMPOTENCY (slice 1) — the SDKs' repeated POSTs are replayed by Intent Service and MDAF; a guard test holds every SDK POST
+
+The three SDKs send a generated `Idempotency-Key` on every POST and send it again on a repeat after a transport error, 502 or 504 (SDK-PY-RETRY,
+RAPP-4.3), but only routes with `@idempotent` (PR-ST-3) replayed the stored answer, so a repeat after a lost answer duplicated the write on most routes.
+An inventory of the 46 platform POSTs the SDKs call found 20 that need the decorator, 4 that had it, 15 safe by their state and 7 that deduplicate on
+their own key. This slice does Intent Service and MDAF; the other 13 routes are slice 2 in `OPEN_ITEMS.md`.
+
+- **Decorated (7 routes).** Intent Service `POST /intents`, `/intent-reports`, `/autonomy-dispatches`; MDAF `POST /reports`, `/subscriptions`
+  (`mdaf/app/main.py`), `/mda-requests`, `/mda-reports` (`mdaf/app/mda.py`). Each with `@idempotent("<module>", status_code=201)`, the route's own
+  status. All seven already took `request` and `db` and are sync, so no signature changed and the OpenAPI documents are unchanged (the regenerated specs
+  are identical). A keyed repeat now gets the first answer with `Idempotent-Replayed: true`: no second intent, report, dispatch (and, in AUTONOMOUS
+  mode, no second intent made by it), subscription or MDA request, and no second notification or RMIH push, because the outbox rows are only written
+  by the first run. A drift report is forwarded to MLMF once. The same key with another body is `422 IDEMPOTENCY_KEY_REUSED`; a call with no key
+  behaves as before.
+- **Database role.** `idempotency_key` is one table in `public` (`001_init.sql`, owner `shared`), so no revision. The roles of `intent-service` and
+  `mdaf` list it in `migrations/db_roles.json`, or a keyed POST would fail with "permission denied" once the per-module roles are on.
+  `tests_integration/test_db_roles.py` gained a check that every module with an `@idempotent` route lists the table.
+- **The guard (`tests_integration/test_sdk_post_routes_idempotent.py`).** It reads the POST paths from the SDK sources: the Python SDK by AST (every
+  `.post("/...")` call outside a decorator, with a `{kind}` placeholder resolved from the literal arguments of the calls of its function, so
+  `_complete("training-jobs", ...)` yields `/aimgf/training-jobs/{}/complete`), `sdk-go/routes.go` and the Java `Routes.java` by pattern. It finds each
+  handler in `<module>/app/*.py` by AST (`@app.post` / `@router.post`, with an `APIRouter` prefix) and fails when a handler is neither `@idempotent` nor
+  on `ALLOWED` with a reason. It also fails on an `ALLOWED` entry that no SDK calls or that is decorated now, on an SDK POST with no handler, and on an
+  `@idempotent` that names another module or another status than the route's. A new SDK POST therefore has to be classified.
+- **Classes b and c are documented, not changed.** Each such handler (AIMgF's three `*/complete`, suspend, resume, progress, model-metrics, resolve,
+  runtime deploy, activate, terminate and feature groups; DME production capabilities and offer notify; MLLF deploy; MLMR models; RAN Analytics
+  producers; rApp Management bootstrap-complete and terminate; SME provider registrations and service APIs; Intent Service intent-handling
+  functions) has a `# Not @idempotent (SDK-RETRY-IDEMPOTENCY, class b|c)` comment with the reason. A repeat of a class-b route after a lost answer
+  is a 409 the SDK raises, although the first attempt worked; decorating them would replay the first answer instead, and is left as a choice.
+- **Tests.** `intent-service/tests/test_main.py` and `mdaf/tests/test_main.py`, `test_mda.py`: per route, the same key and body twice give one new row,
+  the same status and body, and `Idempotent-Replayed: true`; the same key with another body is 422 `IDEMPOTENCY_KEY_REUSED` and adds no row. The
+  report tests also count the notifications (one outbox row, one webhook). The two `client` fixtures create the `idempotency_key` table.
+- **Docs.** `sdk/README.md` (1.5 and 2.5, "What a repeated POST does"), `sdk-go/README.md` and `sdk-java/README.md` (which of their POSTs a
+  repeat is safe on), `intent-service/README.md` and `mdaf/README.md` (ownership, API, error codes, tests), `docs/ARCHITECTURE.md` (the covered routes,
+  which also gain RAN NF OAM's rollback and software campaigns, decorated before and missing from the list), `docs/VALIDATION.md`, `CHANGELOG.md`.
+  No call flow describes these routes' repeat behaviour, so none changed.
+- **Not taken.** A marker attribute set by the decorator for the guard to read at import time: AST reading needs no module import (each module's
+  `app` package is named `app`, so importing all of them in one process clashes) and no change to the shared library.
+
 ### PR-MGT-14, PR-MGT-15 — zero-touch onboarding and software campaigns (MGT-14.1 to 14.5, MGT-15.1 to 15.4); the GUI, notifications and a real software exchange open
 
 Release 0.7.0 scope row 5 (stretch). One module owns both (RAN NF OAM: managed elements, config jobs, software jobs), so the code is `ran-nf-oam/app/lifecycle.py` (a router, like `vendors.py`), three tables and four nullable columns in revision `0033`, and the existing routes with a few lines each. The rule for both: **opt in, nothing changes for an existing user until they act.**

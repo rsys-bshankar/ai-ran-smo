@@ -42,6 +42,7 @@ from smo_shared.metrics import count_by, install_metrics, register_query_gauge
 from smo_shared.health import database_check, install_health, sme_token_check
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
+from smo_shared.idempotency import idempotent
 from smo_shared.identity import is_framework_internal_identity
 from smo_shared.invoker import acting_user, invoker_id
 from smo_shared.roles import ROLE_INTERNAL, ROLE_RAPP, role_of
@@ -226,6 +227,7 @@ def _operator(request: Request, fallback: str | None) -> str | None:
 
 
 @app.post("/intents", status_code=201)
+@idempotent("intent-service", status_code=201)
 def create_intent(body: CreateIntentRequest, request: Request, db: Session = Depends(get_session)):
     """CreateIntent — the caller addresses a specific, already-registered
     RMIH by `rmihId` (consumer-side selection, TS 28.312 containment).
@@ -602,6 +604,7 @@ def submit_negotiation_feedback(intent_id: uuid.UUID, body: NegotiationFeedbackR
 
 
 @app.post("/intent-reports", status_code=201)
+@idempotent("intent-service", status_code=201)
 def publish_intent_report(body: IntentReportRequest, request: Request, db: Session = Depends(get_session)):
     """PublishIntentReport — any of the spec's report kinds, at least one.
     The new report becomes the intent's intentReportReference and is
@@ -637,6 +640,8 @@ def register_intent_handling_function(body: RegisterRmihRequest, request: Reques
     # that parses as a UUID (an rApp identity). An `rmihId` already registered is replaced in place (capabilities, destination, scope), so its intents stay
     # (before DOC-CF-1.8 it was a 409, and SA SMOS deleted the handler, and with it every intent, to register again). The destination is not checked here; the
     # SSRF guard runs when a push is enqueued. 201 with the RMIH view.
+    # Not @idempotent (SDK-RETRY-IDEMPOTENCY, class c): a repeat of the same body upserts the same row by `rmihId`, so the SDK's retry with the
+    # same Idempotency-Key writes nothing new.
     _refuse_rapp(request, "register an intent handling function")
     if not is_framework_internal_identity(body.rmihId):
         raise framework_error(FrameworkError.SERVICE_NAME_CONFLICT, detail="external callers may never hold an rmihId (D-SEC-POLICY-1)")
@@ -797,6 +802,7 @@ def _notify_autonomy_operator(db: Session, notification_destination: str | None,
 
 
 @app.post("/autonomy-dispatches", status_code=201)
+@idempotent("intent-service", status_code=201)
 def request_autonomy_dispatch(body: CreateAutonomyDispatchRequest, request: Request, db: Session = Depends(get_session)):
     """RequestAutonomyDispatch — the real, spec-shaped hand-off call flow
     02/03 lacked: an rApp that just pulled an inference result via DME

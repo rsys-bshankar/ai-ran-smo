@@ -445,6 +445,7 @@ def bootstrap_complete(instance_id: uuid.UUID, request: Request, db: Session = D
     answer says `upgradeCommitted`. The rApp may call it for its own instance only
     (403 `NOT_THIS_INSTANCE` for another rApp's); an operator may call it for any.
     """
+    # Not @idempotent (SDK-RETRY-IDEMPOTENCY, class b): a repeat finds the instance RUNNING and is refused 409 by the state machine, changing nothing.
     inst = _load_instance(db, instance_id)
     _own_instance_or_operator(request, inst)
     if InstanceState(inst.state) != InstanceState.DEPLOYING:
@@ -649,6 +650,7 @@ def terminate_instance(instance_id: uuid.UUID, db: Session = Depends(get_session
     state with the row still present; removing the row itself is the
     separate `delete_instance` below.
     """
+    # Not @idempotent (SDK-RETRY-IDEMPOTENCY, class b): a repeat finds the instance UNDEPLOYED, which has no TERMINATE edge, and is refused 409.
     inst = _load_instance(db, instance_id)
     owner = _upgrade_owner(db, inst)
     if owner is not None and owner.instance_id != inst.instance_id:

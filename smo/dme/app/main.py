@@ -240,6 +240,8 @@ def register_dme_type(body: DMETypeRegistration, request: Request, db: Session =
     A caller with the rApp role may register only under a `producerId` equal to its own invoker id (403 `DME_PRODUCER_NOT_OWNER`, SEC-15.10b); an SMO module
     and a call with no role name any producer.
     """
+    # Not @idempotent (SDK-RETRY-IDEMPOTENCY, class c): the producer, the type (namespace, name, version) and their link are upserts, so an unchanged repeat
+    # writes nothing new.
     # Route notes. 403 `DME_PRODUCER_NOT_OWNER` first when a caller with the rApp role names a `producerId` other than its own invoker id (SEC-15.10b; `_owner_may_act`), before anything is read or
     # written, so the callbacks of the producer it named are never replaced. Then 422 for an unknown `sourceDomain`; then, for a type that is already registered (SEC-15.10), 403 `DME_TYPE_NOT_OWNER` when the request would change its
     # definition (`typeName`, `dataProductionSchema`, `collectionSpec`, `sourceDomain`, `sourceContext`) and the caller is not allowed to (`_may_redefine_type`); the same
@@ -785,6 +787,7 @@ def offer_data_availability(offer_id: uuid.UUID, body: dict, db: Session = Depen
     endpoint to tell the framework its offered data is ready. Every other
     DME notification flows the opposite way.
     """
+    # Not @idempotent (SDK-RETRY-IDEMPOTENCY, class b): an acknowledgement that writes nothing, so a repeat has no effect.
     offer = db.get(DataOffer, offer_id)
     if offer is None:
         raise framework_error(FrameworkError.DATA_OFFER_NOT_FOUND, detail="no such data offer")      # call flow 12c (a 409 DME_TYPE_VERSION_CONFLICT before)

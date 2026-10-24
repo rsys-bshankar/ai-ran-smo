@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
+from smo_shared.idempotency import idempotent
 from smo_shared.invoker import invoker_id, on_own_account
 from smo_shared.roles import ROLE_RAPP, role_of
 from smo_shared.timeutil import as_utc
@@ -182,6 +183,7 @@ def _is_active(r: MDARequest, now: datetime.datetime) -> bool:
 
 
 @router.post("/mda-requests", status_code=201)
+@idempotent("mdaf", status_code=201)
 def create_mda_request(body: MDARequestBody, request: Request, db: Session = Depends(get_session)):
     """A request names the MDA outputs it wants. When it is addressed to an
     MDAFunction, every requested mDAType must be one of that function's
@@ -456,6 +458,7 @@ def _infer_kind(outputs: list[dict]) -> str:
 
 
 @router.post("/mda-reports", status_code=201)
+@idempotent("mdaf", status_code=201)
 def publish_mda_report(body: MDAReportBody, request: Request, db: Session = Depends(get_session)):
     # Stores a spec-shaped report. 201 with the MDAReport resource. 403 PRODUCER_NOT_REGISTERED for an rApp not registered for the first output's mDAType
     # (call flow 08c, as for POST /reports). 422 for empty `mDAOutputs` or an unknown DME source; 404

@@ -66,6 +66,8 @@ def request_model_deployment(model_id: uuid.UUID, node_groups: list[str]):
     clearedNodeGroups (LLD section 5, MultiNode Q2's targeting gap) back
     onto that same row — see `PATCH /aimgf/models/{id}/runtime/node-groups`.
     """
+    # Not @idempotent (SDK-RETRY-IDEMPOTENCY, class b): `clearedNodeGroups` is replaced wholesale in AIMgF, so a repeat writes the same list; MLLF has no
+    # database to store an answer in.
     # Gate and record, in this order: read AIMgF's lifecycle of the model (404 MODEL_NOT_FOUND if AIMgF has none; 403 MODEL_ACCESS_DENIED
     # when AIMgF's owner rule refuses the rApp this call is for, MLLF-NODEGROUP-OWNER), refuse any state other than CERTIFIED and PROMOTED
     # (409 MODEL_NOT_CERTIFIED, which includes DEPRECATED and RETIRED), then replace the model's `clearedNodeGroups` in AIMgF with

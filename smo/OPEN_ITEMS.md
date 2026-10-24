@@ -1223,6 +1223,30 @@ RAPP-4.1 decided (both languages) and RAPP-4.2 to 4.5 are done for Go (`sdk-go/`
 
 Open, not steps: a run of either example against the compose stack (CI builds, unit-tests and image-builds them, it does not start the stack), mTLS configured from the environment in the Java SDK, and the Python namespaces (analytics, lifecycle, intent) that neither SDK covers. The Python SDK now has the same retry policy as both (`HISTORY.md`, SDK-PY-RETRY, a RAPP-4.3 follow-up).
 
+#### SDK-RETRY-IDEMPOTENCY — an SDK's repeat of a POST must not duplicate the write
+
+The three SDKs (Python `sdk/smo_sdk/_common.py`, Go `sdk-go/client.go`, Java `R1Client.java`) send a generated `Idempotency-Key` on every POST and
+send the same key again when they repeat it after a transport error, 502 or 504. Only a route with `@idempotent` (`shared/smo_shared/idempotency.py`,
+`HISTORY.md` PR-ST-3) answers that repeat from the stored first answer; any other POST runs again, so a repeat after a lost answer makes a second row.
+
+The SDKs call 46 platform POSTs (plus the two token-flow POSTs). 20 needed the decorator (class a), 4 had it, 15 are safe by their state (class b: the
+state machine refuses a repeat with 409, or the route rewrites the same value) and 7 deduplicate on their own key (class c: an upsert, or 409 on a
+unique name). `tests_integration/test_sdk_post_routes_idempotent.py` reads the SDK sources and holds the classification: every SDK POST is decorated or
+on its allow-list with a reason, and a stale entry fails.
+
+Slice 1 is done (`HISTORY.md` SDK-RETRY-IDEMPOTENCY): Intent Service and MDAF. What is open, slice 2 (one PR, which closes the item):
+
+| Module | Routes to decorate | Note |
+|---|---|---|
+| AIMgF | `POST /models/{id}/runtime/scale`, `/mlmf/subscriptions`, `/mlmf/subscriptions/{id}/reports` | The role has the grant |
+| DME | `POST /type-subscriptions`, `/data-jobs`, `/offers`, `/data-jobs/{id}/records`, `/actions` | `/type-subscriptions` needs a `request` parameter; `/actions` takes `exclude=("msac_credential",)` as RAN NF OAM's config jobs do |
+| rApp Management | `POST /instances/{id}/performance`, `/instances/{id}/fault` | The role has the grant |
+| SME | `POST /capif-events/v1/{subscriberId}/subscriptions` | Add `idempotency_key` to the role's `shared` list in `migrations/db_roles.json` |
+| MLMR | `POST /coordination-groups` | Same grant needed |
+
+Each route moves from `ALLOWED` in the guard test to decorated, with a unit test (one row on a keyed repeat, 422 on a reused key). Not in slice 2:
+`POST /mlmr/models/{id}/artifact` (a multipart upload the SDK sends without a key and never repeats).
+
 #### PR-RAPP-5 — Developer portal
 
 | Step | What | Done when | Needs |
