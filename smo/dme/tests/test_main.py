@@ -11,6 +11,7 @@ from sqlalchemy.pool import StaticPool
 
 from smo_shared import outbox
 from smo_shared.db import Base, get_session
+from smo_shared.idempotency import IdempotencyKey
 from smo_shared.outbox import NotificationOutbox
 
 from app.main import app
@@ -27,12 +28,12 @@ class FakeHealthResponse:
 
 @pytest.fixture
 def client():
-    """A `TestClient` of the DME app on one in-memory SQLite database that holds the DME tables and the outbox table. The engine is kept as `app.state.test_engine` so tests can read what the routes wrote (outbox rows included); the dependency override is removed afterwards.
+    """A `TestClient` of the DME app on one in-memory SQLite database that holds the DME tables, the outbox table and the idempotency-key table. The engine is kept as `app.state.test_engine` so tests can read what the routes wrote (outbox rows included); the dependency override is removed afterwards.
     """
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine, tables=[DMEProducer.__table__, DMEType.__table__, DMEProducerType.__table__, DMEDeliverySchema.__table__,
                                               DataJob.__table__, DataOffer.__table__, DMETypeSubscription.__table__, DataRecord.__table__,
-                                              DmeActionRecord.__table__, NotificationOutbox.__table__])
+                                              DmeActionRecord.__table__, NotificationOutbox.__table__, IdempotencyKey.__table__])
     TestSession = sessionmaker(bind=engine)
     app.state.test_engine = engine
 
@@ -1438,3 +1439,96 @@ def test_a_producer_stops_producing_one_type_and_keeps_the_others(client):
     for params in ({"namespace": "RAN", "name": "TypeB", "version": "1.0.0"}, {"namespace": "RAN", "name": "Nope", "version": "1.0.0"}):
         assert client.delete("/production-capabilities/ran-nf-oam/types", params=params).status_code == 204
     assert client.delete("/production-capabilities/nobody/types", params={"namespace": "RAN", "name": "TypeA", "version": "1.0.0"}).status_code == 204
+
+
+# ---------------------------------------------------------------- SDK-RETRY-IDEMPOTENCY: the SDK's repeat of a POST is replayed by its key
+
+def _count(model) -> int:
+    """The number of `model` rows in the test database."""
+    with sessionmaker(bind=app.state.test_engine)() as db:
+        return db.query(model).count()
+
+
+def _assert_replayed_once(client, model, path, json, other, status, key="k-1", headers=None):
+    """Posts `json` to `path` twice under one Idempotency-Key (the second time with `headers` too), then `other` (another body) under the same key.
+
+    Asserts one `model` row more than before, the second answer the replay of the first (status `status`, same body, `Idempotent-Replayed: true`),
+    and the reused key refused 422 IDEMPOTENCY_KEY_REUSED without a further row. Returns the first answer.
+    """
+    before = _count(model)
+    first = client.post(path, json=json, headers={"Idempotency-Key": key})
+    again = client.post(path, json=json, headers={"Idempotency-Key": key, **(headers or {})})
+    assert first.status_code == again.status_code == status, first.text
+    assert again.json() == first.json() and again.headers["Idempotent-Replayed"] == "true"
+    assert _count(model) == before + 1
+    reused = client.post(path, json=other, headers={"Idempotency-Key": key})
+    assert reused.status_code == 422 and reused.json()["detail"]["title"] == "IDEMPOTENCY_KEY_REUSED"
+    assert _count(model) == before + 1
+    return first
+
+
+def _job(client, name) -> str:
+    """Registers the type `name` with a producer and creates a data job of it (no key); returns the job id."""
+    reg = client.post("/production-capabilities", json=register_type_body(name=name)).json()
+    return client.post("/data-jobs", json={"dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+                                           "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1"}).json()["dataJobId"]
+
+
+def test_a_repeated_type_subscription_with_the_same_key_subscribes_once(client):
+    """An SDK retry of POST /type-subscriptions gets the first subscriptionId back instead of a second subscription that doubles every type notification."""
+    body = {"notificationDestination": "http://consumer/type-changes", "owner": "sa-smos"}
+    _assert_replayed_once(client, DMETypeSubscription, "/type-subscriptions", body, {**body, "owner": "other"}, 201)
+
+
+def test_a_repeated_data_job_with_the_same_key_creates_one_job_and_tells_the_producer_once(client):
+    """An SDK retry of POST /data-jobs gets the first job id back: one job, and one producer outbox row."""
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    body = {"dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"], "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1"}
+    rows = _count(NotificationOutbox)
+    _assert_replayed_once(client, DataJob, "/data-jobs", body, {**body, "consumerId": "rapp-2"}, 202)
+    assert _count(NotificationOutbox) == rows + 1
+
+
+def test_a_repeated_data_offer_with_the_same_key_creates_one_offer(client):
+    """An SDK retry of POST /offers gets the first offer back, not a second one."""
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    body = {"dmeTypeId": reg["registrationId"], "dataDeliveryMode": "CONTINUOUS", "dataDeliveryMethods": ["PUSH_HTTP"],
+            "dataOfferTerminationNotificationUri": "http://producer/terminate"}
+    _assert_replayed_once(client, DataOffer, "/offers", body, {**body, "dataDeliveryMethods": ["PULL_HTTP"]}, 201)
+
+
+def test_a_repeated_data_record_with_the_same_key_is_stored_once_and_the_key_is_bound_to_its_job(client):
+    """An SDK retry of POST /data-jobs/{id}/records gets the first recordId back and stores one record; the same key on another job's records is
+    422 (the path is part of the key's fingerprint) and stores nothing there."""
+    job_a, job_b = _job(client, "TypeA"), _job(client, "TypeB")
+    _assert_replayed_once(client, DataRecord, f"/data-jobs/{job_a}/records", {"payload": {"kpi": 1}}, {"payload": {"kpi": 2}}, 201)
+    other_job = client.post(f"/data-jobs/{job_b}/records", json={"payload": {"kpi": 1}}, headers={"Idempotency-Key": "k-1"})
+    assert other_job.status_code == 422 and other_job.json()["detail"]["title"] == "IDEMPOTENCY_KEY_REUSED"
+    assert client.get(f"/data-jobs/{job_b}/records").json()["items"] == []
+
+
+def test_a_repeated_action_without_an_action_id_is_forwarded_once(client, ran_nf_oam):
+    """An SDK retry of POST /actions (which the Go and Java SDKs and `mediate_action` send without an `actionId`) gets the first answer: one record and
+    one configuration job at RAN NF OAM, not a second write. A repeat that carries `X-MSAC-Credential` is the same request (the header is left out
+    of the fingerprint), and the credential is in no stored key row."""
+    body = {"requestedBy": "es-rapp", "changes": [{"managedElementRef": "me-1", "attributeChanges": {"txPower": 10}}]}
+    first = _assert_replayed_once(client, DmeActionRecord, "/actions", body, {**body, "requestedBy": "other"}, 202,
+                                  headers={"X-MSAC-Credential": "made-up-credential"})
+    assert first.json()["forwardedJobId"] == "11111111-1111-1111-1111-111111111111"
+    assert len(ran_nf_oam.received) == 1
+    with sessionmaker(bind=app.state.test_engine)() as db:
+        assert "made-up-credential" not in str([(r.request_hash, r.response_body) for r in db.query(IdempotencyKey)])
+
+
+def test_an_action_id_still_deduplicates_across_keys_and_a_key_replays_its_own_answer(client, ran_nf_oam):
+    """The `actionId` check keeps working under the decorator: a new call (another key) with a recorded `actionId` is 200 IGNORED and forwards
+    nothing; a repeat under the first key replays the first 202, and one under the second key the 200 IGNORED. RAN NF OAM gets one job."""
+    action_id = str(uuid.uuid4())
+    body = {"requestedBy": "es-rapp", "actionId": action_id, "changes": [{"managedElementRef": "me-1", "attributeChanges": {"txPower": 10}}]}
+    first = client.post("/actions", json=body, headers={"Idempotency-Key": "k-1"})
+    ignored = client.post("/actions", json=body, headers={"Idempotency-Key": "k-2"})
+    assert first.status_code == 202 and ignored.status_code == 200 and ignored.json()["status"] == "IGNORED"
+    for key, answer in (("k-1", first), ("k-2", ignored)):
+        again = client.post("/actions", json=body, headers={"Idempotency-Key": key})
+        assert again.status_code == answer.status_code and again.json() == answer.json() and again.headers["Idempotent-Replayed"] == "true"
+    assert len(ran_nf_oam.received) == 1

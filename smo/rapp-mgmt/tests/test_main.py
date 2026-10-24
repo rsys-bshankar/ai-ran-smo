@@ -1288,6 +1288,43 @@ def test_create_instance_with_an_idempotency_key_creates_one_instance(client, db
     assert other.status_code == 422 and other.json()["detail"]["title"] == "IDEMPOTENCY_KEY_REUSED"
 
 
+def _rows(db_session_factory, model) -> int:
+    """The number of `model` rows in the test database."""
+    with db_session_factory() as session:
+        return session.query(model).count()
+
+
+def test_a_repeated_performance_report_with_the_same_key_is_stored_once(client, db_session_factory):
+    """SDK-RETRY-IDEMPOTENCY: a Go or Java SDK retry of POST /instances/{id}/performance gets the first answer and stores no second report; the same
+    key with other metrics, or on another instance, is 422 IDEMPOTENCY_KEY_REUSED and stores nothing."""
+    instance_a, instance_b = _make_instance(db_session_factory), _make_instance(db_session_factory)
+    first = client.post(f"/instances/{instance_a}/performance", json={"cpu": 0.5}, headers={"Idempotency-Key": "perf-1"})
+    again = client.post(f"/instances/{instance_a}/performance", json={"cpu": 0.5}, headers={"Idempotency-Key": "perf-1"})
+    assert first.status_code == again.status_code == 200
+    assert again.json() == first.json() and again.headers["Idempotent-Replayed"] == "true"
+    for path, body in ((f"/instances/{instance_a}/performance", {"cpu": 0.9}), (f"/instances/{instance_b}/performance", {"cpu": 0.5})):
+        reused = client.post(path, json=body, headers={"Idempotency-Key": "perf-1"})
+        assert reused.status_code == 422 and reused.json()["detail"]["title"] == "IDEMPOTENCY_KEY_REUSED"
+    assert _rows(db_session_factory, RAppPerformanceReport) == 1
+
+
+def test_a_repeated_fault_with_the_same_key_is_recorded_once_and_a_critical_one_is_not_refused(client, db_session_factory):
+    """SDK-RETRY-IDEMPOTENCY: a retry of POST /instances/{id}/fault gets the first answer. A minor fault is stored once (it was stored twice); a critical
+    one is answered with the first answer (FAULTED) instead of the state machine's 409 for an instance that is FAULTED already. The same key with
+    another severity is 422."""
+    instance_id = _make_instance(db_session_factory)
+    for severity in ("minor", "critical"):
+        params = {"severity": severity, "description": "slow"}
+        first = client.post(f"/instances/{instance_id}/fault", params=params, headers={"Idempotency-Key": f"fault-{severity}"})
+        again = client.post(f"/instances/{instance_id}/fault", params=params, headers={"Idempotency-Key": f"fault-{severity}"})
+        assert first.status_code == again.status_code == 200, again.text
+        assert again.json() == first.json() and again.headers["Idempotent-Replayed"] == "true"
+    assert first.json()["instanceState"] == "FAULTED"
+    reused = client.post(f"/instances/{instance_id}/fault", params={"severity": "major"}, headers={"Idempotency-Key": "fault-minor"})
+    assert reused.status_code == 422 and reused.json()["detail"]["title"] == "IDEMPOTENCY_KEY_REUSED"
+    assert _rows(db_session_factory, RAppFaultReport) == 2
+
+
 # ---- call flow 01d (DOC-CF-1.1 review): RAPP_MGMT_REQUIRE_SME_REGISTRATION makes the SME declarations a condition of the bootstrap
 
 _DECLARATIONS = {"providers": [{"apiProvDomInfo": "Provider domain"}], "serviceApis": [{"apiName": "API", "aefProfiles": [{"aefId": "aef-1"}]}]}

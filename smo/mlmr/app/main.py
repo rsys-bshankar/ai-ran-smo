@@ -29,6 +29,7 @@ from smo_shared.metrics import install_metrics
 from smo_shared.health import database_check, install_health, sme_token_check
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
+from smo_shared.idempotency import idempotent
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared import audit
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
@@ -493,6 +494,7 @@ def download_model_artifact(request: Request, model_id: uuid.UUID, artifact_vers
 
 
 @app.post("/coordination-groups", status_code=201)
+@idempotent("mlmr", status_code=201)
 def create_coordination_group(request: Request, body: CreateCoordinationGroupRequest, db: Session = Depends(get_session)):
     """AI/ML Workflow LLD section 4.5's call flow, step 1: register the
     group as a sibling of individual model registrations.
@@ -509,6 +511,7 @@ def create_coordination_group(request: Request, body: CreateCoordinationGroupReq
     # repository. The member ids are not checked to be existing models. The size check duplicates the schema's CHECK on purpose:
     # the SQLite schema of the unit tests has no CHECK, and on Postgres the CHECK alone would surface as an unhandled IntegrityError
     # (a bare 500).
+    # `@idempotent("mlmr")` (SDK-RETRY-IDEMPOTENCY): a keyed repeat gets the first groupId back instead of a second group over the same members.
     if len(body.memberModelIds) < 2:
         raise framework_error(FrameworkError.COORDINATION_GROUP_TOO_SMALL, detail="a coordination group needs at least 2 memberModelIds")
 

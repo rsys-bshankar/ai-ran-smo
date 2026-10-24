@@ -22,11 +22,9 @@ PY_SDK = SMO / "sdk" / "smo_sdk"
 GO_ROUTES = SMO / "sdk-go" / "routes.go"
 JAVA_ROUTES = SMO / "sdk-java" / "smo-sdk" / "src" / "main" / "java" / "io" / "smo" / "sdk" / "Routes.java"
 
-SLICE_2 = "a: SDK-RETRY-IDEMPOTENCY slice 2, not yet decorated"
-
 # Every SDK POST that is deliberately not `@idempotent`, by normalized path (each `{placeholder}` written `{}`), with its class from the
 # inventory (b: a repeat is refused 409 by the state machine or rewrites the same value; c: the route deduplicates on its own key;
-# e: the token flow) and the reason. OPEN_ITEMS.md SDK-RETRY-IDEMPOTENCY holds the slice-2 routes.
+# a*: would need the decorator but is never sent with a key; e: the token flow) and the reason. HISTORY.md SDK-RETRY-IDEMPOTENCY has the inventory.
 ALLOWED: dict[str, str] = {
     # aimgf
     "/aimgf/training-jobs/{}/complete": "b: 409 TRAINING_JOB_ILLEGAL_TRANSITION once the job is FINISHED or FAILED; the report is not written twice",
@@ -40,18 +38,10 @@ ALLOWED: dict[str, str] = {
     "/aimgf/models/{}/runtime/deploy": "b: REQUEST_DEPLOYMENT is refused 409 on a DEPLOYED runtime before any NFO call",
     "/aimgf/models/{}/runtime/activate": "b: legal only from DEPLOYED; a repeat is 409",
     "/aimgf/models/{}/runtime/terminate": "b: TERMINATED has no REQUEST_TERMINATION edge; a repeat is 409 before the NFO delete",
-    "/aimgf/models/{}/runtime/scale": SLICE_2,
-    "/aimgf/mlmf/subscriptions": SLICE_2,
-    "/aimgf/mlmf/subscriptions/{}/reports": SLICE_2,
     "/aimgf/feature-groups": "c: unique featureGroupName; a repeat is 409 FEATURE_GROUP_ALREADY_REGISTERED",
     # dme
     "/dme/production-capabilities": "c: upserts the producer, the type and the link; an unchanged repeat re-sends nothing",
     "/dme/offers/{}/notify": "b: an acknowledgement that writes nothing",
-    "/dme/type-subscriptions": SLICE_2,
-    "/dme/data-jobs": SLICE_2,
-    "/dme/offers": SLICE_2,
-    "/dme/data-jobs/{}/records": SLICE_2,
-    "/dme/actions": SLICE_2,
     # intent-service
     "/intent-service/intent-handling-functions": "c: upsert by rmihId; a repeat writes the same row",
     # mllf
@@ -59,18 +49,14 @@ ALLOWED: dict[str, str] = {
     # mlmr
     "/mlmr/models": "c: unique (model type, version); a repeat is 409 MODEL_ALREADY_REGISTERED",
     "/mlmr/models/{}/artifact": "a*: multipart upload; the SDK sends it without an Idempotency-Key and never repeats it",
-    "/mlmr/coordination-groups": SLICE_2,
     # ran-analytics
     "/ran-analytics/producers": "c: upsert on (producer, analytics type)",
     # rapp-mgmt
     "/rapp-mgmt/instances/{}/bootstrap-complete": "b: legal only from DEPLOYING; a repeat is 409",
     "/rapp-mgmt/instances/{}/terminate": "b: UNDEPLOYED has no TERMINATE edge; a repeat is 409",
-    "/rapp-mgmt/instances/{}/performance": SLICE_2,
-    "/rapp-mgmt/instances/{}/fault": SLICE_2,
     # sme
     "/sme/provider-registrations": "c: upsert by apfId",
     "/sme/published-apis/v1/{}/service-apis": "c: same provider and serviceName update in place and keep the serviceId",
-    "/sme/capif-events/v1/{}/subscriptions": SLICE_2,
     "/sme/invoker-registrations": "e: token flow; every call mints an invoker and a stored answer would hold its onboardingSecret, repeated only on 429/503",
     "/sme/oauth2/token": "e: token flow; a repeat issues another short-lived token",
 }

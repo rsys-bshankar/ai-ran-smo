@@ -42,6 +42,7 @@ from smo_shared.metrics import install_metrics
 from smo_shared.health import database_check, install_health
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
+from smo_shared.idempotency import idempotent
 from smo_shared.timeutil import as_utc
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.openapi_security import apply_r1_gateway_security
@@ -977,6 +978,7 @@ def _matches_aef_filters(r: ServiceProfile, aef_id: str | None, protocol: str | 
 
 
 @app.post("/capif-events/v1/{subscriber_id}/subscriptions", status_code=201)
+@idempotent("sme", status_code=201)
 def subscribe_events(subscriber_id: str, body: EventSubscriptionRequest, request: Request, db: Session = Depends(get_session)):
     """SubscribeEvent, with TS 29.222's CAPIFEventFilter (OI-5-sme-filters):
     `apiIds` (this build's serviceIds), `apiInvokerIds` and `aefIds`. Each
@@ -988,6 +990,8 @@ def subscribe_events(subscriber_id: str, body: EventSubscriptionRequest, request
     # when events are delivered; nothing authenticates it.
     # Call flow 18e: an rApp subscribes only as itself (403 `INVOKER_IDENTITY_MISMATCH`), since the subscriber id decides which services' events it is shown; a callback
     # the SSRF guard refuses is 422 `SCHEMA_VALIDATION_FAILED` (it was stored and every notification to it dropped).
+    # `@idempotent("sme")` (SDK-RETRY-IDEMPOTENCY): a keyed repeat gets the first subscriptionId back instead of a second subscription that would deliver every
+    # event twice. The path's `subscriber_id` is part of the key's fingerprint.
     _require_own(request, subscriber_id, FrameworkError.INVOKER_IDENTITY_MISMATCH, "subscriber id")
     if not set(body.eventTypes) <= EVENT_TYPES:
         raise framework_error(FrameworkError.SUBSCRIPTION_SCOPE_CONFLICT, detail=f"eventTypes must be a subset of {sorted(EVENT_TYPES)}")

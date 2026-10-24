@@ -16,7 +16,7 @@
   "03-config-write-with-schema-check/03c-dispatch-per-element-and-the-aggregate.png": "9a0057a5db1fd25200150c8337d841a5380f20c16ca645d6bae0b5d14f0da837",
   "03-config-write-with-schema-check/03d-staged-waves-the-health-gate-and-change-windows.png": "720df9b83929893cf9af8ee7fa9817cecefb5cd5177a26df18ab57efa5c80889",
   "03-config-write-with-schema-check/03e-rollback-and-the-kpi-guard.png": "c1aaefbf553c8c64e92568f278b2ab2297d8932543d5d8716773501ceba680b7",
-  "03-config-write-with-schema-check/03f-path-b-through-dme.png": "f41a86d419269c6efb65bb0074ed09a34578a3a982cc5e02b80af8816d7dea44",
+  "03-config-write-with-schema-check/03f-path-b-through-dme.png": "a911b4603a1db2bf37eb4dea4e011da16f6c54ab3d768eb78159ea4312705655",
   "04-closed-loop-assurance/04a-registering-a-monitor-and-its-mdaf-subscription.png": "59f24d7a059deb253393e0ba27c7dacd64c3663c6ff444805cc32af05b00788e",
   "04-closed-loop-assurance/04b-a-report-the-evaluation-and-the-automatic-action.png": "14009a7a8a1ece753704d6b087449239e3bb46cf104db73ba8cc28d28b446335",
   "04-closed-loop-assurance/04c-the-remedial-actions-by-type-and-target.png": "62cbe12533d2260e9c2745a6a56b54269694771c037f10d0ad71143795b7a886",

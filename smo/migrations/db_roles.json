@@ -11,6 +11,7 @@
   "schema": "mlmr",
   "shared": [
    "module_identity",
+   "idempotency_key",
    "audit_log",
    "audit_head"
   ]
@@ -92,7 +93,8 @@
   "schema": "sme",
   "shared": [
    "module_identity",
-   "notification_outbox"
+   "notification_outbox",
+   "idempotency_key"
   ]
  },
  "dme": {

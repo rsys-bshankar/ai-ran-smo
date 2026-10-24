@@ -25,6 +25,7 @@ from smo_shared.metrics import install_metrics
 from smo_shared.health import database_check, install_health, sme_token_check
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
+from smo_shared.idempotency import idempotent
 from smo_shared.r1_client import R1Client
 from smo_shared.invoker import invoker_id
 from smo_shared.roles import ROLE_INTERNAL, ROLE_RAPP, role_of
@@ -476,7 +477,8 @@ def query_producer_status(producer_id: str, db: Session = Depends(get_session)):
 
 
 @app.post("/type-subscriptions", status_code=201)
-def subscribe_type_changes(body: TypeSubscriptionRequest, db: Session = Depends(get_session)):
+@idempotent("dme", status_code=201)
+def subscribe_type_changes(body: TypeSubscriptionRequest, request: Request, db: Session = Depends(get_session)):
     """HISTORY.md §5: ICS's own `/info-type-subscription`
     (InfoTypeSubscriptions/ConsumerCallbacks) — a consumer notified
     whenever any DmeType is registered or removed. Entirely absent from
@@ -485,6 +487,8 @@ def subscribe_type_changes(body: TypeSubscriptionRequest, db: Session = Depends(
     (same adaptation already made for every other subscription in this
     codebase — RAN Analytics, FOCOM).
     """
+    # `@idempotent("dme")` (SDK-RETRY-IDEMPOTENCY): a keyed repeat gets the first subscriptionId back instead of a second subscription that would double every
+    # type notification. `request` is a parameter only for the decorator; FastAPI does not publish it in the OpenAPI document.
     sub = DMETypeSubscription(notification_destination=body.notificationDestination, owner=body.owner)
     db.add(sub)
     db.commit()
@@ -605,10 +609,12 @@ def _validate_lifecycle_eligibility(db: Session, dme_type_id: uuid.UUID, lifecyc
 
 
 @app.post("/data-jobs", status_code=202)
+@idempotent("dme", status_code=202)
 def create_data_job(body: DataJobRequest, request: Request, db: Session = Depends(get_session)):
     # Creates an ACTIVE job. Order of checks: the type is registered (404 DME_TYPE_NOT_FOUND, SEC-15.10), the delivery method (409 DELIVERY_METHOD_NOT_OFFERED), the production definition against the registered type's schema (422 SCHEMA_VALIDATION_FAILED), then
     # the lifecycle stage and the rule that a Digital Twin source may not feed Inference (422 SCHEMA_VALIDATION_FAILED, DIGITAL_TWIN_INFERENCE_NOT_ELIGIBLE). One outbox row per producer of the type is written in the same transaction,
-    # so each producer is told after the commit. Answers 202 with the job id.
+    # so each producer is told after the commit. Answers 202 with the job id. `@idempotent("dme")` (SDK-RETRY-IDEMPOTENCY): a keyed repeat gets the first job id
+    # back, with no second job and no second producer notification.
     dme_type = _registered_type_or_404(db, body.dmeTypeId)
     _validate_delivery_method(db, body.dmeTypeId, body.dataDeliveryMethod)
     _validate_job_definition_schema(db, body.dmeTypeId, body.productionJobDefinition)
@@ -733,8 +739,10 @@ def terminate_data_jobs_for_consumer(request: Request, consumer_id: str | None =
 
 
 @app.post("/offers", status_code=201)
+@idempotent("dme", status_code=201)
 def create_data_offer(body: DataOfferRequest, request: Request, db: Session = Depends(get_session)):
     # Stores an offer, committing to the first of the offered methods. 404 DME_TYPE_NOT_FOUND when the type is not registered (SEC-15.10), then 409 DELIVERY_METHOD_NOT_OFFERED when the list is empty or holds an unknown method. Answers 201.
+    # `@idempotent("dme")` (SDK-RETRY-IDEMPOTENCY): a keyed repeat gets the first offer back, not a second one.
     _registered_type_or_404(db, body.dmeTypeId)
     if not body.dataDeliveryMethods or not set(body.dataDeliveryMethods) <= DELIVERY_METHODS:
         raise framework_error(FrameworkError.DELIVERY_METHOD_NOT_OFFERED)
@@ -1036,10 +1044,13 @@ def list_data_offers(dme_type_id: uuid.UUID | None = None, limit: int = PageLimi
 # paths, not one" — this is the data path, reachable by either).
 
 @app.post("/data-jobs/{data_job_id}/records", status_code=201)
+@idempotent("dme", status_code=201)
 def ingest_data_record(data_job_id: uuid.UUID, body: DataRecordRequest, request: Request, db: Session = Depends(get_session)):
     # Stores one payload for the job; 201 with the record id. Call flow 12b: 404 DATA_JOB_NOT_FOUND (also a job an rApp may not see); 403 DME_NOT_A_PRODUCER when
     # an rApp is not a producer of the job's type (the console, admin, and SMO modules may deliver); 409 DATA_JOB_NO_PRODUCER for a job whose type has no
     # producer. The payload is stored as it is (the type's dataProductionSchema describes the job's definition, not its records).
+    # `@idempotent("dme")` (SDK-RETRY-IDEMPOTENCY): a keyed repeat gets the first recordId back and stores no second record. The path is part of the key's
+    # fingerprint, so the same key on another job's records is 422 IDEMPOTENCY_KEY_REUSED.
     job = db.get(DataJob, data_job_id)
     if job is None:
         raise framework_error(FrameworkError.DATA_JOB_NOT_FOUND, detail="no such data job")
@@ -1115,6 +1126,7 @@ def _idempotency_key(action_id: uuid.UUID) -> str:
 
 
 @app.post("/actions", status_code=202, responses={200: {"description": "the actionId was already recorded: the replay is IGNORED and nothing is forwarded again"}})
+@idempotent("dme", status_code=202, exclude=("msac_credential",))
 def mediate_action(body: ActionRequest, request: Request, db: Session = Depends(get_session),
                    msac_credential: str | None = Header(default=None, alias="X-MSAC-Credential", description=(
                        "The credential of the MSAC Identity named in `requestedBy`, when that Identity has one (`SEC-15.6b`). Passed on to RAN NF OAM in the same header, which asks an rApp for it; "
@@ -1126,6 +1138,11 @@ def mediate_action(body: ActionRequest, request: Request, db: Session = Depends(
     # otherwise 202 with the job id and RAN NF OAM's status. A call that could not be made (no connection) is 502 UPSTREAM_FAILED and REJECTED: nothing was sent. A call whose outcome is
     # unknown (a timeout after it was sent, a 5xx, an unusable body) is 202 with status UNCONFIRMED: the write may have been applied, and a replay finds out. Any other exception is
     # raised after the record is updated (SEC-15.10).
+    # `@idempotent("dme")` (SDK-RETRY-IDEMPOTENCY) runs before the `actionId` check: a repeat under the same `Idempotency-Key` (an SDK's own retry) is
+    # answered with the stored first answer and its status (202, or 200 IGNORED: a JSONResponse is stored with its own status), and nothing runs, so an
+    # action sent without an `actionId` is no longer recorded and forwarded twice. A new call (a new key) with a recorded `actionId` still reaches the check
+    # below: IGNORED, or for an UNCONFIRMED action RAN NF OAM is asked again (call flow 03f). A 4xx or 502 raised here releases the key, so a repeat runs
+    # again. The credential header is left out of the key's fingerprint (`exclude`), so it is never stored and a repeat with it is the same request.
     if not body.changes:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="changes must not be empty")
     caller = invoker_id(request)

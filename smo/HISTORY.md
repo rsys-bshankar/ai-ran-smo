@@ -2225,12 +2225,15 @@ RAPP-4.3 gave the Go and Java SDKs a retry policy and recorded that the Python S
 - **Docs.** `sdk/README.md` (header, 1.5, 2.1, the rules and the composition in 2.5, the variables in 2.6, 3.2, 3.3), `sdk/docs/lifecycle.md` (diagrams a and b, the parity paragraph; images redrawn), `shared/README.md` (the hook). Removed from `OPEN_ITEMS.md`.
 - **Not taken.** Retrying in `R1Client` for every module (a behaviour change across the platform nobody asked for; modules have their own retry rules where they need them, for example RAN NF OAM's NETCONF dispatch). Parsing the HTTP-date form of `Retry-After` (neither Go nor Java does). Teaching Go and Java the `SMO_SDK_RETRY*` variables (a change to those SDKs, not asked for here).
 
-### SDK-RETRY-IDEMPOTENCY (slice 1) — the SDKs' repeated POSTs are replayed by Intent Service and MDAF; a guard test holds every SDK POST
+### SDK-RETRY-IDEMPOTENCY — every platform POST an SDK repeats is replayed by its key, or safe without it; a guard test holds every SDK POST
 
 The three SDKs send a generated `Idempotency-Key` on every POST and send it again on a repeat after a transport error, 502 or 504 (SDK-PY-RETRY,
 RAPP-4.3), but only routes with `@idempotent` (PR-ST-3) replayed the stored answer, so a repeat after a lost answer duplicated the write on most routes.
 An inventory of the 46 platform POSTs the SDKs call found 20 that need the decorator, 4 that had it, 15 safe by their state and 7 that deduplicate on
-their own key. This slice does Intent Service and MDAF; the other 13 routes are slice 2 in `OPEN_ITEMS.md`.
+their own key. Slice 1 did Intent Service and MDAF; slice 2 did the other 12 and closed the item. The twentieth, `POST /mlmr/models/{id}/artifact`,
+stays undecorated: the SDK sends that multipart upload without a key and never repeats it.
+
+**Slice 1.**
 
 - **Decorated (7 routes).** Intent Service `POST /intents`, `/intent-reports`, `/autonomy-dispatches`; MDAF `POST /reports`, `/subscriptions`
   (`mdaf/app/main.py`), `/mda-requests`, `/mda-reports` (`mdaf/app/mda.py`). Each with `@idempotent("<module>", status_code=201)`, the route's own
@@ -2262,6 +2265,47 @@ their own key. This slice does Intent Service and MDAF; the other 13 routes are 
   No call flow describes these routes' repeat behaviour, so none changed.
 - **Not taken.** A marker attribute set by the decorator for the guard to read at import time: AST reading needs no module import (each module's
   `app` package is named `app`, so importing all of them in one process clashes) and no change to the shared library.
+
+**Slice 2 (closes the item).**
+
+- **Decorated (12 routes), each with the route's own success status.** AIMgF `POST /models/{id}/runtime/scale` (200), `/mlmf/subscriptions` (201),
+  `/mlmf/subscriptions/{id}/reports` (200); DME `POST /type-subscriptions` (201), `/data-jobs` (202), `/offers` (201), `/data-jobs/{id}/records` (201),
+  `/actions` (202, `exclude=("msac_credential",)` as RAN NF OAM's `POST /config-jobs`); rApp Management `POST /instances/{id}/performance` and
+  `/instances/{id}/fault` (200); SME `POST /capif-events/v1/{subscriberId}/subscriptions` (201); MLMR `POST /coordination-groups` (201). All are sync
+  and took `request` and `db`, except DME `/type-subscriptions`, which gained a `request: Request` parameter; FastAPI does not publish it, so the
+  regenerated OpenAPI documents are unchanged. A keyed repeat no longer asks NFO to scale again (AIMgF sends NFO no key, so NFO recorded a second
+  SCALE operation), adds no second MLMF report, notification or group retrain, no second DME job (and producer outbox row), offer, record or type
+  subscription, no second rApp performance or fault report, no second CAPIF event subscription and no second coordination group. A repeated critical
+  fault now gets the first answer instead of the state machine's 409.
+- **Path parameters.** The key's fingerprint is the method, the path and the payload (`request_hash`), and the path parameters are in the payload too,
+  so the same key on another subscription's reports, another job's records, another model's runtime, another instance or another subscriber id is
+  `422 IDEMPOTENCY_KEY_REUSED`, never the other resource's answer. The unit tests show it for each such route.
+- **`/dme/actions` and its own `actionId`.** The decorator runs before the route, so a repeat under the same `Idempotency-Key` gets the stored first
+  answer with its own status: `_complete` stores a `JSONResponse` (200 IGNORED, 202 UNCONFIRMED) with the status it carries, and a dict with the declared
+  202, so the varying status needs nothing more. An action sent without an `actionId` (Go, Java, Python `mediate_action`) is no longer recorded and
+  forwarded twice. The `actionId` check is unchanged for a new call (a new key): a recorded id is IGNORED, and the caller's UNCONFIRMED action is asked
+  of RAN NF OAM again (call flow 03f, which now shows the replay branch; its image is redrawn). The SDK's own retry of an UNCONFIRMED answer is that
+  answer again, which tells the rApp to replay the `actionId`. A 4xx or 502 raised by the route releases the key, so a repeat runs again (as before).
+  The credential header is left out of the fingerprint and of the stored row.
+- **A known gap, not new.** `/mlmf/subscriptions/{id}/reports` commits the report before the group retrain step; a 500 from that step releases the key
+  (only 2xx answers are stored), so a repeat after it stores a second report. The decorator's documented limit (a replica that dies between the route's
+  commit and the stored answer) applies to every route.
+- **Database roles.** `migrations/db_roles.json`: the `sme` and `mlmr` roles list `idempotency_key` (aimgf, dme and rapp-mgmt already did); the
+  `test_db_roles.py` check now expects dme, mlmr and sme among the decorating modules.
+- **The guard.** The 12 `SLICE_2` entries left `ALLOWED` in `tests_integration/test_sdk_post_routes_idempotent.py`; what is left there is class b, c,
+  the token flow and the multipart artifact upload (a\*).
+- **Tests (each fails with the decorator removed; checked by removing the 12 decorators and running them).** `aimgf/tests/test_main.py` (scale: one
+  NFO scale call, 422 on another model; subscription; report: one report and one notification, 422 for other metrics and on another subscription),
+  `dme/tests/test_main.py` (the five routes, one outbox row per data job, the credential header not part of the fingerprint and in no stored row, and an
+  `actionId` still IGNORED across keys while each key replays its own answer), `dme/tests/test_action_unconfirmed.py` (an SDK retry of UNCONFIRMED is
+  replayed, a new call with the `actionId` recovers the outcome), `rapp-mgmt/tests/test_main.py` (performance and fault, 422 on another instance),
+  `sme/tests/test_main.py` (422 under another subscriber id), `mlmr/tests/test_main.py`. The DME, SME and MLMR fixtures create the `idempotency_key`
+  table.
+- **Docs.** `sdk/README.md` (2.5: every class-a route is now replayed), `sdk-go/README.md`, `sdk-java/README.md`, the AIMgF, DME, rApp Management, SME
+  and MLMR READMEs (ownership, API, errors, tests), `docs/ARCHITECTURE.md`, `docs/VALIDATION.md`, `CHANGELOG.md`, call flow 03f. Removed from
+  `OPEN_ITEMS.md`.
+- **Not taken.** Decorating the class-b routes, so that a repeat after a lost answer replays the first answer instead of a 409 the SDK raises: still a
+  choice, not needed against duplicates. Decorating the multipart artifact upload: the SDK never keys or repeats it.
 
 ### PR-MGT-14, PR-MGT-15 — zero-touch onboarding and software campaigns (MGT-14.1 to 14.5, MGT-15.1 to 15.4); the GUI, notifications and a real software exchange open
 

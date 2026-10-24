@@ -222,8 +222,12 @@ sequenceDiagram
     participant DME as DME
     participant OAM as RAN NF OAM
 
-    R->>DME: POST /dme/actions {requestedBy, changes, actionId?, sourceContext, decision?} · X-MSAC-Credential?
-    alt changes empty
+    R->>DME: POST /dme/actions {requestedBy, changes, actionId?, sourceContext, decision?} · Idempotency-Key? · X-MSAC-Credential?
+    alt the Idempotency-Key of an earlier call answered 2xx (the SDK's own retry)
+        DME-->>R: that call's answer and status again, Idempotent-Replayed true, nothing recorded or forwarded
+    else the same Idempotency-Key with another body
+        DME-->>R: 422 IDEMPOTENCY_KEY_REUSED
+    else changes empty
         DME-->>R: 422 SCHEMA_VALIDATION_FAILED
     else the actionId is recorded, and it is not this caller's UNCONFIRMED action
         DME-->>R: 200 {IGNORED, originalStatus, forwardedJobId}, nothing forwarded
@@ -243,7 +247,7 @@ sequenceDiagram
             DME-->>R: 502 UPSTREAM_FAILED, the action REJECTED: nothing was sent
         else the outcome is unknown (a timeout after it was sent, a 5xx or 504 from the gateway, still running under the key)
             DME-->>R: 202 {actionId, UNCONFIRMED}: the write may have been applied
-            Note over R,DME: the same caller replays the same actionId (and body): DME asks again under the same key, which never writes twice
+            Note over R,DME: the same caller replays the actionId in a new call (new Idempotency-Key): DME asks again under the dme-action key, never writing twice
         end
     end
 ```
@@ -265,5 +269,7 @@ the element back (the sample rApps) treats UNCONFIRMED like any write it has not
 - **Saved before it is sent** (DOC-CF-1.8): the job and its sub-changes are committed before the first edit, each sub-change is committed DISPATCHING before
   its edit and with its outcome right after, so the record never lags the network by more than the edit in flight.
 - **Path B never duplicates path A** (Wave 3): DME's `/actions` is a thin forward to the same route, which records the decision's provenance. It forwards
-  under an idempotency key derived from the `actionId`, so a timeout is UNCONFIRMED and asked again rather than recorded REJECTED (DOC-CF-1.8).
+  under an idempotency key derived from the `actionId`, so a timeout is UNCONFIRMED and asked again rather than recorded REJECTED (DOC-CF-1.8). The
+  route is also `@idempotent` on the caller's own `Idempotency-Key` (SDK-RETRY-IDEMPOTENCY): an SDK's retry of a call whose answer was lost gets that
+  answer again, so an action sent without an `actionId` (the Go and Java SDKs, Python's `mediate_action`) is not recorded and forwarded twice.
 - **Alarm ids are minted at ingestion**, never taken from the raising element, which closes R1UCR's fleet-wide collision risk.

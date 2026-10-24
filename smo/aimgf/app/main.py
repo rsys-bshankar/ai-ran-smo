@@ -1665,11 +1665,14 @@ def activate_model_runtime(request: Request, model_id: uuid.UUID, db: Session = 
 
 
 @app.post("/models/{model_id}/runtime/scale")
+@idempotent("aimgf", status_code=200)
 def scale_model_runtime(request: Request, model_id: uuid.UUID, db: Session = Depends(get_session)):
     """Refused (409) for a DEPRECATED/RETIRED model."""
     # Route notes: `_owned_model` first (404 `MODEL_NOT_FOUND`, 403 `MODEL_ACCESS_DENIED` for an rApp that is not the owner; SEC-15.3b). Order then: end-of-life check (409), REQUEST_SCALE (409 unless the runtime is ACTIVE), `POST
     # /nfo/deployments/{id}/scale` when the row has a deployment id (no body: NFO's scale takes no target size; 502 when NFO refuses, 503 when it does not
     # answer, and then the runtime stays ACTIVE), SCALE_COMPLETE, one commit. An rApp may call it for a model it owns (call flow 17c).
+    # `@idempotent("aimgf")` (SDK-RETRY-IDEMPOTENCY): a keyed repeat is answered from the first answer and does not ask NFO to scale again (AIMgF sends NFO
+    # no key of its own, so NFO would record a second SCALE operation).
     _owned_model(request, model_id, "scale")
     lifecycle = _get_or_create_lifecycle(db, model_id)
     _refuse_end_of_life(lifecycle, "scale")
@@ -1895,6 +1898,7 @@ def _refuse_if_retired(db: Session, model_id: uuid.UUID, action: str) -> None:
 
 
 @app.post("/mlmf/subscriptions", status_code=201)
+@idempotent("aimgf", status_code=201)
 def subscribe_performance_monitoring(request: Request, model_id: uuid.UUID, metric_types: list[str], dme_type_id: uuid.UUID, guard_kpi_floor: dict | None = None,
                                       notification_destination: str | None = None, guard_kpi_ceiling: dict | None = None, db: Session = Depends(get_session)):
     """MLMF — new sub-function, AI/ML Workflow LLD section 2. Distinct
@@ -1909,6 +1913,7 @@ def subscribe_performance_monitoring(request: Request, model_id: uuid.UUID, metr
     # in MLMR for every caller (404 `MODEL_NOT_FOUND`), and for a caller with the rApp role its owner (403 `MODEL_ACCESS_DENIED` unless it owns the model or the
     # model has no owner; SEC-15.3c); the DME type known to DME (422 `DME_ARTIFACT_NOT_FOUND`).
     # `notification_destination` is stored as given and screened by the outbox's SSRF guard when a report is queued, not here. A RETIRED model is 409 `LIFECYCLE_ILLEGAL_TRANSITION` (call flow 26e). One commit.
+    # `@idempotent("aimgf")` (SDK-RETRY-IDEMPOTENCY): a keyed repeat gets the first subscriptionId back instead of a second subscription.
     _check_numeric(guard_kpi_floor, "the floor of")
     _check_numeric(guard_kpi_ceiling, "the ceiling of")
     _owned_model(request, model_id, "subscribe to the performance of")   # call flow 13a: every caller's model is looked up, an rApp's ownership checked
@@ -1949,6 +1954,7 @@ def _find_coordination_group_for_model(model_id: uuid.UUID) -> dict | None:
 
 
 @app.post("/mlmf/subscriptions/{subscription_id}/reports")
+@idempotent("aimgf", status_code=200)
 def report_performance(request: Request, subscription_id: uuid.UUID, metrics: dict, db: Session = Depends(get_session)):
     """`docs/call-flows/13-mlmf-subscription-lifecycle.md`'s own gap,
     closed: a report against an unsubscribed or never-existed
@@ -1966,6 +1972,9 @@ def report_performance(request: Request, subscription_id: uuid.UUID, metrics: di
     # value) is not caught and answers 500 after the report is already stored. When it fires, `_trigger_group_retrain` starts a run for each PROMOTED member,
     # committing each on its own; a member NFO refuses is skipped, not fatal (call flow 02e). Answers `reportId`, `breachedFloor` and, for a group member,
     # `groupRetrainTriggered` and, when it fired, `retrainedModelIds` and `retrainSkipped` (`[{modelId, reason}]`); `missingMetrics` always.
+    # `@idempotent("aimgf")` (SDK-RETRY-IDEMPOTENCY): a keyed repeat is answered from the first answer, so no second report, notification or group retrain. The
+    # path is part of the key's fingerprint, so the same key on another subscription's reports is 422 IDEMPOTENCY_KEY_REUSED. A 500 from the group step after
+    # the report is committed releases the key (only 2xx answers are stored), so a repeat after that 500 stores a second report.
     sub = db.get(MLMFSubscription, subscription_id)
     if sub is None:
         raise framework_error(FrameworkError.MLMF_SUBSCRIPTION_NOT_FOUND, detail="no such MLMF subscription")
