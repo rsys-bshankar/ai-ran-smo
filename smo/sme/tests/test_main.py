@@ -2,7 +2,7 @@
 subscriptions and their delivery through the outbox, the registry listings and the stale-invoker purge (Foundational Platform LLD sections 2.1-2.3).
 
 Fixtures, defined here and reused by `test_security.py`, `test_scope.py` and `test_enrollment.py` (which import them): `db_session_factory` builds an in-memory SQLite
-database holding only SME's tables plus the outbox table; `client` is a FastAPI `TestClient` with `get_session` overridden to use it and the three
+database holding only SME's tables plus the outbox and idempotency-key tables; `client` is a FastAPI `TestClient` with `get_session` overridden to use it and the three
 `KNOWN_TEST_PUBLISHERS` already enrolled as providers. `conftest.py` additionally opens enrollment for every test (`SME_ALLOW_OPEN_ENROLLMENT`).
 
 Event delivery is observed by replacing `app.main.httpx.post` (the global `httpx.post`, which `smo_shared.webhook` calls) with a recorder, or by reading the outbox table.
@@ -21,6 +21,7 @@ from sqlalchemy.pool import StaticPool
 
 from smo_shared import outbox
 from smo_shared.db import Base, get_session
+from smo_shared.idempotency import IdempotencyKey
 from smo_shared.outbox import NotificationOutbox
 
 from app.main import app
@@ -38,7 +39,7 @@ KNOWN_TEST_PUBLISHERS = ["rapp-1", "rapp-2", "rapp-3"]
 
 @pytest.fixture
 def db_session_factory():
-    """Builds an in-memory SQLite database (one shared connection, so every session sees the same data) with SME's eight tables and the notification outbox, and returns a session factory.
+    """Builds an in-memory SQLite database (one shared connection, so every session sees the same data) with SME's eight tables, the notification outbox and the idempotency-key table, and returns a session factory.
 
     Tests may assume the tables are empty and that no other module's tables exist. Tests use the factory directly to inspect or edit rows behind the API's back.
     """
@@ -46,7 +47,7 @@ def db_session_factory():
     Base.metadata.create_all(engine, tables=[
         ServiceProfile.__table__, ServiceAuthzPolicy.__table__, ServiceEventSubscription.__table__, ProviderRegistration.__table__,
         InvokerRegistration.__table__, IssuedAccessToken.__table__, TrustedInvoker.__table__, UsedClientAssertion.__table__,
-        NotificationOutbox.__table__,
+        NotificationOutbox.__table__, IdempotencyKey.__table__,
     ])
     return sessionmaker(bind=engine)
 
@@ -143,6 +144,22 @@ def test_subscribe_events_accepts_known_event_types(client):
         "subscriberId": "rapp-1", "eventTypes": ["SERVICE_API_AVAILABLE", "SERVICE_API_UPDATE"], "callbackUri": "http://rapp-1/cb",
     })
     assert resp.status_code == 201
+
+
+def test_a_repeated_event_subscription_with_the_same_key_subscribes_once(client, db_session_factory):
+    """SDK-RETRY-IDEMPOTENCY: an SDK retry of POST /capif-events/v1/{subscriberId}/subscriptions gets the first subscriptionId back instead of a second
+    subscription that would deliver every event twice; the same key with another body, or under another subscriber id, is 422 and stores nothing."""
+    body = {"subscriberId": "rapp-1", "eventTypes": ["SERVICE_API_AVAILABLE"], "callbackUri": "http://rapp-1/cb"}
+    first = client.post("/capif-events/v1/rapp-1/subscriptions", json=body, headers={"Idempotency-Key": "sub-1"})
+    again = client.post("/capif-events/v1/rapp-1/subscriptions", json=body, headers={"Idempotency-Key": "sub-1"})
+    assert first.status_code == again.status_code == 201
+    assert again.json() == first.json() and again.headers["Idempotent-Replayed"] == "true"
+    for path, other in (("/capif-events/v1/rapp-1/subscriptions", {**body, "eventTypes": ["SERVICE_API_UPDATE"]}),
+                        ("/capif-events/v1/rapp-2/subscriptions", {**body, "subscriberId": "rapp-2"})):
+        reused = client.post(path, json=other, headers={"Idempotency-Key": "sub-1"})
+        assert reused.status_code == 422 and reused.json()["detail"]["title"] == "IDEMPOTENCY_KEY_REUSED"
+    with db_session_factory() as session:
+        assert session.query(ServiceEventSubscription).count() == 1
 
 
 def test_deregister_removes_service(client):

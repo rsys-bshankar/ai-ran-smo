@@ -9,7 +9,7 @@
 | Depends on (over R1) | Onboarding (`onboarding-status`, `usage/start`, `usage/stop`); NFO (`POST /nfo/deployments`, `DELETE /nfo/deployments/{id}`); SME (provider and service-API registration and deregistration); DME (`DELETE /dme/production-capabilities`) |
 | Called by | Operators and GUI BFF; the rApp container itself (`bootstrap-complete`, `performance` and `operator-api`, each for its own instance only, and reads of its own `config`; the gateway refuses an rApp the other changes, `PUT config` and `fault`, which are an operator's); R1 Termination (`GET operator-api`, to resolve `/rapps/{instanceId}/operator/...`); Intent Service (reads an instance's `autonomyMode` and `regionScope`); SA SMOS (`rollback`, `versions`); the reference rApps (read their own instance) |
 | Database tables | `rapp_instance` (versioned), `rapp_instance_version`, `rapp_fault_report`, `rapp_performance_report` |
-| Idempotency | `POST /instances` accept an `Idempotency-Key` header (`smo_shared/idempotency.py`; the `idempotency_key` table is shared, not this module's) |
+| Idempotency | `POST /instances`, `/instances/{id}/performance` and `/instances/{id}/fault` accept an `Idempotency-Key` header (`smo_shared/idempotency.py`; the `idempotency_key` table is shared, not this module's) |
 | Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
 | Status | Done. No open item in [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md) names this module; limits in 2.8 |
 | Time-driven behaviour | On request, never on a timer: an overdue upgrade is rolled back the next time either row is touched |
@@ -60,6 +60,7 @@ Cross-module references (`package_id`, `package_usage_registration_id`, `workloa
 | The upgrade / rollback choreography and `RAppInstanceVersion` history | Workload placement and the deployment record → NFO |
 | `autonomyMode`, `regionScope`, `configuration` of an instance | Enacting an outcome per autonomy mode (`AutonomyDispatch`) → Intent Service |
 | Instance fault and performance reports (record only) | Service registry and tokens → SME; data producer registry → DME |
+| Its rows of the shared `idempotency_key` table (module `rapp-mgmt`) | The table and the decorator → `smo_shared.idempotency` (PR-ST-3) |
 | Where an instance's operator API is (`operator_api_base`) | What the page declares (Onboarding stores the declaration), and what the GUI may call on it (the GUI backend); the forward itself (R1 Termination) |
 | Instance identity (`oauth_client_id`) and its revocation | Deciding to roll back after an assurance breach → SA SMOS (calls `rollback`) |
 
@@ -206,6 +207,12 @@ Upgrade choreography (`upgrade.py`):
 | POST | `/instances/{id}/fault?severity=&description=` | Record; `severity=critical` fires `CRASH`, or `BOOTSTRAP_FAILED` while `DEPLOYING`; for an upgrade's pending replacement it rolls the upgrade back (`{upgradeRolledBack: true}`, the report kept on the old instance). Own instance only for an rApp (checked before the crash is fired) | 403 `NOT_THIS_INSTANCE`; 409 (critical on a non-`RUNNING` instance) |
 | GET | `/instances/{id}/faults` | Paged, newest first | 404 |
 
+**Repeats (SDK-RETRY-IDEMPOTENCY).** `POST /instances/{id}/performance` and `/instances/{id}/fault` (both 200) are `@idempotent("rapp-mgmt")`, like
+`POST /instances` (`smo_shared.idempotency`, PR-ST-3): a repeat with the same `Idempotency-Key` (the Go and Java SDKs report performance, the Python and
+Java SDKs faults, and all repeat a POST after a transport error, 502 or 504) gets the first answer with `Idempotent-Replayed: true` and stores no second
+report; a repeated critical fault gets the first answer instead of the state machine's 409. The same key with another body, or on another instance, is
+422 `IDEMPOTENCY_KEY_REUSED`. `bootstrap-complete` and `terminate` are not decorated: a repeat is refused 409 by the state machine.
+
 `GET /health` is liveness. Config, performance and fault routes use a plain 404 lookup and do not apply the lazy upgrade timeout.
 
 ### 2.5 Interactions
@@ -253,6 +260,7 @@ rApp Management reads one environment variable of its own: `RAPP_CREDENTIAL_DELI
 | `NOT_THIS_INSTANCE` | 403 | A caller with the rApp role tried to register or forget the operator API, report performance or a fault for, or set the configuration of, an instance that is not its own |
 | `RAPP_UPGRADE_TIMED_OUT` | 409 | Commit after the deadline; the upgrade was rolled back |
 | `ROLLBACK_HISTORY_UNAVAILABLE` | 409 | No upgrade left to roll back |
+| `IDEMPOTENCY_KEY_REUSED` / `IDEMPOTENCY_KEY_IN_PROGRESS` / `IDEMPOTENCY_KEY_INVALID` | 422 / 409 / 422 | `Idempotency-Key` on a decorated route: used for another path or body, the first request still running, or not 1 to 255 printable characters (`smo_shared.idempotency`) |
 | FastAPI request validation | 422 | Invalid `autonomyMode`, malformed body |
 
 ### 2.8 Limits and open items
@@ -298,6 +306,7 @@ Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
 | `tests/test_global_stop_and_latest_kpi.py` | `GUI-9.6` global stop: every live instance stopped through the per-instance call, an already stopped one keeps its first stop, a terminated one is left out, a refusal is listed while the others stay stopped, an unreadable stop list (500, unreachable) changes nothing on stop, resume and count, the list is read page by page, resume lifts only this module's stopped instances and lists a refusal, the count. `GUI-9.8` latest KPI: the newest report's numbers only, no report and no instance are an empty answer (never 404), the batched read in the given order, more than 50 or malformed ids are 422 |
 | `tests/test_scope.py` | `SEC-10.3`: the claim at create (put on the invoker, shown on the instance, refused when not valid or not recorded by SME), kept by an upgrade and restored by a rollback, own-instance-only `bootstrap-complete` and performance; `GUI-9.3`: `GET /instances?region=` with and without the unscoped instances (a claim of tenants only counts as unscoped), `total`, `include_unscoped` alone filters nothing, an empty `region` 422 |
 | `tests/test_rotation.py` | `SEC-15.19`: off by default (unset, 0, negative, not a number: no call, no row); a due instance rotated and a not-due one left alone, a row with no stamp counted from its creation, only RUNNING instances with an identity, an operator API and no pending upgrade; the per-run limit (oldest first, the rest on the next runs); an unreachable workload (502, 503, 504, not registered, gateway down) is not rotated, SME is not asked, and it is rotated once back; SME refusing; a push the workload refuses is retried, recorded as "old secret invalid" and rotated again next run; the audit row and event are written, chain verifies, no secret in either or in the log; an instance no longer due is skipped; two workers ticking give one rotation; the task is off at 0 and its interval setting; Kubernetes delivery rotates nothing; create and manual renewal stamp the time and the detail shows it |
+| `tests/test_main.py` (SDK-RETRY-IDEMPOTENCY) | The `Idempotency-Key` replay of create, performance and fault: one row on a keyed repeat, `Idempotent-Replayed`, a repeated critical fault answered as the first, 422 `IDEMPOTENCY_KEY_REUSED` for another body or another instance |
 | `tests/test_main.py` (event bus) | `MSG-3.5`: an instance's RECOVER is published as `org.oran.smo.rapp-instance.state-changed` about the instance, from the state machine's one hook |
 | `tests/test_main.py`, `tests/test_upgrade.py` (call flow 07) | DOC-CF-1.3: a crash keeps the limit and policy and terminate drops them and the stop; a failed bootstrap; a stopped instance's replacement is stopped, an unstopped one is not, an unreadable or refused stop refuses the upgrade (the replacement torn down); the replacement's address; its credentials pushed; its bootstrap commits, its critical fault rolls back; a critical fault before bootstrap |
 | `tests/test_main.py` (call flow 15) | DOC-CF-1.4: a create NFO refuses or does not answer fails and leaves no usage registration or identity behind; the detail shows the workload as NFO sees it (ABNORMAL with its reason, GONE, UNKNOWN), none without a workload |

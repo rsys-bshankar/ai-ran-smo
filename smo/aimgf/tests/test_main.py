@@ -1611,6 +1611,66 @@ def test_a_started_validation_job_is_replayed_by_key(client, mlmr, db_session_fa
         assert session.query(ValidationJob).count() == 1
 
 
+# ---------------------------------------------------------------- SDK-RETRY-IDEMPOTENCY: the SDK's repeat of a POST is replayed by its key
+
+def _assert_replayed(first, again, status):
+    """Asserts that `again` is the replay of `first`: the same status (`status`) and body, and the `Idempotent-Replayed: true` header."""
+    assert first.status_code == again.status_code == status, first.text
+    assert again.json() == first.json() and again.headers["Idempotent-Replayed"] == "true"
+
+
+def _assert_key_reused(resp):
+    """Asserts that `resp` is the 422 IDEMPOTENCY_KEY_REUSED refusal of a key sent with another request."""
+    assert resp.status_code == 422 and resp.json()["detail"]["title"] == "IDEMPOTENCY_KEY_REUSED"
+
+
+def test_a_repeated_runtime_scale_with_the_same_key_asks_nfo_once(client, mlmr, db_session_factory):
+    """An SDK retry of POST /models/{id}/runtime/scale gets the first answer and does not ask NFO to scale again; the same key on another model's
+    runtime is 422 and that runtime is not scaled (the path is part of the key's fingerprint)."""
+    model_ids = [mlmr.add_model(), mlmr.add_model()]
+    for model_id in model_ids:
+        _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.CERTIFIED)
+        client.post(f"/models/{model_id}/runtime/deploy")
+        client.post(f"/models/{model_id}/runtime/activate")
+    first = client.post(f"/models/{model_ids[0]}/runtime/scale", headers={"Idempotency-Key": "scale-1"})
+    again = client.post(f"/models/{model_ids[0]}/runtime/scale", headers={"Idempotency-Key": "scale-1"})
+    _assert_replayed(first, again, 200)
+    _assert_key_reused(client.post(f"/models/{model_ids[1]}/runtime/scale", headers={"Idempotency-Key": "scale-1"}))
+    assert sorted(d["scaled"] for d in mlmr.nfo.deployments.values()) == [0, 1]
+
+
+def test_a_repeated_mlmf_subscription_with_the_same_key_subscribes_once(client, mlmr, db_session_factory):
+    """An SDK retry of POST /mlmf/subscriptions gets the first subscriptionId back, not a second subscription; the key with another body is 422 and
+    stores nothing."""
+    model_id = mlmr.add_model()
+    params = {"model_id": str(model_id), "dme_type_id": str(uuid.uuid4())}
+    first = client.post("/mlmf/subscriptions", params=params, json={"metric_types": ["accuracy"]}, headers={"Idempotency-Key": "sub-1"})
+    again = client.post("/mlmf/subscriptions", params=params, json={"metric_types": ["accuracy"]}, headers={"Idempotency-Key": "sub-1"})
+    _assert_replayed(first, again, 201)
+    _assert_key_reused(client.post("/mlmf/subscriptions", params=params, json={"metric_types": ["latency"]}, headers={"Idempotency-Key": "sub-1"}))
+    with db_session_factory() as session:
+        assert session.query(MLMFSubscription).count() == 1
+
+
+def test_a_repeated_performance_report_with_the_same_key_is_stored_and_notified_once(client, mlmr, db_session_factory, monkeypatch):
+    """An SDK retry of POST /mlmf/subscriptions/{id}/reports gets the first answer: one report and one subscriber notification. The same key with
+    other metrics, or on another subscription's reports, is 422 and stores no report."""
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append(url) or FakeResponse(200, {}))
+    model_id = mlmr.add_model()
+    sub_a, sub_b = (client.post("/mlmf/subscriptions", params={"model_id": str(model_id), "dme_type_id": str(uuid.uuid4()),
+                                                                "notification_destination": "http://consumer/mlmf"},
+                                json={"metric_types": ["accuracy"]}).json()["subscriptionId"] for _ in range(2))
+    first = client.post(f"/mlmf/subscriptions/{sub_a}/reports", json={"accuracy": 0.95}, headers={"Idempotency-Key": "rep-1"})
+    again = client.post(f"/mlmf/subscriptions/{sub_a}/reports", json={"accuracy": 0.95}, headers={"Idempotency-Key": "rep-1"})
+    _assert_replayed(first, again, 200)
+    _assert_key_reused(client.post(f"/mlmf/subscriptions/{sub_a}/reports", json={"accuracy": 0.5}, headers={"Idempotency-Key": "rep-1"}))
+    _assert_key_reused(client.post(f"/mlmf/subscriptions/{sub_b}/reports", json={"accuracy": 0.95}, headers={"Idempotency-Key": "rep-1"}))
+    with db_session_factory() as session:
+        assert [str(r.subscription_id) for r in session.query(PerformanceReport)] == [sub_a]
+    assert calls == ["http://consumer/mlmf"]
+
+
 # ---------------------------------------------------------------- notifications through the outbox (PR-MSG-1.7)
 
 def _outbox_rows(db_session_factory):

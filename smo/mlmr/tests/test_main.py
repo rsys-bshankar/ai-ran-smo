@@ -16,6 +16,7 @@ from sqlalchemy.orm import sessionmaker
 
 from smo_shared import audit
 from smo_shared.db import Base, get_session
+from smo_shared.idempotency import IdempotencyKey
 from smo_shared.testing import make_test_engine
 
 from app.main import app
@@ -24,7 +25,7 @@ from app.models import MLModel, MLModelCoordinationGroup, MLModelRepository, Mod
 
 @pytest.fixture
 def db_session_factory():
-    """Builds the MLMR tables on an in-memory SQLite engine and returns a session factory. Uses `make_test_engine()` because the
+    """Builds the MLMR tables and the idempotency-key table on an in-memory SQLite engine and returns a session factory. Uses `make_test_engine()` because the
     coordination group's array column needs its UUID-aware JSON fallback.
     """
     # make_test_engine(), not a plain create_engine("sqlite://", ...) —
@@ -34,7 +35,7 @@ def db_session_factory():
     engine = make_test_engine()
     Base.metadata.create_all(engine, tables=[
         MLModelRepository.__table__, MLModel.__table__, MLModelCoordinationGroup.__table__, ModelArtifact.__table__,
-        MLModelsStorage.__table__, MLModelProfile.__table__, audit.AuditEntry.__table__, audit.AuditHead.__table__,
+        MLModelsStorage.__table__, MLModelProfile.__table__, audit.AuditEntry.__table__, audit.AuditHead.__table__, IdempotencyKey.__table__,
     ])
     return sessionmaker(bind=engine)
 
@@ -543,6 +544,20 @@ def test_list_coordination_groups_returns_members(client, db_session_factory):
 
     groups = client.get("/coordination-groups").json()["items"]
     assert [(g["groupId"], g["memberModelIds"]) for g in groups] == [(group_id, [str(model_id_1), str(model_id_2)])]
+
+
+def test_a_repeated_coordination_group_with_the_same_key_creates_one_group(client, db_session_factory):
+    """SDK-RETRY-IDEMPOTENCY: an SDK retry of POST /coordination-groups gets the first groupId back instead of a second group over the same members
+    (a breach would then trigger the group retrain twice); the same key with another body is 422 IDEMPOTENCY_KEY_REUSED and stores nothing."""
+    members = [str(_make_model(db_session_factory, model_type=t)) for t in ("t1", "t2", "t3")]
+    first = client.post("/coordination-groups", json={"memberModelIds": members[:2]}, headers={"Idempotency-Key": "grp-1"})
+    again = client.post("/coordination-groups", json={"memberModelIds": members[:2]}, headers={"Idempotency-Key": "grp-1"})
+    assert first.status_code == again.status_code == 201
+    assert again.json() == first.json() and again.headers["Idempotent-Replayed"] == "true"
+    reused = client.post("/coordination-groups", json={"memberModelIds": members[1:]}, headers={"Idempotency-Key": "grp-1"})
+    assert reused.status_code == 422 and reused.json()["detail"]["title"] == "IDEMPOTENCY_KEY_REUSED"
+    with db_session_factory() as session:
+        assert session.query(MLModelCoordinationGroup).count() == 1
 
 
 def test_create_coordination_group_rejects_fewer_than_two_members(client, db_session_factory):

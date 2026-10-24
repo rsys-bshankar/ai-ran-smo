@@ -1,5 +1,5 @@
 """Tests of call flow 03f (DOC-CF-1.8): an O1 action whose outcome DME could not learn is UNCONFIRMED, not REJECTED, and a replay of its `actionId` by the caller
-that made it asks RAN NF OAM again under the same idempotency key (`dme-action:<actionId>`), so the true outcome is recovered and the write is never made twice.
+that made it asks RAN NF OAM again under the same idempotency key (`dme-action:<actionId>`), so the true outcome is recovered and the write is never made twice. One test shows how an SDK's retry under one `Idempotency-Key` (SDK-RETRY-IDEMPOTENCY) meets it.
 
 Fixtures come from `test_main.py` (`client`, `FakeConfigJobResponse`). The call to RAN NF OAM is replaced by a scripted one. SQLite, no network. Run with
 `cd smo/dme && PYTHONPATH=.:../shared python -m pytest tests/test_action_unconfirmed.py -q`.
@@ -85,3 +85,16 @@ def test_a_refusal_on_the_replay_is_relayed_and_rejected(client, ran_nf_oam):
     client.post("/actions", json=_action(action_id), headers=RAPP)
     replay = client.post("/actions", json=_action(action_id), headers=RAPP)
     assert replay.status_code == 403 and client.get(f"/actions/{action_id}").json()["status"] == "REJECTED"
+
+
+def test_an_sdk_retry_replays_unconfirmed_and_a_new_call_with_the_action_id_asks_again(client, ran_nf_oam):
+    """SDK-RETRY-IDEMPOTENCY with call flow 03f: the SDK's own retry (same `Idempotency-Key`) of an UNCONFIRMED answer gets that answer replayed and
+    calls RAN NF OAM no more; the rApp's replay of the `actionId` in a new call (a new key) still asks RAN NF OAM again and recovers the outcome."""
+    action_id = str(uuid.uuid4())
+    ran_nf_oam["answers"] = [httpx.ReadTimeout("slow"), FakeConfigJobResponse({"jobId": "11111111-1111-1111-1111-111111111111", "status": "COMPLETED"})]
+    first = client.post("/actions", json=_action(action_id), headers={**RAPP, "Idempotency-Key": "sdk-1"})
+    retry = client.post("/actions", json=_action(action_id), headers={**RAPP, "Idempotency-Key": "sdk-1"})
+    assert first.status_code == retry.status_code == 202 and retry.json() == first.json() and first.json()["status"] == "UNCONFIRMED"
+    assert retry.headers["Idempotent-Replayed"] == "true" and len(ran_nf_oam["calls"]) == 1
+    replay = client.post("/actions", json=_action(action_id), headers={**RAPP, "Idempotency-Key": "sdk-2"})
+    assert replay.status_code == 202 and replay.json()["status"] == "COMPLETED" and len(ran_nf_oam["calls"]) == 2

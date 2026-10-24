@@ -9,22 +9,22 @@ CI runs `--check` and fails when this file no longer matches the code.
 
 | suite | files | test functions | collected tests |
 |---|---:|---:|---:|
-| `aimgf` | 17 | 283 | 433 |
-| `dme` | 14 | 170 | 183 |
+| `aimgf` | 17 | 286 | 436 |
+| `dme` | 14 | 177 | 190 |
 | `focom` | 3 | 85 | 85 |
 | `gui` | 51 | 519 | — |
 | `gui-bff` | 17 | 439 | 1682 |
 | `intent-service` | 5 | 87 | 107 |
 | `mdaf` | 4 | 62 | 66 |
 | `mllf` | 1 | 10 | 10 |
-| `mlmr` | 2 | 80 | 86 |
+| `mlmr` | 2 | 81 | 87 |
 | `mock-o1-adaptor` | 6 | 84 | 108 |
 | `nfo` | 2 | 43 | 48 |
 | `onboarding` | 6 | 126 | 212 |
 | `r1-termination` | 10 | 152 | 350 |
 | `ran-analytics` | 2 | 19 | 22 |
 | `ran-nf-oam` | 55 | 828 | 1234 |
-| `rapp-mgmt` | 11 | 201 | 286 |
+| `rapp-mgmt` | 11 | 203 | 288 |
 | `sa-smos` | 3 | 51 | 78 |
 | `samples/coverage-optimization-rapp` | 6 | 61 | 80 |
 | `samples/energy-saving-rapp` | 6 | 74 | 88 |
@@ -34,10 +34,10 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `sdk-go` | 9 | 66 | — |
 | `sdk-java` | 8 | 58 | — |
 | `shared` | 50 | 663 | 1118 |
-| `sme` | 5 | 121 | 139 |
+| `sme` | 5 | 122 | 140 |
 | `so-smos` | 3 | 27 | 40 |
 | `tests_integration` | 95 | 737 | 915 |
-| **total** | **418** | **5364** | **7759** (Python) |
+| **total** | **418** | **5378** | **7773** (Python) |
 
 ## Per test file
 
@@ -52,7 +52,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests/test_feature_group_token.py` | 7 | 13 |
 | `tests/test_governance_end_of_life.py` | 6 | 6 |
 | `tests/test_job_ownership.py` | 10 | 44 |
-| `tests/test_main.py` | 109 | 122 |
+| `tests/test_main.py` | 112 | 125 |
 | `tests/test_mlmf_guard.py` | 6 | 17 |
 | `tests/test_model_ownership_routes.py` | 10 | 44 |
 | `tests/test_nrm.py` | 22 | 22 |
@@ -72,12 +72,12 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | file | test functions | collected tests |
 |---|---:|---:|
 | `tests/test_action_forward_and_types.py` | 5 | 6 |
-| `tests/test_action_unconfirmed.py` | 4 | 6 |
+| `tests/test_action_unconfirmed.py` | 5 | 7 |
 | `tests/test_data_job_owner.py` | 4 | 4 |
 | `tests/test_data_ownership.py` | 9 | 9 |
 | `tests/test_delivery_health.py` | 6 | 6 |
 | `tests/test_event_feed.py` | 5 | 9 |
-| `tests/test_main.py` | 96 | 96 |
+| `tests/test_main.py` | 102 | 102 |
 | `tests/test_msac_credential_forward.py` | 4 | 4 |
 | `tests/test_producer_health.py` | 1 | 7 |
 | `tests/test_producer_lifecycle.py` | 11 | 11 |
@@ -215,7 +215,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 
 | file | test functions | collected tests |
 |---|---:|---:|
-| `tests/test_main.py` | 60 | 66 |
+| `tests/test_main.py` | 61 | 67 |
 | `tests/test_mlr_conformance.py` | 20 | 20 |
 
 </details>
@@ -351,7 +351,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests/test_business_metrics.py` | 1 | 1 |
 | `tests/test_global_stop_and_latest_kpi.py` | 13 | 15 |
 | `tests/test_instance_safeguards.py` | 6 | 11 |
-| `tests/test_main.py` | 72 | 94 |
+| `tests/test_main.py` | 74 | 96 |
 | `tests/test_operator_api.py` | 14 | 30 |
 | `tests/test_own_instance_checks.py` | 2 | 2 |
 | `tests/test_rapp_limits.py` | 19 | 22 |
@@ -539,7 +539,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 |---|---:|---:|
 | `tests/test_enrollment.py` | 9 | 9 |
 | `tests/test_identity.py` | 4 | 4 |
-| `tests/test_main.py` | 80 | 80 |
+| `tests/test_main.py` | 81 | 81 |
 | `tests/test_scope.py` | 10 | 16 |
 | `tests/test_security.py` | 18 | 30 |
 

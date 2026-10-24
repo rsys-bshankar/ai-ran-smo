@@ -707,8 +707,10 @@ def set_config(instance_id: uuid.UUID, config: dict, request: Request, db: Sessi
 
 
 @app.post("/instances/{instance_id}/performance")
+@idempotent("rapp-mgmt", status_code=200)
 def report_performance(instance_id: uuid.UUID, metrics: dict, request: Request, db: Session = Depends(get_session)):
     """Record a metrics object for the instance. The rApp may report for its own instance only (403 `NOT_THIS_INSTANCE` for another rApp's); an operator may for any."""
+    # `@idempotent("rapp-mgmt")` (SDK-RETRY-IDEMPOTENCY): a keyed repeat is answered from the first answer and stores no second report.
     _own_instance_or_operator(request, _get_or_404(db, instance_id))
     db.add(RAppPerformanceReport(instance_id=instance_id, metrics=metrics))
     db.commit()
@@ -716,6 +718,7 @@ def report_performance(instance_id: uuid.UUID, metrics: dict, request: Request, 
 
 
 @app.post("/instances/{instance_id}/fault")
+@idempotent("rapp-mgmt", status_code=200)
 def report_fault(instance_id: uuid.UUID, request: Request, severity: str, description: str = "", db: Session = Depends(get_session)):
     """Records every fault report; severity=critical additionally fires
     CRASH (RUNNING -> FAULTED) or, for an instance that has not come up yet,
@@ -726,6 +729,8 @@ def report_fault(instance_id: uuid.UUID, request: Request, severity: str, descri
     state is refused with 409 and not recorded. A rApp may report for its
     own instance only (403 `NOT_THIS_INSTANCE` for another rApp's); an operator may for any.
     """
+    # `@idempotent("rapp-mgmt")` (SDK-RETRY-IDEMPOTENCY): a keyed repeat is answered from the first answer, so a non-critical fault is not stored twice and a
+    # repeated critical one gets the first answer instead of the state machine's 409.
     inst = _load_instance(db, instance_id)
     _own_instance_or_operator(request, inst)      # before the CRASH below: another instance's token must not be able to fault this one
     if severity == "critical" and InstanceState(inst.state) == InstanceState.DEPLOYING:

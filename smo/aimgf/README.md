@@ -9,7 +9,7 @@
 | Depends on (over R1) | MLMR (`/mlmr/models`, `/mlmr/coordination-groups`), NFO (`/nfo/descriptors`, `/nfo/deployments`), DME (`/dme/data-jobs`: check a training run's jobs; create and terminate a feature group's), Onboarding (`/onboarding/packages/{id}/onboarding-status`) |
 | Called by | rApps through the SDK (`sdk/smo_sdk/lifecycle.py`), MLLF (lifecycle read + node-group write), MLMR (`nrm-refs` join), MDAF (MLMF subscriptions and reports), SA SMOS and SO SMOS (training / validation / emulation / deploy / inference steps), GUI via the BFF |
 | Database tables | `model_lifecycle` (versioned), `training_job`, `validation_job`, `emulation_job`, `inference_job`, `certification_record`, `lifecycle_transition`, `mlmf_subscription`, `performance_report`, `feature_group`, `ml_training_function`, `ml_training_process`, `ml_training_report`, `ml_testing_function`, `ml_testing_report`, `aiml_inference_function`, `aiml_inference_emulation_function`, `aiml_inference_report`, `ml_model_loading_policy`, `ml_model_loading_request`, `ml_model_loading_process`, `ml_update_function`, `ml_update_request`, `ml_update_process`, `ml_update_report` |
-| Idempotency | `POST /training-jobs`, `/validation-jobs`, `/emulation-jobs`, `/models/{id}/inference-jobs` accept an `Idempotency-Key` header (`smo_shared/idempotency.py`; the `idempotency_key` table is shared, not this module's) |
+| Idempotency | `POST /training-jobs`, `/validation-jobs`, `/emulation-jobs`, `/models/{id}/inference-jobs`, `/models/{id}/runtime/scale`, `/mlmf/subscriptions`, `/mlmf/subscriptions/{id}/reports` accept an `Idempotency-Key` header (`smo_shared/idempotency.py`; the `idempotency_key` table is shared, not this module's) |
 | Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
 | Status | Done. Open: `OI-1-weighted-triggers` (group-retrain `WEIGHTED_TRIGGERS` raises `NotImplementedError`), `OI-6.1-runtime-gate` (no operator gate on RuntimeLifecycle transitions); runtime scale takes no target size (NFO's scale has no argument) |
 
@@ -285,6 +285,14 @@ Paths are relative to `/aimgf`. Lists are `{items, total, limit, offset}` with `
 | GET / DELETE | `/feature-groups/{name}` | Read / delete; delete terminates the DME data job (best effort, outcome in `dmeDataJobTeardown`). 404 `FEATURE_GROUP_NOT_FOUND` |
 | GET | `/health` | Liveness |
 
+**Repeats (SDK-RETRY-IDEMPOTENCY).** `POST /models/{id}/runtime/scale` (200), `/mlmf/subscriptions` (201) and `/mlmf/subscriptions/{id}/reports` (200)
+are `@idempotent("aimgf")` (`smo_shared.idempotency`, PR-ST-3), like the four job creates: a repeat with the same `Idempotency-Key` (every SDK POST carries
+one, and repeats it after a transport error, 502 or 504) is answered with the first answer and `Idempotent-Replayed: true`. It asks NFO to scale no second
+time, and stores no second subscription, report or notification and starts no second group retrain. The key is bound to the path too, so the same key on
+another model or subscription is 422 `IDEMPOTENCY_KEY_REUSED`, as is the same key with another body. A report whose group-retrain step fails with 500
+after the report is committed releases its key, so a repeat stores a second report. The other SDK POSTs here are safe by their state (a repeat is
+refused 409) or by the unique feature-group name; each says why in a `# Not @idempotent` comment.
+
 **TS 28.105 NRM resources.** Each is `{"id", "attributes"}`; unknown ids are 404 `NRM_OBJECT_NOT_FOUND`; bodies reject unknown attributes (422).
 
 | Resource | Routes | Behaviour |
@@ -372,6 +380,7 @@ Errors are RFC 7807 ProblemDetails from `framework_error()`; the code is carried
 | `ROLE_NOT_PERMITTED` | 403 | `advance` called with the rApp role |
 | `DME_ARTIFACT_NOT_FOUND` | 422 | a `dmeDataJobIds` entry does not resolve |
 | `SCHEMA_VALIDATION_FAILED` | 422 | job-driven or unknown `advance` event; empty `mLModelRefList`; report without exactly one function ref |
+| `IDEMPOTENCY_KEY_REUSED` / `IDEMPOTENCY_KEY_IN_PROGRESS` / `IDEMPOTENCY_KEY_INVALID` | 422 / 409 / 422 | `Idempotency-Key` on a decorated route: used for another path or body, the first request still running, or not 1 to 255 printable characters (`smo_shared.idempotency`) |
 | (FastAPI validation) | 422 | request body outside the spec datatypes or enums |
 
 ### 2.8 Limits and open items
@@ -402,7 +411,7 @@ Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
 
 | Test file | Covers |
 |---|---|
-| `tests/test_main.py` | training / validation / emulation request, complete, cancel, suspend / resume, supersede, DME check, completion notifications; advance, governance records, operator gates, lifecycle history; runtime deploy / activate / scale / terminate and end-of-life; inference gating; NFO execution runtime create / teardown per job kind; MLMF subscribe / report / notify / unsubscribe and group retrain; feature groups; health |
+| `tests/test_main.py` | training / validation / emulation request, complete, cancel, suspend / resume, supersede, DME check, completion notifications; advance, governance records, operator gates, lifecycle history; runtime deploy / activate / scale / terminate and end-of-life; inference gating; NFO execution runtime create / teardown per job kind; MLMF subscribe / report / notify / unsubscribe and group retrain; feature groups; health; the `Idempotency-Key` replay of the job creates, runtime scale (one NFO call), MLMF subscribe and report (one report, one notification; 422 `IDEMPOTENCY_KEY_REUSED` for another body or another subscription or model) |
 | `tests/test_feature_group_token.py` | `SEC-15.2`: a `tokenRef` group answers `tokenSet` and the name and no `token`; a clear-text `token` is stored and never returned by create, get or list; the deprecation header and warning; `token` deprecated and optional in the OpenAPI schema; both or neither credential and a bad reference are 422 without echoing the value; `feature_group_token` resolves from the environment, a `_FILE` or the legacy column |
 | `tests/test_model_ownership_routes.py` | `SEC-15.3c`: for training-jobs, ml-training-requests, validation-jobs, ml-testing-requests, emulation-jobs, ml-update-requests, the lifecycle, its history, and the MLMF subscription create and list, another rApp is 403 `MODEL_ACCESS_DENIED` with nothing written, and the owner, the console, a call with no role and an owner-less model pass; an unknown model is 404 for an rApp (and the history and subscription create of the console are not asked); an update request naming a foreign model starts no run; the routes that take a subscription id (reports, a report, delete) are the owner's, the console's and the owner-less model's; an rApp's unfiltered subscription and report listings hold only the models it may see |
 | `tests/test_on_behalf_owner.py` | `MLLF-NODEGROUP-OWNER`: an SMO module acting for another rApp (`X-R1-On-Behalf-Of`) is 403 `MODEL_ACCESS_DENIED` on node-groups (nothing written) and on every route of the `SEC-15.3c` table, while one acting for the owner, or for nobody, passes; an inference job a module requests records the rApp it acts for as `requested_by` |

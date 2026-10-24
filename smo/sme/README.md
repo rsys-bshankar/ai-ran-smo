@@ -69,6 +69,7 @@ SME calls nothing but subscriber callbacks. It reads no other module's data, and
 | Provider (APF) enrolment, invoker onboarding, secrets, tokens, introspection | Which instance an rApp is, and its `oauth_client_id` → rApp Management |
 | Trusted-invoker security contexts | Declaring which services a package publishes → Onboarding (reads the CSAR); registering them per instance → rApp Management |
 | Service change events and subscriptions | Per-role rules for GUI users → GUI BFF |
+| Its rows of the shared `idempotency_key` table (module `sme`) | The table and the decorator → `smo_shared.idempotency` (PR-ST-3) |
 
 ### 1.5 Design decisions
 
@@ -188,6 +189,13 @@ None: stateless as to lifecycle. The only time-dependent state is token validity
 
 **Other**: `GET /health`.
 
+**Repeats (SDK-RETRY-IDEMPOTENCY).** `POST /capif-events/v1/{subscriber_id}/subscriptions` is `@idempotent("sme", status_code=201)`
+(`smo_shared.idempotency`, PR-ST-3): a repeat with the same `Idempotency-Key` (every SDK POST carries one, and repeats it after a transport error, 502 or
+504) gets the first `subscriptionId` with `Idempotent-Replayed: true`, and no second subscription that would deliver every event twice. The same key with
+another body, or under another subscriber id, is 422 `IDEMPOTENCY_KEY_REUSED`. The role `sme` may write the shared `idempotency_key` table
+(`migrations/db_roles.json`). `POST /provider-registrations` and `/published-apis/v1/{apfId}/service-apis` are upserts and not decorated, and neither are
+the token-flow routes (`/invoker-registrations` mints an invoker per call and its answer holds the onboarding secret, which must not be stored).
+
 ### 2.5 Interactions
 
 | Direction | Call | When | Failure behaviour |
@@ -216,6 +224,7 @@ Matching rule for the last case: the subscriber id is compared with `allowedCons
 | `TRUSTED_INVOKER_NOT_FOUND` | 404 | Read, update or revoke without a context |
 | `SECURITY_CONTEXT_INVALID` | 422 | Malformed `ServiceSecurity` or `SecurityNotification`; a malformed PEM `apiInvokerPublicKey` |
 | `unsupported_grant_type`, `invalid_request`, `invalid_client`, `unauthorized_client`, `invalid_scope` | 400 | `/oauth2/token` (body `{"error", "error_description"}`, not ProblemDetails) |
+| `IDEMPOTENCY_KEY_REUSED` / `IDEMPOTENCY_KEY_IN_PROGRESS` / `IDEMPOTENCY_KEY_INVALID` | 422 / 409 / 422 | `Idempotency-Key` on a decorated route: used for another path or body, the first request still running, or not 1 to 255 printable characters (`smo_shared.idempotency`) |
 | FastAPI request validation | 422 | Missing or mistyped fields |
 
 ### 2.8 Limits and open items
@@ -245,7 +254,7 @@ Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
 |---|---|
 | `tests/test_main.py` | Service registry and discovery: register, name conflict, same-producer update, authorization gate (hidden / shown / unrestricted), deregistration ownership, `api_name` / `api_version` / AEF / protocol / data-format / comm-type filters |
 | `tests/test_identity.py` | Call flow 18: an rApp registers, publishes and deregisters only as its own provider; discovers only as itself; subscribes, lists and unsubscribes only as itself, and a refused callback is 422; offboarding removes the invoker's subscriptions and its provider with its services |
-| | Event subscriptions and notifications: event-type validation, unsubscribe ownership, matching subscribers only, update / unavailable events, `apiIds` filter, visibility respected, unreachable subscriber |
+| | Event subscriptions and notifications: event-type validation, unsubscribe ownership, matching subscribers only, update / unavailable events, `apiIds` filter, visibility respected, unreachable subscriber, the `Idempotency-Key` replay of a subscription (one row, `Idempotent-Replayed`, 422 `IDEMPOTENCY_KEY_REUSED` for another body or subscriber id) |
 | | Provider enrolment and the own-services query |
 | | Invoker onboarding, token issue and introspection (server-generated id and secret, no cleartext secret or token, bad grant / client / secret, expired and unknown tokens) |
 | | Trusted invokers: validation, replace, redaction and reveal, update, revocation (by `aefId`, whole record), 404s |

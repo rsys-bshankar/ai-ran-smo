@@ -90,7 +90,7 @@ def test_the_role_of_every_module_with_an_idempotent_route_may_write_the_idempot
     """A module with an `@idempotent` route (`smo_shared.idempotency`) reserves and stores keys in `idempotency_key` before and after the route runs; its role must
     list the table, or every request that carries an `Idempotency-Key` (every SDK POST does) fails with "permission denied" (SDK-RETRY-IDEMPOTENCY)."""
     users = {m for m in ROLES if any("@idempotent(" in f.read_text() for f in (SMO_ROOT / m / "app").glob("*.py"))}
-    assert {"aimgf", "intent-service", "mdaf", "nfo", "ran-nf-oam", "rapp-mgmt"} <= users
+    assert {"aimgf", "dme", "intent-service", "mdaf", "mlmr", "nfo", "ran-nf-oam", "rapp-mgmt", "sme"} <= users
     for module in users:
         assert "idempotency_key" in ROLES[module]["shared"], module
 
