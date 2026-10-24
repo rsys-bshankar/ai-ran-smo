@@ -141,24 +141,58 @@ def test_deactivated_foreign_and_unknown_intents(client, platform):
     assert client.get("/o1-cm-handler/enactments").json()["total"] == 0
 
 
-def test_a_re_pushed_intent_replays_the_same_action_id(client, platform, monkeypatch):
-    """The DME action id is derived from the intent and expectation (uuid5), so a re-push sends the same id; when DME answers the replay IGNORED, the original status still decides fulfilment.
-    """
+def _posted(platform, path):
+    """The bodies the handler posted to `path`, in order."""
+    return [body for p, body in platform["posts"] if p == path]
+
+
+def test_a_re_pushed_intent_is_answered_from_its_enactment_and_reported_once(client, platform):
+    """SA-REPLAY: Intent Service's outbox pushes again when the first push got no answer in time. The second push is answered with the recorded enactment,
+    `replayed: true`, and writes no second DME action, records no second enactment and publishes no second IntentReport."""
     intent_id = uuid.uuid4()
-    platform["intents"][str(intent_id)] = _intent(intent_id, [LOCK], cells=("101",))
-    client.post("/o1-cm-handler/intents", json={"intentId": str(intent_id)})
+    platform["intents"][str(intent_id)] = _intent(intent_id, [LOCK])
+    first = client.post("/o1-cm-handler/intents", json={"intentId": str(intent_id)}).json()
+    again = client.post("/o1-cm-handler/intents", json={"intentId": str(intent_id)}).json()
+    assert first["replayed"] is False and again["replayed"] is True
+    assert {k: v for k, v in again.items() if k != "replayed"} == {k: v for k, v in first.items() if k != "replayed"}
+    assert len(_posted(platform, "/dme/actions")) == 1 and len(_posted(platform, "/intent-service/intent-reports")) == 1
+    assert client.get("/o1-cm-handler/enactments").json()["total"] == 1
 
-    def replay(self, path, json=None, **kw):
-        platform["posts"].append((path, json))
-        if path == "/dme/actions":
-            return FakeR1Response(200, {"actionId": json["actionId"], "status": "IGNORED", "originalStatus": "COMPLETED"})
-        return FakeR1Response(201, {"reportId": str(uuid.uuid4())})
 
+def test_two_pushes_at_once_record_one_enactment_and_the_second_answers_the_first(client, platform, monkeypatch):
+    """Two pushes of one intent that both pass the lookup: the unique index on intent_id keeps one row. Here the lookup of the second push misses the first
+    one's row (not yet committed when it looked); its insert then fails, it rolls back and answers the first enactment, replayed, without a second report.
+    Both sent the same uuid5 action id, so DME applied the change once (W10-18)."""
     import app.o1cm
-    monkeypatch.setattr("app.o1cm.R1Client.post", replay)
+    intent_id = uuid.uuid4()
+    platform["intents"][str(intent_id)] = _intent(intent_id, [LOCK])
+    first = client.post("/o1-cm-handler/intents", json={"intentId": str(intent_id)}).json()
+    real_lookup, looked = app.o1cm._enactment_of, []
+
+    def lookup(db, iid):
+        # the first lookup of the second push is too early to see the first push's row; later lookups see it
+        if not looked:
+            looked.append(iid)
+            return None
+        return real_lookup(db, iid)
+    monkeypatch.setattr("app.o1cm._enactment_of", lookup)
+    second = client.post("/o1-cm-handler/intents", json={"intentId": str(intent_id)})
+    assert second.status_code == 200, second.text
+    assert second.json()["replayed"] is True and second.json()["enactmentId"] == first["enactmentId"]
+    assert client.get("/o1-cm-handler/enactments").json()["total"] == 1
+    assert len(_posted(platform, "/intent-service/intent-reports")) == 1
+    ids = [body["actionId"] for body in _posted(platform, "/dme/actions")]
+    assert ids == [str(uuid.uuid5(app.o1cm.ACTION_ID_NAMESPACE, f"{intent_id}:e1"))] * 2
+
+
+def test_an_action_dme_answers_as_a_replay_is_judged_by_its_first_status(client, platform, monkeypatch):
+    """When a push is enacted again after a crash before its record was committed, DME answers the repeated action id IGNORED with the first status;
+    that first status decides fulfilment, and the action is marked `replayed`."""
+    intent_id = uuid.uuid4()
+    platform["intents"][str(intent_id)] = _intent(intent_id, [LOCK])
+    monkeypatch.setattr("app.o1cm.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(200, {
+        "actionId": json["actionId"], "status": "IGNORED", "originalStatus": "COMPLETED"}) if path == "/dme/actions" else FakeR1Response(201, {"reportId": str(uuid.uuid4())}))
     enactment = client.post("/o1-cm-handler/intents", json={"intentId": str(intent_id)}).json()
-    ids = [body["actionId"] for path, body in platform["posts"] if path == "/dme/actions"]
-    assert len(ids) == 2 and ids[0] == ids[1] == str(uuid.uuid5(app.o1cm.ACTION_ID_NAMESPACE, f"{intent_id}:e1"))
     assert enactment["status"] == "FULFILLED" and enactment["actions"][0]["replayed"] is True
 
 

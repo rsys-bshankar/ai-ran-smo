@@ -103,7 +103,8 @@ sequenceDiagram
 ```
 
 **Phase 1:** the rApp waits up to 30 s for SA SMOS's fulfilment report; SA SMOS enacts inside the push it receives, so the report is normally there at
-once. A report that never comes counts as not enacted and the cells are rolled back.
+once. A report that never comes counts as not enacted and the cells are rolled back. A push Intent Service's outbox sends again (the first got no answer in
+time) is answered from the first enactment, so the intent has one SA SMOS report and one config write (SA-REPLAY).
 
 ## 22c — ASSIST: the operator decides, the rApp reconciles
 

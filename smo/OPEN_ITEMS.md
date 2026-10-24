@@ -143,10 +143,6 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
   DME action left `FORWARDED` (a replay is answered `IGNORED`, so its caller never learns the outcome), and a software phase claimed and not sent
   (OAM-SWM-RESEND). Approach: record when each entered the working state and let the module's worker end one older than a grace period (FAILED,
   UNCONFIRMED or re-sent, as the step allows).
-- **SA-REPLAY** — SA SMOS can do the same work twice after a retry: the O1-CM intent handler does not look for an existing enactment, so Intent
-  Service's outbox re-push of a slow enactment records a second one and publishes a second IntentReport (DME's replay protection stops a second CM
-  write), and a remedial action's `Idempotency-Key` is made from a new action id on every run, so a report MDAF re-delivers after a crash runs the
-  action again. Approach: key the enactment on the intent id, and the remedial action on the report id.
 - **UNIQUE-SELECT** — Two uniqueness rules are a read before an insert, not a constraint: an NFO deployment name and an Onboarding package's content
   hash; two replicas can both pass. NFO also answers 204 to a synchronous terminate of a deployment already TERMINATING without removing it, which
   rApp Management records as done. Approach: unique indexes (expand-only), and 202 for the TERMINATING case.

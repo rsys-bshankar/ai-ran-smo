@@ -481,6 +481,41 @@ def test_o1_cm_intent_handler_enacts_an_intent_through_dme_to_the_o1_adaptor(mes
     assert rejected.status_code == 422
 
 
+def test_an_intent_service_outbox_re_push_to_the_o1_cm_handler_gives_one_enactment(mesh, loaded_apps, db_connection, monkeypatch):
+    """SA-REPLAY across the mesh: the push of a new intent reaches SA SMOS and is enacted, but Intent Service's outbox records no answer (the 2 s send timeout
+    ran out); its delivery sweep pushes again. The second push is answered from the first enactment: one enactment, one IntentReport from SA SMOS, one config
+    write at the O1 adaptor."""
+    import datetime
+    from smo_shared import outbox
+    _seed_managed_element(loaded_apps, db_connection, "gnb-du-02")
+    assert mesh["sa-smos"].post("/o1-cm-handler/registration", json={}).status_code == 201
+    real_send, pushes = outbox._send, []
+
+    def send(destination, payload, method="POST"):
+        # every push to the handler is delivered; the first one's answer is lost, as when the handler outlasts the outbox's timeout
+        if "/o1-cm-handler/" not in destination:
+            return real_send(destination, payload, method)
+        pushes.append(real_send(destination, payload, method))
+        return pushes[-1] if len(pushes) > 1 else (False, "no answer from the destination", True)
+    monkeypatch.setattr(outbox, "_send", send)
+    intent = mesh["intent-service"].post("/intents", json={
+        "userLabel": "sleep cell 201", "rmioId": "es-rapp", "rmihId": "sa-smos", "intentReportControl": [{"observationPeriod": 60}],
+        "intentExpectations": [{"expectationId": "sleep", "expectationVerb": "DELIVER",
+                                "expectationObject": {"objectType": "RAN_SUBNETWORK", "objectInstance": "gnb-du-02", "objectContexts": [
+                                    {"contextAttribute": "Cell", "contextCondition": "IS_ALL_OF", "contextValueRange": ["201"]}]},
+                                "expectationTargets": [{"targetName": "NRCellDU.administrativeState", "targetCondition": "IS_EQUAL_TO",
+                                                        "targetValueRange": "LOCKED"}]}]})
+    assert intent.status_code == 201, intent.text
+    intent_id = intent.json()["intentId"]
+    reports_after_first = mesh["intent-service"].get("/intent-reports", params={"intent_id": intent_id}).json()["total"]
+
+    swept = outbox.drain(db_connection, now=datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=5))
+    assert len(pushes) == 2 and swept["sent"] >= 1
+    assert mesh["sa-smos"].get("/o1-cm-handler/enactments", params={"intent_id": intent_id}).json()["total"] == 1
+    assert mesh["intent-service"].get("/intent-reports", params={"intent_id": intent_id}).json()["total"] == reports_after_first
+    jobs = [j for j in mesh["ran-nf-oam"].get("/config-jobs", params={"limit": 500}).json()["items"] if j.get("requestedBy") == "sa-smos:o1-cm-intent-handler"]
+    assert len(jobs) == 1
+
 def test_vendor_onboarding_gates_o1_writes_by_capability_and_schema(mesh):
     """Wave 9 (W9-01..04): a vendor is onboarded as data — once its O1
     adaptor has registered, its capability declaration is discovered from

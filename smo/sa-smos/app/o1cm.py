@@ -25,7 +25,10 @@ When Intent Service pushes a new Intent here, the handler:
      applied, otherwise NOT_FULFILLED / DEGRADED, with the DME action and
      RAN NF OAM job references in `additionalFulfilmentInfo` (W6-04).
 
-Each enactment is recorded (`GET /o1-cm-handler/enactments`).
+Each enactment is recorded (`GET /o1-cm-handler/enactments`), once per intent (SA-REPLAY): Intent Service pushes an intent only when it is
+created, and its outbox sends that push again when it got no answer in time, so a push for an intent already enacted is answered with the
+recorded enactment (`replayed: true`) and nothing is written or reported again. A unique index on `intent_id` (revision 0062) settles two pushes
+that arrive at once: the one whose row is second rolls back and answers the first one's.
 """
 
 import json
@@ -35,6 +38,7 @@ import uuid
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
@@ -209,10 +213,16 @@ def _changes_for(expectation: dict, cm_targets: dict[str, list[str]]) -> tuple[l
 @router.post("/o1-cm-handler/intents")
 def enact_intent(body: IntentNotification, db: Session = Depends(get_session)):
     """Intent Service's push for a new Intent addressed to this handler."""
-    # Maintainer notes (not published). Intent Service's push. Answers the enactment view; {status: SKIPPED} (nothing recorded, no report) for a DEACTIVATED intent; 404 INTENT_NOT_FOUND when Intent Service does not know
-    # the intent; 422 RMIH_CAPABILITY_MISMATCH when it is addressed to another handler.
-    # For every expectation: derive the changes, post one DME action (if there are any), then build the fulfilment result. After the loop one IntentReport is published, and the enactment is recorded with the report id (null
-    # when the publish failed). A transport exception from R1Client is not caught: the request is a 500 and no enactment is recorded.
+    # Maintainer notes (not published). Intent Service's push. Answers the enactment view with `replayed` (false for the push that enacted); {status: SKIPPED} (nothing recorded, no
+    # report) for a DEACTIVATED intent; 404 INTENT_NOT_FOUND when Intent Service does not know the intent; 422 RMIH_CAPABILITY_MISMATCH when it is addressed to another handler.
+    # SA-REPLAY: an intent already enacted is answered from its record with `replayed: true`, before anything is read, written or reported.
+    # For every expectation: derive the changes, post one DME action (if there are any), then build the fulfilment result. After the loop the enactment row is flushed first, so the
+    # unique index on intent_id decides a concurrent push before a second report goes out: the loser (IntegrityError) rolls back and answers the winner's record, replayed. Then one
+    # IntentReport is published and its id (null when the publish failed) committed with the row. A transport exception from R1Client is not caught: the request is a 500 and no
+    # enactment is recorded, so Intent Service's retry enacts it again (the DME action ids are the same, and DME ignores the repeat).
+    recorded = _enactment_of(db, body.intentId)
+    if recorded is not None:
+        return {**_enactment_view(recorded), "replayed": True}
     resp = _r1.get(f"/intent-service/intents/{body.intentId}")
     if resp.status_code != 200:
         raise framework_error(FrameworkError.INTENT_NOT_FOUND, detail=f"no such intent {body.intentId}")
@@ -273,15 +283,25 @@ def enact_intent(body: IntentNotification, db: Session = Depends(get_session)):
         "expectationFulfilmentResult": expectation_results,
         "additionalFulfilmentInfo": json.dumps({"actions": actions}),
     }}
+    enactment = O1CmEnactment(intent_id=body.intentId, status=status, actions=actions, unsupported_targets=unsupported)
+    db.add(enactment)
+    try:
+        db.flush()
+    except IntegrityError:
+        # another push of the same intent recorded its enactment first (Postgres makes this insert wait for it): answer that one, report nothing
+        db.rollback()
+        return {**_enactment_view(_enactment_of(db, body.intentId)), "replayed": True}
     # Failing to publish the report is not an error of the push: the enactment is still recorded, with a null intent_report_id.
     published = _r1.post("/intent-service/intent-reports", json=report)
     report_id = published.json().get("reportId") if published.status_code == 201 else None
-
-    enactment = O1CmEnactment(intent_id=body.intentId, status=status, actions=actions, unsupported_targets=unsupported,
-                              intent_report_id=uuid.UUID(report_id) if report_id else None)
-    db.add(enactment)
+    enactment.intent_report_id = uuid.UUID(report_id) if report_id else None
     db.commit()
-    return _enactment_view(enactment)
+    return {**_enactment_view(enactment), "replayed": False}
+
+
+def _enactment_of(db: Session, intent_id: uuid.UUID) -> O1CmEnactment | None:
+    """The recorded enactment of the intent, or None. One at most since revision 0062; the oldest if a database still held more."""
+    return db.scalars(select(O1CmEnactment).where(O1CmEnactment.intent_id == intent_id).order_by(O1CmEnactment.created_at).limit(1)).first()
 
 
 def _enactment_view(e: O1CmEnactment) -> dict:

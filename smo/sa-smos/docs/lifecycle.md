@@ -122,7 +122,7 @@ sequenceDiagram
         SA-->>Op: 409 ROLLBACK_HISTORY_UNAVAILABLE
     else
         Note over SA: by target first: a group retrains, whatever was asked
-        SA->>M: POST /aimgf/training-jobs, or POST /ran-nf-oam/config-jobs {remedy changes} Idempotency-Key sa-smos-action:{actionId},<br/>or POST /rapp-mgmt/instances/{id}/rollback, or GET the workload then POST /nfo/deployments/{id}/heal
+        SA->>M: POST /aimgf/training-jobs, or POST /ran-nf-oam/config-jobs {remedy changes},<br/>or POST /rapp-mgmt/instances/{id}/rollback, or GET the workload then POST /nfo/deployments/{id}/heal,<br/>each with Idempotency-Key sa-smos-action:{actionId} (a new uuid4 by hand)
         alt accepted (CONFIG_CHANGE: job COMPLETED)
             SA->>DB: RemedialAction RESOLVED with result (commit)
         else refused, no answer, held for approval, nothing to heal, SCALE
@@ -156,30 +156,42 @@ sequenceDiagram
         SA-->>A: 201 {rmihId, cmTargets, notificationDestination} (again: updated in place, intents kept)
     end
     IS->>SA: POST /o1-cm-handler/intents {intentId} (Intent Service's outbox)
-    SA->>IS: GET /intent-service/intents/{intentId}
-    alt not 200 / addressed to another handler
-        SA-->>IS: 404 INTENT_NOT_FOUND / 422 RMIH_CAPABILITY_MISMATCH, not sent again
-    else DEACTIVATED
-        SA-->>IS: 200 {status SKIPPED}, nothing recorded
+    SA->>DB: the enactment of intentId?
+    alt already enacted (the outbox pushed again)
+        SA-->>IS: 200 the recorded enactment {replayed true}, nothing read, written or reported
     else
-        SA->>IS: GET /intent-service/intent-handling-functions (its CM targets, defaults if this fails)
-        loop each expectation with supported targets
-            SA->>DME: POST /dme/actions {actionId uuid5(intentId, expectationId), changes, sourceContext}
-            DME-->>SA: status, or IGNORED with originalStatus for a replay
+        SA->>IS: GET /intent-service/intents/{intentId}
+        alt not 200 / addressed to another handler
+            SA-->>IS: 404 INTENT_NOT_FOUND / 422 RMIH_CAPABILITY_MISMATCH, not sent again
+        else DEACTIVATED
+            SA-->>IS: 200 {status SKIPPED}, nothing recorded
+        else
+            SA->>IS: GET /intent-service/intent-handling-functions (its CM targets, defaults if this fails)
+            loop each expectation with supported targets
+                SA->>DME: POST /dme/actions {actionId uuid5(intentId, expectationId), changes, sourceContext}
+                DME-->>SA: status, or IGNORED with originalStatus for a replay
+            end
+            SA->>DB: enactment {status, actions, unsupported targets} (flush: unique index on intent_id)
+            alt another push of the intent recorded it first
+                SA-->>IS: 200 that enactment {replayed true}, rolled back, no report
+            else
+                SA->>IS: POST /intent-service/intent-reports {intentFulfilmentReport FULFILLED or NOT_FULFILLED DEGRADED}
+                SA->>DB: the report id, or null (commit)
+                SA-->>IS: 200 the enactment {replayed false}
+            end
         end
-        SA->>IS: POST /intent-service/intent-reports {intentFulfilmentReport FULFILLED or NOT_FULFILLED DEGRADED}
-        SA->>DB: enactment {status, actions, unsupported targets, report id or null} (commit)
-        SA-->>IS: 200 the enactment
     end
     A->>SA: DELETE /o1-cm-handler/registration
     SA->>IS: DELETE /intent-service/intent-handling-functions/sa-smos
     SA-->>A: 204 / 409 INTENT_HANDLING_FUNCTION_IN_USE (intents still addressed to it) / 502 UPSTREAM_FAILED
 ```
 
-The action id is derived from the intent and the expectation, so an intent pushed twice (the outbox delivers at least once) is written once: DME answers
-the replay IGNORED and the first outcome decides the report. A transport error to Intent Service or DME is not caught: the push answers 500, nothing is
-recorded, and Intent Service's outbox sends it again. Flow in [call flow 09](../../docs/call-flows/09-intent-service-intent-flow.md) (09c).
-**Phase 1:** a push that is enacted twice still records two enactments and publishes two reports; only `IS_EQUAL_TO` targets on `RAN_SUBNETWORK` are enacted.
+Intent Service pushes an intent once, when it is created, and its outbox delivers at least once, so the enactment is keyed on the intent (SA-REPLAY): a push
+for an intent already enacted is answered from its enactment and does nothing again, and two pushes at once keep one row through the unique index on
+`intent_id`, the loser answering the winner's. The action id is derived from the intent and the expectation, so a push enacted twice (two at once, or after
+a crash before the commit) writes the change once: DME answers the replay IGNORED and the first outcome decides the report. A transport error to Intent
+Service or DME is not caught: the push answers 500, nothing is recorded, and Intent Service's outbox sends it again. Flow in
+[call flow 09](../../docs/call-flows/09-intent-service-intent-flow.md) (09c). **Phase 1:** only `IS_EQUAL_TO` targets on `RAN_SUBNETWORK` are enacted.
 
 ## e — Stopping, crashing and recovering
 
@@ -196,7 +208,7 @@ sequenceDiagram
         Note over DB: its transaction rolls back: no lastEvaluation, no RemedialAction, no enactment,<br/>the monitor lock goes with the connection
         Note over SA: a call already made to the module that acts may have been carried out
         S->>SA: a pushed report or intent is sent again by its outbox (no answer counts as a failure)
-        Note over SA: the report is not DUPLICATE (nothing was committed), so a new breach runs its action again<br/>an intent push replays the same DME action ids, which DME ignores
+        Note over SA: the report is not DUPLICATE (nothing was committed): its action is sent again under the same Idempotency-Key<br/>and the module that acts replays its first answer<br/>an intent push replays the same DME action ids, which DME ignores
     else
         Note over SA,DB: everything committed, nothing left in memory
     end
@@ -205,9 +217,8 @@ sequenceDiagram
 ```
 
 Replicas share nothing but the database: the monitor row lock serialises reports and actions across them, and pushes to `sa-smos:8000` land on any
-replica. A console request cut short ends in an error: the operator sees no action in the queue and asks again. **Phase 1:** the `Idempotency-Key` of a
-CONFIG_CHANGE is made from a fresh action id each time, so it guards only `R1Client`'s own retry after a 401; a report re-delivered after a crash writes
-the remedy again under a new key.
+replica. A console request cut short ends in an error: the operator sees no action in the queue and asks again, under a new key. The action of a report has
+the id uuid5(monitor, report, action type), so its `Idempotency-Key` is the same on every delivery of that report (SA-REPLAY).
 
 ## Configuration it reads
 

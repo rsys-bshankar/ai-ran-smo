@@ -117,7 +117,7 @@ def test_tc01_to_tc10_lifecycle_inference_and_verified_o1_action(mesh, loaded_ap
     assert (d104["decision"], d104["outcome"]) == ("LOCK", "NO_ACTION_ALREADY_IN_STATE")
     assert ok(mesh["dme"].get("/actions"))["total"] == actions_before
 
-    # TC29 — replaying an action id is ignored: the rApp's own direct action, and a re-pushed Intent
+    # TC29 — replaying an action id is ignored: the rApp's own direct action; a re-pushed Intent is answered from its enactment (SA-REPLAY), no new action
     action_id = str(uuid.uuid4())
     body = {"requestedBy": RAPP, "actionId": action_id, "changes": [
         {"managedElementRef": ME, "className": "NRCellDU", "managedFunctionRef": "NRCellDU=102",
@@ -125,8 +125,10 @@ def test_tc01_to_tc10_lifecycle_inference_and_verified_o1_action(mesh, loaded_ap
     assert ok(mesh["dme"].post("/actions", json=body))["status"] == "COMPLETED"
     replay = ok(mesh["dme"].post("/actions", json=body))
     assert (replay["status"], replay["originalStatus"]) == ("IGNORED", "COMPLETED")
+    actions_before = ok(mesh["dme"].get("/actions"))["total"]
     repushed = ok(mesh["sa-smos"].post("/o1-cm-handler/intents", json={"intentId": d["intent"]["intentId"]}))
-    assert repushed["actions"][0]["replayed"] is True and repushed["status"] == "FULFILLED"
+    assert repushed["replayed"] is True and repushed["status"] == "FULFILLED"
+    assert ok(mesh["dme"].get("/actions"))["total"] == actions_before
 
     # TC30 — the audit trail is complete and joined: execution (correlation) id → dispatch → Intent → action → job
     audit = _decisions(mesh, iid, execution_id="exec-tc08", cell_id="101")[0]

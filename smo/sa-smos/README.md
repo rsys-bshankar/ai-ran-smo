@@ -92,9 +92,15 @@ and attribute names. It realises no TS 28.312 expectation semantics beyond `IS_E
   BFF allows it to admins only. It must suit the target (RETRAIN only, for a group; ROLLBACK for a rApp instance;
   RECONNECT for an order or instance; CONFIG_CHANGE once a remedy is set); SCALE is never automatic. With none, a
   breach is recorded as an `ESCALATE` action.
-- **No false success.** CONFIG_CHANGE writes the monitor's remedy (`PUT /monitors/{id}/remedy`) under the
-  idempotency key `sa-smos-action:<actionId>`; COMPLETED is `RESOLVED`, anything else (held for approval, partial,
-  failed, refused) is `ESCALATED` with the reason. Without a remedy nothing is written and the action is `ESCALATED`.
+- **No false success.** CONFIG_CHANGE writes the monitor's remedy (`PUT /monitors/{id}/remedy`); COMPLETED is `RESOLVED`,
+  anything else (held for approval, partial, failed, refused) is `ESCALATED` with the reason. Without a remedy nothing is
+  written and the action is `ESCALATED`.
+- **A re-delivered report acts once (SA-REPLAY).** Every dispatched POST (retrain, config job, rollback, heal) carries
+  `Idempotency-Key: sa-smos-action:<actionId>`, and each target is `@idempotent`. The id of an action a report ran is
+  `uuid5(REPORT_ACTION_NAMESPACE, "<monitorId>:<reportId>:<actionType>")`, so when MDAF delivers a report again after a
+  crash before SA SMOS committed (the `DUPLICATE` check sees only a committed evaluation), the same key goes out and the
+  module that acts answers with its first answer; an action already recorded under that id is returned, nothing is sent.
+  An action asked by hand gets a new `uuid4` every time: asking again acts again.
 - **An action says what happened.** `action_type` is what was run (`RETRAIN` for a group, `ESCALATE` for an
   escalation); `auto_executed` is true only for an action a report ran; `requested_by` (the console pins it to
   `smo-gui:<user>`), `created_at`, `detail`, `result` and `report_id` are kept. No answer from the module that acts
@@ -107,9 +113,16 @@ and attribute names. It realises no TS 28.312 expectation semantics beyond `IS_E
 **O1-CM handler**
 
 - **Intent Service is the source of truth.** The push carries only `intentId`; the handler reads the intent back.
+- **One enactment per intent (SA-REPLAY).** Intent Service pushes an intent only when it is created (the admin-state
+  route, a re-registration and a delete push nothing, and an intent's expectations cannot change), and its outbox sends
+  the push again when it got no answer in time (2 s) or a 5xx. So the handler keys the enactment on `intent_id` alone: a
+  push for an intent already enacted is answered with the recorded enactment and `replayed: true`, before anything is
+  read, written or reported. Two pushes at once are settled by the unique index on `intent_id` (revision 0062): the
+  row is flushed before the IntentReport is published, and the push that loses the insert rolls back and answers the
+  winner's enactment, publishing nothing.
 - **One DME action per expectation, replay-safe.** The action id is `uuid5(namespace, "{intentId}:{expectationId}")`,
-  so a re-pushed intent replays the same action, which DME ignores (status `IGNORED`, `originalStatus` kept)
-  instead of writing the change twice.
+  so a push enacted again (two at once, or after a crash before the record was committed) replays the same action,
+  which DME ignores (status `IGNORED`, `originalStatus` kept) instead of writing the change twice.
 - **Per-cell fan-out.** The expectation's `objectInstance` is the managed element; each `Cell` object context
   value gives a change with `managedFunctionRef = <IOC>=<cell>`; with no cell context a single change without a
   function ref is written.
@@ -164,7 +177,8 @@ routes); `outcome` (`RESOLVED` / `ESCALATED`); `created_at`, `requested_by`, `de
 `o1_cm_enactment`: `enactment_id` PK; `intent_id` bare UUID (Intent Service); `status` (`FULFILLED` /
 `NOT_FULFILLED`); `actions` JSON `[{expectationId, actionId, forwardedJobId, status, replayed}]`;
 `unsupported_targets` JSON `[{expectationId, targetName, reason}]`; `intent_report_id` bare UUID (null if the
-report could not be published); `created_at`.
+report could not be published); `created_at`. Unique index `ux_o1_cm_enactment_intent_id` on `intent_id` (revision
+0062, which kept the oldest enactment of each intent and deleted the later ones).
 
 ### 2.3 State machines
 
@@ -193,12 +207,16 @@ Dispatch by target and action type
 | Monitor target | Action | Call | Outcome |
 |---|---|---|---|
 | Coordination group | any | `POST /aimgf/training-jobs {modelCoordinationGroupId, producerId: "sa-smos"}` | recorded `RETRAIN`: `RESOLVED` if < 300 else `ESCALATED` with AIMgF's reason |
-| order, rApp instance or none | `CONFIG_CHANGE` | `POST /ran-nf-oam/config-jobs {requestedBy: "sa-smos", scope: "cell", changes: <the remedy>}` with `Idempotency-Key: sa-smos-action:<actionId>`; nothing without a remedy | `RESOLVED` when the job is COMPLETED; else `ESCALATED` (no remedy, held for approval, PARTIAL_SUCCESS / FAILED, refused) with why |
+| order, rApp instance or none | `CONFIG_CHANGE` | `POST /ran-nf-oam/config-jobs {requestedBy: "sa-smos", scope: "cell", changes: <the remedy>}`; nothing without a remedy | `RESOLVED` when the job is COMPLETED; else `ESCALATED` (no remedy, held for approval, PARTIAL_SUCCESS / FAILED, refused) with why |
 | order, rApp instance or none | `SCALE` | none (NFO scaling takes no target size, OI-7-nfo-scale-size) | always `ESCALATED` |
 | rApp instance | `ROLLBACK` | `POST /rapp-mgmt/instances/{id}/rollback` | `RESOLVED` (`result` names the replacement instance) or `ESCALATED` with `detail` |
 | order or none | `ROLLBACK` | none | 409 `ROLLBACK_HISTORY_UNAVAILABLE` |
 | rApp instance | `RECONNECT` | `GET /rapp-mgmt/instances/{id}/versions` for `workloadRef`, then `POST /nfo/deployments/{id}/heal` | `RESOLVED`, or `ESCALATED` if unresolved or the heal is refused |
 | order or none | `RECONNECT` | `GET /so-smos/orders/{id}` for the `DEPLOY` step's `nfDeploymentId`, then heal | as above |
+
+Every POST in this table carries `Idempotency-Key: sa-smos-action:<actionId>`; the four targets (`POST /aimgf/training-jobs`,
+`/ran-nf-oam/config-jobs`, `/rapp-mgmt/instances/{id}/rollback`, `/nfo/deployments/{id}/heal`) are `@idempotent`, so a repeat of a
+report-driven action replays the first answer.
 
 O1-CM intent handler
 
@@ -206,7 +224,7 @@ O1-CM intent handler
 |---|---|---|---|
 | POST | `/o1-cm-handler/registration` | Register (or update in place) RMIH `sa-smos` at Intent Service. Optional body `{cmTargets: {"<IOC>.<attribute>": [allowed values]}, intentHandlingScope: ["RAN"]}`; defaults below. Returns `{rmihId, cmTargets, notificationDestination}` (201). | 422 `SCHEMA_VALIDATION_FAILED` for a target name without a `.` or when Intent Service refuses |
 | DELETE | `/o1-cm-handler/registration` | Deregister (204, also when not registered) | 409 `INTENT_HANDLING_FUNCTION_IN_USE` (Intent Service's) while intents are addressed to `sa-smos`; 502 `UPSTREAM_FAILED` for any other refusal |
-| POST | `/o1-cm-handler/intents` | Intent Service's push, body `{intentId}`. Returns the enactment view, or `{status: "SKIPPED"}` for a DEACTIVATED intent. | 404 `INTENT_NOT_FOUND`; 422 `RMIH_CAPABILITY_MISMATCH` (addressed to another RMIH) |
+| POST | `/o1-cm-handler/intents` | Intent Service's push, body `{intentId}`. Returns the enactment view with `replayed` (true when the intent was already enacted: nothing is done again), or `{status: "SKIPPED"}` for a DEACTIVATED intent. | 404 `INTENT_NOT_FOUND`; 422 `RMIH_CAPABILITY_MISMATCH` (addressed to another RMIH) |
 | GET | `/o1-cm-handler/enactments` | List (`intent_id`, paging), newest first | |
 
 Default supported CM targets (an empty list means any value; RAN NF OAM's schema pre-check validates it)
@@ -237,7 +255,7 @@ a JSON string `{"actions": [...]}` carrying the DME action ids and forwarded RAN
 
 Inbound: Intent Service pushes one `POST /o1-cm-handler/intents` per new intent through its notification outbox: a row
 committed with the intent, retried with backoff on no answer or a 5xx (DEAD after five attempts; a 4xx is not retried).
-A retried push can enact an intent twice (`SA-REPLAY` in `../OPEN_ITEMS.md`). No background tasks.
+A retried push is answered from the first enactment (SA-REPLAY, above). No background tasks.
 
 ### 2.6 Configuration
 
@@ -274,8 +292,8 @@ A retried push can enact an intent twice (`SA-REPLAY` in `../OPEN_ITEMS.md`). No
 - `auto_execution_scope_config` is never read or written by a route.
 - The O1-CM handler enacts only `IS_EQUAL_TO` targets on `RAN_SUBNETWORK` objects; other conditions are reported
   unsupported.
-- `../OPEN_ITEMS.md` entries for SA SMOS: `SA-LIFE` (no monitor deletion, no escalation lifecycle), `SA-REPLAY` (a re-pushed
-  intent or re-delivered report can do the work twice) and `FIRST-PAGE` (the handler reads only the first page of RMIHs).
+- `../OPEN_ITEMS.md` entries for SA SMOS: `SA-LIFE` (no monitor deletion, no escalation lifecycle) and `FIRST-PAGE` (the
+  handler reads only the first page of RMIHs).
 
 ## 3. Unit tests
 
@@ -292,8 +310,8 @@ Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
 | File | Covers |
 |---|---|
 | `tests/test_main.py` | Monitor registration and the single-target rule, threshold evaluation, CONFIG_CHANGE writing the remedy, SCALE always escalated, ROLLBACK (409 without an rApp instance target, dispatch to rApp Management, its refusal escalated with the reason), RECONNECT (through the order, rApp-scoped, escalated with no order or no completed DEPLOY step), coordination-group retrain and its escalation, 404 for an unknown monitor (evaluation and remedial action), escalate to the operator, list and get, remedial-action filters, `/health` |
-| `tests/test_assurance_loop.py` | Call flow 04: the MDAF subscription at registration (502 and no monitor when MDAF refuses), threshold validation, an analytics type and a subscription reference refused together, missing metrics and maximums, the report read back from MDAF rather than taken from the push, a breach escalated once or running the automatic action, duplicates and ignored reports, 503 when MDAF cannot be read or another action holds the monitor (409 for an action by hand), the row lock (Postgres's `55P03` becomes 409), the remedy and the automatic action's rules, how CONFIG_CHANGE / RETRAIN / RECONNECT end and why, escalation with its reason and who asked |
-| `tests/test_o1cm.py` | Registration (one POST, no delete first) and the declared CM targets (a name without a `.` is 422), deregistration (Intent Service's 409 passed on, a gone handler 204, another failure 502), per-cell enactment and the FULFILLED report, a failed DME action reported DEGRADED, unenactable targets reported and not written, DEACTIVATED / foreign / unknown intents, a re-push replaying the same action id, CIO on each named relation, tilt and power per named cell |
+| `tests/test_assurance_loop.py` | Call flow 04: the MDAF subscription at registration (502 and no monitor when MDAF refuses), threshold validation, an analytics type and a subscription reference refused together, missing metrics and maximums, the report read back from MDAF rather than taken from the push, a breach escalated once or running the automatic action, duplicates and ignored reports, 503 when MDAF cannot be read or another action holds the monitor (409 for an action by hand), the row lock (Postgres's `55P03` becomes 409), the remedy and the automatic action's rules, how CONFIG_CHANGE / RETRAIN / RECONNECT end and why, escalation with its reason and who asked; SA-REPLAY: a report re-delivered after a crash before the commit sends the same Idempotency-Key, a manual action a new one each time, every dispatched POST carries its key |
+| `tests/test_o1cm.py` | Registration (one POST, no delete first) and the declared CM targets (a name without a `.` is 422), deregistration (Intent Service's 409 passed on, a gone handler 204, another failure 502), per-cell enactment and the FULFILLED report, a failed DME action reported DEGRADED, unenactable targets reported and not written, DEACTIVATED / foreign / unknown intents, SA-REPLAY (a re-push answered from the enactment with one report; two pushes at once keep one row, the loser answering the winner with the same action id; a DME replay judged by its first status), CIO on each named relation, tilt and power per named cell |
 
 ### 3.3 What is not covered here
 

@@ -55,6 +55,9 @@ REPORTS_URL_BASE = mtls.http_url(os.environ.get("SA_SMOS_REPORTS_URL", "http://s
 ACTION_TYPES = ("CONFIG_CHANGE", "SCALE", "RECONNECT", "ROLLBACK", "RETRAIN")   # what an operator may ask for
 AUTO_ACTIONS = ("CONFIG_CHANGE", "RECONNECT", "ROLLBACK", "RETRAIN")              # what a breach may run by itself (SCALE only ever escalates)
 LOOP = "sa-smos"                                                                  # `requested_by` of what the loop does by itself
+# Fixed namespace of the uuid5 that derives a report-driven remedial action's id from its monitor, report and action type (SA-REPLAY). The id names the action's
+# Idempotency-Key downstream, so changing this constant makes a report re-delivered across the change run its action again.
+REPORT_ACTION_NAMESPACE = uuid.UUID("3c7e5d2a-9b14-5f6e-a8c1-2d4b6f8a0e17")
 
 
 def _now() -> datetime.datetime:
@@ -313,8 +316,17 @@ def execute_remedial_action(monitor_id: uuid.UUID, action_type: str, requested_b
 
 def _run(db: Session, monitor: AssuranceMonitor, action_type: str, *, requested_by: str | None, auto: bool,
          report_id: uuid.UUID | None = None, why: str | None = None) -> RemedialAction:
-    """Dispatches `action_type` for the locked monitor and adds its RemedialAction (not committed). A transport error is an ESCALATED action whose outcome downstream is unknown."""
-    action_id = uuid.uuid4()
+    """Dispatches `action_type` for the locked monitor and adds its RemedialAction (not committed); returns it. A transport error is an ESCALATED action whose outcome downstream is
+    unknown.
+
+    A report-driven action (`report_id` given) has the id uuid5(REPORT_ACTION_NAMESPACE, "<monitor>:<report>:<action type>"), so a report MDAF re-delivers after a crash before
+    the commit sends the same Idempotency-Key and the module that acts replays its first answer (SA-REPLAY); one already recorded is returned and nothing is sent. A manual
+    action gets a new uuid4, and so a new key, every time: asking again is a new request.
+    """
+    action_id = uuid.uuid5(REPORT_ACTION_NAMESPACE, f"{monitor.monitor_id}:{report_id}:{action_type}") if report_id else uuid.uuid4()
+    recorded = db.get(RemedialAction, action_id)
+    if recorded is not None:
+        return recorded
     try:
         kind, outcome, result, detail = _dispatch(R1Client(), monitor, action_type, action_id)
     except httpx.HTTPError as exc:
@@ -337,18 +349,19 @@ def _record(db: Session, monitor: AssuranceMonitor, action_type: str, outcome: s
 
 def _dispatch(r1: R1Client, monitor: AssuranceMonitor, action_type: str, action_id: uuid.UUID) -> tuple[str, str, dict | None, str | None]:
     """(action type recorded, outcome, result, detail) of one remedial action, decided by the monitor's target first, then by the action type (see the module docstring).
-    May raise httpx.HTTPError (no answer), which `_run` records."""
+    May raise httpx.HTTPError (no answer), which `_run` records. Every POST carries `Idempotency-Key: sa-smos-action:<action_id>`; each target is `@idempotent`.
+    """
+    key = {"Idempotency-Key": f"sa-smos-action:{action_id}"}
     # A coordination-group monitor retrains whatever action type was asked for: the NF-oriented actions below have no meaning for a model group.
     if monitor.target_coordination_group_id is not None:
-        resp = r1.post("/aimgf/training-jobs", json={"modelCoordinationGroupId": str(monitor.target_coordination_group_id), "producerId": LOOP})
+        resp = r1.post("/aimgf/training-jobs", json={"modelCoordinationGroupId": str(monitor.target_coordination_group_id), "producerId": LOOP}, headers=key)
         if resp.status_code < 300:
             return "RETRAIN", "RESOLVED", _json(resp), None
         return "RETRAIN", "ESCALATED", None, f"AIMgF refused the retrain: {_problem_detail(resp)}"
     if action_type == "CONFIG_CHANGE":
         if not monitor.remedy_changes:
             return action_type, "ESCALATED", None, "no remedy is set for this monitor (PUT /monitors/{id}/remedy): nothing to write"
-        resp = r1.post("/ran-nf-oam/config-jobs", json={"requestedBy": LOOP, "scope": "cell", "changes": monitor.remedy_changes},
-                       headers={"Idempotency-Key": f"sa-smos-action:{action_id}"})
+        resp = r1.post("/ran-nf-oam/config-jobs", json={"requestedBy": LOOP, "scope": "cell", "changes": monitor.remedy_changes}, headers=key)
         if resp.status_code >= 300:
             return action_type, "ESCALATED", None, f"RAN NF OAM refused the write: {_problem_detail(resp)}"
         job = _json(resp) or {}
@@ -361,7 +374,7 @@ def _dispatch(r1: R1Client, monitor: AssuranceMonitor, action_type: str, action_
     if action_type == "SCALE":
         return action_type, "ESCALATED", None, "NFO scaling takes no target size (OI-7-nfo-scale-size): an operator scales"
     if action_type == "ROLLBACK":
-        resp = r1.post(f"/rapp-mgmt/instances/{monitor.target_rapp_instance_id}/rollback")
+        resp = r1.post(f"/rapp-mgmt/instances/{monitor.target_rapp_instance_id}/rollback", headers=key)
         if resp.status_code < 300:
             return action_type, "RESOLVED", _json(resp), None
         return action_type, "ESCALATED", None, _problem_detail(resp)
@@ -372,7 +385,7 @@ def _dispatch(r1: R1Client, monitor: AssuranceMonitor, action_type: str, action_
         nf_deployment_id, source = _resolve_deployed_nf(r1, monitor.target_order_id), "no completed DEPLOY step of the monitor's order"
     if nf_deployment_id is None:
         return action_type, "ESCALATED", None, f"nothing to heal: {source}"
-    heal = r1.post(f"/nfo/deployments/{nf_deployment_id}/heal")
+    heal = r1.post(f"/nfo/deployments/{nf_deployment_id}/heal", headers=key)
     if heal.status_code < 300:
         return action_type, "RESOLVED", {"nfDeploymentId": nf_deployment_id}, None
     return action_type, "ESCALATED", {"nfDeploymentId": nf_deployment_id}, f"NFO refused the heal: {_problem_detail(heal)}"

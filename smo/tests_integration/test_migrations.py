@@ -22,7 +22,8 @@ MIGRATE = SMO_ROOT / "scripts" / "migrate.py"
 CHECK = SMO_ROOT / "scripts" / "check_migration_matches_models.py"
 ADMIN_URL = os.environ.get("SMO_TEST_POSTGRES_URL")
 needs_postgres = pytest.mark.skipif(not ADMIN_URL, reason="SMO_TEST_POSTGRES_URL not set")
-HEAD = "0061"         # raise this with every new revision: the tests below then check it is the head
+HEAD = "0062"         # raise this with every new revision: the tests below then check it is the head
+HEAD_TABLE = "sa_smos.o1_cm_enactment"   # a table the head revision changes: the lock tests hold it, so raise it with HEAD
 
 
 def _scripts() -> ScriptDirectory:
@@ -275,6 +276,35 @@ def test_downgrading_0017_keeps_every_rapp_limit_row_including_one_without_an_ho
     engine.dispose()
 
 
+# --- SA-REPLAY: 0062 keeps the oldest enactment of each intent and makes the index -------------------------------------------------------
+
+@needs_postgres
+def test_0062_keeps_the_oldest_enactment_of_each_intent_and_makes_intent_id_unique(databases):
+    """A database of the previous release can hold several enactments of one intent (the handler recorded one per push). Upgrading to 0062 keeps the oldest
+    of each intent, leaves an intent with one enactment alone, and then refuses a second row for an intent. Needs Postgres."""
+    url = databases["fresh"]
+    assert _run(MIGRATE, url, "--revision", "0061").returncode == 0
+    twice, once = uuid.uuid4(), uuid.uuid4()
+    insert = text("INSERT INTO sa_smos.o1_cm_enactment (enactment_id, intent_id, status, actions, unsupported_targets, created_at) "
+                  "VALUES (:e, :i, 'FULFILLED', '[]', '[]', now() - make_interval(secs => :age))")
+    rows = {"oldest": (twice, 30), "later": (twice, 20), "latest": (twice, 10), "alone": (once, 5)}
+    ids = {name: uuid.uuid4() for name in rows}
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        for name, (intent, age) in rows.items():
+            connection.execute(insert, {"e": ids[name], "i": intent, "age": age})
+    up = _run(MIGRATE, url)
+    assert up.returncode == 0 and "upgraded to 0062" in up.stdout, up.stderr
+    with engine.connect() as connection:
+        kept = set(connection.execute(text("SELECT enactment_id FROM sa_smos.o1_cm_enactment")).scalars())
+        index = connection.execute(text("SELECT indexdef FROM pg_indexes WHERE schemaname = 'sa_smos' AND indexname = 'ux_o1_cm_enactment_intent_id'")).scalar_one()
+    assert kept == {ids["oldest"], ids["alone"]}
+    assert index.startswith("CREATE UNIQUE INDEX") and "(intent_id)" in index
+    with pytest.raises(Exception, match="ux_o1_cm_enactment_intent_id"), engine.begin() as connection:
+        connection.execute(insert, {"e": uuid.uuid4(), "i": twice, "age": 0})
+    engine.dispose()
+
+
 # --- MIGRATE-LOCK-HOLD: a revision that cannot take its lock gives up its locks and is tried again -----------------------------------------
 
 class _LockTimeout(Exception):
@@ -382,7 +412,7 @@ def test_a_held_lock_makes_the_migration_give_up_and_change_nothing(databases):
     """
     url, previous = databases["fresh"], _scripts().get_revision(HEAD).down_revision
     assert _run(MIGRATE, url, "--revision", previous).returncode == 0
-    holder, engine = _hold_lock(url, "ran_nf_oam.pm_subscription")
+    holder, engine = _hold_lock(url, HEAD_TABLE)
     try:
         env = {"SMO_MIGRATE_LOCK_TIMEOUT_MS": "200", "SMO_MIGRATE_LOCK_ATTEMPTS": "2"}
         blocked = subprocess.run([sys.executable, str(MIGRATE)], env={**os.environ, "SMO_DATABASE_URL": url, **env},
@@ -401,7 +431,7 @@ def test_a_lock_released_while_the_migration_waits_lets_a_later_try_succeed(data
     """The lock is let go while the migration pauses between tries: a later try takes it and the database reaches the head. Needs Postgres."""
     url, previous = databases["fresh"], _scripts().get_revision(HEAD).down_revision
     assert _run(MIGRATE, url, "--revision", previous).returncode == 0
-    holder, engine = _hold_lock(url, "ran_nf_oam.pm_subscription")
+    holder, engine = _hold_lock(url, HEAD_TABLE)
     env = {**os.environ, "SMO_DATABASE_URL": url, "SMO_MIGRATE_LOCK_TIMEOUT_MS": "200", "SMO_MIGRATE_LOCK_ATTEMPTS": "5"}
     process = subprocess.Popen([sys.executable, str(MIGRATE)], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
