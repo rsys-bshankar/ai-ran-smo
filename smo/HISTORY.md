@@ -2331,6 +2331,72 @@ count the breach again).
 - **Docs.** `aimgf/README.md` (the gap sentence removed, `groupRetrainError` in the route table and the propagation paragraph, the tests), call flows
   02e and 13b and `aimgf/docs/lifecycle.md` (the 500 replaced by `groupRetrainError`; images redrawn), `docs/VALIDATION.md`, `CHANGELOG.md`.
 
+### INTENT-LIFECYCLE-PUSH — Intent Service tells an intent's RMIH when its admin state changes and when it is deleted
+
+The item (recorded by SA-REPLAY): Intent Service pushed an intent to its RMIH only when it was created (`_create_intent_row`). `PATCH
+/intents/{id}/admin-state` wrote and delivered a report to the report recipients but told the RMIH nothing, and `DELETE /intents/{id}` told no one. So an
+intent created DEACTIVATED was SKIPPED by SA SMOS's O1-CM handler and never enacted when it was activated, and a handler never learnt that an intent it
+enacted was deactivated or deleted. ADR 0007 (call flow 33g, deactivate, delete, unload) depends on it.
+
+- **What the routes did, checked first.** The PATCH route is not `@idempotent`; a PATCH to the state the intent already has returns the intent and writes
+  nothing (no report). DELETE is not `@idempotent` either; an unknown id is 204 and does nothing; an rApp that does not own the intent is 403. The create
+  push was `{intentId, expectationObjectTypes, intentPriority, rmioId, intentMgmtPurpose}`. SA SMOS's push model (`IntentNotification`) had only
+  `intentId` and pydantic's default `extra` (ignore), in this release and in `smo-v0.8.0`, so a push with more fields is read, not refused. SO SMOS has no
+  route at `/intents/notify` (or any intent route) in either release: a push to an RMIH registered as `so-smos` with that destination is a 404. The outbox
+  (`smo_shared.outbox._send`) counts a 2xx or a 4xx as delivered (SENT, no retry) and retries no answer or a 5xx with backoff, DEAD after five attempts.
+- **Intent Service (`intent-service/app/main.py`).** `_lifecycle_push(intent, event)` builds `{intentId, event, adminState, expectationObjectTypes,
+  rmioId}` and `_push_to_rmih` adds it as an outbox row to the RMIH's `notificationDestination` in the caller's transaction (nothing when the RMIH is no
+  longer registered, which deregistration's 409 prevents). The admin-state route pushes `ADMIN_STATE_CHANGED` only in the branch that changes the state,
+  before its one commit, with the report; DELETE pushes `INTENT_DELETED` for an existing intent, built before the row is deleted (the handler cannot read
+  it back), in the delete's commit. The create push keeps its five fields and gains `event: INTENT_CREATED` and `adminState`. A refused or failed change
+  pushes nothing (the row rolls back with it).
+- **SA SMOS (`sa-smos/app/o1cm.py`, `enact_intent`).** The model gains `event` (default `INTENT_CREATED`, so a push from a release before this one is a
+  create push) and `adminState`, both plain strings so a new value is not a 422. `INTENT_DELETED`: `_record_deleted` sets `deleted_at` on the enactment
+  (once) and answers it, `replayed: true`; no enactment is 200 SKIPPED; nothing is read back. An unknown event is 200 `IGNORED`, nothing read or written.
+  `INTENT_CREATED` for an intent already enacted is answered from the record before any read (SA-REPLAY, unchanged). Otherwise the intent is read back (404,
+  422 as before); for an enacted intent `_record_admin_state` sets `deactivated_at` when the state read is DEACTIVATED and clears it when it is ACTIVATED,
+  and answers the enactment, replayed; an intent not enacted is SKIPPED while DEACTIVATED and enacted when ACTIVATED (`_enact`, the former body of the
+  route, unchanged: flush before the report, the unique index settles a race). The handler acts on the state it **reads back**, not on the push's
+  `adminState`: the outbox retries a push on its own backoff, so a DEACTIVATED push can arrive after a later ACTIVATED one, and trusting the body would
+  record a deactivation that is no longer true. Nothing is written to the network for a deactivation or a delete: a CM intent's values stay as written.
+- **Re-enacting on reactivation: considered, not taken.** An intent that was enacted, deactivated and activated again is not enacted again; its enactment
+  is answered. The enactment is keyed on the intent (SA-REPLAY, revision 0062), and its DME action ids are uuid5(intent, expectation), so a second
+  enactment would be IGNORED by DME anyway and would need new ids and a second row per intent. More to the point, while the intent was DEACTIVATED the
+  values it set may have been changed by someone else (an operator's config job, another intent, a remedial action), and writing them back on
+  reactivation would undo that change without anyone asking; deactivating does not restore the old value either, so the handler treats a CM intent as a
+  one-off write. A consequence: after a reactivation the intent's current report is Intent Service's RECEIVED until a handler reports again
+  (INTENT-REACTIVATE-REPORT, open).
+- **Revision 0063 (`migrations/versions/0063_o1_cm_enactment_lifecycle.py`).** `sa_smos.o1_cm_enactment.deactivated_at` and `deleted_at`, `TIMESTAMPTZ`
+  nullable, no default; the model has both. Expand only: every existing row reads "active, not deleted". Downgrade drops them.
+  `tests_integration/test_migrations.py`: `HEAD` 0063 (`HEAD_TABLE` stays `sa_smos.o1_cm_enactment`), and the 0062 test now migrates to 0062 explicitly.
+- **Rolling upgrade, traced.** `smo-v0.8.0`'s SA SMOS (`git show smo-v0.8.0:smo/sa-smos/app/o1cm.py`) was run on a Postgres migrated to 0063, with
+  Intent Service and DME faked at `R1Client` (DME answering a repeated action id IGNORED, as it does), and sent each new push. It reads every push as a
+  create push and reads the intent back. `ADMIN_STATE_CHANGED` to DEACTIVATED: 200 SKIPPED, one GET, nothing written. `INTENT_DELETED` (and any push for
+  an intent that is gone): 404 `INTENT_NOT_FOUND`, one GET. `ADMIN_STATE_CHANGED` to ACTIVATED of an intent created DEACTIVATED and never enacted: it
+  enacts it, once (one DME action, one report), which is the new behaviour. `ADMIN_STATE_CHANGED` to ACTIVATED of an intent already enacted: it reads the
+  CM targets, posts the DME action again with the same id (DME answers IGNORED and forwards nothing; only an action DME holds as UNCONFIRMED is asked of
+  RAN NF OAM again, under the same idempotency key, as a re-push always did), publishes **one extra IntentReport** restating the enactment's status, then
+  its insert hits `ux_o1_cm_enactment_intent_id` and the shared IntegrityError handler answers 409 `RESOURCE_ALREADY_EXISTS`. Every answer is 2xx or
+  4xx, so the outbox marks each row SENT: no retry loop, and no write to the network beyond the replay DME ignores. The extra report is the one a
+  pre-SA-REPLAY re-push made; it lasts only while an old replica serves. The other direction: this release's handler reads a push without `event` (the old
+  Intent Service) as a create push, and an old Intent Service pushes nothing on a PATCH, so an intent created DEACTIVATED and activated through an old
+  replica during the upgrade stays unenacted, as before. SO SMOS: no route in either release, so every push is a 404, counted delivered; nothing to change
+  (`so-smos/tests/test_main.py` pins the 404 for each event).
+- **Tests.** `intent-service/tests/test_main.py`: the create push's event and fields; ADMIN_STATE_CHANGED on each change and none on a no-op PATCH; the
+  delete's payload and nothing for an unknown or repeated delete; the pushes are outbox rows of the change's transaction (PENDING with the inline send
+  off, none for a refused PATCH); none when the change's commit fails. `sa-smos/tests/test_o1cm.py`: created DEACTIVATED then activated is enacted once,
+  one report, and repeats of the activation and of the create push do nothing; deactivation and reactivation recorded with no DME call or report; a late
+  DEACTIVATED push after the intent was activated records nothing; a delete recorded from the push alone, a repeat keeps the first time, an unknown one
+  SKIPPED; an admin-state push for a gone or foreign intent 404 / 422; an unknown event 200 IGNORED. `so-smos/tests/test_main.py`: each event is a 404 and
+  makes no order. `tests_integration/test_cross_service.py`: through the mesh, an intent created DEACTIVATED is not enacted, activating it gives one
+  enactment, one config job and the value at the mock O1 adaptor, and deactivating, activating, deactivating and deleting it record `deactivatedAt` and
+  `deletedAt` with no further config job.
+- **Docs.** `intent-service/README.md` (1.5 dispatch, the idempotency note, the state machine, the interactions table, the tests), `intent-service/docs/lifecycle.md` (b; image
+  redrawn), `sa-smos/README.md`
+  (the handler, the table, the route, inbound, the tests), `sa-smos/docs/lifecycle.md` (d; image redrawn), call flow 09 (09a the push body, 09b the pushes
+  of a change and a delete, 09c the handler's branches; images redrawn), `docs/NOTIFICATIONS.md` (the new call site), `docs/VALIDATION.md`, `CHANGELOG.md`, `OPEN_ITEMS.md`
+  (INTENT-REACTIVATE-REPORT).
+
 ### SA-REPLAY — SA SMOS enacts an intent once and runs a report's remedial action once
 
 The item: Intent Service's outbox re-push of a slow enactment recorded a second O1-CM enactment and published a second IntentReport, and a remedial action's

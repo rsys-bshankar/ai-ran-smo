@@ -243,7 +243,11 @@ discovery and download), SA-MLMR-7 (`phaseInfo.trainingInfo.baseModelId` lineage
 SA-MLMR-8 (`usageReqs`), SA-MLMR-9 (whole-object `filt-criteria` discovery).
 
 ### Intent Service (TS 28.312)
-- None open. SA-INTENT-partial is closed: the 8 value datatypes are structure-checked, `ValueRangeType`
+- **INTENT-REACTIVATE-REPORT** — After an enacted intent is deactivated and activated again, its current report is the RECEIVED report Intent Service
+  writes on activation, and stays so: SA SMOS's O1-CM handler records the reactivation (`deactivated_at` cleared) but does not enact again or report
+  again (`HISTORY.md` INTENT-LIFECYCLE-PUSH says why it does not re-enact). Approach: on the push that clears `deactivated_at`, publish an IntentReport
+  that restates the enactment's status (no DME call), once; or have Intent Service keep the last handler report current on reactivation.
+- SA-INTENT-partial is closed: the 8 value datatypes are structure-checked, `ValueRangeType`
   is enforced for generic targets and contexts, and `ReportingCondition` is validated in
   `intentReportControl` (`intent-service/app/ts28312_datatypes.py`).
 

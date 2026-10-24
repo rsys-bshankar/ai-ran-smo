@@ -78,7 +78,9 @@ class O1CmEnactment(Base):
     enact, and the id of the IntentReport it published.
 
     `status` is FULFILLED or NOT_FULFILLED. `intent_report_id` is null when the report could not be published. One row per intent: the unique index on
-    `intent_id` (revision 0062, SA-REPLAY) is what makes a second push of the intent a replay, also when two arrive at once.
+    `intent_id` (revision 0062, SA-REPLAY) is what makes a second push of the intent a replay, also when two arrive at once. `deactivated_at` is when the
+    handler learnt the intent was DEACTIVATED (null while it is ACTIVATED; cleared when it is activated again) and `deleted_at` when it learnt the intent was
+    deleted (revision 0063, INTENT-LIFECYCLE-PUSH). Neither changes anything in the network: the values written stay as written.
     """
     __tablename__ = "o1_cm_enactment"
     __table_args__ = (Index("ux_o1_cm_enactment_intent_id", "intent_id", unique=True),)
@@ -91,3 +93,5 @@ class O1CmEnactment(Base):
     intent_report_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False,
                                                            default=lambda: datetime.datetime.now(datetime.UTC))
+    deactivated_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))

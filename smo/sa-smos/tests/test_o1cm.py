@@ -1,4 +1,5 @@
-"""The generic O1-CM intent handler of SA SMOS (`app/o1cm.py`): registration, enactment of an Intent as DME actions, and the fulfilment report.
+"""The generic O1-CM intent handler of SA SMOS (`app/o1cm.py`): registration, enactment of an Intent as DME actions, the fulfilment report, and the pushes
+of an intent's admin-state change and deletion (INTENT-LIFECYCLE-PUSH).
 
 Intent Service and DME are faked at the R1Client boundary by the `platform` fixture; the real round trip (Intent Service, SA SMOS, DME, RAN NF OAM, mock O1 adaptor) is tested in
 `tests_integration/test_cross_service.py`. The `client` fixture and `FakeR1Response` are imported from `test_main.py`, so this file needs `tests/` on the import path (pytest's default when run from
@@ -217,3 +218,92 @@ def test_tilt_and_power_targets_write_each_named_cell(client, platform):
     action = next(body for path, body in platform["posts"] if path == "/dme/actions")
     assert action["changes"][0]["managedFunctionRef"] == "CommonBeamformingFunction=301"
     assert action["changes"][0]["attributeChanges"] == {"digitalTilt": 70}
+
+
+
+# --- INTENT-LIFECYCLE-PUSH: Intent Service pushes an admin-state change and a delete too -------------------------------------------------------
+
+def _push(client, intent_id, event=None, admin=None):
+    """Posts one push of Intent Service for `intent_id`, with `event` and `adminState` when given (none: a push of a release before the events)."""
+    body = {"intentId": str(intent_id), "expectationObjectTypes": ["RAN_SUBNETWORK"], "rmioId": "es-rapp"}
+    if event:
+        body["event"] = event
+    if admin:
+        body["adminState"] = admin
+    return client.post("/o1-cm-handler/intents", json=body)
+
+
+def test_an_intent_created_deactivated_is_enacted_once_when_it_is_activated(client, platform):
+    """An intent created DEACTIVATED is SKIPPED; the ADMIN_STATE_CHANGED push of its activation enacts it, one DME action and one report; a repeat of the
+    activation push and a late repeat of the create push are answered from the enactment and do nothing more."""
+    intent_id = uuid.uuid4()
+    platform["intents"][str(intent_id)] = _intent(intent_id, [LOCK], admin="DEACTIVATED")
+    assert _push(client, intent_id, "INTENT_CREATED", "DEACTIVATED").json()["status"] == "SKIPPED"
+    assert _posted(platform, "/dme/actions") == []
+    platform["intents"][str(intent_id)]["intentAdminState"] = "ACTIVATED"
+    enacted = _push(client, intent_id, "ADMIN_STATE_CHANGED", "ACTIVATED").json()
+    assert enacted["status"] == "FULFILLED" and enacted["replayed"] is False
+    assert _push(client, intent_id, "ADMIN_STATE_CHANGED", "ACTIVATED").json()["replayed"] is True
+    assert _push(client, intent_id, "INTENT_CREATED", "DEACTIVATED").json()["replayed"] is True
+    assert len(_posted(platform, "/dme/actions")) == 1 and len(_posted(platform, "/intent-service/intent-reports")) == 1
+    assert client.get("/o1-cm-handler/enactments").json()["total"] == 1
+
+
+def test_deactivation_and_reactivation_are_recorded_and_nothing_is_written(client, platform):
+    """Deactivating an enacted intent sets `deactivatedAt` and sends nothing to DME or Intent Service's reports; a repeat keeps the first time;
+    reactivation clears it and does not enact the intent again."""
+    intent_id = uuid.uuid4()
+    platform["intents"][str(intent_id)] = _intent(intent_id, [LOCK])
+    assert _push(client, intent_id).json()["deactivatedAt"] is None     # a push without an event is a create push
+    posts = len(platform["posts"])
+    platform["intents"][str(intent_id)]["intentAdminState"] = "DEACTIVATED"
+    first = _push(client, intent_id, "ADMIN_STATE_CHANGED", "DEACTIVATED").json()
+    again = _push(client, intent_id, "ADMIN_STATE_CHANGED", "DEACTIVATED").json()
+    assert first["deactivatedAt"] and again["deactivatedAt"] == first["deactivatedAt"] and again["replayed"] is True
+    platform["intents"][str(intent_id)]["intentAdminState"] = "ACTIVATED"
+    reactivated = _push(client, intent_id, "ADMIN_STATE_CHANGED", "ACTIVATED").json()
+    assert reactivated["deactivatedAt"] is None and reactivated["replayed"] is True
+    assert len(platform["posts"]) == posts                                # no DME action, no report since the enactment
+
+
+def test_a_late_deactivation_push_does_not_undo_a_later_activation(client, platform):
+    """The handler acts on the state it reads back, not on the push's `adminState`: a DEACTIVATED push delivered after the intent was activated again
+    records nothing."""
+    intent_id = uuid.uuid4()
+    platform["intents"][str(intent_id)] = _intent(intent_id, [LOCK])
+    _push(client, intent_id, "INTENT_CREATED", "ACTIVATED")
+    assert _push(client, intent_id, "ADMIN_STATE_CHANGED", "DEACTIVATED").json()["deactivatedAt"] is None
+
+
+def test_a_delete_is_recorded_once_without_reading_the_intent_back_or_writing(client, platform):
+    """INTENT_DELETED sets `deletedAt` on the enactment from the push alone (the intent is gone, 404), a repeat keeps the first time, and nothing is sent to
+    DME; a delete of an intent this handler never enacted is SKIPPED, 200."""
+    intent_id = uuid.uuid4()
+    platform["intents"][str(intent_id)] = _intent(intent_id, [LOCK])
+    _push(client, intent_id, "INTENT_CREATED", "ACTIVATED")
+    del platform["intents"][str(intent_id)]
+    posts = len(platform["posts"])
+    first = _push(client, intent_id, "INTENT_DELETED", "ACTIVATED")
+    again = _push(client, intent_id, "INTENT_DELETED", "ACTIVATED").json()
+    assert first.status_code == 200 and first.json()["deletedAt"] and again["deletedAt"] == first.json()["deletedAt"]
+    assert len(platform["posts"]) == posts
+    unknown = _push(client, uuid.uuid4(), "INTENT_DELETED", "DEACTIVATED")
+    assert unknown.status_code == 200 and unknown.json()["status"] == "SKIPPED"
+
+
+def test_an_admin_state_push_for_an_intent_gone_or_foreign_is_refused_like_a_create(client, platform):
+    """ADMIN_STATE_CHANGED reads the intent back: an intent Intent Service no longer knows is 404 and one addressed to another handler is 422, both of
+    which Intent Service's outbox counts as delivered (no retry)."""
+    foreign = uuid.uuid4()
+    platform["intents"][str(foreign)] = _intent(foreign, [LOCK], rmih="so-smos")
+    assert _push(client, uuid.uuid4(), "ADMIN_STATE_CHANGED", "ACTIVATED").status_code == 404
+    assert _push(client, foreign, "ADMIN_STATE_CHANGED", "ACTIVATED").status_code == 422
+
+
+def test_an_unknown_event_is_answered_ignored_and_does_nothing(client, platform):
+    """Forward compatibility: an event this handler does not know is 200 IGNORED, with nothing read back, written or recorded."""
+    intent_id = uuid.uuid4()
+    platform["intents"][str(intent_id)] = _intent(intent_id, [LOCK])
+    resp = _push(client, intent_id, "INTENT_MODIFIED", "ACTIVATED")
+    assert resp.status_code == 200 and resp.json()["status"] == "IGNORED"
+    assert platform["posts"] == [] and client.get("/o1-cm-handler/enactments").json()["total"] == 0

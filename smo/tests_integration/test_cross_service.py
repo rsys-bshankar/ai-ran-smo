@@ -684,3 +684,47 @@ def _mlmf_dme_type(mesh, name: str) -> str:
         "namespace": "RAN", "name": name, "version": "1.0.0", "typeName": f"RAN.{name}", "producerId": "ran-nf-oam",
         "dataProductionSchema": {"type": "object"}, "producerHealthCallbackUrl": "http://ran-nf-oam:8000/health",
         "jobCallbackUrl": "http://ran-nf-oam:8000/dme-jobs"}).json()["registrationId"]
+
+
+def test_an_intent_created_deactivated_is_enacted_once_when_activated_and_its_end_is_recorded(mesh, loaded_apps, db_connection):
+    """INTENT-LIFECYCLE-PUSH across the mesh: an intent created DEACTIVATED is not enacted; activating it pushes ADMIN_STATE_CHANGED and SA SMOS enacts it
+    (one enactment, one config job, the value at the O1 adaptor); deactivating and deleting it are recorded on the enactment and write nothing more."""
+    _seed_managed_element(loaded_apps, db_connection, "gnb-du-03")
+    assert mesh["sa-smos"].post("/o1-cm-handler/registration", json={}).status_code == 201
+    intent = mesh["intent-service"].post("/intents", json={
+        "userLabel": "sleep cell 301 later", "rmioId": "es-rapp", "rmihId": "sa-smos", "intentAdminState": "DEACTIVATED",
+        "intentReportControl": [{"observationPeriod": 60}],
+        "intentExpectations": [{"expectationId": "sleep", "expectationVerb": "DELIVER",
+                                "expectationObject": {"objectType": "RAN_SUBNETWORK", "objectInstance": "gnb-du-03", "objectContexts": [
+                                    {"contextAttribute": "Cell", "contextCondition": "IS_ALL_OF", "contextValueRange": ["301"]}]},
+                                "expectationTargets": [{"targetName": "NRCellDU.administrativeState", "targetCondition": "IS_EQUAL_TO",
+                                                        "targetValueRange": "LOCKED"}]}]})
+    assert intent.status_code == 201, intent.text
+    intent_id = intent.json()["intentId"]
+    enactments = {"intent_id": intent_id}
+    assert mesh["sa-smos"].get("/o1-cm-handler/enactments", params=enactments).json()["total"] == 0
+
+    def set_state(state):
+        # the intent's creator changes its state; Intent Service pushes the change to SA SMOS after the commit
+        resp = mesh["intent-service"].patch(f"/intents/{intent_id}/admin-state", json={"newState": state, "requesterId": "es-rapp"})
+        assert resp.status_code == 200, resp.text
+
+    def handler_jobs():
+        # the number of config jobs the O1-CM handler has asked RAN NF OAM for
+        return len([j for j in mesh["ran-nf-oam"].get("/config-jobs", params={"limit": 500}).json()["items"]
+                    if j.get("requestedBy") == "sa-smos:o1-cm-intent-handler"])
+
+    jobs_before = handler_jobs()
+    set_state("ACTIVATED")
+    items = mesh["sa-smos"].get("/o1-cm-handler/enactments", params=enactments).json()["items"]
+    assert len(items) == 1 and items[0]["status"] == "FULFILLED" and items[0]["deactivatedAt"] is None
+    assert mesh["mock-o1-adaptor"].get("/edit-config/gnb-du-03").json()["attributeChanges"] == {"administrativeState": "LOCKED"}
+    assert handler_jobs() == jobs_before + 1
+
+    set_state("DEACTIVATED")
+    set_state("ACTIVATED")
+    set_state("DEACTIVATED")
+    assert mesh["intent-service"].delete(f"/intents/{intent_id}").status_code == 204
+    items = mesh["sa-smos"].get("/o1-cm-handler/enactments", params=enactments).json()["items"]
+    assert len(items) == 1 and items[0]["deactivatedAt"] and items[0]["deletedAt"]
+    assert handler_jobs() == jobs_before + 1

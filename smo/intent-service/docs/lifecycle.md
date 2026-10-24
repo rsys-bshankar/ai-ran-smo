@@ -79,7 +79,7 @@ sequenceDiagram
     else
         Note over IS: an rApp's rmioId becomes its own invoker id, the caller is the owner<br/>conflicts with ACTIVATED intents are reported, never refused
         IS->>DB: intent, first report (NOT_FULFILLED RECEIVED), outbox rows: the RMIH push<br/>and one per wanting report recipient, one commit
-        IS->>H: POST notificationDestination {intentId, expectationObjectTypes, intentPriority, rmioId, intentMgmtPurpose} (d)
+        IS->>H: POST notificationDestination {intentId, event INTENT_CREATED, adminState, expectationObjectTypes,<br/>intentPriority, rmioId, intentMgmtPurpose} (d)
         IS->>RR: POST reportRecipientAddress {notificationType notifyIntentReport, report} (d)
         IS-->>C: 201 {intentId, intentReportReference}
     end
@@ -91,7 +91,8 @@ sequenceDiagram
         IS-->>H: 201 {reportId, report}
     end
     C->>IS: PATCH /intents/{id}/admin-state, DELETE /intents/{id}
-    Note over IS: an rApp acts only on its own intents (403 INTENT_ACCESS_DENIED)<br/>a state change writes a SUSPENDED or RECEIVED report and delivers it, a delete tells no one
+    Note over IS: an rApp acts only on its own intents (403 INTENT_ACCESS_DENIED)<br/>a state change writes a SUSPENDED or RECEIVED report and delivers it, a PATCH to the same state<br/>or a delete of an unknown id does nothing
+    IS->>H: POST notificationDestination {intentId, event ADMIN_STATE_CHANGED or INTENT_DELETED, adminState,<br/>expectationObjectTypes, rmioId}, an outbox row of the change's commit (d)
 ```
 
 Every route that changes something enqueues its notifications before its one `db.commit()` (PR-MSG-1.9): the intent and the rows that announce it exist

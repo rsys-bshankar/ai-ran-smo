@@ -22,7 +22,7 @@ MIGRATE = SMO_ROOT / "scripts" / "migrate.py"
 CHECK = SMO_ROOT / "scripts" / "check_migration_matches_models.py"
 ADMIN_URL = os.environ.get("SMO_TEST_POSTGRES_URL")
 needs_postgres = pytest.mark.skipif(not ADMIN_URL, reason="SMO_TEST_POSTGRES_URL not set")
-HEAD = "0062"         # raise this with every new revision: the tests below then check it is the head
+HEAD = "0063"         # raise this with every new revision: the tests below then check it is the head
 HEAD_TABLE = "sa_smos.o1_cm_enactment"   # a table the head revision changes: the lock tests hold it, so raise it with HEAD
 
 
@@ -293,7 +293,7 @@ def test_0062_keeps_the_oldest_enactment_of_each_intent_and_makes_intent_id_uniq
     with engine.begin() as connection:
         for name, (intent, age) in rows.items():
             connection.execute(insert, {"e": ids[name], "i": intent, "age": age})
-    up = _run(MIGRATE, url)
+    up = _run(MIGRATE, url, "--revision", "0062")
     assert up.returncode == 0 and "upgraded to 0062" in up.stdout, up.stderr
     with engine.connect() as connection:
         kept = set(connection.execute(text("SELECT enactment_id FROM sa_smos.o1_cm_enactment")).scalars())

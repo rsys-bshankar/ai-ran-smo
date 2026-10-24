@@ -49,7 +49,7 @@ sequenceDiagram
         Note over IS: target conflicts with other ACTIVATED intents are reported, not refused,<br/>a FEASIBILITYCHECK purpose is taken with its INFEASIBLE report
         IS->>DB: intent {rmioId, ownerInvokerId = the caller}, first report (RECEIVED, conflicts, feasibility),<br/>outbox rows, one commit
         IS-->>C: 201 {intentId, intentReportReference}
-        IS->>H: POST notificationDestination {intentId, expectationObjectTypes, intentPriority, rmioId, intentMgmtPurpose}
+        IS->>H: POST notificationDestination {intentId, event INTENT_CREATED, adminState, expectationObjectTypes,<br/>intentPriority, rmioId, intentMgmtPurpose}
         IS->>RR: POST reportRecipientAddress (the first report)
         Note over IS: both after the commit, retried by the outbox, never a reason to refuse the intent
     end
@@ -64,6 +64,7 @@ sequenceDiagram
     participant C as Owner rApp (SDK) / Operator, Admin (GUI)
     participant IS as Intent Service
     participant DB as Intent Service database
+    participant H as RMIH (09c)
     participant RR as Report recipients
 
     C->>IS: PATCH /intents/{id}/admin-state {newState ACTIVATED / DEACTIVATED, requesterId}
@@ -72,11 +73,12 @@ sequenceDiagram
     else an rApp that does not own the intent, or the console / a module naming a requesterId that is not its rmioId
         IS-->>C: 403 INTENT_ACCESS_DENIED, unchanged
     else the state it already has
-        IS-->>C: 200 the intent, no report written
+        IS-->>C: 200 the intent, no report written, nothing pushed
     else
-        IS->>DB: state changed, a new report (SUSPENDED when deactivated, RECEIVED when activated) made current
+        IS->>DB: state changed, a new report (SUSPENDED when deactivated, RECEIVED when activated) made current,<br/>outbox rows, one commit
         IS-->>C: 200 the intent
         IS->>RR: POST the new report
+        IS->>H: POST notificationDestination {intentId, event ADMIN_STATE_CHANGED, adminState, expectationObjectTypes, rmioId}
     end
     C->>IS: POST /intents/{id}/negotiation-feedback {referredIntentOutcomeId, consumerSatisfactionIndex?}
     alt an rApp that does not own the intent
@@ -90,14 +92,19 @@ sequenceDiagram
     C->>IS: DELETE /intents/{id}
     alt an rApp that does not own the intent
         IS-->>C: 403 INTENT_ACCESS_DENIED, the intent stays
-    else its owner, the console (Admin) or a module, or an unknown id
-        IS->>DB: the intent and its reports deleted, one commit
-        IS-->>C: 204 (nothing is sent to the RMIH)
+    else an unknown id
+        IS-->>C: 204, nothing pushed
+    else its owner, the console (Admin) or a module
+        IS->>DB: the intent and its reports deleted, outbox row, one commit
+        IS-->>C: 204
+        IS->>H: POST notificationDestination {intentId, event INTENT_DELETED, adminState, expectationObjectTypes, rmioId}
     end
 ```
 
-The owner is the invoker that created the intent (`ownerInvokerId`); an intent from before revision 0057 has none and its `rmioId` stands in.
-**Phase 1:** deleting an intent does not tell its RMIH, which stops reporting on it when its next read answers 404.
+The owner is the invoker that created the intent (`ownerInvokerId`); an intent from before revision 0057 has none and its `rmioId` stands in. The pushes
+to the RMIH go after the commit and are retried by the outbox, as in 09a (INTENT-LIFECYCLE-PUSH). A delete push carries everything the handler needs,
+because the intent can no longer be read back. A handler answers an `event` it does not know with 2xx and does nothing; SO SMOS registers no handler
+route, so a push to it is a 404, which the outbox counts as delivered.
 
 ## 09c — Handlers and their reports
 
@@ -119,9 +126,18 @@ sequenceDiagram
         IS-->>H: 201 the handler
     end
     Note over H,IS: SA SMOS registers at the console's request (POST /sa-smos/o1-cm-handler/registration),<br/>one POST, no delete first
-    IS->>H: POST /sa-smos/o1-cm-handler/intents {intentId} (09a's push)
-    H->>IS: GET /intents/{intentId}
-    Note over H: per expectation: objectInstance is the managed element, the Cell context gives the cells,<br/>each IS_EQUAL_TO target is a change on IOC=cell
+    IS->>H: POST /sa-smos/o1-cm-handler/intents {intentId, event, adminState, ...} (the push of 09a or 09b)
+    alt INTENT_DELETED
+        Note over H: deletedAt set on the enactment (none: SKIPPED), nothing read, nothing written to the network
+    else an event it does not know
+        Note over H: 200 IGNORED, nothing read or written
+    else INTENT_CREATED for an intent already enacted
+        Note over H: 200 the enactment, replayed (SA-REPLAY)
+    else INTENT_CREATED or ADMIN_STATE_CHANGED
+        H->>IS: GET /intents/{intentId}
+        Note over H: 404 / 422 for an unknown or foreign intent. Enacted already: deactivatedAt set (DEACTIVATED) or cleared<br/>(ACTIVATED), nothing written to the network, the enactment answered replayed. DEACTIVATED and not enacted: SKIPPED
+    end
+    Note over H: ACTIVATED and not enacted (also an intent created DEACTIVATED and activated since): per expectation,<br/>objectInstance is the managed element, the Cell context gives the cells, each IS_EQUAL_TO target is a change on IOC=cell
     H->>DME: POST /dme/actions {changes, sourceContext intentId, expectationId}
     H->>IS: POST /intent-reports {intentReference, intentFulfilmentReport FULFILLED, or NOT_FULFILLED with action and job references}
     alt an rApp caller

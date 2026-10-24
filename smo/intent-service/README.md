@@ -19,8 +19,8 @@
 An rApp (the intent owner or RMIO) states what it wants as a TS 28.312 `Intent`: expectations over an object, with
 targets, contexts, priority and report control. It addresses the intent to one `IntentHandlingFunction` (RMIH) it
 discovered. Intent Service validates the intent, checks it against that RMIH's declared capabilities, stores it,
-produces the initial reports, pushes it to the RMIH and delivers every later `IntentReport` to the recipients the
-intent named. It also owns `AutonomyDispatch`, the record that connects an AI/ML inference outcome to an intent
+produces the initial reports, pushes it to the RMIH (and pushes again when its admin state changes and when it is
+deleted) and delivers every later `IntentReport` to the recipients the intent named. It also owns `AutonomyDispatch`, the record that connects an AI/ML inference outcome to an intent
 according to the rApp instance's autonomy mode. It does not enforce anything itself: enactment belongs to the RMIH.
 
 ### 1.2 Standards basis
@@ -96,6 +96,12 @@ Platform-wide ownership summary: [ARCHITECTURE.md](../docs/ARCHITECTURE.md).
   409, and SA SMOS deleted the handler first, which cascaded away every intent). `Intent.rmih_id` keeps its
   `ON DELETE CASCADE` foreign key.
 - Dispatch is one notification to the named RMIH, an outbox row committed with the intent (`PR-MSG-1.9`). RMIHs register with a `notificationDestination`.
+  The RMIH is also told of the intent's life after that (INTENT-LIFECYCLE-PUSH): an admin-state change that changes the state pushes
+  `ADMIN_STATE_CHANGED`, and a delete of an existing intent pushes `INTENT_DELETED`, each an outbox row in the transaction of the change; the create push
+  carries `event` `INTENT_CREATED`. A PATCH to the state the intent already has and a delete of an unknown id push nothing. Every push names the intent,
+  its current `adminState`, its `expectationObjectTypes` and its `rmioId`, so a handler can act on a delete without reading the intent back (it is gone).
+  A handler answers an `event` it does not know with 2xx and does nothing, so an event can be added without a release of every handler; a 4xx answer
+  (SO SMOS has no handler route: 404) counts as delivered and is not retried.
 
 **Autonomy dispatch.** An rApp instance carries `autonomyMode` (`AUTONOMOUS` / `ASSIST` / `SHADOW`, default
 `SHADOW`) and `regionScope` (rApp Management). An inference outcome is handed to
@@ -133,7 +139,7 @@ The mode is snapshotted onto the dispatch at request time and never rewritten by
 - **Region scope bounds, never widens.** For an autonomy-created intent the region scope fills a missing
   `objectInstance` (a different one is rejected) and its `cells` become the expectation's `Cell` context; an
   expectation that already names cells is intersected with the region, and an empty intersection is rejected.
-- **Notifications go through the transactional outbox** (`smo_shared.outbox`, `PR-MSG-1.9`). The new-intent push, report delivery and
+- **Notifications go through the transactional outbox** (`smo_shared.outbox`, `PR-MSG-1.9`). The pushes to the RMIH, report delivery and
   operator notification are rows in the same transaction as the intent, report or dispatch they announce, sent right after it commits (2 s
   timeout), at least once; they never fail the triggering call, and a crash after the commit no longer loses them. An autonomy dispatch and the
   Intent it creates are now one transaction (`_create_intent_row` no longer commits; its callers do). A destination is never guessed.
@@ -147,8 +153,8 @@ The mode is snapshotted onto the dispatch at request time and never rewritten by
   reject need the console's signed-in user (`X-R1-Acting-User`; 403 `ROLE_NOT_PERMITTED` for an rApp or a module on its own
   account), recorded as `resolvedBy` / `rejectedBy`. The GUI BFF pins `rmioId` for GUI-created intents and restricts
   registration, report publication and deletion to admin (`../gui-bff/app/rbac.py`). Reads are open to any caller.
-- **Idempotency.** `DELETE` of an unknown intent, RMIH or formula is a 204 no-op. Admin-state change to the current
-  state creates no new report.
+- **Idempotency.** `DELETE` of an unknown intent, RMIH or formula is a 204 no-op (no push). Admin-state change to the current
+  state creates no new report and pushes nothing. Neither route is `@idempotent`: a repeat is already a no-op.
 
 ## 2. Low-level design (LLD)
 
@@ -216,8 +222,8 @@ Intent admin state (`PATCH /intents/{id}/admin-state`, creator only)
 
 | From | Event | To | Side effect |
 |---|---|---|---|
-| `ACTIVATED` | `newState = DEACTIVATED` | `DEACTIVATED` | New report: fulfilment `NOT_FULFILLED` / `SUSPENDED`, delivered per report control |
-| `DEACTIVATED` | `newState = ACTIVATED` | `ACTIVATED` | New report: `NOT_FULFILLED` / `RECEIVED` |
+| `ACTIVATED` | `newState = DEACTIVATED` | `DEACTIVATED` | New report: fulfilment `NOT_FULFILLED` / `SUSPENDED`, delivered per report control; `ADMIN_STATE_CHANGED` pushed to the RMIH |
+| `DEACTIVATED` | `newState = ACTIVATED` | `ACTIVATED` | New report: `NOT_FULFILLED` / `RECEIVED`; `ADMIN_STATE_CHANGED` pushed to the RMIH |
 | either | same state | unchanged | none |
 
 Autonomy dispatch
@@ -283,7 +289,9 @@ and, when the dispatch has one, `reportRecipientAddress = notificationDestinatio
 
 | Trigger | Interaction | Failure behaviour |
 |---|---|---|
-| Intent created (any path) | POST to the RMIH's `notificationDestination`: `{intentId, expectationObjectTypes, intentPriority, rmioId, intentMgmtPurpose}`. The RMIH reads the intent back over R1. | Outbox row, committed with the intent; unreachable RMIH never fails create |
+| Intent created (any path) | POST to the RMIH's `notificationDestination`: `{intentId, event: "INTENT_CREATED", adminState, expectationObjectTypes, intentPriority, rmioId, intentMgmtPurpose}`. The RMIH reads the intent back over R1. | Outbox row, committed with the intent; unreachable RMIH never fails create |
+| Admin state changed (not to the state it had) | POST to the RMIH's `notificationDestination`: `{intentId, event: "ADMIN_STATE_CHANGED", adminState, expectationObjectTypes, rmioId}` (INTENT-LIFECYCLE-PUSH) | Outbox row, committed with the change and its report |
+| Intent deleted (an existing one) | POST to the RMIH's `notificationDestination`: `{intentId, event: "INTENT_DELETED", adminState, expectationObjectTypes, rmioId}`; the intent can no longer be read back | Outbox row, committed with the delete |
 | Any report written (initial, admin-state, published) | For each `intentReportControl` with a `reportRecipientAddress` whose `expectedReportTypes` (all when empty) intersect the report: POST `{notificationType: "notifyIntentReport", ...report view}` | Outbox row, committed with the report |
 | Autonomy dispatch | `GET /rapp-mgmt/instances/{id}` for `autonomyMode` and `regionScope` | No answer (connection error or timeout) → 503 `ENDPOINT_UNREACHABLE`; non-200 → 404 `RAPP_INSTANCE_NOT_FOUND` |
 | Autonomy dispatch / resolve / reject | POST dispatch summary to `notificationDestination` | Outbox row, committed with the dispatch; none sent when no destination; non-http(s) schemes are refused by the SSRF guard (`smo_shared.webhook`) at enqueue and at send |
@@ -331,7 +339,7 @@ No Intent-Service-specific variables.
   as `IS_less_THAN` (5GC `5GSession`) and `S_EQUAL_TO` (radio-service `AssuranceDuration`) that cannot equal any
   value of the `Condition` enum, so those two specialised contexts can never validate.
 - A module may publish a report for any intent, not only those addressed to it: module invoker ids are not tied to an `rmihId`.
-- `rApp Management` is the only cross-module read; the new-intent push is an outbox row, retried by the outbox sweep like every other notification.
+- `rApp Management` is the only cross-module read; the pushes to the RMIH are outbox rows, retried by the outbox sweep like every other notification.
 - The ON DELETE CASCADE of a deregistered RMIH's autonomy dispatches is verified against PostgreSQL, not in the unit suite.
 
 ## 3. Unit tests
@@ -350,7 +358,7 @@ Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
 
 | File | Covers |
 |---|---|
-| `tests/test_main.py` | Create/query/delete intents, admin-state (creator only, SUSPENDED report), RMIH registration (external-caller rejection, capability validation, list, deregister), scope and capability matching, dispatch to the named RMIH (and unreachable callback), strict spec shapes and family constraints, feasibility (reject vs report), purpose/negotiation gating, initial report and conflicts, report-control delivery, all report kinds, negotiation feedback, utility formula IOC, autonomy dispatch (AUTONOMOUS, ASSIST resolve/reject, SHADOW, up-front RMIH validation, operator notification and its SSRF scheme guard, unknown instance/RMIH, list/get, region-scope folding and bounding), `/health`, the outbox transaction, and the `Idempotency-Key` replay of `POST /intents`, `/intent-reports` and `/autonomy-dispatches` (one row on a keyed repeat, `Idempotent-Replayed`, 422 `IDEMPOTENCY_KEY_REUSED`) |
+| `tests/test_main.py` | Create/query/delete intents, admin-state (creator only, SUSPENDED report), RMIH registration (external-caller rejection, capability validation, list, deregister), scope and capability matching, dispatch to the named RMIH (and unreachable callback), strict spec shapes and family constraints, feasibility (reject vs report), purpose/negotiation gating, initial report and conflicts, report-control delivery, all report kinds, negotiation feedback, utility formula IOC, autonomy dispatch (AUTONOMOUS, ASSIST resolve/reject, SHADOW, up-front RMIH validation, operator notification and its SSRF scheme guard, unknown instance/RMIH, list/get, region-scope folding and bounding), `/health`, the outbox transaction, the pushes to the RMIH on create, admin-state change and delete (INTENT-LIFECYCLE-PUSH: the event and payload of each, none on a no-op PATCH or an unknown delete, outbox rows of the change's transaction, none when the change does not commit), and the `Idempotency-Key` replay of `POST /intents`, `/intent-reports` and `/autonomy-dispatches` (one row on a keyed repeat, `Idempotent-Replayed`, 422 `IDEMPOTENCY_KEY_REUSED`) |
 | `tests/test_intent_identity.py` | Call flow 09 (DOC-CF-1.8): an rApp's intent is its own (rmioId, owner), another rApp's admin-state / delete / feedback is refused, the console deletes with the reports, the console's requesterId check; an rApp registers no handler and publishes no report, re-registration in place keeps the intents; dispatch only for the caller's own instance (no fallback), `dispatchedBy` and the intent's owner; ASSIST decided only by a console user, recorded as `resolvedBy` / `rejectedBy` |
 | `tests/test_business_metrics.py` | `smo_intents` counts intents by admin state, both states present at zero |
 | `tests/test_fulfilment_and_conflict.py` | `GUI-9.8`: a new intent is 0 % and not in conflict, the percent follows the newest fulfilment report, a handler's conflict report sets `inConflict` and an empty one clears it, a conflict found at creation shows, deactivation resets the percent, the `fulfilled` / `in_conflict` list filters both ways, and the percent rule on six report shapes |
