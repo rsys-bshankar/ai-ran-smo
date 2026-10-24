@@ -9,7 +9,7 @@ CI runs `--check` and fails when this file no longer matches the code.
 
 | suite | files | test functions | collected tests |
 |---|---:|---:|---:|
-| `aimgf` | 17 | 286 | 436 |
+| `aimgf` | 17 | 290 | 440 |
 | `dme` | 14 | 177 | 190 |
 | `focom` | 3 | 85 | 85 |
 | `gui` | 51 | 519 | — |
@@ -37,7 +37,7 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `sme` | 5 | 122 | 140 |
 | `so-smos` | 3 | 27 | 40 |
 | `tests_integration` | 95 | 737 | 915 |
-| **total** | **418** | **5378** | **7773** (Python) |
+| **total** | **418** | **5382** | **7777** (Python) |
 
 ## Per test file
 
@@ -52,7 +52,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests/test_feature_group_token.py` | 7 | 13 |
 | `tests/test_governance_end_of_life.py` | 6 | 6 |
 | `tests/test_job_ownership.py` | 10 | 44 |
-| `tests/test_main.py` | 112 | 125 |
+| `tests/test_main.py` | 116 | 129 |
 | `tests/test_mlmf_guard.py` | 6 | 17 |
 | `tests/test_model_ownership_routes.py` | 10 | 44 |
 | `tests/test_nrm.py` | 22 | 22 |

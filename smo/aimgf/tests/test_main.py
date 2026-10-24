@@ -1671,6 +1671,93 @@ def test_a_repeated_performance_report_with_the_same_key_is_stored_and_notified_
     assert calls == ["http://consumer/mlmf"]
 
 
+# ---------------------------------------------------------------- MLMF-REPORT-REPLAY: the group step never turns a stored report into a 500
+
+def _breaching_member_subscription(mlmr, db_session_factory, retrain_propagation="ANY_MEMBER_TRIGGERS"):
+    """A PROMOTED model in a coordination group of one with `retrain_propagation`, and an MLMF subscription on it whose floor 0.9 a report of 0.5 breaches;
+    returns the subscription id."""
+    member_ids = _make_group_with_subscription(mlmr, db_session_factory, [ModelLifecycleState.PROMOTED], retrain_propagation=retrain_propagation)
+    with db_session_factory() as session:
+        sub = MLMFSubscription(model_id=member_ids[0], metric_types=["accuracy"], dme_type_id=uuid.uuid4(), guard_kpi_floor={"accuracy": 0.9})
+        session.add(sub)
+        session.commit()
+        return sub.subscription_id
+
+
+def _report_count(db_session_factory):
+    """The number of PerformanceReport rows."""
+    with db_session_factory() as session:
+        return session.query(PerformanceReport).count()
+
+
+def test_a_failing_group_step_answers_200_with_group_retrain_error_and_keeps_one_report(client, mlmr, db_session_factory, caplog):
+    """A group whose `retrainPropagation` is the reserved WEIGHTED_TRIGGERS makes the group step raise after the report is committed: the answer is 200 with
+    `groupRetrainError` (INTERNAL_ERROR, the reason), one report is stored and a WARNING is logged, instead of a 500 that released the key."""
+    sub_id = _breaching_member_subscription(mlmr, db_session_factory, retrain_propagation="WEIGHTED_TRIGGERS")
+    with caplog.at_level("WARNING", logger="app.main"):
+        resp = client.post(f"/mlmf/subscriptions/{sub_id}/reports", json={"accuracy": 0.5})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["breachedFloor"] is True and body["groupRetrainError"]["code"] == "INTERNAL_ERROR"
+    assert "WEIGHTED_TRIGGERS" in body["groupRetrainError"]["detail"] and "groupRetrainTriggered" not in body
+    assert _report_count(db_session_factory) == 1
+    assert any("group retrain" in r.getMessage() for r in caplog.records if r.levelname == "WARNING")
+
+
+def test_mlmr_not_answering_the_group_read_is_upstream_failed_in_the_body(client, mlmr, db_session_factory, monkeypatch):
+    """A transport error on the coordination-group read at MLMR is answered as `groupRetrainError` UPSTREAM_FAILED, with the report stored."""
+    import httpx
+    sub_id = _breaching_member_subscription(mlmr, db_session_factory)
+
+    real_get = mlmr.get
+
+    def get(path, **kw):
+        # the group list does not answer; any other read is MLMR's double
+        if path == "/mlmr/coordination-groups":
+            raise httpx.ConnectError("mlmr is down")
+        return real_get(path, **kw)
+    monkeypatch.setattr(mlmr, "get", get)
+    resp = client.post(f"/mlmf/subscriptions/{sub_id}/reports", json={"accuracy": 0.5})
+    assert resp.status_code == 200 and resp.json()["groupRetrainError"]["code"] == "UPSTREAM_FAILED"
+    assert _report_count(db_session_factory) == 1
+
+
+def test_a_repeat_after_a_failing_group_step_is_replayed_and_stores_no_second_report(client, mlmr, db_session_factory):
+    """With the 200 the key is stored: the SDK's repeat with the same Idempotency-Key gets the first answer back and no second report is stored."""
+    sub_id = _breaching_member_subscription(mlmr, db_session_factory, retrain_propagation="WEIGHTED_TRIGGERS")
+    first = client.post(f"/mlmf/subscriptions/{sub_id}/reports", json={"accuracy": 0.5}, headers={"Idempotency-Key": "rep-g"})
+    again = client.post(f"/mlmf/subscriptions/{sub_id}/reports", json={"accuracy": 0.5}, headers={"Idempotency-Key": "rep-g"})
+    _assert_replayed(first, again, 200)
+    assert "groupRetrainError" in again.json()
+    assert _report_count(db_session_factory) == 1
+
+
+def test_a_failure_before_the_report_commit_stores_nothing_and_releases_the_key(client, mlmr, db_session_factory, monkeypatch):
+    """A failure before the commit is not swallowed: the commit of the report fails, the call is a 500, no report is stored and the key is released,
+    so the repeat with the same key runs and stores the one report."""
+    sub_id = _breaching_member_subscription(mlmr, db_session_factory)
+    from sqlalchemy.orm import Session as OrmSession
+    real_commit = OrmSession.commit
+
+    def failing_commit(self):
+        # only the commit that carries the report and its outbox row fails; the key's reservation and release commit as usual
+        if any(isinstance(o, PerformanceReport) for o in self.identity_map.values()):
+            self.rollback()
+            raise RuntimeError("the database refused the commit")
+        return real_commit(self)
+
+    monkeypatch.setattr(OrmSession, "commit", failing_commit)
+    failed = TestClient(app, raise_server_exceptions=False).post(f"/mlmf/subscriptions/{sub_id}/reports", json={"accuracy": 0.95},
+                                                                 headers={"Idempotency-Key": "rep-c"})
+    monkeypatch.setattr(OrmSession, "commit", real_commit)
+    assert failed.status_code == 500 and _report_count(db_session_factory) == 0
+    with db_session_factory() as session:
+        assert session.query(IdempotencyKey).count() == 0
+    again = client.post(f"/mlmf/subscriptions/{sub_id}/reports", json={"accuracy": 0.95}, headers={"Idempotency-Key": "rep-c"})
+    assert again.status_code == 200 and "Idempotent-Replayed" not in again.headers
+    assert _report_count(db_session_factory) == 1
+
+
 # ---------------------------------------------------------------- notifications through the outbox (PR-MSG-1.7)
 
 def _outbox_rows(db_session_factory):

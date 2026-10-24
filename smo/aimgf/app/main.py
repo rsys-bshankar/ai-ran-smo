@@ -1968,13 +1968,14 @@ def report_performance(request: Request, subscription_id: uuid.UUID, metrics: di
     # number is 422 `SCHEMA_VALIDATION_FAILED` with nothing stored. A report breaches when a guarded metric it carries is below its floor or above its ceiling; a
     # guarded metric it does not carry is listed in `missingMetrics` and does not breach (call flow 13b: MDAF's drift reports carry only their own outputs). The
     # report and its subscriber notification (`{reportId, modelId, metrics, breachedFloor, missingMetrics}`) are committed first. Only then, for a breach, is the model's
-    # coordination group fetched from MLMR and `should_trigger_group_retrain` asked with `breached_count=1`; a raise from it (WEIGHTED_TRIGGERS or an unknown
-    # value) is not caught and answers 500 after the report is already stored. When it fires, `_trigger_group_retrain` starts a run for each PROMOTED member,
-    # committing each on its own; a member NFO refuses is skipped, not fatal (call flow 02e). Answers `reportId`, `breachedFloor` and, for a group member,
-    # `groupRetrainTriggered` and, when it fired, `retrainedModelIds` and `retrainSkipped` (`[{modelId, reason}]`); `missingMetrics` always.
+    # coordination group fetched from MLMR and `should_trigger_group_retrain` asked with `breached_count=1`. When it fires, `_trigger_group_retrain` starts a
+    # run for each PROMOTED member, committing each on its own; a member NFO refuses is skipped, not fatal (call flow 02e). Answers `reportId`, `breachedFloor`
+    # and, for a group member, `groupRetrainTriggered` and, when it fired, `retrainedModelIds` and `retrainSkipped` (`[{modelId, reason}]`); `missingMetrics` always.
+    # Once the report is committed the answer is 200 whatever the group step does (MLMF-REPORT-REPLAY): a failure there (MLMR or NFO not answering,
+    # WEIGHTED_TRIGGERS or an unknown `retrainPropagation`) is answered as `groupRetrainError` `{code, detail}` (`_group_retrain_step`). A failure before the
+    # commit still raises, stores nothing and releases the Idempotency-Key.
     # `@idempotent("aimgf")` (SDK-RETRY-IDEMPOTENCY): a keyed repeat is answered from the first answer, so no second report, notification or group retrain. The
-    # path is part of the key's fingerprint, so the same key on another subscription's reports is 422 IDEMPOTENCY_KEY_REUSED. A 500 from the group step after
-    # the report is committed releases the key (only 2xx answers are stored), so a repeat after that 500 stores a second report.
+    # path is part of the key's fingerprint, so the same key on another subscription's reports is 422 IDEMPOTENCY_KEY_REUSED.
     sub = db.get(MLMFSubscription, subscription_id)
     if sub is None:
         raise framework_error(FrameworkError.MLMF_SUBSCRIPTION_NOT_FOUND, detail="no such MLMF subscription")
@@ -1999,19 +2000,38 @@ def report_performance(request: Request, subscription_id: uuid.UUID, metrics: di
 
     result = {"reportId": str(report.id), "breachedFloor": breached, "missingMetrics": missing}
     if breached:
-        # if this model belongs to a coordination group, decide group-scoped
-        # propagation per LLD section 4.3-4.4; otherwise it's a standalone retrain trigger.
-        group = _find_coordination_group_for_model(sub.model_id)
-        if group is not None:
-            triggered = should_trigger_group_retrain(
-                group["retrainPropagation"], member_count=len(group["memberModelIds"]), breached_count=1
-            )
-            result["groupRetrainTriggered"] = triggered
-            if triggered:
-                started, skipped = _trigger_group_retrain(db, group)
-                result["retrainedModelIds"] = [str(mid) for mid in started]
-                result["retrainSkipped"] = skipped
+        _group_retrain_step(db, sub.model_id, result)
     return result
+
+
+def _group_retrain_step(db: Session, model_id: uuid.UUID, result: dict) -> None:
+    """Runs the group-retrain step of a breached MLMF report, after the report is committed, and writes its outcome into `result` (the route's answer). Never raises.
+
+    For a model in an MLMR coordination group it sets `groupRetrainTriggered` (the group's `retrainPropagation` decides, LLD sections 4.3 and 4.4) and, when it fired,
+    `retrainedModelIds` and `retrainSkipped` (call flow 02e); a model in no group is not retrained by a breach. Any failure of the step (MLMR or NFO not answering, a
+    reserved or unknown `retrainPropagation`, anything else) rolls back what the step had not committed, is logged at WARNING and is answered as
+    `groupRetrainError` `{code, detail}` (`code` UPSTREAM_FAILED for a transport error, INTERNAL_ERROR otherwise), beside the members already started.
+    It never raises because the report is stored: a 500 here released the Idempotency-Key, and a repeat stored a second report (MLMF-REPORT-REPLAY).
+    """
+    started: list[uuid.UUID] = []
+    skipped: list[dict] = []
+    try:
+        group = _find_coordination_group_for_model(model_id)
+        if group is None:
+            return
+        triggered = should_trigger_group_retrain(group["retrainPropagation"], member_count=len(group["memberModelIds"]), breached_count=1)
+        result["groupRetrainTriggered"] = triggered
+        if triggered:
+            _trigger_group_retrain(db, group, started, skipped)
+    # Deliberately broad: whatever fails after the report's commit must not turn its answer into a 500 (see the docstring).
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        code = FrameworkError.UPSTREAM_FAILED[0] if isinstance(exc, httpx.HTTPError) else FrameworkError.INTERNAL_ERROR[0]
+        logger.warning("group retrain after the MLMF report of model %s failed: %s %s: %s", model_id, code, type(exc).__name__, exc)
+        result["groupRetrainError"] = {"code": code, "detail": f"{type(exc).__name__}: {exc}"}
+    if result.get("groupRetrainTriggered"):
+        result["retrainedModelIds"] = [str(mid) for mid in started]
+        result["retrainSkipped"] = skipped
 
 
 @app.get("/mlmf/subscriptions")
@@ -2062,16 +2082,16 @@ def list_recent_performance_reports(request: Request, breached_only: bool = Fals
     return {**page, "items": [_performance_report_view(r) for r in page["items"]]}
 
 
-def _trigger_group_retrain(db: Session, group: dict) -> tuple[list[uuid.UUID], list[dict]]:
-    """Starts a RE_TRAINING run for every PROMOTED member of the coordination group; returns the ids of the members it started and the members it could not start.
+def _trigger_group_retrain(db: Session, group: dict, retrained_model_ids: list[uuid.UUID], skipped: list[dict]) -> None:
+    """Starts a RE_TRAINING run for every PROMOTED member of the coordination group; appends each member it started to `retrained_model_ids` and each it could not
+    start to `skipped` as it goes, so the caller keeps them when a later member raises.
 
     `group` is MLMR's group object (`memberModelIds`). A member MLMR no longer knows (`_get_model_or_none`) or that is not PROMOTED (already TRAINING from an earlier trigger, mid-certification, never
     certified) is passed over, never forced: a group retrain is a PROMOTED model's retrain, not a first cycle or a recovery. Each run goes through `_start_training` (the same lifecycle gate, NFO runtime and
     MLTrainingProcess as a requested retrain) with producer `aimgf:group-retrain`. Best effort per member (call flow 02e, DOC-CF-1.6): each started run is committed on its own, and a member whose start
-    is refused (NFO refuses or does not answer its runtime, 502/503) is rolled back alone and listed as `{modelId, reason}` in the second list, so one member never stops the others.
+    is refused (NFO refuses or does not answer its runtime, 502/503) is rolled back alone and listed as `{modelId, reason}` in `skipped`, so one member never stops the others.
+    Anything else (MLMR not answering for a member) raises, and `_group_retrain_step` answers it.
     """
-    retrained_model_ids: list[uuid.UUID] = []
-    skipped: list[dict] = []
     for raw_member_id in group["memberModelIds"]:
         member_id = uuid.UUID(raw_member_id)
         if _get_model_or_none(member_id) is None:
@@ -2093,7 +2113,6 @@ def _trigger_group_retrain(db: Session, group: dict) -> tuple[list[uuid.UUID], l
             continue
         db.commit()
         retrained_model_ids.append(member_id)
-    return retrained_model_ids, skipped
 
 
 def _write_training_report(db: Session, job: TrainingJob, body: CompleteJobRequest) -> MLTrainingReport:

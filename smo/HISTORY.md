@@ -2288,7 +2288,7 @@ stays undecorated: the SDK sends that multipart upload without a key and never r
   answer again, which tells the rApp to replay the `actionId`. A 4xx or 502 raised by the route releases the key, so a repeat runs again (as before).
   The credential header is left out of the fingerprint and of the stored row.
 - **A known gap, not new.** `/mlmf/subscriptions/{id}/reports` commits the report before the group retrain step; a 500 from that step releases the key
-  (only 2xx answers are stored), so a repeat after it stores a second report. The decorator's documented limit (a replica that dies between the route's
+  (only 2xx answers are stored), so a repeat after it stores a second report (closed since: MLMF-REPORT-REPLAY). The decorator's documented limit (a replica that dies between the route's
   commit and the stored answer) applies to every route.
 - **Database roles.** `migrations/db_roles.json`: the `sme` and `mlmr` roles list `idempotency_key` (aimgf, dme and rapp-mgmt already did); the
   `test_db_roles.py` check now expects dme, mlmr and sme among the decorating modules.
@@ -2306,6 +2306,30 @@ stays undecorated: the SDK sends that multipart upload without a key and never r
   `OPEN_ITEMS.md`.
 - **Not taken.** Decorating the class-b routes, so that a repeat after a lost answer replays the first answer instead of a 409 the SDK raises: still a
   choice, not needed against duplicates. Decorating the multipart artifact upload: the SDK never keys or repeats it.
+
+### MLMF-REPORT-REPLAY — a stored MLMF report answers 200 whatever its group-retrain step does
+
+Recorded and closed in the same change. `aimgf/README.md` ("Repeats") documented it and SDK-RETRY-IDEMPOTENCY slice 2 named it as a known gap, but
+`OPEN_ITEMS.md` had no row: `POST /aimgf/mlmf/subscriptions/{id}/reports` commits the report and its outbox row, then runs the group-retrain step; when that
+step raised, the route answered 500, `@idempotent` released the key (only 2xx answers are stored), and the SDK's repeat stored a second report (and could
+count the breach again).
+
+- **Who relied on the 500.** Nothing. MDAF's drift forwarding (`mdaf/app/mda.py` `_forward_drift_to_subscriptions`) ignores the answer and swallows every
+  error; the Python SDK's `report_performance` raises on a non-2xx and no caller reads that; no sample rApp, SA SMOS, the Go or Java SDK posts MLMF reports;
+  the GUI's "report" button shows success or the error. No test pinned a 500 from the group step (the one 500 test in `aimgf/tests/test_main.py` is a
+  failed commit of a job completion). `statemachine.py` and `aimgf/docs/lifecycle.md` stated the 500 as behaviour; both now say what the code does.
+- **The change (`aimgf/app/main.py`).** The step moved into `_group_retrain_step(db, model_id, result)`, which never raises: the MLMR group read
+  (`_find_coordination_group_for_model`), `should_trigger_group_retrain` (`NotImplementedError` for `WEIGHTED_TRIGGERS`, `ValueError` for an unknown
+  value) and `_trigger_group_retrain` are inside one `try`; a failure rolls back what the step had not committed, is logged at WARNING and is answered as
+  `groupRetrainError` `{code, detail}` beside `retrainSkipped` (call flow 02e's pattern): `code` is `UPSTREAM_FAILED` for an `httpx.HTTPError`,
+  `INTERNAL_ERROR` otherwise, `detail` the exception's class and text. `_trigger_group_retrain` now appends to lists the caller passes, so the members
+  started before a later one raised are still answered in `retrainedModelIds`. Nothing before the commit is caught: a failure there still raises, stores
+  nothing and releases the key. The response is a dict with no response model, so the OpenAPI document is unchanged.
+- **Tests (`aimgf/tests/test_main.py`).** A WEIGHTED_TRIGGERS group: 200 with `groupRetrainError` INTERNAL_ERROR, one report, a WARNING logged; MLMR not
+  answering the group read: UPSTREAM_FAILED in the body, one report; the same key repeated: replayed, still one report; the commit of the report failing:
+  500, no report, no key left, and the repeat stores the one report. The first three fail on the code before the change.
+- **Docs.** `aimgf/README.md` (the gap sentence removed, `groupRetrainError` in the route table and the propagation paragraph, the tests), call flows
+  02e and 13b and `aimgf/docs/lifecycle.md` (the 500 replaced by `groupRetrainError`; images redrawn), `docs/VALIDATION.md`, `CHANGELOG.md`.
 
 ### PR-MGT-14, PR-MGT-15 — zero-touch onboarding and software campaigns (MGT-14.1 to 14.5, MGT-15.1 to 15.4); the GUI, notifications and a real software exchange open
 

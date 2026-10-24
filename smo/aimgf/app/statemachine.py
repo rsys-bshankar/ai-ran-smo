@@ -247,7 +247,7 @@ def should_trigger_group_retrain(retrain_propagation: str, member_count: int, br
     `retrain_propagation` is the group's `retrainPropagation` value from MLMR (untrusted text: anything unknown raises `ValueError`). With no breach the answer is
     always False. ANY_MEMBER_TRIGGERS: one breach is enough. MAJORITY_TRIGGERS: more than half the members must have breached; `main.report_performance` passes
     `breached_count=1`, so in practice this only fires for a group of one member. WEIGHTED_TRIGGERS is reserved and raises `NotImplementedError`
-    (`OI-1-weighted-triggers`), which `report_performance` does not catch, so a report against such a group answers 500.
+    (`OI-1-weighted-triggers`); `report_performance` answers it as `groupRetrainError`, the report already stored.
     Pure function: no database, no side effects. Design: AI/ML Workflow LLD sections 4.3 and 4.4.
     """
     if breached_count == 0:

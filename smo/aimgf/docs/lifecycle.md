@@ -154,15 +154,17 @@ sequenceDiagram
             A->>M: GET /mlmr/coordination-groups
             A->>N: one training workload per PROMOTED member (_start_training)
             A->>DB: each member's run committed on its own, a member NFO refuses is skipped
+            Note over A: any other failure of this step: rolled back, logged, groupRetrainError {code, detail}
         end
-        A-->>P: 200 {reportId, breachedFloor, missingMetrics, groupRetrainTriggered?, retrainedModelIds?, retrainSkipped?}
+        A-->>P: 200 {reportId, breachedFloor, missingMetrics, groupRetrainTriggered?, retrainedModelIds?, retrainSkipped?, groupRetrainError?}
     end
 ```
 
 The subscription itself is [call flow 13](../../docs/call-flows/13-mlmf-subscription-lifecycle.md). Feature groups (`/feature-groups`) are the other
 thing AIMgF creates elsewhere: with `enableDme` it makes a DME data job first (`POST /dme/data-jobs`, 422 `FEATURE_GROUP_DME_JOB_REFUSED` when DME
-refuses) and deletes it when the group is deleted or the insert loses a race on the name. **Phase 1:** `WEIGHTED_TRIGGERS` raises `NotImplementedError`
-after the report is stored (500), and the group is looked up on MLMR's first page of groups only.
+refuses) and deletes it when the group is deleted or the insert loses a race on the name. Once the report is committed the answer is 200: a failure of the group step
+(`WEIGHTED_TRIGGERS`, MLMR or NFO not answering) is answered as `groupRetrainError`, so the SDK's repeat is replayed and stores no second report
+(MLMF-REPORT-REPLAY). **Phase 1:** the group is looked up on MLMR's first page of groups only.
 
 ## e — The worker
 
