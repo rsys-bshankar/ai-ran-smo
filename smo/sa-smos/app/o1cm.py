@@ -290,7 +290,10 @@ def enact_intent(body: IntentNotification, db: Session = Depends(get_session)):
     except IntegrityError:
         # another push of the same intent recorded its enactment first (Postgres makes this insert wait for it): answer that one, report nothing
         db.rollback()
-        return {**_enactment_view(_enactment_of(db, body.intentId)), "replayed": True}
+        winner = _enactment_of(db, body.intentId)
+        if winner is None:          # the violation was not the per-intent index: not a lost race
+            raise
+        return {**_enactment_view(winner), "replayed": True}
     # Failing to publish the report is not an error of the push: the enactment is still recorded, with a null intent_report_id.
     published = _r1.post("/intent-service/intent-reports", json=report)
     report_id = published.json().get("reportId") if published.status_code == 201 else None
