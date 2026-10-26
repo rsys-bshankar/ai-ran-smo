@@ -1,5 +1,1 @@
-{
-  "ran-nf-oam new-required-parameter POST /software-management-jobs query remote_file_path": "Call flow 19 (DOC-CF-1.8): a software job now sends software-download to the element, which needs the package's remote path; a job without one could only ever do nothing. Breaking in 0.MINOR, stated under [Unreleased] in CHANGELOG.md.",
-  "ran-nf-oam narrowed-parameter POST /pm-subscriptions query delivery_method": "Call flow 20 (DOC-CF-1.8): delivery_method was free text, but the database's CHECK already allowed only pull, push and stream, so another value registered at DME and then failed; it is now refused (422) before DME is asked. Nothing that worked is refused.",
-  "ran-nf-oam narrowed-parameter POST /fm-subscriptions query delivery_method": "Call flow 20 (DOC-CF-1.8): delivery_method was free text, but the database's CHECK already allowed only pull, push and stream, so another value registered at DME and then failed; it is now refused (422) before DME is asked. Nothing that worked is refused."
-}
+{}
