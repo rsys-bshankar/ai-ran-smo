@@ -162,7 +162,7 @@ def test_probe_leaves_an_image_that_does_not_answer_on_its_upstream_registry():
     entries = _entries()
     postgres = next(e for e in entries if e.source == "postgres:18-alpine")
     python = next(e for e in entries if e.source == "python:3.11-slim")
-    loki = next(e for e in entries if e.source == "grafana/loki:3.7.8")
+    loki = next(e for e in entries if e.source == "grafana/loki:3.7.9")
     run = _fake(
         answers={f"{PREFIX}/{loki.mirror}@{loki.digest}": "sha256:" + "0" * 64},
         fail={f"{PREFIX}/{postgres.mirror}@{postgres.digest}": (1, "denied: permission_denied"), f"{PREFIX}/{python.mirror}@{python.digest}": (1, "manifest unknown")},
