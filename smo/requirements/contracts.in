@@ -1,0 +1,3 @@
+# the "Contracts" job (.github/workflows/smo-tests.yml, plan task S0.7) installs this on top of dev.txt: pyang for `pyang --strict` on the YANG modules the
+# schema bundle names (specs/smo-schema-bundle/yang/modules.txt). Constrained by dev.txt so no pin there moves.
+pyang==2.7.1

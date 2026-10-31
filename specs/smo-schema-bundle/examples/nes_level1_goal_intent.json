@@ -1,0 +1,50 @@
+{
+  "id": "intent-nes-blr12-001",
+  "objectClass": "Intent",
+  "objectInstance": "SubNetwork=BLR_12,IntentHandlingFunction=SO-SMOS,Intent=intent-nes-blr12-001",
+  "attributes": {
+    "userLabel": "Night-time carrier sleep energy saving, BLR_12 (Level-1 goal)",
+    "intentPriority": 80,
+    "intentPreemptionCapability": true,
+    "intentMgmtPurpose": "FULFILMENT_WITHOUT_NEGOTIATION",
+    "intentExpectations": [
+      {
+        "expectationId": "exp-nes-goal-01",
+        "expectationVerb": "ENSURE",
+        "expectationObject": {
+          "objectType": "RAN_SUBNETWORK",
+          "objectInstance": "SubNetwork=BLR_12"
+        },
+        "expectationTargets": [
+          {
+            "targetName": "RANEnergyEfficiency",
+            "targetCondition": "IS_GREATER_THAN",
+            "targetValueRange": 18
+          },
+          {
+            "targetName": "LowDLRANUEThptRatio",
+            "targetCondition": "IS_LESS_THAN",
+            "targetValueRange": 5
+          }
+        ]
+      }
+    ],
+    "intentContexts": [
+      {
+        "contextAttribute": "executionMode",
+        "contextCondition": "IS_EQUAL_TO",
+        "contextValueRange": "SUPERVISED_MODE"
+      }
+    ],
+    "intentReportControl": [
+      {
+        "observationPeriod": 900,
+        "expectedReportTypes": [
+          "INTENT_FULFILMENT_REPORT",
+          "INTENT_DECOMPOSITION_REPORT",
+          "INTENT_CONFLICT_REPORT"
+        ]
+      }
+    ]
+  }
+}

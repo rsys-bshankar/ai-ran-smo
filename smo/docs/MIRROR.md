@@ -52,6 +52,7 @@ digest at the mirror.
 |---|---|---|
 | `<repo>/mirror/python` | `python:3.11-slim`, `python:3.14-slim` | yes |
 | `<repo>/mirror/postgres` | `postgres:18-alpine` | yes |
+| `<repo>/mirror/timescaledb` | `timescale/timescaledb:2.31.0-pg18` (the Contracts job's scratch database, plan task S0.7) | yes |
 | `<repo>/mirror/nginx-unprivileged` | `nginxinc/nginx-unprivileged:1.31-alpine` | yes |
 | `<repo>/mirror/sysrepo-netopeer2` | `sysrepo/sysrepo-netopeer2` (digest only; mirrored as `latest`) | yes |
 | `<repo>/mirror/testssl` | `drwetter/testssl.sh:3.2` | yes |

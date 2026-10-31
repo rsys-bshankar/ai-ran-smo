@@ -106,7 +106,18 @@ jobs:
         with:
           python-version: "3.11"
 
+      # Rewrite mode (smo/scripts/rewrite_mode.json, plan task S0.8): until 1.0 a replaced route is deleted with its replacement, so the comparison with
+      # 0.9.0 is paused: the job prints a notice naming the file and passes. The step and its script stay; S8.8 switches it back on.
+      - name: Rewrite mode
+        id: rewrite
+        working-directory: smo
+        run: |
+          if python scripts/rewrite_mode.py notice "R1 contract has no breaking change since the previous release"; then
+            echo "paused=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Compare the committed OpenAPI specs with the previous release's
+        if: steps.rewrite.outputs.paused != 'true'
         working-directory: smo
         run: python scripts/check_breaking_changes.py
 
@@ -162,6 +173,65 @@ jobs:
         run: |
           base="$(git merge-base origin/main HEAD)"
           python scripts/verify_docs_only.py --base "$base" --head HEAD --allow-unverified-extension .md
+
+  # Plan task S0.7: the schema bundle (specs/smo-schema-bundle, docs in its README) is the contract every module is held to. redocly lints every OpenAPI
+  # document (structural rules; problems inside the published 3GPP files are listed in the bundle's .redocly.lint-ignore.yaml), pyang --strict checks the
+  # YANG modules the bundle names, every example validates (the Intent ones against Intent Service's own strict TS 28.312 models), the DDL applies to
+  # Postgres 18 with TimescaleDB with one role per schema, and the drift between each module's generated OpenAPI and its contract may not grow
+  # (scripts/contract_drift_baseline.json). A required check: the owner adds "Contracts" to the branch protection of main.
+  contracts:
+    name: Contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
+
+      - name: Start Postgres 18 with TimescaleDB (a scratch database for the bundle's DDL)
+        run: |
+          docker run -d --name contracts-pg -p 5432:5432 -e POSTGRES_PASSWORD=contracts-only -e POSTGRES_DB=smo \
+            --health-cmd "pg_isready -U postgres -d smo" --health-interval 5s --health-timeout 3s --health-retries 12 \
+            "$SMO_IMAGE_TIMESCALEDB_2_31_0_PG18"
+          for i in $(seq 1 30); do [ "$(docker inspect -f '{{.State.Health.Status}}' contracts-pg)" = "healthy" ] && break; sleep 2; done
+          [ "$(docker inspect -f '{{.State.Health.Status}}' contracts-pg)" = "healthy" ]
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: smo/requirements/*.txt
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+
+      - name: Install the checks' dependencies (hashed locks; pyang from requirements/contracts.txt)
+        working-directory: smo
+        run: |
+          pip install --require-hashes -r requirements/dev.txt -r requirements/contracts.txt
+          pip install --no-deps -e shared
+
+      - name: redocly lint every OpenAPI document of the bundle (pinned @redocly/cli 2.63.0)
+        working-directory: specs/smo-schema-bundle
+        env:
+          REDOCLY_TELEMETRY: "off"
+          REDOCLY_SUPPRESS_UPDATE_NOTICE: "true"
+        run: npx --yes @redocly/cli@2.63.0 lint openapi/common/*.yaml openapi/modules/*.yaml
+
+      - name: Structure, examples, pyang --strict, and the DDL on Postgres 18 + TimescaleDB
+        working-directory: smo
+        run: python scripts/check_contract_bundle.py --database-url postgresql://postgres:contracts-only@localhost:5432/smo
+
+      - name: Contract drift does not grow (scripts/contract_drift_baseline.json)
+        working-directory: smo
+        run: python scripts/check_contract_drift.py
 
   unit-and-integration:
     name: Unit + integration tests (SQLite)
@@ -1185,7 +1255,11 @@ jobs:
       - name: Does this change touch the schema?
         id: gate
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ] && git diff --quiet "${{ github.event.pull_request.base.sha }}" HEAD -- \
+          # Rewrite mode (smo/scripts/rewrite_mode.json, plan task S0.8): until 1.0 a revision may drop or rename in one step, and nothing is kept for
+          # 0.9.0, so this comparison with the previous release is paused: the job prints a notice naming the file and passes. S8.8 switches it back on.
+          if python3 smo/scripts/rewrite_mode.py notice "Previous release's code runs on the new schema"; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "pull_request" ] && git diff --quiet "${{ github.event.pull_request.base.sha }}" HEAD -- \
                smo/migrations smo/scripts/check_previous_release_code.sh; then
             echo "run=false" >> "$GITHUB_OUTPUT"
             echo "neither smo/migrations nor this check changed in this pull request: nothing to prove"
@@ -1241,7 +1315,11 @@ jobs:
       - name: Does this change touch the schema?
         id: gate
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ] && git diff --quiet "${{ github.event.pull_request.base.sha }}" HEAD -- \
+          # Rewrite mode (smo/scripts/rewrite_mode.json, plan task S0.8): until 1.0 a revision may drop or rename in one step, and nothing is kept for
+          # 0.9.0, so this comparison with the previous release is paused: the job prints a notice naming the file and passes. S8.8 switches it back on.
+          if python3 smo/scripts/rewrite_mode.py notice "Upgrade from the previous release keeps its data"; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "pull_request" ] && git diff --quiet "${{ github.event.pull_request.base.sha }}" HEAD -- \
                smo/migrations smo/scripts/check_upgrade_from_previous_release.sh .github/workflows/smo-tests.yml; then
             echo "run=false" >> "$GITHUB_OUTPUT"
             echo "neither smo/migrations nor this check changed in this pull request: nothing to prove"
