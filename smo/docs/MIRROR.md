@@ -63,7 +63,7 @@ digest at the mirror.
 | `<repo>/mirror/maven` | `maven:3.9.11-eclipse-temurin-21-noble` | yes |
 | `<repo>/mirror/eclipse-temurin` | `eclipse-temurin:25-jre-noble` | yes |
 | `<repo>/mirror/tempo` | `grafana/tempo:2.10.8` | yes |
-| `<repo>/mirror/loki` | `grafana/loki:3.7.8` | yes |
+| `<repo>/mirror/loki` | `grafana/loki:3.7.9` | yes |
 | `<repo>/mirror/fluent-bit` | `fluent/fluent-bit:5.1.4` | yes |
 | `<repo>/mirror/grafana` | `grafana/grafana:13.2.4` | yes |
 | `<repo>/mirror/keycloak` | `quay.io/keycloak/keycloak:26.4` (quay.io, not Docker Hub) | yes |
