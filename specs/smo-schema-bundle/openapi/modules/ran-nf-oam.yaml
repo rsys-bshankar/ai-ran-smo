@@ -448,6 +448,14 @@ components:
       $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/DMROFunction-Single
     DLBOFunction-Single:
       $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/DLBOFunction-Single
+    CCOFunction-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/CCOFunction-Single
+    NRFreqRelation-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/NRFreqRelation-Single
+    CommonBeamformingFunction-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/CommonBeamformingFunction-Single
+    NRSectorCarrier-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/NRSectorCarrier-Single
     AlarmList-Single:
       $ref: ../../../5G_APIs/TS28111_FaultNrm.yaml#/components/schemas/AlarmList-Single
     Identity-Single:
@@ -499,7 +507,37 @@ x-smo-classes:
   standard: '[N] TS 28.541 v19.6.0'
   operations:
   - getMOIAttributes
+  - modifyMOIAttributes
   schema: '#/components/schemas/DLBOFunction-Single'
+  note: load balancing within its bounds; writable (plan task S3.14, amended by the S0.10 sign-off of 1 November 2026)
+- class: CCOFunction
+  standard: '[N] TS 28.541 v19.6.0'
+  operations:
+  - getMOIAttributes
+  - modifyMOIAttributes
+  schema: '#/components/schemas/CCOFunction-Single'
+  note: coverage and capacity optimisation (cCOControl, CCOParameters ranges); writable (S3.14 amended, S0.10)
+- class: NRFreqRelation
+  standard: '[N] TS 28.541 v19.6.0'
+  operations:
+  - getMOIAttributes
+  - modifyMOIAttributes
+  schema: '#/components/schemas/NRFreqRelation-Single'
+  note: idle-mode steering (cellReselectionPriority); traffic steering, S7.4
+- class: CommonBeamformingFunction
+  standard: '[N] TS 28.541 v19.6.0'
+  operations:
+  - getMOIAttributes
+  - modifyMOIAttributes
+  schema: '#/components/schemas/CommonBeamformingFunction-Single'
+  note: digitalTilt; coverage optimisation inside the CCOFunction ranges, S7.4
+- class: NRSectorCarrier
+  standard: '[N] TS 28.541 v19.6.0'
+  operations:
+  - getMOIAttributes
+  - modifyMOIAttributes
+  schema: '#/components/schemas/NRSectorCarrier-Single'
+  note: configuredMaxTxPower; coverage optimisation inside the CCOFunction ranges, S7.4
 - class: AlarmList
   standard: '[N] TS 28.111 v19.3.0'
   operations:

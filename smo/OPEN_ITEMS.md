@@ -1415,15 +1415,13 @@ real detail, and sets the task's status in the live plan to Done the same day (t
 
 Stage 0 ends at milestone M0 (week 2): decisions answered, three ADRs merged, the schema bundle corrected and complete, the contract gate required in CI, and the four sample use cases realised on paper.
 
-Done, in `HISTORY.md`: `PR-CONV-S0.1` to `PR-CONV-S0.9`, `PR-CONV-S0.11`, `PR-CONV-S0.12`, `PR-CONV-S0.16`.
+Done, in `HISTORY.md`: `PR-CONV-S0.1` to `PR-CONV-S0.12`, `PR-CONV-S0.16`, `PR-CONV-S0.17`.
 
 | ID | Task | Stage | Needs | Done when |
 |---|---|---|---|---|
-| PR-CONV-S0.10 | Realise the four sample use cases on paper through flows 34–37. The pack is written (`docs/plan/S0.10-use-cases-on-paper.md`): none of the four maps today without special-case logic; it lists the gaps per sample with a fix each, four of which need a decision (G-ES-3, G-CCO-6, G-CCO-1 and G-TS-2 against S3.14) | 0 | S0.9 | Each sample maps with no special-case logic; Balaji Shankaran signs off (sign-off owner agreed 31 October 2026) |
 | PR-CONV-S0.13 | Integration spike: O-RAN-SC smo-teiv behind a 3GPP MnS and WG10 TE&IV R1 face (D19) | 0 | S0.1 | Written result: load, query latency and change events measured; the gap list turned into Stage 3 tasks |
 | PR-CONV-S0.14 | Obtain the WG10 Application Packaging and Onboarding v1.00 texts; check S4.1 against them | 0 | – | Texts on file; S4.1 marked normative or kept provisional with the differences listed |
 | PR-CONV-S0.15 | Choose the O1 simulator: O-RAN-SC sim-o1-ofhmp-interfaces in place of ntsim-ng | 0 | S0.8 | Simulator runs in compose and the chart; NETCONF, VES stndDefined and file-ready PM reach the SMO |
-| PR-CONV-S0.17 | Interface gate in CI: every route is a standard operation or in the ADR 0011 [D] list | 0 | S0.16 | Required check; it fails on a private route added in a test PR |
 
 ### Stage 1 — Shared MnS foundation
 
@@ -1486,7 +1484,7 @@ Stage 3 ends at milestone M3 (week 10): against ten simulated nodes (S0.15), a P
 | PR-CONV-S3.11 | Tiered retention: hot 14 d, warm 90 d aggregates, cold Parquet | 3 | S3.8, S1.10 | Retention job runs under the single-runner lock |
 | PR-CONV-S3.12 | Freeze DME O1 action mediation (no new caller) | 3 | S0.8 | Guard test fails on a new caller of `/dme/actions` |
 | PR-CONV-S3.13 | Simulator lane: ten simulated O-DU/O-CU nodes in CI | 3 | S1.10 | M3 scenario runs in CI, not required for the first 20 runs |
-| PR-CONV-S3.14 | TS 28.541 SON functions in RAN NF OAM (CES, DES, DMRO) (G3, G4) | 3 | S3.3 | An out-of-bounds MRO write is refused; energySavingState changes are notified |
+| PR-CONV-S3.14 | TS 28.541 SON functions in RAN NF OAM (G3, G4): CES, DES, DMRO, CCO and DLBO functions all writable; NRFreqRelation, CommonBeamformingFunction and NRSectorCarrier added; DMRO bounds and minimum interval enforced on write (amended by the S0.10 sign-off of 1 November 2026; the contract half is in `specs/smo-schema-bundle/openapi/modules/ran-nf-oam.yaml`, the code is open) | 3 | S3.3 | An out-of-bounds MRO write is refused; energySavingState changes are notified |
 | PR-CONV-S3.15 | Fault supervision per TS 28.111 (G9) | 3 | S1.13, S0.15 | Simulator alarms raised, acknowledged, cleared and rebuilt after a restart |
 | PR-CONV-S3.16 | TS 28.622 PerfMetricJob, ThresholdMonitor, TraceJob; file pull, streaming PM, MDT and RLF traces (G10) | 3 | S1.13, S0.15 | A job created over ProvMnS yields files and a stream from the simulator; a threshold crossing notifies |
 | PR-CONV-S3.17 | DME types per R1TD v05 as the rApp PM path (G11) | 3 | S3.16 | Two rApps consuming the same type share one collection job |
@@ -1560,7 +1558,7 @@ Stage 7 ends at milestone M7 (week 23): a 24-hour TS 28.552 PM replay shows NES 
 | PR-CONV-S7.1 | rApp SDK v2 in Python, Go and Java, generated from the bundle; v1 deleted | 7 | M5 | Contract tests against the bundle in all three languages |
 | PR-CONV-S7.2 | NES rApp on Level-1 / Level-2 through CES / DES functions | 7 | S7.1 | NES Tier-3 replay passes |
 | PR-CONV-S7.3 | MRO rApp through `DMROFunction` within the TS 28.313 bounds | 7 | S7.1 | MRO Tier-3 replay passes |
-| PR-CONV-S7.4 | Coverage-optimization and traffic-steering samples moved or retired | 7 | S7.1 | Each either passes its call flow or is removed with its CSAR |
+| PR-CONV-S7.4 | Coverage-optimization and traffic-steering samples moved to Level-1 / Level-2 (none retired, S0.10 sign-off of 1 November 2026): coverage through CCOFunction, traffic steering through DLBOFunction and NRFreqRelation | 7 | S7.1, S3.14 | Both pass their flows and replays |
 | PR-CONV-S7.5 | MDAF over ProvMnS; absorbs RAN Analytics | 7 | S1.6, S3.9 | `ran-analytics/` removed; call flow 08 updated |
 | PR-CONV-S7.6 | PSI drift circuit breaker | 7 | S5.10, S7.5 | Known-drift unit tests; demotion seen in the M7 run |
 | PR-CONV-S7.7 | TS 32.422 trace and MDT ingest for MRO training | 7 | S3.8 | RLF traces queryable for a cell and period |
