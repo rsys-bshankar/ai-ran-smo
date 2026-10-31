@@ -1,0 +1,96 @@
+# Contract of the teiv module (plan tasks S0.5, S0.6). Paths are relative to the module's R1 root; ProvMnS classes are listed in
+# x-smo-classes and reached at the one form of ../common/provmns-root.yaml. [N] classes are $refs into specs/5G_APIs; [D] items carry
+# x-smo-design with their ADR 0011 section 6 id. scripts/check_contract_drift.py compares this file with docs/openapi of x-smo-code-modules.
+openapi: 3.0.1
+info:
+  title: 'TE&IV: topology and inventory through TS 28.532 ProvMnS reads and notifications (D19)'
+  version: 0.1.0
+  description: 'TE&IV reuses O-RAN-SC smo-teiv internally and is reached only through the standards (ADR 0008 section 3.6): ProvMnS reads of the TS 28.541 / TS 28.622
+    NRM with scope and filter, TS 28.532 notifications through NtfSubscriptionControl, and the O-RAN WG10 TE&IV R1 services. RAN NF OAM and FOCOM write the NRM through
+    these ProvMnS operations (S3.4, S4.5); nothing else writes. smo-teiv''s own API is not part of this contract.'
+x-smo-module: teiv
+x-smo-code-modules: []
+x-smo-mns-root: ../common/provmns-root.yaml
+x-smo-standards:
+- '[N] TS 28.532 ProvMnS v19.2.0'
+- '[N] TS 28.541 v19.6.0'
+- '[N] TS 28.622'
+- '[N] O-RAN WG10 TE&IV (API pending)'
+paths:
+  /health:
+    $ref: ../common/probes.yaml#/paths/~1health
+  /live:
+    $ref: ../common/probes.yaml#/paths/~1live
+  /ready:
+    $ref: ../common/probes.yaml#/paths/~1ready
+  /version:
+    $ref: ../common/probes.yaml#/paths/~1version
+  /{className}={id}:
+    $ref: ../common/provmns-root.yaml#/paths/~1{className}={id}
+  /{URI-LDN-first-part}:
+    $ref: ../common/provmns-root.yaml#/paths/~1{URI-LDN-first-part}
+components:
+  schemas:
+    SubNetwork-Single:
+      $ref: ../../../5G_APIs/TS28623_GenericNrm.yaml#/components/schemas/SubNetwork-Single
+    ManagedElement-Single:
+      $ref: ../../../5G_APIs/TS28623_GenericNrm.yaml#/components/schemas/ManagedElement-Single
+    GNBDUFunction-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/GNBDUFunction-Single
+    GNBCUCPFunction-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/GNBCUCPFunction-Single
+    GNBCUUPFunction-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/GNBCUUPFunction-Single
+    NRCellDU-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/NRCellDU-Single
+    NRCellCU-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/NRCellCU-Single
+    NRCellRelation-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/NRCellRelation-Single
+    NtfSubscriptionControl-Single:
+      $ref: ../../../5G_APIs/TS28623_SubscriptionControlNrm.yaml#/components/schemas/NtfSubscriptionControl-Single
+x-smo-classes:
+- class: SubNetwork
+  standard: '[N] TS 28.622 (OpenAPI TS 28.623 v19.7.0)'
+  operations: &id001
+  - createMOI
+  - getMOIAttributes
+  - modifyMOIAttributes
+  - deleteMOI
+  schema: '#/components/schemas/SubNetwork-Single'
+- class: ManagedElement
+  standard: '[N] TS 28.622 (OpenAPI TS 28.623 v19.7.0)'
+  operations: *id001
+  schema: '#/components/schemas/ManagedElement-Single'
+- class: GNBDUFunction
+  standard: '[N] TS 28.541 v19.6.0'
+  operations: *id001
+  schema: '#/components/schemas/GNBDUFunction-Single'
+- class: GNBCUCPFunction
+  standard: '[N] TS 28.541 v19.6.0'
+  operations: *id001
+  schema: '#/components/schemas/GNBCUCPFunction-Single'
+- class: GNBCUUPFunction
+  standard: '[N] TS 28.541 v19.6.0'
+  operations: *id001
+  schema: '#/components/schemas/GNBCUUPFunction-Single'
+- class: NRCellDU
+  standard: '[N] TS 28.541 v19.6.0'
+  operations: *id001
+  schema: '#/components/schemas/NRCellDU-Single'
+- class: NRCellCU
+  standard: '[N] TS 28.541 v19.6.0'
+  operations: *id001
+  schema: '#/components/schemas/NRCellCU-Single'
+- class: NRCellRelation
+  standard: '[N] TS 28.541 v19.6.0'
+  operations: *id001
+  schema: '#/components/schemas/NRCellRelation-Single'
+  note: NEIGHBOR_CELL edges are NRCellRelation objects
+- class: NtfSubscriptionControl
+  standard: '[N] TS 28.622 subscription control (OpenAPI TS 28.623 SubscriptionControlNrm v19.4.0)'
+  operations: *id001
+  schema: '#/components/schemas/NtfSubscriptionControl-Single'
+x-smo-pending:
+- 'The O-RAN WG10 TE&IV topology and inventory R1 services: neither the API nor the WG10 TE&IV models are in specs/ (S0.13 imports them). Until then the CO_COVERAGE_OVERLAY
+  and HOSTED_ON_OCLOUD relationships have no standard carrier in this contract.'

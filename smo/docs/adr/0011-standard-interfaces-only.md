@@ -176,6 +176,7 @@ Counts are of today's operations in appendix A; a zero means the exception is de
 | D-20 | GUI BFF console session and console administration (sign-in, OIDC, MFA, the user's settings, console users, the console's audit view, exports, JWKS) | The console's own state, not an SMO interface | GUI BFF | 0 in `docs/openapi` (37 of the BFF's 45 routes, appendix A.2) |
 | D-21 | R1 conflict query and subscribe | R1ServCnfMtgt v01.00 is a TR: [O] until O-RAN defines the API | SO SMOS | 0 (S5.14) |
 | D-22 | ADR 0005 scope attributes (region, tenant, site cluster, SubNetwork) on `ManagedElement` and on invokers | A [D] attribute on a standard class, set and read through standard operations, enforced through TS 28.319 AccessRules | TE&IV (attributes), SME (invoker claims) | 0 |
+| D-23 | The cell-lock read model: the `CellLock` class (cell, lock state, owning intent, lease expiry) served by SO SMOS over ProvMnS | No standard class for a lease lock on a cell; added by plan task S0.5, whose DDL keeps the lock table in SO SMOS's own schema (one writer, D6) so TE&IV, SA SMOS and rApps read it from SO SMOS rather than by SQL | SO SMOS | 0 (S3.2) |
 
 ## 7. The S0.17 interface gate (written, not built)
 

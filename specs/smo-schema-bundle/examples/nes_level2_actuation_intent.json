@@ -1,35 +1,54 @@
 {
-  "id": "intent-l2-nes-actuation-20261029-01",
+  "id": "intent-l2-nes-blr12-20261029-01",
   "objectClass": "Intent",
-  "objectInstance": "SubNetwork=SMO_Global,Intent=intent-l2-nes-actuation-20261029-01",
+  "objectInstance": "SubNetwork=BLR_12,IntentHandlingFunction=SO-SMOS,Intent=intent-l2-nes-blr12-20261029-01",
   "attributes": {
-    "intentLevel": "LEVEL_2_RESOURCE_ACTUATION",
-    "parentIntentId": "intent-nes-cluster12-001",
+    "userLabel": "NES rApp: put NRCellCU-Cap-3500MHz-B into energy saving (Level-2 actuation)",
     "intentPriority": 80,
     "intentExpectations": [
       {
         "expectationId": "exp-nes-sleep-cellB",
-        "expectationVerb": "CONFIGURE_NRM",
+        "expectationVerb": "DELIVER",
         "expectationObject": {
-          "objectType": "NRCellDU",
-          "objectInstanceList": [
-            "SubNetwork=BLR_12,GNBDUFunction=1,NRCellDU=NRCellDU-Cap-3500MHz-B",
-            "SubNetwork=BLR_12,GNBDUFunction=1,NRCellDU=NRCellDU-Cov-700MHz-A"
+          "objectType": "RAN_SUBNETWORK",
+          "objectInstance": "SubNetwork=BLR_12",
+          "objectContexts": [
+            {
+              "contextAttribute": "Cell",
+              "contextCondition": "IS_ALL_OF",
+              "contextValueRange": [
+                "SubNetwork=BLR_12,ManagedElement=gNB_104,GNBCUCPFunction=1,NRCellCU=NRCellCU-Cap-3500MHz-B"
+              ]
+            }
           ]
         },
-        "nrmActuationDeltas": [
-          {
-            "moiDn": "SubNetwork=BLR_12,GNBDUFunction=1,NRCellDU=NRCellDU-Cap-3500MHz-B",
-            "attributeList": { "administrativeState": "SHUTTING_DOWN" }
-          },
-          {
-            "moiDn": "SubNetwork=BLR_12,GNBDUFunction=1,NRCellDU=NRCellDU-Cov-700MHz-A",
-            "attributeList": { "ssbPowerOffset": 2 }
-          }
-        ],
         "expectationTargets": [
-          { "targetName": "PEE.EnergyEfficiency_Gain_Pct", "targetCondition": "IS_GREATER_THAN", "targetValueRange": "18.0" },
-          { "targetName": "DRB.RlcSduDropRateDl_Max_Pct", "targetCondition": "IS_LESS_THAN", "targetValueRange": "0.50" }
+          {
+            "targetName": "CESManagementFunction.energySavingControl",
+            "targetCondition": "IS_EQUAL_TO",
+            "targetValueRange": "TO_BE_ENERGY_SAVING"
+          }
+        ]
+      }
+    ],
+    "intentContexts": [
+      {
+        "contextAttribute": "parentIntent",
+        "contextCondition": "IS_EQUAL_TO",
+        "contextValueRange": "SubNetwork=BLR_12,IntentHandlingFunction=SO-SMOS,Intent=intent-nes-blr12-001"
+      },
+      {
+        "contextAttribute": "leaseDurationSec",
+        "contextCondition": "IS_EQUAL_TO",
+        "contextValueRange": 1800
+      }
+    ],
+    "intentReportControl": [
+      {
+        "observationPeriod": 900,
+        "expectedReportTypes": [
+          "INTENT_FULFILMENT_REPORT",
+          "INTENT_CONFLICT_REPORT"
         ]
       }
     ]

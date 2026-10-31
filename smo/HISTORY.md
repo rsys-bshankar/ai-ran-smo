@@ -4688,3 +4688,104 @@ Closed from `OPEN_ITEMS.md` (`PR-CONV-S0.16`). Documents only: `docs/adr/0011-st
 - **Verification.** The two mermaid diagrams of ADRs 0008 and 0011 were parsed with mermaid's own parser (the same set-up as
   `gui/scripts/validate-call-flow-diagrams.mjs`, which reads only `docs/call-flows/` and the module lifecycle documents, so it does not cover `docs/adr/`;
   extending it is a code change left out of this documents-only PR).
+- **Follow-up (plan task S0.5, 31 October 2026): no schema registry and no mock servers.** The direction document asks for a Common Schema Registry
+  (Apicurio) and contract mock servers (Prism, WireMock) (EXEC section 2). Decided not to build either: `specs/` is the registry. The contracts live in
+  `specs/smo-schema-bundle/`, the 3GPP sources they reference in `specs/5G_APIs/` and `specs/MnS/`, `smo/scripts/check_contract_drift.py` holds each module's
+  generated OpenAPI to its contract, and the CI job "Contracts" lints and validates the rest. A mock server is not needed while every module's tests run
+  in process (the integration mesh). Written into `specs/README.md` and the bundle's README.
+
+### PR-CONV-S0.5 — the schema bundle imported and corrected (R1–R4, R13, R15–R18)
+
+Closed from `OPEN_ITEMS.md` (`PR-CONV-S0.5`). Specs, scripts, CI and documents only; no module code or schema changed.
+
+- **Import.** `specs/smo-schema-bundle/` (at the repository root beside `specs/5G_APIs`, as D13 and ADR 0008 name it) holds the bundle of 31 October 2026
+  (`SMO_OpenAPI_YANG_DB_Bundle.zip`, 30 files, SHA-256 `5ee6f027...967de`), unpacked into an empty directory outside the repository, nothing run from it, committed
+  verbatim in one commit and corrected in the next, so the corrections are a reviewable diff. Its README lists every correction (file, what, why, issue).
+- **Standards first.** The bundle restated 3GPP definitions by hand: the ProvMnS operations, the notification envelope, the fault MnS, the generic NRM,
+  and seven YANG modules under the real 3GPP module names but with a different tree. All are now `$ref`s into `specs/5G_APIs/` or the names of the published
+  modules in `specs/MnS/yang-models` (`yang/modules.txt`; all twelve pass `pyang --strict` with the repository's IETF modules). The README pins the 28
+  3GPP OpenAPI files the bundle references directly by `info.version` and SHA-256.
+- **Not done: vendoring from the 3GPP Forge.** The task asked for the 3GPP files to be vendored again with pinned forge.3gpp.org URLs. This environment's
+  network policy refused forge.3gpp.org (HTTP 403 from the proxy), so nothing was downloaded or retyped; the owner chose to build on the copies already in
+  `specs/5G_APIs/`, which are at the versions `specs/README.md` records but have no recorded source URL. Re-checking them against pinned Forge tags
+  stays open (allow forge.3gpp.org in the environment's network settings).
+- **R1.** The intent examples are TS 28.312 v20.0.0: verbs DELIVER / ENSURE / MAINTAIN, object type `RAN_SUBNETWORK`, family targets with typed values,
+  `intentReportControl`; `intentLevel`, `parentIntentId` and `nrmActuationDeltas` became the ADR 0009 contexts (`parentIntent`, `leaseDurationSec`,
+  `executionMode`) and an `IntentDecompositionReport` example. Every example validates against Intent Service's own `CreateIntentRequest` and `ts28312`
+  models, imported from `intent-service/app` in a fresh interpreter (importing `app.main` twice in one process registers its tables twice). MRO Level-1 has
+  no TS 28.312 family target, so its targets are generic [D] names (`HandoverSuccessRate`, `PingPongHandoverRatio`).
+- **R2 / D5.** One ProvMnS form with the version (`19.2.0`, the TS 28.532 OpenAPI carried) set once, in `openapi/common/provmns-root.yaml`; module contracts set
+  no server and list their classes in `x-smo-classes`. The file data reporting MnS has its own root the same way.
+- **R3.** `servingState` is a derived, read-only attribute of the [D] class `MLModelGovernance` with the mapping of ADR 0010 section 3.4
+  (`x-smo-serving-state-map`), and `aimgf.serving_state(lifecycle, runtime)` in the DDL.
+- **R4, D6, D7, D8.** The DDL names schemas after the modules, gives each a role that can use its own schema and no other (`db/03_roles_and_grants.sql`),
+  makes the two ROP tables TimescaleDB hypertables, uses no Apache AGE, keeps the MOIs and edges in TE&IV's schema with no lock columns, and moves the cell
+  locks to `so_smos.cell_lock`. With that last choice the lock table is in SO SMOS's schema only, so TE&IV, SA SMOS and rApps read locks from SO SMOS over
+  ProvMnS (the new [D] exception **D-23** in ADR 0011 section 6), not, as ADR 0008 section 3.4 put it, "through TE&IV's ProvMnS".
+- **R13.** One DN set in every example (`SubNetwork=BLR_12`, `ManagedElement=gNB_104`, intents under `IntentHandlingFunction=SO-SMOS`).
+- **R15–R18.** No MTEF / mltf / mtef name; FM is TS 28.111 `AlarmList`; NES drives `CESManagementFunction.energySavingControl`; MRO uses
+  `NRCellRelation.cellIndividualOffset` and `isHOAllowed` as TS 28.541 spells them (the bundle's `a3Offset`, `timeToTrigger` and `ssbPowerOffset` are not NRM
+  attributes and were removed).
+
+### PR-CONV-S0.6 — the five stub contracts completed
+
+Closed from `OPEN_ITEMS.md` (`PR-CONV-S0.6`). Nine module contracts in `specs/smo-schema-bundle/openapi/modules/`: the five stubs completed and four more.
+
+- **rApp Management** (`rapp-mgmt.yaml`): [D] classes `RappPackage`, `RappInstance` (the HLD's six states, a random `rAppId`, `operatorApiBase` as D-09) and
+  `RappRegistration` (R1GAP v14 section 5.7.2), all D-19 over the standard ProvMnS operations; faults as TS 28.111 `AlarmList`, performance as TS 28.622
+  `PerfMetricJob`, subscriptions as `NtfSubscriptionControl`; the D-09 operator-API routes as served today.
+- **AI/ML** (`aimgf.yaml`, covering aimgf, mlmr and mllf): all twenty TS 28.105 v19.5.0 classes, the ten R1GAP v14 section 5.6 services mapped onto them
+  (`x-smo-r1gap-services`), TS 29.482 storages, the governance class (D-07, with the model owner D-08), the D-07 / D-08 routes as served today.
+- **MDAF** (`mdaf.yaml`, covering mdaf and ran-analytics): TS 28.104 v20.0.0 `MDAFunction`, `MDARequest`, `MDAReport`, report files through the file data
+  reporting MnS.
+- **TE&IV** (`teiv.yaml`): ProvMnS reads of `SubNetwork`, `ManagedElement` (TS 28.622) and the TS 28.541 cell and function classes, writes only by RAN NF OAM
+  and FOCOM, `NtfSubscriptionControl` for TS 28.532 notifications; smo-teiv's API is not in the contract (D19).
+- **SME** (`sme.yaml`): the six TS 29.222 CAPIF APIs as `$ref`s at their standard prefixes, TS 28.622 `MnsRegistry` / `MnsInfo` / `MgmtDataInfo`, RFC 7662
+  introspection.
+- Also SO SMOS (TS 28.312 classes, TS 28.567 coordination entity, [D] classes for D-03, D-05, D-06, D-18, D-23), SA SMOS (TS 28.536 classes and the
+  intent handler), DME (TS 28.622 PM, trace and threshold jobs; the D-02 ROP matrix type and query; D-04, D-10) and RAN NF OAM (the facade classes incl.
+  CES, DES, DMRO; TS 28.111; TS 28.319; file reporting; VES; the D-11 to D-15 routes).
+- **Every [D] item carries `x-smo-design: D-nn`** and the gate refuses an id ADR 0011 section 6 does not list.
+- **Not done, because the specification is not in the repository** (each named in the contract's `x-smo-pending`, nothing typed in): the O-RAN R1AP APIs of
+  the R1GAP v14 section 5.2 data services, of the section 5.6 services (realised meanwhile on TS 28.105) and of section 5.7 registration; the O-RAN WG10 TE&IV
+  R1 services and the WG10 TE&IV models (so the `CO_COVERAGE_OVERLAY` and `HOSTED_ON_OCLOUD` relationships have no standard carrier yet; S0.13). The plan's
+  done-when, "every operation named in call flows 33–37 has a schema", cannot be checked yet: flows 34–37 are S0.9's, and 33 was never committed.
+
+### PR-CONV-S0.7 — the contract gate
+
+Closed from `OPEN_ITEMS.md` (`PR-CONV-S0.7`), except that a required check is set in GitHub's branch protection, which is the owner's step.
+
+- **CI job "Contracts"** (`.github/workflows/smo-tests.yml`, `contracts`): redocly lint with `@redocly/cli@2.63.0` (pinned; rules `spec` plus unique
+  operation ids, declared path parameters and resolved refs) on every OpenAPI document of the bundle, problems inside the published 3GPP files listed in the
+  bundle's `.redocly.lint-ignore.yaml` (250, all `$ref` siblings and `nullable` without a type in 3GPP's own files; the gate refuses an entry for a bundle
+  file); `smo/scripts/check_contract_bundle.py` (structure, every example, `pyang --strict` from the hashed `requirements/contracts.txt`, and the DDL applied to
+  Postgres 18 with TimescaleDB 2.31.0, `timescale/timescaledb:2.31.0-pg18` through the GHCR mirror list); `smo/scripts/check_contract_drift.py`.
+- **Drift baseline** (`smo/scripts/contract_drift_baseline.json`): per module, operations served but not in the contract / in the contract but not served.
+  The check fails only when a count grows; a drop is reported for `--write-baseline`. Today:
+
+| Module | code_only | contract_only |
+|---|---:|---:|
+| `aimgf` | 123 | 92 |
+| `coverage-optimization-rapp` | 26 | 0 |
+| `dme` | 30 | 21 |
+| `energy-saving-rapp` | 28 | 0 |
+| `focom` | 94 | 0 |
+| `mdaf` | 22 | 16 |
+| `mobility-optimization-rapp` | 27 | 0 |
+| `mock-o1-adaptor` | 24 | 0 |
+| `nfo` | 18 | 0 |
+| `onboarding` | 18 | 0 |
+| `r1-termination` | 10 | 0 |
+| `ran-nf-oam` | 119 | 54 |
+| `rapp-mgmt` | 27 | 20 |
+| `sa-smos` | 14 | 13 |
+| `sme` | 18 | 28 |
+| `so-smos` | 25 | 35 |
+| `teiv` | 0 | 40 |
+| `traffic-steering-rapp` | 27 | 0 |
+
+  Modules with no contract yet (FOCOM, NFO, Onboarding, R1 Termination, the mock adaptor, the four samples) count every operation as `code_only`, so a new
+  route there fails too.
+- **Tests:** `tests_integration/test_contract_gate.py` (the committed bundle passes; each check fails on a seeded defect; the drift arithmetic; the baseline
+  is current; the DDL check with `SMO_CONTRACTS_DATABASE_URL` set).
+- **Owner's step:** add "Contracts" to the required checks of `main` in GitHub branch protection (not in the repository).

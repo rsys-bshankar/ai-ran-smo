@@ -140,7 +140,7 @@ each module writes its own rows through `smo_shared`.
 | Store | Writer | Others |
 |---|---|---|
 | `common_teiv_nrm` (MOIs and edges: containment, `NEIGHBOR_CELL`, `CO_COVERAGE_OVERLAY`, `HOSTED_ON_OCLOUD`) | **TE&IV only** | RAN NF OAM writes discovered NRM, FOCOM writes hosting edges, both through TE&IV's ProvMnS (S3.4, S4.5) |
-| Cell lock table (`lock_state`, `lock_owner_intent`, `lock_expires_at`) | **SO SMOS only** | TE&IV, SA SMOS and rApps read it through TE&IV's ProvMnS and the lock notifications (S3.2) |
+| Cell lock table (`lock_state`, `lock_owner_intent`, `lock_expires_at`) | **SO SMOS only** | TE&IV, SA SMOS and rApps read it as SO SMOS's `CellLock` class over ProvMnS and the lock notifications (S3.2). *Amended by S0.5: the table lives in SO SMOS's own schema, so it is read from SO SMOS, not through TE&IV (ADR 0011 D-23)* |
 | `common_dme_telemetry` (ROP tables, KPI rows) | **DME only** | RAN NF OAM publishes ROP batches to DME (S3.8); MDAF, SA SMOS and rApps read through DME's R1 services and the [D] matrix query (ADR 0011 D-02), never by SQL |
 | TS 28.111 alarm list | **RAN NF OAM** for RAN alarms; **FOCOM** for O-Cloud alarms in its own table | Read through TS 28.111 operations (S3.15) |
 

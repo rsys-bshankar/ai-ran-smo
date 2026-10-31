@@ -1,0 +1,10 @@
+# redocly configuration of the "Contracts" job (plan task S0.7): structural correctness of every OpenAPI document of the bundle (`spec`), plus
+# unique operation ids and declared path parameters. The documents reference the published 3GPP files in specs/5G_APIs, which redocly lints
+# with them; problems located inside those files (3GPP's own `$ref` siblings and `nullable` without a type) are listed in
+# .redocly.lint-ignore.yaml, which may only name files under specs/5G_APIs (smo/scripts/check_contract_bundle.py holds that rule).
+extends:
+  - spec
+rules:
+  operation-operationId-unique: error
+  path-parameters-defined: error
+  no-unresolved-refs: error

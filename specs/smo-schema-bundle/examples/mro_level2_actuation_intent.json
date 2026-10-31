@@ -1,33 +1,54 @@
 {
-  "id": "intent-l2-mro-actuation-20261029-04",
+  "id": "intent-l2-mro-blr12-20261029-04",
   "objectClass": "Intent",
-  "objectInstance": "SubNetwork=SMO_Global,Intent=intent-l2-mro-actuation-20261029-04",
+  "objectInstance": "SubNetwork=BLR_12,IntentHandlingFunction=SO-SMOS,Intent=intent-l2-mro-blr12-20261029-04",
   "attributes": {
-    "intentLevel": "LEVEL_2_RESOURCE_ACTUATION",
-    "parentIntentId": "intent-mro-cluster12-002",
+    "userLabel": "MRO rApp: tune CIO on NRCellCU-Cov-700MHz-A to C (Level-2 actuation)",
     "intentPriority": 70,
     "intentExpectations": [
       {
-        "expectationId": "exp-mro-ho-tuning-cellA-cellC",
-        "expectationVerb": "CONFIGURE_NRM",
+        "expectationId": "exp-mro-cio-cellA-cellC",
+        "expectationVerb": "DELIVER",
         "expectationObject": {
-          "objectType": "NRCellRelation",
-          "objectInstanceList": ["SubNetwork=BLR_12,GNBCUCPFunction=1,NRCellRelation=CellA_to_CellC"]
-        },
-        "nrmActuationDeltas": [
-          {
-            "moiDn": "SubNetwork=BLR_12,GNBCUCPFunction=1,NRCellRelation=CellA_to_CellC",
-            "attributeList": {
-              "cellIndividualOffset": 2,
-              "a3Offset": 4,
-              "timeToTrigger": 160,
-              "isHoAllowed": true
+          "objectType": "RAN_SUBNETWORK",
+          "objectInstance": "SubNetwork=BLR_12",
+          "objectContexts": [
+            {
+              "contextAttribute": "Cell",
+              "contextCondition": "IS_ALL_OF",
+              "contextValueRange": [
+                "SubNetwork=BLR_12,ManagedElement=gNB_104,GNBCUCPFunction=1,NRCellCU=NRCellCU-Cov-700MHz-A,NRCellRelation=to-NRCellCU-Cov-700MHz-C"
+              ]
             }
-          }
-        ],
+          ]
+        },
         "expectationTargets": [
-          { "targetName": "MM.HoSuccessRate_Min_Pct", "targetCondition": "IS_GREATER_THAN", "targetValueRange": "99.2" },
-          { "targetName": "MM.PingPongHoRatio_Max_Pct", "targetCondition": "IS_LESS_THAN", "targetValueRange": "1.5" }
+          {
+            "targetName": "NRCellRelation.cellIndividualOffset.rsrpOffsetSsb",
+            "targetCondition": "IS_EQUAL_TO",
+            "targetValueRange": 2
+          },
+          {
+            "targetName": "NRCellRelation.isHOAllowed",
+            "targetCondition": "IS_EQUAL_TO",
+            "targetValueRange": true
+          }
+        ]
+      }
+    ],
+    "intentContexts": [
+      {
+        "contextAttribute": "parentIntent",
+        "contextCondition": "IS_EQUAL_TO",
+        "contextValueRange": "SubNetwork=BLR_12,IntentHandlingFunction=SO-SMOS,Intent=intent-mro-blr12-002"
+      }
+    ],
+    "intentReportControl": [
+      {
+        "observationPeriod": 900,
+        "expectedReportTypes": [
+          "INTENT_FULFILMENT_REPORT",
+          "INTENT_CONFLICT_REPORT"
         ]
       }
     ]

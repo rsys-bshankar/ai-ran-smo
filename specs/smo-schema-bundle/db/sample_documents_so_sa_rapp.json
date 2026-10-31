@@ -1,44 +1,87 @@
 {
-  "so_smos_intent_moi_doc": {
-    "intent_id": "intent-nes-cluster12-001",
-    "dn": "SubNetwork=SMO_Global,Intent=intent-nes-cluster12-001",
-    "intent_level": "LEVEL_1_SERVICE_GOAL",
-    "priority": 80,
-    "prov_mns_envelope_jsonb": {
-      "id": "intent-nes-cluster12-001",
+  "description": "Rows as SO SMOS, AIMgF and rApp Management store them (db/02_per_module_schemas.sql), corrected to TS 28.312 v20.0.0 and the ADR 0009 / 0010 shapes.",
+  "so_smos.intent": {
+    "intent_id": "intent-nes-blr12-001",
+    "dn": "SubNetwork=BLR_12,IntentHandlingFunction=SO-SMOS,Intent=intent-nes-blr12-001",
+    "intent_level": "LEVEL_1",
+    "parent_intent_dn": null,
+    "intent_priority": 80,
+    "prov_mns_envelope": {
+      "id": "intent-nes-blr12-001",
       "objectClass": "Intent",
-      "moiVersion": 3,
+      "objectInstance": "SubNetwork=BLR_12,IntentHandlingFunction=SO-SMOS,Intent=intent-nes-blr12-001",
       "attributes": {
-        "intentLevel": "LEVEL_1_SERVICE_GOAL",
+        "userLabel": "Night-time carrier sleep energy saving, BLR_12 (Level-1 goal)",
+        "intentPriority": 80,
+        "intentPreemptionCapability": true,
+        "intentMgmtPurpose": "FULFILMENT_WITHOUT_NEGOTIATION",
         "intentExpectations": [
           {
-            "expectationId": "exp-01",
-            "expectationVerb": "OPTIMIZE",
+            "expectationId": "exp-nes-goal-01",
+            "expectationVerb": "ENSURE",
             "expectationObject": {
-              "objectType": "SubNetwork",
-              "objectInstanceList": ["SubNetwork=Bangalore_Urban_12"]
+              "objectType": "RAN_SUBNETWORK",
+              "objectInstance": "SubNetwork=BLR_12"
             },
             "expectationTargets": [
               {
-                "targetName": "PEE.EnergyEfficiency_Gain_Pct",
+                "targetName": "RANEnergyEfficiency",
                 "targetCondition": "IS_GREATER_THAN",
-                "targetValueRange": "18.0"
+                "targetValueRange": 18
+              },
+              {
+                "targetName": "LowDLRANUEThptRatio",
+                "targetCondition": "IS_LESS_THAN",
+                "targetValueRange": 5
               }
             ]
           }
         ],
-        "intentFulfilmentInfo": {
-          "fulfilmentStatus": "FULFILLED"
-        }
+        "intentContexts": [
+          {
+            "contextAttribute": "executionMode",
+            "contextCondition": "IS_EQUAL_TO",
+            "contextValueRange": "SUPERVISED_MODE"
+          }
+        ],
+        "intentReportControl": [
+          {
+            "observationPeriod": 900,
+            "expectedReportTypes": [
+              "INTENT_FULFILMENT_REPORT",
+              "INTENT_DECOMPOSITION_REPORT",
+              "INTENT_CONFLICT_REPORT"
+            ]
+          }
+        ]
       }
     },
-    "playbook_state_jsonb": {
-      "assignedRappDescriptorId": "rapp-nes-carrier-sleep-v2.1",
-      "assignedRappInstanceId": "rapp-inst-nes-blr-01",
-      "delegatedR1ChildIntentId": "intent-r1-child-nes-001",
-      "activeO1SnapshotId": "snap-o1-cluster12-20261029T2230Z",
-      "activeSaSmosAcclId": "accl-nes-cluster12-001",
-      "lockedCellDnList": ["SubNetwork=BLR_12,GNBDUFunction=1,NRCellDU=Cell-B"]
+    "playbook_state": {
+      "assignedRappPackage": "rapp-nes-carrier-sleep-v2.1",
+      "assignedRappInstance": "rapp-inst-nes-blr-01",
+      "delegatedIntent": "SubNetwork=BLR_12,IntentHandlingFunction=SO-SMOS,Intent=intent-r1-child-nes-001",
+      "level2Intents": [
+        "SubNetwork=BLR_12,IntentHandlingFunction=SO-SMOS,Intent=intent-l2-nes-blr12-20261029-01"
+      ],
+      "activeSnapshot": "snap-o1-blr12-20261029T2230Z",
+      "assuranceIntent": "SubNetwork=BLR_12,IntentHandlingFunction=SA-SMOS,Intent=accl-nes-blr12-001"
     }
+  },
+  "so_smos.cell_lock": {
+    "cell_dn": "SubNetwork=BLR_12,ManagedElement=gNB_104,GNBCUCPFunction=1,NRCellCU=NRCellCU-Cap-3500MHz-B",
+    "lock_state": "NES_SLEEP_LOCKED",
+    "lock_owner_intent": "intent-l2-nes-blr12-20261029-01",
+    "lock_expires_at": "2026-10-29T23:00:00Z"
+  },
+  "aimgf.ml_model": {
+    "model_id": "mdl-nes-lstm-4",
+    "model_name": "nes-carrier-sleep-lstm",
+    "model_version": "4",
+    "artifact_version": 2,
+    "lifecycle_state": "PROMOTED",
+    "runtime_state": "ACTIVE",
+    "serving_state (derived)": "SERVING_ACTIVE",
+    "artifact_format": "ONNX",
+    "artifact_object_key": "models/nes-carrier-sleep-lstm/4/2/model.onnx"
   }
 }

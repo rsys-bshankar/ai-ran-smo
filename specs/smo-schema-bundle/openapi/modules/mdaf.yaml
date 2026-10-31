@@ -1,0 +1,64 @@
+# Contract of the mdaf module (plan tasks S0.5, S0.6). Paths are relative to the module's R1 root; ProvMnS classes are listed in
+# x-smo-classes and reached at the one form of ../common/provmns-root.yaml. [N] classes are $refs into specs/5G_APIs; [D] items carry
+# x-smo-design with their ADR 0011 section 6 id. scripts/check_contract_drift.py compares this file with docs/openapi of x-smo-code-modules.
+openapi: 3.0.1
+info:
+  title: 'MDAF: TS 28.104 MDA MnS (absorbs RAN Analytics)'
+  version: 0.1.0
+  description: The three TS 28.104 classes over ProvMnS; MDA report files through the TS 28.532 file data reporting MnS (S7.5, S7.10).
+x-smo-module: mdaf
+x-smo-code-modules:
+- mdaf
+- ran-analytics
+x-smo-mns-root: ../common/provmns-root.yaml
+x-smo-standards:
+- '[N] TS 28.104 v20.0.0'
+- '[N] TS 28.532 file data reporting v19.1.0'
+paths:
+  /health:
+    $ref: ../common/probes.yaml#/paths/~1health
+  /live:
+    $ref: ../common/probes.yaml#/paths/~1live
+  /ready:
+    $ref: ../common/probes.yaml#/paths/~1ready
+  /version:
+    $ref: ../common/probes.yaml#/paths/~1version
+  /{className}={id}:
+    $ref: ../common/provmns-root.yaml#/paths/~1{className}={id}
+  /{URI-LDN-first-part}:
+    $ref: ../common/provmns-root.yaml#/paths/~1{URI-LDN-first-part}
+components:
+  schemas:
+    MDAFunction-Single:
+      $ref: ../../../5G_APIs/TS28104_MdaNrm.yaml#/components/schemas/MDAFunction-Single
+    MDARequest-Single:
+      $ref: ../../../5G_APIs/TS28104_MdaNrm.yaml#/components/schemas/MDARequest-Single
+    MDAReport-Single:
+      $ref: ../../../5G_APIs/TS28104_MdaNrm.yaml#/components/schemas/MDAReport-Single
+    NtfSubscriptionControl-Single:
+      $ref: ../../../5G_APIs/TS28623_SubscriptionControlNrm.yaml#/components/schemas/NtfSubscriptionControl-Single
+x-smo-classes:
+- class: MDAFunction
+  standard: '[N] TS 28.104 v20.0.0'
+  operations: &id001
+  - createMOI
+  - getMOIAttributes
+  - modifyMOIAttributes
+  - deleteMOI
+  schema: '#/components/schemas/MDAFunction-Single'
+  note: RAN Analytics' producer registry becomes MDAFunction registration
+- class: MDARequest
+  standard: '[N] TS 28.104 v20.0.0'
+  operations: *id001
+  schema: '#/components/schemas/MDARequest-Single'
+- class: MDAReport
+  standard: '[N] TS 28.104 v20.0.0'
+  operations:
+  - getMOIAttributes
+  schema: '#/components/schemas/MDAReport-Single'
+- class: NtfSubscriptionControl
+  standard: '[N] TS 28.622 subscription control (OpenAPI TS 28.623 SubscriptionControlNrm v19.4.0)'
+  operations: *id001
+  schema: '#/components/schemas/NtfSubscriptionControl-Single'
+x-smo-mns-mounts:
+- ../common/file-data-reporting-root.yaml

@@ -1,0 +1,384 @@
+# Contract of the aimgf module (plan tasks S0.5, S0.6). Paths are relative to the module's R1 root; ProvMnS classes are listed in
+# x-smo-classes and reached at the one form of ../common/provmns-root.yaml. [N] classes are $refs into specs/5G_APIs; [D] items carry
+# x-smo-design with their ADR 0011 section 6 id. scripts/check_contract_drift.py compares this file with docs/openapi of x-smo-code-modules.
+openapi: 3.0.1
+info:
+  title: 'AIMgF: TS 28.105 AI/ML management and the R1 AI/ML workflow services (absorbs MLMR and MLLF)'
+  version: 0.1.0
+  description: All twenty TS 28.105 v19.5.0 classes over ProvMnS (ADR 0010 section 3.2), the R1GAP v14 section 5.6 services realised on them (x-smo-r1gap-services),
+    TS 29.482 storage profiles, and the 14-state governance (D-07) with its servingState mapping (R3).
+x-smo-module: aimgf
+x-smo-code-modules:
+- aimgf
+- mlmr
+- mllf
+x-smo-mns-root: ../common/provmns-root.yaml
+x-smo-standards:
+- '[N] TS 28.105 v19.5.0'
+- '[N] O-RAN R1GAP v14 section 5.6 (realised on TS 28.105; R1AP API pending)'
+- '[N] TS 29.482 v19.1.0'
+- '[D] D-07, D-08'
+paths:
+  /health:
+    $ref: ../common/probes.yaml#/paths/~1health
+  /live:
+    $ref: ../common/probes.yaml#/paths/~1live
+  /ready:
+    $ref: ../common/probes.yaml#/paths/~1ready
+  /version:
+    $ref: ../common/probes.yaml#/paths/~1version
+  /{className}={id}:
+    $ref: ../common/provmns-root.yaml#/paths/~1{className}={id}
+  /{URI-LDN-first-part}:
+    $ref: ../common/provmns-root.yaml#/paths/~1{URI-LDN-first-part}
+  /mlr-mlmm/v1/storages:
+    $ref: ../../../5G_APIs/TS29482_MLR_MLModelManagement.yaml#/paths/~1storages
+  /mlr-mlmm/v1/storages/{storageId}:
+    $ref: ../../../5G_APIs/TS29482_MLR_MLModelManagement.yaml#/paths/~1storages~1{storageId}
+  /model-lifecycles:
+    get:
+      operationId: get_model_lifecycles
+      summary: D-07 model governance on the 14-state lifecycle (operator gates, certification)
+      x-smo-design: D-07
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+  /model-lifecycles/counts:
+    get:
+      operationId: get_model_lifecycles_counts
+      summary: D-07 model governance on the 14-state lifecycle (operator gates, certification)
+      x-smo-design: D-07
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+  /models/{model_id}/advance:
+    post:
+      operationId: post_models_model_id_advance
+      summary: D-07 model governance on the 14-state lifecycle (operator gates, certification)
+      x-smo-design: D-07
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: model_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /models/{model_id}/governance-history:
+    get:
+      operationId: get_models_model_id_governance_history
+      summary: D-07 model governance on the 14-state lifecycle (operator gates, certification)
+      x-smo-design: D-07
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: model_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /models/{model_id}/lifecycle:
+    get:
+      operationId: get_models_model_id_lifecycle
+      summary: D-07 model governance on the 14-state lifecycle (operator gates, certification)
+      x-smo-design: D-07
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: model_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /models/{model_id}/lifecycle-history:
+    get:
+      operationId: get_models_model_id_lifecycle_history
+      summary: D-07 model governance on the 14-state lifecycle (operator gates, certification)
+      x-smo-design: D-07
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: model_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /models/{model_id}/owner:
+    put:
+      operationId: put_models_model_id_owner
+      summary: D-08 model owner (SEC-15.3
+      x-smo-design: D-08
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: model_id
+        in: path
+        required: true
+        schema:
+          type: string
+components:
+  schemas:
+    MLModel-Single:
+      $ref: ../../../5G_APIs/TS28105_AiMlNrm.yaml#/components/schemas/MLModel-Single
+    MLModelRepository-Single:
+      $ref: ../../../5G_APIs/TS28105_AiMlNrm.yaml#/components/schemas/MLModelRepository-Single
+    MLModelCoordinationGroup-Single:
+      $ref: ../../../5G_APIs/TS28105_AiMlNrm.yaml#/components/schemas/MLModelCoordinationGroup-Single
+    MLTrainingFunction-Single:
+      $ref: ../../../5G_APIs/TS28105_AiMlNrm.yaml#/components/schemas/MLTrainingFunction-Single
+    MLTrainingRequest-Single:
+      $ref: ../../../5G_APIs/TS28105_AiMlNrm.yaml#/components/schemas/MLTrainingRequest-Single
+    MLTrainingProcess-Single:
+      $ref: ../../../5G_APIs/TS28105_AiMlNrm.yaml#/components/schemas/MLTrainingProcess-Single
+    MLTrainingReport-Single:
+      $ref: ../../../5G_APIs/TS28105_AiMlNrm.yaml#/components/schemas/MLTrainingReport-Single
+    MLTestingFunction-Single:
+      $ref: ../../../5G_APIs/TS28105_AiMlNrm.yaml#/components/schemas/MLTestingFunction-Single
+    MLTestingRequest-Single:
+      $ref: ../../../5G_APIs/TS28105_AiMlNrm.yaml#/components/schemas/MLTestingRequest-Single
+    MLTestingReport-Single:
+      $ref: ../../../5G_APIs/TS28105_AiMlNrm.yaml#/components/schemas/MLTestingReport-Single
+    MLModelLoadingPolicy-Single:
+      $ref: ../../../5G_APIs/TS28105_AiMlNrm.yaml#/components/schemas/MLModelLoadingPolicy-Single
+    MLModelLoadingRequest-Single:
+      $ref: ../../../5G_APIs/TS28105_AiMlNrm.yaml#/components/schemas/MLModelLoadingRequest-Single
+    MLModelLoadingProcess-Single:
+      $ref: ../../../5G_APIs/TS28105_AiMlNrm.yaml#/components/schemas/MLModelLoadingProcess-Single
+    MLUpdateFunction-Single:
+      $ref: ../../../5G_APIs/TS28105_AiMlNrm.yaml#/components/schemas/MLUpdateFunction-Single
+    MLUpdateRequest-Single:
+      $ref: ../../../5G_APIs/TS28105_AiMlNrm.yaml#/components/schemas/MLUpdateRequest-Single
+    MLUpdateProcess-Single:
+      $ref: ../../../5G_APIs/TS28105_AiMlNrm.yaml#/components/schemas/MLUpdateProcess-Single
+    MLUpdateReport-Single:
+      $ref: ../../../5G_APIs/TS28105_AiMlNrm.yaml#/components/schemas/MLUpdateReport-Single
+    AIMLInferenceFunction-Single:
+      $ref: ../../../5G_APIs/TS28105_AiMlNrm.yaml#/components/schemas/AIMLInferenceFunction-Single
+    AIMLInferenceReport-Single:
+      $ref: ../../../5G_APIs/TS28105_AiMlNrm.yaml#/components/schemas/AIMLInferenceReport-Single
+    AIMLInferenceEmulationFunction-Single:
+      $ref: ../../../5G_APIs/TS28105_AiMlNrm.yaml#/components/schemas/AIMLInferenceEmulationFunction-Single
+    NtfSubscriptionControl-Single:
+      $ref: ../../../5G_APIs/TS28623_SubscriptionControlNrm.yaml#/components/schemas/NtfSubscriptionControl-Single
+    MLModelGovernance-Single:
+      x-smo-design: D-07
+      type: object
+      required:
+      - id
+      properties:
+        id:
+          type: string
+        objectClass:
+          type: string
+          enum:
+          - MLModelGovernance
+        objectInstance:
+          type: string
+        attributes:
+          type: object
+          properties:
+            mLModelRef: &id001
+              type: string
+            lifecycleState:
+              type: string
+              enum:
+              - REGISTERED
+              - TRAINING
+              - TRAINED
+              - VALIDATING
+              - VALIDATED
+              - EMULATING
+              - EMULATED
+              - PENDING_APPROVAL
+              - APPROVED
+              - CERTIFIED
+              - PROMOTED
+              - DEPRECATED
+              - RETIRED
+              - FAILED
+            runtimeState:
+              type: string
+              enum:
+              - NOT_DEPLOYED
+              - DEPLOYMENT_REQUESTED
+              - DEPLOYED
+              - ACTIVATING
+              - ACTIVE
+              - SCALING
+              - TERMINATING
+              - TERMINATED
+            servingState:
+              type: string
+              enum:
+              - REGISTERED
+              - VALIDATED
+              - SERVING_ACTIVE
+              - DEPRECATED
+              readOnly: true
+              description: 'The bundle''s servingState, derived (R3, ADR 0010 section 3.4): x-smo-serving-state-map from lifecycleState, and SERVING_ACTIVE when lifecycleState
+                is CERTIFIED or PROMOTED and runtimeState is ACTIVE'
+            owner:
+              type: string
+              description: D-08 model owner (SEC-15.3; package-level from S4.7)
+              x-smo-design: D-08
+            decisions:
+              type: array
+              items:
+                type: object
+                properties:
+                  event: *id001
+                  decidedBy: *id001
+                  decidedAt:
+                    type: string
+                    format: date-time
+                  reason: *id001
+          x-smo-serving-state-map:
+            REGISTERED: REGISTERED
+            TRAINING: REGISTERED
+            TRAINED: REGISTERED
+            VALIDATING: REGISTERED
+            FAILED: REGISTERED
+            VALIDATED: VALIDATED
+            EMULATING: VALIDATED
+            EMULATED: VALIDATED
+            PENDING_APPROVAL: VALIDATED
+            APPROVED: VALIDATED
+            CERTIFIED: VALIDATED
+            PROMOTED: VALIDATED
+            DEPRECATED: DEPRECATED
+            RETIRED: DEPRECATED
+x-smo-classes:
+- class: MLModel
+  standard: '[N] TS 28.105 v19.5.0'
+  operations: &id002
+  - createMOI
+  - getMOIAttributes
+  - modifyMOIAttributes
+  - deleteMOI
+  schema: '#/components/schemas/MLModel-Single'
+- class: MLModelRepository
+  standard: '[N] TS 28.105 v19.5.0'
+  operations: *id002
+  schema: '#/components/schemas/MLModelRepository-Single'
+- class: MLModelCoordinationGroup
+  standard: '[N] TS 28.105 v19.5.0'
+  operations: *id002
+  schema: '#/components/schemas/MLModelCoordinationGroup-Single'
+- class: MLTrainingFunction
+  standard: '[N] TS 28.105 v19.5.0'
+  operations: *id002
+  schema: '#/components/schemas/MLTrainingFunction-Single'
+- class: MLTrainingRequest
+  standard: '[N] TS 28.105 v19.5.0'
+  operations: *id002
+  schema: '#/components/schemas/MLTrainingRequest-Single'
+- class: MLTrainingProcess
+  standard: '[N] TS 28.105 v19.5.0'
+  operations: *id002
+  schema: '#/components/schemas/MLTrainingProcess-Single'
+- class: MLTrainingReport
+  standard: '[N] TS 28.105 v19.5.0'
+  operations: *id002
+  schema: '#/components/schemas/MLTrainingReport-Single'
+- class: MLTestingFunction
+  standard: '[N] TS 28.105 v19.5.0'
+  operations: *id002
+  schema: '#/components/schemas/MLTestingFunction-Single'
+- class: MLTestingRequest
+  standard: '[N] TS 28.105 v19.5.0'
+  operations: *id002
+  schema: '#/components/schemas/MLTestingRequest-Single'
+- class: MLTestingReport
+  standard: '[N] TS 28.105 v19.5.0'
+  operations: *id002
+  schema: '#/components/schemas/MLTestingReport-Single'
+- class: MLModelLoadingPolicy
+  standard: '[N] TS 28.105 v19.5.0'
+  operations: *id002
+  schema: '#/components/schemas/MLModelLoadingPolicy-Single'
+- class: MLModelLoadingRequest
+  standard: '[N] TS 28.105 v19.5.0'
+  operations: *id002
+  schema: '#/components/schemas/MLModelLoadingRequest-Single'
+- class: MLModelLoadingProcess
+  standard: '[N] TS 28.105 v19.5.0'
+  operations: *id002
+  schema: '#/components/schemas/MLModelLoadingProcess-Single'
+- class: MLUpdateFunction
+  standard: '[N] TS 28.105 v19.5.0'
+  operations: *id002
+  schema: '#/components/schemas/MLUpdateFunction-Single'
+- class: MLUpdateRequest
+  standard: '[N] TS 28.105 v19.5.0'
+  operations: *id002
+  schema: '#/components/schemas/MLUpdateRequest-Single'
+- class: MLUpdateProcess
+  standard: '[N] TS 28.105 v19.5.0'
+  operations: *id002
+  schema: '#/components/schemas/MLUpdateProcess-Single'
+- class: MLUpdateReport
+  standard: '[N] TS 28.105 v19.5.0'
+  operations: *id002
+  schema: '#/components/schemas/MLUpdateReport-Single'
+- class: AIMLInferenceFunction
+  standard: '[N] TS 28.105 v19.5.0'
+  operations: *id002
+  schema: '#/components/schemas/AIMLInferenceFunction-Single'
+- class: AIMLInferenceReport
+  standard: '[N] TS 28.105 v19.5.0'
+  operations: *id002
+  schema: '#/components/schemas/AIMLInferenceReport-Single'
+- class: AIMLInferenceEmulationFunction
+  standard: '[N] TS 28.105 v19.5.0'
+  operations: *id002
+  schema: '#/components/schemas/AIMLInferenceEmulationFunction-Single'
+- class: NtfSubscriptionControl
+  standard: '[N] TS 28.622 subscription control (OpenAPI TS 28.623 SubscriptionControlNrm v19.4.0)'
+  operations: *id002
+  schema: '#/components/schemas/NtfSubscriptionControl-Single'
+- class: MLModelGovernance
+  standard: '[D] ADR 0011 D-07'
+  operations:
+  - getMOIAttributes
+  - modifyMOIAttributes
+  schema: '#/components/schemas/MLModelGovernance-Single'
+  x-smo-design: D-07
+  note: Governance events need a console user; two people certify
+x-smo-pending:
+- The O-RAN R1AP API of the section 5.6 services is not in specs/; until it is, they are realised on the TS 28.105 classes as listed
+x-smo-r1gap-services:
+- service: 5.6.2 AI/ML model registration
+  producer: AIMgF
+  realisation: MLModel createMOI / modifyMOIAttributes / deleteMOI
+- service: 5.6.3 AI/ML model storage
+  producer: AIMgF
+  realisation: artifact in the object store (D10); location in MLModel; TS 29.482 storages
+- service: 5.6.4 AI/ML model discovery
+  producer: AIMgF
+  realisation: MLModel getMOIAttributes with scope and filter
+- service: 5.6.5 AI/ML model change subscription
+  producer: AIMgF
+  realisation: NtfSubscriptionControl on MLModel
+- service: 5.6.6 AI/ML model training capability registration
+  producer: AIMgF
+  realisation: MLTrainingFunction createMOI by a trainer rApp
+- service: 5.6.7 AI/ML model deployment request
+  producer: AIMgF
+  realisation: MLModelLoadingRequest createMOI (the deploy gate in process)
+- service: 5.6.8 AI/ML model training
+  producer: AIMgF or a trainer
+  realisation: MLTrainingRequest / MLTrainingProcess
+- service: 5.6.9 AI/ML model performance monitoring
+  producer: the consumer rApp
+  realisation: AIMgF subscribes; feeds the PSI breaker (S7.6)
+- service: 5.6.10 AI/ML model inference
+  producer: model producer or AIMgF
+  realisation: AIMLInferenceFunction, AIMLInferenceReport
+- service: 5.6.11 AI/ML model training capability query
+  producer: AIMgF
+  realisation: MLTrainingFunction getMOIAttributes

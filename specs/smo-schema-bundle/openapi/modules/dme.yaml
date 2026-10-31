@@ -1,0 +1,247 @@
+# Contract of the dme module (plan tasks S0.5, S0.6). Paths are relative to the module's R1 root; ProvMnS classes are listed in
+# x-smo-classes and reached at the one form of ../common/provmns-root.yaml. [N] classes are $refs into specs/5G_APIs; [D] items carry
+# x-smo-design with their ADR 0011 section 6 id. scripts/check_contract_drift.py compares this file with docs/openapi of x-smo-code-modules.
+openapi: 3.0.1
+info:
+  title: 'DME: R1 data management, PM and trace jobs, and the ROP matrix [D]'
+  version: 0.1.0
+  description: 'PM and trace jobs are TS 28.622 classes over ProvMnS (S3.16). The R1GAP v14 section 5.2 data services wait for the O-RAN R1AP API (not in specs/).
+    The ROP matrix is the one [D] data type (ADR 0011 D-02): its production and delivery schemas and the matrix query.'
+x-smo-module: dme
+x-smo-code-modules:
+- dme
+x-smo-mns-root: ../common/provmns-root.yaml
+x-smo-standards:
+- '[N] O-RAN R1GAP v14 section 5.2 (API pending)'
+- '[N] O-RAN R1TD v05'
+- '[N] TS 28.622 PerfMetricJob / TraceJob'
+- '[D] D-02, D-04, D-10'
+paths:
+  /health:
+    $ref: ../common/probes.yaml#/paths/~1health
+  /live:
+    $ref: ../common/probes.yaml#/paths/~1live
+  /ready:
+    $ref: ../common/probes.yaml#/paths/~1ready
+  /version:
+    $ref: ../common/probes.yaml#/paths/~1version
+  /{className}={id}:
+    $ref: ../common/provmns-root.yaml#/paths/~1{className}={id}
+  /{URI-LDN-first-part}:
+    $ref: ../common/provmns-root.yaml#/paths/~1{URI-LDN-first-part}
+  /v1/query:
+    post:
+      operationId: queryRopMatrix
+      summary: Query the ROP matrix (cell x time x feature) over a time window
+      x-smo-design: D-02
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RopMatrixQueryRequest'
+      responses:
+        '200':
+          description: The matrix
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RopMatrixResponse'
+  /smo-events:
+    get:
+      operationId: get_smo_events
+      summary: 'D-04 SMO event feed (CloudEvents, internal only): the console''s live updates and the Kafka relay''s source'
+      x-smo-design: D-04
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+components:
+  schemas:
+    PerfMetricJob-Single:
+      $ref: ../../../5G_APIs/TS28623_PmControlNrm.yaml#/components/schemas/PerfMetricJob-Single
+    TraceJob-Single:
+      $ref: ../../../5G_APIs/TS28623_TraceControlNrm.yaml#/components/schemas/TraceJob-Single
+    ThresholdMonitor-Single:
+      $ref: ../../../5G_APIs/TS28623_ThresholdMonitorNrm.yaml#/components/schemas/ThresholdMonitor-Single
+    NtfSubscriptionControl-Single:
+      $ref: ../../../5G_APIs/TS28623_SubscriptionControlNrm.yaml#/components/schemas/NtfSubscriptionControl-Single
+    KpiDefinition-Single:
+      x-smo-design: D-10
+      type: object
+      required:
+      - id
+      properties:
+        id:
+          type: string
+        objectClass:
+          type: string
+          enum:
+          - KpiDefinition
+        objectInstance:
+          type: string
+        attributes:
+          type: object
+          properties:
+            name: &id001
+              type: string
+            formula: *id001
+            unit: *id001
+            standardRef: *id001
+    OamPmRopBatch:
+      x-smo-design: D-02
+      description: 'Production schema of the [D] data type SMO:RopMatrix:1.0.0: one batch per ManagedElement per ROP, published by RAN NF OAM through the R1 data
+        services'
+      type: object
+      required:
+      - managedElementDn
+      - subNetworkDn
+      - ropStartTime
+      - ropEndTime
+      - granularityPeriodSec
+      - cells
+      properties:
+        managedElementDn: *id001
+        subNetworkDn: *id001
+        sourceVendor: *id001
+        ropStartTime: &id002
+          type: string
+          format: date-time
+        ropEndTime: *id002
+        granularityPeriodSec:
+          type: integer
+          default: 900
+        cells:
+          type: array
+          items:
+            type: object
+            required:
+            - cellDn
+            - counters
+            properties:
+              cellDn: *id001
+              suspectFlag:
+                type: boolean
+                default: false
+              counters:
+                type: object
+                additionalProperties:
+                  type: number
+                description: TS 28.552 measurement name to value
+    RopMatrixDelivery:
+      x-smo-design: D-02
+      description: 'Delivery schema of SMO:RopMatrix:1.0.0: one notification per ROP for a data job'
+      type: object
+      required:
+      - dataJobId
+      - ropEndTime
+      - featureOrder
+      - cellsMatrix
+      properties:
+        dataJobId: *id001
+        ropEndTime: *id002
+        subNetworkDn: *id001
+        featureOrder:
+          type: array
+          items: *id001
+        cellsMatrix:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: number
+              nullable: true
+    RopMatrixQueryRequest:
+      x-smo-design: D-02
+      type: object
+      required:
+      - scope
+      - timeWindow
+      properties:
+        scope:
+          type: object
+          properties:
+            subNetworkDn: *id001
+            cellDnList:
+              type: array
+              items: *id001
+        timeWindow:
+          type: object
+          required:
+          - startTime
+          - endTime
+          properties:
+            startTime: *id002
+            endTime: *id002
+            stepSec:
+              type: integer
+              default: 900
+            aggregation:
+              type: string
+              enum:
+              - NONE
+              - AVG
+              - MAX
+              - MIN
+              - P95
+        selectedCounters:
+          type: array
+          items: *id001
+        selectedKpis:
+          type: array
+          items: *id001
+    RopMatrixResponse:
+      x-smo-design: D-02
+      type: object
+      required:
+      - featureOrder
+      - timestamps
+      - seriesByCell
+      properties:
+        subNetworkDn: *id001
+        granularityPeriodSec:
+          type: integer
+        featureOrder:
+          type: array
+          items: *id001
+        timestamps:
+          type: array
+          items: *id002
+        seriesByCell:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: array
+              items:
+                type: number
+                nullable: true
+x-smo-classes:
+- class: PerfMetricJob
+  standard: '[N] TS 28.622 (OpenAPI TS 28.623 PmControlNrm v19.2.0)'
+  operations: &id003
+  - createMOI
+  - getMOIAttributes
+  - modifyMOIAttributes
+  - deleteMOI
+  schema: '#/components/schemas/PerfMetricJob-Single'
+- class: TraceJob
+  standard: '[N] TS 28.622 (OpenAPI TS 28.623 TraceControlNrm v19.6.0)'
+  operations: *id003
+  schema: '#/components/schemas/TraceJob-Single'
+- class: ThresholdMonitor
+  standard: '[N] TS 28.622 (OpenAPI TS 28.623 ThresholdMonitorNrm)'
+  operations: *id003
+  schema: '#/components/schemas/ThresholdMonitor-Single'
+- class: NtfSubscriptionControl
+  standard: '[N] TS 28.622 subscription control (OpenAPI TS 28.623 SubscriptionControlNrm v19.4.0)'
+  operations: *id003
+  schema: '#/components/schemas/NtfSubscriptionControl-Single'
+- class: KpiDefinition
+  standard: '[D] ADR 0011 D-10'
+  operations: *id003
+  schema: '#/components/schemas/KpiDefinition-Single'
+  x-smo-design: D-10
+  note: Moves from RAN NF OAM (S3.8)
+x-smo-pending:
+- 'R1GAP v14 section 5.2 data registration, discovery, request, subscription, delivery and offer: the O-RAN R1AP API is not in specs/ (appendix A rows of /data-jobs,
+  /dme-types, /offers, /production-capabilities, /type-subscriptions)'

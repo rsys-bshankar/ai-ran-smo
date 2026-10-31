@@ -1,0 +1,526 @@
+# Contract of the ran-nf-oam module (plan tasks S0.5, S0.6). Paths are relative to the module's R1 root; ProvMnS classes are listed in
+# x-smo-classes and reached at the one form of ../common/provmns-root.yaml. [N] classes are $refs into specs/5G_APIs; [D] items carry
+# x-smo-design with their ADR 0011 section 6 id. scripts/check_contract_drift.py compares this file with docs/openapi of x-smo-code-modules.
+openapi: 3.0.1
+info:
+  title: 'RAN NF OAM: the ProvMnS facade on the TS 28.541 NRM, TS 28.111 faults, PM files, VES'
+  version: 0.1.0
+  description: Network writes come only from SO SMOS (D14). Fault supervision is TS 28.111, not TS 28.532 (R17). NES and MRO act through the TS 28.541 SON functions
+    (R18). The [D] routes that stay in this module are listed as they are served today.
+x-smo-module: ran-nf-oam
+x-smo-code-modules:
+- ran-nf-oam
+x-smo-mns-root: ../common/provmns-root.yaml
+x-smo-standards:
+- '[N] TS 28.532 ProvMnS v19.2.0'
+- '[N] TS 28.541 v19.6.0'
+- '[N] TS 28.111 v19.3.0'
+- '[N] TS 28.532 file data reporting v19.1.0'
+- '[N] TS 28.319 v19.0.0'
+- '[N] VES 7.2 event listener'
+- '[D] D-11 to D-15'
+paths:
+  /health:
+    $ref: ../common/probes.yaml#/paths/~1health
+  /live:
+    $ref: ../common/probes.yaml#/paths/~1live
+  /ready:
+    $ref: ../common/probes.yaml#/paths/~1ready
+  /version:
+    $ref: ../common/probes.yaml#/paths/~1version
+  /{className}={id}:
+    $ref: ../common/provmns-root.yaml#/paths/~1{className}={id}
+  /{URI-LDN-first-part}:
+    $ref: ../common/provmns-root.yaml#/paths/~1{URI-LDN-first-part}
+  /ves/eventListener/v7:
+    post:
+      operationId: vesEventListener
+      summary: VES 7.2 event listener (O1 notifications, stndDefined included)
+      x-smo-standard: '[N] VES 7.2 (O-RAN O1)'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '202':
+          description: Accepted
+  /cm-schemas:
+    get:
+      operationId: get_cm_schemas
+      summary: D-11 vendor capability registry and YANG dialect mapper (O1 has no vendor-registration operation)
+      x-smo-design: D-11
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+    post:
+      operationId: post_cm_schemas
+      summary: D-11 vendor capability registry and YANG dialect mapper (O1 has no vendor-registration operation)
+      x-smo-design: D-11
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+  /cm-schemas/{schema_name}:
+    get:
+      operationId: get_cm_schemas_schema_name
+      summary: D-11 vendor capability registry and YANG dialect mapper (O1 has no vendor-registration operation)
+      x-smo-design: D-11
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: schema_name
+        in: path
+        required: true
+        schema:
+          type: string
+  /element-onboarding:
+    get:
+      operationId: get_element_onboarding
+      summary: 'D-12 Day-1 configuration templates for zero-touch onboarding (the triggers are standard: pnfRegistration, NETCONF call-h'
+      x-smo-design: D-12
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+  /element-onboarding/{managed_element_ref}:
+    get:
+      operationId: get_element_onboarding_managed_element_ref
+      summary: 'D-12 Day-1 configuration templates for zero-touch onboarding (the triggers are standard: pnfRegistration, NETCONF call-h'
+      x-smo-design: D-12
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: managed_element_ref
+        in: path
+        required: true
+        schema:
+          type: string
+  /element-onboarding/{managed_element_ref}/apply:
+    post:
+      operationId: post_element_onboarding_managed_element_ref_apply
+      summary: 'D-12 Day-1 configuration templates for zero-touch onboarding (the triggers are standard: pnfRegistration, NETCONF call-h'
+      x-smo-design: D-12
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: managed_element_ref
+        in: path
+        required: true
+        schema:
+          type: string
+  /element-onboarding/{managed_element_ref}/select:
+    post:
+      operationId: post_element_onboarding_managed_element_ref_select
+      summary: 'D-12 Day-1 configuration templates for zero-touch onboarding (the triggers are standard: pnfRegistration, NETCONF call-h'
+      x-smo-design: D-12
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: managed_element_ref
+        in: path
+        required: true
+        schema:
+          type: string
+  /managed-entities/{managed_element_ref}/config-history:
+    get:
+      operationId: get_managed_entities_managed_element_ref_config_history
+      summary: D-13 configuration history and before / after diff (no MnS returns history)
+      x-smo-design: D-13
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: managed_element_ref
+        in: path
+        required: true
+        schema:
+          type: string
+  /managed-entities/{managed_element_ref}/config-history/diff:
+    get:
+      operationId: get_managed_entities_managed_element_ref_config_history_diff
+      summary: D-13 configuration history and before / after diff (no MnS returns history)
+      x-smo-design: D-13
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: managed_element_ref
+        in: path
+        required: true
+        schema:
+          type: string
+  /o1-adaptor-endpoints:
+    get:
+      operationId: get_o1_adaptor_endpoints
+      summary: D-14 O1 southbound endpoint registry (where to reach an element)
+      x-smo-design: D-14
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+    post:
+      operationId: post_o1_adaptor_endpoints
+      summary: D-14 O1 southbound endpoint registry (where to reach an element)
+      x-smo-design: D-14
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+  /onboarding-templates:
+    get:
+      operationId: get_onboarding_templates
+      summary: 'D-12 Day-1 configuration templates for zero-touch onboarding (the triggers are standard: pnfRegistration, NETCONF call-h'
+      x-smo-design: D-12
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+  /onboarding-templates/{name}:
+    delete:
+      operationId: delete_onboarding_templates_name
+      summary: 'D-12 Day-1 configuration templates for zero-touch onboarding (the triggers are standard: pnfRegistration, NETCONF call-h'
+      x-smo-design: D-12
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: get_onboarding_templates_name
+      summary: 'D-12 Day-1 configuration templates for zero-touch onboarding (the triggers are standard: pnfRegistration, NETCONF call-h'
+      x-smo-design: D-12
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      operationId: put_onboarding_templates_name
+      summary: 'D-12 Day-1 configuration templates for zero-touch onboarding (the triggers are standard: pnfRegistration, NETCONF call-h'
+      x-smo-design: D-12
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+  /software-campaigns:
+    get:
+      operationId: get_software_campaigns
+      summary: D-15 software campaigns and jobs (waves, health gate)
+      x-smo-design: D-15
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+    post:
+      operationId: post_software_campaigns
+      summary: D-15 software campaigns and jobs (waves, health gate)
+      x-smo-design: D-15
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+  /software-campaigns/{campaign_id}:
+    get:
+      operationId: get_software_campaigns_campaign_id
+      summary: D-15 software campaigns and jobs (waves, health gate)
+      x-smo-design: D-15
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: campaign_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /software-campaigns/{campaign_id}/abort:
+    post:
+      operationId: post_software_campaigns_campaign_id_abort
+      summary: D-15 software campaigns and jobs (waves, health gate)
+      x-smo-design: D-15
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: campaign_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /software-campaigns/{campaign_id}/continue:
+    post:
+      operationId: post_software_campaigns_campaign_id_continue
+      summary: D-15 software campaigns and jobs (waves, health gate)
+      x-smo-design: D-15
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: campaign_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /software-campaigns/{campaign_id}/halt:
+    post:
+      operationId: post_software_campaigns_campaign_id_halt
+      summary: D-15 software campaigns and jobs (waves, health gate)
+      x-smo-design: D-15
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: campaign_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /software-campaigns/{campaign_id}/report:
+    get:
+      operationId: get_software_campaigns_campaign_id_report
+      summary: D-15 software campaigns and jobs (waves, health gate)
+      x-smo-design: D-15
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: campaign_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /software-campaigns/{campaign_id}/rollback:
+    post:
+      operationId: post_software_campaigns_campaign_id_rollback
+      summary: D-15 software campaigns and jobs (waves, health gate)
+      x-smo-design: D-15
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: campaign_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /software-management-jobs:
+    get:
+      operationId: get_software_management_jobs
+      summary: D-15 software campaigns and jobs (waves, health gate)
+      x-smo-design: D-15
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+    post:
+      operationId: post_software_management_jobs
+      summary: D-15 software campaigns and jobs (waves, health gate)
+      x-smo-design: D-15
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+  /software-management-jobs/{job_id}:
+    get:
+      operationId: get_software_management_jobs_job_id
+      summary: D-15 software campaigns and jobs (waves, health gate)
+      x-smo-design: D-15
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /software-management-jobs/{job_id}/abort:
+    post:
+      operationId: post_software_management_jobs_job_id_abort
+      summary: D-15 software campaigns and jobs (waves, health gate)
+      x-smo-design: D-15
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /software-management-jobs/{job_id}/advance:
+    post:
+      operationId: post_software_management_jobs_job_id_advance
+      summary: D-15 software campaigns and jobs (waves, health gate)
+      x-smo-design: D-15
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /vendor-capabilities:
+    get:
+      operationId: get_vendor_capabilities
+      summary: D-11 vendor capability registry and YANG dialect mapper (O1 has no vendor-registration operation)
+      x-smo-design: D-11
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+  /vendor-capabilities/{vendor_name}:
+    delete:
+      operationId: delete_vendor_capabilities_vendor_name
+      summary: D-11 vendor capability registry and YANG dialect mapper (O1 has no vendor-registration operation)
+      x-smo-design: D-11
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: vendor_name
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: get_vendor_capabilities_vendor_name
+      summary: D-11 vendor capability registry and YANG dialect mapper (O1 has no vendor-registration operation)
+      x-smo-design: D-11
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: vendor_name
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      operationId: put_vendor_capabilities_vendor_name
+      summary: D-11 vendor capability registry and YANG dialect mapper (O1 has no vendor-registration operation)
+      x-smo-design: D-11
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+      parameters:
+      - name: vendor_name
+        in: path
+        required: true
+        schema:
+          type: string
+  /vendor-onboarding:
+    post:
+      operationId: post_vendor_onboarding
+      summary: D-11 vendor capability registry and YANG dialect mapper (O1 has no vendor-registration operation)
+      x-smo-design: D-11
+      responses:
+        '200':
+          description: As the module answers today; the shape is fixed by its PR-CONV stage
+components:
+  schemas:
+    GNBDUFunction-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/GNBDUFunction-Single
+    GNBCUCPFunction-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/GNBCUCPFunction-Single
+    NRCellDU-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/NRCellDU-Single
+    NRCellCU-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/NRCellCU-Single
+    NRCellRelation-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/NRCellRelation-Single
+    CESManagementFunction-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/CESManagementFunction-Single
+    DESManagementFunction-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/DESManagementFunction-Single
+    DMROFunction-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/DMROFunction-Single
+    DLBOFunction-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/DLBOFunction-Single
+    AlarmList-Single:
+      $ref: ../../../5G_APIs/TS28111_FaultNrm.yaml#/components/schemas/AlarmList-Single
+    Identity-Single:
+      $ref: ../../../5G_APIs/TS28319_MsacNrm.yaml#/components/schemas/Identity-Single
+    Role-Single:
+      $ref: ../../../5G_APIs/TS28319_MsacNrm.yaml#/components/schemas/Role-Single
+    AccessRule-Single:
+      $ref: ../../../5G_APIs/TS28319_MsacNrm.yaml#/components/schemas/AccessRule-Single
+    NtfSubscriptionControl-Single:
+      $ref: ../../../5G_APIs/TS28623_SubscriptionControlNrm.yaml#/components/schemas/NtfSubscriptionControl-Single
+x-smo-classes:
+- class: GNBDUFunction
+  standard: '[N] TS 28.541 v19.6.0'
+  operations: &id001
+  - createMOI
+  - getMOIAttributes
+  - modifyMOIAttributes
+  - deleteMOI
+  schema: '#/components/schemas/GNBDUFunction-Single'
+- class: GNBCUCPFunction
+  standard: '[N] TS 28.541 v19.6.0'
+  operations: *id001
+  schema: '#/components/schemas/GNBCUCPFunction-Single'
+- class: NRCellDU
+  standard: '[N] TS 28.541 v19.6.0'
+  operations: *id001
+  schema: '#/components/schemas/NRCellDU-Single'
+- class: NRCellCU
+  standard: '[N] TS 28.541 v19.6.0'
+  operations: *id001
+  schema: '#/components/schemas/NRCellCU-Single'
+- class: NRCellRelation
+  standard: '[N] TS 28.541 v19.6.0'
+  operations: *id001
+  schema: '#/components/schemas/NRCellRelation-Single'
+- class: CESManagementFunction
+  standard: '[N] TS 28.541 v19.6.0'
+  operations: *id001
+  schema: '#/components/schemas/CESManagementFunction-Single'
+- class: DESManagementFunction
+  standard: '[N] TS 28.541 v19.6.0'
+  operations: *id001
+  schema: '#/components/schemas/DESManagementFunction-Single'
+- class: DMROFunction
+  standard: '[N] TS 28.541 v19.6.0'
+  operations: *id001
+  schema: '#/components/schemas/DMROFunction-Single'
+- class: DLBOFunction
+  standard: '[N] TS 28.541 v19.6.0'
+  operations:
+  - getMOIAttributes
+  schema: '#/components/schemas/DLBOFunction-Single'
+- class: AlarmList
+  standard: '[N] TS 28.111 v19.3.0'
+  operations:
+  - getMOIAttributes
+  - modifyMOIAttributes
+  schema: '#/components/schemas/AlarmList-Single'
+- class: Identity
+  standard: '[N] TS 28.319 v19.0.0'
+  operations: *id001
+  schema: '#/components/schemas/Identity-Single'
+- class: Role
+  standard: '[N] TS 28.319 v19.0.0'
+  operations: *id001
+  schema: '#/components/schemas/Role-Single'
+- class: AccessRule
+  standard: '[N] TS 28.319 v19.0.0'
+  operations: *id001
+  schema: '#/components/schemas/AccessRule-Single'
+- class: NtfSubscriptionControl
+  standard: '[N] TS 28.622 subscription control (OpenAPI TS 28.623 SubscriptionControlNrm v19.4.0)'
+  operations: *id001
+  schema: '#/components/schemas/NtfSubscriptionControl-Single'
+x-smo-mns-mounts:
+- ../common/file-data-reporting-root.yaml
