@@ -1,0 +1,56 @@
+{
+  "id": "intent-l2-mro-blr12-20261029-04",
+  "objectClass": "Intent",
+  "objectInstance": "SubNetwork=BLR_12,IntentHandlingFunction=SO-SMOS,Intent=intent-l2-mro-blr12-20261029-04",
+  "attributes": {
+    "userLabel": "MRO rApp: tune CIO on NRCellCU-Cov-700MHz-A to C (Level-2 actuation)",
+    "intentPriority": 70,
+    "intentExpectations": [
+      {
+        "expectationId": "exp-mro-cio-cellA-cellC",
+        "expectationVerb": "DELIVER",
+        "expectationObject": {
+          "objectType": "RAN_SUBNETWORK",
+          "objectInstance": "SubNetwork=BLR_12",
+          "objectContexts": [
+            {
+              "contextAttribute": "Cell",
+              "contextCondition": "IS_ALL_OF",
+              "contextValueRange": [
+                "SubNetwork=BLR_12,ManagedElement=gNB_104,GNBCUCPFunction=1,NRCellCU=NRCellCU-Cov-700MHz-A,NRCellRelation=to-NRCellCU-Cov-700MHz-C"
+              ]
+            }
+          ]
+        },
+        "expectationTargets": [
+          {
+            "targetName": "NRCellRelation.cellIndividualOffset.rsrpOffsetSsb",
+            "targetCondition": "IS_EQUAL_TO",
+            "targetValueRange": 2
+          },
+          {
+            "targetName": "NRCellRelation.isHOAllowed",
+            "targetCondition": "IS_EQUAL_TO",
+            "targetValueRange": true
+          }
+        ]
+      }
+    ],
+    "intentContexts": [
+      {
+        "contextAttribute": "parentIntent",
+        "contextCondition": "IS_EQUAL_TO",
+        "contextValueRange": "SubNetwork=BLR_12,IntentHandlingFunction=SO-SMOS,Intent=intent-mro-blr12-002"
+      }
+    ],
+    "intentReportControl": [
+      {
+        "observationPeriod": 900,
+        "expectedReportTypes": [
+          "INTENT_FULFILMENT_REPORT",
+          "INTENT_CONFLICT_REPORT"
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,290 @@
+# Contract of the so-smos module (plan tasks S0.5, S0.6). Paths are relative to the module's R1 root; ProvMnS classes are listed in
+# x-smo-classes and reached at the one form of ../common/provmns-root.yaml. [N] classes are $refs into specs/5G_APIs; [D] items carry
+# x-smo-design with their ADR 0011 section 6 id. scripts/check_contract_drift.py compares this file with docs/openapi of x-smo-code-modules.
+openapi: 3.0.1
+info:
+  title: 'SO SMOS: TS 28.312 Intent MnS, playbooks, leases and conflicts'
+  version: 0.1.0
+  description: SO SMOS is the TS 28.312 IntentHandlingFunction for Level-1 and the only handler of Level-2 intents (ADR 0009). Intents are TS 28.532 ProvMnS resources
+    at the D5 form of ../common/provmns-root.yaml. Lease, parent link and mode travel as generic contexts (ADR 0011 D-17).
+x-smo-module: so-smos
+x-smo-code-modules:
+- so-smos
+- intent-service
+x-smo-mns-root: ../common/provmns-root.yaml
+x-smo-standards:
+- '[N] TS 28.312 v20.0.0'
+- '[N] TS 28.532 ProvMnS v19.2.0'
+- '[N] TS 28.567 v20.0.0'
+- '[O] O-RAN.WG2.TR.R1ServCnfMtgt v01.00'
+paths:
+  /health:
+    $ref: ../common/probes.yaml#/paths/~1health
+  /live:
+    $ref: ../common/probes.yaml#/paths/~1live
+  /ready:
+    $ref: ../common/probes.yaml#/paths/~1ready
+  /version:
+    $ref: ../common/probes.yaml#/paths/~1version
+  /{className}={id}:
+    $ref: ../common/provmns-root.yaml#/paths/~1{className}={id}
+  /{URI-LDN-first-part}:
+    $ref: ../common/provmns-root.yaml#/paths/~1{URI-LDN-first-part}
+components:
+  schemas:
+    Intent-Single:
+      $ref: ../../../5G_APIs/TS28312_IntentNrm.yaml#/components/schemas/Intent-Single
+    IntentReport-Single:
+      $ref: ../../../5G_APIs/TS28312_IntentNrm.yaml#/components/schemas/IntentReport-Single
+    IntentHandlingFunction-Single:
+      $ref: ../../../5G_APIs/TS28312_IntentNrm.yaml#/components/schemas/IntentHandlingFunction-Single
+    IntentUtilityFormula-Single:
+      $ref: ../../../5G_APIs/TS28312_IntentNrm.yaml#/components/schemas/IntentUtilityFormula-Single
+    ConflictManagementAndCoordinationEntity-Single:
+      $ref: ../../../5G_APIs/TS28567_CclNrm.yaml#/components/schemas/ConflictManagementAndCoordinationEntity-Single
+    NtfSubscriptionControl-Single:
+      $ref: ../../../5G_APIs/TS28623_SubscriptionControlNrm.yaml#/components/schemas/NtfSubscriptionControl-Single
+    CellLock-Single:
+      x-smo-design: D-23
+      type: object
+      required:
+      - id
+      properties:
+        id:
+          type: string
+        objectClass:
+          type: string
+          enum:
+          - CellLock
+        objectInstance:
+          type: string
+        attributes:
+          type: object
+          properties:
+            cellDn: &id001
+              type: string
+            lockState:
+              type: string
+              enum:
+              - FREE
+              - NES_SLEEP_LOCKED
+              - MAINTENANCE_LOCKED
+            lockOwnerIntent: *id001
+            lockExpiresAt: &id002
+              type: string
+              format: date-time
+    ApprovalRequest-Single:
+      x-smo-design: D-03
+      type: object
+      required:
+      - id
+      properties:
+        id:
+          type: string
+        objectClass:
+          type: string
+          enum:
+          - ApprovalRequest
+        objectInstance:
+          type: string
+        attributes:
+          type: object
+          properties:
+            intentId: *id001
+            state:
+              type: string
+              enum:
+              - PENDING
+              - APPROVED
+              - REJECTED
+              - EXPIRED
+            requiredApprovals:
+              type: integer
+              minimum: 1
+              maximum: 2
+            expiresAt: *id002
+            votes:
+              type: array
+              items:
+                type: object
+                properties:
+                  decidedBy: *id001
+                  decision:
+                    type: string
+                    enum:
+                    - APPROVE
+                    - REJECT
+                  decidedAt: *id002
+    DecisionRecord-Single:
+      x-smo-design: D-05
+      type: object
+      required:
+      - id
+      properties:
+        id:
+          type: string
+        objectClass:
+          type: string
+          enum:
+          - DecisionRecord
+        objectInstance:
+          type: string
+        attributes:
+          type: object
+          properties:
+            intentId: *id001
+            rAppId: *id001
+            inputsRef: *id001
+            modelVersion: *id001
+            rationale: *id001
+            auditHash: *id001
+            recordedAt: *id002
+    RappSafeguard-Single:
+      x-smo-design: D-06
+      type: object
+      required:
+      - id
+      properties:
+        id:
+          type: string
+        objectClass:
+          type: string
+          enum:
+          - RappSafeguard
+        objectInstance:
+          type: string
+        attributes:
+          type: object
+          properties:
+            rAppId: *id001
+            killed: &id004
+              type: boolean
+            limits:
+              type: object
+              properties:
+                maxIntentsPerHour: &id003
+                  type: integer
+                maxCellsPerIntent: *id003
+                maxMagnitude:
+                  type: number
+    GlobalStop-Single:
+      x-smo-design: D-06
+      type: object
+      required:
+      - id
+      properties:
+        id:
+          type: string
+        objectClass:
+          type: string
+          enum:
+          - GlobalStop
+        objectInstance:
+          type: string
+        attributes:
+          type: object
+          properties:
+            active: *id004
+            activatedBy: *id001
+            activatedAt: *id002
+            resetVotes:
+              type: array
+              items: *id001
+    AutonomyCeiling-Single:
+      x-smo-design: D-18
+      type: object
+      required:
+      - id
+      properties:
+        id:
+          type: string
+        objectClass:
+          type: string
+          enum:
+          - AutonomyCeiling
+        objectInstance:
+          type: string
+        attributes:
+          type: object
+          properties:
+            packageId: *id001
+            subNetworkDn: *id001
+            ceiling:
+              type: string
+              enum:
+              - SHADOW_MODE
+              - SUPERVISED_MODE
+              - CLOSED_LOOP_AUTONOMOUS
+x-smo-classes:
+- class: Intent
+  standard: '[N] TS 28.312 v20.0.0'
+  operations: &id005
+  - createMOI
+  - getMOIAttributes
+  - modifyMOIAttributes
+  - deleteMOI
+  schema: '#/components/schemas/Intent-Single'
+- class: IntentReport
+  standard: '[N] TS 28.312 v20.0.0'
+  operations: *id005
+  schema: '#/components/schemas/IntentReport-Single'
+  note: Written by the handling function; consumers read and subscribe
+- class: IntentHandlingFunction
+  standard: '[N] TS 28.312 v20.0.0'
+  operations: *id005
+  schema: '#/components/schemas/IntentHandlingFunction-Single'
+- class: IntentUtilityFormula
+  standard: '[N] TS 28.312 v20.0.0'
+  operations: *id005
+  schema: '#/components/schemas/IntentUtilityFormula-Single'
+- class: ConflictManagementAndCoordinationEntity
+  standard: '[N] TS 28.567 v20.0.0'
+  operations: &id006
+  - getMOIAttributes
+  schema: '#/components/schemas/ConflictManagementAndCoordinationEntity-Single'
+  note: ADR 0009 section 4.9; the R1 conflict query and subscribe are D-21 [O]
+- class: NtfSubscriptionControl
+  standard: '[N] TS 28.622 subscription control (OpenAPI TS 28.623 SubscriptionControlNrm v19.4.0)'
+  operations: *id005
+  schema: '#/components/schemas/NtfSubscriptionControl-Single'
+- class: CellLock
+  standard: '[D] ADR 0011 D-23'
+  operations: *id006
+  schema: '#/components/schemas/CellLock-Single'
+  x-smo-design: D-23
+  note: Written only by SO SMOS (D6); read by TE&IV, SA SMOS and rApps
+- class: ApprovalRequest
+  standard: '[D] ADR 0011 D-03'
+  operations:
+  - getMOIAttributes
+  - modifyMOIAttributes
+  schema: '#/components/schemas/ApprovalRequest-Single'
+  x-smo-design: D-03
+  note: Shape fixed by S5.4
+- class: DecisionRecord
+  standard: '[D] ADR 0011 D-05'
+  operations: *id006
+  schema: '#/components/schemas/DecisionRecord-Single'
+  x-smo-design: D-05
+- class: RappSafeguard
+  standard: '[D] ADR 0011 D-06'
+  operations: *id005
+  schema: '#/components/schemas/RappSafeguard-Single'
+  x-smo-design: D-06
+  note: Kill switch and package limits per rApp; Global Stop is GlobalStop
+- class: GlobalStop
+  standard: '[D] ADR 0011 D-06'
+  operations:
+  - getMOIAttributes
+  - modifyMOIAttributes
+  schema: '#/components/schemas/GlobalStop-Single'
+  x-smo-design: D-06
+  note: Reset needs two distinct people (S5.11)
+- class: AutonomyCeiling
+  standard: '[D] ADR 0011 D-18'
+  operations: *id005
+  schema: '#/components/schemas/AutonomyCeiling-Single'
+  x-smo-design: D-18
+  note: Default SHADOW_MODE when no row exists (ADR 0009 section 4.6)
+x-smo-pending:
+- 'R1 conflict query and subscribe (D-21 [O]): no normative API until O-RAN publishes one (S5.14)'

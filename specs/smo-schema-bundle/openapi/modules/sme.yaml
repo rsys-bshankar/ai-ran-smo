@@ -1,0 +1,111 @@
+# Contract of the sme module (plan tasks S0.5, S0.6). Paths are relative to the module's R1 root; ProvMnS classes are listed in
+# x-smo-classes and reached at the one form of ../common/provmns-root.yaml. [N] classes are $refs into specs/5G_APIs; [D] items carry
+# x-smo-design with their ADR 0011 section 6 id. scripts/check_contract_drift.py compares this file with docs/openapi of x-smo-code-modules.
+openapi: 3.0.1
+info:
+  title: 'SME: the TS 29.222 CAPIF core function, the MnS registry and access rules'
+  version: 0.1.0
+  description: The CAPIF APIs are the published TS 29.222 ones at their standard prefixes, referenced, not restated (ADR 0011 section 3.2). The MnS registry is the
+    TS 28.622 MnsRegistry / MnsInfo / MgmtDataInfo over ProvMnS (S1.12).
+x-smo-module: sme
+x-smo-code-modules:
+- sme
+x-smo-mns-root: ../common/provmns-root.yaml
+x-smo-standards:
+- '[N] TS 29.222 V20.0.0 (provider management V19.5.0)'
+- '[N] TS 23.222'
+- '[N] TS 28.622 MnS registry'
+- '[N] IETF RFC 7662'
+paths:
+  /health:
+    $ref: ../common/probes.yaml#/paths/~1health
+  /live:
+    $ref: ../common/probes.yaml#/paths/~1live
+  /ready:
+    $ref: ../common/probes.yaml#/paths/~1ready
+  /version:
+    $ref: ../common/probes.yaml#/paths/~1version
+  /{className}={id}:
+    $ref: ../common/provmns-root.yaml#/paths/~1{className}={id}
+  /{URI-LDN-first-part}:
+    $ref: ../common/provmns-root.yaml#/paths/~1{URI-LDN-first-part}
+  /published-apis/v1/{apfId}/service-apis:
+    $ref: ../../../5G_APIs/TS29222_CAPIF_Publish_Service_API.yaml#/paths/~1{apfId}~1service-apis
+  /published-apis/v1/{apfId}/service-apis/{serviceApiId}:
+    $ref: ../../../5G_APIs/TS29222_CAPIF_Publish_Service_API.yaml#/paths/~1{apfId}~1service-apis~1{serviceApiId}
+  /service-apis/v1/allServiceAPIs:
+    $ref: ../../../5G_APIs/TS29222_CAPIF_Discover_Service_API.yaml#/paths/~1allServiceAPIs
+  /capif-events/v1/{subscriberId}/subscriptions:
+    $ref: ../../../5G_APIs/TS29222_CAPIF_Events_API.yaml#/paths/~1{subscriberId}~1subscriptions
+  /capif-events/v1/{subscriberId}/subscriptions/{subscriptionId}:
+    $ref: ../../../5G_APIs/TS29222_CAPIF_Events_API.yaml#/paths/~1{subscriberId}~1subscriptions~1{subscriptionId}
+  /api-invoker-management/v1/onboardedInvokers:
+    $ref: ../../../5G_APIs/TS29222_CAPIF_API_Invoker_Management_API.yaml#/paths/~1onboardedInvokers
+  /api-invoker-management/v1/onboardedInvokers/{onboardingId}:
+    $ref: ../../../5G_APIs/TS29222_CAPIF_API_Invoker_Management_API.yaml#/paths/~1onboardedInvokers~1{onboardingId}
+  /api-provider-management/v1/registrations:
+    $ref: ../../../5G_APIs/TS29222_CAPIF_API_Provider_Management_API.yaml#/paths/~1registrations
+  /api-provider-management/v1/registrations/{registrationId}:
+    $ref: ../../../5G_APIs/TS29222_CAPIF_API_Provider_Management_API.yaml#/paths/~1registrations~1{registrationId}
+  /capif-security/v1/trustedInvokers/{apiInvokerId}:
+    $ref: ../../../5G_APIs/TS29222_CAPIF_Security_API.yaml#/paths/~1trustedInvokers~1{apiInvokerId}
+  /capif-security/v1/trustedInvokers/{apiInvokerId}/update:
+    $ref: ../../../5G_APIs/TS29222_CAPIF_Security_API.yaml#/paths/~1trustedInvokers~1{apiInvokerId}~1update
+  /capif-security/v1/trustedInvokers/{apiInvokerId}/delete:
+    $ref: ../../../5G_APIs/TS29222_CAPIF_Security_API.yaml#/paths/~1trustedInvokers~1{apiInvokerId}~1delete
+  /capif-security/v1/securities/{securityId}/token:
+    $ref: ../../../5G_APIs/TS29222_CAPIF_Security_API.yaml#/paths/~1securities~1{securityId}~1token
+  /oauth2/introspect:
+    post:
+      operationId: introspectToken
+      summary: OAuth 2.0 token introspection, the R1 gateway's check
+      x-smo-standard: '[N] IETF RFC 7662'
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+              - token
+              properties:
+                token:
+                  type: string
+      responses:
+        '200':
+          description: Introspection response (RFC 7662 section 2.2)
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - active
+                properties:
+                  active:
+                    type: boolean
+components:
+  schemas:
+    MnsRegistry-Single:
+      $ref: ../../../5G_APIs/TS28623_MnSRegistryNrm.yaml#/components/schemas/MnsRegistry-Single
+    MnsInfo-Single:
+      $ref: ../../../5G_APIs/TS28623_MnSRegistryNrm.yaml#/components/schemas/MnsInfo-Single
+    MgmtDataInfo-Single:
+      $ref: ../../../5G_APIs/TS28623_MnSRegistryNrm.yaml#/components/schemas/MgmtDataInfo-Single
+x-smo-classes:
+- class: MnsRegistry
+  standard: '[N] TS 28.622 MnS registry (OpenAPI TS 28.623 MnSRegistryNrm v19.6.0)'
+  operations:
+  - getMOIAttributes
+  schema: '#/components/schemas/MnsRegistry-Single'
+- class: MnsInfo
+  standard: '[N] TS 28.622 MnS registry (OpenAPI TS 28.623 MnSRegistryNrm v19.6.0)'
+  operations: &id001
+  - createMOI
+  - getMOIAttributes
+  - modifyMOIAttributes
+  - deleteMOI
+  schema: '#/components/schemas/MnsInfo-Single'
+- class: MgmtDataInfo
+  standard: '[N] TS 28.622 MnS registry (OpenAPI TS 28.623 MnSRegistryNrm v19.6.0)'
+  operations: *id001
+  schema: '#/components/schemas/MgmtDataInfo-Single'

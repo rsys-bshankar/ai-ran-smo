@@ -1,0 +1,41 @@
+# ADR 0011 exception D-01: the process probes every SMO service answers. Not R1 operations (the gateway never routes them between modules);
+# listed so that every module contract can name them and the drift check (scripts/check_contract_drift.py) counts them as agreed.
+openapi: 3.0.1
+info:
+  title: SMO process probes (ADR 0011 D-01)
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      operationId: health
+      summary: Alias of /live
+      x-smo-design: D-01
+      responses:
+        '200':
+          description: The process is up
+  /live:
+    get:
+      operationId: live
+      summary: Liveness (never depends on anything)
+      x-smo-design: D-01
+      responses:
+        '200':
+          description: The process is up
+  /ready:
+    get:
+      operationId: ready
+      summary: Readiness (the database and, for callers of R1, an SME token)
+      x-smo-design: D-01
+      responses:
+        '200':
+          description: Ready
+        '503':
+          description: Not ready; the body names the failing check
+  /version:
+    get:
+      operationId: version
+      summary: Build identity
+      x-smo-design: D-01
+      responses:
+        '200':
+          description: The build's version

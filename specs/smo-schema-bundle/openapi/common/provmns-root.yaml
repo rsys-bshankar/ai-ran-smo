@@ -1,0 +1,39 @@
+# The one TS 28.532 ProvMnS form of the converged SMO (decision D5, ADR 0011): every module's ProvMnS classes are reached at
+#   {apiRoot}/ProvMnS/{MnSVersion}/{URI-LDN-first-part}/{className}={id}
+# This file is the only place the version is set (`MnSVersion`). Module contracts in ../modules/ list their classes in `x-smo-classes` and do not
+# repeat the server; scripts/check_contract_drift.py builds each class's paths from this file. The operations themselves are the published ones
+# (specs/5G_APIs/TS28532_ProvMnS.yaml, OAS 19.2.0), referenced, not restated.
+openapi: 3.0.1
+info:
+  title: SMO ProvMnS root (TS 28.532 ProvMnS, one form and one version)
+  version: 19.2.0
+  description: >-
+    The TS 28.532 Provisioning MnS as every SMO module exposes it. The path items are the published 3GPP ones; this document only fixes
+    the server form and the version (D5). [N] 3GPP TS 28.532, OpenAPI v19.2.0 as carried in specs/5G_APIs.
+servers:
+  - url: '{apiRoot}/ProvMnS/{MnSVersion}/{URI-LDN-first-part}'
+    variables:
+      apiRoot:
+        description: The R1 gateway's root (R1 Termination), for example https://r1.smo.example/so-smos
+        default: https://r1.smo.example
+      MnSVersion:
+        description: The ProvMnS version every SMO module serves. Changed here and nowhere else.
+        default: 19.2.0
+        enum:
+          - 19.2.0
+      URI-LDN-first-part:
+        description: The first part of the LDN (TS 32.158 clause 4.4.2), for example SubNetwork=BLR_12
+        default: ''
+x-smo-provmns:
+  version: 19.2.0
+  form: '{apiRoot}/ProvMnS/{MnSVersion}/{URI-LDN-first-part}/{className}={id}'
+  operations:
+    createMOI: PUT
+    getMOIAttributes: GET
+    modifyMOIAttributes: PATCH
+    deleteMOI: DELETE
+paths:
+  '/{className}={id}':
+    $ref: '../../../5G_APIs/TS28532_ProvMnS.yaml#/paths/~1{className}={id}'
+  '/{URI-LDN-first-part}':
+    $ref: '../../../5G_APIs/TS28532_ProvMnS.yaml#/paths/~1{URI-LDN-first-part}'
