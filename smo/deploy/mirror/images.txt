@@ -33,7 +33,7 @@ golang:1.27.2-alpine | sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924
 maven:3.9.11-eclipse-temurin-21-noble | sha256:6fdc855a6ed81d288ca7ca37ac6ff5e9308b612485c0801d70b25a858c83d237 | maven |
 eclipse-temurin:25-jre-noble | sha256:3f2223fe04b750aa5a8179e29b5c9a1ddf7665fc9bb08bfe11ad01d143bc13a5 | eclipse-temurin |
 
-grafana/tempo:2.10.8 | sha256:f0561deb1c68ec44d6e6e7e4487f30106c4e5e768642077695b37958b105812a | tempo |
+grafana/tempo:2.10.10 | sha256:12b0820f13ffa10ce956b6e9acc3b03f3cffded99109be6cc09d106fe56e5d38 | tempo |
 grafana/loki:3.7.8 | sha256:1107dd5274e0ada47e42472b7a7e71f3b2a2fe878878108f3e2f9e51528f0193 | loki |
 fluent/fluent-bit:5.1.4 | sha256:a9cc9627aeabb8bb33077ee85b6ec8c0fe40aff8e7000bb4e8cd924511fa626c | fluent-bit |
 grafana/grafana:13.2.4 | sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f | grafana |

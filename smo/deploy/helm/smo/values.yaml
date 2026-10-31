@@ -238,7 +238,7 @@ tracing:
 observability:
   tempo:
     enabled: false
-    image: grafana/tempo:2.10.8@sha256:f0561deb1c68ec44d6e6e7e4487f30106c4e5e768642077695b37958b105812a
+    image: grafana/tempo:2.10.10@sha256:12b0820f13ffa10ce956b6e9acc3b03f3cffded99109be6cc09d106fe56e5d38
     resources:
       requests: { cpu: 50m, memory: 128Mi }
       limits: { memory: 512Mi }
