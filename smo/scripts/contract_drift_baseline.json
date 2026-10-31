@@ -22,7 +22,7 @@
   },
   "mdaf": {
     "code_only": 22,
-    "contract_only": 16
+    "contract_only": 22
   },
   "mobility-optimization-rapp": {
     "code_only": 27,
@@ -33,7 +33,7 @@
     "contract_only": 0
   },
   "nfo": {
-    "code_only": 18,
+    "code_only": 14,
     "contract_only": 0
   },
   "onboarding": {

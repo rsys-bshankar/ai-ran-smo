@@ -4789,3 +4789,48 @@ Closed from `OPEN_ITEMS.md` (`PR-CONV-S0.7`), except that a required check is se
 - **Tests:** `tests_integration/test_contract_gate.py` (the committed bundle passes; each check fails on a seeded defect; the drift arithmetic; the baseline
   is current; the DDL check with `SMO_CONTRACTS_DATABASE_URL` set).
 - **Owner's step:** add "Contracts" to the required checks of `main` in GitHub branch protection (not in the repository).
+
+### PR-CONV-S0.9 — call flows 34–37
+
+Closed from `OPEN_ITEMS.md` (`PR-CONV-S0.9`). Four call flows of the converged target design in `docs/call-flows/`, in the house format (one file per
+flow, numbered sub-flows, prose before each mermaid `sequenceDiagram`, PNG images under `images/<flow>/` with their manifest entries, a "Standards used"
+table and a "What the code does today" paragraph naming the PR-CONV rows that build each flow), indexed in a new `docs/call-flows/README.md`:
+
+- **34 — Level-1 intake and an on-demand rApp** (11 steps in five diagrams): strict TS 28.312 intake at SO SMOS; pre-evaluation from TE&IV, MDAF,
+  AIMgF, rApp Management and the write ledger with no network write (G19); selection by `intentCapabilityProfile`; `RappInstance` creation (D-19); NFO's
+  placement over O2dms; R1GAP §5.7.2 registration, CAPIF onboarding, publish, discovery and token (S1.16); `MLModelLoadingRequest` in AIMgF; data through
+  `ORAN:RanOamPmData:1.0.0` and the D-02 matrix; the assurance intent to SA SMOS (ACCL and `AssuranceGoal` realised inside SA SMOS on the slice profile,
+  R19); the delegated Level-1; the rApp's Level-2; the intent reports up to the operator.
+- **35 — Level-2 parallel split and rollback** (7 steps in five diagrams): intake safeguards in ADR 0009 section 4.5's order (D-06, TS 28.319 `AccessRule`
+  and the D-22 scope attributes, D-03 approval in SUPERVISED_MODE, D-05); the write ledger and impact tables (S5.14); the TS 28.561 `NDTJob` what-if (D18);
+  cell locks (D-23), snapshot, the lease from enactment (R12); parallel `modifyMOIAttributes` per O-DU/O-CU, then NETCONF `edit-config` with
+  `test-then-set` and `commit`; Branch B to SA SMOS; one element refuses, every element rolls back (`discard-changes` where nothing was committed);
+  `IntentReport` NOT_FULFILLED with the `IntentDecompositionReport`.
+- **36 — NES vs MRO arbitration on cluster 12** (three diagrams): NES's `CESManagementFunction.energySavingControl` on Cell-B with the gNB's TS 28.310
+  procedure and `isHOAllowed` false into the sleeping cell; MRO's `cellIndividualOffset` within the `DMROFunction` bounds (TS 28.313); an indirect conflict
+  through the Impact Map; MRO (70) deferred behind NES (80) with a time-to-defer; `IntentConflictReport` and the R1 conflict notification and query (D-21);
+  SA SMOS's evaluation of NES's goal decides: deferral expires and MRO is withdrawn, or NES is rolled back and MRO is enacted.
+- **37 — Lease expiry and demotion** (three diagrams): the lease clock from enactment after a two-hour approval wait (R12), two renewals by
+  `modifyMOIAttributes` of `leaseDurationSec` (D-17), the crash; the 30 s watchdog under the single-runner lock restores the snapshot, withdraws the
+  assurance intent, releases the lock and reports TERMINATED; SA SMOS reports the delegated goal DEGRADED; the second consecutive rollback demotes the
+  instance to SHADOW_MODE automatically (D16, D-18); the operator reads it all in the intent tree and the autonomy ceiling.
+- **Number 33 stays unused.** It was ADR 0007's flow, never adopted (ADR 0009 supersedes ADR 0007); the index says so, and the new test checks no `33-*.md`
+  exists. Number 05 is unused too (A1 EI registration, removed with A1 in 0.5.0).
+- **Where the direction documents differ** (HLD §5.1, §5.2, §6.1–6.3; Part 2 §4, §6.1), each flow has a table: what the HLD says, what the flow does, and
+  the ADR or issue that decides it (for example `common_teiv_nrm.moi_store` locks become SO SMOS's `CellLock`, `createMOI(AssuranceClosedControlLoop)` on SA
+  SMOS becomes a TS 28.312 assurance intent, IN_PROGRESS becomes NOT_FULFILLED / RECEIVED, the lease runs from enactment).
+- **The bundle, completed for the flows** (owner's decision in this session): MDAF's contract gains the TS 28.561 `NDTFunction`, `NDTJob` and `NDTReport` as
+  `$ref`s to `TS28561_NdtNrm.yaml` (S7.11 places the twin in RAN Analytics, now MDAF); a new `nfo.yaml` contract has the probes and names O2dms and the
+  R1GAP §5.5.3 O2 deployment management service in `x-smo-pending`. The flows mark those two arrows and the R1GAP §5.2 data request `[pending: ...]`. The
+  drift baseline moved with them: `mdaf` contract_only 16 → 22 (the six NDT operations no code serves yet), `nfo` code_only 18 → 14 (its probes are now
+  contracted).
+- **S0.6's done-when is now checked.** `tests_integration/test_call_flow_operations.py` reads flows 34–37 and fails when a message between two participants
+  is not one of: a TS 28.532 operation on a class the receiving module's contract lists with that operation (the sender's, for a notification), a bundle
+  path's `operationId` or a CAPIF API of a `$ref`'d published file, an RFC 6241 NETCONF operation on the bundle's YANG list, a listed `[D-nn]` step, or a
+  `[pending: ...]` interface an `x-smo-pending` entry names; when a [D] class or path lacks its id; when a `[D-nn]` is not in ADR 0011 section 6; when a
+  message uses a route appendix A marks "delete"; or when a participant is not one of ADR 0008's fourteen services, the operator or OSS, an rApp instance, an
+  O-DU/O-CU or an O-Cloud. Seeded-defect tests prove each refusal.
+- **Clause numbers.** The TS 28.532 operation clauses (§11.1.1.1–§11.1.1.8), the TS 29.222 API clauses (§8.1–§8.5) and the RFC 6241 sections are given
+  per message; the repository carries the 3GPP OpenAPI files, not the specification text, so the clause numbers were not re-read from the specifications.
+- **Not done:** the plan's live copy (Claude Docs) still has to show S0.9 as Done (the plan's working rule 6); FOCOM's O2ims capacity check before
+  placement (HLD §5.1 step 5) is named in flow 34 and left to S4.5.

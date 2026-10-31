@@ -148,5 +148,21 @@
   "32-backup-restore-and-disaster-recovery/32c-wal-archiving-and-base-backups-on-cloudnativepg.png": "93c20bd0d54a4b8aa7067b9a2d3c6fff425942eb0effb4cd1e04dbb64c6a323c",
   "32-backup-restore-and-disaster-recovery/32d-recovering-a-new-cluster-to-a-chosen-minute.png": "f065a7d8d6fe078c403b4cb21137535ff407a44ed2ef6e8112f4a95ab0b8ca26",
   "32-backup-restore-and-disaster-recovery/32e-the-drill.png": "a3d5742aba610c09a4afd83c6db3ec786c9cf4ceccd7b20d879ad741fe148ab5",
-  "32-backup-restore-and-disaster-recovery/32f-a-primary-failover.png": "976a5c5880488f17e368596c7f61c5df31b953c7747ce80c9f5f8be56280d2c3"
+  "32-backup-restore-and-disaster-recovery/32f-a-primary-failover.png": "976a5c5880488f17e368596c7f61c5df31b953c7747ce80c9f5f8be56280d2c3",
+  "34-level1-intake-and-on-demand-rapp/34a-intake-and-pre-evaluation.png": "851a77b92b87b97a8e40e23082cce8f8c579825989b75dc5ace3f85f590711e3",
+  "34-level1-intake-and-on-demand-rapp/34b-selection-instantiation-and-placement.png": "9d55a648a05681a8b32dc1e48113c0d3a1b55de16892ac07c2b6a964874763be",
+  "34-level1-intake-and-on-demand-rapp/34c-registration-capif-model-and-data.png": "7cae59df7e1879d1dcb44a48e5798fa09f6a6ec8dda37537edcf8197b0044753",
+  "34-level1-intake-and-on-demand-rapp/34d-assurance-hand-off-and-delegation.png": "d40cc27b7d121000172030cf925c1385169b0447e09b1426361e9544a0dccf55",
+  "34-level1-intake-and-on-demand-rapp/34e-the-level-2-and-the-reports.png": "f704365b69de11012be5cba24cab12b979048571ae84d0d61bc2479c30f60f61",
+  "35-level2-parallel-split-and-rollback/35a-arrival-and-intake-safeguards.png": "0c9f79f2300ad1c7a3ea932df74922497d351997d0215178f763475b33649cb5",
+  "35-level2-parallel-split-and-rollback/35b-conflict-check-and-the-twin.png": "8340f98b75bc28052f3b5f43cce6521a7e68b5cedb1aaf09a940b5a9e54c7d7a",
+  "35-level2-parallel-split-and-rollback/35c-the-parallel-split.png": "2956a52e1f7f949caf4c87eb2d20aa6ebcffc22419d1ecd8a0475a7491f8e5b1",
+  "35-level2-parallel-split-and-rollback/35d-one-element-fails-everything-rolls-back.png": "9958a1b6f25deabcc31b6e8476f82fe3020d9cdf05d9732115e9d3d1c3ce71dd",
+  "35-level2-parallel-split-and-rollback/35e-the-report.png": "e9e6bfc1d3b70835aa8d88ea34e1f246ecb7d891e4398e5943ce05ba05e40678",
+  "36-nes-vs-mro-arbitration/36a-nes-s-level-2-is-enacted-on-cell-b.png": "e2f0eb3f621e3a3b770cabfca5067eb43c52cbea07467fec7c231ddcadec501f",
+  "36-nes-vs-mro-arbitration/36b-mro-s-level-2-the-indirect-conflict-and-the-deferral.png": "d21536645fa447907916a7042a79b51d0fb8d634912b52c20d3092e6756a3710",
+  "36-nes-vs-mro-arbitration/36c-sa-smos-decides-the-deferred-change-runs-or-is-withdrawn.png": "895b2e74b5d586a0be692ca4d761ade24bf698301b512b74e1ebd7892e32b572",
+  "37-lease-expiry-and-demotion/37a-the-lease-clock-and-the-renewals-then-the-crash.png": "319f197f4acc08b024fe4de7aed7417115a98e7518b41401ae188a61f8881350",
+  "37-lease-expiry-and-demotion/37b-the-watchdog-reverts-the-cell.png": "95ae5eda82e371cb32478d4bd730496c4e1e5cc8a361c4117be249f5b860e7ec",
+  "37-lease-expiry-and-demotion/37c-sa-smos-reports-so-smos-demotes-the-operator-sees-it.png": "85331dcfbfe6c394523aec2b5cfb3717e9ba6eac2265204c306ab00d3bc14e12"
 }
