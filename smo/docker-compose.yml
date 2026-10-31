@@ -837,7 +837,7 @@ services:
   # Run scripts/make_dev_certs.sh first. The default stack does not start it and needs no certificate.
   edge-tls:
     profiles: ["tls"]
-    image: nginxinc/nginx-unprivileged:1.31-alpine@sha256:b9241c6e7b8e9a862f129d8d4199ab64b10390949a78bdd5603379b32c844083
+    image: nginxinc/nginx-unprivileged:1.31-alpine@sha256:b5047b9b76845eac124358373c6852377c52e4b05834a47647e955dd91cb8f1e
     <<: *hardening
     depends_on: [r1-termination, gui, sme]
     ports: ["3443:3443", "8443:8443"]
@@ -863,7 +863,7 @@ services:
 
   loki:
     profiles: ["logging"]
-    image: grafana/loki:3.7.8@sha256:1107dd5274e0ada47e42472b7a7e71f3b2a2fe878878108f3e2f9e51528f0193
+    image: grafana/loki:3.7.9@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28
     command: ["-config.file=/etc/loki/loki.yaml"]
     restart: unless-stopped
     cap_drop: [ALL]

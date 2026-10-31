@@ -23,7 +23,7 @@ python:3.11-slim | sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6
 python:3.14-slim | sha256:0741d101873c12ab927e6f8653feb8862b9bd58771177acb1b885b95141f91b4 | python |
 postgres:18-alpine | sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873 | postgres |
 timescale/timescaledb:2.31.0-pg18 | sha256:0fcff5761363809d1242f2261a3482197b5a5337407f8b97a976fb174206d579 | timescaledb | Postgres 18 with TimescaleDB for the Contracts job's DDL apply (plan task S0.7, D8)
-nginxinc/nginx-unprivileged:1.31-alpine | sha256:b9241c6e7b8e9a862f129d8d4199ab64b10390949a78bdd5603379b32c844083 | nginx-unprivileged |
+nginxinc/nginx-unprivileged:1.31-alpine | sha256:b5047b9b76845eac124358373c6852377c52e4b05834a47647e955dd91cb8f1e | nginx-unprivileged |
 sysrepo/sysrepo-netopeer2 | sha256:36cc1d841c97f118d62f775024d60fb1ce210c3bca6b32135c1a9e5a358a1cc9 | sysrepo-netopeer2 | the compose file pins this one by digest alone, no tag; the mirror tags it `latest`
 drwetter/testssl.sh:3.2 | sha256:51e487545f506e4e58b3e557d99538dbc2e63eec40680a2f6f6c9eb5ae1296af | testssl |
 projectdiscovery/nuclei:v3.9.0 | sha256:66b5f88c9b98ad29c03343dd34e5e85bde0ad10428d72e0171b067efe1ed7811 | nuclei |
@@ -34,7 +34,7 @@ maven:3.9.11-eclipse-temurin-21-noble | sha256:6fdc855a6ed81d288ca7ca37ac6ff5e93
 eclipse-temurin:25-jre-noble | sha256:3f2223fe04b750aa5a8179e29b5c9a1ddf7665fc9bb08bfe11ad01d143bc13a5 | eclipse-temurin |
 
 grafana/tempo:2.10.10 | sha256:12b0820f13ffa10ce956b6e9acc3b03f3cffded99109be6cc09d106fe56e5d38 | tempo |
-grafana/loki:3.7.8 | sha256:1107dd5274e0ada47e42472b7a7e71f3b2a2fe878878108f3e2f9e51528f0193 | loki |
+grafana/loki:3.7.9 | sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28 | loki |
 fluent/fluent-bit:5.1.5 | sha256:2740f387f6e68fab66d28e4fa6a853387b9cab6ffb4cb78958f69bba4eb0e7b4 | fluent-bit |
 grafana/grafana:13.2.4 | sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f | grafana |
 quay.io/keycloak/keycloak:26.4 | sha256:9409c59bdfb65dbffa20b11e6f18b8abb9281d480c7ca402f51ed3d5977e6007 | keycloak | on quay.io, not Docker Hub; pinned in smo-gui-e2e.yml (KEYCLOAK_IMAGE)
