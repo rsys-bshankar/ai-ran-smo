@@ -62,7 +62,7 @@ digest at the mirror.
 | `<repo>/mirror/golang` | `golang:1.27.2-alpine` | yes |
 | `<repo>/mirror/maven` | `maven:3.9.11-eclipse-temurin-21-noble` | yes |
 | `<repo>/mirror/eclipse-temurin` | `eclipse-temurin:25-jre-noble` | yes |
-| `<repo>/mirror/tempo` | `grafana/tempo:2.10.8` | yes |
+| `<repo>/mirror/tempo` | `grafana/tempo:2.10.10` | yes |
 | `<repo>/mirror/loki` | `grafana/loki:3.7.9` | yes |
 | `<repo>/mirror/fluent-bit` | `fluent/fluent-bit:5.1.4` | yes |
 | `<repo>/mirror/grafana` | `grafana/grafana:13.2.4` | yes |
