@@ -38,7 +38,8 @@ PROVMNS_TEMPLATES = {"/{className}={id}", "/{URI-LDN-first-part}"}
 
 def normalize(method: str, path: str) -> str:
     """`METHOD /path` with every `{parameter}` written `{}`, so a code route and a contract path compare by shape."""
-    return f"{method.upper()} {re.sub(r'\{[^}]*\}', '{}', path)}"
+    shape = re.sub(r"\{[^}]*\}", "{}", path)
+    return f"{method.upper()} {shape}"
 
 
 def resolve(base: Path, ref: str):
