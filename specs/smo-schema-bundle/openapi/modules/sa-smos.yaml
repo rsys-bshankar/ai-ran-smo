@@ -1,0 +1,82 @@
+# Contract of the sa-smos module (plan tasks S0.5, S0.6). Paths are relative to the module's R1 root; ProvMnS classes are listed in
+# x-smo-classes and reached at the one form of ../common/provmns-root.yaml. [N] classes are $refs into specs/5G_APIs; [D] items carry
+# x-smo-design with their ADR 0011 section 6 id. scripts/check_contract_drift.py compares this file with docs/openapi of x-smo-code-modules.
+openapi: 3.0.1
+info:
+  title: 'SA SMOS: TS 28.535 / 28.536 assurance, reached through TS 28.312 intents'
+  version: 0.1.0
+  description: Outside, SA SMOS is a TS 28.312 IntentHandlingFunction for assurance intents from SO SMOS and reports as intent reports (ADR 0011 section 3.3). Inside,
+    TS 28.536 closed loops, readable by anyone through ProvMnS.
+x-smo-module: sa-smos
+x-smo-code-modules:
+- sa-smos
+x-smo-mns-root: ../common/provmns-root.yaml
+x-smo-standards:
+- '[N] TS 28.536 v19.1.0'
+- '[N] TS 28.535'
+- '[N] TS 28.312 v20.0.0'
+paths:
+  /health:
+    $ref: ../common/probes.yaml#/paths/~1health
+  /live:
+    $ref: ../common/probes.yaml#/paths/~1live
+  /ready:
+    $ref: ../common/probes.yaml#/paths/~1ready
+  /version:
+    $ref: ../common/probes.yaml#/paths/~1version
+  /{className}={id}:
+    $ref: ../common/provmns-root.yaml#/paths/~1{className}={id}
+  /{URI-LDN-first-part}:
+    $ref: ../common/provmns-root.yaml#/paths/~1{URI-LDN-first-part}
+components:
+  schemas:
+    AssuranceClosedControlLoop-Single:
+      $ref: ../../../5G_APIs/TS28536_CoslaNrm.yaml#/components/schemas/AssuranceClosedControlLoop-Single
+    AssuranceGoal-Single:
+      $ref: ../../../5G_APIs/TS28536_CoslaNrm.yaml#/components/schemas/AssuranceGoal-Single
+    AssuranceReport-Single:
+      $ref: ../../../5G_APIs/TS28536_CoslaNrm.yaml#/components/schemas/AssuranceReport-Single
+    Intent-Single:
+      $ref: ../../../5G_APIs/TS28312_IntentNrm.yaml#/components/schemas/Intent-Single
+    IntentReport-Single:
+      $ref: ../../../5G_APIs/TS28312_IntentNrm.yaml#/components/schemas/IntentReport-Single
+    IntentHandlingFunction-Single:
+      $ref: ../../../5G_APIs/TS28312_IntentNrm.yaml#/components/schemas/IntentHandlingFunction-Single
+    NtfSubscriptionControl-Single:
+      $ref: ../../../5G_APIs/TS28623_SubscriptionControlNrm.yaml#/components/schemas/NtfSubscriptionControl-Single
+x-smo-classes:
+- class: AssuranceClosedControlLoop
+  standard: '[N] TS 28.536 v19.1.0'
+  operations: &id001
+  - getMOIAttributes
+  schema: '#/components/schemas/AssuranceClosedControlLoop-Single'
+  note: Created by SA SMOS itself from an assurance intent; read by anyone
+- class: AssuranceGoal
+  standard: '[N] TS 28.536 v19.1.0'
+  operations: *id001
+  schema: '#/components/schemas/AssuranceGoal-Single'
+- class: AssuranceReport
+  standard: '[N] TS 28.536 v19.1.0'
+  operations: *id001
+  schema: '#/components/schemas/AssuranceReport-Single'
+- class: Intent
+  standard: '[N] TS 28.312 v20.0.0'
+  operations: &id002
+  - createMOI
+  - getMOIAttributes
+  - modifyMOIAttributes
+  - deleteMOI
+  schema: '#/components/schemas/Intent-Single'
+  note: Assurance intents from SO SMOS
+- class: IntentReport
+  standard: '[N] TS 28.312 v20.0.0'
+  operations: *id001
+  schema: '#/components/schemas/IntentReport-Single'
+- class: IntentHandlingFunction
+  standard: '[N] TS 28.312 v20.0.0'
+  operations: *id001
+  schema: '#/components/schemas/IntentHandlingFunction-Single'
+- class: NtfSubscriptionControl
+  standard: '[N] TS 28.622 subscription control (OpenAPI TS 28.623 SubscriptionControlNrm v19.4.0)'
+  operations: *id002
+  schema: '#/components/schemas/NtfSubscriptionControl-Single'

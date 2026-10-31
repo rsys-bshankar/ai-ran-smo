@@ -1,0 +1,23 @@
+# The TS 28.532 file data reporting MnS as the SMO serves it (MDA report files, PM files): the published path items at the published server form,
+# with the version set here once. A module that serves it names this file in `x-smo-mns-mounts`; scripts/check_contract_drift.py expands the mount.
+openapi: 3.0.1
+info:
+  title: SMO file data reporting MnS root (TS 28.532)
+  version: 19.1.0
+  description: '[N] 3GPP TS 28.532 file data reporting MnS, OpenAPI v19.1.0 as carried in specs/5G_APIs. Paths referenced, not restated.'
+servers:
+  - url: '{MnSRoot}/fileDataReportingMnS/{MnSVersion}'
+    variables:
+      MnSRoot:
+        default: https://r1.smo.example
+      MnSVersion:
+        default: 19.1.0
+        enum:
+          - 19.1.0
+paths:
+  /files:
+    $ref: '../../../5G_APIs/TS28532_FileDataReportingMnS.yaml#/paths/~1files'
+  /subscriptions:
+    $ref: '../../../5G_APIs/TS28532_FileDataReportingMnS.yaml#/paths/~1subscriptions'
+  /subscriptions/{subscriptionId}:
+    $ref: '../../../5G_APIs/TS28532_FileDataReportingMnS.yaml#/paths/~1subscriptions~1{subscriptionId}'
