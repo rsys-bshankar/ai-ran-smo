@@ -13,6 +13,14 @@ README first, then the code. Packaging of rApps is in
 the runtime realization see [STANDARDS.md](STANDARDS.md); for how the platform
 reached this shape see [HISTORY.md](../HISTORY.md).
 
+**Where it is going.** This document describes the code as it runs. The converged target is decided in
+[ADR 0008](adr/0008-converged-architecture.md) (fourteen services, layers, one writer per table, stores, the O-RAN SMOS map),
+[ADR 0009](adr/0009-intent-model-ts28312.md) (Level-1 and Level-2 TS 28.312 intents in SO SMOS),
+[ADR 0010](adr/0010-aimgf-absorbs-mlmr-mllf.md) (AIMgF absorbs MLMR and MLLF) and
+[ADR 0011](adr/0011-standard-interfaces-only.md) (standard interfaces only), built in the stages of
+[the plan](plan/CONVERGED_REWRITE_PLAN.md). A statement below that an ADR replaces is marked *replaced by ADR 00xx, pending Stage n*: it stays true
+of the running code until that stage lands.
+
 ## Contents
 
 - [Layered architecture](#layered-architecture)
@@ -74,12 +82,17 @@ reached this shape see [HISTORY.md](../HISTORY.md).
 +------------------------------------------------+
 ```
 
+*Replaced by ADR 0008 section 3.2, pending Stages 2, 3, 5 and 7:* the Platform Services layer becomes the layers of ADR 0008 (R1 exposure;
+intent and assurance; data, analytics and AI/ML; rApp and cloud lifecycle; network model and southbound), MLMR and MLLF move into AIMgF,
+Intent Service into SO SMOS, RAN Analytics into MDAF, and TE&IV is a new module.
+
 ## Golden rules
 
 1. **Platform Services are permanent services.** SME, DME, MDAF, AIMgF,
    MLMR, MLLF, Intent Service, RAN NF OAM, Onboarding and rApp Management
    are long-lived, independently deployed services, not modules of
-   convenience.
+   convenience. *The list is replaced by ADR 0008 section 3.1 (fourteen services: MLMR and MLLF in AIMgF, Intent Service in SO SMOS,
+   RAN Analytics in MDAF, TE&IV new), pending Stages 2, 3, 5 and 7.*
 2. **rApps are business logic.** The reference rApps under `samples/` are
    consumers of the platform, never platform internals.
 3. **MLTF/MLVF/MLEF/MLIF are runtime roles, not services.** They are
@@ -91,11 +104,13 @@ reached this shape see [HISTORY.md](../HISTORY.md).
    NFO's decision, never AIMgF's.
 5. **AIMgF owns lifecycle.** AIMgF decides what state a model or runtime is
    in and whether a transition is allowed. It does not train, validate,
-   emulate, infer or store anything itself.
+   emulate, infer or store anything itself. *Replaced by ADR 0010, pending Stage 2: AIMgF also keeps the model catalogue and the artifacts
+   (in the object store); it still trains, validates, emulates and infers nothing itself.*
 6. **R1 owns service exposure.** Every platform service is reached through
    R1 Termination's gateway (`r1-termination/`). Nothing bypasses it; the AI
    Runtime SDKs (`sdk/smo_sdk/` in Python, `sdk-go/` in Go, `sdk-java/` in Java) are thin clients over that same path, not a
-   second one.
+   second one. *Sharpened by ADR 0011, pending Stages 1 and 7: every call over it is a 3GPP or O-RAN operation or a named [D] exception, and
+   peers are found by CAPIF discovery instead of the static routing table.*
 7. **Service code is stateless.** A module keeps its state in Postgres, never
    in the process, and starts no background work, so any number of identical
    replicas can serve any request. Enforced by
@@ -173,19 +188,21 @@ others named above).
 
 | Service | Module | Standard it realizes |
 |---|---|---|
-| SME | `sme/` | O-RAN (CAPIF-derived) |
-| DME | `dme/` | O-RAN ICS-derived data plane + O1 Adaptor MnS mapping (O1 action mediation) |
+| SME | `sme/` | O-RAN (CAPIF-derived). *Replaced by ADR 0011 section 3.2 (the TS 29.222 CAPIF core function at its standard paths), pending S1.16* |
+| DME | `dme/` | O-RAN ICS-derived data plane + O1 Adaptor MnS mapping (O1 action mediation). *O1 action mediation replaced by ADR 0009 section 4.4 (Level-2 intents), pending S5.9; data services on R1GAP v14 §5.2 and R1TD v05 (ADR 0011), pending S3.17* |
 | MDAF | `mdaf/` | 3GPP TS 28.104 (MDA NRM) |
 | AIMgF | `aimgf/` | 3GPP TS 28.105 (AI/ML NRM): lifecycle, requests, functions |
-| MLMR | `mlmr/` | 3GPP TS 28.105 (MLModel, repository) + TS 29.482 AIMLE MLR |
-| MLLF | `mllf/` | TS 28.105 deploy-request gate and node-group targeting |
-| Intent Service | `intent-service/` | 3GPP TS 28.312 (Intent NRM) |
+| MLMR | `mlmr/` | 3GPP TS 28.105 (MLModel, repository) + TS 29.482 AIMLE MLR. *Replaced by ADR 0010 (a package of AIMgF), pending S2.1* |
+| MLLF | `mllf/` | TS 28.105 deploy-request gate and node-group targeting. *Replaced by ADR 0010 (an in-process gate in AIMgF), pending S2.2* |
+| Intent Service | `intent-service/` | 3GPP TS 28.312 (Intent NRM). *Replaced by ADR 0009 section 4.1 (the intent package of SO SMOS), pending S5.1* |
 | NFO | `nfo/` | O-Cloud / O2 (deployment) |
 | FOCOM | `focom/` | O2IMS |
 | RAN NF OAM | `ran-nf-oam/` | O1 (CM/FM/PM/SWM, per-vendor capability registry) |
-| SO SMOS | `so-smos/` | O-RAN SMO-ARCH §4.2.7 SMOS (interfaces unspecified, internal design) |
-| SA SMOS | `sa-smos/` | O-RAN SMO-ARCH §4.2.8 SMOS (interfaces unspecified, internal design); O1-CM handler is a 3GPP TS 28.312 RMIH |
-| RAN Analytics | `ran-analytics/` | None (custom). A registry of analytics producers; reports go to MDAF, which asks it whether an rApp publishing a report is a registered producer of its type (call flow 08) |
+| SO SMOS | `so-smos/` | O-RAN SMO-ARCH §4.2.7 SMOS (interfaces unspecified, internal design). *Replaced by ADR 0009: the TS 28.312 handler of Level-1 and Level-2 intents, pending Stage 5* |
+| SA SMOS | `sa-smos/` | O-RAN SMO-ARCH §4.2.8 SMOS (interfaces unspecified, internal design); O1-CM handler is a 3GPP TS 28.312 RMIH. *Replaced by ADR 0011 section 3.3 (TS 28.535 / 28.536 inside, TS 28.312 intents outside; the O1-CM handler retires), pending S5.8, S5.9, S5.17* |
+| RAN Analytics | `ran-analytics/` | None (custom). A registry of analytics producers; reports go to MDAF, which asks it whether an rApp publishing a report is a registered producer of its type (call flow 08) *Replaced by ADR 0008 section 3.1 (merged into MDAF as `MDAFunction` registration), pending S7.5* |
+
+*Added by ADR 0008 section 3.6, pending Stage 3:* **TE&IV** (`teiv/`), the O-RAN WG10 TE&IV topology and inventory services and TS 28.532 ProvMnS reads of the NRM, built on O-RAN-SC smo-teiv, whose own API stays internal. The O-RAN OAD v14 SMOS and the 3GPP MnS of every module after the rewrite are ADR 0008 section 3.9.
 
 
 ## Repository layout
@@ -255,7 +272,7 @@ Every R1-facing service applies the same conventions, implemented once in
 | Callbacks | Any caller-supplied callback URL is called through `smo_shared.webhook`. |
 | Correlation | `X-Correlation-ID` (`correlation.py`): middleware assigns one when absent; `R1Client` propagates it on every downstream call; R1 Termination forwards its own current id. It is not declared per operation in OpenAPI. See call flow 14. |
 | Trace context | W3C `traceparent` / `tracestate` (`tracing.py`): a valid inbound header is passed on by `R1Client` and the gateway, so one request's fan-out shares a trace id (`traceId` in the logs); with `SMO_OTEL_ENDPOINT` and the optional OpenTelemetry packages each request is a server span and each R1 call a client span, exported to Tempo. Off by default. `docs/OBSERVABILITY.md`. |
-| Cross-module calls | Always `R1Client` through R1 Termination, never a direct service URL. |
+| Cross-module calls | Always `R1Client` through R1 Termination, never a direct service URL. *Sharpened by ADR 0011: standard operations only, peers found by CAPIF discovery (S1.16)* |
 
 ## Caller roles and scope
 
@@ -317,12 +334,12 @@ and API are in each module's README):
 | Service | Owns | README |
 |---|---|---|
 | AIMgF | State and decisions: model and runtime lifecycle, governance, NFO invocation | [aimgf](../aimgf/README.md) |
-| MLMR | Model truth: identity, versions, artifacts, coordination groups | [mlmr](../mlmr/README.md) |
-| MLLF | The deploy-request gate and node-group targeting | [mllf](../mllf/README.md) |
+| MLMR | Model truth: identity, versions, artifacts, coordination groups. *Moves into AIMgF (ADR 0010), pending Stage 2* | [mlmr](../mlmr/README.md) |
+| MLLF | The deploy-request gate and node-group targeting. *Moves into AIMgF (ADR 0010), pending Stage 2* | [mllf](../mllf/README.md) |
 | NFO | Runtime truth: where and how a runtime executes | [nfo](../nfo/README.md) |
 | MDAF | Analytics truth: reports, predictions, drift, TS 28.104 MDA (RAN Analytics only registers producers; it does not store or serve reports) | [mdaf](../mdaf/README.md) |
-| DME | Data truth, plus O1 action mediation (O1 protocol dispatch is RAN NF OAM's) | [dme](../dme/README.md) |
-| Intent Service | Intent truth: TS 28.312 intents, RMIH, autonomy dispatch | [intent-service](../intent-service/README.md) |
+| DME | Data truth, plus O1 action mediation (O1 protocol dispatch is RAN NF OAM's). *O1 action mediation retires (ADR 0009), pending S5.9; DME becomes the only writer of `common_dme_telemetry` (ADR 0008 section 3.4)* | [dme](../dme/README.md) |
+| Intent Service | Intent truth: TS 28.312 intents, RMIH, autonomy dispatch. *Moves into SO SMOS and autonomy dispatch retires (ADR 0009), pending S5.1, S5.9* | [intent-service](../intent-service/README.md) |
 | RAN NF OAM | O1: CM / FM / PM / SWM dispatch, per-vendor capability registry (see its O1 vendor onboarding section) | [ran-nf-oam](../ran-nf-oam/README.md) |
 
 The AI/ML responsibility matrix across AIMgF, MLMR and MLLF is in
@@ -385,9 +402,10 @@ Two things the platform does between an rApp's decision and the network, both at
 |---|---|
 | Module READMEs (`<module>/README.md`) | HLD, LLD and unit tests of each module |
 | [RAPP_PACKAGING.md](RAPP_PACKAGING.md) | rApp CSAR layout, manifest and capabilities (including `operatorUi`, the page a rApp declares), per-sample parameter tables |
-| [adr/](adr/) | Architecture decision records, `0004`: the operator page a rApp declares; `0005`: tenant and region authorization (where scope is enforced) |
+| [adr/](adr/) | Architecture decision records, `0004`: the operator page a rApp declares; `0005`: tenant and region authorization (where scope is enforced); `0006`: the Kafka relay; `0007`: superseded by 0009 before it was built; `0008`–`0011`: the converged architecture, the TS 28.312 intent model, AIMgF absorbing MLMR and MLLF, standard interfaces only |
 | [STANDARDS.md](STANDARDS.md) | Frozen decisions, standards compliance matrices, runtime realization |
 | [HISTORY.md](../HISTORY.md) | How the platform got here: decisions, audits, exit reviews (the code cites its IDs) |
+| [plan/CONVERGED_REWRITE_PLAN.md](plan/CONVERGED_REWRITE_PLAN.md) | Where the architecture is going: the converged 3GPP + O-RAN rewrite plan to 1.0 (snapshot of 31 October 2026) |
 | [call-flows/](call-flows/) | Sequence diagrams 01–27 (02 and 17: AI/ML lifecycle; 09: intents; 12: DME eligibility; 14: correlation id; 21: vendor onboarding; 22–25: reference rApps; 26: model governance and end of life; 27: TS 28.105 provisioning resources) |
 | [openapi/](openapi/) | Generated OpenAPI specs per service |
 | [`../DEMO_RUNBOOK.md`](../DEMO_RUNBOOK.md) | Runnable demo, including §24–§27 for the reference rApps |

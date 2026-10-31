@@ -7,8 +7,10 @@ implementation these specs describe. Moved here from the repo root so the
 top level reads as `specs/` (what the industry defines) + `smo/` (what
 this build implements), instead of seven unrelated top-level folders.
 
-None of `smo/`'s code generates from these files or references their
-paths — they are read-only reference material for grounding design and
+No service code of `smo/` generates from these files or references their
+paths (the contract gate does: `smo/scripts/check_contract_bundle.py` and
+`check_contract_drift.py` read `smo-schema-bundle/` and the 3GPP files it
+references) — they are read-only reference material for grounding design and
 implementation decisions, and for auditing `smo/`'s completeness against
 the real, formal contracts (as opposed to `smo/`'s own audits so far in
 `smo/OPEN_ITEMS.md` section 5, which compare against the O-RAN-SC
@@ -17,6 +19,19 @@ different and complementary ground truth).
 
 ## What's here
 
+- **`smo-schema-bundle/`** — the contracts of the converged SMO (plan tasks
+  S0.5 to S0.7): one OpenAPI contract per module, the YANG modules they use,
+  reference DDL and worked examples, corrected from the bundle of 31 October
+  2026 to TS 28.312 v20.0.0 and the one TS 28.532 ProvMnS form. Standard
+  classes and operations are `$ref`s into `5G_APIs/` and the YANG of `MnS/`,
+  never restated. **This folder is the schema registry**: there is no separate
+  registry (Apicurio) and no mock servers (Prism, WireMock); the contracts live
+  here, `smo/scripts/check_contract_drift.py` holds each module's generated
+  OpenAPI to its contract, and the CI job "Contracts" lints and validates the
+  rest. Its README lists every correction and pins each 3GPP file it uses by
+  version and SHA-256. The 3GPP files in `5G_APIs/` carry no recorded Forge
+  URL; re-checking them against pinned forge.3gpp.org tags was planned with
+  S0.5 and is open while this environment cannot reach that host.
 - **`5G_APIs/`** — the full 3GPP 5G Core OpenAPI spec set (Release 20,
   ~540 files, most SBI-facing NFs like AMF/SMF/PCF/UDM that are out of
   SMO's scope entirely). The subset actually relevant to `smo/`'s

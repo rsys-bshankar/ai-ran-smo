@@ -1,0 +1,15 @@
+# The O1 YANG modules the SMO contracts and examples use. They are the published 3GPP SA5 modules in specs/MnS/yang-models (search path
+# specs/MnS/yang-models and its external-yams/ for the IETF imports), named here, not copied: the bundle of 31 October 2026 restated them by hand
+# under the same module names, which is replaced by this list (S0.5). The "Contracts" job runs `pyang --strict` on each.
+_3gpp-common-top
+_3gpp-common-managed-element
+_3gpp-common-subnetwork
+_3gpp-common-fm
+_3gpp-nr-nrm-gnbdufunction
+_3gpp-nr-nrm-gnbcucpfunction
+_3gpp-nr-nrm-nrcelldu
+_3gpp-nr-nrm-nrcellcu
+_3gpp-nr-nrm-nrcellrelation
+_3gpp-nr-nrm-cesmanagementfunction
+_3gpp-nr-nrm-desmanagementfunction
+_3gpp-nr-nrm-dmrofunction

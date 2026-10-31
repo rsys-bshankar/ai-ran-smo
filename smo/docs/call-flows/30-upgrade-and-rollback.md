@@ -13,6 +13,10 @@ call flow 32 the backup to take before an upgrade. Five diagrams:
 | 30d | An upgrade that keeps the data | CI job "Upgrade from the previous release keeps its data" | the previous release's rows upgraded by this commit's `migrate`; a revision that breaks on rows refused |
 | 30e | Rolling back | Operator (`helm rollback`) | the previous release's code on the new schema; the schema itself undone only by hand (call flow 31e) |
 
+**Until 1.0** the converged rewrite keeps nothing for 0.9.0 (`docs/RELEASES.md`, "Until 1.0: rewrite mode"): 30b does not apply, and the CI jobs of 30c and 30d and the
+kind lane's job `upgrade` print a notice naming `scripts/rewrite_mode.json` and pass without running. Plan task S8.8 switches them back on at 1.0; this flow
+describes them as they run from then.
+
 **As images:** [30a](images/30-upgrade-and-rollback/30a-a-rolling-upgrade-with-helm.png) ·
 [30b](images/30-upgrade-and-rollback/30b-expand-then-contract.png) ·
 [30c](images/30-upgrade-and-rollback/30c-the-previous-release-s-code-on-the-new-schema.png) ·

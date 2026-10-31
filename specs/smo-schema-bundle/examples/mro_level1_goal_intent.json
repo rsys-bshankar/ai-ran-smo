@@ -1,0 +1,49 @@
+{
+  "id": "intent-mro-blr12-002",
+  "objectClass": "Intent",
+  "objectInstance": "SubNetwork=BLR_12,IntentHandlingFunction=SO-SMOS,Intent=intent-mro-blr12-002",
+  "attributes": {
+    "userLabel": "Mobility robustness optimisation, BLR_12 (Level-1 goal)",
+    "intentPriority": 70,
+    "intentMgmtPurpose": "FULFILMENT_WITHOUT_NEGOTIATION",
+    "intentExpectations": [
+      {
+        "expectationId": "exp-mro-goal-01",
+        "expectationVerb": "MAINTAIN",
+        "expectationObject": {
+          "objectType": "RAN_SUBNETWORK",
+          "objectInstance": "SubNetwork=BLR_12"
+        },
+        "expectationTargets": [
+          {
+            "targetName": "HandoverSuccessRate",
+            "targetCondition": "IS_GREATER_THAN",
+            "targetValueRange": 99
+          },
+          {
+            "targetName": "PingPongHandoverRatio",
+            "targetCondition": "IS_LESS_THAN",
+            "targetValueRange": 2
+          }
+        ]
+      }
+    ],
+    "intentContexts": [
+      {
+        "contextAttribute": "executionMode",
+        "contextCondition": "IS_EQUAL_TO",
+        "contextValueRange": "SUPERVISED_MODE"
+      }
+    ],
+    "intentReportControl": [
+      {
+        "observationPeriod": 900,
+        "expectedReportTypes": [
+          "INTENT_FULFILMENT_REPORT",
+          "INTENT_DECOMPOSITION_REPORT",
+          "INTENT_CONFLICT_REPORT"
+        ]
+      }
+    ]
+  }
+}

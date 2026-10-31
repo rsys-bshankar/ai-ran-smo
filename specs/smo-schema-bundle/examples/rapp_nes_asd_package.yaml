@@ -1,0 +1,26 @@
+# Application service descriptor (ASD) of the NES sample rApp, as Onboarding validates it (S4.1). The three SMO keys under properties are the
+# RappPackage attributes of openapi/modules/rapp-mgmt.yaml ([D] D-19); WG10 Application Packaging v1.00 is members-only, so the layout stays provisional (S0.14).
+tosca_definitions_version: tosca_simple_yaml_1_2
+node_templates:
+  rapp_nes_optimizer:
+    type: oran.nodes.rApp
+    properties:
+      descriptor_id: rapp-nes-carrier-sleep-v2.1
+      provider: ORAN-AI-Labs
+      version: 2.1.0
+      intentCapabilityProfile:
+        optimizationDomains: [RAN_ENERGY_SAVING, CARRIER_SLEEP_MANAGEMENT]
+        supportedExpectationTypes: [RadioNetworkExpectation]
+        supportedObjectTypes: [RAN_SUBNETWORK]
+        multiClusterSupport: true
+        maxConcurrentIntents: 16
+      aimlModelDependencies:
+        - modelName: nes-carrier-sleep-lstm
+          modelVersion: "4"
+          modelRole: WARM_START_BASELINE
+          minValidationAccuracy: 0.94
+      requiredR1Services:
+        - serviceApiCategory: r1-dme-data-v1
+        - serviceApiCategory: r1-mdaf-analytics-v1
+        - serviceApiCategory: r1-teiv-topology-v1
+        - serviceApiCategory: r1-sosmos-intent-v1
