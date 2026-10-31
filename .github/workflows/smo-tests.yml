@@ -106,7 +106,18 @@ jobs:
         with:
           python-version: "3.11"
 
+      # Rewrite mode (smo/scripts/rewrite_mode.json, plan task S0.8): until 1.0 a replaced route is deleted with its replacement, so the comparison with
+      # 0.9.0 is paused: the job prints a notice naming the file and passes. The step and its script stay; S8.8 switches it back on.
+      - name: Rewrite mode
+        id: rewrite
+        working-directory: smo
+        run: |
+          if python scripts/rewrite_mode.py notice "R1 contract has no breaking change since the previous release"; then
+            echo "paused=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Compare the committed OpenAPI specs with the previous release's
+        if: steps.rewrite.outputs.paused != 'true'
         working-directory: smo
         run: python scripts/check_breaking_changes.py
 
@@ -1185,7 +1196,11 @@ jobs:
       - name: Does this change touch the schema?
         id: gate
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ] && git diff --quiet "${{ github.event.pull_request.base.sha }}" HEAD -- \
+          # Rewrite mode (smo/scripts/rewrite_mode.json, plan task S0.8): until 1.0 a revision may drop or rename in one step, and nothing is kept for
+          # 0.9.0, so this comparison with the previous release is paused: the job prints a notice naming the file and passes. S8.8 switches it back on.
+          if python3 smo/scripts/rewrite_mode.py notice "Previous release's code runs on the new schema"; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "pull_request" ] && git diff --quiet "${{ github.event.pull_request.base.sha }}" HEAD -- \
                smo/migrations smo/scripts/check_previous_release_code.sh; then
             echo "run=false" >> "$GITHUB_OUTPUT"
             echo "neither smo/migrations nor this check changed in this pull request: nothing to prove"
@@ -1241,7 +1256,11 @@ jobs:
       - name: Does this change touch the schema?
         id: gate
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ] && git diff --quiet "${{ github.event.pull_request.base.sha }}" HEAD -- \
+          # Rewrite mode (smo/scripts/rewrite_mode.json, plan task S0.8): until 1.0 a revision may drop or rename in one step, and nothing is kept for
+          # 0.9.0, so this comparison with the previous release is paused: the job prints a notice naming the file and passes. S8.8 switches it back on.
+          if python3 smo/scripts/rewrite_mode.py notice "Upgrade from the previous release keeps its data"; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "pull_request" ] && git diff --quiet "${{ github.event.pull_request.base.sha }}" HEAD -- \
                smo/migrations smo/scripts/check_upgrade_from_previous_release.sh .github/workflows/smo-tests.yml; then
             echo "run=false" >> "$GITHUB_OUTPUT"
             echo "neither smo/migrations nor this check changed in this pull request: nothing to prove"

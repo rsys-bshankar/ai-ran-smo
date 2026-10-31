@@ -15,6 +15,7 @@ entries here by section (`HISTORY.md §5`) or ID (`HISTORY.md OI-6.3`).
 | `OI-6.1` … `OI-6.7` | Former §6, AI/ML pipeline review (numbers kept) |
 | `PR-<area>-<n>` | Production-readiness features from `OPEN_ITEMS.md` §5, closed (§10) |
 | `SA-<area>-<n>` | Former `HISTORY.md §7`, numbered as in that file's per-module sections |
+| `PR-CONV-S<stage>.<n>` | Tasks of the converged rewrite plan (`docs/plan/CONVERGED_REWRITE_PLAN.md`), closed from `OPEN_ITEMS.md` §7 (§11) |
 | `W0` … `W10.4` | Waves of the AI Platform Service Decomposition; work-item IDs (`W9-02`) are indexed at the end of §9, decisions `D-1`…`D-9` are in `docs/STANDARDS.md` |
 
 PR numbers are given where the squash-merge title or the original text names them.
@@ -4499,3 +4500,81 @@ sections 5, 6 and 11 (amended).
   two regions; an unscoped person; the requester's re-check. `ran-nf-oam/tests/test_scope_reads.py`: `/rapp-approvals` moved from "internal-only, not about
   elements" to the routes a claim filters. `tests_integration/test_console_approval_scope.py`: the real R1 gateway, a token introspected at the real SME, the
   person's claim forwarded to the real RAN NF OAM.
+
+## 11. Converged rewrite (`PR-CONV`, closed rows of `OPEN_ITEMS.md` §7)
+
+The tasks of the converged 3GPP + O-RAN rewrite plan (`docs/plan/CONVERGED_REWRITE_PLAN.md`), closed under their `PR-CONV-S<stage>.<n>` ID.
+
+### PR-CONV-S0.1 — the answers to decisions D1–D20 (31 October 2026)
+
+Closed from `OPEN_ITEMS.md` (`PR-CONV-S0.1`, plan task S0.1: "Every decision has an answer and an owner"). The twenty Stage 0 decisions of the plan were
+answered on 31 October 2026 by Balaji Shankaran, the plan's owner: D1 to D18 and D20 agreed as recommended, D19 agreed with a change. The recommendation
+and the reason below are copied from the plan's decision table; for D19 the plan's recommendation already carries the change. What each decision sets in
+motion is a `PR-CONV` row of `OPEN_ITEMS.md` §7 (for example D19: the integration spike S0.13 now integrates smo-teiv instead of choosing it).
+
+| # | Decision | Answer (31 October 2026) | Recommendation | Why |
+|---|---|---|---|---|
+| D1 | Restart from an empty repo, or restructure ai-ran-smo | Agreed as recommended | Restructure in place, module by module; old routes, tables and SDK calls are replaced outright, with no compatibility window, because the product is not live | The design's Day-0 tree is the repo's tree (`shared/smo_shared`, migrations 0001–0063, ADRs 0001–0006, call flows 01–32); keeping the repo keeps the tooling the direction document lacks (see Keep from ai-ran-smo) |
+| D2 | Intent model for Level-1 and Level-2 | Agreed as recommended | Keep TS 28.312 v20 as the wire model. Level-1 = KPI targets (TR 28.912 Type 2); Level-2 = CM targets `<IOC>.<attribute> IS_EQUAL_TO`, the shape SA SMOS already enacts; the parent link = `IntentDecompositionReport`; lease = a generic context \[D\]. Correct the bundle to match | Keeps 3GPP conformance and the existing strict validator; the bundle's fields have normative equivalents |
+| D3 | Where intents live | Agreed as recommended | Merge Intent Service into SO SMOS as its intent package; ADR 0007's Tier-1 orchestrator becomes SO SMOS's playbook engine (ADR 0007 superseded, its rules kept) | The HLD terminates every intent on SO SMOS and lists no intent schema of its own |
+| D4 | AIMgF scope | Agreed as recommended | MLMR and MLLF become packages inside `aimgf/`. Training, validation, emulation and inference stay runtime roles (MLTF, MLVF, MLEF, MLIF) that NFO places; no module is named after them, and the direction document's MTEF is a retired name in this project. Keep the 14-state lifecycle and publish its mapping to the HLD's 7 stages | Your instruction; the mapping avoids losing PENDING\_APPROVAL, PROMOTED and RETIRED |
+| D5 | ProvMnS URI and version | Agreed as recommended | One form for every module: `{apiRoot}/ProvMnS/{version}/{URI-LDN-first-part}/{className}={id}`, as RAN NF OAM already uses, with the version held in one constant | Ends the v18/v20 skew; R1 can route on class name |
+| D6 | Writers on `common_teiv_nrm` | Agreed as recommended | TE&IV is the only writer of MOIs and edges; RAN NF OAM and FOCOM write through its API. Cell locks live in a separate lock table whose only writer is SO SMOS | One writer per table, as Principle 3 intends |
+| D7 | Graph store | Agreed as recommended | Relational edges and recursive SQL first; adopt Apache AGE only if 1,000-node queries miss their target | No new extension until a measurement asks for it |
+| D8 | Telemetry store | Agreed as recommended | TimescaleDB for `common_dme_telemetry` (hot 14 d, warm 90 d aggregates); no InfluxDB; VictoriaMetrics only for SMO self-metrics if Prometheus falls short | Matches the bundle's SQL DDL |
+| D9 | Event backbone | Agreed as recommended | Kafka through the ADR 0006 relay; the table-backed bus stays the source of truth | Already decided and designed, not built |
+| D10 | Object store | Agreed as recommended | SeaweedFS (Apache-2.0) by default, MinIO as an optional profile; used for model artifacts, CSARs and the cold Parquet tier | Follows the design's own licensing rule |
+| D11 | Python and base image | Agreed as recommended | Python 3.12 everywhere (image and CI), one Dockerfile with `BASE_IMAGE` for Ubuntu 24.04 or UBI 9 | UBI 9 offers 3.12; one runtime for build and test |
+| D12 | Helm packaging | Agreed as recommended | Keep one application chart with per-module values; add a separate infrastructure-prerequisites chart and a post-upgrade canary hook | Less churn than subcharts; meets licensing rule 1 |
+| D13 | Repository layout | Agreed as recommended | Keep `smo/<module>/`; add `specs/smo-schema-bundle/`; no `services/`, `libs/`, `rapps/` move | Moving every path breaks CI, imports and history for no runtime gain |
+| D14 | rApp write paths | Agreed as recommended | rApps stop writing O1 directly (config jobs, DME actions, autonomy dispatch); all writes become Level-2 intents. The safeguards move into SO SMOS's Level-2 intake | The design's "rApps never touch O1"; R7 |
+| D15 | Roles and scope | Agreed as recommended | Map PLATFORM\_ADMIN, NOC\_OPERATOR, ML\_ENGINEER, RAPP\_DEVELOPER and READ\_ONLY\_AUDITOR onto the BFF's role tiers; add a SubNetwork axis to the ADR 0005 claim | Part 2 §9.3 asks for SubNetwork scope; ADR 0005 has region and tenant |
+| D16 | Autonomy promotion | Agreed as recommended | Criteria only make an intent eligible; a two-person approval promotes it; demotion stays automatic | Resolves R11 and keeps a person on every widening of autonomy |
+| D17 | Where conflict management lives | Agreed as recommended | SO SMOS holds the write ledger and the impact tables; rApps query and subscribe over R1 | Every O1 write already passes through SO SMOS (D14), so detection sees all of them |
+| D18 | Digital-twin scope | Agreed as recommended | TS 28.561 model and interface (what-if NDTJob) in Stage 7; a full twin in H2 | Gates risky actuation now without building a simulator-grade twin |
+| D19 | TE&IV: reuse O-RAN-SC smo-teiv or build | Agreed with a change: reuse O-RAN-SC smo-teiv, but expose it only through 3GPP TS 28.532 ProvMnS and notifications and the O-RAN WG10 TE&IV R1 services; smo-teiv's own API stays internal to the TE&IV module | Agreed with change: reuse O-RAN-SC smo-teiv as the topology store, but expose it only through the standards — 3GPP TS 28.532 ProvMnS reads of the TS 28.541 / TS 28.622 NRM, TS 28.532 notifications, and the O-RAN WG10 TE&IV R1 services. smo-teiv's own API stays internal to the TE&IV module | Saves writing a topology store and keeps pace with the WG10 models, while callers see only 3GPP MnS and O-RAN R1 (Interface rules) |
+| D20 | O-RU M-plane scope | Agreed as recommended | Out of Phase 1; the O-RU is managed through the O-DU (hierarchical model) | Keeps O1 the single southbound; the lab has no direct O-RU M-plane today |
+
+What it does not decide: the week numbers (planning estimates, re-set at each milestone gate) and when 1.0 is cut (`OPEN_ITEMS.md` "Scope").
+### PR-CONV-S0.8 — rewrite mode: the gates that compare with the previous release are paused until 1.0
+
+Closed from `OPEN_ITEMS.md` (`PR-CONV-S0.8`). No code or schema of a module changed. Decision: D1 (restructure in place, no compatibility window, the
+product is not live).
+
+- **The rule until 1.0.** A replaced route, table, service or SDK call is deleted in the same PR series as its replacement; a migration may drop or rename
+  in one revision; each revision still has a real `downgrade()` and `scripts/check_migration_matches_models.py` still runs. Written in `CLAUDE.md`
+  ("Schema changes are revisions", step 2), `docs/RELEASES.md` ("Until 1.0: rewrite mode", and the notes on the compatibility checks, the deprecation
+  policy and criteria 1 and 7 for 1.0.0), `migrations/README.md`, `docs/VALIDATION.md` section 8 and call flow 30 (prose only; its diagrams are unchanged).
+- **One switch.** `scripts/rewrite_mode.json` (`active`, `since`, `until`, `reason`), read by `scripts/rewrite_mode.py notice "<gate>"`: on, it prints a
+  GitHub notice naming the file and exits 0; off, it exits 1. A file that is missing, not JSON or has no boolean `active` is read as off with a warning, so a
+  broken switch runs the gates rather than skipping them. Standard library only, because the workflows call it on the runner's Python before installing.
+- **What it pauses, and how.** In `.github/workflows/smo-tests.yml`: `breaking-changes` (a step before the comparison; the comparison is skipped), and
+  `previous-release-compat` and `upgrade-from-previous-release` (their existing gate step answers `run=false`, so every later step is skipped as on a
+  pull request that does not touch the schema). In `.github/workflows/smo-upgrade-kind.yml`, the job `upgrade`: it installs the previous release from its
+  own chart and images, upgrades to the checkout and rolls back, which is exactly what the rewrite does not keep, so a step after the checkout sets
+  `SMO_REWRITE_MODE` and every later step has `env.SMO_REWRITE_MODE != 'true'` in its condition. The job `targets` ("Which releases") only reads the
+  tags and is left as it was. Each job still runs and reports success, so the required checks stay green. The jobs, their steps and their scripts
+  (`check_breaking_changes.py`, `check_previous_release_code.sh`, `check_upgrade_from_previous_release.sh`) are kept for S8.8.
+- **Not paused.** The commit-to-commit upgrade in `migration-postgres` (`scripts/check_upgrade_from_previous.sh`), every revision up and down,
+  `check_migration_matches_models.py`, and the volume lane's upgrade timing (`smo-db-volume.yml`, which migrates the previous release's schema forward
+  and does not run its code).
+- **Fail-safe.** `tests_integration/test_rewrite_mode.py` fails when the switch is on and the release version is 1.0.0 or later, a 1.0.0 release
+  candidate included. The version is read where the release PR sets it (`docs/RELEASES.md`, "Cutting a release"): the newest dated section of
+  `CHANGELOG.md` and the chart's `version` and `appVersion`; not the tags, which CI's checkouts often lack. The same file checks that the guard can fail,
+  that the switch is well formed, that each paused job still reads the switch and still holds its real check, and the notice and fail-safe behaviour of
+  the script.
+- **Switching back on.** Plan task S8.8: squash the rewrite's revisions into one baseline, set `active` to false, and settle which base the
+  comparisons take at 1.0 (no earlier release has that baseline); `docs/RELEASES.md` says so.
+
+### PR-CONV-S0.11 — the `PR-CONV` rows in `OPEN_ITEMS.md`
+
+Closed from `OPEN_ITEMS.md` (`PR-CONV-S0.11`). `OPEN_ITEMS.md` section 7 ("Converged rewrite") has one row per task of the plan's stage tables, 128 in
+all (Stage 0: 17, Stage 1: 16, Stage 2: 12, Stage 3: 18, Stage 4: 10, Stage 5: 17, Stage 6: 11, Stage 7: 13, Stage 8: 14), under one heading per stage
+with the stage's milestone line; columns ID, task (short), stage, needs, done when, the needs and done-when copied from the plan. Three are closed into
+this section: S0.1, S0.8 and S0.11. The section is numbered 7, not 6, because section 6 is the call-flow enrichment (`DOC-CF`) and existing sections
+were left as they were. Fifteen existing items that a `PR-CONV` row plainly replaces carry a line "Superseded by PR-CONV-Sx.y" and are otherwise
+unchanged: `OI-1-alarm-storm` (S3.7), `SO-WAIT`, `SO-CHAIN`, `SO-RESUME` (S5.3), `MLLF-IDENTITY` (S2.2), `SA-RANOAM-8` (S3.16),
+`INTENT-REACTIVATE-REPORT` (S5.9), `SEC-12.1` (S8.5), `PR-SB-8` (S3.16), `PR-SB-16` (S4.4), `PR-MGT-16` (S5.14), `PR-MGT-17` (S5.3), `PR-NB-3` (S3.3,
+S3.15, S3.16), `AI-7.3` (S7.6), `PR-AI-12` (S5.10). Left without the line, because a row covers only part of them: `MSG-3.4` (S1.10 builds slices 1–3 of
+its five), `AIML-VER` (S2.11 versions artifacts but does not promise serving N while N+1 is gated), `PR-MGT-13` (S3.16 has trace jobs, not QoE),
+`PR-MGT-18`, `PR-SB-14`, `PR-SB-15` and the 1.0 criteria (S8.10 runs them, they are not replaced).

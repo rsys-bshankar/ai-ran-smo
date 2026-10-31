@@ -388,6 +388,7 @@ Two things the platform does between an rApp's decision and the network, both at
 | [adr/](adr/) | Architecture decision records, `0004`: the operator page a rApp declares; `0005`: tenant and region authorization (where scope is enforced) |
 | [STANDARDS.md](STANDARDS.md) | Frozen decisions, standards compliance matrices, runtime realization |
 | [HISTORY.md](../HISTORY.md) | How the platform got here: decisions, audits, exit reviews (the code cites its IDs) |
+| [plan/CONVERGED_REWRITE_PLAN.md](plan/CONVERGED_REWRITE_PLAN.md) | Where the architecture is going: the converged 3GPP + O-RAN rewrite plan to 1.0 (snapshot of 31 October 2026) |
 | [call-flows/](call-flows/) | Sequence diagrams 01–27 (02 and 17: AI/ML lifecycle; 09: intents; 12: DME eligibility; 14: correlation id; 21: vendor onboarding; 22–25: reference rApps; 26: model governance and end of life; 27: TS 28.105 provisioning resources) |
 | [openapi/](openapi/) | Generated OpenAPI specs per service |
 | [`../DEMO_RUNBOOK.md`](../DEMO_RUNBOOK.md) | Runnable demo, including §24–§27 for the reference rApps |
