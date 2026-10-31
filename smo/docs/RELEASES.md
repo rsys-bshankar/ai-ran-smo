@@ -21,13 +21,24 @@ Until `1.0.0`, `0.MINOR` is the breaking-change number and `0.x.PATCH` is for fi
 | **PATCH** | A fix that changes none of the above: a bug, a security fix, a dependency bump, documentation |
 
 A schema revision is additive when the previous release's code runs on the new schema (a new nullable column, a new table, a new index). Anything else needs
-the MAJOR bump, or an expand/contract split across two MINOR releases (`PR-OPS-5`).
+the MAJOR bump, or an expand/contract split across two MINOR releases (`PR-OPS-5`). Until 1.0 this is suspended by rewrite mode (above).
+
+## Until 1.0: rewrite mode
+
+Before 1.0 the SMO is restructured in place into a converged 3GPP + O-RAN SMO ([`docs/plan/CONVERGED_REWRITE_PLAN.md`](plan/CONVERGED_REWRITE_PLAN.md)). The product is not live, so nothing is kept for 0.9.0 users: no deprecation window, no alias, no upgrade path from 0.9.0. The rule that holds until 1.0:
+
+- A replaced route, table, service or SDK call is deleted in the same PR series as its replacement, and nothing still calls it.
+- A migration may drop or rename in one revision; expand-then-contract (below) does not apply. Each revision still has a real `downgrade()`, and `scripts/check_migration_matches_models.py` still runs against Postgres (`CLAUDE.md`, "Schema changes are revisions").
+- The switch is `scripts/rewrite_mode.json` (plan task S0.8). While `active` is true, the gates that compare with the previous release print a GitHub notice naming that file and pass without running their check, so the required checks stay green: "R1 contract has no breaking change since the previous release", "Previous release's code runs on the new schema" and "Upgrade from the previous release keeps its data" (`.github/workflows/smo-tests.yml`), and the job `upgrade` of the kind lane (`.github/workflows/smo-upgrade-kind.yml`, which installs a previous release). The jobs and their scripts stay; `scripts/breaking_change_waivers.json` is not read while the comparison is paused.
+- At 1.0, plan task S8.8 squashes the rewrite's revisions into one baseline revision and sets `active` to false, which switches the gates back on; from then the compatibility checks, the deprecation policy and expand-then-contract below apply. `tests_integration/test_rewrite_mode.py` fails if the switch is still on once the release version (the newest dated `CHANGELOG.md` section, or the chart's `version` or `appVersion`) is 1.0.0 or later, a 1.0.0 release candidate included.
+
+The sections below describe the gates as they run from 1.0, and for 1.0 itself the criteria are read with this in mind (criteria 1 and 7, below).
 
 ## Compatibility checks and the deprecation policy
 
 CI compares the contract with the previous release on every pull request (`scripts/check_breaking_changes.py`, job "R1 contract has no breaking change since the previous release"): each `docs/openapi/<module>.json` at the newest `smo-v*` tag against the one in the checkout. A removed operation, a new required parameter or request property, a narrowed bound or enum, a changed type or a lost response property fails the job. A base it cannot use is an error, never a pass: no release tag, a `--base` that does not resolve to a commit, or a base with no `docs/openapi` documents all exit non-zero with a message (the job fetches tags and full history so that the newest tag exists). An intended break is waived in `scripts/breaking_change_waivers.json` with a reason (a key may use `*`); a waiver that matches nothing fails, and the file is emptied right after a release is tagged ("Cutting a release", step 4), since each waiver describes the comparison with one release. Schema compatibility has its own jobs (the previous release's code on the new schema; the upgrade that keeps data).
 
-Deprecation, for a MAJOR-bump change made without surprising a consumer:
+Deprecation, for a MAJOR-bump change made without surprising a consumer (from 1.0; until then rewrite mode deletes a replaced interface outright, above):
 
 1. **Announce first.** A route, field or setting to be removed or narrowed is marked deprecated in a MINOR release: `deprecated: true` in its OpenAPI entry, a `### Deprecated` entry in `CHANGELOG.md` naming what replaces it and the release it goes in.
 2. **Keep it working for at least one MINOR release** (two before 1.0), and answer a call to it as before; where a response can carry it, add a `Deprecation` header.
@@ -47,6 +58,8 @@ A change that only refuses input that used to make the service fail (a 500) is a
 6. **Traffic between services is mutually authenticated**: native mTLS (`PR-SEC-2`, built in 0.5.0, opt in) with the rotation procedure tried once (the CI job `compose-mtls` renews and restarts three services; the CA rotation phases are tested by handshake). The service-mesh path (`PR-SEC-3`) was decided against, so it is not a way to meet this criterion.
 7. **No unwaived breaking change since 0.5.0**: `scripts/breaking_change_waivers.json` is empty at the candidate, and the deprecation policy above has been followed for everything removed.
 8. **The compliance documents exist and are current**: spec release table, personal-data inventory and erasure procedure, data residency statement, control matrix (`PR-STD`).
+
+Rewrite mode changes criteria 1 and 7 for 1.0.0 itself: there is no upgrade path from 0.9.0, and what the rewrite replaced was deleted without the deprecation policy. The breaking-change, previous-release and upgrade lanes are switched back on by S8.8 on the 1.0 baseline and must be green from the first 1.0 release candidate; which base they compare with at 1.0, since no earlier release has that baseline, is for S8.8 to settle and write here.
 
 A criterion that cannot be met is not waived silently: the release notes say which one and why, and the person cutting the release decides.
 

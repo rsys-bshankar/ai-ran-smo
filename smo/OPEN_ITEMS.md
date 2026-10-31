@@ -68,16 +68,20 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
 - **OI-1-alarm-storm** — No alarm-storm correlation algorithm in `ran-nf-oam/`;
   `correlation_group` is a coarse string. No audited O-RAN-SC repo implements one either.
   Approach: wait for real alarm traces; start with time-window + topology (`neighbourRefs`) grouping.
+  Superseded by PR-CONV-S3.7.
 - **SO-WAIT** — An order's step is COMPLETED once the module accepted it, not when its work finished: SO SMOS does not wait for the AIMgF job a
   step started, so an order whose later step needs that job finished (emulation after validation, inference after an ACTIVE runtime) fails there (call
   flow 10d). Approach: an optional `waitFor` on a step (a job state, a model lifecycle state) and asynchronous execution in a worker that polls it with a
   deadline, the order answering 202 at once.
+  Superseded by PR-CONV-S5.3.
 - **SO-CHAIN** — A step cannot take an input from an earlier step's result: a DEPLOY step needs an `nfDeploymentDescriptorId` the operator already has,
   not the resource INFRA provisioned, nor the training job a later VALIDATION step names (call flow 10a). Approach: references in a step's fields to an
   earlier step's result (`{"$from": 0, "path": "trainingJobId"}`), resolved just before the step is dispatched; an unresolved one fails the step.
+  Superseded by PR-CONV-S5.3.
 - **SO-RESUME** — A failed or interrupted order cannot be retried or resumed: its PENDING steps are only cancellable, and a step left RUNNING by a crash
   stays so (call flow 10b). Approach: `POST /orders/{id}/resume` that, for an order with no RUNNING step, runs its PENDING steps (a FAILED step again
   only when asked), and a worker that marks a step RUNNING for longer than a deadline as UNKNOWN for an operator to settle.
+  Superseded by PR-CONV-S5.3.
 - **AIML-UNLOAD** — A model loaded onto an inference function cannot be unloaded: there is no unload operation, and cancelling a loading request does not
   remove what it loaded (call flow 27d). Taking a model off a function today means terminating its runtime (call flow 17d) and editing the function's
   `mLModelRefList`. Approach: an unload request (TS 28.105 has none, so a vendor extension of `MLModelLoadingRequest`) that removes the model from the
@@ -183,6 +187,7 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
   invokers to the gateway's per-invoker controls and audit (`mllf/docs/lifecycle.md`, a and c). `SMO_INVOKER_ID` / `SMO_INVOKER_SECRET` avoid it but
   neither compose nor the chart sets them. Approach: give MLLF the shared `module_identity` path (a database role with only that table, as every other
   module has) or a pre-provisioned identity from a Secret in compose and the chart.
+  Superseded by PR-CONV-S2.2.
 - **O1-ADAPTOR-ENROL** — How a production O1 adaptor is given an identity is not specified: an adaptor's ingest routes (`POST /ran-nf-oam/alarms/ingest`,
   `/pm-reports`, `/pm-files`, `/o1-adaptor-endpoints/{id}/heartbeat`) are not on the rApp allow-list (`shared/smo_shared/roles.py`, `/ran-nf-oam`
   allows only `config-jobs`), so an adaptor enrolled as an rApp is refused at the gateway; enrolled as an SMO module (the enrollment secret) it gets the
@@ -203,6 +208,7 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
   `notifyFileReady`). TS 28.532 streaming data reporting is not: there is no streaming transport,
   and `delivery_method=stream` stays a registration (MDAF's `STREAMING` is likewise recorded only,
   `SA-MDA-5`). Approach: a streaming transport shared by RAN NF OAM and MDAF, when a consumer needs one.
+  Superseded by PR-CONV-S3.16.
 - **SA-RANOAM-4 / SA-O1-1 (containment)** — DN refs are parsed and validated, the IOC class is
   taken from the last RDN, and the registry now has a containment tree (`managed_object`, `GET /managed-objects/{dn}/children`, PR-SB-6.1).
   `managedElementRef` is still a flat registry key (its root DN is `ManagedElement=<ref>`), and a model-based server fills the tree through
@@ -247,6 +253,7 @@ SA-MLMR-8 (`usageReqs`), SA-MLMR-9 (whole-object `filt-criteria` discovery).
   writes on activation, and stays so: SA SMOS's O1-CM handler records the reactivation (`deactivated_at` cleared) but does not enact again or report
   again (`HISTORY.md` INTENT-LIFECYCLE-PUSH says why it does not re-enact). Approach: on the push that clears `deactivated_at`, publish an IntentReport
   that restates the enactment's status (no DME call), once; or have Intent Service keep the last handler report current on reactivation.
+  Superseded by PR-CONV-S5.9.
 - SA-INTENT-partial is closed: the 8 value datatypes are structure-checked, `ValueRangeType`
   is enforced for generic targets and contexts, and `ReportingCondition` is validated in
   `intentReportControl` (`intent-service/app/ts28312_datatypes.py`).
@@ -506,7 +513,7 @@ Done (`HISTORY.md`, PR-SEC-10; decision `docs/adr/0005-tenant-region-authorizati
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SEC-12.1 | SBOM per image. Built: every release image carries BuildKit's SBOM attestation in the registry (`release-images.yml`, `--sbom=true`, `HISTORY.md` PR-SEC-12.1). Open: a file someone can download without a registry tool (attached to the GitHub release or kept as a workflow artifact), and a step that reads the attestation back so a release without one fails | SBOM file per image on the release; the release fails without it | – |
+| SEC-12.1 | SBOM per image. Built: every release image carries BuildKit's SBOM attestation in the registry (`release-images.yml`, `--sbom=true`, `HISTORY.md` PR-SEC-12.1). Open: a file someone can download without a registry tool (attached to the GitHub release or kept as a workflow artifact), and a step that reads the attestation back so a release without one fails. Superseded by PR-CONV-S8.5. | SBOM file per image on the release; the release fails without it | – |
 | SEC-12.2 | Image vulnerability scan with a severity gate (built in `image-scan.yml`; not yet shown to fail on a seeded finding in CI: `tests_integration/test_scan_summary.py` shows the gate on Trivy-shaped results) | Gate fails on a seeded finding | – |
 
 #### PR-SEC-13 — Container hardening (all steps done: `HISTORY.md` PR-SEC-13, PR-SEC-13.2 and PR-SEC-13.4)
@@ -773,6 +780,8 @@ A CM write's values are checked against the leaf's YANG type, range, length, pat
 
 #### PR-SB-8 — Streaming PM (`SA-RANOAM-8`)
 
+Superseded by PR-CONV-S3.16.
+
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | SB-8.1 | ADR: transport (Kafka, gRPC or chunked HTTP) | ADR merged | – |
@@ -818,6 +827,8 @@ subscription scope, a RIC simulator lane, the dormant A1-ML schema) is dropped w
 | SB-15.5 | Cancel | Test | SB-15.3, MSG-4.3 |
 
 #### PR-SB-16 — Kubernetes driver for NFO
+
+Superseded by PR-CONV-S4.4.
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
@@ -978,6 +989,8 @@ MGT-15.1 to 15.4 are built, and the GUI tabs (`MGT-15.5`), the halted-campaign a
 
 #### PR-MGT-16 — Intent and rApp conflict handling (MGT-16.2 done: `HISTORY.md` PR-MGT-16.2)
 
+Superseded by PR-CONV-S5.14.
+
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | MGT-16.1 | Target-overlap detection between two intents | Unit tests | – |
@@ -987,6 +1000,8 @@ MGT-15.1 to 15.4 are built, and the GUI tabs (`MGT-15.5`), the halted-campaign a
 | MGT-16.6 | GUI list of open conflicts | Component test | MGT-16.3 |
 
 #### PR-MGT-17 — SO SMOS saga semantics
+
+Superseded by PR-CONV-S5.3.
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
@@ -1031,6 +1046,8 @@ FM subscriptions with callbacks exist; the steps below add destinations a NOC us
 | NB-2.4 | Sample CMDB sync script | Script runs against the demo data | NB-2.3 |
 
 #### PR-NB-3 — TS 28.532 MnS facade
+
+Superseded by PR-CONV-S3.3, PR-CONV-S3.15 and PR-CONV-S3.16.
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
@@ -1143,7 +1160,7 @@ Current state, checked: AIMgF training, validation, emulation and inference jobs
 |---|---|---|---|
 | AI-7.1 | Store baseline stats at training completion | Migration | – |
 | AI-7.2 | Ingest performance reports from `MLMFSubscription` into a table | Rows appear | – |
-| AI-7.3 | PSI and KS computation | Unit tests with known drift | AI-7.1 |
+| AI-7.3 | PSI and KS computation. Superseded by PR-CONV-S7.6. | Unit tests with known drift | AI-7.1 |
 | AI-7.4 | Threshold breach raises an event | Event delivered | AI-7.3, MSG-1.4 |
 | AI-7.5 | Flag the model and notify the owner | Flag visible in GUI | AI-7.4 |
 
@@ -1175,6 +1192,8 @@ Current state, checked: AIMgF training, validation, emulation and inference jobs
 Built (`HISTORY.md` PR-AI-11, PR-AI-13): the approval request object, the queue routes, the timeout policy, the hook for an `ASSIST` instance with an approval policy and the notice to approvers. A second approver is built, opt in per instance (`requiredApprovals: 2`; `HISTORY.md` PR-AI-11 follow-ups). What it does not do, and may want a decision: approval of changes other than config jobs, approver groups or a required role per approval, more than two approvals, per-region approvers (tenant and region authorisation, a later change), a notice of the first of two approvals, a notice of a decision to the rApp or the approver, and a way for the platform (rather than the GUI backend that pins the name) to know that two `decidedBy` values are two people.
 
 #### PR-AI-12 — Shadow mode
+
+Superseded by PR-CONV-S5.10.
 
 Not started in the change that built AI-11 and AI-13 (`HISTORY.md` PR-AI-11, PR-AI-13): what it would reuse is listed there, and the decisions it needs (a policy row like the approval one or a flag on the instance, where the recording lives, what the compare report compares).
 
@@ -1382,6 +1401,205 @@ and how it stops and recovers. Same diagram format.
 | DOC-CF-3.3 | Upgrade: rolling upgrade, expand/contract migrations, the previous release's code on the new schema | done: call flow 30, `HISTORY.md` DOC-CF-3 |
 | DOC-CF-3.4 | Schema migration on its own (Alembic, roles and grants) | done: call flow 31, `HISTORY.md` DOC-CF-3 |
 | DOC-CF-3.5 | Backup, restore and disaster recovery drill | done: call flow 32, `HISTORY.md` DOC-CF-3 |
+
+## 7. Converged rewrite (`PR-CONV`)
+
+One row per task of the converged 3GPP + O-RAN rewrite plan ([`docs/plan/CONVERGED_REWRITE_PLAN.md`](docs/plan/CONVERGED_REWRITE_PLAN.md), snapshot of
+31 October 2026; the live copy is the Claude Docs plan "ai-ran-smo Converged Rewrite Plan"), as its stage tables list them: 128 tasks, `S0.1` to `S8.14`.
+Cite a task as `PR-CONV-S3.1`. **Needs** is as in the plan: a task ID, a milestone (`M0` to `M7`, each the gate at the end of its stage) or a decision
+(`D1` to `D20`, all answered: `HISTORY.md` PR-CONV-S0.1). The pull request that finishes a task moves its row to `HISTORY.md` under the same ID, with
+real detail, and sets the task's status in the live plan to Done the same day (the plan's working rule 6). Until 1.0 the work runs in rewrite mode
+(`docs/RELEASES.md`, "Until 1.0: rewrite mode"). An older item of this file that a row replaces says so with a line "Superseded by PR-CONV-Sx.y".
+
+### Stage 0 — Decide and lock contracts
+
+Stage 0 ends at milestone M0 (week 2): decisions answered, three ADRs merged, the schema bundle corrected and complete, the contract gate required in CI, and the four sample use cases realised on paper.
+
+Done, in `HISTORY.md`: `PR-CONV-S0.1`, `PR-CONV-S0.8`, `PR-CONV-S0.11`.
+
+| ID | Task | Stage | Needs | Done when |
+|---|---|---|---|---|
+| PR-CONV-S0.2 | ADR 0008: converged architecture (module map, two intent tiers, one writer per table, stores) | 0 | S0.1 | Merged |
+| PR-CONV-S0.3 | ADR 0009: intent model on TS 28.312 v20 (Level-1/Level-2, decomposition, lease, autonomy); supersedes ADR 0007 | 0 | S0.1 | Merged; ADR 0007 status updated |
+| PR-CONV-S0.4 | ADR 0010: AIMgF absorbs MLMR and MLLF | 0 | S0.1 | Merged |
+| PR-CONV-S0.5 | Import the schema bundle to `specs/smo-schema-bundle/` and correct R1–R4 and R13 | 0 | S0.3 | Bundle lints clean; every example validates against the repo's TS 28.312 models |
+| PR-CONV-S0.6 | Complete the five stub contracts (rAppMgmt, AI/ML, MDAF, TE&IV, SME) | 0 | S0.5 | Every operation named in call flows 33–37 has a schema |
+| PR-CONV-S0.7 | Contract gate in CI (`redocly lint`, `pyang --strict`, bundle-to-OpenAPI drift) | 0 | S0.5 | Job green and made a required check |
+| PR-CONV-S0.9 | Call flows 34–37 (Level-1 intake, Level-2 split and rollback, NES vs MRO, lease expiry) | 0 | S0.3, S0.6 | Diagrams parse (`validate:diagrams`), images rendered |
+| PR-CONV-S0.10 | Realise the four sample use cases on paper through flows 34–37 | 0 | S0.9 | Each sample maps with no special-case logic; Balaji Shankaran signs off (sign-off owner agreed 31 October 2026) |
+| PR-CONV-S0.12 | ADR 0008 addendum: module names aligned with the O-RAN OAD v14 SMOS list and 3GPP MnS names (G23) | 0 | S0.2 | Every module maps to one OAD SMOS or is marked \[D\] |
+| PR-CONV-S0.13 | Integration spike: O-RAN-SC smo-teiv behind a 3GPP MnS and WG10 TE&IV R1 face (D19) | 0 | S0.1 | Written result: load, query latency and change events measured; the gap list turned into Stage 3 tasks |
+| PR-CONV-S0.14 | Obtain the WG10 Application Packaging and Onboarding v1.00 texts; check S4.1 against them | 0 | – | Texts on file; S4.1 marked normative or kept provisional with the differences listed |
+| PR-CONV-S0.15 | Choose the O1 simulator: O-RAN-SC sim-o1-ofhmp-interfaces in place of ntsim-ng | 0 | S0.8 | Simulator runs in compose and the chart; NETCONF, VES stndDefined and file-ready PM reach the SMO |
+| PR-CONV-S0.16 | ADR 0011: standard interfaces only; the [D] exceptions listed by name | 0 | S0.2 | Merged; the table is in ARCHITECTURE.md |
+| PR-CONV-S0.17 | Interface gate in CI: every route is a standard operation or in the ADR 0011 [D] list | 0 | S0.16 | Required check; it fails on a private route added in a test PR |
+
+### Stage 1 — Shared MnS foundation
+
+Stage 1 ends at milestone M1 (week 5): a reference "Echo" MnS module, built only from the shared library, passes every ProvMnS operation test and is reached through R1 by class name, with no static route.
+
+| ID | Task | Stage | Needs | Done when |
+|---|---|---|---|---|
+| PR-CONV-S1.1 | `smo_shared.mns`: generic ProvMnS router on Postgres JSONB (the four MOI operations) | 1 | M0 | Echo MnS passes all four operations on SQLite and Postgres |
+| PR-CONV-S1.2 | `IMoiLifecycleHandler` hooks and the Component-B class registry | 1 | S1.1 | A class with no registered schema is refused 422 |
+| PR-CONV-S1.3 | Component-C dictionary: TS 28.111 alarms, TS 28.552 / 28.554 counters and KPIs | 1 | M0 | Used by RAN NF OAM and DME tests |
+| PR-CONV-S1.4 | Scope and filter engine (BASE_ONLY … BASE_SUBTREE, JSONPath filter, keyset paging) | 1 | S1.1 | Property tests; mutation gate covers it |
+| PR-CONV-S1.5 | Cross-cutting checks inside the router (scope, MSAC, idempotency, audit, `traceparent`, metric) | 1 | S1.1 | One test per check through the Echo module |
+| PR-CONV-S1.6 | Echo MnS reference module and its test suite | 1 | S1.4, S1.5 | Wave 0 exit gate met; added to `smo-mutation.yml` |
+| PR-CONV-S1.7 | SME: TS 28.533 MnS registry, discovery, `ServiceReady` / `NotifyServiceChange` | 1 | S1.1 | Conformance tests against the corrected SME contract |
+| PR-CONV-S1.8 | R1 Termination routes ProvMnS paths by registry lookup | 1 | S1.7 | Echo MnS reached through R1 with no entry in the static table |
+| PR-CONV-S1.9 | Common schemas `common_teiv_nrm` and `common_dme_telemetry` with writer and reader roles | 1 | M0 | `check_migration_matches_models.py` green on Postgres |
+| PR-CONV-S1.10 | Infrastructure profiles: TimescaleDB, SeaweedFS, Kafka relay slices 1–3, the O1 simulator | 1 | M0 | `docker compose config` valid; mirror check green |
+| PR-CONV-S1.11 | Runtime alignment: Python 3.12, `BASE_IMAGE` for Ubuntu 24.04 and UBI 9 | 1 | M0 | Both images build; full battery green on 3.12 |
+| PR-CONV-S1.12 | MnS registry per TS 28.622 MnsRegistry / MnsInfo and TS 28.537 MgmtDataInfo (G12) | 1 | S1.6 | Every module and rApp self-registers; a registry read lists them all |
+| PR-CONV-S1.13 | One subscription manager: TS 28.622 NtfSubscriptionControl and HeartbeatControl (G13) | 1 | S1.12 | Filtered subscriptions and heartbeats proved in the integration mesh |
+| PR-CONV-S1.14 | Access control per TS 28.319 (Identity, Role, AccessRule) (G14) | 1 | S1.6 | Every route's scope check reads AccessRules; MSAC tests still pass |
+| PR-CONV-S1.15 | WG11 security baseline (OAuth2 with mTLS, JWS, Kafka ACLs, random rAppIds, log forwarding) (G15) | 1 | S1.14 | Negative tests (no client cert, wrong audience, unsigned token, ACL breach) all fail closed |
+| PR-CONV-S1.16 | SME as the CAPIF core function over R1; peers found by CAPIF discovery | 1 | S1.12, S1.15 | A module started with no peer addresses finds every peer through CAPIF |
+
+### Stage 2 — AIMgF absorbs MLMR and MLLF
+
+Stage 2 ends at milestone M2 (week 5, in parallel with Stage 1): one AI/ML service, old `/mlmr/*` and `/mllf/*` routes deleted once every caller uses /aimgf/\*, and model artifacts in the object store.
+
+| ID | Task | Stage | Needs | Done when |
+|---|---|---|---|---|
+| PR-CONV-S2.1 | Move MLMR into `aimgf/app/mlmr/`; its tables into the aimgf schema | 2 | D4 | AIMgF suite green, including the TS 29.482 MLR conformance tests moved from `mlmr/` |
+| PR-CONV-S2.2 | Move the MLLF deploy gate into `aimgf/app/mllf/` (in-process call) | 2 | S2.1 | Deploy-gate tests pass with no MLLF container |
+| PR-CONV-S2.3 | Organise AIMgF's code by TS 28.105 capability | 2 | S2.1 | Code map in the README matches the packages |
+| PR-CONV-S2.4 | Move every caller to `/aimgf/*`; no alias | 2 | S2.2 | A CI grep finds no caller of the old prefixes |
+| PR-CONV-S2.5 | Model artifacts out of the database into the object store; ONNX and Safetensors only | 2 | S2.1, S1.10 | Upgrade from 0.9.0 keeps every artifact readable (upgrade lane) |
+| PR-CONV-S2.6 | Publish the lifecycle mapping (14 states → 7 stages → `servingState`) | 2 | S0.5 | Mapping table merged; GUI labels follow it |
+| PR-CONV-S2.7 | Expose `AIMLModel`, `MLTrainingRequest`, `MLTestingRequest` as ProvMnS classes | 2 | S1.6, S2.3 | Classes registered in SME's MnS registry and reachable through R1 |
+| PR-CONV-S2.8 | Remove `mlmr/` and `mllf/` from compose, Helm, CI, coverage floors and roles | 2 | S2.4 | No service, image or role named mlmr or mllf |
+| PR-CONV-S2.9 | Amend `docs/ARCHITECTURE.md` (golden rules 1 and 5, service map, merged README) | 2 | S2.2 | Merged with the code change |
+| PR-CONV-S2.10 | Full TS 28.105 Rel-19 model in AIMgF (G6) | 2 | S2.3 | Every class reachable over ProvMnS and mapped onto the 14-state lifecycle |
+| PR-CONV-S2.11 | R1 AI/ML workflow services, all 11 of R1GAP v14 §5.6 (G7) | 2 | S2.10 | An R1 test per service passes; SDKs expose all 11 |
+| PR-CONV-S2.12 | Training-data lineage per artifact version (G8) | 2 | S2.10, S3.17 | Every artifact version shows its dataset statistics and source jobs |
+
+### Stage 3 — Topology, O1 and data spine
+
+Stage 3 ends at milestone M3 (week 10): against ten simulated nodes (S0.15), a ProvMnS write reaches the cell by NETCONF, VES PM lands in the ROP tables, an alarm reaches the TS 28.111 list, TE&IV shows the nodes and their edges, and an injected critical alarm reaches DME in under 2 seconds.
+
+| ID | Task | Stage | Needs | Done when |
+|---|---|---|---|---|
+| PR-CONV-S3.1 | New `teiv/` module owning `common_teiv_nrm` (moi_store, topology edges, query API) | 3 | S1.6, S1.9 | RAN NF OAM's `/topology` and `/topology/graph` answers reproduced byte for byte by `teiv/` (golden tests) |
+| PR-CONV-S3.2 | Cell lock table, written only by SO SMOS | 3 | S3.1 | Role grants prove a second writer is refused |
+| PR-CONV-S3.3 | RAN NF OAM ProvMnS NRM facade on today's config jobs | 3 | S1.6 | Bundle examples applied to netconf-lab and to the O-RAN-SC simulator chosen in S0.15 |
+| PR-CONV-S3.4 | RAN NF OAM writes NRM into TE&IV and stops serving topology | 3 | S3.1 | No topology code left in `ran-nf-oam/app/` and no caller of its old topology routes |
+| PR-CONV-S3.5 | Declarative YANG dialect mapper keyed by vendor and software version | 3 | S3.3 | Part 2 §3's two vendor examples pass from one canonical request |
+| PR-CONV-S3.6 | Persist NETCONF sessions and an O1 transaction audit log | 3 | S3.3 | A restarted pod resumes its sessions from the table |
+| PR-CONV-S3.7 | VES alarm storm control (5 s de-duplication, children folded under a parent) | 3 | S1.3 | A 500-alarm burst publishes one parent alarm with its children linked |
+| PR-CONV-S3.8 | DME wide ROP store on TimescaleDB; one ROP batch per element per ROP | 3 | S1.9, S1.10 | One row per cell per 15-minute ROP; ingestion lag p99 under 5 s (`smo_dme_ingestion_lag_seconds`) |
+| PR-CONV-S3.9 | DME data jobs by SubNetwork; matrix query `POST /dme/v1/query` | 3 | S3.8 | NES and MRO example jobs answered from the ROP tables |
+| PR-CONV-S3.10 | Data quality: SUSPECT, IMPUTED, withheld inference triggers | 3 | S3.8 | Unit tests for each quality state |
+| PR-CONV-S3.11 | Tiered retention: hot 14 d, warm 90 d aggregates, cold Parquet | 3 | S3.8, S1.10 | Retention job runs under the single-runner lock |
+| PR-CONV-S3.12 | Freeze DME O1 action mediation (no new caller) | 3 | S0.8 | Guard test fails on a new caller of `/dme/actions` |
+| PR-CONV-S3.13 | Simulator lane: ten simulated O-DU/O-CU nodes in CI | 3 | S1.10 | M3 scenario runs in CI, not required for the first 20 runs |
+| PR-CONV-S3.14 | TS 28.541 SON functions in RAN NF OAM (CES, DES, DMRO) (G3, G4) | 3 | S3.3 | An out-of-bounds MRO write is refused; energySavingState changes are notified |
+| PR-CONV-S3.15 | Fault supervision per TS 28.111 (G9) | 3 | S1.13, S0.15 | Simulator alarms raised, acknowledged, cleared and rebuilt after a restart |
+| PR-CONV-S3.16 | TS 28.622 PerfMetricJob, ThresholdMonitor, TraceJob; file pull, streaming PM, MDT and RLF traces (G10) | 3 | S1.13, S0.15 | A job created over ProvMnS yields files and a stream from the simulator; a threshold crossing notifies |
+| PR-CONV-S3.17 | DME types per R1TD v05 as the rApp PM path (G11) | 3 | S3.16 | Two rApps consuming the same type share one collection job |
+| PR-CONV-S3.18 | Energy-efficiency KPIs per TS 28.554 §6.7.1 (G5) | 3 | S3.16 | KPIs computed from simulator counters match a hand calculation |
+
+### Stage 4 — rApp lifecycle and real O2
+
+Stage 4 ends at milestone M4 (week 13): an rApp CSAR carrying an `intentCapabilityProfile` is instantiated by API onto a kind cluster, registers with SME, emits ServiceReady, loads its warm-start model from AIMgF, and is healed after `kubectl delete pod`.
+
+| ID | Task | Stage | Needs | Done when |
+|---|---|---|---|---|
+| PR-CONV-S4.1 | Onboarding validates `intentCapabilityProfile`, `aimlModelDependencies`, `requiredR1Services` | 4 | M0 | The bundle's NES package onboards; a bad profile fails the package with the reason |
+| PR-CONV-S4.2 | rApp Management: `RappPackage` / `RappInstance` over ProvMnS, six states, automatic rollback | 4 | S1.6, S4.1 | createMOI(RappInstance) from a test client reaches RUNNING |
+| PR-CONV-S4.3 | Warm start: a new instance loads its model from AIMgF | 4 | S2.7, S4.1 | Both paths tested |
+| PR-CONV-S4.4 | NFO real O2dms driver (Helm 3, Kubernetes API) behind a driver interface | 4 | S1.10 | Test CSAR deployed, pod killed, pod back and re-registered |
+| PR-CONV-S4.5 | FOCOM checks O2ims capacity and writes `HOSTED_ON_OCLOUD` edges to TE&IV | 4 | S3.1 | Deploy refused with a reason when the pool lacks capacity |
+| PR-CONV-S4.6 | SME emits ServiceReady and NotifyServiceChange when an rApp publishes | 4 | S1.7 | Event received by a test subscriber within 1 s |
+| PR-CONV-S4.7 | Package-level model owner in AIMgF (ADR 0007 Q6) | 4 | S2.1 | Second instance loads the model without re-registering it |
+| PR-CONV-S4.8 | rApp registration under rApp Management returning a random rAppId (G16) | 4 | S1.15 | Register and deregister over R1; SDKs use the returned rAppId |
+| PR-CONV-S4.9 | O2 detail: O-Cloud registration, O2ims v12 subscriptions, O2dms K8s profile v7 (G17) | 4 | S4.1 | Deploy through the O2dms K8s profile on kind; inventory change events received |
+| PR-CONV-S4.10 | GPU runtime profiles that never take the gNodeB's share (G18) | 4 | S4.9 | Load test: the gNodeB's GPU share holds while a training job runs |
+
+### Stage 5 — SO SMOS intent brain and SA SMOS assurance
+
+Stage 5 ends at milestone M5 (week 18): with a rule-based hello rApp on the simulator, the 11-step Level-1 flow and the 7-step Level-2 parallel split run end to end, and the chaos test passes — NES locks Cell-B, injected PRB load above 80% on Cell-A turns the loop DEGRADED, and SO SMOS restores Cell-B from its snapshot within one evaluation window.
+
+| ID | Task | Stage | Needs | Done when |
+|---|---|---|---|---|
+| PR-CONV-S5.1 | Move Intent Service into `so-smos/` as its intent package | 5 | M0 | Intent Service's whole test suite passes inside `so-smos/` |
+| PR-CONV-S5.2 | Level-1 intake through ProvMnS, scope-checked, feasibility, first report | 5 | S5.1, S1.6 | Bundle's NES and MRO Level-1 examples (corrected) accepted; out-of-scope DN refused 403 |
+| PR-CONV-S5.3 | Playbook engine (DAG per intent, rApp discovery and instantiation, delegation, compensation) | 5 | S4.2, S4.6, S5.2 | Design call flow 1 (11 steps) passes on kind |
+| PR-CONV-S5.4 | Level-2 intake from rApps over R1; the safeguards move here | 5 | S5.1 | Each safeguard has a refusal test on the Level-2 path |
+| PR-CONV-S5.5 | Arbitration: cell locks, priority, partial filtering, `isHoAllowed=false` | 5 | S3.2, S5.4 | NES (80) vs MRO (70) scenario of the HLD §6.3 passes |
+| PR-CONV-S5.6 | Snapshot and parallel split (RAN NF OAM branch and SA SMOS branch, both or neither) | 5 | S3.3, S5.8 | Atomicity test: a failed Branch B leaves no O1 change |
+| PR-CONV-S5.7 | Leases with renewal and an expiry watchdog | 5 | S5.6 | Killed rApp → cell restored within one watchdog period after expiry |
+| PR-CONV-S5.8 | SA SMOS per TS 28.535 / 28.536 assurance closed loops | 5 | S1.6, S3.9 | Metric `smo_sasmos_accl_outcomes_total` populated in the chaos test |
+| PR-CONV-S5.9 | Retire the O1-CM handler, autonomy dispatch, `/dme/actions` and direct rApp config-job writes | 5 | S5.4, S5.6 | Routes, code and tests gone; a CI grep finds no caller |
+| PR-CONV-S5.10 | Autonomy per intent (SHADOW, SUPERVISED, CLOSED_LOOP_AUTONOMOUS); two-person promotion | 5 | S5.4 | State machine tests for every promotion and demotion path |
+| PR-CONV-S5.11 | Global Stop extended to SO SMOS, RAN NF OAM and AIMgF | 5 | S5.6 | Reset needs two people (Part 2 §9.4) |
+| PR-CONV-S5.12 | Rule-based hello rApp for the M5 tests | 5 | S5.4 | Runs the M5 scenarios in CI |
+| PR-CONV-S5.13 | SO SMOS high availability | 5 | S5.7 | Replica killed mid-split: the other finishes or rolls back |
+| PR-CONV-S5.14 | Conflict management per R1ServCnfMtgt and TS 28.567 (G2, D17) | 5 | S5.4, S0.1 | Flow 36 (NES vs MRO) and an indirect-conflict case both pass |
+| PR-CONV-S5.15 | Intent pre-evaluation per TS 28.312 §4.6.2 and IntentHandlingCapability (G19) | 5 | S5.14 | The write ledger shows no network write during any pre-evaluation |
+| PR-CONV-S5.16 | TS 28.100 autonomy levels per workflow (G22) | 5 | S5.8 | Level shown per workflow in the console and in STANDARDS.md |
+| PR-CONV-S5.17 | SA SMOS talks only through TS 28.312 intents and reports; private routes deleted | 5 | S5.8, S1.16 | In the integration mesh, no call into or out of SA SMOS falls outside TS 28.312, TS 28.535/28.536 and CAPIF |
+
+### Stage 6 — Generic intent-based GUI and BFF
+
+Stage 6 ends at milestone M6 (week 21): every write an operator makes in the console is either a TS 28.312 intent operation (create, modify, change admin state, delete, answer a negotiation) or a TS 28.532 ProvMnS operation on a registered 3GPP class, and the console draws its forms and tables from the class schemas instead of per-module code.
+
+| ID | Task | Stage | Needs | Done when |
+|---|---|---|---|---|
+| PR-CONV-S6.1 | BFF generic proxy (`/api/mns/{class}`, `/api/intents`) and generated RBAC matrix | 6 | M5, D15 | Every BFF write route is one of the two generic families |
+| PR-CONV-S6.2 | Schema-driven building blocks (class table, MOI detail, merge-patch form, diff) | 6 | S6.1 | A new class appears in the console with no page code |
+| PR-CONV-S6.3 | Intent composer | 6 | S6.2, S5.2 | NES and MRO Level-1 intents composed without typing JSON |
+| PR-CONV-S6.4 | Intent operations view | 6 | S6.3, S5.10 | One page answers "is this intent working, and why not" |
+| PR-CONV-S6.5 | Topology on TE&IV with lock and alarm overlays | 6 | S3.1, S3.2 | Locked cells show their owning intent and expiry |
+| PR-CONV-S6.6 | Roles and scope: five Part 2 roles, SubNetwork axis | 6 | D15 | Role matrix tests per class and operation |
+| PR-CONV-S6.7 | Two-person rule for the four Part 2 §9.4 action classes | 6 | S5.10, S5.11 | Each class refused with one vote, accepted with two distinct people |
+| PR-CONV-S6.8 | Retire the module pages, one area per PR | 6 | S6.2–S6.5 | Page count down; no route left without a generic replacement |
+| PR-CONV-S6.9 | GUI tests: Playwright intent lifecycle, axe, ZAP, English and German parity | 6 | S6.4 | All four gates green in `smo-gui-e2e.yml` |
+| PR-CONV-S6.10 | Live events for intents, lease rollbacks and loop DEGRADED on SSE | 6 | S5.8 | Events reach the console within 2 s of the outbox row |
+| PR-CONV-S6.11 | Admin through the generic views: TS 28.319 and the MnS registry (G12, G14) | 6 | S1.12, S1.14 | Playwright journey creates a role and an access rule, then sees the registry |
+
+### Stage 7 — SDK v2, flagship rApps and MDAF
+
+Stage 7 ends at milestone M7 (week 23): a 24-hour TS 28.552 PM replay shows NES saving at least 18% simulated power and MRO cutting too-late handovers; with both running on cluster 12, SO SMOS blocks MRO from steering into the sleeping Cell-B; a PSI above 0.25 demotes the loop to SHADOW\_MODE.
+
+| ID | Task | Stage | Needs | Done when |
+|---|---|---|---|---|
+| PR-CONV-S7.1 | rApp SDK v2 in Python, Go and Java, generated from the bundle; v1 deleted | 7 | M5 | Contract tests against the bundle in all three languages |
+| PR-CONV-S7.2 | NES rApp on Level-1 / Level-2 through CES / DES functions | 7 | S7.1 | NES Tier-3 replay passes |
+| PR-CONV-S7.3 | MRO rApp through `DMROFunction` within the TS 28.313 bounds | 7 | S7.1 | MRO Tier-3 replay passes |
+| PR-CONV-S7.4 | Coverage-optimization and traffic-steering samples moved or retired | 7 | S7.1 | Each either passes its call flow or is removed with its CSAR |
+| PR-CONV-S7.5 | MDAF over ProvMnS; absorbs RAN Analytics | 7 | S1.6, S3.9 | `ran-analytics/` removed; call flow 08 updated |
+| PR-CONV-S7.6 | PSI drift circuit breaker | 7 | S5.10, S7.5 | Known-drift unit tests; demotion seen in the M7 run |
+| PR-CONV-S7.7 | TS 32.422 trace and MDT ingest for MRO training | 7 | S3.8 | RLF traces queryable for a cell and period |
+| PR-CONV-S7.8 | Tier-3 test lane (24 h PM replay, NES vs MRO, chaos rollback) | 7 | S7.2, S7.3 | Lane green three runs in a row |
+| PR-CONV-S7.9 | rApp Developer Guide rewritten for SDK v2 | 7 | S7.1 | Reviewed by someone who has not built an rApp here |
+| PR-CONV-S7.10 | Standard MDA types and reporting per TS 28.104 (G21) | 7 | S3.17 | Each sample rApp consumes a standard MDAType |
+| PR-CONV-S7.11 | Digital twin per TS 28.561, scoped by D18 (G20) | 7 | S7.2, S7.3 | A plan the twin rejects is never sent to the network |
+| PR-CONV-S7.12 | Record the NES pre-offload gap and its workaround | 7 | S7.2 | Recorded; the NES replay shows no dropped calls at switch-off in the simulator |
+| PR-CONV-S7.13 | All four sample rApps on SDK v2 and standard interfaces only | 7 | S7.1, S0.17 | Each sample passes its replay; the interface gate finds no \[D\] call in samples/ |
+
+### Stage 8 — Production hardening and 1.0
+
+Stage 8 ends at milestone M8, release 1.0.0 (week 27): the Part 2 production capabilities are in, the migrations are squashed into a 1.0 baseline with the upgrade gates back on, and the 1.0 criteria already in `OPEN_ITEMS.md` (72-hour soak, full-size disaster-recovery drill, external penetration test) pass on the converged build.
+
+| ID | Task | Stage | Needs | Done when |
+|---|---|---|---|---|
+| PR-CONV-S8.1 | O-RAN WG11 PKI: CMPv2 / EST enrolment, rotation, NETCONF over TLS | 8 | S3.6 | Certificate rotated on the simulator with no dropped session |
+| PR-CONV-S8.2 | Zero-touch provisioning in 8 steps (extends MGT-14) | 8 | S5.3, S3.4 | A fresh simulated node goes from power-on to UNLOCKED with no operator step |
+| PR-CONV-S8.3 | Self-observability: golden SLO metrics, alerts, runbooks, `traceparent` across Kafka | 8 | S5.8, S1.10 | One trace spans GUI → SO SMOS → rApp → RAN NF OAM → SA SMOS |
+| PR-CONV-S8.4 | Packaging: application and infrastructure charts, permissive profile, canary hook | 8 | D10, D12 | `helm upgrade --atomic` rolls back on a failed canary in the kind lane |
+| PR-CONV-S8.5 | Licence gate and SBOM file per image (extends SEC-12.1) | 8 | S1.11 | Gate required; third-party notices file generated |
+| PR-CONV-S8.6 | OpenShift lane: UBI 9 under `restricted-v2` | 8 | S1.11 | SMO starts with an arbitrary non-root UID |
+| PR-CONV-S8.7 | Disaster recovery extended to the common schemas and the object store | 8 | S1.9 | Drill restores a lease and an intent mid-flight correctly |
+| PR-CONV-S8.8 | Migration baseline for 1.0; gates switched back on | 8 | S8.9 | Baseline migrates an empty Postgres and matches the models; both upgrade jobs green from 1.0-rc |
+| PR-CONV-S8.9 | Scale run: 100 rApps, 1,000 RAN nodes | 8 | S7.8 | Report attached to the release |
+| PR-CONV-S8.10 | The 1.0 criteria: 72 h soak, DR drill, node loss, partition, penetration test | 8 | S8.1–S8.9 | All passed on a host you control |
+| PR-CONV-S8.11 | DDD set updated | 8 | M7 | Every module volume matches the shipped code |
+| PR-CONV-S8.12 | Conformance suites mapped to the standard test IDs (G24) | 8 | S1.15, S2.11, S4.9 | Report lists every mapped test ID with its result |
+| PR-CONV-S8.13 | Agent position: any agent acts only through intents (G22) | 8 | S5.16 | Position written; no agent can write outside an intent |
+| PR-CONV-S8.14 | Refresh every LCM page and GUI screenshot by a Playwright script | 8 | S6.8, S7.13, S8.12 | No page or image older than the screen or flow it shows; the screenshot script runs in CI |
 
 ## v0.5.0 validation inventory (started)
 - **Every CHECK constraint on a status/enum column against the code that writes it: done (V-5).** `tests_integration/test_check_constraints.py` covers all 97 single-column lists (ten state-machine columns by enum, the rest by assigned literals); computed values and multi-column checks are not covered.

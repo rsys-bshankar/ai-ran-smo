@@ -314,6 +314,7 @@ smo/
 | [`docs/openapi/`](docs/openapi/) | Generated OpenAPI spec per service |
 | [`gui/README.md`](gui/README.md) | Operator GUI: running it, roles, security, pages, screenshots |
 | [`OPEN_ITEMS.md`](OPEN_ITEMS.md) | Items still open, and deliberate scope cuts |
+| [`docs/plan/CONVERGED_REWRITE_PLAN.md`](docs/plan/CONVERGED_REWRITE_PLAN.md) | The converged 3GPP + O-RAN rewrite plan to 1.0 (snapshot of 31 October 2026; decisions D1–D20, stages S0–S8, tracked as `PR-CONV` in `OPEN_ITEMS.md`) |
 | [`CHANGELOG.md`](CHANGELOG.md), [`docs/RELEASES.md`](docs/RELEASES.md) | What changed for an operator; the tag scheme (`smo-vX.Y.Z`, semver) and how a release is cut |
 | [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) | Distributed traces (W3C `traceparent`, OpenTelemetry to Tempo), log shipping (Fluent Bit to Loki), Grafana, queries by trace id and correlation id |
 | [`deploy/gitops/README.md`](deploy/gitops/README.md) | Kustomize overlays and Argo CD Applications for the Helm chart |

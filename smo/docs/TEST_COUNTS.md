@@ -36,8 +36,8 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `shared` | 50 | 663 | 1118 |
 | `sme` | 5 | 122 | 140 |
 | `so-smos` | 3 | 28 | 44 |
-| `tests_integration` | 95 | 740 | 918 |
-| **total** | **418** | **5404** | **7804** (Python) |
+| `tests_integration` | 96 | 746 | 924 |
+| **total** | **419** | **5410** | **7810** (Python) |
 
 ## Per test file
 
@@ -555,7 +555,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 
 </details>
 
-<details><summary><code>tests_integration</code>: 95 files</summary>
+<details><summary><code>tests_integration</code>: 96 files</summary>
 
 | file | test functions | collected tests |
 |---|---:|---:|
@@ -633,6 +633,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests_integration/test_rate_limit_postgres.py` | 4 | 4 |
 | `tests_integration/test_release_tooling.py` | 7 | 7 |
 | `tests_integration/test_retention_samples.py` | 11 | 11 |
+| `tests_integration/test_rewrite_mode.py` | 6 | 6 |
 | `tests_integration/test_role_policy.py` | 4 | 4 |
 | `tests_integration/test_runbook_over_ssh.py` | 1 | 1 |
 | `tests_integration/test_scan_summary.py` | 5 | 5 |

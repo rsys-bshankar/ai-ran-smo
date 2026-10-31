@@ -145,16 +145,18 @@ column, index or constraint:
 
 1. Write a revision in `migrations/versions/` (next number, `down_revision` = the current head, a real `downgrade()`), and change
    the ORM model in the same PR. Never edit `001_init.sql` or an earlier revision: a database that already ran it will not see the change.
-2. **Expand, then contract.** Within a MINOR release a revision is additive: a new table, a nullable column or one with a default, a new
-   index. The previous release's code must keep working on the upgraded database, because during a rolling upgrade both run at once.
-   Removing, renaming or narrowing something (a column, a constraint, a type) takes two releases: release N stops using it and keeps it,
-   release N+1 drops it (and says so under `### Changed` in `CHANGELOG.md`). CI proves it: the job "Previous release's code runs on the
-   new schema" builds the newest `smo-v*` tag, starts it on the database this commit's `scripts/migrate.py` produces and replays that
-   release's demo runbook (`scripts/check_previous_release_code.sh`; it runs when a PR touches `migrations/`, and on every push to `main`).
-   If it fails, the revision is a contract step done too early: split it. The job "Upgrade from the previous release keeps its data"
-   (`scripts/check_upgrade_from_previous_release.sh`, same triggers) is the operator's side: the previous release is installed and given data, then this
-   commit's `migrate` service upgrades that database; a revision that works on an empty schema but not on rows (a NOT NULL column with no default)
-   fails there. `docs/RELEASES.md`, "What each number means".
+2. **Until 1.0: replace, then delete (rewrite mode).** The SMO is being restructured into a converged 3GPP + O-RAN SMO
+   (`docs/plan/CONVERGED_REWRITE_PLAN.md`), and the product is not live, so nothing is kept for 0.9.0 users: no deprecation window, no alias, no
+   upgrade path from 0.9.0. A replaced route, table, service or SDK call is deleted in the same PR series as its replacement, and a revision may drop or
+   rename in one step. Each revision still has a real `downgrade()`, and `scripts/check_migration_matches_models.py` still runs (step 3). The switch is
+   `scripts/rewrite_mode.json` (plan task S0.8): while it is on, the CI jobs that compare with the previous release print a notice naming that file and
+   pass without running their check: "R1 contract has no breaking change since the previous release" (`scripts/check_breaking_changes.py`),
+   "Previous release's code runs on the new schema" (`scripts/check_previous_release_code.sh`), "Upgrade from the previous release keeps its data"
+   (`scripts/check_upgrade_from_previous_release.sh`) and the kind lane's job `upgrade` (`.github/workflows/smo-upgrade-kind.yml`). The jobs and
+   scripts stay. At 1.0, plan task S8.8 squashes the rewrite's revisions into one baseline and switches these gates back on; from then the
+   expand-then-contract rule of `docs/RELEASES.md` applies (a revision additive within a MINOR release, a removal or rename across two releases).
+   `tests_integration/test_rewrite_mode.py` fails if the switch is still on once the release version (the newest `CHANGELOG.md` release and the
+   chart's `version` / `appVersion`) is 1.0.0 or later.
 3. Run `python scripts/migrate.py` then `python scripts/check_migration_matches_models.py` against Postgres (step 4 below), and raise
    `HEAD` in `tests_integration/test_migrations.py`.
 4. Add a line under `[Unreleased]` in `CHANGELOG.md`.
