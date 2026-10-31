@@ -1,0 +1,36 @@
+# Contract of the nfo module (plan tasks S0.6, S0.9). Paths are relative to the module's R1 root. NFO produces no ProvMnS class: it is a consumer of
+# O2dms and the producer of the R1GAP v14 section 5.5.3 O2 deployment management service. Neither API is in specs/, so this contract names them as
+# pending and types nothing in (specs/smo-schema-bundle/README.md, "What is pending"). scripts/check_contract_drift.py compares this file with
+# docs/openapi of x-smo-code-modules.
+openapi: 3.0.1
+info:
+  title: 'NFO: O2dms consumer; R1GAP v14 section 5.5.3 O2 deployment management (both APIs pending)'
+  version: 0.1.0
+  description: NFO places rApp and AI/ML runtime workloads on an O-Cloud over O2dms (Kubernetes-native profile v7) for rApp Management and AIMgF
+    (ADR 0008 sections 3.1 and 3.9; plan task S4.4). Only the probes are contracted until the O-RAN APIs are in specs/; call flow 34 draws the placement
+    as a pending step.
+x-smo-module: nfo
+x-smo-code-modules:
+- nfo
+x-smo-mns-root: ../common/provmns-root.yaml
+x-smo-standards:
+- '[N] O-RAN O2dms Kubernetes-native profile v7 (API pending)'
+- '[N] O-RAN R1GAP v14 section 5.5.3 (R1AP API pending)'
+- '[D] D-01'
+paths:
+  /health:
+    $ref: ../common/probes.yaml#/paths/~1health
+  /live:
+    $ref: ../common/probes.yaml#/paths/~1live
+  /ready:
+    $ref: ../common/probes.yaml#/paths/~1ready
+  /version:
+    $ref: ../common/probes.yaml#/paths/~1version
+components:
+  schemas: {}
+x-smo-classes: []
+x-smo-pending:
+- 'O2dms (O-RAN WG6 O2dms Kubernetes-native profile v7): the deployment operations NFO calls on an O-Cloud to place a workload. The API is not in
+  specs/ (only O2ims is, under specs/o-cloud-im/, for FOCOM).'
+- 'R1GAP v14 section 5.5.3 O2 deployment management service: the request rApp Management and AIMgF make to NFO to place a workload. The O-RAN R1AP
+  API is not in specs/.'

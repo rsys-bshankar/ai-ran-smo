@@ -5,7 +5,9 @@ openapi: 3.0.1
 info:
   title: 'MDAF: TS 28.104 MDA MnS (absorbs RAN Analytics)'
   version: 0.1.0
-  description: The three TS 28.104 classes over ProvMnS; MDA report files through the TS 28.532 file data reporting MnS (S7.5, S7.10).
+  description: The three TS 28.104 classes over ProvMnS; MDA report files through the TS 28.532 file data reporting MnS (S7.5, S7.10). The
+    TS 28.561 network digital twin (NDTFunction, NDTJob, NDTReport) that gates NES and MRO actuation (ADR 0009 section 4.10, D18), placed in RAN
+    Analytics by plan task S7.11 and so in MDAF; added for call flows 35 and 36 (plan task S0.9).
 x-smo-module: mdaf
 x-smo-code-modules:
 - mdaf
@@ -14,6 +16,7 @@ x-smo-mns-root: ../common/provmns-root.yaml
 x-smo-standards:
 - '[N] TS 28.104 v20.0.0'
 - '[N] TS 28.532 file data reporting v19.1.0'
+- '[N] TS 28.561 v20.0.0'
 paths:
   /health:
     $ref: ../common/probes.yaml#/paths/~1health
@@ -35,6 +38,12 @@ components:
       $ref: ../../../5G_APIs/TS28104_MdaNrm.yaml#/components/schemas/MDARequest-Single
     MDAReport-Single:
       $ref: ../../../5G_APIs/TS28104_MdaNrm.yaml#/components/schemas/MDAReport-Single
+    NDTFunction-Single:
+      $ref: ../../../5G_APIs/TS28561_NdtNrm.yaml#/components/schemas/NDTFunction-Single
+    NDTJob-Single:
+      $ref: ../../../5G_APIs/TS28561_NdtNrm.yaml#/components/schemas/NDTJob-Single
+    NDTReport-Single:
+      $ref: ../../../5G_APIs/TS28561_NdtNrm.yaml#/components/schemas/NDTReport-Single
     NtfSubscriptionControl-Single:
       $ref: ../../../5G_APIs/TS28623_SubscriptionControlNrm.yaml#/components/schemas/NtfSubscriptionControl-Single
 x-smo-classes:
@@ -56,6 +65,22 @@ x-smo-classes:
   operations:
   - getMOIAttributes
   schema: '#/components/schemas/MDAReport-Single'
+- class: NDTFunction
+  standard: '[N] TS 28.561 v20.0.0'
+  operations:
+  - getMOIAttributes
+  schema: '#/components/schemas/NDTFunction-Single'
+  note: the twin's capabilities (NDTCapability); one instance, created by MDAF itself
+- class: NDTJob
+  standard: '[N] TS 28.561 v20.0.0'
+  operations: *id001
+  schema: '#/components/schemas/NDTJob-Single'
+  note: a what-if job SO SMOS creates before it enacts a NES or MRO Level-2 intent (D18)
+- class: NDTReport
+  standard: '[N] TS 28.561 v20.0.0'
+  operations:
+  - getMOIAttributes
+  schema: '#/components/schemas/NDTReport-Single'
 - class: NtfSubscriptionControl
   standard: '[N] TS 28.622 subscription control (OpenAPI TS 28.623 SubscriptionControlNrm v19.4.0)'
   operations: *id001

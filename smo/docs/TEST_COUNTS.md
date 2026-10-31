@@ -36,8 +36,8 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `shared` | 50 | 663 | 1118 |
 | `sme` | 5 | 122 | 140 |
 | `so-smos` | 3 | 28 | 44 |
-| `tests_integration` | 97 | 758 | 936 |
-| **total** | **420** | **5422** | **7822** (Python) |
+| `tests_integration` | 98 | 762 | 943 |
+| **total** | **421** | **5426** | **7829** (Python) |
 
 ## Per test file
 
@@ -555,7 +555,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 
 </details>
 
-<details><summary><code>tests_integration</code>: 97 files</summary>
+<details><summary><code>tests_integration</code>: 98 files</summary>
 
 | file | test functions | collected tests |
 |---|---:|---:|
@@ -565,6 +565,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests_integration/test_authz_walk.py` | 4 | 4 |
 | `tests_integration/test_breaking_changes.py` | 7 | 7 |
 | `tests_integration/test_call_flow_images.py` | 3 | 3 |
+| `tests_integration/test_call_flow_operations.py` | 4 | 7 |
 | `tests_integration/test_changelog.py` | 5 | 5 |
 | `tests_integration/test_check_constraints.py` | 4 | 4 |
 | `tests_integration/test_ci_image_mirror.py` | 26 | 26 |
