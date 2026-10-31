@@ -148,6 +148,15 @@ python scripts/check_contract_bundle.py --database-url postgresql://postgres:<pa
 python scripts/check_contract_drift.py      # a route a contract does not name, or a contract operation no route serves, may not grow; after it shrank: --write-baseline
 ```
 
+**8. Interfaces** (CI job `Interfaces`, plan task S0.17, ADR 0011 section 7): every route in `docs/openapi/*.json` and every call of the SMO's own code
+(R1Client, the three SDKs, the GUI BFF's proxy rules, the GUI) is a bundle operation, a listed ADR 0011 [D] exception, or waiting in
+`scripts/interface_baseline.json` for the PR-CONV row that replaces or deletes it:
+
+```bash
+cd smo && python scripts/check_interfaces.py     # prints the per-module counts; fails on a new private route or call and on a stale baseline entry
+python scripts/check_interfaces.py --write-baseline   # after a route or call was replaced or deleted: the baseline only shrinks
+```
+
 ## Schema changes are revisions
 
 The database schema is the Alembic history in `migrations/` (`docs/adr/0001-schema-migrations.md`). To add or change a table,
@@ -188,6 +197,9 @@ Docker compose runs the migrations itself (the `migrate` service); services star
   implementation detail (not just "done"). A design choice deliberately *not* taken belongs in the
   same entry, not left implicit. Keep docs current: state what the code
   does now, not how it got there.
+- **The interface baseline only shrinks.** A PR that replaces or deletes a route, or moves a caller off one, also removes its entry from
+  `scripts/interface_baseline.json` (`python scripts/check_interfaces.py --write-baseline`); the gate fails on a stale entry, and on a pull request it
+  fails when an entry is added against the base branch. A new route is a bundle operation or a listed ADR 0011 [D] exception from the day it is added.
 - Don't merge your own PR on the assumption that's always wanted —
   that's a per-task call the person running the session makes explicitly
   each time, not a standing default this file grants.

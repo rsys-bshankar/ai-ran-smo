@@ -137,7 +137,7 @@ flowchart LR
 
 Every edge above the O1 and O2 ones crosses R1 Termination, which is left out of the picture for readability. Notifications (TS 28.532, through
 `NtfSubscriptionControl`) flow back along each edge. The SO SMOS → MDAF edge stands for the twin gate's `NDTJob`; which module hosts the
-`NDTFunction` is S7.11's to decide (the plan names `ran-analytics/`, which merges into MDAF).
+`NDTFunction` is S7.11's to decide (the plan names `ran-analytics/`, which merges into MDAF). *Note of 1 November 2026: the schema bundle places `NDTFunction` in MDAF's contract (call flows 35, 36), and the S0.10 sign-off keeps the twin gate to NES and MRO only (G-CCO-6, a known limit for coverage). The same sign-off drops the cell guards (G-ES-3): no [D] row is added for them.*
 
 ## 5. Consequences
 
@@ -178,7 +178,7 @@ Counts are of today's operations in appendix A; a zero means the exception is de
 | D-22 | ADR 0005 scope attributes (region, tenant, site cluster, SubNetwork) on `ManagedElement` and on invokers | A [D] attribute on a standard class, set and read through standard operations, enforced through TS 28.319 AccessRules | TE&IV (attributes), SME (invoker claims) | 0 |
 | D-23 | The cell-lock read model: the `CellLock` class (cell, lock state, owning intent, lease expiry) served by SO SMOS over ProvMnS | No standard class for a lease lock on a cell; added by plan task S0.5, whose DDL keeps the lock table in SO SMOS's own schema (one writer, D6) so TE&IV, SA SMOS and rApps read it from SO SMOS rather than by SQL | SO SMOS | 0 (S3.2) |
 
-## 7. The S0.17 interface gate (written, not built)
+## 7. The S0.17 interface gate (built 1 November 2026)
 
 A CI job (`scripts/` plus `.github/workflows/smo-tests.yml`, made a required check) that fails when:
 
@@ -193,6 +193,23 @@ A CI job (`scripts/` plus `.github/workflows/smo-tests.yml`, made a required che
 
 Done when (S0.17): required check; it fails on a private route added in a test PR. During the rewrite the gate reports today's routes against
 appendix A's verdicts, so a replaced route that is still served is listed, not failed, until its stage deletes it; from M5 it fails.
+
+**As built** (`scripts/check_interfaces.py`, CI job "Interfaces" in `.github/workflows/smo-tests.yml`, tests `tests_integration/test_interface_gate.py`;
+`HISTORY.md` PR-CONV-S0.17):
+
+- **Producer half (rule 1).** A served operation passes when the module's bundle contract names it (the operations `scripts/check_contract_drift.py`
+  reads: ProvMnS classes at the one form, CAPIF, probes, the contract's [D] paths), when appendix A classifies it "[D] exception" with an id of section
+  6, or when appendix A classifies it "keep (standard)". Appendix A itself is the machine-readable list this section asked for: the gate parses its
+  rows, so there is no second copy to keep in step. Every other operation must be in `scripts/interface_baseline.json` (`producer`) with its appendix
+  A fate and PR-CONV row; at introduction that is 513 operations, exactly appendix A's 423 replaced and 90 to delete.
+- **Consumer half (rule 2).** The literal-path `R1Client` calls of the modules and the Python SDK (found by `test_r1_consumer_calls.py`'s own finder),
+  the Go and Java SDK route tables, the GUI BFF's proxy targets (`gui-bff/app/rbac.py` rules) and own reads, and the GUI's literal R1 paths are each
+  resolved to a served operation. A call that reaches only a waiting operation must be in the baseline (`consumer`, 402 at introduction), so a new caller
+  of a route that is going away fails; a call that reaches no operation fails.
+- **Rule 3** (smo-teiv's API outside `teiv/`) is a text check for `/topology-inventory/`. **Rule 4** (SA SMOS) is covered by rules 1 and 2: SA SMOS's
+  non-standard routes and calls are baseline entries carrying S5.17, and none may be added.
+- **Shrink only.** A baseline entry whose route or call is gone fails as stale, so the PR that replaces or deletes a route removes its entry; on a pull
+  request the job also fails when an entry is added against the base branch. "From M5 it fails" is reached when the baseline is empty.
 
 ## 8. Slices mapped to PR-CONV rows
 

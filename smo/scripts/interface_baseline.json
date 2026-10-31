@@ -1,0 +1,2974 @@
+{
+ "_comment": "Written by scripts/check_interfaces.py --write-baseline; entries may only be removed (plan task S0.17). producer: served routes neither in the bundle nor a listed [D] exception, with their ADR 0011 appendix A fate and the PR-CONV row that removes them. consumer: calls of the SMO's own code that reach only such routes.",
+ "producer": {
+  "aimgf DELETE /aiml-inference-emulation-functions/{}": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS deleteMOI on `AIMLInferenceEmulationFunction` [N] TS 28.105"
+  },
+  "aimgf DELETE /aiml-inference-functions/{}": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS deleteMOI on `AIMLInferenceFunction` [N] TS 28.105"
+  },
+  "aimgf DELETE /feature-groups/{}": {
+   "fate": "replaced",
+   "row": "S2.12, S3.17",
+   "replacement": "DME data types (R1GAP v14 \u00a75.2.2, R1TD v05) named by the training request; lineage per artifact version"
+  },
+  "aimgf DELETE /ml-model-loading-policies/{}": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS deleteMOI on `MLModelLoadingPolicy` [N] TS 28.105"
+  },
+  "aimgf DELETE /ml-testing-functions/{}": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS deleteMOI on `MLTestingFunction` [N] TS 28.105"
+  },
+  "aimgf DELETE /ml-training-functions/{}": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS deleteMOI on `MLTrainingFunction` [N] TS 28.105"
+  },
+  "aimgf DELETE /ml-training-requests/{}": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS deleteMOI on `MLTrainingRequest` [N] TS 28.105"
+  },
+  "aimgf DELETE /ml-update-functions/{}": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS deleteMOI on `MLUpdateFunction` [N] TS 28.105"
+  },
+  "aimgf DELETE /mlmf/subscriptions/{}": {
+   "fate": "replaced",
+   "row": "S1.13, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.9 AI/ML model performance monitoring service (produced by the consumer rApp) + TS 28.622 `ThresholdMonitor` through the subscription manager"
+  },
+  "aimgf DELETE /training-jobs/{}": {
+   "fate": "replaced",
+   "row": "S2.10, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.8 AI/ML model training services; inside AIMgF `MLTrainingRequest` / `MLTrainingProcess` [N] TS 28.105"
+  },
+  "aimgf GET /aiml-inference-emulation-functions": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `AIMLInferenceEmulationFunction` [N] TS 28.105"
+  },
+  "aimgf GET /aiml-inference-emulation-functions/{}": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `AIMLInferenceEmulationFunction` [N] TS 28.105"
+  },
+  "aimgf GET /aiml-inference-functions": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `AIMLInferenceFunction` [N] TS 28.105"
+  },
+  "aimgf GET /aiml-inference-functions/{}": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `AIMLInferenceFunction` [N] TS 28.105"
+  },
+  "aimgf GET /aiml-inference-reports": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `AIMLInferenceReport` [N] TS 28.105"
+  },
+  "aimgf GET /aiml-inference-reports/{}": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `AIMLInferenceReport` [N] TS 28.105"
+  },
+  "aimgf GET /emulation-jobs": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS on `AIMLInferenceEmulationFunction` [N] TS 28.105 (v19.5.0 has no separate emulation request class)"
+  },
+  "aimgf GET /emulation-jobs/{}/status": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS on `AIMLInferenceEmulationFunction` [N] TS 28.105 (v19.5.0 has no separate emulation request class)"
+  },
+  "aimgf GET /feature-groups": {
+   "fate": "replaced",
+   "row": "S2.12, S3.17",
+   "replacement": "DME data types (R1GAP v14 \u00a75.2.2, R1TD v05) named by the training request; lineage per artifact version"
+  },
+  "aimgf GET /feature-groups/{}": {
+   "fate": "replaced",
+   "row": "S2.12, S3.17",
+   "replacement": "DME data types (R1GAP v14 \u00a75.2.2, R1TD v05) named by the training request; lineage per artifact version"
+  },
+  "aimgf GET /inference-jobs": {
+   "fate": "replaced",
+   "row": "S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.10 AI/ML model inference service"
+  },
+  "aimgf GET /inference-jobs/{}/status": {
+   "fate": "replaced",
+   "row": "S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.10 AI/ML model inference service"
+  },
+  "aimgf GET /ml-model-loading-policies": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLModelLoadingPolicy` [N] TS 28.105"
+  },
+  "aimgf GET /ml-model-loading-policies/{}": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLModelLoadingPolicy` [N] TS 28.105"
+  },
+  "aimgf GET /ml-model-loading-processes": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLModelLoadingProcess` [N] TS 28.105"
+  },
+  "aimgf GET /ml-model-loading-processes/{}": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLModelLoadingProcess` [N] TS 28.105"
+  },
+  "aimgf GET /ml-model-loading-requests": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLModelLoadingRequest` [N] TS 28.105"
+  },
+  "aimgf GET /ml-model-loading-requests/{}": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLModelLoadingRequest` [N] TS 28.105"
+  },
+  "aimgf GET /ml-models/{}/nrm-refs": {
+   "fate": "replaced",
+   "row": "S2.7",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLModel`, scope BASE_SUBTREE"
+  },
+  "aimgf GET /ml-testing-functions": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLTestingFunction` [N] TS 28.105"
+  },
+  "aimgf GET /ml-testing-functions/{}": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLTestingFunction` [N] TS 28.105"
+  },
+  "aimgf GET /ml-testing-reports": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLTestingReport` [N] TS 28.105"
+  },
+  "aimgf GET /ml-testing-reports/{}": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLTestingReport` [N] TS 28.105"
+  },
+  "aimgf GET /ml-testing-requests": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLTestingRequest` [N] TS 28.105"
+  },
+  "aimgf GET /ml-testing-requests/{}": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLTestingRequest` [N] TS 28.105"
+  },
+  "aimgf GET /ml-training-functions": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLTrainingFunction` [N] TS 28.105"
+  },
+  "aimgf GET /ml-training-functions/{}": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLTrainingFunction` [N] TS 28.105"
+  },
+  "aimgf GET /ml-training-processes": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLTrainingProcess` [N] TS 28.105"
+  },
+  "aimgf GET /ml-training-processes/{}": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLTrainingProcess` [N] TS 28.105"
+  },
+  "aimgf GET /ml-training-reports": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLTrainingReport` [N] TS 28.105"
+  },
+  "aimgf GET /ml-training-reports/{}": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLTrainingReport` [N] TS 28.105"
+  },
+  "aimgf GET /ml-training-requests": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLTrainingRequest` [N] TS 28.105"
+  },
+  "aimgf GET /ml-training-requests/{}": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLTrainingRequest` [N] TS 28.105"
+  },
+  "aimgf GET /ml-update-functions": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLUpdateFunction` [N] TS 28.105"
+  },
+  "aimgf GET /ml-update-functions/{}": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLUpdateFunction` [N] TS 28.105"
+  },
+  "aimgf GET /ml-update-processes": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLUpdateProcess` [N] TS 28.105"
+  },
+  "aimgf GET /ml-update-processes/{}": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLUpdateProcess` [N] TS 28.105"
+  },
+  "aimgf GET /ml-update-reports": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLUpdateReport` [N] TS 28.105"
+  },
+  "aimgf GET /ml-update-reports/{}": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLUpdateReport` [N] TS 28.105"
+  },
+  "aimgf GET /ml-update-requests": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLUpdateRequest` [N] TS 28.105"
+  },
+  "aimgf GET /ml-update-requests/{}": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLUpdateRequest` [N] TS 28.105"
+  },
+  "aimgf GET /mlmf/reports": {
+   "fate": "replaced",
+   "row": "S1.13, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.9 AI/ML model performance monitoring service (produced by the consumer rApp) + TS 28.622 `ThresholdMonitor` through the subscription manager"
+  },
+  "aimgf GET /mlmf/subscriptions": {
+   "fate": "replaced",
+   "row": "S1.13, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.9 AI/ML model performance monitoring service (produced by the consumer rApp) + TS 28.622 `ThresholdMonitor` through the subscription manager"
+  },
+  "aimgf GET /mlmf/subscriptions/{}/reports": {
+   "fate": "replaced",
+   "row": "S1.13, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.9 AI/ML model performance monitoring service (produced by the consumer rApp) + TS 28.622 `ThresholdMonitor` through the subscription manager"
+  },
+  "aimgf GET /training-jobs": {
+   "fate": "replaced",
+   "row": "S2.10, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.8 AI/ML model training services; inside AIMgF `MLTrainingRequest` / `MLTrainingProcess` [N] TS 28.105"
+  },
+  "aimgf GET /training-jobs/{}/model-metrics": {
+   "fate": "replaced",
+   "row": "S2.10, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.8 AI/ML model training services; inside AIMgF `MLTrainingRequest` / `MLTrainingProcess` [N] TS 28.105"
+  },
+  "aimgf GET /training-jobs/{}/status": {
+   "fate": "replaced",
+   "row": "S2.10, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.8 AI/ML model training services; inside AIMgF `MLTrainingRequest` / `MLTrainingProcess` [N] TS 28.105"
+  },
+  "aimgf GET /validation-jobs": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS on `MLTestingRequest` [N] TS 28.105"
+  },
+  "aimgf GET /validation-jobs/{}/status": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS on `MLTestingRequest` [N] TS 28.105"
+  },
+  "aimgf PATCH /aiml-inference-functions/{}": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `AIMLInferenceFunction` [N] TS 28.105"
+  },
+  "aimgf PATCH /ml-model-loading-requests/{}": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `MLModelLoadingRequest` [N] TS 28.105"
+  },
+  "aimgf PATCH /ml-testing-requests/{}": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `MLTestingRequest` [N] TS 28.105"
+  },
+  "aimgf PATCH /ml-training-processes/{}": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `MLTrainingProcess` [N] TS 28.105"
+  },
+  "aimgf PATCH /ml-training-requests/{}": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `MLTrainingRequest` [N] TS 28.105"
+  },
+  "aimgf PATCH /ml-update-requests/{}": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `MLUpdateRequest` [N] TS 28.105"
+  },
+  "aimgf PATCH /models/{}/runtime/node-groups": {
+   "fate": "replaced",
+   "row": "S4.4, S4.9",
+   "replacement": "O2dms Kubernetes-native profile v7 through NFO (placement and scale are NFO's)"
+  },
+  "aimgf POST /aiml-inference-emulation-functions": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS createMOI on `AIMLInferenceEmulationFunction` [N] TS 28.105"
+  },
+  "aimgf POST /aiml-inference-functions": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS createMOI on `AIMLInferenceFunction` [N] TS 28.105"
+  },
+  "aimgf POST /aiml-inference-reports": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS createMOI on `AIMLInferenceReport` [N] TS 28.105"
+  },
+  "aimgf POST /emulation-jobs": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS on `AIMLInferenceEmulationFunction` [N] TS 28.105 (v19.5.0 has no separate emulation request class)"
+  },
+  "aimgf POST /emulation-jobs/{}/complete": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS on `AIMLInferenceEmulationFunction` [N] TS 28.105 (v19.5.0 has no separate emulation request class)"
+  },
+  "aimgf POST /execution-timeouts/sweep": {
+   "fate": "delete",
+   "row": "S2.3",
+   "replacement": "worker task in process; not an interface"
+  },
+  "aimgf POST /feature-groups": {
+   "fate": "replaced",
+   "row": "S2.12, S3.17",
+   "replacement": "DME data types (R1GAP v14 \u00a75.2.2, R1TD v05) named by the training request; lineage per artifact version"
+  },
+  "aimgf POST /inference-jobs/{}/resolve": {
+   "fate": "replaced",
+   "row": "S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.10 AI/ML model inference service"
+  },
+  "aimgf POST /ml-model-loading-policies": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS createMOI on `MLModelLoadingPolicy` [N] TS 28.105"
+  },
+  "aimgf POST /ml-model-loading-policies/{}/trigger": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS createMOI on `MLModelLoadingRequest` [N] TS 28.105 (a policy triggers itself on its conditions)"
+  },
+  "aimgf POST /ml-model-loading-requests": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS createMOI on `MLModelLoadingRequest` [N] TS 28.105"
+  },
+  "aimgf POST /ml-testing-functions": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS createMOI on `MLTestingFunction` [N] TS 28.105"
+  },
+  "aimgf POST /ml-testing-requests": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS createMOI on `MLTestingRequest` [N] TS 28.105"
+  },
+  "aimgf POST /ml-training-functions": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS createMOI on `MLTrainingFunction` [N] TS 28.105"
+  },
+  "aimgf POST /ml-training-processes/{}/progress": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `MLTrainingProcess` (`progressStatus`)"
+  },
+  "aimgf POST /ml-training-requests": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS createMOI on `MLTrainingRequest` [N] TS 28.105"
+  },
+  "aimgf POST /ml-update-functions": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS createMOI on `MLUpdateFunction` [N] TS 28.105"
+  },
+  "aimgf POST /ml-update-requests": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS createMOI on `MLUpdateRequest` [N] TS 28.105"
+  },
+  "aimgf POST /mlmf/subscriptions": {
+   "fate": "replaced",
+   "row": "S1.13, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.9 AI/ML model performance monitoring service (produced by the consumer rApp) + TS 28.622 `ThresholdMonitor` through the subscription manager"
+  },
+  "aimgf POST /mlmf/subscriptions/{}/reports": {
+   "fate": "replaced",
+   "row": "S1.13, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.9 AI/ML model performance monitoring service (produced by the consumer rApp) + TS 28.622 `ThresholdMonitor` through the subscription manager"
+  },
+  "aimgf POST /models/{}/inference-jobs": {
+   "fate": "replaced",
+   "row": "S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.10 AI/ML model inference service"
+  },
+  "aimgf POST /models/{}/runtime/activate": {
+   "fate": "replaced",
+   "row": "S2.10, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.7 AI/ML model deployment request service; inside AIMgF a TS 28.105 `MLModelLoadingRequest`"
+  },
+  "aimgf POST /models/{}/runtime/deploy": {
+   "fate": "replaced",
+   "row": "S2.10, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.7 AI/ML model deployment request service; inside AIMgF a TS 28.105 `MLModelLoadingRequest`"
+  },
+  "aimgf POST /models/{}/runtime/scale": {
+   "fate": "replaced",
+   "row": "S4.4, S4.9",
+   "replacement": "O2dms Kubernetes-native profile v7 through NFO (placement and scale are NFO's)"
+  },
+  "aimgf POST /models/{}/runtime/terminate": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS deleteMOI on the loaded `MLModel` under its `AIMLInferenceFunction` (unload, AIML-UNLOAD)"
+  },
+  "aimgf POST /training-jobs": {
+   "fate": "replaced",
+   "row": "S2.10, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.8 AI/ML model training services; inside AIMgF `MLTrainingRequest` / `MLTrainingProcess` [N] TS 28.105"
+  },
+  "aimgf POST /training-jobs/{}/complete": {
+   "fate": "replaced",
+   "row": "S2.10, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.8 AI/ML model training services; inside AIMgF `MLTrainingRequest` / `MLTrainingProcess` [N] TS 28.105"
+  },
+  "aimgf POST /training-jobs/{}/model-metrics": {
+   "fate": "replaced",
+   "row": "S2.10, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.8 AI/ML model training services; inside AIMgF `MLTrainingRequest` / `MLTrainingProcess` [N] TS 28.105"
+  },
+  "aimgf POST /training-jobs/{}/progress": {
+   "fate": "replaced",
+   "row": "S2.10, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.8 AI/ML model training services; inside AIMgF `MLTrainingRequest` / `MLTrainingProcess` [N] TS 28.105"
+  },
+  "aimgf POST /training-jobs/{}/resume": {
+   "fate": "replaced",
+   "row": "S2.10, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.8 AI/ML model training services; inside AIMgF `MLTrainingRequest` / `MLTrainingProcess` [N] TS 28.105"
+  },
+  "aimgf POST /training-jobs/{}/suspend": {
+   "fate": "replaced",
+   "row": "S2.10, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.8 AI/ML model training services; inside AIMgF `MLTrainingRequest` / `MLTrainingProcess` [N] TS 28.105"
+  },
+  "aimgf POST /validation-jobs": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS on `MLTestingRequest` [N] TS 28.105"
+  },
+  "aimgf POST /validation-jobs/{}/complete": {
+   "fate": "replaced",
+   "row": "S2.10",
+   "replacement": "TS 28.532 ProvMnS on `MLTestingRequest` [N] TS 28.105"
+  },
+  "aimgf PUT /ml-training-functions/{}": {
+   "fate": "replaced",
+   "row": "S2.7, S2.10",
+   "replacement": "TS 28.532 ProvMnS createMOI / modifyMOIAttributes on `MLTrainingFunction` [N] TS 28.105"
+  },
+  "coverage-optimization-rapp DELETE /sim-producer/jobs/{}": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "coverage-optimization-rapp GET /sim-producer/health": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "coverage-optimization-rapp POST /instances/{}/demo/emulate": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "coverage-optimization-rapp POST /instances/{}/demo/history": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "coverage-optimization-rapp POST /instances/{}/demo/kpi-hour": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "coverage-optimization-rapp POST /instances/{}/demo/live": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "coverage-optimization-rapp POST /instances/{}/demo/prepare": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "coverage-optimization-rapp POST /instances/{}/lifecycle/deploy": {
+   "fate": "delete",
+   "row": "S7.13",
+   "replacement": "the rApp uses R1GAP v14 \u00a75.6 services itself; the operator acts through intents"
+  },
+  "coverage-optimization-rapp POST /instances/{}/lifecycle/emulate": {
+   "fate": "delete",
+   "row": "S7.13",
+   "replacement": "the rApp uses R1GAP v14 \u00a75.6 services itself; the operator acts through intents"
+  },
+  "coverage-optimization-rapp POST /instances/{}/lifecycle/train": {
+   "fate": "delete",
+   "row": "S7.13",
+   "replacement": "the rApp uses R1GAP v14 \u00a75.6 services itself; the operator acts through intents"
+  },
+  "coverage-optimization-rapp POST /instances/{}/lifecycle/validate": {
+   "fate": "delete",
+   "row": "S7.13",
+   "replacement": "the rApp uses R1GAP v14 \u00a75.6 services itself; the operator acts through intents"
+  },
+  "coverage-optimization-rapp POST /sim-producer/jobs": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "coverage-optimization-rapp POST /sim-producer/publish": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "coverage-optimization-rapp POST /sim-producer/register": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "dme DELETE /data-jobs": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.4 data request / \u00a75.2.5 data subscription (data job), R1AP path form"
+  },
+  "dme DELETE /data-jobs/{}": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.4 data request / \u00a75.2.5 data subscription (data job), R1AP path form"
+  },
+  "dme DELETE /dme-types/{}": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.2 data registration / \u00a75.2.3 data discovery, R1TD v05 type ids `namespace:name:semver`"
+  },
+  "dme DELETE /offers/{}": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.7 data offer service"
+  },
+  "dme DELETE /production-capabilities": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.2 data registration / \u00a75.2.3 data discovery, R1TD v05 type ids `namespace:name:semver`"
+  },
+  "dme DELETE /production-capabilities/{}/types": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.2 data registration / \u00a75.2.3 data discovery, R1TD v05 type ids `namespace:name:semver`"
+  },
+  "dme DELETE /type-subscriptions/{}": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.3 data discovery (type availability subscription)"
+  },
+  "dme GET /actions": {
+   "fate": "delete",
+   "row": "S3.12, S5.9",
+   "replacement": "DME O1 action mediation retires; network writes are Level-2 intents to SO SMOS"
+  },
+  "dme GET /actions/{}": {
+   "fate": "delete",
+   "row": "S3.12, S5.9",
+   "replacement": "DME O1 action mediation retires; network writes are Level-2 intents to SO SMOS"
+  },
+  "dme GET /data-jobs": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.4 data request / \u00a75.2.5 data subscription (data job), R1AP path form"
+  },
+  "dme GET /data-jobs/{}": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.4 data request / \u00a75.2.5 data subscription (data job), R1AP path form"
+  },
+  "dme GET /data-jobs/{}/records": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.6 data delivery (pull / push / streaming), R1TD v05 delivery schemas"
+  },
+  "dme GET /data-jobs/{}/status": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.4 data request / \u00a75.2.5 data subscription (data job), R1AP path form"
+  },
+  "dme GET /dme-types": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.2 data registration / \u00a75.2.3 data discovery, R1TD v05 type ids `namespace:name:semver`"
+  },
+  "dme GET /dme-types/{}": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.2 data registration / \u00a75.2.3 data discovery, R1TD v05 type ids `namespace:name:semver`"
+  },
+  "dme GET /offers": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.7 data offer service"
+  },
+  "dme GET /offers/{}": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.7 data offer service"
+  },
+  "dme GET /production-capabilities": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.2 data registration / \u00a75.2.3 data discovery, R1TD v05 type ids `namespace:name:semver`"
+  },
+  "dme GET /production-capabilities/{}": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.2 data registration / \u00a75.2.3 data discovery, R1TD v05 type ids `namespace:name:semver`"
+  },
+  "dme GET /production-capabilities/{}/status": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.2 data registration / \u00a75.2.3 data discovery, R1TD v05 type ids `namespace:name:semver`"
+  },
+  "dme GET /type-subscriptions": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.3 data discovery (type availability subscription)"
+  },
+  "dme GET /type-subscriptions/{}": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.3 data discovery (type availability subscription)"
+  },
+  "dme POST /actions": {
+   "fate": "delete",
+   "row": "S3.12, S5.9",
+   "replacement": "DME O1 action mediation retires; network writes are Level-2 intents to SO SMOS"
+  },
+  "dme POST /data-jobs": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.4 data request / \u00a75.2.5 data subscription (data job), R1AP path form"
+  },
+  "dme POST /data-jobs/{}/records": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.6 data delivery (pull / push / streaming), R1TD v05 delivery schemas"
+  },
+  "dme POST /offers": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.7 data offer service"
+  },
+  "dme POST /offers/{}/notify": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.7 data offer service"
+  },
+  "dme POST /production-capabilities": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.2 data registration / \u00a75.2.3 data discovery, R1TD v05 type ids `namespace:name:semver`"
+  },
+  "dme POST /type-subscriptions": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.3 data discovery (type availability subscription)"
+  },
+  "dme PUT /data-jobs/{}": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.4 data request / \u00a75.2.5 data subscription (data job), R1AP path form"
+  },
+  "energy-saving-rapp DELETE /sim-producer/jobs/{}": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "energy-saving-rapp GET /sim-producer/health": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "energy-saving-rapp POST /instances/{}/demo/emulate": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "energy-saving-rapp POST /instances/{}/demo/history": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "energy-saving-rapp POST /instances/{}/demo/live": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "energy-saving-rapp POST /instances/{}/demo/prepare": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "energy-saving-rapp POST /instances/{}/lifecycle/deploy": {
+   "fate": "delete",
+   "row": "S7.13",
+   "replacement": "the rApp uses R1GAP v14 \u00a75.6 services itself; the operator acts through intents"
+  },
+  "energy-saving-rapp POST /instances/{}/lifecycle/emulate": {
+   "fate": "delete",
+   "row": "S7.13",
+   "replacement": "the rApp uses R1GAP v14 \u00a75.6 services itself; the operator acts through intents"
+  },
+  "energy-saving-rapp POST /instances/{}/lifecycle/train": {
+   "fate": "delete",
+   "row": "S7.13",
+   "replacement": "the rApp uses R1GAP v14 \u00a75.6 services itself; the operator acts through intents"
+  },
+  "energy-saving-rapp POST /instances/{}/lifecycle/validate": {
+   "fate": "delete",
+   "row": "S7.13",
+   "replacement": "the rApp uses R1GAP v14 \u00a75.6 services itself; the operator acts through intents"
+  },
+  "energy-saving-rapp POST /sim-producer/jobs": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "energy-saving-rapp POST /sim-producer/publish": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "energy-saving-rapp POST /sim-producer/register": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "focom DELETE /alarm-subscriptions/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom DELETE /artifact-resource-types/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom DELETE /artifact-resources/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom DELETE /cluster-resource-groups/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom DELETE /cluster-resource-types/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom DELETE /cluster-resources/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom DELETE /infrastructure-resource-types/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom DELETE /infrastructure-resources/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom DELETE /inventory/subscriptions/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom DELETE /locations/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom DELETE /node-cluster-types/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom DELETE /node-clusters/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom DELETE /o-cloud-sites/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom DELETE /performance-jobs/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom DELETE /performance-subscriptions/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom DELETE /provisioning-requests/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom DELETE /resource-pools/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom DELETE /resources/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /alarm-subscriptions": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /alarm-subscriptions/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /alarms": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /alarms/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /artifact-resource-types": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /artifact-resource-types/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /artifact-resources": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /artifact-resources/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /cluster-resource-groups": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /cluster-resource-groups/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /cluster-resource-types": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /cluster-resource-types/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /cluster-resources": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /cluster-resources/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /deployment-managers": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /deployment-managers/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /infrastructure-resource-types": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /infrastructure-resource-types/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /infrastructure-resources": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /infrastructure-resources/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /inventory": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /inventory/subscriptions": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /locations": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /locations/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /node-cluster-types": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /node-cluster-types/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /node-clusters": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /node-clusters/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /o-cloud-sites": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /o-cloud-sites/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /performance": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /performance-jobs": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /performance-jobs/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /performance-subscriptions": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /performance-subscriptions/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /provisioning-requests": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /provisioning-requests/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /resource-pools": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /resource-pools/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /resource-pools/{}/resources": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /resource-types": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /resource-types/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /resources/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /resources/{}/status": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom GET /resources/{}/utilisation": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 performance (measurement jobs and reports)"
+  },
+  "focom GET /topology": {
+   "fate": "replaced",
+   "row": "S4.5",
+   "replacement": "WG10 TE&IV R1 topology query (`HOSTED_ON_OCLOUD` edges written by FOCOM)"
+  },
+  "focom GET /utilisation": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 performance (measurement jobs and reports)"
+  },
+  "focom PATCH /alarms/{}/ack": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom PATCH /alarms/{}/clear": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom PATCH /alarms/{}/severity": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom PATCH /performance-jobs/{}": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom POST /alarm-subscriptions": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom POST /alarms/ingest": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 alarm / performance notifications to FOCOM's subscriptions (inbound callbacks)"
+  },
+  "focom POST /artifact-resource-types": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom POST /artifact-resources": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom POST /cluster-resource-groups": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom POST /cluster-resource-types": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom POST /cluster-resources": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom POST /infrastructure-resource-types": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom POST /infrastructure-resources": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom POST /inventory/subscriptions": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom POST /locations": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom POST /node-cluster-types": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom POST /node-clusters": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom POST /o-cloud-sites": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom POST /performance-jobs": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom POST /performance-subscriptions": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom POST /performance/ingest": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 alarm / performance notifications to FOCOM's subscriptions (inbound callbacks)"
+  },
+  "focom POST /provisioning-requests": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom POST /resource-pools": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom POST /resource-types": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)"
+  },
+  "focom POST /resources/provision": {
+   "fate": "replaced",
+   "row": "S4.9",
+   "replacement": "O2ims v12 `ProvisioningRequest`"
+  },
+  "intent-service DELETE /intent-handling-functions/{}": {
+   "fate": "replaced",
+   "row": "S5.1",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS deleteMOI (in SO SMOS)"
+  },
+  "intent-service DELETE /intent-utility-formulas/{}": {
+   "fate": "replaced",
+   "row": "S5.1",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS deleteMOI (in SO SMOS)"
+  },
+  "intent-service DELETE /intents/{}": {
+   "fate": "replaced",
+   "row": "S5.1",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS deleteMOI (in SO SMOS)"
+  },
+  "intent-service GET /autonomy-dispatches": {
+   "fate": "delete",
+   "row": "S5.4, S5.9",
+   "replacement": "autonomy dispatch retires; an rApp submits a Level-2 intent to SO SMOS"
+  },
+  "intent-service GET /autonomy-dispatches/{}": {
+   "fate": "delete",
+   "row": "S5.4, S5.9",
+   "replacement": "autonomy dispatch retires; an rApp submits a Level-2 intent to SO SMOS"
+  },
+  "intent-service GET /intent-handling-functions": {
+   "fate": "replaced",
+   "row": "S5.1",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS getMOIAttributes (in SO SMOS)"
+  },
+  "intent-service GET /intent-reports": {
+   "fate": "replaced",
+   "row": "S5.1",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS getMOIAttributes (in SO SMOS)"
+  },
+  "intent-service GET /intent-reports/{}": {
+   "fate": "replaced",
+   "row": "S5.1",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS getMOIAttributes (in SO SMOS)"
+  },
+  "intent-service GET /intent-utility-formulas": {
+   "fate": "replaced",
+   "row": "S5.1",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS getMOIAttributes (in SO SMOS)"
+  },
+  "intent-service GET /intent-utility-formulas/{}": {
+   "fate": "replaced",
+   "row": "S5.1",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS getMOIAttributes (in SO SMOS)"
+  },
+  "intent-service GET /intents": {
+   "fate": "replaced",
+   "row": "S5.1",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS getMOIAttributes (in SO SMOS)"
+  },
+  "intent-service GET /intents/{}": {
+   "fate": "replaced",
+   "row": "S5.1",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS getMOIAttributes (in SO SMOS)"
+  },
+  "intent-service PATCH /intents/{}/admin-state": {
+   "fate": "replaced",
+   "row": "S5.1",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS modifyMOIAttributes `administrativeState` on `Intent` (in SO SMOS)"
+  },
+  "intent-service POST /autonomy-dispatches": {
+   "fate": "delete",
+   "row": "S5.4, S5.9",
+   "replacement": "autonomy dispatch retires; an rApp submits a Level-2 intent to SO SMOS"
+  },
+  "intent-service POST /autonomy-dispatches/{}/reject": {
+   "fate": "delete",
+   "row": "S5.4, S5.9",
+   "replacement": "autonomy dispatch retires; an rApp submits a Level-2 intent to SO SMOS"
+  },
+  "intent-service POST /autonomy-dispatches/{}/resolve": {
+   "fate": "delete",
+   "row": "S5.4, S5.9",
+   "replacement": "autonomy dispatch retires; an rApp submits a Level-2 intent to SO SMOS"
+  },
+  "intent-service POST /intent-handling-functions": {
+   "fate": "replaced",
+   "row": "S5.1",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS createMOI (in SO SMOS)"
+  },
+  "intent-service POST /intent-reports": {
+   "fate": "replaced",
+   "row": "S5.1",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS createMOI (in SO SMOS)"
+  },
+  "intent-service POST /intent-utility-formulas": {
+   "fate": "replaced",
+   "row": "S5.1",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS createMOI (in SO SMOS)"
+  },
+  "intent-service POST /intents": {
+   "fate": "replaced",
+   "row": "S5.1",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS createMOI (in SO SMOS)"
+  },
+  "intent-service POST /intents/{}/negotiation-feedback": {
+   "fate": "replaced",
+   "row": "S5.1, S5.15",
+   "replacement": "TS 28.312 v20.0.0 \u00a74.6.2 negotiation: modifyMOIAttributes on `Intent` with the negotiation context (in SO SMOS)"
+  },
+  "mdaf DELETE /mda-functions/{}": {
+   "fate": "replaced",
+   "row": "S7.5",
+   "replacement": "TS 28.532 ProvMnS deleteMOI on `MDAFunction` [N] TS 28.104"
+  },
+  "mdaf DELETE /mda-requests/{}": {
+   "fate": "replaced",
+   "row": "S7.5",
+   "replacement": "TS 28.532 ProvMnS deleteMOI on `MDARequest` [N] TS 28.104"
+  },
+  "mdaf DELETE /subscriptions/{}": {
+   "fate": "replaced",
+   "row": "S7.10, S1.13",
+   "replacement": "TS 28.104 MDA reporting (file, stream, notification) and TS 28.622 `NtfSubscriptionControl`"
+  },
+  "mdaf GET /mda-functions": {
+   "fate": "replaced",
+   "row": "S7.5",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MDAFunction` [N] TS 28.104"
+  },
+  "mdaf GET /mda-functions/{}": {
+   "fate": "replaced",
+   "row": "S7.5",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MDAFunction` [N] TS 28.104"
+  },
+  "mdaf GET /mda-reports": {
+   "fate": "replaced",
+   "row": "S7.5, S7.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MDAReport` [N] TS 28.104"
+  },
+  "mdaf GET /mda-reports/{}": {
+   "fate": "replaced",
+   "row": "S7.5, S7.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MDAReport` [N] TS 28.104"
+  },
+  "mdaf GET /mda-reports/{}/file": {
+   "fate": "replaced",
+   "row": "S7.10",
+   "replacement": "TS 28.532 file data reporting MnS (MDA report file)"
+  },
+  "mdaf GET /mda-requests": {
+   "fate": "replaced",
+   "row": "S7.5",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MDARequest` [N] TS 28.104"
+  },
+  "mdaf GET /mda-requests/{}": {
+   "fate": "replaced",
+   "row": "S7.5",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MDARequest` [N] TS 28.104"
+  },
+  "mdaf GET /reports": {
+   "fate": "replaced",
+   "row": "S7.10, S1.13",
+   "replacement": "TS 28.104 MDA reporting (file, stream, notification) and TS 28.622 `NtfSubscriptionControl`"
+  },
+  "mdaf GET /reports/{}": {
+   "fate": "replaced",
+   "row": "S7.10, S1.13",
+   "replacement": "TS 28.104 MDA reporting (file, stream, notification) and TS 28.622 `NtfSubscriptionControl`"
+  },
+  "mdaf GET /subscriptions": {
+   "fate": "replaced",
+   "row": "S7.10, S1.13",
+   "replacement": "TS 28.104 MDA reporting (file, stream, notification) and TS 28.622 `NtfSubscriptionControl`"
+  },
+  "mdaf POST /mda-functions": {
+   "fate": "replaced",
+   "row": "S7.5",
+   "replacement": "TS 28.532 ProvMnS createMOI on `MDAFunction` [N] TS 28.104"
+  },
+  "mdaf POST /mda-reports": {
+   "fate": "replaced",
+   "row": "S7.5, S7.10",
+   "replacement": "TS 28.532 ProvMnS createMOI on `MDAReport` [N] TS 28.104"
+  },
+  "mdaf POST /mda-requests": {
+   "fate": "replaced",
+   "row": "S7.5",
+   "replacement": "TS 28.532 ProvMnS createMOI on `MDARequest` [N] TS 28.104"
+  },
+  "mdaf POST /reports": {
+   "fate": "replaced",
+   "row": "S7.10, S1.13",
+   "replacement": "TS 28.104 MDA reporting (file, stream, notification) and TS 28.622 `NtfSubscriptionControl`"
+  },
+  "mdaf POST /subscriptions": {
+   "fate": "replaced",
+   "row": "S7.10, S1.13",
+   "replacement": "TS 28.104 MDA reporting (file, stream, notification) and TS 28.622 `NtfSubscriptionControl`"
+  },
+  "mdaf PUT /mda-functions/{}": {
+   "fate": "replaced",
+   "row": "S7.5",
+   "replacement": "TS 28.532 ProvMnS createMOI / modifyMOIAttributes on `MDAFunction` [N] TS 28.104"
+  },
+  "mllf POST /models/{}/deploy": {
+   "fate": "delete",
+   "row": "S2.2",
+   "replacement": "the deploy gate becomes an in-process call inside AIMgF; callers use R1GAP v14 \u00a75.6.7"
+  },
+  "mlmr DELETE /ml-model-repositories/{}": {
+   "fate": "replaced",
+   "row": "S2.1, S2.5",
+   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store"
+  },
+  "mlmr DELETE /models/{}": {
+   "fate": "replaced",
+   "row": "S2.1, S2.7, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.2 / \u00a75.6.4 model registration and discovery; TS 28.532 ProvMnS on `MLModel` [N] TS 28.105 (in AIMgF)"
+  },
+  "mlmr DELETE /storages/{}": {
+   "fate": "replaced",
+   "row": "S2.1, S2.5",
+   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store"
+  },
+  "mlmr GET /coordination-groups": {
+   "fate": "replaced",
+   "row": "S2.1, S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLModelCoordinationGroup` [N] TS 28.105 (in AIMgF)"
+  },
+  "mlmr GET /ml-model-coordination-groups/{}": {
+   "fate": "replaced",
+   "row": "S2.1, S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLModelCoordinationGroup` [N] TS 28.105 (in AIMgF)"
+  },
+  "mlmr GET /ml-model-repositories": {
+   "fate": "replaced",
+   "row": "S2.1, S2.5",
+   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store"
+  },
+  "mlmr GET /ml-model-repositories/{}": {
+   "fate": "replaced",
+   "row": "S2.1, S2.5",
+   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store"
+  },
+  "mlmr GET /ml-models/{}": {
+   "fate": "replaced",
+   "row": "S2.1, S2.7, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.2 / \u00a75.6.4 model registration and discovery; TS 28.532 ProvMnS on `MLModel` [N] TS 28.105 (in AIMgF)"
+  },
+  "mlmr GET /models": {
+   "fate": "replaced",
+   "row": "S2.1, S2.7, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.2 / \u00a75.6.4 model registration and discovery; TS 28.532 ProvMnS on `MLModel` [N] TS 28.105 (in AIMgF)"
+  },
+  "mlmr GET /models/{}": {
+   "fate": "replaced",
+   "row": "S2.1, S2.7, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.2 / \u00a75.6.4 model registration and discovery; TS 28.532 ProvMnS on `MLModel` [N] TS 28.105 (in AIMgF)"
+  },
+  "mlmr GET /models/{}/artifact/{}": {
+   "fate": "replaced",
+   "row": "S2.5, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.3 AI/ML model storage service; the artifact lives in the object store (D10)"
+  },
+  "mlmr GET /storages": {
+   "fate": "replaced",
+   "row": "S2.1, S2.5",
+   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store"
+  },
+  "mlmr GET /storages/{}": {
+   "fate": "replaced",
+   "row": "S2.1, S2.5",
+   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store"
+  },
+  "mlmr PATCH /models/{}/phase-info": {
+   "fate": "replaced",
+   "row": "S2.1, S2.7",
+   "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `MLModel` (in AIMgF)"
+  },
+  "mlmr PATCH /storages/{}": {
+   "fate": "replaced",
+   "row": "S2.1, S2.5",
+   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store"
+  },
+  "mlmr POST /coordination-groups": {
+   "fate": "replaced",
+   "row": "S2.1, S2.10",
+   "replacement": "TS 28.532 ProvMnS createMOI on `MLModelCoordinationGroup` [N] TS 28.105 (in AIMgF)"
+  },
+  "mlmr POST /ml-model-repositories": {
+   "fate": "replaced",
+   "row": "S2.1, S2.5",
+   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store"
+  },
+  "mlmr POST /models": {
+   "fate": "replaced",
+   "row": "S2.1, S2.7, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.2 / \u00a75.6.4 model registration and discovery; TS 28.532 ProvMnS on `MLModel` [N] TS 28.105 (in AIMgF)"
+  },
+  "mlmr POST /models/{}/artifact": {
+   "fate": "replaced",
+   "row": "S2.5, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.3 AI/ML model storage service; the artifact lives in the object store (D10)"
+  },
+  "mlmr POST /storages": {
+   "fate": "replaced",
+   "row": "S2.1, S2.5",
+   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store"
+  },
+  "mlmr PUT /models/{}": {
+   "fate": "replaced",
+   "row": "S2.1, S2.7, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.2 / \u00a75.6.4 model registration and discovery; TS 28.532 ProvMnS on `MLModel` [N] TS 28.105 (in AIMgF)"
+  },
+  "mlmr PUT /storages/{}": {
+   "fate": "replaced",
+   "row": "S2.1, S2.5",
+   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store"
+  },
+  "mobility-optimization-rapp DELETE /sim-producer/jobs/{}": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "mobility-optimization-rapp GET /sim-producer/health": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "mobility-optimization-rapp POST /instances/{}/demo/emulate": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "mobility-optimization-rapp POST /instances/{}/demo/history": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "mobility-optimization-rapp POST /instances/{}/demo/kpi-hour": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "mobility-optimization-rapp POST /instances/{}/demo/live": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "mobility-optimization-rapp POST /instances/{}/demo/prepare": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "mobility-optimization-rapp POST /instances/{}/lifecycle/deploy": {
+   "fate": "delete",
+   "row": "S7.13",
+   "replacement": "the rApp uses R1GAP v14 \u00a75.6 services itself; the operator acts through intents"
+  },
+  "mobility-optimization-rapp POST /instances/{}/lifecycle/emulate": {
+   "fate": "delete",
+   "row": "S7.13",
+   "replacement": "the rApp uses R1GAP v14 \u00a75.6 services itself; the operator acts through intents"
+  },
+  "mobility-optimization-rapp POST /instances/{}/lifecycle/train": {
+   "fate": "delete",
+   "row": "S7.13",
+   "replacement": "the rApp uses R1GAP v14 \u00a75.6 services itself; the operator acts through intents"
+  },
+  "mobility-optimization-rapp POST /instances/{}/lifecycle/validate": {
+   "fate": "delete",
+   "row": "S7.13",
+   "replacement": "the rApp uses R1GAP v14 \u00a75.6 services itself; the operator acts through intents"
+  },
+  "mobility-optimization-rapp POST /sim-producer/jobs": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "mobility-optimization-rapp POST /sim-producer/publish": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "mobility-optimization-rapp POST /sim-producer/register": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "nfo DELETE /deployments/{}": {
+   "fate": "replaced",
+   "row": "S4.4, S4.9",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)"
+  },
+  "nfo DELETE /descriptors/{}": {
+   "fate": "replaced",
+   "row": "S4.4, S4.9",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)"
+  },
+  "nfo GET /deployments": {
+   "fate": "replaced",
+   "row": "S4.4, S4.9",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)"
+  },
+  "nfo GET /deployments/{}": {
+   "fate": "replaced",
+   "row": "S4.4, S4.9",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)"
+  },
+  "nfo GET /deployments/{}/operations": {
+   "fate": "replaced",
+   "row": "S4.4, S4.9",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)"
+  },
+  "nfo GET /deployments/{}/placement": {
+   "fate": "replaced",
+   "row": "S4.4, S4.9",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)"
+  },
+  "nfo GET /deployments/{}/resources": {
+   "fate": "replaced",
+   "row": "S4.4, S4.9",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)"
+  },
+  "nfo GET /descriptors": {
+   "fate": "replaced",
+   "row": "S4.4, S4.9",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)"
+  },
+  "nfo GET /operations/{}": {
+   "fate": "replaced",
+   "row": "S4.4, S4.9",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)"
+  },
+  "nfo POST /deployments": {
+   "fate": "replaced",
+   "row": "S4.4, S4.9",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)"
+  },
+  "nfo POST /deployments/{}/dms-notifications": {
+   "fate": "replaced",
+   "row": "S4.4, S4.9",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)"
+  },
+  "nfo POST /deployments/{}/heal": {
+   "fate": "replaced",
+   "row": "S4.4, S4.9",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)"
+  },
+  "nfo POST /deployments/{}/scale": {
+   "fate": "replaced",
+   "row": "S4.4, S4.9",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)"
+  },
+  "nfo POST /descriptors": {
+   "fate": "replaced",
+   "row": "S4.4, S4.9",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)"
+  },
+  "onboarding DELETE /packages/{}": {
+   "fate": "replaced",
+   "row": "S4.1, S4.2",
+   "replacement": "TS 28.532 ProvMnS deleteMOI on `RappPackage` (WG10 App Packaging v1.00, provisional until S0.14)"
+  },
+  "onboarding GET /packages": {
+   "fate": "replaced",
+   "row": "S4.1, S4.2",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `RappPackage` (WG10 App Packaging v1.00, provisional until S0.14)"
+  },
+  "onboarding GET /packages/{}/artifacts": {
+   "fate": "replaced",
+   "row": "S4.1, S4.2",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `RappPackage` (WG10 App Packaging v1.00, provisional until S0.14)"
+  },
+  "onboarding GET /packages/{}/onboarding-status": {
+   "fate": "replaced",
+   "row": "S4.1, S4.2",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `RappPackage` (WG10 App Packaging v1.00, provisional until S0.14)"
+  },
+  "onboarding GET /packages/{}/usage": {
+   "fate": "delete",
+   "row": "S4.2",
+   "replacement": "a package is in use when `RappInstance` objects name it; read through ProvMnS"
+  },
+  "onboarding POST /packages": {
+   "fate": "replaced",
+   "row": "S4.1, S4.2",
+   "replacement": "TS 28.532 ProvMnS createMOI on `RappPackage` (WG10 App Packaging v1.00, provisional until S0.14)"
+  },
+  "onboarding POST /packages/upload": {
+   "fate": "replaced",
+   "row": "S4.1, S4.2",
+   "replacement": "TS 28.532 ProvMnS createMOI on `RappPackage` (WG10 App Packaging v1.00, provisional until S0.14)"
+  },
+  "onboarding POST /packages/{}/cancel-delete": {
+   "fate": "replaced",
+   "row": "S4.1, S4.2",
+   "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `RappPackage` (administrative state)"
+  },
+  "onboarding POST /packages/{}/deprecate": {
+   "fate": "replaced",
+   "row": "S4.1, S4.2",
+   "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `RappPackage` (administrative state)"
+  },
+  "onboarding POST /packages/{}/deprime": {
+   "fate": "replaced",
+   "row": "S4.1, S4.2",
+   "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `RappPackage` (administrative state)"
+  },
+  "onboarding POST /packages/{}/prime": {
+   "fate": "replaced",
+   "row": "S4.1, S4.2",
+   "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `RappPackage` (administrative state)"
+  },
+  "onboarding POST /packages/{}/usage/start": {
+   "fate": "delete",
+   "row": "S4.2",
+   "replacement": "a package is in use when `RappInstance` objects name it; read through ProvMnS"
+  },
+  "onboarding POST /packages/{}/usage/{}/release": {
+   "fate": "delete",
+   "row": "S4.2",
+   "replacement": "a package is in use when `RappInstance` objects name it; read through ProvMnS"
+  },
+  "onboarding POST /packages/{}/usage/{}/stop": {
+   "fate": "delete",
+   "row": "S4.2",
+   "replacement": "a package is in use when `RappInstance` objects name it; read through ProvMnS"
+  },
+  "r1-termination GET /bootstrap": {
+   "fate": "delete",
+   "row": "S1.16",
+   "replacement": "peers are found by CAPIF discovery (TS 29.222 CAPIF_Discover_Service_API)"
+  },
+  "ran-analytics DELETE /producers/{}": {
+   "fate": "replaced",
+   "row": "S7.5",
+   "replacement": "TS 28.532 ProvMnS deleteMOI on `MDAFunction` [N] TS 28.104 (registry absorbed by MDAF)"
+  },
+  "ran-analytics GET /producers": {
+   "fate": "replaced",
+   "row": "S7.5",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MDAFunction` [N] TS 28.104 (registry absorbed by MDAF)"
+  },
+  "ran-analytics POST /producers": {
+   "fate": "replaced",
+   "row": "S7.5",
+   "replacement": "TS 28.532 ProvMnS createMOI on `MDAFunction` [N] TS 28.104 (registry absorbed by MDAF)"
+  },
+  "ran-nf-oam DELETE /dme-jobs/{}": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.2 data registration: the producer side of a DME data job (R1TD v05)"
+  },
+  "ran-nf-oam DELETE /file-subscriptions/{}": {
+   "fate": "replaced",
+   "row": "S3.16",
+   "replacement": "TS 28.532 v19.1.0 file data reporting MnS (listAvailableFiles, notifyFileReady)"
+  },
+  "ran-nf-oam DELETE /fm-subscriptions/{}": {
+   "fate": "replaced",
+   "row": "S1.13, S3.16",
+   "replacement": "TS 28.622 `PerfMetricJob` / `NtfSubscriptionControl` through the subscription manager"
+  },
+  "ran-nf-oam DELETE /kpi-schedules/{}": {
+   "fate": "delete",
+   "row": "S3.8",
+   "replacement": "DME computes KPIs per ROP; no schedule or publish call"
+  },
+  "ran-nf-oam DELETE /lifecycle-subscriptions/{}": {
+   "fate": "replaced",
+   "row": "S1.13, S3.16",
+   "replacement": "TS 28.622 `PerfMetricJob` / `NtfSubscriptionControl` through the subscription manager"
+  },
+  "ran-nf-oam DELETE /managed-entities/{}/cells/{}/guards": {
+   "fate": "replaced",
+   "row": "S3.1, S3.2",
+   "replacement": "TE&IV cell attributes and the cell lock table (one writer, SO SMOS)"
+  },
+  "ran-nf-oam DELETE /msac/access-rules/{}": {
+   "fate": "replaced",
+   "row": "S1.14",
+   "replacement": "TS 28.532 ProvMnS deleteMOI on `Identity` / `Role` / `AccessRule` [N] TS 28.319"
+  },
+  "ran-nf-oam DELETE /msac/identities/{}": {
+   "fate": "replaced",
+   "row": "S1.14",
+   "replacement": "TS 28.532 ProvMnS deleteMOI on `Identity` / `Role` / `AccessRule` [N] TS 28.319"
+  },
+  "ran-nf-oam DELETE /msac/roles/{}": {
+   "fate": "replaced",
+   "row": "S1.14",
+   "replacement": "TS 28.532 ProvMnS deleteMOI on `Identity` / `Role` / `AccessRule` [N] TS 28.319"
+  },
+  "ran-nf-oam DELETE /o1-adaptor-endpoints/{}/host-keys/{}": {
+   "fate": "delete",
+   "row": "S8.1",
+   "replacement": "SSH host-key trust replaced by WG11 PKI certificates (CMPv2 / EST)"
+  },
+  "ran-nf-oam DELETE /pm-subscriptions/{}": {
+   "fate": "replaced",
+   "row": "S1.13, S3.16",
+   "replacement": "TS 28.622 `PerfMetricJob` / `NtfSubscriptionControl` through the subscription manager"
+  },
+  "ran-nf-oam GET /alarms": {
+   "fate": "replaced",
+   "row": "S3.15",
+   "replacement": "TS 28.111 v19.3.0 getAlarmList on `AlarmList` (comments, correlation and history are AlarmRecord attributes)"
+  },
+  "ran-nf-oam GET /alarms/counts": {
+   "fate": "replaced",
+   "row": "S3.15",
+   "replacement": "TS 28.111 v19.3.0 getAlarmCount"
+  },
+  "ran-nf-oam GET /alarms/stats": {
+   "fate": "replaced",
+   "row": "S3.15",
+   "replacement": "TS 28.111 v19.3.0 getAlarmCount"
+  },
+  "ran-nf-oam GET /alarms/{}/comments": {
+   "fate": "replaced",
+   "row": "S3.15",
+   "replacement": "TS 28.111 v19.3.0 getAlarmList on `AlarmList` (comments, correlation and history are AlarmRecord attributes)"
+  },
+  "ran-nf-oam GET /alarms/{}/correlated": {
+   "fate": "replaced",
+   "row": "S3.15",
+   "replacement": "TS 28.111 v19.3.0 getAlarmList on `AlarmList` (comments, correlation and history are AlarmRecord attributes)"
+  },
+  "ran-nf-oam GET /alarms/{}/history": {
+   "fate": "replaced",
+   "row": "S3.15",
+   "replacement": "TS 28.111 v19.3.0 getAlarmList on `AlarmList` (comments, correlation and history are AlarmRecord attributes)"
+  },
+  "ran-nf-oam GET /capabilities": {
+   "fate": "replaced",
+   "row": "S1.12",
+   "replacement": "TS 28.622 `MnsInfo` in the MnS registry"
+  },
+  "ran-nf-oam GET /cell-guards": {
+   "fate": "replaced",
+   "row": "S3.1, S3.2",
+   "replacement": "TE&IV cell attributes and the cell lock table (one writer, SO SMOS)"
+  },
+  "ran-nf-oam GET /config-jobs": {
+   "fate": "replaced",
+   "row": "S3.3, S5.9",
+   "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on the TS 28.541 NRM through RAN NF OAM's facade, called by SO SMOS only"
+  },
+  "ran-nf-oam GET /config-jobs/{}": {
+   "fate": "replaced",
+   "row": "S3.3, S5.9",
+   "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on the TS 28.541 NRM through RAN NF OAM's facade, called by SO SMOS only"
+  },
+  "ran-nf-oam GET /files": {
+   "fate": "replaced",
+   "row": "S3.16",
+   "replacement": "TS 28.532 v19.1.0 file data reporting MnS (listAvailableFiles, notifyFileReady)"
+  },
+  "ran-nf-oam GET /fm-subscriptions": {
+   "fate": "replaced",
+   "row": "S1.13, S3.16",
+   "replacement": "TS 28.622 `PerfMetricJob` / `NtfSubscriptionControl` through the subscription manager"
+  },
+  "ran-nf-oam GET /kpi-schedules": {
+   "fate": "delete",
+   "row": "S3.8",
+   "replacement": "DME computes KPIs per ROP; no schedule or publish call"
+  },
+  "ran-nf-oam GET /kpi-schedules/{}": {
+   "fate": "delete",
+   "row": "S3.8",
+   "replacement": "DME computes KPIs per ROP; no schedule or publish call"
+  },
+  "ran-nf-oam GET /kpis/{}": {
+   "fate": "replaced",
+   "row": "S3.8, S3.9",
+   "replacement": "DME R1TD data types of KPI ROP rows (and D-02 matrix query)"
+  },
+  "ran-nf-oam GET /kpis/{}/series": {
+   "fate": "replaced",
+   "row": "S3.8, S3.9",
+   "replacement": "DME R1TD data types of KPI ROP rows (and D-02 matrix query)"
+  },
+  "ran-nf-oam GET /lifecycle-subscriptions": {
+   "fate": "replaced",
+   "row": "S1.13, S3.16",
+   "replacement": "TS 28.622 `PerfMetricJob` / `NtfSubscriptionControl` through the subscription manager"
+  },
+  "ran-nf-oam GET /managed-entities": {
+   "fate": "replaced",
+   "row": "S3.1, S3.3",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `ManagedElement` (served by TE&IV)"
+  },
+  "ran-nf-oam GET /managed-entities/health": {
+   "fate": "delete",
+   "row": "S6.2",
+   "replacement": "console aggregate, rebuilt from TS 28.111 alarm counts and TE&IV"
+  },
+  "ran-nf-oam GET /managed-entities/scopes": {
+   "fate": "replaced",
+   "row": "S1.14, S3.1",
+   "replacement": "TS 28.532 ProvMnS on `ManagedElement` with the ADR 0005 scope as a [D] attribute (TE&IV), read by TS 28.319 AccessRules"
+  },
+  "ran-nf-oam GET /managed-entities/worst": {
+   "fate": "delete",
+   "row": "S6.2",
+   "replacement": "console aggregate, rebuilt from TS 28.111 alarm counts and TE&IV"
+  },
+  "ran-nf-oam GET /managed-entities/{}": {
+   "fate": "replaced",
+   "row": "S3.1, S3.3",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `ManagedElement` (served by TE&IV)"
+  },
+  "ran-nf-oam GET /managed-entities/{}/config": {
+   "fate": "replaced",
+   "row": "S3.1, S3.3",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `ManagedElement` (served by TE&IV)"
+  },
+  "ran-nf-oam GET /managed-objects/{}": {
+   "fate": "replaced",
+   "row": "S1.4, S3.1",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes with scope BASE_ONLY / BASE_NTH_LEVEL / BASE_SUBTREE (TE&IV)"
+  },
+  "ran-nf-oam GET /managed-objects/{}/children": {
+   "fate": "replaced",
+   "row": "S1.4, S3.1",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes with scope BASE_ONLY / BASE_NTH_LEVEL / BASE_SUBTREE (TE&IV)"
+  },
+  "ran-nf-oam GET /managed-objects/{}/subtree": {
+   "fate": "replaced",
+   "row": "S1.4, S3.1",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes with scope BASE_ONLY / BASE_NTH_LEVEL / BASE_SUBTREE (TE&IV)"
+  },
+  "ran-nf-oam GET /msac/access-rules": {
+   "fate": "replaced",
+   "row": "S1.14",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `Identity` / `Role` / `AccessRule` [N] TS 28.319"
+  },
+  "ran-nf-oam GET /msac/access-rules/{}": {
+   "fate": "replaced",
+   "row": "S1.14",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `Identity` / `Role` / `AccessRule` [N] TS 28.319"
+  },
+  "ran-nf-oam GET /msac/identities": {
+   "fate": "replaced",
+   "row": "S1.14",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `Identity` / `Role` / `AccessRule` [N] TS 28.319"
+  },
+  "ran-nf-oam GET /msac/identities/{}": {
+   "fate": "replaced",
+   "row": "S1.14",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `Identity` / `Role` / `AccessRule` [N] TS 28.319"
+  },
+  "ran-nf-oam GET /msac/roles": {
+   "fate": "replaced",
+   "row": "S1.14",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `Identity` / `Role` / `AccessRule` [N] TS 28.319"
+  },
+  "ran-nf-oam GET /msac/roles/{}": {
+   "fate": "replaced",
+   "row": "S1.14",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `Identity` / `Role` / `AccessRule` [N] TS 28.319"
+  },
+  "ran-nf-oam GET /o1-adaptor-endpoints/{}/host-keys": {
+   "fate": "delete",
+   "row": "S8.1",
+   "replacement": "SSH host-key trust replaced by WG11 PKI certificates (CMPv2 / EST)"
+  },
+  "ran-nf-oam GET /pm-files/{}/file": {
+   "fate": "replaced",
+   "row": "S3.16",
+   "replacement": "TS 28.532 v19.1.0 file data reporting MnS (listAvailableFiles, notifyFileReady)"
+  },
+  "ran-nf-oam GET /pm-subscriptions": {
+   "fate": "replaced",
+   "row": "S1.13, S3.16",
+   "replacement": "TS 28.622 `PerfMetricJob` / `NtfSubscriptionControl` through the subscription manager"
+  },
+  "ran-nf-oam GET /topology": {
+   "fate": "replaced",
+   "row": "S3.4",
+   "replacement": "WG10 TE&IV R1 topology and inventory services (TE&IV module)"
+  },
+  "ran-nf-oam GET /topology/graph": {
+   "fate": "replaced",
+   "row": "S3.4",
+   "replacement": "WG10 TE&IV R1 topology and inventory services (TE&IV module)"
+  },
+  "ran-nf-oam GET /topology/links": {
+   "fate": "replaced",
+   "row": "S3.4",
+   "replacement": "WG10 TE&IV R1 topology and inventory services (TE&IV module)"
+  },
+  "ran-nf-oam GET /topology/links/counts": {
+   "fate": "replaced",
+   "row": "S3.4",
+   "replacement": "WG10 TE&IV R1 topology and inventory services (TE&IV module)"
+  },
+  "ran-nf-oam GET /topology/relation": {
+   "fate": "replaced",
+   "row": "S3.4",
+   "replacement": "WG10 TE&IV R1 topology and inventory services (TE&IV module)"
+  },
+  "ran-nf-oam PATCH /alarms/{}/ack": {
+   "fate": "replaced",
+   "row": "S3.15",
+   "replacement": "TS 28.111 v19.3.0 acknowledgeAlarms"
+  },
+  "ran-nf-oam PATCH /alarms/{}/clear": {
+   "fate": "replaced",
+   "row": "S3.15",
+   "replacement": "TS 28.111 v19.3.0 clearAlarms"
+  },
+  "ran-nf-oam POST /alarms/ingest": {
+   "fate": "replaced",
+   "row": "S3.15",
+   "replacement": "O1 alarm notifications: VES `stndDefined` notifyNewAlarm / notifyClearedAlarm (TS 28.111)"
+  },
+  "ran-nf-oam POST /alarms/{}/comments": {
+   "fate": "replaced",
+   "row": "S3.15",
+   "replacement": "TS 28.111 v19.3.0 getAlarmList on `AlarmList` (comments, correlation and history are AlarmRecord attributes)"
+  },
+  "ran-nf-oam POST /config-history/purge": {
+   "fate": "delete",
+   "row": "S3.3",
+   "replacement": "worker task in process; not an interface"
+  },
+  "ran-nf-oam POST /config-jobs": {
+   "fate": "replaced",
+   "row": "S3.3, S5.9",
+   "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on the TS 28.541 NRM through RAN NF OAM's facade, called by SO SMOS only"
+  },
+  "ran-nf-oam POST /config-jobs/advance-due": {
+   "fate": "delete",
+   "row": "S3.3",
+   "replacement": "worker task in process; not an interface"
+  },
+  "ran-nf-oam POST /config-jobs/{}/abort": {
+   "fate": "replaced",
+   "row": "S5.6, S5.7",
+   "replacement": "TS 28.312 operations on the Level-2 intent (admin state, delete); SO SMOS restores from its snapshot"
+  },
+  "ran-nf-oam POST /config-jobs/{}/continue": {
+   "fate": "replaced",
+   "row": "S5.6, S5.7",
+   "replacement": "TS 28.312 operations on the Level-2 intent (admin state, delete); SO SMOS restores from its snapshot"
+  },
+  "ran-nf-oam POST /config-jobs/{}/halt": {
+   "fate": "replaced",
+   "row": "S5.6, S5.7",
+   "replacement": "TS 28.312 operations on the Level-2 intent (admin state, delete); SO SMOS restores from its snapshot"
+  },
+  "ran-nf-oam POST /config-jobs/{}/kpi-check": {
+   "fate": "replaced",
+   "row": "S5.6, S5.7",
+   "replacement": "TS 28.312 operations on the Level-2 intent (admin state, delete); SO SMOS restores from its snapshot"
+  },
+  "ran-nf-oam POST /config-jobs/{}/rollback": {
+   "fate": "replaced",
+   "row": "S5.6, S5.7",
+   "replacement": "TS 28.312 operations on the Level-2 intent (admin state, delete); SO SMOS restores from its snapshot"
+  },
+  "ran-nf-oam POST /dme-jobs": {
+   "fate": "replaced",
+   "row": "S3.17",
+   "replacement": "R1GAP v14 \u00a75.2.2 data registration: the producer side of a DME data job (R1TD v05)"
+  },
+  "ran-nf-oam POST /file-subscriptions": {
+   "fate": "replaced",
+   "row": "S3.16",
+   "replacement": "TS 28.532 v19.1.0 file data reporting MnS (listAvailableFiles, notifyFileReady)"
+  },
+  "ran-nf-oam POST /fm-subscriptions": {
+   "fate": "replaced",
+   "row": "S1.13, S3.16",
+   "replacement": "TS 28.622 `PerfMetricJob` / `NtfSubscriptionControl` through the subscription manager"
+  },
+  "ran-nf-oam POST /kpis/{}/publish": {
+   "fate": "delete",
+   "row": "S3.8",
+   "replacement": "DME computes KPIs per ROP; no schedule or publish call"
+  },
+  "ran-nf-oam POST /lifecycle-subscriptions": {
+   "fate": "replaced",
+   "row": "S1.13, S3.16",
+   "replacement": "TS 28.622 `PerfMetricJob` / `NtfSubscriptionControl` through the subscription manager"
+  },
+  "ran-nf-oam POST /managed-entities/{}/managed-objects/refresh": {
+   "fate": "replaced",
+   "row": "S3.4",
+   "replacement": "TE&IV discovery: RAN NF OAM writes the discovered NRM through TE&IV's ProvMnS"
+  },
+  "ran-nf-oam POST /msac/access-rules": {
+   "fate": "replaced",
+   "row": "S1.14",
+   "replacement": "TS 28.532 ProvMnS createMOI on `Identity` / `Role` / `AccessRule` [N] TS 28.319"
+  },
+  "ran-nf-oam POST /msac/identities": {
+   "fate": "replaced",
+   "row": "S1.14",
+   "replacement": "TS 28.532 ProvMnS createMOI on `Identity` / `Role` / `AccessRule` [N] TS 28.319"
+  },
+  "ran-nf-oam POST /msac/roles": {
+   "fate": "replaced",
+   "row": "S1.14",
+   "replacement": "TS 28.532 ProvMnS createMOI on `Identity` / `Role` / `AccessRule` [N] TS 28.319"
+  },
+  "ran-nf-oam POST /o1-adaptor-endpoints/discover": {
+   "fate": "replaced",
+   "row": "S8.2",
+   "replacement": "pnfRegistration and NETCONF call-home (RFC 8071)"
+  },
+  "ran-nf-oam POST /o1-adaptor-endpoints/{}/heartbeat": {
+   "fate": "replaced",
+   "row": "S1.13",
+   "replacement": "TS 28.532 heartbeat notification (`HeartbeatControl`, TS 28.622)"
+  },
+  "ran-nf-oam POST /pm-files": {
+   "fate": "replaced",
+   "row": "S3.16",
+   "replacement": "O1 file-ready notification and VES `stndDefined` PM from the element"
+  },
+  "ran-nf-oam POST /pm-reports": {
+   "fate": "replaced",
+   "row": "S3.16",
+   "replacement": "O1 file-ready notification and VES `stndDefined` PM from the element"
+  },
+  "ran-nf-oam POST /pm-subscriptions": {
+   "fate": "replaced",
+   "row": "S1.13, S3.16",
+   "replacement": "TS 28.622 `PerfMetricJob` / `NtfSubscriptionControl` through the subscription manager"
+  },
+  "ran-nf-oam POST /rapp-approvals/expire-due": {
+   "fate": "delete",
+   "row": "S3.3",
+   "replacement": "worker task in process; not an interface"
+  },
+  "ran-nf-oam POST /safeguard-refusals/purge": {
+   "fate": "delete",
+   "row": "S3.3",
+   "replacement": "worker task in process; not an interface"
+  },
+  "ran-nf-oam POST /software-campaigns/advance-due": {
+   "fate": "delete",
+   "row": "S3.3",
+   "replacement": "worker task in process; not an interface"
+  },
+  "ran-nf-oam PUT /kpi-schedules/{}": {
+   "fate": "delete",
+   "row": "S3.8",
+   "replacement": "DME computes KPIs per ROP; no schedule or publish call"
+  },
+  "ran-nf-oam PUT /managed-entities/{}/cells/{}/guards": {
+   "fate": "replaced",
+   "row": "S3.1, S3.2",
+   "replacement": "TE&IV cell attributes and the cell lock table (one writer, SO SMOS)"
+  },
+  "ran-nf-oam PUT /managed-entities/{}/scope": {
+   "fate": "replaced",
+   "row": "S1.14, S3.1",
+   "replacement": "TS 28.532 ProvMnS on `ManagedElement` with the ADR 0005 scope as a [D] attribute (TE&IV), read by TS 28.319 AccessRules"
+  },
+  "ran-nf-oam PUT /managed-entities/{}/site-cluster": {
+   "fate": "replaced",
+   "row": "S1.14, S3.1",
+   "replacement": "TS 28.532 ProvMnS on `ManagedElement` with the ADR 0005 scope as a [D] attribute (TE&IV), read by TS 28.319 AccessRules"
+  },
+  "ran-nf-oam PUT /msac/identities/{}": {
+   "fate": "replaced",
+   "row": "S1.14",
+   "replacement": "TS 28.532 ProvMnS createMOI / modifyMOIAttributes on `Identity` / `Role` / `AccessRule` [N] TS 28.319"
+  },
+  "ran-nf-oam PUT /msac/roles/{}": {
+   "fate": "replaced",
+   "row": "S1.14",
+   "replacement": "TS 28.532 ProvMnS createMOI / modifyMOIAttributes on `Identity` / `Role` / `AccessRule` [N] TS 28.319"
+  },
+  "ran-nf-oam PUT /o1-adaptor-endpoints/{}/host-keys": {
+   "fate": "delete",
+   "row": "S8.1",
+   "replacement": "SSH host-key trust replaced by WG11 PKI certificates (CMPv2 / EST)"
+  },
+  "rapp-mgmt DELETE /instances/{}": {
+   "fate": "replaced",
+   "row": "S4.2",
+   "replacement": "TS 28.532 ProvMnS deleteMOI on `RappInstance` (R1GAP v14 \u00a75.7, HLD six states)"
+  },
+  "rapp-mgmt GET /instances": {
+   "fate": "replaced",
+   "row": "S4.2",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `RappInstance` (R1GAP v14 \u00a75.7, HLD six states)"
+  },
+  "rapp-mgmt GET /instances/performance/latest": {
+   "fate": "replaced",
+   "row": "S1.13, S4.2",
+   "replacement": "TS 28.622 `PerfMetricJob` on `RappInstance`"
+  },
+  "rapp-mgmt GET /instances/{}": {
+   "fate": "replaced",
+   "row": "S4.2",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `RappInstance` (R1GAP v14 \u00a75.7, HLD six states)"
+  },
+  "rapp-mgmt GET /instances/{}/config": {
+   "fate": "replaced",
+   "row": "S4.2",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `RappInstance` (R1GAP v14 \u00a75.7, HLD six states)"
+  },
+  "rapp-mgmt GET /instances/{}/faults": {
+   "fate": "replaced",
+   "row": "S3.15, S4.2",
+   "replacement": "TS 28.111 alarms on `RappInstance`"
+  },
+  "rapp-mgmt GET /instances/{}/performance": {
+   "fate": "replaced",
+   "row": "S1.13, S4.2",
+   "replacement": "TS 28.622 `PerfMetricJob` on `RappInstance`"
+  },
+  "rapp-mgmt GET /instances/{}/performance/latest": {
+   "fate": "replaced",
+   "row": "S1.13, S4.2",
+   "replacement": "TS 28.622 `PerfMetricJob` on `RappInstance`"
+  },
+  "rapp-mgmt GET /instances/{}/versions": {
+   "fate": "replaced",
+   "row": "S4.2",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `RappInstance` (R1GAP v14 \u00a75.7, HLD six states)"
+  },
+  "rapp-mgmt POST /instances": {
+   "fate": "replaced",
+   "row": "S4.2",
+   "replacement": "TS 28.532 ProvMnS createMOI on `RappInstance` (R1GAP v14 \u00a75.7, HLD six states)"
+  },
+  "rapp-mgmt POST /instances/{}/bootstrap-complete": {
+   "fate": "replaced",
+   "row": "S4.6",
+   "replacement": "SME `ServiceReady` when the rApp publishes its R1 endpoint (CAPIF publish)"
+  },
+  "rapp-mgmt POST /instances/{}/credentials": {
+   "fate": "replaced",
+   "row": "S1.16, S4.8",
+   "replacement": "TS 29.222 CAPIF API invoker onboarding and security (credentials of the invoker)"
+  },
+  "rapp-mgmt POST /instances/{}/credentials/renew": {
+   "fate": "replaced",
+   "row": "S1.16, S4.8",
+   "replacement": "TS 29.222 CAPIF API invoker onboarding and security (credentials of the invoker)"
+  },
+  "rapp-mgmt POST /instances/{}/fault": {
+   "fate": "replaced",
+   "row": "S3.15, S4.2",
+   "replacement": "TS 28.111 alarms on `RappInstance`"
+  },
+  "rapp-mgmt POST /instances/{}/performance": {
+   "fate": "replaced",
+   "row": "S1.13, S4.2",
+   "replacement": "TS 28.622 `PerfMetricJob` on `RappInstance`"
+  },
+  "rapp-mgmt POST /instances/{}/recover": {
+   "fate": "replaced",
+   "row": "S4.2",
+   "replacement": "TS 28.532 ProvMnS createMOI on `RappInstance` (R1GAP v14 \u00a75.7, HLD six states)"
+  },
+  "rapp-mgmt POST /instances/{}/rollback": {
+   "fate": "replaced",
+   "row": "S4.2",
+   "replacement": "TS 28.532 ProvMnS createMOI on `RappInstance` (R1GAP v14 \u00a75.7, HLD six states)"
+  },
+  "rapp-mgmt POST /instances/{}/terminate": {
+   "fate": "replaced",
+   "row": "S4.2",
+   "replacement": "TS 28.532 ProvMnS createMOI on `RappInstance` (R1GAP v14 \u00a75.7, HLD six states)"
+  },
+  "rapp-mgmt POST /instances/{}/upgrade": {
+   "fate": "replaced",
+   "row": "S4.2",
+   "replacement": "TS 28.532 ProvMnS createMOI on `RappInstance` (R1GAP v14 \u00a75.7, HLD six states)"
+  },
+  "rapp-mgmt POST /instances/{}/upgrade/resolve": {
+   "fate": "replaced",
+   "row": "S4.2",
+   "replacement": "TS 28.532 ProvMnS createMOI on `RappInstance` (R1GAP v14 \u00a75.7, HLD six states)"
+  },
+  "rapp-mgmt PUT /instances/{}/config": {
+   "fate": "replaced",
+   "row": "S4.2",
+   "replacement": "TS 28.532 ProvMnS createMOI / modifyMOIAttributes on `RappInstance` (R1GAP v14 \u00a75.7, HLD six states)"
+  },
+  "sa-smos DELETE /o1-cm-handler/registration": {
+   "fate": "delete",
+   "row": "S5.9",
+   "replacement": "the O1-CM handler retires; SO SMOS enacts Level-2 intents"
+  },
+  "sa-smos GET /monitors": {
+   "fate": "replaced",
+   "row": "S5.8, S5.17",
+   "replacement": "TS 28.532 ProvMnS on `AssuranceClosedControlLoop` / `AssuranceGoal` [N] TS 28.536; outcomes as TS 28.312 intent reports to SO SMOS"
+  },
+  "sa-smos GET /monitors/{}": {
+   "fate": "replaced",
+   "row": "S5.8, S5.17",
+   "replacement": "TS 28.532 ProvMnS on `AssuranceClosedControlLoop` / `AssuranceGoal` [N] TS 28.536; outcomes as TS 28.312 intent reports to SO SMOS"
+  },
+  "sa-smos GET /o1-cm-handler/enactments": {
+   "fate": "delete",
+   "row": "S5.9",
+   "replacement": "the O1-CM handler retires; SO SMOS enacts Level-2 intents"
+  },
+  "sa-smos GET /remedial-actions": {
+   "fate": "replaced",
+   "row": "S5.8, S5.17",
+   "replacement": "TS 28.532 ProvMnS on `AssuranceClosedControlLoop` / `AssuranceGoal` [N] TS 28.536; outcomes as TS 28.312 intent reports to SO SMOS"
+  },
+  "sa-smos POST /monitors": {
+   "fate": "replaced",
+   "row": "S5.8, S5.17",
+   "replacement": "TS 28.532 ProvMnS on `AssuranceClosedControlLoop` / `AssuranceGoal` [N] TS 28.536; outcomes as TS 28.312 intent reports to SO SMOS"
+  },
+  "sa-smos POST /monitors/{}/escalate": {
+   "fate": "replaced",
+   "row": "S5.8, S5.17",
+   "replacement": "TS 28.532 ProvMnS on `AssuranceClosedControlLoop` / `AssuranceGoal` [N] TS 28.536; outcomes as TS 28.312 intent reports to SO SMOS"
+  },
+  "sa-smos POST /monitors/{}/evaluate": {
+   "fate": "replaced",
+   "row": "S5.8, S5.17",
+   "replacement": "TS 28.532 ProvMnS on `AssuranceClosedControlLoop` / `AssuranceGoal` [N] TS 28.536; outcomes as TS 28.312 intent reports to SO SMOS"
+  },
+  "sa-smos POST /monitors/{}/remedial-actions": {
+   "fate": "replaced",
+   "row": "S5.8, S5.17",
+   "replacement": "TS 28.532 ProvMnS on `AssuranceClosedControlLoop` / `AssuranceGoal` [N] TS 28.536; outcomes as TS 28.312 intent reports to SO SMOS"
+  },
+  "sa-smos POST /monitors/{}/reports": {
+   "fate": "replaced",
+   "row": "S5.8, S5.17",
+   "replacement": "TS 28.532 ProvMnS on `AssuranceClosedControlLoop` / `AssuranceGoal` [N] TS 28.536; outcomes as TS 28.312 intent reports to SO SMOS"
+  },
+  "sa-smos POST /o1-cm-handler/intents": {
+   "fate": "delete",
+   "row": "S5.9",
+   "replacement": "the O1-CM handler retires; SO SMOS enacts Level-2 intents"
+  },
+  "sa-smos POST /o1-cm-handler/registration": {
+   "fate": "delete",
+   "row": "S5.9",
+   "replacement": "the O1-CM handler retires; SO SMOS enacts Level-2 intents"
+  },
+  "sa-smos PUT /monitors/{}/automation": {
+   "fate": "replaced",
+   "row": "S5.8, S5.17",
+   "replacement": "TS 28.532 ProvMnS on `AssuranceClosedControlLoop` / `AssuranceGoal` [N] TS 28.536; outcomes as TS 28.312 intent reports to SO SMOS"
+  },
+  "sa-smos PUT /monitors/{}/remedy": {
+   "fate": "replaced",
+   "row": "S5.8, S5.17",
+   "replacement": "TS 28.532 ProvMnS on `AssuranceClosedControlLoop` / `AssuranceGoal` [N] TS 28.536; outcomes as TS 28.312 intent reports to SO SMOS"
+  },
+  "sme DELETE /invoker-registrations/{}": {
+   "fate": "replaced",
+   "row": "S1.16",
+   "replacement": "TS 29.222 CAPIF_API_Invoker_Management_API (`/api-invoker-management/v1/onboardedInvokers`)"
+  },
+  "sme DELETE /provider-registrations/{}": {
+   "fate": "replaced",
+   "row": "S1.16",
+   "replacement": "TS 29.222 CAPIF_API_Provider_Management_API (`/api-provider-management/v1/registrations`)"
+  },
+  "sme DELETE /trusted-invokers/{}": {
+   "fate": "replaced",
+   "row": "S1.16",
+   "replacement": "TS 29.222 CAPIF_Security_API `trustedInvokers` at its standard path"
+  },
+  "sme GET /invoker-registrations": {
+   "fate": "replaced",
+   "row": "S1.16",
+   "replacement": "TS 29.222 CAPIF_API_Invoker_Management_API (`/api-invoker-management/v1/onboardedInvokers`)"
+  },
+  "sme GET /provider-registrations": {
+   "fate": "replaced",
+   "row": "S1.16",
+   "replacement": "TS 29.222 CAPIF_API_Provider_Management_API (`/api-provider-management/v1/registrations`)"
+  },
+  "sme GET /trusted-invokers": {
+   "fate": "replaced",
+   "row": "S1.16",
+   "replacement": "TS 29.222 CAPIF_Security_API `trustedInvokers` at its standard path"
+  },
+  "sme GET /trusted-invokers/{}": {
+   "fate": "replaced",
+   "row": "S1.16",
+   "replacement": "TS 29.222 CAPIF_Security_API `trustedInvokers` at its standard path"
+  },
+  "sme POST /invoker-registrations": {
+   "fate": "replaced",
+   "row": "S1.16",
+   "replacement": "TS 29.222 CAPIF_API_Invoker_Management_API (`/api-invoker-management/v1/onboardedInvokers`)"
+  },
+  "sme POST /invoker-registrations/purge-stale": {
+   "fate": "delete",
+   "row": "S1.16",
+   "replacement": "worker task in process; not an interface"
+  },
+  "sme POST /invoker-registrations/{}/secret": {
+   "fate": "replaced",
+   "row": "S1.16",
+   "replacement": "TS 29.222 CAPIF_API_Invoker_Management_API (`/api-invoker-management/v1/onboardedInvokers`)"
+  },
+  "sme POST /oauth2/token": {
+   "fate": "replaced",
+   "row": "S1.16",
+   "replacement": "TS 29.222 CAPIF_Security_API token (`/capif-security/v1/securities/{id}/token`)"
+  },
+  "sme POST /provider-registrations": {
+   "fate": "replaced",
+   "row": "S1.16",
+   "replacement": "TS 29.222 CAPIF_API_Provider_Management_API (`/api-provider-management/v1/registrations`)"
+  },
+  "sme POST /trusted-invokers/{}/delete": {
+   "fate": "replaced",
+   "row": "S1.16",
+   "replacement": "TS 29.222 CAPIF_Security_API `trustedInvokers` at its standard path"
+  },
+  "sme POST /trusted-invokers/{}/update": {
+   "fate": "replaced",
+   "row": "S1.16",
+   "replacement": "TS 29.222 CAPIF_Security_API `trustedInvokers` at its standard path"
+  },
+  "sme PUT /invoker-registrations/{}": {
+   "fate": "replaced",
+   "row": "S1.16",
+   "replacement": "TS 29.222 CAPIF_API_Invoker_Management_API (`/api-invoker-management/v1/onboardedInvokers`)"
+  },
+  "sme PUT /invoker-registrations/{}/authz-scope": {
+   "fate": "replaced",
+   "row": "S1.14",
+   "replacement": "TS 28.319 `AccessRule` naming the invoker (ADR 0005 scope)"
+  },
+  "sme PUT /trusted-invokers/{}": {
+   "fate": "replaced",
+   "row": "S1.16",
+   "replacement": "TS 29.222 CAPIF_Security_API `trustedInvokers` at its standard path"
+  },
+  "so-smos GET /orders": {
+   "fate": "replaced",
+   "row": "S5.3",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: a Level-1 intent and its playbook replace a service order"
+  },
+  "so-smos GET /orders/{}": {
+   "fate": "replaced",
+   "row": "S5.3",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: a Level-1 intent and its playbook replace a service order"
+  },
+  "so-smos POST /orders": {
+   "fate": "replaced",
+   "row": "S5.3",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: a Level-1 intent and its playbook replace a service order"
+  },
+  "so-smos POST /orders/{}/cancel": {
+   "fate": "replaced",
+   "row": "S5.3",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: a Level-1 intent and its playbook replace a service order"
+  },
+  "traffic-steering-rapp DELETE /sim-producer/jobs/{}": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "traffic-steering-rapp GET /sim-producer/health": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "traffic-steering-rapp POST /instances/{}/demo/emulate": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "traffic-steering-rapp POST /instances/{}/demo/history": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "traffic-steering-rapp POST /instances/{}/demo/kpi-hour": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "traffic-steering-rapp POST /instances/{}/demo/live": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "traffic-steering-rapp POST /instances/{}/demo/prepare": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "traffic-steering-rapp POST /instances/{}/lifecycle/deploy": {
+   "fate": "delete",
+   "row": "S7.13",
+   "replacement": "the rApp uses R1GAP v14 \u00a75.6 services itself; the operator acts through intents"
+  },
+  "traffic-steering-rapp POST /instances/{}/lifecycle/emulate": {
+   "fate": "delete",
+   "row": "S7.13",
+   "replacement": "the rApp uses R1GAP v14 \u00a75.6 services itself; the operator acts through intents"
+  },
+  "traffic-steering-rapp POST /instances/{}/lifecycle/train": {
+   "fate": "delete",
+   "row": "S7.13",
+   "replacement": "the rApp uses R1GAP v14 \u00a75.6 services itself; the operator acts through intents"
+  },
+  "traffic-steering-rapp POST /instances/{}/lifecycle/validate": {
+   "fate": "delete",
+   "row": "S7.13",
+   "replacement": "the rApp uses R1GAP v14 \u00a75.6 services itself; the operator acts through intents"
+  },
+  "traffic-steering-rapp POST /sim-producer/jobs": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "traffic-steering-rapp POST /sim-producer/publish": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  },
+  "traffic-steering-rapp POST /sim-producer/register": {
+   "fate": "delete",
+   "row": "S0.15, S7.8",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 \u00a75.2.2"
+  }
+ },
+ "consumer": {
+  "aimgf/app/main.py DELETE /dme/data-jobs/{}": "dme DELETE /data-jobs/{}",
+  "aimgf/app/main.py DELETE /nfo/descriptors/{}": "nfo DELETE /descriptors/{}",
+  "aimgf/app/main.py GET /dme/data-jobs/{}": "dme GET /data-jobs/{}",
+  "aimgf/app/main.py GET /dme/dme-types/{}": "dme GET /dme-types/{}",
+  "aimgf/app/main.py GET /mlmr/coordination-groups": "mlmr GET /coordination-groups",
+  "aimgf/app/main.py GET /mlmr/models/{}": "mlmr GET /models/{}",
+  "aimgf/app/main.py GET /nfo/deployments/{}": "nfo GET /deployments/{}",
+  "aimgf/app/main.py GET /onboarding/packages/{}/onboarding-status": "onboarding GET /packages/{}/onboarding-status",
+  "aimgf/app/main.py PATCH /mlmr/models/{}/phase-info": "mlmr PATCH /models/{}/phase-info",
+  "aimgf/app/main.py POST /dme/data-jobs": "dme POST /data-jobs",
+  "dme/app/main.py GET /ran-nf-oam/managed-entities": "ran-nf-oam GET /managed-entities",
+  "dme/app/main.py POST /ran-nf-oam/config-jobs": "ran-nf-oam POST /config-jobs",
+  "gui-bff/app/exports.py GET /ran-nf-oam/alarms": "ran-nf-oam GET /alarms",
+  "gui-bff/app/rapps.py GET /onboarding/packages": "onboarding GET /packages",
+  "gui-bff/app/rapps.py GET /onboarding/packages/{package_id}/onboarding-status": "onboarding GET /packages/{}/onboarding-status",
+  "gui-bff/app/rapps.py GET /rapp-mgmt/instances": "rapp-mgmt GET /instances",
+  "gui-bff/app/rapps.py GET /rapp-mgmt/instances/{instance_id}": "rapp-mgmt GET /instances/{}",
+  "gui-bff/app/rbac.py DELETE /aimgf/feature-groups/{id}": "aimgf DELETE /feature-groups/{}",
+  "gui-bff/app/rbac.py DELETE /aimgf/mlmf/subscriptions/{id}": "aimgf DELETE /mlmf/subscriptions/{}",
+  "gui-bff/app/rbac.py DELETE /aimgf/training-jobs/{id}": "aimgf DELETE /training-jobs/{}",
+  "gui-bff/app/rbac.py DELETE /dme/data-jobs/{id}": "dme DELETE /data-jobs/{}",
+  "gui-bff/app/rbac.py DELETE /dme/dme-types/{id}": "dme DELETE /dme-types/{}",
+  "gui-bff/app/rbac.py DELETE /dme/offers/{id}": "dme DELETE /offers/{}",
+  "gui-bff/app/rbac.py DELETE /dme/production-capabilities": "dme DELETE /production-capabilities",
+  "gui-bff/app/rbac.py DELETE /dme/type-subscriptions/{id}": "dme DELETE /type-subscriptions/{}",
+  "gui-bff/app/rbac.py DELETE /focom/inventory/subscriptions/{id}": "focom DELETE /inventory/subscriptions/{}",
+  "gui-bff/app/rbac.py DELETE /focom/resources/{id}": "focom DELETE /resources/{}",
+  "gui-bff/app/rbac.py DELETE /intent-service/intent-handling-functions/{id}": "intent-service DELETE /intent-handling-functions/{}",
+  "gui-bff/app/rbac.py DELETE /intent-service/intents/{id}": "intent-service DELETE /intents/{}",
+  "gui-bff/app/rbac.py DELETE /mdaf/mda-functions/{id}": "mdaf DELETE /mda-functions/{}",
+  "gui-bff/app/rbac.py DELETE /mdaf/mda-requests/{id}": "mdaf DELETE /mda-requests/{}",
+  "gui-bff/app/rbac.py DELETE /mdaf/subscriptions/{id}": "mdaf DELETE /subscriptions/{}",
+  "gui-bff/app/rbac.py DELETE /mlmr/models/{id}": "mlmr DELETE /models/{}",
+  "gui-bff/app/rbac.py DELETE /nfo/deployments/{id}": "nfo DELETE /deployments/{}",
+  "gui-bff/app/rbac.py DELETE /onboarding/packages/{id}": "onboarding DELETE /packages/{}",
+  "gui-bff/app/rbac.py DELETE /ran-analytics/producers/{id}": "ran-analytics DELETE /producers/{}",
+  "gui-bff/app/rbac.py DELETE /ran-nf-oam/fm-subscriptions/{id}": "ran-nf-oam DELETE /fm-subscriptions/{}",
+  "gui-bff/app/rbac.py DELETE /ran-nf-oam/kpi-schedules/{id}": "ran-nf-oam DELETE /kpi-schedules/{}",
+  "gui-bff/app/rbac.py DELETE /ran-nf-oam/lifecycle-subscriptions/{id}": "ran-nf-oam DELETE /lifecycle-subscriptions/{}",
+  "gui-bff/app/rbac.py DELETE /ran-nf-oam/managed-entities/{id}/cells/{id}/guards": "ran-nf-oam DELETE /managed-entities/{}/cells/{}/guards",
+  "gui-bff/app/rbac.py DELETE /ran-nf-oam/msac/access-rules/{id}": "ran-nf-oam DELETE /msac/access-rules/{}",
+  "gui-bff/app/rbac.py DELETE /ran-nf-oam/msac/identities/{id}": "ran-nf-oam DELETE /msac/identities/{}",
+  "gui-bff/app/rbac.py DELETE /ran-nf-oam/msac/roles/{id}": "ran-nf-oam DELETE /msac/roles/{}",
+  "gui-bff/app/rbac.py DELETE /ran-nf-oam/o1-adaptor-endpoints/{id}/host-keys/{id}": "ran-nf-oam DELETE /o1-adaptor-endpoints/{}/host-keys/{}",
+  "gui-bff/app/rbac.py DELETE /ran-nf-oam/pm-subscriptions/{id}": "ran-nf-oam DELETE /pm-subscriptions/{}",
+  "gui-bff/app/rbac.py DELETE /rapp-mgmt/instances/{id}": "rapp-mgmt DELETE /instances/{}",
+  "gui-bff/app/rbac.py DELETE /sme/invoker-registrations/{id}": "sme DELETE /invoker-registrations/{}",
+  "gui-bff/app/rbac.py DELETE /sme/provider-registrations/{id}": "sme DELETE /provider-registrations/{}",
+  "gui-bff/app/rbac.py DELETE /sme/trusted-invokers/{id}": "sme DELETE /trusted-invokers/{}",
+  "gui-bff/app/rbac.py GET /aimgf/feature-groups": "aimgf GET /feature-groups",
+  "gui-bff/app/rbac.py GET /aimgf/feature-groups/{id}": "aimgf GET /feature-groups/{}",
+  "gui-bff/app/rbac.py PATCH /aimgf/aiml-inference-functions/{id}": "aimgf PATCH /aiml-inference-functions/{}",
+  "gui-bff/app/rbac.py PATCH /aimgf/ml-model-loading-requests/{id}": "aimgf PATCH /ml-model-loading-requests/{}",
+  "gui-bff/app/rbac.py PATCH /aimgf/ml-testing-requests/{id}": "aimgf PATCH /ml-testing-requests/{}",
+  "gui-bff/app/rbac.py PATCH /aimgf/ml-training-processes/{id}": "aimgf PATCH /ml-training-processes/{}",
+  "gui-bff/app/rbac.py PATCH /aimgf/ml-training-requests/{id}": "aimgf PATCH /ml-training-requests/{}",
+  "gui-bff/app/rbac.py PATCH /aimgf/ml-update-requests/{id}": "aimgf PATCH /ml-update-requests/{}",
+  "gui-bff/app/rbac.py PATCH /intent-service/intents/{id}/admin-state": "intent-service PATCH /intents/{}/admin-state",
+  "gui-bff/app/rbac.py PATCH /ran-nf-oam/alarms/{id}/ack": "ran-nf-oam PATCH /alarms/{}/ack",
+  "gui-bff/app/rbac.py PATCH /ran-nf-oam/alarms/{id}/clear": "ran-nf-oam PATCH /alarms/{}/clear",
+  "gui-bff/app/rbac.py POST /aimgf/aiml-inference-functions": "aimgf POST /aiml-inference-functions",
+  "gui-bff/app/rbac.py POST /aimgf/emulation-jobs": "aimgf POST /emulation-jobs",
+  "gui-bff/app/rbac.py POST /aimgf/emulation-jobs/{id}/complete": "aimgf POST /emulation-jobs/{}/complete",
+  "gui-bff/app/rbac.py POST /aimgf/feature-groups": "aimgf POST /feature-groups",
+  "gui-bff/app/rbac.py POST /aimgf/inference-jobs/{id}/resolve": "aimgf POST /inference-jobs/{}/resolve",
+  "gui-bff/app/rbac.py POST /aimgf/ml-model-loading-policies": "aimgf POST /ml-model-loading-policies",
+  "gui-bff/app/rbac.py POST /aimgf/ml-model-loading-policies/{id}/trigger": "aimgf POST /ml-model-loading-policies/{}/trigger",
+  "gui-bff/app/rbac.py POST /aimgf/ml-model-loading-requests": "aimgf POST /ml-model-loading-requests",
+  "gui-bff/app/rbac.py POST /aimgf/ml-testing-requests": "aimgf POST /ml-testing-requests",
+  "gui-bff/app/rbac.py POST /aimgf/ml-training-requests": "aimgf POST /ml-training-requests",
+  "gui-bff/app/rbac.py POST /aimgf/ml-update-requests": "aimgf POST /ml-update-requests",
+  "gui-bff/app/rbac.py POST /aimgf/mlmf/subscriptions": "aimgf POST /mlmf/subscriptions",
+  "gui-bff/app/rbac.py POST /aimgf/mlmf/subscriptions/{id}/reports": "aimgf POST /mlmf/subscriptions/{}/reports",
+  "gui-bff/app/rbac.py POST /aimgf/models/{id}/inference-jobs": "aimgf POST /models/{}/inference-jobs",
+  "gui-bff/app/rbac.py POST /aimgf/models/{id}/runtime/activate": "aimgf POST /models/{}/runtime/activate",
+  "gui-bff/app/rbac.py POST /aimgf/models/{id}/runtime/deploy": "aimgf POST /models/{}/runtime/deploy",
+  "gui-bff/app/rbac.py POST /aimgf/models/{id}/runtime/scale": "aimgf POST /models/{}/runtime/scale",
+  "gui-bff/app/rbac.py POST /aimgf/models/{id}/runtime/terminate": "aimgf POST /models/{}/runtime/terminate",
+  "gui-bff/app/rbac.py POST /aimgf/training-jobs": "aimgf POST /training-jobs",
+  "gui-bff/app/rbac.py POST /aimgf/training-jobs/{id}/complete": "aimgf POST /training-jobs/{}/complete",
+  "gui-bff/app/rbac.py POST /aimgf/training-jobs/{id}/model-metrics": "aimgf POST /training-jobs/{}/model-metrics",
+  "gui-bff/app/rbac.py POST /aimgf/training-jobs/{id}/progress": "aimgf POST /training-jobs/{}/progress",
+  "gui-bff/app/rbac.py POST /aimgf/training-jobs/{id}/resume": "aimgf POST /training-jobs/{}/resume",
+  "gui-bff/app/rbac.py POST /aimgf/training-jobs/{id}/suspend": "aimgf POST /training-jobs/{}/suspend",
+  "gui-bff/app/rbac.py POST /aimgf/validation-jobs": "aimgf POST /validation-jobs",
+  "gui-bff/app/rbac.py POST /aimgf/validation-jobs/{id}/complete": "aimgf POST /validation-jobs/{}/complete",
+  "gui-bff/app/rbac.py POST /dme/actions": "dme POST /actions",
+  "gui-bff/app/rbac.py POST /dme/data-jobs": "dme POST /data-jobs",
+  "gui-bff/app/rbac.py POST /dme/data-jobs/{id}/records": "dme POST /data-jobs/{}/records",
+  "gui-bff/app/rbac.py POST /dme/offers": "dme POST /offers",
+  "gui-bff/app/rbac.py POST /dme/offers/{id}/notify": "dme POST /offers/{}/notify",
+  "gui-bff/app/rbac.py POST /dme/production-capabilities": "dme POST /production-capabilities",
+  "gui-bff/app/rbac.py POST /dme/type-subscriptions": "dme POST /type-subscriptions",
+  "gui-bff/app/rbac.py POST /focom/alarms/ingest": "focom POST /alarms/ingest",
+  "gui-bff/app/rbac.py POST /focom/inventory/subscriptions": "focom POST /inventory/subscriptions",
+  "gui-bff/app/rbac.py POST /focom/resources/provision": "focom POST /resources/provision",
+  "gui-bff/app/rbac.py POST /intent-service/autonomy-dispatches": "intent-service POST /autonomy-dispatches",
+  "gui-bff/app/rbac.py POST /intent-service/autonomy-dispatches/{id}/reject": "intent-service POST /autonomy-dispatches/{}/reject",
+  "gui-bff/app/rbac.py POST /intent-service/autonomy-dispatches/{id}/resolve": "intent-service POST /autonomy-dispatches/{}/resolve",
+  "gui-bff/app/rbac.py POST /intent-service/intent-handling-functions": "intent-service POST /intent-handling-functions",
+  "gui-bff/app/rbac.py POST /intent-service/intent-reports": "intent-service POST /intent-reports",
+  "gui-bff/app/rbac.py POST /intent-service/intents": "intent-service POST /intents",
+  "gui-bff/app/rbac.py POST /intent-service/intents/{id}/negotiation-feedback": "intent-service POST /intents/{}/negotiation-feedback",
+  "gui-bff/app/rbac.py POST /mdaf/mda-functions": "mdaf POST /mda-functions",
+  "gui-bff/app/rbac.py POST /mdaf/mda-requests": "mdaf POST /mda-requests",
+  "gui-bff/app/rbac.py POST /mdaf/reports": "mdaf POST /reports",
+  "gui-bff/app/rbac.py POST /mdaf/subscriptions": "mdaf POST /subscriptions",
+  "gui-bff/app/rbac.py POST /mllf/models/{id}/deploy": "mllf POST /models/{}/deploy",
+  "gui-bff/app/rbac.py POST /mlmr/coordination-groups": "mlmr POST /coordination-groups",
+  "gui-bff/app/rbac.py POST /mlmr/models": "mlmr POST /models",
+  "gui-bff/app/rbac.py POST /mlmr/models/{id}/artifact": "mlmr POST /models/{}/artifact",
+  "gui-bff/app/rbac.py POST /nfo/deployments/{id}/dms-notifications": "nfo POST /deployments/{}/dms-notifications",
+  "gui-bff/app/rbac.py POST /nfo/deployments/{id}/heal": "nfo POST /deployments/{}/heal",
+  "gui-bff/app/rbac.py POST /nfo/deployments/{id}/scale": "nfo POST /deployments/{}/scale",
+  "gui-bff/app/rbac.py POST /onboarding/packages": "onboarding POST /packages",
+  "gui-bff/app/rbac.py POST /onboarding/packages/upload": "onboarding POST /packages/upload",
+  "gui-bff/app/rbac.py POST /onboarding/packages/{id}/cancel-delete": "onboarding POST /packages/{}/cancel-delete",
+  "gui-bff/app/rbac.py POST /onboarding/packages/{id}/deprecate": "onboarding POST /packages/{}/deprecate",
+  "gui-bff/app/rbac.py POST /onboarding/packages/{id}/deprime": "onboarding POST /packages/{}/deprime",
+  "gui-bff/app/rbac.py POST /onboarding/packages/{id}/prime": "onboarding POST /packages/{}/prime",
+  "gui-bff/app/rbac.py POST /onboarding/packages/{id}/usage/{id}/release": "onboarding POST /packages/{}/usage/{}/release",
+  "gui-bff/app/rbac.py POST /ran-analytics/producers": "ran-analytics POST /producers",
+  "gui-bff/app/rbac.py POST /ran-nf-oam/alarms/ingest": "ran-nf-oam POST /alarms/ingest",
+  "gui-bff/app/rbac.py POST /ran-nf-oam/alarms/{id}/comments": "ran-nf-oam POST /alarms/{}/comments",
+  "gui-bff/app/rbac.py POST /ran-nf-oam/config-jobs": "ran-nf-oam POST /config-jobs",
+  "gui-bff/app/rbac.py POST /ran-nf-oam/config-jobs/{id}/abort": "ran-nf-oam POST /config-jobs/{}/abort",
+  "gui-bff/app/rbac.py POST /ran-nf-oam/config-jobs/{id}/continue": "ran-nf-oam POST /config-jobs/{}/continue",
+  "gui-bff/app/rbac.py POST /ran-nf-oam/config-jobs/{id}/halt": "ran-nf-oam POST /config-jobs/{}/halt",
+  "gui-bff/app/rbac.py POST /ran-nf-oam/config-jobs/{id}/kpi-check": "ran-nf-oam POST /config-jobs/{}/kpi-check",
+  "gui-bff/app/rbac.py POST /ran-nf-oam/config-jobs/{id}/rollback": "ran-nf-oam POST /config-jobs/{}/rollback",
+  "gui-bff/app/rbac.py POST /ran-nf-oam/fm-subscriptions": "ran-nf-oam POST /fm-subscriptions",
+  "gui-bff/app/rbac.py POST /ran-nf-oam/lifecycle-subscriptions": "ran-nf-oam POST /lifecycle-subscriptions",
+  "gui-bff/app/rbac.py POST /ran-nf-oam/managed-entities/{id}/managed-objects/refresh": "ran-nf-oam POST /managed-entities/{}/managed-objects/refresh",
+  "gui-bff/app/rbac.py POST /ran-nf-oam/msac/access-rules": "ran-nf-oam POST /msac/access-rules",
+  "gui-bff/app/rbac.py POST /ran-nf-oam/msac/identities": "ran-nf-oam POST /msac/identities",
+  "gui-bff/app/rbac.py POST /ran-nf-oam/msac/roles": "ran-nf-oam POST /msac/roles",
+  "gui-bff/app/rbac.py POST /ran-nf-oam/o1-adaptor-endpoints/discover": "ran-nf-oam POST /o1-adaptor-endpoints/discover",
+  "gui-bff/app/rbac.py POST /ran-nf-oam/o1-adaptor-endpoints/{id}/heartbeat": "ran-nf-oam POST /o1-adaptor-endpoints/{}/heartbeat",
+  "gui-bff/app/rbac.py POST /ran-nf-oam/pm-subscriptions": "ran-nf-oam POST /pm-subscriptions",
+  "gui-bff/app/rbac.py POST /ran-nf-oam/safeguard-refusals/purge": "ran-nf-oam POST /safeguard-refusals/purge",
+  "gui-bff/app/rbac.py POST /rapp-mgmt/instances": "rapp-mgmt POST /instances",
+  "gui-bff/app/rbac.py POST /rapp-mgmt/instances/{id}/bootstrap-complete": "rapp-mgmt POST /instances/{}/bootstrap-complete",
+  "gui-bff/app/rbac.py POST /rapp-mgmt/instances/{id}/credentials/renew": "rapp-mgmt POST /instances/{}/credentials/renew",
+  "gui-bff/app/rbac.py POST /rapp-mgmt/instances/{id}/fault": "rapp-mgmt POST /instances/{}/fault",
+  "gui-bff/app/rbac.py POST /rapp-mgmt/instances/{id}/performance": "rapp-mgmt POST /instances/{}/performance",
+  "gui-bff/app/rbac.py POST /rapp-mgmt/instances/{id}/recover": "rapp-mgmt POST /instances/{}/recover",
+  "gui-bff/app/rbac.py POST /rapp-mgmt/instances/{id}/rollback": "rapp-mgmt POST /instances/{}/rollback",
+  "gui-bff/app/rbac.py POST /rapp-mgmt/instances/{id}/terminate": "rapp-mgmt POST /instances/{}/terminate",
+  "gui-bff/app/rbac.py POST /rapp-mgmt/instances/{id}/upgrade": "rapp-mgmt POST /instances/{}/upgrade",
+  "gui-bff/app/rbac.py POST /rapp-mgmt/instances/{id}/upgrade/resolve": "rapp-mgmt POST /instances/{}/upgrade/resolve",
+  "gui-bff/app/rbac.py POST /sa-smos/monitors": "sa-smos POST /monitors",
+  "gui-bff/app/rbac.py POST /sa-smos/monitors/{id}/escalate": "sa-smos POST /monitors/{}/escalate",
+  "gui-bff/app/rbac.py POST /sa-smos/monitors/{id}/evaluate": "sa-smos POST /monitors/{}/evaluate",
+  "gui-bff/app/rbac.py POST /sa-smos/monitors/{id}/remedial-actions": "sa-smos POST /monitors/{}/remedial-actions",
+  "gui-bff/app/rbac.py POST /sa-smos/o1-cm-handler/registration": "sa-smos POST /o1-cm-handler/registration",
+  "gui-bff/app/rbac.py POST /sme/invoker-registrations": "sme POST /invoker-registrations",
+  "gui-bff/app/rbac.py POST /sme/provider-registrations": "sme POST /provider-registrations",
+  "gui-bff/app/rbac.py POST /sme/trusted-invokers/{id}/delete": "sme POST /trusted-invokers/{}/delete",
+  "gui-bff/app/rbac.py POST /sme/trusted-invokers/{id}/update": "sme POST /trusted-invokers/{}/update",
+  "gui-bff/app/rbac.py POST /so-smos/orders": "so-smos POST /orders",
+  "gui-bff/app/rbac.py POST /so-smos/orders/{id}/cancel": "so-smos POST /orders/{}/cancel",
+  "gui-bff/app/rbac.py PUT /dme/data-jobs/{id}": "dme PUT /data-jobs/{}",
+  "gui-bff/app/rbac.py PUT /mdaf/mda-functions/{id}": "mdaf PUT /mda-functions/{}",
+  "gui-bff/app/rbac.py PUT /mlmr/models/{id}": "mlmr PUT /models/{}",
+  "gui-bff/app/rbac.py PUT /ran-nf-oam/kpi-schedules/{id}": "ran-nf-oam PUT /kpi-schedules/{}",
+  "gui-bff/app/rbac.py PUT /ran-nf-oam/managed-entities/{id}/cells/{id}/guards": "ran-nf-oam PUT /managed-entities/{}/cells/{}/guards",
+  "gui-bff/app/rbac.py PUT /ran-nf-oam/managed-entities/{id}/scope": "ran-nf-oam PUT /managed-entities/{}/scope",
+  "gui-bff/app/rbac.py PUT /ran-nf-oam/managed-entities/{id}/site-cluster": "ran-nf-oam PUT /managed-entities/{}/site-cluster",
+  "gui-bff/app/rbac.py PUT /ran-nf-oam/msac/identities/{id}": "ran-nf-oam PUT /msac/identities/{}",
+  "gui-bff/app/rbac.py PUT /ran-nf-oam/msac/roles/{id}": "ran-nf-oam PUT /msac/roles/{}",
+  "gui-bff/app/rbac.py PUT /ran-nf-oam/o1-adaptor-endpoints/{id}/host-keys": "ran-nf-oam PUT /o1-adaptor-endpoints/{}/host-keys",
+  "gui-bff/app/rbac.py PUT /rapp-mgmt/instances/{id}/config": "rapp-mgmt PUT /instances/{}/config",
+  "gui-bff/app/rbac.py PUT /sa-smos/monitors/{id}/automation": "sa-smos PUT /monitors/{}/automation",
+  "gui-bff/app/rbac.py PUT /sa-smos/monitors/{id}/remedy": "sa-smos PUT /monitors/{}/remedy",
+  "gui-bff/app/rbac.py PUT /sme/invoker-registrations/{id}": "sme PUT /invoker-registrations/{}",
+  "gui-bff/app/rbac.py PUT /sme/invoker-registrations/{id}/authz-scope": "sme PUT /invoker-registrations/{}/authz-scope",
+  "gui-bff/app/rbac.py PUT /sme/trusted-invokers/{id}": "sme PUT /trusted-invokers/{}",
+  "gui/src/api/client.ts * /rapp-mgmt/instances": "rapp-mgmt GET /instances",
+  "gui/src/components/ConfigJobDrawer.tsx * /ran-nf-oam/config-jobs/${id}": "ran-nf-oam GET /config-jobs/{}",
+  "gui/src/components/OperatorUi.tsx * /rapp-mgmt/instances/${instanceId}/performance": "rapp-mgmt GET /instances/{}/performance",
+  "gui/src/pages/dashboard/data/queries.ts * /aimgf/mlmf/reports": "aimgf GET /mlmf/reports",
+  "gui/src/pages/dashboard/data/queries.ts * /ran-nf-oam/managed-entities/health": "ran-nf-oam GET /managed-entities/health",
+  "gui/src/pages/dashboard/data/queries.ts * /rapp-mgmt/instances": "rapp-mgmt GET /instances",
+  "gui/src/pages/dashboard/data/queries.ts * /rapp-mgmt/instances/${i.instanceId}/performance": "rapp-mgmt GET /instances/{}/performance",
+  "gui/src/pages/flows/data/flow01.tsx * /onboarding/packages": "onboarding GET /packages",
+  "gui/src/pages/flows/data/flow02.tsx * /aimgf/mlmf/subscriptions/${s.subscriptionId}/reports": "aimgf GET /mlmf/subscriptions/{}/reports",
+  "gui/src/pages/flows/data/flow02.tsx * /mlmr/models": "mlmr GET /models",
+  "gui/src/pages/flows/data/flow03.tsx * /ran-nf-oam/config-jobs": "ran-nf-oam GET /config-jobs",
+  "gui/src/pages/flows/data/flow04.tsx * /aimgf/mlmf/reports": "aimgf GET /mlmf/reports",
+  "gui/src/pages/flows/data/flow04.tsx * /mdaf/reports": "mdaf GET /reports",
+  "gui/src/pages/flows/data/flow04.tsx * /sa-smos/monitors": "sa-smos GET /monitors",
+  "gui/src/pages/flows/data/flow06.tsx * /onboarding/packages": "onboarding GET /packages",
+  "gui/src/pages/flows/data/flow07.tsx * /rapp-mgmt/instances": "rapp-mgmt GET /instances",
+  "gui/src/pages/flows/data/flow08.tsx * /mdaf/reports": "mdaf GET /reports",
+  "gui/src/pages/flows/data/flow08.tsx * /mdaf/subscriptions": "mdaf GET /subscriptions",
+  "gui/src/pages/flows/data/flow08.tsx * /ran-analytics/producers": "ran-analytics GET /producers",
+  "gui/src/pages/flows/data/flow09.tsx * /intent-service/intent-handling-functions": "intent-service GET /intent-handling-functions",
+  "gui/src/pages/flows/data/flow09.tsx * /intent-service/intents": "intent-service GET /intents",
+  "gui/src/pages/flows/data/flow10.tsx * /so-smos/orders": "so-smos GET /orders",
+  "gui/src/pages/flows/data/flow15.tsx * /nfo/deployments": "nfo GET /deployments",
+  "gui/src/pages/flows/data/flow16.tsx * /focom/inventory/subscriptions": "focom GET /inventory/subscriptions",
+  "gui/src/pages/flows/data/flow16.tsx * /focom/resource-pools": "focom GET /resource-pools",
+  "gui/src/pages/flows/data/flow16.tsx * /focom/resource-pools/${p.resourcePoolId}/resources": "focom GET /resource-pools/{}/resources",
+  "gui/src/pages/infrastructure/data/queries.ts * /focom/alarms": "focom GET /alarms",
+  "gui/src/pages/infrastructure/data/queries.ts * /focom/topology": "focom GET /topology",
+  "gui/src/pages/infrastructure/data/queries.ts * /mlmr/models": "mlmr GET /models",
+  "gui/src/pages/infrastructure/data/queries.ts * /nfo/deployments/${id}/operations": "nfo GET /deployments/{}/operations",
+  "gui/src/pages/infrastructure/data/queries.ts * /nfo/deployments/${id}/resources": "nfo GET /deployments/{}/resources",
+  "gui/src/pages/kpis/data/queries.ts * /dme/dme-types": "dme GET /dme-types",
+  "gui/src/pages/kpis/data/queries.ts * /mlmr/coordination-groups": "mlmr GET /coordination-groups",
+  "gui/src/pages/kpis/data/queries.ts * /so-smos/orders": "so-smos GET /orders",
+  "intent-service/app/main.py GET /rapp-mgmt/instances/{}": "rapp-mgmt GET /instances/{}",
+  "mdaf/app/main.py GET /dme/data-jobs/{}": "dme GET /data-jobs/{}",
+  "mdaf/app/main.py GET /ran-analytics/producers": "ran-analytics GET /producers",
+  "mdaf/app/mda.py GET /aimgf/mlmf/subscriptions": "aimgf GET /mlmf/subscriptions",
+  "mdaf/app/mda.py POST /aimgf/mlmf/subscriptions/{}/reports": "aimgf POST /mlmf/subscriptions/{}/reports",
+  "mllf/app/main.py PATCH /aimgf/models/{}/runtime/node-groups": "aimgf PATCH /models/{}/runtime/node-groups",
+  "mlmr/app/main.py GET /aimgf/ml-models/{}/nrm-refs": "aimgf GET /ml-models/{}/nrm-refs",
+  "nfo/app/main.py GET /focom/inventory": "focom GET /inventory",
+  "onboarding/app/main.py DELETE /nfo/descriptors/{}": "nfo DELETE /descriptors/{}",
+  "onboarding/app/main.py GET /rapp-mgmt/instances/{}": "rapp-mgmt GET /instances/{}",
+  "onboarding/app/main.py POST /nfo/descriptors": "nfo POST /descriptors",
+  "ran-analytics/app/main.py POST /sme/provider-registrations": "sme POST /provider-registrations",
+  "ran-nf-oam/app/main.py DELETE /dme/production-capabilities/ran-nf-oam/types": "dme DELETE /production-capabilities/{}/types",
+  "ran-nf-oam/app/main.py GET /dme/data-jobs": "dme GET /data-jobs",
+  "ran-nf-oam/app/main.py GET /dme/dme-types": "dme GET /dme-types",
+  "ran-nf-oam/app/main.py POST /dme/data-jobs/{}/records": "dme POST /data-jobs/{}/records",
+  "ran-nf-oam/app/main.py POST /dme/production-capabilities": "dme POST /production-capabilities",
+  "rapp-mgmt/app/main.py DELETE /sme/invoker-registrations/{}": "sme DELETE /invoker-registrations/{}",
+  "rapp-mgmt/app/main.py GET /nfo/deployments/{}": "nfo GET /deployments/{}",
+  "rapp-mgmt/app/provisioning.py DELETE /nfo/deployments/{}": "nfo DELETE /deployments/{}",
+  "rapp-mgmt/app/provisioning.py DELETE /sme/invoker-registrations/{}": "sme DELETE /invoker-registrations/{}",
+  "rapp-mgmt/app/provisioning.py GET /onboarding/packages/{}/onboarding-status": "onboarding GET /packages/{}/onboarding-status",
+  "rapp-mgmt/app/provisioning.py POST /nfo/deployments": "nfo POST /deployments",
+  "rapp-mgmt/app/provisioning.py POST /onboarding/packages/{}/usage/start": "onboarding POST /packages/{}/usage/start",
+  "rapp-mgmt/app/provisioning.py POST /onboarding/packages/{}/usage/{}/stop": "onboarding POST /packages/{}/usage/{}/stop",
+  "rapp-mgmt/app/provisioning.py POST /sme/invoker-registrations": "sme POST /invoker-registrations",
+  "rapp-mgmt/app/provisioning.py POST /sme/invoker-registrations/{}/secret": "sme POST /invoker-registrations/{}/secret",
+  "rapp-mgmt/app/provisioning.py POST /sme/provider-registrations": "sme POST /provider-registrations",
+  "rapp-mgmt/app/statemachine.py DELETE /dme/data-jobs": "dme DELETE /data-jobs",
+  "rapp-mgmt/app/statemachine.py DELETE /dme/production-capabilities": "dme DELETE /production-capabilities",
+  "rapp-mgmt/app/statemachine.py DELETE /sme/invoker-registrations/{}": "sme DELETE /invoker-registrations/{}",
+  "rapp-mgmt/app/statemachine.py DELETE /sme/provider-registrations/{}": "sme DELETE /provider-registrations/{}",
+  "sa-smos/app/main.py GET /mdaf/reports/{}": "mdaf GET /reports/{}",
+  "sa-smos/app/main.py GET /rapp-mgmt/instances/{}/versions": "rapp-mgmt GET /instances/{}/versions",
+  "sa-smos/app/main.py GET /so-smos/orders/{}": "so-smos GET /orders/{}",
+  "sa-smos/app/main.py POST /aimgf/training-jobs": "aimgf POST /training-jobs",
+  "sa-smos/app/main.py POST /mdaf/subscriptions": "mdaf POST /subscriptions",
+  "sa-smos/app/main.py POST /nfo/deployments/{}/heal": "nfo POST /deployments/{}/heal",
+  "sa-smos/app/main.py POST /ran-nf-oam/config-jobs": "ran-nf-oam POST /config-jobs",
+  "sa-smos/app/main.py POST /rapp-mgmt/instances/{}/rollback": "rapp-mgmt POST /instances/{}/rollback",
+  "sa-smos/app/o1cm.py DELETE /intent-service/intent-handling-functions/{}": "intent-service DELETE /intent-handling-functions/{}",
+  "sa-smos/app/o1cm.py GET /intent-service/intent-handling-functions": "intent-service GET /intent-handling-functions",
+  "sa-smos/app/o1cm.py GET /intent-service/intents/{}": "intent-service GET /intents/{}",
+  "sa-smos/app/o1cm.py POST /dme/actions": "dme POST /actions",
+  "sa-smos/app/o1cm.py POST /intent-service/intent-handling-functions": "intent-service POST /intent-handling-functions",
+  "sa-smos/app/o1cm.py POST /intent-service/intent-reports": "intent-service POST /intent-reports",
+  "samples/coverage-optimization-rapp/app/main.py GET /rapp-mgmt/instances/{}": "rapp-mgmt GET /instances/{}",
+  "samples/coverage-optimization-rapp/app/main.py POST /ran-nf-oam/pm-reports": "ran-nf-oam POST /pm-reports",
+  "samples/energy-saving-rapp/app/main.py GET /rapp-mgmt/instances/{}": "rapp-mgmt GET /instances/{}",
+  "samples/energy-saving-rapp/app/main.py POST /ran-nf-oam/pm-reports": "ran-nf-oam POST /pm-reports",
+  "samples/mobility-optimization-rapp/app/main.py GET /rapp-mgmt/instances/{}": "rapp-mgmt GET /instances/{}",
+  "samples/mobility-optimization-rapp/app/main.py POST /ran-nf-oam/pm-reports": "ran-nf-oam POST /pm-reports",
+  "samples/traffic-steering-rapp/app/main.py GET /rapp-mgmt/instances/{}": "rapp-mgmt GET /instances/{}",
+  "samples/traffic-steering-rapp/app/main.py POST /ran-nf-oam/pm-reports": "ran-nf-oam POST /pm-reports",
+  "sdk-go/routes.go DELETE /sme/provider-registrations/{apf_id}": "sme DELETE /provider-registrations/{}",
+  "sdk-go/routes.go GET /dme/dme-types": "dme GET /dme-types",
+  "sdk-go/routes.go GET /dme/production-capabilities": "dme GET /production-capabilities",
+  "sdk-go/routes.go GET /dme/production-capabilities/{producer_id}/status": "dme GET /production-capabilities/{}/status",
+  "sdk-go/routes.go GET /mlmr/models": "mlmr GET /models",
+  "sdk-go/routes.go GET /rapp-mgmt/instances/{instance_id}": "rapp-mgmt GET /instances/{}",
+  "sdk-go/routes.go POST /dme/actions": "dme POST /actions",
+  "sdk-go/routes.go POST /invoker-registrations": "sme POST /invoker-registrations",
+  "sdk-go/routes.go POST /oauth2/token": "sme POST /oauth2/token",
+  "sdk-go/routes.go POST /rapp-mgmt/instances/{instance_id}/bootstrap-complete": "rapp-mgmt POST /instances/{}/bootstrap-complete",
+  "sdk-go/routes.go POST /rapp-mgmt/instances/{instance_id}/performance": "rapp-mgmt POST /instances/{}/performance",
+  "sdk-go/routes.go POST /sme/provider-registrations": "sme POST /provider-registrations",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java DELETE /dme/data-jobs/{}": "dme DELETE /data-jobs/{}",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /dme/data-jobs": "dme GET /data-jobs",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /dme/data-jobs/{}": "dme GET /data-jobs/{}",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /dme/data-jobs/{}/records": "dme GET /data-jobs/{}/records",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /dme/data-jobs/{}/status": "dme GET /data-jobs/{}/status",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /dme/dme-types": "dme GET /dme-types",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /mlmr/models": "mlmr GET /models",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /mlmr/models/{}": "mlmr GET /models/{}",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /rapp-mgmt/instances/{}": "rapp-mgmt GET /instances/{}",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /rapp-mgmt/instances/{}/config": "rapp-mgmt GET /instances/{}/config",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java POST /dme/actions": "dme POST /actions",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java POST /dme/data-jobs": "dme POST /data-jobs",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java POST /rapp-mgmt/instances/{}/bootstrap-complete": "rapp-mgmt POST /instances/{}/bootstrap-complete",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java POST /rapp-mgmt/instances/{}/fault": "rapp-mgmt POST /instances/{}/fault",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java POST /rapp-mgmt/instances/{}/performance": "rapp-mgmt POST /instances/{}/performance",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java POST /rapp-mgmt/instances/{}/terminate": "rapp-mgmt POST /instances/{}/terminate",
+  "sdk/smo_sdk/analytics.py DELETE /mdaf/mda-requests/{}": "mdaf DELETE /mda-requests/{}",
+  "sdk/smo_sdk/analytics.py DELETE /mdaf/subscriptions/{}": "mdaf DELETE /subscriptions/{}",
+  "sdk/smo_sdk/analytics.py DELETE /ran-analytics/producers/{}": "ran-analytics DELETE /producers/{}",
+  "sdk/smo_sdk/analytics.py GET /mdaf/mda-reports": "mdaf GET /mda-reports",
+  "sdk/smo_sdk/analytics.py GET /mdaf/reports": "mdaf GET /reports",
+  "sdk/smo_sdk/analytics.py GET /mdaf/subscriptions": "mdaf GET /subscriptions",
+  "sdk/smo_sdk/analytics.py GET /ran-analytics/producers": "ran-analytics GET /producers",
+  "sdk/smo_sdk/analytics.py POST /mdaf/mda-reports": "mdaf POST /mda-reports",
+  "sdk/smo_sdk/analytics.py POST /mdaf/mda-requests": "mdaf POST /mda-requests",
+  "sdk/smo_sdk/analytics.py POST /mdaf/reports": "mdaf POST /reports",
+  "sdk/smo_sdk/analytics.py POST /mdaf/subscriptions": "mdaf POST /subscriptions",
+  "sdk/smo_sdk/analytics.py POST /ran-analytics/producers": "ran-analytics POST /producers",
+  "sdk/smo_sdk/data.py DELETE /dme/data-jobs": "dme DELETE /data-jobs",
+  "sdk/smo_sdk/data.py DELETE /dme/data-jobs/{}": "dme DELETE /data-jobs/{}",
+  "sdk/smo_sdk/data.py DELETE /dme/offers/{}": "dme DELETE /offers/{}",
+  "sdk/smo_sdk/data.py DELETE /dme/production-capabilities": "dme DELETE /production-capabilities",
+  "sdk/smo_sdk/data.py DELETE /dme/type-subscriptions/{}": "dme DELETE /type-subscriptions/{}",
+  "sdk/smo_sdk/data.py GET /dme/actions": "dme GET /actions",
+  "sdk/smo_sdk/data.py GET /dme/actions/{}": "dme GET /actions/{}",
+  "sdk/smo_sdk/data.py GET /dme/data-jobs": "dme GET /data-jobs",
+  "sdk/smo_sdk/data.py GET /dme/data-jobs/{}": "dme GET /data-jobs/{}",
+  "sdk/smo_sdk/data.py GET /dme/data-jobs/{}/records": "dme GET /data-jobs/{}/records",
+  "sdk/smo_sdk/data.py GET /dme/data-jobs/{}/status": "dme GET /data-jobs/{}/status",
+  "sdk/smo_sdk/data.py GET /dme/dme-types": "dme GET /dme-types",
+  "sdk/smo_sdk/data.py GET /dme/offers": "dme GET /offers",
+  "sdk/smo_sdk/data.py GET /dme/offers/{}": "dme GET /offers/{}",
+  "sdk/smo_sdk/data.py GET /dme/production-capabilities": "dme GET /production-capabilities",
+  "sdk/smo_sdk/data.py GET /dme/production-capabilities/{}": "dme GET /production-capabilities/{}",
+  "sdk/smo_sdk/data.py GET /dme/production-capabilities/{}/status": "dme GET /production-capabilities/{}/status",
+  "sdk/smo_sdk/data.py GET /dme/type-subscriptions": "dme GET /type-subscriptions",
+  "sdk/smo_sdk/data.py GET /dme/type-subscriptions/{}": "dme GET /type-subscriptions/{}",
+  "sdk/smo_sdk/data.py GET /ran-nf-oam/alarms": "ran-nf-oam GET /alarms",
+  "sdk/smo_sdk/data.py GET /ran-nf-oam/capabilities": "ran-nf-oam GET /capabilities",
+  "sdk/smo_sdk/data.py GET /ran-nf-oam/cell-guards": "ran-nf-oam GET /cell-guards",
+  "sdk/smo_sdk/data.py GET /ran-nf-oam/managed-entities/{}": "ran-nf-oam GET /managed-entities/health",
+  "sdk/smo_sdk/data.py GET /ran-nf-oam/managed-entities/{}/config": "ran-nf-oam GET /managed-entities/{}/config",
+  "sdk/smo_sdk/data.py POST /dme/actions": "dme POST /actions",
+  "sdk/smo_sdk/data.py POST /dme/data-jobs": "dme POST /data-jobs",
+  "sdk/smo_sdk/data.py POST /dme/data-jobs/{}/records": "dme POST /data-jobs/{}/records",
+  "sdk/smo_sdk/data.py POST /dme/offers": "dme POST /offers",
+  "sdk/smo_sdk/data.py POST /dme/offers/{}/notify": "dme POST /offers/{}/notify",
+  "sdk/smo_sdk/data.py POST /dme/production-capabilities": "dme POST /production-capabilities",
+  "sdk/smo_sdk/data.py POST /dme/type-subscriptions": "dme POST /type-subscriptions",
+  "sdk/smo_sdk/data.py PUT /dme/data-jobs/{}": "dme PUT /data-jobs/{}",
+  "sdk/smo_sdk/intent.py DELETE /intent-service/intent-handling-functions/{}": "intent-service DELETE /intent-handling-functions/{}",
+  "sdk/smo_sdk/intent.py DELETE /intent-service/intents/{}": "intent-service DELETE /intents/{}",
+  "sdk/smo_sdk/intent.py GET /intent-service/autonomy-dispatches/{}": "intent-service GET /autonomy-dispatches/{}",
+  "sdk/smo_sdk/intent.py GET /intent-service/intent-handling-functions": "intent-service GET /intent-handling-functions",
+  "sdk/smo_sdk/intent.py GET /intent-service/intent-reports": "intent-service GET /intent-reports",
+  "sdk/smo_sdk/intent.py GET /intent-service/intents": "intent-service GET /intents",
+  "sdk/smo_sdk/intent.py GET /intent-service/intents/{}": "intent-service GET /intents/{}",
+  "sdk/smo_sdk/intent.py PATCH /intent-service/intents/{}/admin-state": "intent-service PATCH /intents/{}/admin-state",
+  "sdk/smo_sdk/intent.py POST /intent-service/autonomy-dispatches": "intent-service POST /autonomy-dispatches",
+  "sdk/smo_sdk/intent.py POST /intent-service/intent-handling-functions": "intent-service POST /intent-handling-functions",
+  "sdk/smo_sdk/intent.py POST /intent-service/intent-reports": "intent-service POST /intent-reports",
+  "sdk/smo_sdk/intent.py POST /intent-service/intents": "intent-service POST /intents",
+  "sdk/smo_sdk/lifecycle.py DELETE /aimgf/feature-groups/{}": "aimgf DELETE /feature-groups/{}",
+  "sdk/smo_sdk/lifecycle.py DELETE /aimgf/mlmf/subscriptions/{}": "aimgf DELETE /mlmf/subscriptions/{}",
+  "sdk/smo_sdk/lifecycle.py DELETE /aimgf/training-jobs/{}": "aimgf DELETE /training-jobs/{}",
+  "sdk/smo_sdk/lifecycle.py GET /aimgf/aiml-inference-reports/{}": "aimgf GET /aiml-inference-reports/{}",
+  "sdk/smo_sdk/lifecycle.py GET /aimgf/feature-groups": "aimgf GET /feature-groups",
+  "sdk/smo_sdk/lifecycle.py GET /aimgf/inference-jobs": "aimgf GET /inference-jobs",
+  "sdk/smo_sdk/lifecycle.py GET /aimgf/inference-jobs/{}/status": "aimgf GET /inference-jobs/{}/status",
+  "sdk/smo_sdk/lifecycle.py GET /aimgf/mlmf/reports": "aimgf GET /mlmf/reports",
+  "sdk/smo_sdk/lifecycle.py GET /aimgf/mlmf/subscriptions": "aimgf GET /mlmf/subscriptions",
+  "sdk/smo_sdk/lifecycle.py GET /aimgf/mlmf/subscriptions/{}/reports": "aimgf GET /mlmf/subscriptions/{}/reports",
+  "sdk/smo_sdk/lifecycle.py GET /aimgf/training-jobs": "aimgf GET /training-jobs",
+  "sdk/smo_sdk/lifecycle.py GET /aimgf/training-jobs/{}/model-metrics": "aimgf GET /training-jobs/{}/model-metrics",
+  "sdk/smo_sdk/lifecycle.py GET /aimgf/training-jobs/{}/status": "aimgf GET /training-jobs/{}/status",
+  "sdk/smo_sdk/lifecycle.py POST /aimgf/emulation-jobs": "aimgf POST /emulation-jobs",
+  "sdk/smo_sdk/lifecycle.py POST /aimgf/feature-groups": "aimgf POST /feature-groups",
+  "sdk/smo_sdk/lifecycle.py POST /aimgf/inference-jobs/{}/resolve": "aimgf POST /inference-jobs/{}/resolve",
+  "sdk/smo_sdk/lifecycle.py POST /aimgf/mlmf/subscriptions": "aimgf POST /mlmf/subscriptions",
+  "sdk/smo_sdk/lifecycle.py POST /aimgf/mlmf/subscriptions/{}/reports": "aimgf POST /mlmf/subscriptions/{}/reports",
+  "sdk/smo_sdk/lifecycle.py POST /aimgf/models/{}/inference-jobs": "aimgf POST /models/{}/inference-jobs",
+  "sdk/smo_sdk/lifecycle.py POST /aimgf/models/{}/runtime/activate": "aimgf POST /models/{}/runtime/activate",
+  "sdk/smo_sdk/lifecycle.py POST /aimgf/models/{}/runtime/deploy": "aimgf POST /models/{}/runtime/deploy",
+  "sdk/smo_sdk/lifecycle.py POST /aimgf/models/{}/runtime/scale": "aimgf POST /models/{}/runtime/scale",
+  "sdk/smo_sdk/lifecycle.py POST /aimgf/models/{}/runtime/terminate": "aimgf POST /models/{}/runtime/terminate",
+  "sdk/smo_sdk/lifecycle.py POST /aimgf/training-jobs": "aimgf POST /training-jobs",
+  "sdk/smo_sdk/lifecycle.py POST /aimgf/training-jobs/{}/model-metrics": "aimgf POST /training-jobs/{}/model-metrics",
+  "sdk/smo_sdk/lifecycle.py POST /aimgf/training-jobs/{}/progress": "aimgf POST /training-jobs/{}/progress",
+  "sdk/smo_sdk/lifecycle.py POST /aimgf/training-jobs/{}/resume": "aimgf POST /training-jobs/{}/resume",
+  "sdk/smo_sdk/lifecycle.py POST /aimgf/training-jobs/{}/suspend": "aimgf POST /training-jobs/{}/suspend",
+  "sdk/smo_sdk/lifecycle.py POST /aimgf/validation-jobs": "aimgf POST /validation-jobs",
+  "sdk/smo_sdk/lifecycle.py POST /aimgf/{}/{}/complete": "aimgf POST /emulation-jobs/{}/complete",
+  "sdk/smo_sdk/lifecycle.py POST /mllf/models/{}/deploy": "mllf POST /models/{}/deploy",
+  "sdk/smo_sdk/models.py DELETE /mlmr/models/{}": "mlmr DELETE /models/{}",
+  "sdk/smo_sdk/models.py GET /mlmr/coordination-groups": "mlmr GET /coordination-groups",
+  "sdk/smo_sdk/models.py GET /mlmr/models": "mlmr GET /models",
+  "sdk/smo_sdk/models.py GET /mlmr/models/{}": "mlmr GET /models/{}",
+  "sdk/smo_sdk/models.py GET /mlmr/models/{}/artifact/{}": "mlmr GET /models/{}/artifact/{}",
+  "sdk/smo_sdk/models.py POST /mlmr/coordination-groups": "mlmr POST /coordination-groups",
+  "sdk/smo_sdk/models.py POST /mlmr/models": "mlmr POST /models",
+  "sdk/smo_sdk/models.py POST /mlmr/models/{}/artifact": "mlmr POST /models/{}/artifact",
+  "sdk/smo_sdk/models.py PUT /mlmr/models/{}": "mlmr PUT /models/{}",
+  "sdk/smo_sdk/platform.py DELETE /sme/provider-registrations/{}": "sme DELETE /provider-registrations/{}",
+  "sdk/smo_sdk/platform.py POST /dme/actions": "dme POST /actions",
+  "sdk/smo_sdk/platform.py POST /rapp-mgmt/instances/{}/bootstrap-complete": "rapp-mgmt POST /instances/{}/bootstrap-complete",
+  "sdk/smo_sdk/platform.py POST /rapp-mgmt/instances/{}/fault": "rapp-mgmt POST /instances/{}/fault",
+  "sdk/smo_sdk/platform.py POST /sme/provider-registrations": "sme POST /provider-registrations",
+  "so-smos/app/dispatch.py POST /aimgf/emulation-jobs": "aimgf POST /emulation-jobs",
+  "so-smos/app/dispatch.py POST /aimgf/models/{}/inference-jobs": "aimgf POST /models/{}/inference-jobs",
+  "so-smos/app/dispatch.py POST /aimgf/models/{}/runtime/deploy": "aimgf POST /models/{}/runtime/deploy",
+  "so-smos/app/dispatch.py POST /aimgf/training-jobs": "aimgf POST /training-jobs",
+  "so-smos/app/dispatch.py POST /aimgf/validation-jobs": "aimgf POST /validation-jobs",
+  "so-smos/app/dispatch.py POST /focom/resources/provision": "focom POST /resources/provision",
+  "so-smos/app/dispatch.py POST /nfo/deployments": "nfo POST /deployments",
+  "so-smos/app/dispatch.py POST /ran-nf-oam/config-jobs": "ran-nf-oam POST /config-jobs"
+ }
+}
