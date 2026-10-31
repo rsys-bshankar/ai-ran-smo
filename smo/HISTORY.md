@@ -4578,3 +4578,113 @@ unchanged: `OI-1-alarm-storm` (S3.7), `SO-WAIT`, `SO-CHAIN`, `SO-RESUME` (S5.3),
 S3.15, S3.16), `AI-7.3` (S7.6), `PR-AI-12` (S5.10). Left without the line, because a row covers only part of them: `MSG-3.4` (S1.10 builds slices 1–3 of
 its five), `AIML-VER` (S2.11 versions artifacts but does not promise serving N while N+1 is gated), `PR-MGT-13` (S3.16 has trace jobs, not QoE),
 `PR-MGT-18`, `PR-SB-14`, `PR-SB-15` and the 1.0 criteria (S8.10 runs them, they are not replaced).
+
+### PR-CONV-S0.2 — ADR 0008, the converged architecture
+
+Closed from `OPEN_ITEMS.md` (`PR-CONV-S0.2`). Documents only: `docs/adr/0008-converged-architecture.md`; no code, schema, OpenAPI or workflow changed.
+
+- **What it decides.** The module map (seventeen services become fourteen: MLMR and MLLF into AIMgF, Intent Service into SO SMOS, RAN Analytics into
+  MDAF, TE&IV carved out of RAN NF OAM's managed-object tree as a new module), drawn as a mermaid flowchart; the layers (R1 exposure; intent and
+  assurance; data, analytics and AI/ML; rApp and cloud lifecycle; network model and southbound) and which golden rules change (1, 5, 6); the two tiers of
+  intent (detail in ADR 0009); one writer per table (D6), including `common_dme_telemetry` (DME only) and the cell lock table (SO SMOS only), with no
+  SQL reads across modules; the stores (D7 relational graph, D8 TimescaleDB, D9 Kafka through the ADR 0006 relay, D10 SeaweedFS with MinIO optional);
+  D11 Python 3.12, D12 one chart plus an infrastructure chart, D13 layout; the eighteen "Keep from ai-ran-smo" areas as binding rules K1–K18; D19
+  (TE&IV reuses O-RAN-SC smo-teiv, reached only through TS 28.532 ProvMnS reads and notifications and the WG10 TE&IV R1 services).
+- **Choices made in the record that the plan left implicit.** S1.9's reader roles on the common schemas are for the owning module's own processes
+  only (HLD §3.2 lets SA SMOS and MDAF read `common_dme_telemetry` by SQL; refused, reads go through DME over R1 and the [D] ROP matrix query). S3.1's
+  "`moi_store` grown from `managed_object`" is read with D19 as "the data of `managed_object` loaded into smo-teiv"; the S0.13 spike reconciles the two
+  models. FOCOM keeps O-Cloud alarms in a table of its own. No StatefulSet for any service (EXEC §5.4's partitioned RAN NF OAM is refused; NETCONF
+  sessions are persisted instead, S3.6). The Go co-runtime and Envoy / Spring Cloud Gateway of EXEC §3.2 and §6.1 are refused (D11).
+- **Found in the direction documents and not covered by the plan** (recorded in ADR 0008 section 8 for a plan row or an explicit exclusion): NFO
+  deploying O-CU / O-DU network functions and FOCOM's DMS cluster lifecycle and acceleration-hardware discovery (HLD §2.3, §4.11); E-UTRAN and non-O1
+  southbound under RAN NF OAM (HLD §1.1, §4.4); O-Cloud alarms in TS 28.111 and infrastructure metrics into `common_dme_telemetry` (HLD §4.11); rApp
+  container alarms per TS 28.111 (HLD §4.7); the DME cold tier's 1–3 year retention, `subnetwork_dn` partitioning and late-ROP-file recovery (Part 2 §5);
+  rApp image SBOM and signature checks at onboarding (Part 2 §1); performance numbers no done-when carries (1,000 `modifyMOIAttributes` per second, SME
+  route injection under 200 ms, keyset paging under 15 ms over 100,000 rows; EXEC §4, Part 2 §9.6).
+
+### PR-CONV-S0.12 — the O-RAN OAD v14 SMOS and 3GPP MnS of every module
+
+Closed from `OPEN_ITEMS.md` (`PR-CONV-S0.12`), as ADR 0008 section 3.9. Every module after the rewrite maps to one SMOS of the list the plan names (RAN NF
+OAM, NFO, FOCOM, SME, DME, TE&IV, RAN Analytics, Service and Subnet Slice Orchestration and Assurance, AIMLWF, rApp Management, SW Package Onboarding,
+PMI) and lists the 3GPP or O-RAN service it produces, tagged [N] with the version `specs/README.md` records: MDAF is the RAN Analytics SMOS; SO SMOS and
+SA SMOS are the orchestration and assurance halves of Service and Subnet Slice Orchestration and Assurance; AIMgF is AIMLWF; Onboarding is SW Package
+Onboarding. Marked [D] with a reason: R1 Termination (the R1 gateway, infrastructure of the exposure, no service of its own) and the GUI BFF (an operator
+front end). No module maps to PMI. **Not done:** the OAD v14 text was not among the inputs, so the names were not re-read from it and PMI's scope is an open
+point (ADR 0008 section 8). Module and schema names stay as they are (`aimgf`, not the HLD's `aiml_wf`; D13).
+
+### PR-CONV-S0.3 — ADR 0009, the intent model on TS 28.312 v20; ADR 0007 superseded
+
+Closed from `OPEN_ITEMS.md` (`PR-CONV-S0.3`). Documents only: `docs/adr/0009-intent-model-ts28312.md`, and `docs/adr/0007-intent-driven-ai-ran-tier-1-intent.md`
+committed for history with its status changed to "superseded by ADR 0009 before it was built" (body unchanged; its call flow 33 was not committed).
+
+- **What it decides.** Intents live in SO SMOS (D3). Level-1 = KPI targets (TR 28.912 Type 2 [O]), Level-2 = CM targets `<IOC>.<attribute>` IS_EQUAL_TO
+  (Type 1); the level is told from the targets, since TS 28.312 has no `intentLevel`. Parent link through `IntentDecompositionReport` /
+  `IntentTraceabilityInfo` [N], with a generic context `parentIntent` [D] on the Level-2 intent for intake. The lease as a generic context
+  `leaseDurationSec` [D] (default 1800, max 3600), mandatory on a Level-2 intent that locks a cell or changes coverage power, renewed by
+  `modifyMOIAttributes`, rolled back by a 30 s watchdog; it starts when the change is made, not when a SUPERVISED intent is filed (R12). rApps change the
+  network only through Level-2 intents (D14); the nine safeguards (kill switch, scope with a SubNetwork axis, MSAC, package limits, conflict check, twin
+  gate, approval queue, decision record, refusal log) are enforced at SO SMOS's Level-2 intake, each with a refusal test (R7, S5.4). Autonomy modes
+  SHADOW_MODE / SUPERVISED_MODE / CLOSED_LOOP_AUTONOMOUS carried in a generic context `executionMode` [D] (the name Part 2 §4 uses); effective mode is the
+  lowest of the purpose's limit, the request and an admin ceiling per package and SubNetwork (SHADOW when unset); eligibility is measured, promotion needs
+  two people (D16), demotion is automatic. Pre-evaluation (TS 28.312 §4.6.2 and `IntentHandlingCapability`) never touches the network (G19). Conflict
+  management in SO SMOS: write ledger, R1ServCnfMtgt v01.00 impact tables, detection before and after, defer, arbitration with preemption that keeps the
+  preempted intent's admin state, TS 28.567 v20.0.0 `ConflictManagementAndCoordinationEntity` as the model (D17, G2). The TS 28.561 v20.0.0 `NDTJob` gate
+  before NES and MRO enactment (D18, G20). Twelve bundle corrections for PR 0.3 (R1, R2, R13, R18, G5 and the missing lease and mode carriers).
+- **Loop prevention [D]** (EXEC §4 asks for it; the plan had no task): an rApp may not create a Level-1 intent or address another rApp, and a Level-2
+  intent's parent must be a Level-1 intent delegated to that same instance; recorded for S5.4.
+- **Plan inconsistency resolved.** S5.6 says Branch B is `createMOI(AssuranceClosedControlLoop)` on SA SMOS, while S5.17 and the interface rules say SA SMOS
+  is reached only through TS 28.312 intents. The record reads S5.6 as a TS 28.312 assurance intent to SA SMOS, which SA SMOS realises as an ACCL inside
+  itself (the HLD's `notifyMOIAttributeValueChanges` reporting is likewise replaced by intent reports).
+- **ADR 0007 carry-over** (ADR 0009 section 9): carried over are the feasibility steps, `intentBinding` (as the delegated scoped Level-1 intent, not a
+  configuration key), the autonomy ceiling with its lowest-of rule and SHADOW default, preemption keeping the owner's admin state, the Type 3 guard rails,
+  the report contents, governance events needing a console user, and the package-level model owner. Replaced: the separate orchestrator module and RMIH,
+  the Tier-2 autonomy dispatch, the SO SMOS `INSTANTIATE` / `TERMINATE` steps, the both-signals retrain rule (by S7.6), and `intentCapabilities` (by the
+  ASD's `intentCapabilityProfile`, S4.1).
+- **Not covered by the plan, recorded:** SHADOW_MODE's counterfactual scoring has no task (S5.8 or S5.10 must build it); Part 2's autonomy "per SubNetwork"
+  is met by the ceiling per package and SubNetwork; the HLD's flow 2 has 7 steps in its text and 9 in its figure (S0.9 draws what the code will run).
+
+### PR-CONV-S0.4 — ADR 0010, AIMgF absorbs MLMR and MLLF
+
+Closed from `OPEN_ITEMS.md` (`PR-CONV-S0.4`). Documents only: `docs/adr/0010-aimgf-absorbs-mlmr-mllf.md`.
+
+- **What it decides.** Packages by TS 28.105 capability (`registry`, `training`, `testing`, `emulation`, `loading`, `inference`, `update`,
+  `governance`, `workflow`); no `mltf`, `mtef`, `mlvf`, `mlef` or `mlif` module; MTEF is a retired name and MLTF / MLVF / MLEF / MLIF are runtime roles NFO
+  places (D4, R15). All twenty IOCs of TS 28.105 v19.5.0 (read from `specs/5G_APIs/TS28105_AiMlNrm.yaml`) as ProvMnS resources, with the data types
+  `ManagedActivationScope` and `DataStatisticalProperties` (G6). The R1GAP v14 §5.6 AI/ML workflow services with producer, consumer and realisation each
+  (G7); model identity = name + version + artifact version. The 14-state lifecycle kept, with a table mapping each state to the HLD's 7 stages (REGISTERED →
+  TRAINING → TESTED → EMULATED → CERTIFIED → LOADED → ACTIVE, where LOADED and ACTIVE come from the runtime lifecycle) and to the bundle's `servingState`
+  (REGISTERED, VALIDATED, SERVING_ACTIVE, DEPRECATED) (R3). Artifacts to the object store with a SHA-256 digest; ONNX and Safetensors only, pickle refused
+  (D10). Lineage per artifact version (G8). The 27 non-test caller files listed (11 GUI, 3 BFF, 3 Python SDK, 3 Java SDK, 2 AIMgF, 1 each Go SDK, shared,
+  scripts, R1, MLMR), no route alias; `shared/smo_shared/roles.py` (gateway rules for the two prefixes) and the R1 body-limit override move with them.
+- **Differences from the plan, recorded.** R1GAP v14 numbers **ten** AI/ML workflow services (§5.6.2 to §5.6.11), not the plan's eleven; the record lists
+  the ten. S2.5's done-when ("upgrade from 0.9.0 keeps every artifact readable (upgrade lane)") cannot hold under rewrite mode, which keeps no upgrade path
+  from 0.9.0; the record reads it as "the revision copies every row to the object store and a test reads each copy back by digest". From the direction
+  documents: the HLD's `MLValidation` IOC is TS 28.105's `MLTestingRequest` / `MLTestingReport`; "ONNX/PyTorch" means a PyTorch model exported to ONNX or
+  saved as Safetensors; "automated promotion to CERTIFIED" is refused (people only, two for certification).
+
+### PR-CONV-S0.16 — ADR 0011, standard interfaces only, with the route map
+
+Closed from `OPEN_ITEMS.md` (`PR-CONV-S0.16`). Documents only: `docs/adr/0011-standard-interfaces-only.md` and its
+`docs/adr/0011-appendix-a-route-map.md`; `docs/ARCHITECTURE.md` and `docs/STANDARDS.md` point to ADRs 0008–0011 and mark each statement they replace
+"replaced by ADR 00xx, pending Stage n" (the statements stay true of the running code).
+
+- **What it decides.** The plan's interface rules table is binding. SME is the TS 29.222 v20.0.0 CAPIF core function and peers are found by CAPIF
+  discovery, not the static table (S1.16). SA SMOS uses TS 28.312 intents and intent reports outside and TS 28.535 / 28.536 inside; cell loops are
+  assurance goals on the RAN subnetwork's slice profile, TS 28.567 only as the fallback (R19). The GUI BFF uses the same standard operations, with no
+  BFF-only route beyond its own console session. The SDKs in three languages and the sample rApps call only standard operations. 22 named [D] exceptions,
+  each with a reason and an owner (D-01 to D-22: probes; the ROP matrix; the operator approval queue; the SMO event feed; decision records; safeguards;
+  model governance; model owner; the rApp operator page and API; KPI formula definitions; the vendor registry and YANG mapper; Day-1 templates;
+  configuration history; the O1 endpoint registry; software campaigns; the mock adaptor's controls; the TS 28.312 generic contexts; the autonomy
+  ceiling; the `RappPackage` / `RappInstance` classes; the BFF console session; the [O] R1 conflict services; the ADR 0005 scope attributes). What the S0.17
+  gate will check, written and not built.
+- **The route map.** The 21 committed OpenAPI documents hold **750 operations** (path × method). Each was classified by a one-off script (not
+  committed): **21 keep** (already standard: CAPIF events / publish / discover, the VES listener, RFC 7662 introspection, the gateway's forwarding, the mock
+  adaptor's RESTCONF), **423 replaced** by a standard operation, **90 deleted** (autonomy dispatch, DME `/actions`, the O1-CM handler, MLLF's deploy route,
+  `/bootstrap`, worker-sweep routes, sample-rApp demo and lifecycle buttons, ...), **216 [D]** (84 of them process probes). The BFF's 45 own routes are
+  listed apart: 38 [D] (37 console session, 1 event stream), 7 replaced.
+- **Differences from the plan, recorded.** The plan's interface table cites R1GAP "§5.3" for DME; in v14, §5.3 is A1-related services and data management
+  is §5.2, so the record cites §5.2. From the direction documents: the HLD's BFF-to-module "SBMA REST" and EXEC §1.3's generated controllers are not taken;
+  contract mock servers and a schema registry (EXEC §2) and per-class CAPIF token scopes for rApps (Part 2 §1) are recorded for plan rows.
+- **Verification.** The two mermaid diagrams of ADRs 0008 and 0011 were parsed with mermaid's own parser (the same set-up as
+  `gui/scripts/validate-call-flow-diagrams.mjs`, which reads only `docs/call-flows/` and the module lifecycle documents, so it does not cover `docs/adr/`;
+  extending it is a code change left out of this documents-only PR).

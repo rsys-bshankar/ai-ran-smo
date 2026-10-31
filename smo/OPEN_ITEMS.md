@@ -1415,23 +1415,18 @@ real detail, and sets the task's status in the live plan to Done the same day (t
 
 Stage 0 ends at milestone M0 (week 2): decisions answered, three ADRs merged, the schema bundle corrected and complete, the contract gate required in CI, and the four sample use cases realised on paper.
 
-Done, in `HISTORY.md`: `PR-CONV-S0.1`, `PR-CONV-S0.8`, `PR-CONV-S0.11`.
+Done, in `HISTORY.md`: `PR-CONV-S0.1`, `PR-CONV-S0.2`, `PR-CONV-S0.3`, `PR-CONV-S0.4`, `PR-CONV-S0.8`, `PR-CONV-S0.11`, `PR-CONV-S0.12`, `PR-CONV-S0.16`.
 
 | ID | Task | Stage | Needs | Done when |
 |---|---|---|---|---|
-| PR-CONV-S0.2 | ADR 0008: converged architecture (module map, two intent tiers, one writer per table, stores) | 0 | S0.1 | Merged |
-| PR-CONV-S0.3 | ADR 0009: intent model on TS 28.312 v20 (Level-1/Level-2, decomposition, lease, autonomy); supersedes ADR 0007 | 0 | S0.1 | Merged; ADR 0007 status updated |
-| PR-CONV-S0.4 | ADR 0010: AIMgF absorbs MLMR and MLLF | 0 | S0.1 | Merged |
 | PR-CONV-S0.5 | Import the schema bundle to `specs/smo-schema-bundle/` and correct R1–R4 and R13 | 0 | S0.3 | Bundle lints clean; every example validates against the repo's TS 28.312 models |
 | PR-CONV-S0.6 | Complete the five stub contracts (rAppMgmt, AI/ML, MDAF, TE&IV, SME) | 0 | S0.5 | Every operation named in call flows 33–37 has a schema |
 | PR-CONV-S0.7 | Contract gate in CI (`redocly lint`, `pyang --strict`, bundle-to-OpenAPI drift) | 0 | S0.5 | Job green and made a required check |
 | PR-CONV-S0.9 | Call flows 34–37 (Level-1 intake, Level-2 split and rollback, NES vs MRO, lease expiry) | 0 | S0.3, S0.6 | Diagrams parse (`validate:diagrams`), images rendered |
 | PR-CONV-S0.10 | Realise the four sample use cases on paper through flows 34–37 | 0 | S0.9 | Each sample maps with no special-case logic; Balaji Shankaran signs off (sign-off owner agreed 31 October 2026) |
-| PR-CONV-S0.12 | ADR 0008 addendum: module names aligned with the O-RAN OAD v14 SMOS list and 3GPP MnS names (G23) | 0 | S0.2 | Every module maps to one OAD SMOS or is marked \[D\] |
 | PR-CONV-S0.13 | Integration spike: O-RAN-SC smo-teiv behind a 3GPP MnS and WG10 TE&IV R1 face (D19) | 0 | S0.1 | Written result: load, query latency and change events measured; the gap list turned into Stage 3 tasks |
 | PR-CONV-S0.14 | Obtain the WG10 Application Packaging and Onboarding v1.00 texts; check S4.1 against them | 0 | – | Texts on file; S4.1 marked normative or kept provisional with the differences listed |
 | PR-CONV-S0.15 | Choose the O1 simulator: O-RAN-SC sim-o1-ofhmp-interfaces in place of ntsim-ng | 0 | S0.8 | Simulator runs in compose and the chart; NETCONF, VES stndDefined and file-ready PM reach the SMO |
-| PR-CONV-S0.16 | ADR 0011: standard interfaces only; the [D] exceptions listed by name | 0 | S0.2 | Merged; the table is in ARCHITECTURE.md |
 | PR-CONV-S0.17 | Interface gate in CI: every route is a standard operation or in the ADR 0011 [D] list | 0 | S0.16 | Required check; it fails on a private route added in a test PR |
 
 ### Stage 1 — Shared MnS foundation
