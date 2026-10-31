@@ -7,6 +7,12 @@ state. How and when it was built is in [HISTORY.md](../HISTORY.md); what is
 still open is in [OPEN_ITEMS.md](../OPEN_ITEMS.md); the architecture itself is in
 [ARCHITECTURE.md](ARCHITECTURE.md).
 
+**Where it is going.** The converged rewrite decides the target in [ADR 0008](adr/0008-converged-architecture.md) (architecture and the O-RAN SMOS /
+3GPP MnS map), [ADR 0009](adr/0009-intent-model-ts28312.md) (the TS 28.312 v20.0.0 intent model), [ADR 0010](adr/0010-aimgf-absorbs-mlmr-mllf.md)
+(TS 28.105 and the R1 AI/ML workflow services in AIMgF, and the lifecycle mapping) and [ADR 0011](adr/0011-standard-interfaces-only.md) (standard
+interfaces only). This document keeps describing what runs; a decision or statement those records replace is marked *replaced by ADR 00xx, pending
+Stage n*.
+
 Source tags: `[W49]` = SMO_Waves_4to9.docx (pre-roadmap artifact checklist);
 `[W10]` = SMO_Wave_10.docx (raw Wave 10 proposal); `[W10C]` =
 SMO_Wave_10_Consolidated.docx (Wave 10 v1.0, canonical over `[W10]`).
@@ -22,16 +28,15 @@ SMO_Wave_10_Consolidated.docx (Wave 10 v1.0, canonical over `[W10]`).
 
 | # | Topic | Decision |
 |---|-------|----------|
-| D-1 | Intent → O1 enactment | **Generic platform O1-CM Intent handler (RMIH)** in SA SMOS. It translates CM-shaped intent expectations into DME `/actions` → RAN NF OAM for *any* rApp, and posts IntentReports (W8-07). |
-| D-1b | ASSIST semantics | The operator can **approve** (resolve, with scope) **or reject**. The dispatch stays `AWAITING_SCOPE` until one of the two; `/reject` → `REJECTED` (W8-08). |
-| D-2 | O1 actuator | **Both, configurable per rApp instance**: `NRCellDU.administrativeState` (LOCKED/UNLOCKED) **or** `CESManagementFunction.energySavingControl` (TO_BE_ENERGY_SAVING/TO_BE_NOT_ENERGY_SAVING). `administrativeState` is on NRCellDU, where TS 28.541 places it. |
+| D-1 | Intent → O1 enactment | **Generic platform O1-CM Intent handler (RMIH)** in SA SMOS. It translates CM-shaped intent expectations into DME `/actions` → RAN NF OAM for *any* rApp, and posts IntentReports (W8-07). *Replaced by ADR 0009 section 4.4: an rApp's change is a Level-2 intent that SO SMOS enacts through RAN NF OAM's ProvMnS facade; the O1-CM handler retires, pending S5.4, S5.9.* |
+| D-1b | ASSIST semantics | The operator can **approve** (resolve, with scope) **or reject**. The dispatch stays `AWAITING_SCOPE` until one of the two; `/reject` → `REJECTED` (W8-08). *Replaced by ADR 0009 section 4.6: SUPERVISED_MODE holds a Level-2 intent for a person (exception D-03 of ADR 0011), pending S5.4, S5.10.* |
+| D-2 | O1 actuator | **Both, configurable per rApp instance**: `NRCellDU.administrativeState` (LOCKED/UNLOCKED) **or** `CESManagementFunction.energySavingControl` (TO_BE_ENERGY_SAVING/TO_BE_NOT_ENERGY_SAVING). `administrativeState` is on NRCellDU, where TS 28.541 places it. *Replaced by ADR 0009 section 4.2: Level-2 targets on the TS 28.541 SON functions (`CESManagementFunction`, `DESManagementFunction`) are preferred over `administrativeState`, pending S3.14, S7.2.* |
 | D-3 | 3-state model | **rApp-internal** `SERVING / PRE_SLEEP / SLEEP`. PRE_SLEEP is the 60-min sustained-low-PRB window. Only PRE_SLEEP→SLEEP produces an O1 write. |
-| D-4 | APIs | **Existing DME types/DataJobs + `/actions`**, plus thin SDK wrappers named as in the docs (`get_dataset`, `start_training`, `store_model`, `get_prediction`, `execute_action`). |
-| D-5 | Guard data | **RAN NF OAM ManagedEntity attributes**: cell classification (emergency, coverage-critical, sector group / last sector, incident zone) and neighbour list, readable by any rApp (W9-06). |
-| D-6 | Model | **Threshold + linear regression** (next-hour PRB), stored as a plain serialized artifact. LSTM is backlog. |
+| D-4 | APIs | **Existing DME types/DataJobs + `/actions`**, plus thin SDK wrappers named as in the docs (`get_dataset`, `start_training`, `store_model`, `get_prediction`, `execute_action`). *Replaced by ADR 0011: DME services per R1GAP v14 §5.2 and R1TD v05; `/actions` retires, pending S3.17, S5.9.* |
+| D-5 | Guard data | **RAN NF OAM ManagedEntity attributes**: cell classification (emergency, coverage-critical, sector group / last sector, incident zone) and neighbour list, readable by any rApp (W9-06). *Replaced by ADR 0008 section 3.4: cell attributes in TE&IV and the cell lock table, pending S3.1, S3.2.* |
+| D-6 | Model | **Threshold + linear regression** (next-hour PRB), stored as a plain serialized artifact. LSTM is backlog. *The artifact format is replaced by ADR 0010 section 3.6: ONNX or Safetensors only, in the object store, pending S2.5.* |
 | D-7 | Emulation input | Synthetic `PRB_UTILIZATION_SIM` DME type fed by a sample producer. |
-| D-9 | Waves 4–6 depth | **Full spec compliance at REST level.** Every IOC, attribute, enum, operation and notification of TS 28.105 / 28.104 / 28.312 as REST resources/fields in the existing services, with spec names. The one recorded deviation is **addressing**: flat REST, no DN containment tree. FL/RL and MLUpdateFunction included. |
-
+| D-9 | Waves 4–6 depth | **Full spec compliance at REST level.** Every IOC, attribute, enum, operation and notification of TS 28.105 / 28.104 / 28.312 as REST resources/fields in the existing services, with spec names. The one recorded deviation is **addressing**: flat REST, no DN containment tree. FL/RL and MLUpdateFunction included. *Addressing replaced by ADR 0011 and decision D5: one ProvMnS form `{apiRoot}/ProvMnS/{version}/{URI-LDN-first-part}/{className}={id}`, pending Stages 1–7.* |
 Resolved without a decision:
 - **Test-case IDs.** `[W10C]` TC01–TC33 is canonical. The extra `[W10]` assertions (NETCONF timeout ⇒ alarm + no lifecycle corruption; PRB=3% sleep trigger) are folded into TC16/TC17/TC08.
 - **Retry.** "Max 3 retries" = immediate, then +5/+10/+20 s (4 attempts). Notifications are retried 0 times, best-effort.
@@ -46,7 +51,7 @@ the generator checks that every attribute marked Compliant appears by name in
 the implementing code. Attributes of one IOC that share a status and need no
 note are listed together in one table row.
 
-**Addressing is the one deviation that applies to every row.** DN-typed
+**Addressing is the one deviation that applies to every row** (*replaced by ADR 0011 and D5, pending Stages 1–7*). DN-typed
 attributes (`Dn`, `DnRo`, `DnListRo`) carry resource ids (UUIDs); resources
 are flat REST collections, not a DN containment tree. Each resource is
 returned as `{"id", "attributes"}`, mirroring the spec's `-Single` shape.
@@ -62,13 +67,13 @@ limit below is tracked in [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md) §3.
 |---|---|---|---|
 | TS 28.104 | MDAF | 48/48 rows | `STREAMING` is recorded, not streamed (SA-MDA-5, no TS 28.532 streaming transport); `recommendationFilter`, `performanceThresholdInfo`, `analysisRequirements`, `thresholdMonitorRefList` stored not enforced; `areaScope` stored not matched; backing-model refs set by the caller; flat addressing |
 | TS 28.312 | Intent Service | 91/91 rows | Flat addressing; `DateTime` / `FullTime` checked by shape; the Intent Service validates and routes, the RMIHs realise the expectations (SA SMOS: `IS_EQUAL_TO` target setting only) |
-| TS 28.105 | AIMgF, MLMR, MLLF, runtime | 125/126 attributes | `ThresholdMonitors` (TS 28.623 containment, MLMF equivalent); FL/RL stored, no training engine; runtime scale has no target size; flat addressing |
+| TS 28.105 | AIMgF, MLMR, MLLF, runtime (*one module, AIMgF, by ADR 0010, pending Stage 2*) | 125/126 attributes | `ThresholdMonitors` (TS 28.623 containment, MLMF equivalent); FL/RL stored, no training engine; runtime scale has no target size; flat addressing |
 | TS 29.482 | MLMR | `MLModel`, storages / profiles, `storeDiscReqs`, discovery at REST level | `accessReqs.location` not enforced; phase written at training start / success only; the `MLModel` `anyOf` and forward-compatible enums not honoured |
 | TS 28.532 / 28.111 / 28.319 | RAN NF OAM | MSAC, `accessScope`, `PerceivedSeverity`, DN refs and file reporting closed | Streaming reporting (SA-RANOAM-8); DN containment tree (SA-RANOAM-4); MSAC guards CM writes, and with `RAN_NF_OAM_MSAC_REACH` on (`MGT-2`, off by default) config reads, subscriptions, alarm changes, software jobs, file routes, and the list routes and subscription deletes (`MGT-2.6`); Jex subset for `dataNodeSelector` |
 | O2IMS | FOCOM | Inventory sites, fault, performance, artifacts / cluster / infrastructure / provisioning at REST level | `FILE` / `STREAM` performance reporting; no real cluster behind a ProvisioningRequest; flat addressing |
 | TS 28.541 + WG10/WG5 | RAN NF OAM | 3GPP descriptor plus WG10 O1 NRM and WG5 O-DU / O-CU descriptors bundled | The 3GPP common YANG modules are not in `specs/`, so the attributes they contribute are missing from the YANG descriptors; WG4 M-plane not ingested |
 
-RAN Analytics is not in this table: it realises no standard (it is a producer
+RAN Analytics is not in this table (*it merges into MDAF as `MDAFunction` registration, ADR 0008, pending S7.5*): it realises no standard (it is a producer
 registry, separate from MDAF).
 
 The 16 spec-conformance items were closed module by module, each in its own PR with
@@ -280,6 +285,8 @@ and the `STREAMING` reporting method's transport.
 
 ### TS 28.312
 
+*Intent Service moves into SO SMOS and autonomy dispatch retires (ADR 0009), pending S5.1, S5.9; the strict models below move unchanged.*
+
 Intent NRM, Intent Service (`specs/5G_APIs/TS28312_IntentNrm.yaml` and the
 five `TS28312_*Expectation.yaml` family files). 91 rows, all compliant.
 Recorded deviation: addressing.
@@ -351,7 +358,7 @@ Recorded deviation: addressing.
 
 ## Runtime realization
 
-The four AI/ML execution roles (MLTF / MLVF / MLEF / MLIF) are ordinary NFO
+The four AI/ML execution roles (MLTF / MLVF / MLEF / MLIF; kept by ADR 0010, which also retires the name MTEF) are ordinary NFO
 deployments driven by AIMgF.
 
 ### Deployment model per role (W7-02)
