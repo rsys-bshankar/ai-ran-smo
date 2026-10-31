@@ -36,8 +36,8 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `shared` | 50 | 663 | 1118 |
 | `sme` | 5 | 122 | 140 |
 | `so-smos` | 3 | 28 | 44 |
-| `tests_integration` | 98 | 762 | 943 |
-| **total** | **421** | **5426** | **7829** (Python) |
+| `tests_integration` | 99 | 768 | 949 |
+| **total** | **422** | **5432** | **7835** (Python) |
 
 ## Per test file
 
@@ -555,7 +555,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 
 </details>
 
-<details><summary><code>tests_integration</code>: 98 files</summary>
+<details><summary><code>tests_integration</code>: 99 files</summary>
 
 | file | test functions | collected tests |
 |---|---:|---:|
@@ -608,6 +608,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests_integration/test_http_timeouts.py` | 3 | 10 |
 | `tests_integration/test_image_mirror_list.py` | 8 | 8 |
 | `tests_integration/test_intent_identity.py` | 2 | 2 |
+| `tests_integration/test_interface_gate.py` | 6 | 6 |
 | `tests_integration/test_introspection_load.py` | 5 | 11 |
 | `tests_integration/test_k8s_pin_state.py` | 3 | 3 |
 | `tests_integration/test_kpi_through_dme.py` | 1 | 1 |

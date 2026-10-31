@@ -30,7 +30,7 @@ TS 28.312 Annex F.3, later, `PR-NB-5`). A1, E2 and the Near-RT RIC (out of scope
 | SA SMOS O1-CM handler: RMIH `sa-smos`, `<IOC>.<attribute> IS_EQUAL_TO` targets enacted through DME `/actions` | `sa-smos/app/o1cm.py` | The Level-2 shape already exists here; the handler retires (S5.9) |
 | SO SMOS: ordered steps, fail-fast, no compensation (387 lines) | `so-smos/app/main.py`, `dispatch.py` | Rewritten as the intent brain (Stage 5) |
 | rApp safeguards on `POST /config-jobs`: kill switch, package limits (rate, blast radius, magnitude), MSAC (TS 28.319), ADR 0005 scope, approval queue (optional second approver), decision record per action, refusal log | `ran-nf-oam/app/main.py` (`_refuse_if_killed`, `_enforce_rapp_limit`, `_enforce_limits_of`, `_require_msac`), `scoping.py`, `shared/smo_shared/killswitch.py`; `HISTORY.md` PR-AI-11, PR-AI-13, PR-SEC-10 | Move, all of them, to SO SMOS's Level-2 intake (section 4.5) |
-| Cell guards (emergency, coverage-critical, last sector, neighbour list) | `ran-nf-oam` `/cell-guards`, `HISTORY.md` W9-06 | Become TE&IV attributes and the cell lock table (ADR 0008 section 3.4) |
+| Cell guards (emergency, coverage-critical, last sector, neighbour list) | `ran-nf-oam` `/cell-guards`, `HISTORY.md` W9-06 | ~~Become TE&IV attributes and the cell lock table (ADR 0008 section 3.4)~~ *Note of 1 November 2026 (S0.10 sign-off, G-ES-3): dropped. SO SMOS does not check `cellClass`, `sectorGroup`, `incidentZone` or `neighbourRefs`, no ADR 0011 row is added, and the energy-saving sample's guard code is deleted in S7.2; the cell lock table (D-23) stays* |
 
 ## 3. Standards basis
 
@@ -166,6 +166,10 @@ Every network write passes through SO SMOS (section 4.4), so SO SMOS sees all of
 Before SO SMOS enacts a NES or MRO Level-2 intent, it creates a TS 28.561 v20.0.0 `NDTJob` (what-if) on an `NDTFunction` and reads the `NDTReport`; a plan
 the twin rejects is never sent to the network (S7.11). Scope in Phase 1: the TS 28.561 model and interface; a simulator-grade twin is H2. Until S7.11
 lands, the gate is absent and the shadow mode is the only rehearsal.
+
+*Note of 1 November 2026 (S0.10 sign-off, G-CCO-6):* the gate stays NES and MRO only. Coverage changes (`CCOFunction`, tilt and power) have no twin
+what-if; they rely on the lease (section 4.3), SA SMOS's goals (section 4.11) and rollback. This is a known limit, recorded in
+`docs/plan/S0.10-use-cases-on-paper.md`.
 
 ### 4.11 Assurance
 

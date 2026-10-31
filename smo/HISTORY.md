@@ -4834,3 +4834,76 @@ table and a "What the code does today" paragraph naming the PR-CONV rows that bu
   per message; the repository carries the 3GPP OpenAPI files, not the specification text, so the clause numbers were not re-read from the specifications.
 - **Not done:** the plan's live copy (Claude Docs) still has to show S0.9 as Done (the plan's working rule 6); FOCOM's O2ims capacity check before
   placement (HLD §5.1 step 5) is named in flow 34 and left to S4.5.
+
+### PR-CONV-S0.10 — the four sample use cases on paper, signed off
+
+Closed from `OPEN_ITEMS.md` (`PR-CONV-S0.10`). The pack `docs/plan/S0.10-use-cases-on-paper.md` (written with PR-CONV-S0.9) traces the energy-saving,
+mobility, coverage and traffic-steering samples through call flows 34–37 and lists every place a sample needs special-case logic, with a fix and a
+plan task each. **Signed off by Balaji Shankaran on 1 November 2026: accepted with changes.** The decisions:
+
+- **G-ES-3, cell guards: dropped.** SO SMOS does not check `cellClass`, `sectorGroup`, `incidentZone` or `neighbourRefs`, and no ADR 0011 [D] row is
+  added for them. The energy-saving sample's guard code is deleted when it moves to SDK v2 (S7.2). Dated notes in ADR 0009 section 2 and ADR 0011.
+- **G-CCO-6, the twin's scope: a known limit.** The twin gate (D18) stays NES and MRO only; a coverage change relies on its lease, SA SMOS's goals and
+  rollback. Dated notes in ADR 0009 section 4.10 and ADR 0011.
+- **G-CCO-1, G-TS-2: `CCOFunction` and `DLBOFunction` writable** through `modifyMOIAttributes`. Plan task S3.14 is amended (`OPEN_ITEMS.md` row and the plan
+  snapshot): CES, DES, DMRO, CCO and DLBO functions all writable; `NRFreqRelation`, `CommonBeamformingFunction` and `NRSectorCarrier` added; DMRO bounds and
+  minimum interval enforced on write. The contract half is done in the same PR as this entry: `specs/smo-schema-bundle/openapi/modules/ran-nf-oam.yaml`
+  gains `getMOIAttributes` and `modifyMOIAttributes` on `CCOFunction` and `DLBOFunction` and the three classes, each a `$ref` into
+  `specs/5G_APIs/TS28541_NrNrm.yaml` (v19.6.0). The contract drift baseline moved by exactly those nine operations: `ran-nf-oam` contract_only 54 → 63
+  (code_only unchanged at 119). The code half of S3.14 stays open.
+- **S7.4: all four samples move to Level-1 / Level-2; none is retired.** Coverage goes through `CCOFunction`, traffic steering through `DLBOFunction`
+  and `NRFreqRelation`; done when both pass their flows and replays (`OPEN_ITEMS.md` row and plan snapshot amended).
+- **Not changed:** every other gap of the pack stays with the plan task it names (Stages 3, 5 and 7); the common gaps (G-ALL-1 to G-ALL-8) are the
+  SDK v2 and SO SMOS work of S5 and S7.1.
+
+### PR-CONV-S0.17 — the interface gate
+
+Closed from `OPEN_ITEMS.md` (`PR-CONV-S0.17`), except that "Interfaces" is made a required check in GitHub branch protection, which is the owner's step.
+ADR 0011 section 7 is marked built and describes what was built.
+
+- **`scripts/check_interfaces.py`, CI job "Interfaces"** (`.github/workflows/smo-tests.yml`). **Producer half:** each operation of `docs/openapi/*.json` passes
+  when the module's bundle contract names it (`scripts/check_contract_drift.py`'s operations, reused), when ADR 0011 appendix A classifies it "[D]
+  exception" with a section 6 id, or "keep (standard)". Appendix A is parsed as the machine-readable list section 7 called for, so there is no second
+  copy. Every other operation is in `scripts/interface_baseline.json` (`producer`) with its appendix A fate and PR-CONV row. **Consumer half:** the
+  literal-path `R1Client` calls of the modules and the Python SDK (found by `tests_integration/test_r1_consumer_calls.py`'s own finder, imported, not
+  re-written), the Go SDK's `routes.go`, the Java SDK's `Routes.java`, the GUI BFF's proxy rules (`gui-bff/app/rbac.py`, each pattern passing when one
+  of its expansions is a route) and its own reads, and the GUI's literal R1 paths (`smo`, `useSmo`, `useSmoPage`, `scopeQuery`; any method) are each
+  resolved to a served operation; one that reaches only waiting operations must be in the baseline (`consumer`), one that reaches nothing fails.
+  ADR 0011 rule 3 (smo-teiv's API outside `teiv/`) is a check for `/topology-inventory/`; rule 4 (SA SMOS) is covered by the baseline (its entries carry
+  S5.17).
+- **The baseline only shrinks:** a stale entry fails (so the PR that replaces or deletes a route removes it, now a PR convention in `CLAUDE.md`), and on a
+  pull request the job fails when an entry is added against the base branch (`--base-ref`). At introduction: **513 producer entries** (exactly appendix A's
+  423 replaced and 90 to delete) and **402 consumer entries**. Per module (bundle = named by its contract, [D] = appendix A [D] exception, std = standard
+  as served, waiting = producer entries, callers = consumer entries reaching that module's waiting routes):
+
+| Module | bundle | [D] | std | waiting | callers |
+|---|---:|---:|---:|---:|---:|
+| `aimgf` | 10 | 0 | 0 | 100 | 80 |
+| `coverage-optimization-rapp` | 0 | 12 | 0 | 14 | 0 |
+| `dme` | 5 | 0 | 0 | 30 | 67 |
+| `energy-saving-rapp` | 0 | 15 | 0 | 13 | 0 |
+| `focom` | 0 | 4 | 0 | 90 | 12 |
+| `intent-service` | 4 | 0 | 0 | 21 | 29 |
+| `mdaf` | 4 | 0 | 0 | 19 | 22 |
+| `mllf` | 4 | 0 | 0 | 1 | 2 |
+| `mlmr` | 5 | 0 | 0 | 22 | 23 |
+| `mobility-optimization-rapp` | 0 | 13 | 0 | 14 | 0 |
+| `mock-o1-adaptor` | 0 | 17 | 7 | 0 | 0 |
+| `nfo` | 4 | 0 | 0 | 14 | 16 |
+| `onboarding` | 0 | 4 | 0 | 14 | 16 |
+| `r1-termination` | 0 | 4 | 5 | 1 | 0 |
+| `ran-analytics` | 4 | 0 | 0 | 3 | 7 |
+| `ran-nf-oam` | 38 | 32 | 0 | 87 | 53 |
+| `rapp-mgmt` | 7 | 6 | 0 | 21 | 38 |
+| `sa-smos` | 4 | 0 | 0 | 14 | 8 |
+| `sme` | 11 | 0 | 1 | 17 | 24 |
+| `so-smos` | 4 | 0 | 0 | 4 | 5 |
+| `traffic-steering-rapp` | 0 | 13 | 0 | 14 | 0 |
+| `total` | 104 | 120 | 13 | 513 | 402 |
+
+- **Tests:** `tests_integration/test_interface_gate.py`: the committed code passes and every waiting route has its appendix A fate and a PR-CONV row; a
+  private route added to a producer fails; a route added to the Java SDK's table fails both when it reaches a route going away and when it reaches none;
+  a new `R1Client` call to a route going away fails; a stale entry and a grown baseline fail; the BFF rule expansion.
+- **Not done:** the GUI's paths built by helper functions (`aimgfModel(id)` and the like) are not literal and are not checked; the GUI's method is not
+  read from the call's options, so a GUI path passes on any method of that path. "From M5 it fails" (ADR 0011 section 7) is reached when the baseline
+  is empty; nothing switches it.
