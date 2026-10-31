@@ -64,7 +64,7 @@ digest at the mirror.
 | `<repo>/mirror/eclipse-temurin` | `eclipse-temurin:25-jre-noble` | yes |
 | `<repo>/mirror/tempo` | `grafana/tempo:2.10.10` | yes |
 | `<repo>/mirror/loki` | `grafana/loki:3.7.8` | yes |
-| `<repo>/mirror/fluent-bit` | `fluent/fluent-bit:5.1.4` | yes |
+| `<repo>/mirror/fluent-bit` | `fluent/fluent-bit:5.1.5` | yes |
 | `<repo>/mirror/grafana` | `grafana/grafana:13.2.4` | yes |
 | `<repo>/mirror/keycloak` | `quay.io/keycloak/keycloak:26.4` (quay.io, not Docker Hub) | yes |
 | `<repo>/mirror/kind-node` | `kindest/node:v1.37.0` (the node image of every `kind create cluster`) | yes |

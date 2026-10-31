@@ -35,7 +35,7 @@ eclipse-temurin:25-jre-noble | sha256:3f2223fe04b750aa5a8179e29b5c9a1ddf7665fc9b
 
 grafana/tempo:2.10.10 | sha256:12b0820f13ffa10ce956b6e9acc3b03f3cffded99109be6cc09d106fe56e5d38 | tempo |
 grafana/loki:3.7.8 | sha256:1107dd5274e0ada47e42472b7a7e71f3b2a2fe878878108f3e2f9e51528f0193 | loki |
-fluent/fluent-bit:5.1.4 | sha256:a9cc9627aeabb8bb33077ee85b6ec8c0fe40aff8e7000bb4e8cd924511fa626c | fluent-bit |
+fluent/fluent-bit:5.1.5 | sha256:2740f387f6e68fab66d28e4fa6a853387b9cab6ffb4cb78958f69bba4eb0e7b4 | fluent-bit |
 grafana/grafana:13.2.4 | sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f | grafana |
 quay.io/keycloak/keycloak:26.4 | sha256:9409c59bdfb65dbffa20b11e6f18b8abb9281d480c7ca402f51ed3d5977e6007 | keycloak | on quay.io, not Docker Hub; pinned in smo-gui-e2e.yml (KEYCLOAK_IMAGE)
 kindest/node:v1.37.0 | sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5 | kind-node | the node image of every `kind create cluster --image` in the workflows; v1.37.0 is the default of kind 0.33.0, the version on the runner image

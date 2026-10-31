@@ -875,7 +875,7 @@ services:
   # Reads every container's json-file log (the Docker default), so it needs the host's container log directory, read-only, and root to read it.
   fluent-bit:
     profiles: ["logging"]
-    image: fluent/fluent-bit:5.1.4@sha256:a9cc9627aeabb8bb33077ee85b6ec8c0fe40aff8e7000bb4e8cd924511fa626c
+    image: fluent/fluent-bit:5.1.5@sha256:2740f387f6e68fab66d28e4fa6a853387b9cab6ffb4cb78958f69bba4eb0e7b4
     command: ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
     user: "0"
     restart: unless-stopped
