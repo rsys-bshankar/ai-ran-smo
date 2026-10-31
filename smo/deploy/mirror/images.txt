@@ -22,6 +22,7 @@
 python:3.11-slim | sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 | python |
 python:3.14-slim | sha256:0741d101873c12ab927e6f8653feb8862b9bd58771177acb1b885b95141f91b4 | python |
 postgres:18-alpine | sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873 | postgres |
+timescale/timescaledb:2.31.0-pg18 | sha256:0fcff5761363809d1242f2261a3482197b5a5337407f8b97a976fb174206d579 | timescaledb | Postgres 18 with TimescaleDB for the Contracts job's DDL apply (plan task S0.7, D8)
 nginxinc/nginx-unprivileged:1.31-alpine | sha256:b9241c6e7b8e9a862f129d8d4199ab64b10390949a78bdd5603379b32c844083 | nginx-unprivileged |
 sysrepo/sysrepo-netopeer2 | sha256:36cc1d841c97f118d62f775024d60fb1ce210c3bca6b32135c1a9e5a358a1cc9 | sysrepo-netopeer2 | the compose file pins this one by digest alone, no tag; the mirror tags it `latest`
 drwetter/testssl.sh:3.2 | sha256:51e487545f506e4e58b3e557d99538dbc2e63eec40680a2f6f6c9eb5ae1296af | testssl |
