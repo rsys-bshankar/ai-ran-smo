@@ -1,0 +1,49 @@
+# This file instructs Redocly's linter to ignore the rules contained for specific parts of your API.
+# See https://redocly.com/docs/cli/ for more information.
+../5G_APIs/TS28623_GenericNrm.yaml:
+  nullable-type-sibling:
+    - '#/components/schemas/VsDataContainer-Single/properties/attributes/properties/vsData/nullable'
+../5G_APIs/TS28623_ComDefs.yaml:
+  nullable-type-sibling:
+    - '#/components/schemas/AttributeNameValuePairSet/additionalProperties/nullable'
+../5G_APIs/TS28104_MdaReport.yaml:
+  spec-ref-siblings:
+    - '#/components/schemas/CoverageProblemAnalysisOutput/properties/cellConfigurations/description'
+../5G_APIs/TS28105_AiMlNrm.yaml:
+  spec-ref-siblings:
+    - '#/components/schemas/FLParticipationInfo/properties/candidateFLClientRefList/description'
+    - '#/components/schemas/ClusteringCriteria/properties/allowedClusterTrainingTime/minItems'
+    - '#/components/schemas/ClusteringCriteria/properties/allowedClusterTrainingTime/maxItems'
+    - '#/components/schemas/MLCapabilityInfo/properties/mLCapabilityParameters/description'
+    - '#/components/schemas/MLModelLoadingProcess-Single/allOf/1/properties/attributes/allOf/0/properties/loadedMLModelRef/uniqueItems'
+    - '#/components/schemas/InferenceOutput/properties/aIMLInferenceName/readOnly'
+    - '#/components/schemas/InferenceOutput/properties/outputResult/description'
+../5G_APIs/TS28312_IntentNrm.yaml:
+  spec-ref-siblings:
+    - '#/components/schemas/IntentTraceabilityInfo/properties/intentHandlingFunctionID/readOnly'
+    - '#/components/schemas/IntentTraceabilityInfo/properties/intentID/readOnly'
+    - '#/components/schemas/TargetFulfilmentResult/properties/targetAchievedValue/description'
+    - '#/components/schemas/IntentConflictReport/properties/conflictingIntent/description'
+    - '#/components/schemas/InFeasibleExpectationInfo/properties/inFeasibleTargets/items/readOnly'
+../5G_APIs/TS28541_NrNrm.yaml:
+  spec-ref-siblings:
+    - '#/components/schemas/NRCellDU-Single/allOf/1/properties/attributes/allOf/1/properties/bWPSetRef/description'
+    - '#/components/schemas/OperatorDU-Single/allOf/2/properties/configurable5QISetRef/description'
+    - '#/components/schemas/OperatorDU-Single/allOf/2/properties/dynamic5QISetRef/description'
+../5G_APIs/TS29571_CommonData.yaml:
+  spec-ref-siblings:
+    - '#/components/schemas/AiotDevPermId/description'
+../5G_APIs/TS28541_SliceNrm.yaml:
+  spec-ref-siblings:
+    - '#/components/schemas/RequestedReservationExpiration/description'
+    - '#/components/schemas/ReservationExpiration/description'
+../5G_APIs/TS28561_NdtNrm.yaml:
+  spec-ref-siblings:
+    - '#/components/schemas/NDTFunction-Single/allOf/1/properties/genericModellingCapabilities/description'
+    - '#/components/schemas/NDTJob-Single/allOf/1/properties/nDTCapability/description'
+../5G_APIs/TS28623_MnSRegistryNrm.yaml:
+  spec-ref-siblings:
+    - '#/components/schemas/MnsInfo-Single/allOf/1/properties/mnsAddress/description'
+../5G_APIs/TS28532_ProvMnS.yaml:
+  nullable-type-sibling:
+    - '#/components/schemas/PatchItem/properties/value/nullable'

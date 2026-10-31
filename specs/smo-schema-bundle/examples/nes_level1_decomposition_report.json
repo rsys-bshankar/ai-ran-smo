@@ -1,0 +1,17 @@
+{
+  "id": "report-nes-blr12-001",
+  "objectClass": "IntentReport",
+  "objectInstance": "SubNetwork=BLR_12,IntentHandlingFunction=SO-SMOS,IntentReport=report-nes-blr12-001",
+  "attributes": {
+    "intentReference": "SubNetwork=BLR_12,IntentHandlingFunction=SO-SMOS,Intent=intent-nes-blr12-001",
+    "intentDecompositionReport": {
+      "intentDecompositionResults": [
+        {
+          "intentHandlingFunctionID": "SubNetwork=BLR_12,IntentHandlingFunction=SO-SMOS",
+          "intentID": "SubNetwork=BLR_12,IntentHandlingFunction=SO-SMOS,Intent=intent-l2-nes-blr12-20261029-01",
+          "decomposedExpectationID": "exp-nes-goal-01"
+        }
+      ]
+    }
+  }
+}

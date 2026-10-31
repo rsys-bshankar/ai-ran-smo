@@ -1415,13 +1415,10 @@ real detail, and sets the task's status in the live plan to Done the same day (t
 
 Stage 0 ends at milestone M0 (week 2): decisions answered, three ADRs merged, the schema bundle corrected and complete, the contract gate required in CI, and the four sample use cases realised on paper.
 
-Done, in `HISTORY.md`: `PR-CONV-S0.1`, `PR-CONV-S0.2`, `PR-CONV-S0.3`, `PR-CONV-S0.4`, `PR-CONV-S0.8`, `PR-CONV-S0.11`, `PR-CONV-S0.12`, `PR-CONV-S0.16`.
+Done, in `HISTORY.md`: `PR-CONV-S0.1` to `PR-CONV-S0.8`, `PR-CONV-S0.11`, `PR-CONV-S0.12`, `PR-CONV-S0.16`.
 
 | ID | Task | Stage | Needs | Done when |
 |---|---|---|---|---|
-| PR-CONV-S0.5 | Import the schema bundle to `specs/smo-schema-bundle/` and correct R1–R4 and R13 | 0 | S0.3 | Bundle lints clean; every example validates against the repo's TS 28.312 models |
-| PR-CONV-S0.6 | Complete the five stub contracts (rAppMgmt, AI/ML, MDAF, TE&IV, SME) | 0 | S0.5 | Every operation named in call flows 33–37 has a schema |
-| PR-CONV-S0.7 | Contract gate in CI (`redocly lint`, `pyang --strict`, bundle-to-OpenAPI drift) | 0 | S0.5 | Job green and made a required check |
 | PR-CONV-S0.9 | Call flows 34–37 (Level-1 intake, Level-2 split and rollback, NES vs MRO, lease expiry) | 0 | S0.3, S0.6 | Diagrams parse (`validate:diagrams`), images rendered |
 | PR-CONV-S0.10 | Realise the four sample use cases on paper through flows 34–37 | 0 | S0.9 | Each sample maps with no special-case logic; Balaji Shankaran signs off (sign-off owner agreed 31 October 2026) |
 | PR-CONV-S0.13 | Integration spike: O-RAN-SC smo-teiv behind a 3GPP MnS and WG10 TE&IV R1 face (D19) | 0 | S0.1 | Written result: load, query latency and change events measured; the gap list turned into Stage 3 tasks |

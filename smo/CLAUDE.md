@@ -138,6 +138,16 @@ python scripts/verify_docs_only.py --base origin/main --allow-unverified-extensi
 Code you add must meet the rule from the day it is added. A pull request that only adds comments and docstrings is titled `Docs(code): ...`; CI proves it. If it lowers a
 count, run `python scripts/check_code_docs.py --write-baseline` and commit the baseline in the same change.
 
+**7. Contracts** (CI job `Contracts`, plan task S0.7; the bundle is `specs/smo-schema-bundle/`, its README says how a contract is written). After changing a
+contract, an example, the bundle's DDL or a route a contract covers:
+
+```bash
+cd specs/smo-schema-bundle && npx --yes @redocly/cli@2.63.0 lint openapi/common/*.yaml openapi/modules/*.yaml
+cd smo && pip install --require-hashes -r requirements/contracts.txt
+python scripts/check_contract_bundle.py --database-url postgresql://postgres:<password>@localhost:5432/smo   # Postgres 18 with TimescaleDB (timescale/timescaledb:2.31.0-pg18)
+python scripts/check_contract_drift.py      # a route a contract does not name, or a contract operation no route serves, may not grow; after it shrank: --write-baseline
+```
+
 ## Schema changes are revisions
 
 The database schema is the Alembic history in `migrations/` (`docs/adr/0001-schema-migrations.md`). To add or change a table,

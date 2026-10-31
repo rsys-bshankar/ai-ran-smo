@@ -10,7 +10,7 @@ still open is in [OPEN_ITEMS.md](../OPEN_ITEMS.md); the architecture itself is i
 **Where it is going.** The converged rewrite decides the target in [ADR 0008](adr/0008-converged-architecture.md) (architecture and the O-RAN SMOS /
 3GPP MnS map), [ADR 0009](adr/0009-intent-model-ts28312.md) (the TS 28.312 v20.0.0 intent model), [ADR 0010](adr/0010-aimgf-absorbs-mlmr-mllf.md)
 (TS 28.105 and the R1 AI/ML workflow services in AIMgF, and the lifecycle mapping) and [ADR 0011](adr/0011-standard-interfaces-only.md) (standard
-interfaces only). This document keeps describing what runs; a decision or statement those records replace is marked *replaced by ADR 00xx, pending
+interfaces only). The contracts that realise them are in [`specs/smo-schema-bundle/`](../../specs/smo-schema-bundle/README.md) (plan tasks S0.5 to S0.7): the standard classes and operations are `$ref`s to the 3GPP files of `specs/5G_APIs` at the releases recorded there (TS 28.312 v20.0.0, TS 28.105 v19.5.0, TS 28.104 v20.0.0, TS 28.536 v19.1.0, TS 28.567 v20.0.0, TS 28.111 v19.3.0, TS 28.319 v19.0.0, TS 28.541 v19.6.0, TS 29.222 V20.0.0), and the one ProvMnS form is pinned to TS 28.532 OpenAPI v19.2.0 in a single file. This document keeps describing what runs; a decision or statement those records replace is marked *replaced by ADR 00xx, pending
 Stage n*.
 
 Source tags: `[W49]` = SMO_Waves_4to9.docx (pre-roadmap artifact checklist);

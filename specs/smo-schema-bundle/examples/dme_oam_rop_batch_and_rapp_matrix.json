@@ -1,0 +1,133 @@
+{
+  "description": "Examples of the [D] data type SMO:RopMatrix:1.0.0 (ADR 0011 D-02) and its query; schemas in openapi/modules/dme.yaml. Corrected: delivery and subscription go through the R1GAP v14 section 5.2 data services (R1AP API pending), so the bundle's /r1/dme/v1/dataJobs subscription payload is no longer part of the contract.",
+  "production_OamPmRopBatch": {
+    "managedElementDn": "SubNetwork=BLR_12,ManagedElement=gNB_104",
+    "subNetworkDn": "SubNetwork=BLR_12",
+    "sourceVendor": "VendorA-O1-Rel18",
+    "ropStartTime": "2026-10-30T14:00:00Z",
+    "ropEndTime": "2026-10-30T14:15:00Z",
+    "granularityPeriodSec": 900,
+    "cells": [
+      {
+        "cellDn": "SubNetwork=BLR_12,ManagedElement=gNB_104,GNBDUFunction=1,NRCellDU=NRCellDU-Cov-700MHz-A",
+        "suspectFlag": false,
+        "counters": {
+          "RRU.PrbTotDl": 24.8,
+          "RRU.PrbTotUl": 14.2,
+          "RRC.ConnMean": 42.0,
+          "DRB.UEThpDl": 185.4,
+          "PEE.AvgPower": 710.5,
+          "MM.HoExeAtt": 310,
+          "MM.HoExeSucc": 308
+        }
+      },
+      {
+        "cellDn": "SubNetwork=BLR_12,ManagedElement=gNB_104,GNBDUFunction=1,NRCellDU=NRCellDU-Cap-3500MHz-B",
+        "suspectFlag": false,
+        "counters": {
+          "RRU.PrbTotDl": 11.4,
+          "RRU.PrbTotUl": 5.1,
+          "RRC.ConnMean": 9.0,
+          "DRB.UEThpDl": 340.2,
+          "PEE.AvgPower": 980.0,
+          "MM.HoExeAtt": 120,
+          "MM.HoExeSucc": 119
+        }
+      }
+    ]
+  },
+  "delivery_RopMatrixDelivery": {
+    "dataJobId": "dj-nes-blr12-001",
+    "ropEndTime": "2026-10-30T14:15:00Z",
+    "subNetworkDn": "SubNetwork=BLR_12",
+    "featureOrder": [
+      "RRU.PrbTotDl",
+      "RRC.ConnMean",
+      "DRB.UEThpDl",
+      "PEE.AvgPower",
+      "RANEnergyEfficiency",
+      "DRB.RlcSduDropRateDl"
+    ],
+    "cellsMatrix": {
+      "SubNetwork=BLR_12,ManagedElement=gNB_104,GNBDUFunction=1,NRCellDU=NRCellDU-Cov-700MHz-A": [
+        24.8,
+        42.0,
+        185.4,
+        710.5,
+        3.42,
+        0.08
+      ],
+      "SubNetwork=BLR_12,ManagedElement=gNB_104,GNBDUFunction=1,NRCellDU=NRCellDU-Cap-3500MHz-B": [
+        11.4,
+        9.0,
+        340.2,
+        980.0,
+        1.85,
+        0.04
+      ]
+    }
+  },
+  "query_RopMatrixQueryRequest": {
+    "scope": {
+      "subNetworkDn": "SubNetwork=BLR_12"
+    },
+    "timeWindow": {
+      "startTime": "2026-10-30T08:00:00Z",
+      "endTime": "2026-10-30T14:15:00Z",
+      "stepSec": 900,
+      "aggregation": "NONE"
+    },
+    "selectedCounters": [
+      "RRU.PrbTotDl",
+      "RRC.ConnMean",
+      "PEE.AvgPower"
+    ],
+    "selectedKpis": [
+      "RANEnergyEfficiency"
+    ]
+  },
+  "query_RopMatrixResponse": {
+    "subNetworkDn": "SubNetwork=BLR_12",
+    "granularityPeriodSec": 900,
+    "featureOrder": [
+      "RRU.PrbTotDl",
+      "RRC.ConnMean",
+      "PEE.AvgPower",
+      "RANEnergyEfficiency"
+    ],
+    "timestamps": [
+      "2026-10-30T14:00:00Z",
+      "2026-10-30T14:15:00Z"
+    ],
+    "seriesByCell": {
+      "SubNetwork=BLR_12,ManagedElement=gNB_104,GNBDUFunction=1,NRCellDU=NRCellDU-Cov-700MHz-A": [
+        [
+          22.1,
+          39.0,
+          695.0,
+          3.31
+        ],
+        [
+          24.8,
+          42.0,
+          710.5,
+          3.42
+        ]
+      ],
+      "SubNetwork=BLR_12,ManagedElement=gNB_104,GNBDUFunction=1,NRCellDU=NRCellDU-Cap-3500MHz-B": [
+        [
+          14.0,
+          12.0,
+          990.0,
+          1.92
+        ],
+        [
+          11.4,
+          9.0,
+          980.0,
+          1.85
+        ]
+      ]
+    }
+  }
+}
