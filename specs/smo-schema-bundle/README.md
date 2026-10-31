@@ -116,6 +116,7 @@ All pass `pyang --strict` (pyang 2.7.1).
 | `examples/o1_netconf_edit_config_nes_mro.xml` | Rewritten on the published YANG tree: `CESManagementFunction` under `NRCellCU`, `NRCellRelation` under `NRCellCU`, `cellIndividualOffset/rsrpOffsetSsb` | R18 | R18, standards first |
 | `README.md` | This file | – | S0.5 |
 | (none) | No `MTEF`, `mltf` or `mtef` name anywhere (the bundle had none in its files; the gate keeps it so) | MTEF is a retired name | R15 |
+| (none) | No `ntsim` (ntsim-ng) anywhere; the bundle names no simulator, and the gate keeps it so (the move to sim-o1-ofhmp-interfaces is S0.15's) | The named simulator is being retired | R16 |
 
 ## The gate (CI job "Contracts")
 

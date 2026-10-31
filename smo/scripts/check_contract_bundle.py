@@ -10,7 +10,7 @@ What it checks (each failure is printed and the exit status is 1):
   exists; a class tagged [N] is a `$ref` into `specs/5G_APIs/` (standards first: the bundle never restates a 3GPP class), and a [D] class, path or
   schema carries `x-smo-design` with an id that ADR 0011 section 6 lists. The redocly ignore file names only files under `specs/5G_APIs` (3GPP's own
   `$ref` siblings), never a file of the bundle. No module file sets a server: the ProvMnS version lives only in
-  `openapi/common/provmns-root.yaml` (D5). No file of the bundle uses the retired names (R2 `/ProvMnS/v18` and `18.4.0`; R15 `MTEF`, `mltf`, `mtef`).
+  `openapi/common/provmns-root.yaml` (D5). No file of the bundle uses the retired names (R2 `/ProvMnS/v18` and `18.4.0`; R15 `MTEF`, `mltf`, `mtef`; R16 `ntsim`).
 - **Examples.** The Intent examples validate against Intent Service's strict TS 28.312 models (its own `CreateIntentRequest` and `ts28312` module,
   imported from `intent-service/app` in a fresh interpreter, never copied), with the containing IntentHandlingFunction of the DN as `rmihId`, and carry no `intentLevel`, `parentIntentId` or `nrmActuationDeltas` (R1); a
   Level-2 NES example has no `administrativeState` target (R18); every IntentReport kind validates against its strict model; the ASD properties and
@@ -42,7 +42,7 @@ REPO = SMO.parent
 BUNDLE = REPO / "specs" / "smo-schema-bundle"
 YANG_DIR = REPO / "specs" / "MnS" / "yang-models"
 ADR_0011 = SMO / "docs" / "adr" / "0011-standard-interfaces-only.md"
-RETIRED = [r"/ProvMnS/v18", r"\b18\.4\.0\b", r"\bMTEF\b", r"\bmltf\b", r"\bmtef\b"]
+RETIRED = [r"/ProvMnS/v18", r"\b18\.4\.0\b", r"\bMTEF\b", r"\bmltf\b", r"\bmtef\b", r"ntsim"]
 NETCONF_BASE = "urn:ietf:params:xml:ns:netconf:base:1.0"
 MODULE_SCHEMAS = ["common_teiv_nrm", "common_dme_telemetry", "so_smos", "sa_smos", "ran_nf_oam", "mdaf", "aimgf", "rapp_mgmt", "sme"]
 ROLE_OF = {s: "smo_" + {"common_teiv_nrm": "teiv", "common_dme_telemetry": "dme"}.get(s, s) for s in MODULE_SCHEMAS}
@@ -81,7 +81,7 @@ def check_structure(problems: list[str]) -> None:
         rel = path.relative_to(BUNDLE)
         for pattern in RETIRED:
             if re.search(pattern, text):
-                problems.append(f"{rel}: retired name or version matches /{pattern}/ (R2, R15)")
+                problems.append(f"{rel}: retired name or version matches /{pattern}/ (R2, R15, R16)")
         doc = yaml.safe_load(text)
         for pointer, node in walk(doc):
             design = node.get("x-smo-design")
