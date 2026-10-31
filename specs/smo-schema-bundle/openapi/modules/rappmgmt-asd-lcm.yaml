@@ -1,0 +1,9 @@
+openapi: 3.0.3
+info:
+  title: rAppMgmt SMOS & Onboarding Service (O-RAN WG2 / WG10 + 3GPP TS 28.532)
+  version: 18.4.0
+paths:
+  /RappPackage={id}:
+    $ref: '../common/ts28532-ProvMnS-base.yaml#/paths/~1{className}={id}'
+  /RappInstance={id}:
+    $ref: '../common/ts28532-ProvMnS-base.yaml#/paths/~1{className}={id}'

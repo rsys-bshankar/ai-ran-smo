@@ -1,0 +1,45 @@
+module _3gpp-common-fm {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-common-fm";
+  prefix fm3gpp;
+
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+
+  organization "3GPP SA5";
+  description "3GPP TS 28.111 / TS 28.545 Fault Supervision AlarmList YANG module.";
+
+  revision 2026-10-01 {
+    description "Rel-18 baseline.";
+  }
+
+  typedef perceived-severity {
+    type enumeration {
+      enum CRITICAL;
+      enum MAJOR;
+      enum MINOR;
+      enum WARNING;
+      enum INDETERMINATE;
+      enum CLEARED;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement" {
+    list AlarmList {
+      key "id";
+      uses top3gpp:Top_Grp;
+      container attributes {
+        leaf numOfAlarmRecords { type uint32; config false; }
+        list alarmRecords {
+          key "alarmId";
+          config false;
+          leaf alarmId { type string; }
+          leaf objectInstance { type string; }
+          leaf probableCause { type string; }
+          leaf perceivedSeverity { type perceived-severity; }
+          leaf additionalText { type string; }
+        }
+      }
+    }
+  }
+}

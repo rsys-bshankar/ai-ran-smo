@@ -1,0 +1,23 @@
+tosca_definitions_version: tosca_simple_yaml_1_2
+node_templates:
+  rapp_nes_optimizer:
+    type: oran.nodes.rApp
+    properties:
+      descriptor_id: "rapp-nes-carrier-sleep-v2.1"
+      provider: "ORAN-AI-Labs"
+      version: "2.1.0"
+      intentCapabilityProfile:
+        optimizationDomains: ["RAN_ENERGY_SAVING", "CARRIER_SLEEP_MANAGEMENT"]
+        supportedExpectationTypes: ["EnergySavingExpectation"]
+        supportedObjectTypes: ["SubNetwork", "NRCellDU"]
+        multiClusterSupport: true
+        maxConcurrentIntents: 16
+      aimlModelDependencies:
+        - modelId: "aiml-ts28105-nes-lstm-v4"
+          modelRole: "WARM_START_BASELINE"
+          minValidationAccuracy: 0.94
+      requiredR1Services:
+        - serviceApiCategory: "r1-dme-pm-kpi-v1"
+        - serviceApiCategory: "r1-mdaf-analytics-v1"
+        - serviceApiCategory: "r1-teiv-topology-v1"
+        - serviceApiCategory: "r1-sosmos-intent-v1"

@@ -1,0 +1,24 @@
+{
+  "id": "intent-mro-cluster12-002",
+  "objectClass": "Intent",
+  "objectInstance": "SubNetwork=SMO_Global,Intent=intent-mro-cluster12-002",
+  "attributes": {
+    "userLabel": "Mobility Robustness Optimization for Bangalore Urban Cluster 12",
+    "intentLevel": "LEVEL_1_SERVICE_GOAL",
+    "intentPriority": 70,
+    "intentExpectations": [
+      {
+        "expectationId": "exp-mro-goal-01",
+        "expectationVerb": "OPTIMIZE",
+        "expectationObject": {
+          "objectType": "SubNetwork",
+          "objectInstanceList": ["SubNetwork=Bangalore_Urban_12"]
+        },
+        "expectationTargets": [
+          { "targetName": "MM.HoSuccessRate_Min_Pct", "targetCondition": "IS_GREATER_THAN", "targetValueRange": "99.2" },
+          { "targetName": "MM.PingPongHoRatio_Max_Pct", "targetCondition": "IS_LESS_THAN", "targetValueRange": "1.5" }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "id": "intent-nes-cluster12-001",
+  "objectClass": "Intent",
+  "objectInstance": "SubNetwork=SMO_Global,Intent=intent-nes-cluster12-001",
+  "attributes": {
+    "userLabel": "Nighttime Carrier Sleep Energy Saving for Bangalore Urban Cluster 12",
+    "intentLevel": "LEVEL_1_SERVICE_GOAL",
+    "intentPriority": 80,
+    "intentExpectations": [
+      {
+        "expectationId": "exp-nes-goal-01",
+        "expectationVerb": "OPTIMIZE",
+        "expectationObject": {
+          "objectType": "SubNetwork",
+          "objectInstanceList": ["SubNetwork=Bangalore_Urban_12"]
+        },
+        "expectationTargets": [
+          {
+            "targetName": "PEE.EnergyEfficiency_Gain_Pct",
+            "targetCondition": "IS_GREATER_THAN",
+            "targetValueRange": "18.0"
+          },
+          {
+            "targetName": "DRB.RlcSduDropRateDl_Max_Pct",
+            "targetCondition": "IS_LESS_THAN",
+            "targetValueRange": "0.50"
+          }
+        ]
+      }
+    ]
+  }
+}

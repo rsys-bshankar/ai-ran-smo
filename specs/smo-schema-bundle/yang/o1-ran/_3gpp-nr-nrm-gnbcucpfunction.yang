@@ -1,0 +1,26 @@
+module _3gpp-nr-nrm-gnbcucpfunction {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-nr-nrm-gnbcucpfunction";
+  prefix gnbcucp3gpp;
+
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+
+  organization "3GPP SA5";
+  description "3GPP TS 28.541 GNBCUCPFunction NRM for O1 management.";
+
+  revision 2026-10-01 {
+    description "Rel-18 baseline.";
+  }
+
+  augment "/me3gpp:ManagedElement" {
+    list GNBCUCPFunction {
+      key "id";
+      uses top3gpp:Top_Grp;
+      container attributes {
+        leaf gNBId { type uint64; }
+        leaf gNBCUName { type string; }
+      }
+    }
+  }
+}

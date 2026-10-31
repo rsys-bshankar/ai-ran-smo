@@ -1,0 +1,50 @@
+openapi: 3.0.3
+info:
+  title: 3GPP TS 28.532 Generic Notification MnS (notifyMOIChanges)
+  version: 18.4.0
+paths:
+  /notifications/moiChanges:
+    post:
+      operationId: notifyMOIChanges
+      summary: Deliver notifyMOICreation, notifyMOIAttributeValueChanges, or notifyMOIDeletion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotifyMoiChangesEnvelope'
+      responses:
+        '204':
+          description: Notification acknowledged
+components:
+  schemas:
+    NotifyMoiChangesEnvelope:
+      type: object
+      required: [notificationId, notificationType, eventTime, objectClass, objectInstance]
+      properties:
+        notificationId:
+          type: integer
+        notificationType:
+          type: string
+          enum: [notifyMOICreation, notifyMOIAttributeValueChanges, notifyMOIDeletion]
+        eventTime:
+          type: string
+          format: date-time
+        systemDN:
+          type: string
+        objectClass:
+          type: string
+        objectInstance:
+          type: string
+        correlatedNotifications:
+          type: array
+          items:
+            type: integer
+        attributeListValueChanges:
+          type: array
+          items:
+            type: object
+            properties:
+              attributeName: { type: string }
+              oldValue: {}
+              newValue: {}

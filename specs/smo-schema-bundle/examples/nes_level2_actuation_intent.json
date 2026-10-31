@@ -1,0 +1,37 @@
+{
+  "id": "intent-l2-nes-actuation-20261029-01",
+  "objectClass": "Intent",
+  "objectInstance": "SubNetwork=SMO_Global,Intent=intent-l2-nes-actuation-20261029-01",
+  "attributes": {
+    "intentLevel": "LEVEL_2_RESOURCE_ACTUATION",
+    "parentIntentId": "intent-nes-cluster12-001",
+    "intentPriority": 80,
+    "intentExpectations": [
+      {
+        "expectationId": "exp-nes-sleep-cellB",
+        "expectationVerb": "CONFIGURE_NRM",
+        "expectationObject": {
+          "objectType": "NRCellDU",
+          "objectInstanceList": [
+            "SubNetwork=BLR_12,GNBDUFunction=1,NRCellDU=NRCellDU-Cap-3500MHz-B",
+            "SubNetwork=BLR_12,GNBDUFunction=1,NRCellDU=NRCellDU-Cov-700MHz-A"
+          ]
+        },
+        "nrmActuationDeltas": [
+          {
+            "moiDn": "SubNetwork=BLR_12,GNBDUFunction=1,NRCellDU=NRCellDU-Cap-3500MHz-B",
+            "attributeList": { "administrativeState": "SHUTTING_DOWN" }
+          },
+          {
+            "moiDn": "SubNetwork=BLR_12,GNBDUFunction=1,NRCellDU=NRCellDU-Cov-700MHz-A",
+            "attributeList": { "ssbPowerOffset": 2 }
+          }
+        ],
+        "expectationTargets": [
+          { "targetName": "PEE.EnergyEfficiency_Gain_Pct", "targetCondition": "IS_GREATER_THAN", "targetValueRange": "18.0" },
+          { "targetName": "DRB.RlcSduDropRateDl_Max_Pct", "targetCondition": "IS_LESS_THAN", "targetValueRange": "0.50" }
+        ]
+      }
+    ]
+  }
+}

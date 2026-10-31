@@ -1,0 +1,20 @@
+module _3gpp-common-top {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-common-top";
+  prefix top3gpp;
+
+  organization "3GPP SA5";
+  description "Base Top_Grp grouping for all 3GPP NRM Information Object Classes (TS 28.622).";
+
+  revision 2026-10-01 {
+    description "Rel-18 baseline for SMO O1 YANG bundle.";
+  }
+
+  grouping Top_Grp {
+    leaf id {
+      type string;
+      mandatory true;
+      description "Relative Distinguished Name (RDN) identifier of the MOI.";
+    }
+  }
+}

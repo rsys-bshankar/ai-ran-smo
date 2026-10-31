@@ -1,0 +1,44 @@
+{
+  "so_smos_intent_moi_doc": {
+    "intent_id": "intent-nes-cluster12-001",
+    "dn": "SubNetwork=SMO_Global,Intent=intent-nes-cluster12-001",
+    "intent_level": "LEVEL_1_SERVICE_GOAL",
+    "priority": 80,
+    "prov_mns_envelope_jsonb": {
+      "id": "intent-nes-cluster12-001",
+      "objectClass": "Intent",
+      "moiVersion": 3,
+      "attributes": {
+        "intentLevel": "LEVEL_1_SERVICE_GOAL",
+        "intentExpectations": [
+          {
+            "expectationId": "exp-01",
+            "expectationVerb": "OPTIMIZE",
+            "expectationObject": {
+              "objectType": "SubNetwork",
+              "objectInstanceList": ["SubNetwork=Bangalore_Urban_12"]
+            },
+            "expectationTargets": [
+              {
+                "targetName": "PEE.EnergyEfficiency_Gain_Pct",
+                "targetCondition": "IS_GREATER_THAN",
+                "targetValueRange": "18.0"
+              }
+            ]
+          }
+        ],
+        "intentFulfilmentInfo": {
+          "fulfilmentStatus": "FULFILLED"
+        }
+      }
+    },
+    "playbook_state_jsonb": {
+      "assignedRappDescriptorId": "rapp-nes-carrier-sleep-v2.1",
+      "assignedRappInstanceId": "rapp-inst-nes-blr-01",
+      "delegatedR1ChildIntentId": "intent-r1-child-nes-001",
+      "activeO1SnapshotId": "snap-o1-cluster12-20261029T2230Z",
+      "activeSaSmosAcclId": "accl-nes-cluster12-001",
+      "lockedCellDnList": ["SubNetwork=BLR_12,GNBDUFunction=1,NRCellDU=Cell-B"]
+    }
+  }
+}

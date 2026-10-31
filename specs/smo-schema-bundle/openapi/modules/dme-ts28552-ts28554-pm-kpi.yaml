@@ -1,0 +1,226 @@
+openapi: 3.0.3
+info:
+  title: DME Data Management & Exposure Service (O-RAN WG2 R1 + 3GPP TS 28.552 / 28.554 / 32.422)
+  version: 18.5.0
+  description: >
+    High-scale DME specification enforcing:
+    (1) Southbound mediation isolation: RAN NF OAM terminates all O1 (Rel-16/17/18) and
+        non-O1 RAN connections, normalizes counters into 3GPP TS 28.552 names, and publishes
+        one batched ROP envelope per ManagedElement (gNB) to DME (/oam-ingest/v1/rop-batches).
+    (2) Scoped Multi-Metric Subscriptions (/r1/dme/v1/dataJobs): rApps and SA SMOS subscribe
+        by SubNetwork scope + selectedCounters + selectedKpis, receiving 1 consolidated matrix
+        notification per ROP instead of per-counter notifications.
+    (3) Historical Time-Series Matrix Queries (/r1/dme/v1/query): Returns a pivoted
+        [cell x timestamp x feature] matrix backed by wide JSONB/VictoriaMetrics storage.
+paths:
+  /PmJob={id}:
+    $ref: '../common/ts28532-ProvMnS-base.yaml#/paths/~1{className}={id}'
+
+  /oam-ingest/v1/rop-batches:
+    post:
+      operationId: ingestOamPmRopBatch
+      summary: Ingest normalized per-ManagedElement 15-min ROP PM batch from RAN NF OAM
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OamPmRopBatchV1'
+      responses:
+        '202':
+          description: ROP batch accepted, stored in pm_rop_ts28552, and queued for TS 28.554 KPI evaluation
+
+  /r1/dme/v1/dataJobs:
+    post:
+      operationId: createDmeDataJob
+      summary: Create a scoped multi-cell, multi-metric continuous ROP subscription (rApp or SA SMOS)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DmeDataJobSubscription'
+      responses:
+        '201':
+          description: Scoped DataJob subscription created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DmeDataJobSubscription'
+
+  /r1/dme/v1/query:
+    post:
+      operationId: queryTelemetryMatrix
+      summary: Query multi-cell, multi-metric TS 28.552 PM & TS 28.554 KPI time-series matrix over a time window
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DmeMatrixQueryRequest'
+      responses:
+        '200':
+          description: Pivoted Cell Time-Series Matrix returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DmeCellTimeSeriesMatrixResponse'
+
+components:
+  schemas:
+    OamPmRopBatchV1:
+      type: object
+      required: [eventType, managedElementDn, subNetworkDn, ropStartTime, ropEndTime, granularityPeriodSec, cells]
+      properties:
+        eventType:
+          type: string
+          enum: [OAM_PM_ROP_BATCH_V1]
+        managedElementDn:
+          type: string
+          example: "SubNetwork=BLR_12,ManagedElement=gNB_104"
+        subNetworkDn:
+          type: string
+          example: "SubNetwork=BLR_12"
+        sourceVendor:
+          type: string
+          example: "VendorA-O1-Rel18"
+        southboundProtocol:
+          type: string
+          enum: [O1_VES_7_2, O1_SFTP_XML, NON_O1_LEGACY_EMS]
+        ropStartTime:
+          type: string
+          format: date-time
+        ropEndTime:
+          type: string
+          format: date-time
+        granularityPeriodSec:
+          type: integer
+          default: 900
+        cells:
+          type: array
+          items:
+            type: object
+            required: [cellDn, counters]
+            properties:
+              cellDn:
+                type: string
+              suspectFlag:
+                type: boolean
+                default: false
+              counters:
+                type: object
+                additionalProperties:
+                  type: number
+                description: Map of canonical 3GPP TS 28.552 counter names to float64 values for this cell and ROP
+
+    DmeDataJobSubscription:
+      type: object
+      required: [consumerId, scope, granularityPeriodSec, delivery]
+      properties:
+        dataJobId:
+          type: string
+        consumerId:
+          type: string
+          example: "rapp-nes-instance-01"
+        scope:
+          type: object
+          properties:
+            subNetworkDn:
+              type: string
+              example: "SubNetwork=BLR_12"
+            cellDnList:
+              type: array
+              items:
+                type: string
+        granularityPeriodSec:
+          type: integer
+          default: 900
+        measurementProfile:
+          type: string
+          enum: [CUSTOM, 3GPP_NES_CORE_V1, 3GPP_MRO_HO_V1, 3GPP_CCO_COVERAGE_V1]
+          default: CUSTOM
+        selectedCounters:
+          type: array
+          items:
+            type: string
+          example: ["RRU.PrbTotDl", "RRC.ConnMean", "DRB.UEThpDl", "PEE.AvgPower"]
+        selectedKpis:
+          type: array
+          items:
+            type: string
+          example: ["PEE.EnergyEfficiency", "DRB.RlcSduDropRateDl"]
+        delivery:
+          type: object
+          required: [transport]
+          properties:
+            transport:
+              type: string
+              enum: [R1_WEBHOOK, KAFKA_TOPIC, SSE_STREAM]
+            callbackUri:
+              type: string
+            kafkaTopic:
+              type: string
+
+    DmeMatrixQueryRequest:
+      type: object
+      required: [scope, timeWindow]
+      properties:
+        scope:
+          type: object
+          properties:
+            subNetworkDn:
+              type: string
+            cellDnList:
+              type: array
+              items:
+                type: string
+        timeWindow:
+          type: object
+          required: [startTime, endTime]
+          properties:
+            startTime:
+              type: string
+              format: date-time
+            endTime:
+              type: string
+              format: date-time
+            stepSec:
+              type: integer
+              default: 900
+            aggregation:
+              type: string
+              enum: [NONE, AVG, MAX, MIN, P95]
+              default: NONE
+        selectedCounters:
+          type: array
+          items:
+            type: string
+        selectedKpis:
+          type: array
+          items:
+            type: string
+
+    DmeCellTimeSeriesMatrixResponse:
+      type: object
+      properties:
+        subNetworkDn:
+          type: string
+        granularityPeriodSec:
+          type: integer
+        featureOrder:
+          type: array
+          items:
+            type: string
+        timestamps:
+          type: array
+          items:
+            type: string
+            format: date-time
+        seriesByCell:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: array
+              items:
+                type: number

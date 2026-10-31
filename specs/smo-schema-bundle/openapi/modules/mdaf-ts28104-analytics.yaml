@@ -1,0 +1,23 @@
+openapi: 3.0.3
+info:
+  title: MDAF Management Data Analytics Service (3GPP TS 28.104)
+  version: 18.4.0
+paths:
+  /MDAFRequest={id}:
+    $ref: '../common/ts28532-ProvMnS-base.yaml#/paths/~1{className}={id}'
+components:
+  schemas:
+    AnalyticsInfoSingle:
+      allOf:
+        - $ref: '../common/ts28532-ProvMnS-base.yaml#/components/schemas/ResourceSingle'
+        - type: object
+          properties:
+            attributes:
+              type: object
+              properties:
+                analyticsId: { type: string }
+                analyticsType: { type: string, enum: [CELL_PRB_LOAD_FORECAST, HO_ANOMALY_ROOT_CAUSE, ENERGY_SAVING_WINDOW_PREDICTION] }
+                targetDnList: { type: array, items: { type: string } }
+                predictionHorizonSec: { type: integer }
+                confidenceIntervalPct: { type: number }
+                predictedSeries: { type: array, items: { type: object } }

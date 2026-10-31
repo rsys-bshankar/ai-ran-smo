@@ -1,0 +1,35 @@
+{
+  "id": "intent-l2-mro-actuation-20261029-04",
+  "objectClass": "Intent",
+  "objectInstance": "SubNetwork=SMO_Global,Intent=intent-l2-mro-actuation-20261029-04",
+  "attributes": {
+    "intentLevel": "LEVEL_2_RESOURCE_ACTUATION",
+    "parentIntentId": "intent-mro-cluster12-002",
+    "intentPriority": 70,
+    "intentExpectations": [
+      {
+        "expectationId": "exp-mro-ho-tuning-cellA-cellC",
+        "expectationVerb": "CONFIGURE_NRM",
+        "expectationObject": {
+          "objectType": "NRCellRelation",
+          "objectInstanceList": ["SubNetwork=BLR_12,GNBCUCPFunction=1,NRCellRelation=CellA_to_CellC"]
+        },
+        "nrmActuationDeltas": [
+          {
+            "moiDn": "SubNetwork=BLR_12,GNBCUCPFunction=1,NRCellRelation=CellA_to_CellC",
+            "attributeList": {
+              "cellIndividualOffset": 2,
+              "a3Offset": 4,
+              "timeToTrigger": 160,
+              "isHoAllowed": true
+            }
+          }
+        ],
+        "expectationTargets": [
+          { "targetName": "MM.HoSuccessRate_Min_Pct", "targetCondition": "IS_GREATER_THAN", "targetValueRange": "99.2" },
+          { "targetName": "MM.PingPongHoRatio_Max_Pct", "targetCondition": "IS_LESS_THAN", "targetValueRange": "1.5" }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,41 @@
+openapi: 3.0.3
+info:
+  title: SA SMOS Closed-Loop Assurance MnS (3GPP TS 28.536)
+  version: 18.4.0
+paths:
+  /AssuranceClosedControlLoop={id}:
+    $ref: '../common/ts28532-ProvMnS-base.yaml#/paths/~1{className}={id}'
+components:
+  schemas:
+    AssuranceClosedControlLoopSingle:
+      allOf:
+        - $ref: '../common/ts28532-ProvMnS-base.yaml#/components/schemas/ResourceSingle'
+        - type: object
+          properties:
+            attributes:
+              type: object
+              required: [operationalState, administrativeState, assuranceGoalList]
+              properties:
+                operationalState: { type: string, enum: [ENABLED, DISABLED] }
+                administrativeState: { type: string, enum: [LOCKED, UNLOCKED] }
+                controlLoopLifeCyclePhase: { type: string, enum: [PREPARATION, COMMISSIONING, OPERATION, EVALUATION_AND_SUPERVISION, DECOMMISSIONING] }
+                parentIntentId: { type: string }
+                rollbackSnapshotId: { type: string }
+                evaluationWindowSec: { type: integer }
+                assuranceGoalList:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      assuranceGoalId: { type: string }
+                      assuranceScope: { type: array, items: { type: string } }
+                      assuranceTargetList:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            assuranceTargetName: { type: string }
+                            tSpecRef: { type: string }
+                            targetCondition: { type: string }
+                            targetValue: { type: string }
+                            breachAction: { type: string, enum: [IMMEDIATE_O1_SNAPSHOT_ROLLBACK, RAISE_TS28111_ALARM, NOTIFY_RAPP] }
