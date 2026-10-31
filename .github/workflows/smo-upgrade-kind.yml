@@ -13,6 +13,8 @@ name: SMO upgrade and rollback on kind
 # the previous release's runbook passes; then the lock is released and the same upgrade runs (the next step).
 # Nightly, on demand, and on a pull request that changes this workflow or the chart's upgrade path. Not a required check yet. A light load (scripts/load_run.py, 4 callers paced to 20 calls a second, as an SMO module) runs from a pod of its own through every step after the install (V-10) and is judged at the end
 # (scripts/upgrade_load_verdict.py).
+# Rewrite mode (smo/scripts/rewrite_mode.json, plan task S0.8): until 1.0 the job `upgrade` skips its steps and passes with a notice naming that file, since the
+# converged rewrite keeps nothing for the previous release; the job "Which releases" still runs. Plan task S8.8 switches the steps back on.
 
 on:
   schedule:
@@ -72,20 +74,33 @@ jobs:
         with:
           path: cur
 
+      # Rewrite mode (smo/scripts/rewrite_mode.json, plan task S0.8): this job installs a previous release and upgrades and rolls back across it, which
+      # the converged rewrite does not keep until 1.0 (nothing is kept for 0.9.0 users, a revision may drop or rename in one step). While the switch is on,
+      # every step below is skipped and the job passes with a notice naming the file. The steps stay; plan task S8.8 switches them back on.
+      - name: Rewrite mode
+        working-directory: cur/smo
+        run: |
+          if python3 scripts/rewrite_mode.py notice "From ${{ matrix.from }}, upgrade${{ matrix.rollback && ' then roll back' || '' }}"; then
+            echo "SMO_REWRITE_MODE=true" >> "$GITHUB_ENV"
+          fi
+
       # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
       # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
       - name: Use the GHCR image mirror
+        if: env.SMO_REWRITE_MODE != 'true'
         working-directory: cur/smo
         env:
           SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
         run: python3 scripts/ci_mirror.py setup
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: env.SMO_REWRITE_MODE != 'true'
         with:
           ref: ${{ matrix.from }}
           path: prev
 
       - name: Build the images of both
+        if: env.SMO_REWRITE_MODE != 'true'
         run: |
           pip install --quiet pyyaml
           build() {   # build <checkout> <tag>
@@ -105,11 +120,13 @@ jobs:
           docker image ls 'local/smo-*' | head -60
 
       - name: Create the cluster and load the images
+        if: env.SMO_REWRITE_MODE != 'true'
         run: |
           kind create cluster --name smo --image "$SMO_IMAGE_KIND_NODE_V1_37_0" --wait 120s
           kind load docker-image --name smo $(docker image ls 'local/smo-*' --format '{{.Repository}}:{{.Tag}}')
 
       - name: Install the previous release from its own chart
+        if: env.SMO_REWRITE_MODE != 'true'
         working-directory: prev/smo
         run: |
           helm install smo deploy/helm/smo -n smo --create-namespace -f deploy/helm/smo/ci/kind-values.yaml --set image.tag=prev --wait --timeout 12m
@@ -121,6 +138,7 @@ jobs:
           echo "audit rows written by the previous release: $(cat "$RUNNER_TEMP/audit_before")"
 
       - name: Start a light load through the gateway, from a pod of its own (V-10)
+        if: env.SMO_REWRITE_MODE != 'true'
         working-directory: cur/smo
         run: |
           # the load is the current checkout's script, run by the current image (it has httpx), as an SMO module: it holds the enrollment secret like one. It keeps running through
@@ -149,6 +167,7 @@ jobs:
           kubectl -n smo exec loadgen -- sh -c 'for p in /proc/[0-9]*; do grep -q "[l]oad_run.py" "$p/cmdline" 2>/dev/null && exit 0; done; exit 1' || { kubectl -n smo exec loadgen -- cat /tmp/load.log; echo "::error::the load did not start"; exit 1; }
 
       - name: Record the pods' logs, events and database lock waits while the load runs
+        if: env.SMO_REWRITE_MODE != 'true'
         working-directory: cur/smo
         run: |
           # a pod that is replaced takes its log with it, so every pod is followed from the moment it runs (scripts/k8s_diag.sh); printed by "What happened to the pods" below
@@ -157,14 +176,14 @@ jobs:
       # an operator's history is install, upgrade, upgrade: the migrate Job of an upgrade is a pre-upgrade hook and is not run again by a rollback to it,
       # while the install's is a plain Job that a rollback to revision 1 runs again, with the old image, on the new schema. So the rollback goes to revision 2.
       - name: A second revision of the previous release (its history, as an operator has it)
-        if: ${{ matrix.rollback }}
+        if: ${{ (matrix.rollback) && env.SMO_REWRITE_MODE != 'true' }}
         working-directory: prev/smo
         run: |
           helm upgrade smo deploy/helm/smo -n smo -f deploy/helm/smo/ci/kind-values.yaml --set image.tag=prev --set migrate.backoffLimit=7 --wait --timeout 12m
           helm history smo -n smo
 
       - name: A migration that cannot finish leaves the previous release serving, and changes nothing (V-11)
-        if: ${{ matrix.rollback }}
+        if: ${{ (matrix.rollback) && env.SMO_REWRITE_MODE != 'true' }}
         working-directory: cur/smo
         run: |
           psql() { kubectl -n smo exec postgres-0 -- psql -U smo -d smo -Atc "$1"; }
@@ -218,6 +237,7 @@ jobs:
           kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify || { sleep 5; kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify; }
 
       - name: Upgrade to this checkout
+        if: env.SMO_REWRITE_MODE != 'true'
         working-directory: cur/smo
         run: |
           helm upgrade smo deploy/helm/smo -n smo -f deploy/helm/smo/ci/kind-values.yaml --set image.tag=cur --wait --timeout 12m
@@ -231,6 +251,7 @@ jobs:
           [ "$at" = "$head" ]
 
       - name: The data of the old release is there, and this release runs the runbook
+        if: env.SMO_REWRITE_MODE != 'true'
         working-directory: cur/smo
         run: |
           psql() { kubectl -n smo exec postgres-0 -- psql -U smo -d smo -Atc "$1"; }
@@ -241,7 +262,7 @@ jobs:
           kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify
 
       - name: Roll back to the previous release, on the schema this checkout migrated
-        if: ${{ matrix.rollback }}
+        if: ${{ (matrix.rollback) && env.SMO_REWRITE_MODE != 'true' }}
         working-directory: prev/smo
         run: |
           helm rollback smo 2 -n smo --wait --timeout 12m
@@ -257,7 +278,7 @@ jobs:
           kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify || { sleep 5; kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify; }
 
       - name: Stop the load and judge it (V-10)
-        if: ${{ !cancelled() }}
+        if: ${{ (!cancelled()) && env.SMO_REWRITE_MODE != 'true' }}
         working-directory: cur/smo
         run: |
           kubectl -n smo exec loadgen -- touch /tmp/stop
@@ -269,7 +290,7 @@ jobs:
           python3 scripts/upgrade_load_verdict.py ../../load-out/load-results.json ${{ matrix.verdict }}
 
       - name: Keep the load results
-        if: ${{ !cancelled() }}
+        if: ${{ (!cancelled()) && env.SMO_REWRITE_MODE != 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: upgrade-load-${{ matrix.from }}
@@ -277,14 +298,14 @@ jobs:
           retention-days: 30
 
       - name: What happened to the pods while the load ran
-        if: ${{ !cancelled() }}
+        if: ${{ (!cancelled()) && env.SMO_REWRITE_MODE != 'true' }}
         working-directory: cur/smo
         run: |
           scripts/k8s_diag.sh stop "$RUNNER_TEMP/diag"
           scripts/k8s_diag.sh report "$RUNNER_TEMP/diag" | tee "$RUNNER_TEMP/diag/report.txt"
 
       - name: Keep the pods' logs
-        if: ${{ !cancelled() }}
+        if: ${{ (!cancelled()) && env.SMO_REWRITE_MODE != 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: upgrade-pod-logs-${{ matrix.from }}
@@ -292,7 +313,7 @@ jobs:
           retention-days: 14
 
       - name: Pod logs on failure
-        if: ${{ failure() }}
+        if: ${{ (failure()) && env.SMO_REWRITE_MODE != 'true' }}
         run: |
           kubectl -n smo get pods -o wide || true
           kubectl -n smo get events --sort-by=.lastTimestamp | tail -60 || true

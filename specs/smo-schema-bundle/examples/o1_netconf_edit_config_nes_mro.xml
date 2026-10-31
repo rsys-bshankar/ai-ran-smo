@@ -1,0 +1,40 @@
+<!-- The O1 NETCONF edit-config RAN NF OAM sends for the two Level-2 intents of examples/ (S3.3), on the published 3GPP YANG modules of
+     specs/MnS/yang-models (yang/modules.txt). NES drives CESManagementFunction.energySavingControl (TS 28.541), not administrativeState (R18);
+     MRO sets the cell individual offset of one NRCellRelation, inside the DMROFunction bounds (S3.14). -->
+<rpc message-id="o1-tx-9042" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
+  <edit-config>
+    <target><running/></target>
+    <default-operation>merge</default-operation>
+    <test-option>test-then-set</test-option>
+    <error-option>rollback-on-error</error-option>
+    <config>
+      <ManagedElement xmlns="urn:3gpp:sa5:_3gpp-common-managed-element">
+        <id>gNB_104</id>
+        <GNBCUCPFunction xmlns="urn:3gpp:sa5:_3gpp-nr-nrm-gnbcucpfunction">
+          <id>1</id>
+          <NRCellCU xmlns="urn:3gpp:sa5:_3gpp-nr-nrm-nrcellcu">
+            <id>NRCellCU-Cap-3500MHz-B</id>
+            <CESManagementFunction xmlns="urn:3gpp:sa5:_3gpp-nr-nrm-cesmanagementfunction">
+              <id>1</id>
+              <attributes>
+                <energySavingControl>TO_BE_ENERGY_SAVING</energySavingControl>
+              </attributes>
+            </CESManagementFunction>
+          </NRCellCU>
+          <NRCellCU xmlns="urn:3gpp:sa5:_3gpp-nr-nrm-nrcellcu">
+            <id>NRCellCU-Cov-700MHz-A</id>
+            <NRCellRelation xmlns="urn:3gpp:sa5:_3gpp-nr-nrm-nrcellrelation">
+              <id>to-NRCellCU-Cov-700MHz-C</id>
+              <attributes>
+                <cellIndividualOffset>
+                  <rsrpOffsetSsb>2</rsrpOffsetSsb>
+                </cellIndividualOffset>
+                <isHOAllowed>true</isHOAllowed>
+              </attributes>
+            </NRCellRelation>
+          </NRCellCU>
+        </GNBCUCPFunction>
+      </ManagedElement>
+    </config>
+  </edit-config>
+</rpc>
