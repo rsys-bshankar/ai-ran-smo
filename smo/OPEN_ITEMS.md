@@ -1415,12 +1415,11 @@ real detail, and sets the task's status in the live plan to Done the same day (t
 
 Stage 0 ends at milestone M0 (week 2): decisions answered, three ADRs merged, the schema bundle corrected and complete, the contract gate required in CI, and the four sample use cases realised on paper.
 
-Done, in `HISTORY.md`: `PR-CONV-S0.1` to `PR-CONV-S0.8`, `PR-CONV-S0.11`, `PR-CONV-S0.12`, `PR-CONV-S0.16`.
+Done, in `HISTORY.md`: `PR-CONV-S0.1` to `PR-CONV-S0.9`, `PR-CONV-S0.11`, `PR-CONV-S0.12`, `PR-CONV-S0.16`.
 
 | ID | Task | Stage | Needs | Done when |
 |---|---|---|---|---|
-| PR-CONV-S0.9 | Call flows 34–37 (Level-1 intake, Level-2 split and rollback, NES vs MRO, lease expiry) | 0 | S0.3, S0.6 | Diagrams parse (`validate:diagrams`), images rendered |
-| PR-CONV-S0.10 | Realise the four sample use cases on paper through flows 34–37 | 0 | S0.9 | Each sample maps with no special-case logic; Balaji Shankaran signs off (sign-off owner agreed 31 October 2026) |
+| PR-CONV-S0.10 | Realise the four sample use cases on paper through flows 34–37. The pack is written (`docs/plan/S0.10-use-cases-on-paper.md`): none of the four maps today without special-case logic; it lists the gaps per sample with a fix each, four of which need a decision (G-ES-3, G-CCO-6, G-CCO-1 and G-TS-2 against S3.14) | 0 | S0.9 | Each sample maps with no special-case logic; Balaji Shankaran signs off (sign-off owner agreed 31 October 2026) |
 | PR-CONV-S0.13 | Integration spike: O-RAN-SC smo-teiv behind a 3GPP MnS and WG10 TE&IV R1 face (D19) | 0 | S0.1 | Written result: load, query latency and change events measured; the gap list turned into Stage 3 tasks |
 | PR-CONV-S0.14 | Obtain the WG10 Application Packaging and Onboarding v1.00 texts; check S4.1 against them | 0 | – | Texts on file; S4.1 marked normative or kept provisional with the differences listed |
 | PR-CONV-S0.15 | Choose the O1 simulator: O-RAN-SC sim-o1-ofhmp-interfaces in place of ntsim-ng | 0 | S0.8 | Simulator runs in compose and the chart; NETCONF, VES stndDefined and file-ready PM reach the SMO |

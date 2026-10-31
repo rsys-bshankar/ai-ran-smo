@@ -18,7 +18,7 @@ plan task S0.5; recorded in `smo/HISTORY.md` PR-CONV-S0.16, follow-up).
 | `openapi/common/provmns-root.yaml` | The one TS 28.532 ProvMnS form `{apiRoot}/ProvMnS/{MnSVersion}/{URI-LDN-first-part}/{className}={id}` (D5) and **the only place the ProvMnS version is set** (`19.2.0`, the TS 28.532 OpenAPI the repository carries). Its path items are `$ref`s to `specs/5G_APIs/TS28532_ProvMnS.yaml` |
 | `openapi/common/file-data-reporting-root.yaml` | The TS 28.532 file data reporting MnS (v19.1.0) the same way, mounted by MDAF and RAN NF OAM |
 | `openapi/common/probes.yaml` | `/health`, `/live`, `/ready`, `/version` ([D] D-01) |
-| `openapi/modules/<module>.yaml` | One contract per module after the rewrite (ADR 0008): `so-smos`, `sa-smos`, `dme`, `mdaf`, `aimgf`, `rapp-mgmt`, `sme`, `teiv`, `ran-nf-oam` |
+| `openapi/modules/<module>.yaml` | One contract per module after the rewrite (ADR 0008): `so-smos`, `sa-smos`, `dme`, `mdaf`, `aimgf`, `rapp-mgmt`, `sme`, `teiv`, `ran-nf-oam`, and `nfo` (probes and pending APIs only) |
 | `yang/modules.txt` | The published 3GPP YANG modules the contracts and examples use, in `specs/MnS/yang-models` |
 | `db/01_common_shared_databases.sql`, `02_per_module_schemas.sql`, `03_roles_and_grants.sql` | Reference DDL, applied by the Contracts job to Postgres 18 with TimescaleDB (the real schema is the Alembic history, ADR 0001) |
 | `db/sample_documents_so_sa_rapp.json` | Rows as SO SMOS, AIMgF and rApp Management store them |
@@ -36,7 +36,10 @@ plan task S0.5; recorded in `smo/HISTORY.md` PR-CONV-S0.16, follow-up).
   cell-lock read model (D-23, added by this task).
 - **What is pending** (`x-smo-pending`): an operation O-RAN defines whose API is not in `specs/`. It is named, not typed in: the R1GAP v14 section 5.2
   data services (R1AP), the R1AP form of the section 5.6 AI/ML workflow services (realised meanwhile on the TS 28.105 classes, `x-smo-r1gap-services`) and of
-  section 5.7 registration, the O-RAN WG10 TE&IV R1 services, and the R1 conflict services (D-21, [O]).
+  section 5.7 registration, the O-RAN WG10 TE&IV R1 services, the R1 conflict services (D-21, [O]), and NFO's two interfaces, O2dms and the R1GAP
+  section 5.5.3 O2 deployment management service (`nfo.yaml`).
+- **The call flows hold the bundle to its word.** Call flows 34–37 (`smo/docs/call-flows/`) use only operations of this bundle, listed [D] steps, or a
+  pending interface an `x-smo-pending` entry names; `smo/tests_integration/test_call_flow_operations.py` fails otherwise (plan task S0.6's done-when).
 
 ## 3GPP sources
 
@@ -116,6 +119,8 @@ All pass `pyang --strict` (pyang 2.7.1).
 | `examples/o1_netconf_edit_config_nes_mro.xml` | Rewritten on the published YANG tree: `CESManagementFunction` under `NRCellCU`, `NRCellRelation` under `NRCellCU`, `cellIndividualOffset/rsrpOffsetSsb` | R18 | R18, standards first |
 | `README.md` | This file | – | S0.5 |
 | (none) | No `MTEF`, `mltf` or `mtef` name anywhere (the bundle had none in its files; the gate keeps it so) | MTEF is a retired name | R15 |
+| `openapi/modules/mdaf.yaml` | TS 28.561 v20.0.0 `NDTFunction`, `NDTJob`, `NDTReport` added (`$ref`s to `TS28561_NdtNrm.yaml`) | The twin what-if that gates NES and MRO actuation (call flows 35, 36); plan task S7.11 places the twin in RAN Analytics, now MDAF | D18, G20, S0.9 |
+| `openapi/modules/nfo.yaml` | Added: probes only, O2dms and R1GAP v14 section 5.5.3 in `x-smo-pending` | Call flow 34 places the rApp through NFO; neither API is in `specs/` | S0.9 |
 | (none) | No `ntsim` (ntsim-ng) anywhere; the bundle names no simulator, and the gate keeps it so (the move to sim-o1-ofhmp-interfaces is S0.15's) | The named simulator is being retired | R16 |
 
 ## The gate (CI job "Contracts")
