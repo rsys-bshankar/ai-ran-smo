@@ -77,9 +77,12 @@ class Settings:
         endpoint = (environ.get("SMO_OBJECTSTORE_URL") or "").strip().rstrip("/")
         access = read_secret("SMO_OBJECTSTORE_ACCESS_KEY", environ)
         secret = read_secret("SMO_OBJECTSTORE_SECRET_KEY", environ)
-        for name, value in (("SMO_OBJECTSTORE_URL", endpoint), ("SMO_OBJECTSTORE_ACCESS_KEY", access), ("SMO_OBJECTSTORE_SECRET_KEY", secret)):
-            if not value:
-                raise ValueError(f"{name} (or {name}_FILE) is not set" if name != "SMO_OBJECTSTORE_URL" else f"{name} is not set")
+        if not endpoint:
+            raise ValueError("SMO_OBJECTSTORE_URL is not set")
+        if not access:
+            raise ValueError("SMO_OBJECTSTORE_ACCESS_KEY (or SMO_OBJECTSTORE_ACCESS_KEY_FILE) is not set")
+        if not secret:
+            raise ValueError("SMO_OBJECTSTORE_SECRET_KEY (or SMO_OBJECTSTORE_SECRET_KEY_FILE) is not set")
         if urlsplit(endpoint).scheme not in ("http", "https"):
             raise ValueError("SMO_OBJECTSTORE_URL must be an http or https URL")
         try:
@@ -126,8 +129,8 @@ def sign(method: str, url: str, headers: Mapping[str, str], payload_sha256: str,
     canonical = "\n".join([method.upper(), parts.path or "/", canonical_query, canonical_headers, signed_headers, payload_sha256])
     scope = f"{date}/{region}/{service}/aws4_request"
     to_sign = "\n".join(["AWS4-HMAC-SHA256", amz_date, scope, hashlib.sha256(canonical.encode("utf-8")).hexdigest()])
-    key = _hmac(_hmac(_hmac(_hmac(("AWS4" + secret_key).encode("utf-8"), date), region), service), "aws4_request")
-    signature = hmac.new(key, to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
+    signing_key = _hmac(_hmac(_hmac(_hmac(("AWS4" + secret_key).encode("utf-8"), date), region), service), "aws4_request")
+    signature = hmac.new(signing_key, to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
     out["authorization"] = f"AWS4-HMAC-SHA256 Credential={access_key}/{scope}, SignedHeaders={signed_headers}, Signature={signature}"
     return out
 
@@ -224,7 +227,7 @@ class ObjectStore:
             query = "list-type=2" + (f"&prefix={quote(prefix, safe='')}" if prefix else "") + (f"&continuation-token={quote(token, safe='')}" if token else "")
             root = _xml(self._request("GET", f"/{self.bucket(use)}", query=query).content)
             ns = _S3_NS if root.tag.startswith(_S3_NS) else ""
-            keys += [c.findtext(f"{ns}Key") for c in root.findall(f"{ns}Contents")]
+            keys += [k for k in (c.findtext(f"{ns}Key") for c in root.findall(f"{ns}Contents")) if k is not None]
             token = root.findtext(f"{ns}NextContinuationToken")
             if root.findtext(f"{ns}IsTruncated") != "true" or not token:
                 return keys
