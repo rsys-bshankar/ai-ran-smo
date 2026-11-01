@@ -54,7 +54,7 @@ def test_the_trunk_is_one_linear_chain_from_the_baseline_to_0068():
     revision, seen = scripts.get_revision(TRUNK_END), []
     while revision is not None:
         seen.append(revision.revision)
-        assert not revision.branch_labels, revision.revision
+        assert not revision._orig_branch_labels, revision.revision    # labels a file declares (Alembic carries a branch's label down to its ancestors until a branch point)
         parents = revision._normalized_down_revisions
         assert len(parents) <= 1, f"{revision.revision} merges {parents}"
         revision = scripts.get_revision(parents[0]) if parents else None
