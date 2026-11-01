@@ -1,0 +1,35 @@
+{
+ "consumer": {
+  "so-smos/app/dispatch.py POST /aimgf/emulation-jobs": "aimgf POST /emulation-jobs",
+  "so-smos/app/dispatch.py POST /aimgf/models/{}/inference-jobs": "aimgf POST /models/{}/inference-jobs",
+  "so-smos/app/dispatch.py POST /aimgf/models/{}/runtime/deploy": "aimgf POST /models/{}/runtime/deploy",
+  "so-smos/app/dispatch.py POST /aimgf/training-jobs": "aimgf POST /training-jobs",
+  "so-smos/app/dispatch.py POST /aimgf/validation-jobs": "aimgf POST /validation-jobs",
+  "so-smos/app/dispatch.py POST /focom/resources/provision": "focom POST /resources/provision",
+  "so-smos/app/dispatch.py POST /nfo/deployments": "nfo POST /deployments",
+  "so-smos/app/dispatch.py POST /ran-nf-oam/config-jobs": "ran-nf-oam POST /config-jobs"
+ },
+ "module": "so-smos",
+ "producer": {
+  "so-smos GET /orders": {
+   "fate": "replaced",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: a Level-1 intent and its playbook replace a service order",
+   "row": "S5.3"
+  },
+  "so-smos GET /orders/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: a Level-1 intent and its playbook replace a service order",
+   "row": "S5.3"
+  },
+  "so-smos POST /orders": {
+   "fate": "replaced",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: a Level-1 intent and its playbook replace a service order",
+   "row": "S5.3"
+  },
+  "so-smos POST /orders/{}/cancel": {
+   "fate": "replaced",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: a Level-1 intent and its playbook replace a service order",
+   "row": "S5.3"
+  }
+ }
+}

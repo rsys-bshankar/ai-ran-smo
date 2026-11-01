@@ -74,7 +74,7 @@ PY
   fi
 
   local revision server tables
-  revision="$(psql_value 'SELECT version_num FROM alembic_version' | head -1)"
+  revision="$(psql_value "SELECT string_agg(version_num, ',' ORDER BY version_num) FROM alembic_version")"
   server="$(psql_value 'SHOW server_version' | head -1)"
   tables="$(psql_value "SELECT count(*) FROM information_schema.tables WHERE table_type = 'BASE TABLE' AND table_schema NOT IN ('pg_catalog','information_schema')" | head -1)"
   [ -n "$revision" ] || { echo "no alembic_version row: is this an SMO database at a revision?" >&2; return 1; }

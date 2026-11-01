@@ -1,0 +1,9 @@
+{
+ "files_without_description": 0,
+ "functions_without_description": 0,
+ "items_requiring_description": 50,
+ "module": "sa-smos",
+ "source_files": 7,
+ "tests": 62,
+ "tests_without_docstring": 0
+}

@@ -1,0 +1,10 @@
+{
+ "module": "r1-termination",
+ "producer": {
+  "r1-termination GET /bootstrap": {
+   "fate": "delete",
+   "replacement": "peers are found by CAPIF discovery (TS 29.222 CAPIF_Discover_Service_API)",
+   "row": "S1.16"
+  }
+ }
+}

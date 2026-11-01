@@ -1,0 +1,9 @@
+{
+ "files_without_description": 0,
+ "functions_without_description": 0,
+ "items_requiring_description": 78,
+ "module": "sme",
+ "source_files": 8,
+ "tests": 122,
+ "tests_without_docstring": 0
+}

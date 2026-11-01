@@ -14,7 +14,7 @@ The rule is docs/CODE_DOCUMENTATION.md. For every source file under smo/ the scr
   functions_without_description   classes, functions and methods that need a description and have none (see `needs_description`).
   tests_without_docstring         test functions with no description (Python `test_*`, Go `Test*`, Java `@Test`, TS `it(`/`test(` with no comment above).
 
-The numbers are compared with `scripts/code_docs_baseline.json`: a module that goes up fails; a count that went down is reported so the baseline can be lowered
+The numbers are compared with `scripts/code_docs_baseline/` (one file per module): a module that goes up fails; a count that went down is reported so the baseline can be lowered
 (`--write-baseline`, in the same change). Independently, a file or function that is NEW against the merge base with `origin/main` must meet the rule outright,
 so documentation cannot decay while the baseline is being worked down. The target is zero everywhere.
 
@@ -40,9 +40,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import baseline_dirs  # noqa: E402 - needs the scripts directory on sys.path first
 import docs_common as common  # noqa: E402 - needs the scripts directory on sys.path first
 
-BASELINE = common.SCRIPTS / "code_docs_baseline.json"
+BASELINE = common.SCRIPTS / "code_docs_baseline"      # one JSON file per module (scripts/baseline_dirs.py)
 KEYS = ("files_without_description", "functions_without_description", "tests_without_docstring")
 SMO_PREFIX = "smo/"
 
@@ -516,15 +517,20 @@ def report_table(counts: dict[str, dict[str, int]]) -> str:
     return "\n".join([fmt(head), fmt(["-" * w for w in widths]), *map(fmt, rows)])
 
 
+def load_baseline(directory: Path = BASELINE) -> dict[str, dict[str, int]]:
+    """{module: its counts} from the per-module files of `directory` (empty when it does not exist)."""
+    return baseline_dirs.read(directory)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Command line entry point; returns the exit status (0: no module is worse than the baseline and nothing new lacks a description)."""
     ap = argparse.ArgumentParser(description="Count what the code-documentation rule still asks for and compare it with the baseline.")
-    ap.add_argument("--write-baseline", action="store_true", help="regenerate scripts/code_docs_baseline.json from the working tree")
+    ap.add_argument("--write-baseline", action="store_true", help="regenerate scripts/code_docs_baseline/ from the working tree")
     ap.add_argument("--report", action="store_true", help="print the table by module and exit")
     ap.add_argument("--base", default=None, help="ref to take 'new' from (default: merge base with origin/main)")
     ap.add_argument("--no-new-check", action="store_true", help="skip the new-file / new-function check")
     ap.add_argument("--root", default=None, help="repository root (default: the one that holds this script); the sources are its smo/ directory")
-    ap.add_argument("--baseline", default=None, help="baseline file (default: scripts/code_docs_baseline.json)")
+    ap.add_argument("--baseline", default=None, help="baseline directory, one JSON file per module (default: scripts/code_docs_baseline/)")
     ap.add_argument("--list", metavar="MODULE", default=None, help="list the findings of one module and exit")
     args = ap.parse_args(argv)
     try:
@@ -549,12 +555,12 @@ def main(argv: list[str] | None = None) -> int:
                 print("ERROR", e)
             return 0
         if args.write_baseline:
-            baseline_file.write_text(json.dumps({"modules": counts}, indent=2, sort_keys=True) + "\n")
-            print(f"wrote {baseline_file}")
+            written, removed = baseline_dirs.write(baseline_file, counts)
+            print(f"{baseline_file}: written {', '.join(written) or 'nothing'}; removed {', '.join(removed) or 'nothing'}")
             print(report_table(counts))
             return 0
         failures = list(errors)
-        base = json.loads(baseline_file.read_text())["modules"] if baseline_file.exists() else {}
+        base = load_baseline(baseline_file)
         lowered = []
         for mod, c in counts.items():
             for k in KEYS:

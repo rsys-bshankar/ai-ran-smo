@@ -9,7 +9,7 @@
 | Depends on (over R1) | RAN NF OAM, NFO, FOCOM, AIMgF (one per dispatch-table entry) |
 | Called by | GUI BFF (operators submit and cancel orders); SA SMOS reads orders (`GET /so-smos/orders/{id}`) to resolve a monitor's deployment; any R1 consumer with the route |
 | Database tables | `service_order` |
-| Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
+| Unit tests | `tests/`, SQLite, standalone (counts: [docs/test-counts/so-smos.md](../docs/test-counts/so-smos.md)) |
 | Status | Done for Phase 1: no compensation, no waiting for a job a step started, no resume (see 2.8) |
 
 ## 1. High-level design (HLD)
@@ -194,7 +194,7 @@ cd smo/so-smos && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 ### 3.2 What is covered
 
-Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
+Counts per file: [`docs/test-counts/so-smos.md`](../docs/test-counts/so-smos.md).
 
 | File | Covers |
 |---|---|

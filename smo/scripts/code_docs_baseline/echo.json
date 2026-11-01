@@ -1,0 +1,9 @@
+{
+ "files_without_description": 0,
+ "functions_without_description": 0,
+ "items_requiring_description": 9,
+ "module": "echo",
+ "source_files": 5,
+ "tests": 20,
+ "tests_without_docstring": 0
+}

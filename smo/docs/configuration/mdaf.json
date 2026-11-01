@@ -1,0 +1,3 @@
+{
+  "SMO_RETENTION_MDAF_REPORTS_DAYS": "Days to keep an MDAF report before the MDAF worker deletes it (`purge-reports`, hourly). 0 (the default) keeps them all. See docs/RETENTION.md."
+}

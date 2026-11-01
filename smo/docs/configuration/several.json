@@ -1,0 +1,3 @@
+{
+  "SME_URL": "Address of SME: where R1 Termination forwards `/sme/...`, the base of SME's own token-endpoint audience, and (GUI backend) an optional override of the token endpoint otherwise discovered from `/bootstrap`."
+}

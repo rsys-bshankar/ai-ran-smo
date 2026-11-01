@@ -9,7 +9,7 @@
 | Depends on (over R1) | rApp Management (`GET /rapp-mgmt/instances/{id}`, autonomy dispatch only); outbound webhooks to RMIHs, report recipients and operator destinations |
 | Called by | rApps via `sdk.intent`; GUI BFF (intents, autonomy dispatches); SA SMOS O1-CM handler (reads intents, publishes reports, registers as RMIH `sa-smos`, see [`../sa-smos/README.md`](../sa-smos/README.md)); SO SMOS identity may register as an RMIH |
 | Database tables | `intent`, `intent_utility_formula`, `intent_report`, `intent_handling_function`, `autonomy_dispatch` |
-| Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
+| Unit tests | `tests/`, SQLite, standalone (counts: [docs/test-counts/intent-service.md](../docs/test-counts/intent-service.md)) |
 | Status | Done. The 8 value datatypes are checked by structure (`SA-INTENT-partial`, closed); `GeoArea` is the one `ValueRangeType` alternative with a documented simplification (1.2) |
 
 ## 1. High-level design (HLD)
@@ -354,7 +354,7 @@ cd smo/intent-service && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 `tests/test_ts28312_datatypes.py`: good and bad values for each datatype and as lists, `ValueRangeType` forms, `ReportingCondition`, and the same checks through `POST /intents` (contexts, guarantee periods, generic values, `intentReportControl`).
 
-Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
+Counts per file: [`docs/test-counts/intent-service.md`](../docs/test-counts/intent-service.md).
 
 | File | Covers |
 |---|---|

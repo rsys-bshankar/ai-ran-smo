@@ -9,7 +9,7 @@
 | Depends on (over R1) | MDAF (`/mdaf/subscriptions`, `/mdaf/reports/{id}`); Intent Service; DME (`/dme/actions`); RAN NF OAM (`/ran-nf-oam/config-jobs`); NFO (`/nfo/deployments/{id}/heal`); SO SMOS (`/so-smos/orders/{id}`); rApp Management (`/rapp-mgmt/instances/...`); AIMgF (`/aimgf/training-jobs`) |
 | Called by | GUI BFF (monitors, evaluate, escalate, remedial actions, remedy, automatic action); MDAF's notification outbox (a monitor's reports, call flow 04b); Intent Service (the O1-CM handler's push of a created, activated or deactivated, or deleted intent); rApp demos and integration environments (O1-CM registration) |
 | Database tables | `assurance_monitor`, `remedial_action`, `o1_cm_enactment` |
-| Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
+| Unit tests | `tests/`, SQLite, standalone (counts: [docs/test-counts/sa-smos.md](../docs/test-counts/sa-smos.md)) |
 | Status | Done for Phase 1; `SCALE` always escalates (NFO scaling takes no target size, see 2.8) |
 | Time-driven behaviour | Event-driven: a monitor with an analytics type evaluates each report MDAF pushes (call flow 04b); `POST /monitors/{id}/evaluate` evaluates by hand. Nothing polls |
 
@@ -319,7 +319,7 @@ cd smo/sa-smos && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 ### 3.2 What is covered
 
-Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
+Counts per file: [`docs/test-counts/sa-smos.md`](../docs/test-counts/sa-smos.md).
 
 | File | Covers |
 |---|---|

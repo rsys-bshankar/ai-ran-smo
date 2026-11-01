@@ -1,0 +1,79 @@
+{
+ "consumer": {
+  "samples/mobility-optimization-rapp/app/main.py GET /rapp-mgmt/instances/{}": "rapp-mgmt GET /instances/{}",
+  "samples/mobility-optimization-rapp/app/main.py POST /ran-nf-oam/pm-reports": "ran-nf-oam POST /pm-reports"
+ },
+ "module": "mobility-optimization-rapp",
+ "producer": {
+  "mobility-optimization-rapp DELETE /sim-producer/jobs/{}": {
+   "fate": "delete",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 §5.2.2",
+   "row": "S0.15, S7.8"
+  },
+  "mobility-optimization-rapp GET /sim-producer/health": {
+   "fate": "delete",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 §5.2.2",
+   "row": "S0.15, S7.8"
+  },
+  "mobility-optimization-rapp POST /instances/{}/demo/emulate": {
+   "fate": "delete",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 §5.2.2",
+   "row": "S0.15, S7.8"
+  },
+  "mobility-optimization-rapp POST /instances/{}/demo/history": {
+   "fate": "delete",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 §5.2.2",
+   "row": "S0.15, S7.8"
+  },
+  "mobility-optimization-rapp POST /instances/{}/demo/kpi-hour": {
+   "fate": "delete",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 §5.2.2",
+   "row": "S0.15, S7.8"
+  },
+  "mobility-optimization-rapp POST /instances/{}/demo/live": {
+   "fate": "delete",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 §5.2.2",
+   "row": "S0.15, S7.8"
+  },
+  "mobility-optimization-rapp POST /instances/{}/demo/prepare": {
+   "fate": "delete",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 §5.2.2",
+   "row": "S0.15, S7.8"
+  },
+  "mobility-optimization-rapp POST /instances/{}/lifecycle/deploy": {
+   "fate": "delete",
+   "replacement": "the rApp uses R1GAP v14 §5.6 services itself; the operator acts through intents",
+   "row": "S7.13"
+  },
+  "mobility-optimization-rapp POST /instances/{}/lifecycle/emulate": {
+   "fate": "delete",
+   "replacement": "the rApp uses R1GAP v14 §5.6 services itself; the operator acts through intents",
+   "row": "S7.13"
+  },
+  "mobility-optimization-rapp POST /instances/{}/lifecycle/train": {
+   "fate": "delete",
+   "replacement": "the rApp uses R1GAP v14 §5.6 services itself; the operator acts through intents",
+   "row": "S7.13"
+  },
+  "mobility-optimization-rapp POST /instances/{}/lifecycle/validate": {
+   "fate": "delete",
+   "replacement": "the rApp uses R1GAP v14 §5.6 services itself; the operator acts through intents",
+   "row": "S7.13"
+  },
+  "mobility-optimization-rapp POST /sim-producer/jobs": {
+   "fate": "delete",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 §5.2.2",
+   "row": "S0.15, S7.8"
+  },
+  "mobility-optimization-rapp POST /sim-producer/publish": {
+   "fate": "delete",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 §5.2.2",
+   "row": "S0.15, S7.8"
+  },
+  "mobility-optimization-rapp POST /sim-producer/register": {
+   "fate": "delete",
+   "replacement": "demo data comes from the O1 simulator and the Tier-3 replay; a producer registers through R1GAP v14 §5.2.2",
+   "row": "S0.15, S7.8"
+  }
+ }
+}

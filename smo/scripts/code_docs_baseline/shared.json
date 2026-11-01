@@ -1,0 +1,9 @@
+{
+ "files_without_description": 0,
+ "functions_without_description": 0,
+ "items_requiring_description": 612,
+ "module": "shared",
+ "source_files": 125,
+ "tests": 856,
+ "tests_without_docstring": 0
+}

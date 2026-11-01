@@ -1,0 +1,9 @@
+{
+ "files_without_description": 0,
+ "functions_without_description": 0,
+ "items_requiring_description": 108,
+ "module": "samples/energy-saving-rapp",
+ "source_files": 21,
+ "tests": 74,
+ "tests_without_docstring": 0
+}

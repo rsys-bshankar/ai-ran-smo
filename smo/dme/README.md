@@ -9,7 +9,7 @@
 | Depends on (over R1) | RAN NF OAM (`POST /ran-nf-oam/config-jobs`, action path only); caller-registered callback URLs (producers, type subscribers, offer termination) |
 | Called by | rApps and the SDK `data` namespace; MDAF (checks `input_sources` against `GET /dme/data-jobs/{id}`); RAN NF OAM (registers PM types, ingests records into jobs); SA SMOS O1-CM handler (`POST /dme/actions`); rApp Management (producer deregistration); GUI BFF |
 | Database tables | `dme_producer`, `dme_type`, `dme_producer_type`, `dme_type_subscription`, `dme_delivery_schema`, `data_job`, `data_offer`, `data_record`, `dme_action_record` |
-| Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
+| Unit tests | `tests/`, SQLite, standalone (counts: [docs/test-counts/dme.md](../docs/test-counts/dme.md)) |
 | Status | Done. `dme_delivery_schema` is defined but unused (see 2.8) |
 
 ## 1. High-level design (HLD)
@@ -317,7 +317,7 @@ cd smo/dme && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 ### 3.2 What is covered
 
-Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
+Counts per file: [`docs/test-counts/dme.md`](../docs/test-counts/dme.md).
 
 | Test file | Covers |
 |---|---|

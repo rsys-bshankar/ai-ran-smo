@@ -1,0 +1,127 @@
+{
+ "consumer": {
+  "rapp-mgmt/app/main.py DELETE /sme/invoker-registrations/{}": "sme DELETE /invoker-registrations/{}",
+  "rapp-mgmt/app/main.py GET /nfo/deployments/{}": "nfo GET /deployments/{}",
+  "rapp-mgmt/app/provisioning.py DELETE /nfo/deployments/{}": "nfo DELETE /deployments/{}",
+  "rapp-mgmt/app/provisioning.py DELETE /sme/invoker-registrations/{}": "sme DELETE /invoker-registrations/{}",
+  "rapp-mgmt/app/provisioning.py GET /onboarding/packages/{}/onboarding-status": "onboarding GET /packages/{}/onboarding-status",
+  "rapp-mgmt/app/provisioning.py POST /nfo/deployments": "nfo POST /deployments",
+  "rapp-mgmt/app/provisioning.py POST /onboarding/packages/{}/usage/start": "onboarding POST /packages/{}/usage/start",
+  "rapp-mgmt/app/provisioning.py POST /onboarding/packages/{}/usage/{}/stop": "onboarding POST /packages/{}/usage/{}/stop",
+  "rapp-mgmt/app/provisioning.py POST /sme/invoker-registrations": "sme POST /invoker-registrations",
+  "rapp-mgmt/app/provisioning.py POST /sme/invoker-registrations/{}/secret": "sme POST /invoker-registrations/{}/secret",
+  "rapp-mgmt/app/provisioning.py POST /sme/provider-registrations": "sme POST /provider-registrations",
+  "rapp-mgmt/app/statemachine.py DELETE /dme/data-jobs": "dme DELETE /data-jobs",
+  "rapp-mgmt/app/statemachine.py DELETE /dme/production-capabilities": "dme DELETE /production-capabilities",
+  "rapp-mgmt/app/statemachine.py DELETE /sme/invoker-registrations/{}": "sme DELETE /invoker-registrations/{}",
+  "rapp-mgmt/app/statemachine.py DELETE /sme/provider-registrations/{}": "sme DELETE /provider-registrations/{}"
+ },
+ "module": "rapp-mgmt",
+ "producer": {
+  "rapp-mgmt DELETE /instances/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS deleteMOI on `RappInstance` (R1GAP v14 §5.7, HLD six states)",
+   "row": "S4.2"
+  },
+  "rapp-mgmt GET /instances": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `RappInstance` (R1GAP v14 §5.7, HLD six states)",
+   "row": "S4.2"
+  },
+  "rapp-mgmt GET /instances/performance/latest": {
+   "fate": "replaced",
+   "replacement": "TS 28.622 `PerfMetricJob` on `RappInstance`",
+   "row": "S1.13, S4.2"
+  },
+  "rapp-mgmt GET /instances/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `RappInstance` (R1GAP v14 §5.7, HLD six states)",
+   "row": "S4.2"
+  },
+  "rapp-mgmt GET /instances/{}/config": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `RappInstance` (R1GAP v14 §5.7, HLD six states)",
+   "row": "S4.2"
+  },
+  "rapp-mgmt GET /instances/{}/faults": {
+   "fate": "replaced",
+   "replacement": "TS 28.111 alarms on `RappInstance`",
+   "row": "S3.15, S4.2"
+  },
+  "rapp-mgmt GET /instances/{}/performance": {
+   "fate": "replaced",
+   "replacement": "TS 28.622 `PerfMetricJob` on `RappInstance`",
+   "row": "S1.13, S4.2"
+  },
+  "rapp-mgmt GET /instances/{}/performance/latest": {
+   "fate": "replaced",
+   "replacement": "TS 28.622 `PerfMetricJob` on `RappInstance`",
+   "row": "S1.13, S4.2"
+  },
+  "rapp-mgmt GET /instances/{}/versions": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `RappInstance` (R1GAP v14 §5.7, HLD six states)",
+   "row": "S4.2"
+  },
+  "rapp-mgmt POST /instances": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS createMOI on `RappInstance` (R1GAP v14 §5.7, HLD six states)",
+   "row": "S4.2"
+  },
+  "rapp-mgmt POST /instances/{}/bootstrap-complete": {
+   "fate": "replaced",
+   "replacement": "SME `ServiceReady` when the rApp publishes its R1 endpoint (CAPIF publish)",
+   "row": "S4.6"
+  },
+  "rapp-mgmt POST /instances/{}/credentials": {
+   "fate": "replaced",
+   "replacement": "TS 29.222 CAPIF API invoker onboarding and security (credentials of the invoker)",
+   "row": "S1.16, S4.8"
+  },
+  "rapp-mgmt POST /instances/{}/credentials/renew": {
+   "fate": "replaced",
+   "replacement": "TS 29.222 CAPIF API invoker onboarding and security (credentials of the invoker)",
+   "row": "S1.16, S4.8"
+  },
+  "rapp-mgmt POST /instances/{}/fault": {
+   "fate": "replaced",
+   "replacement": "TS 28.111 alarms on `RappInstance`",
+   "row": "S3.15, S4.2"
+  },
+  "rapp-mgmt POST /instances/{}/performance": {
+   "fate": "replaced",
+   "replacement": "TS 28.622 `PerfMetricJob` on `RappInstance`",
+   "row": "S1.13, S4.2"
+  },
+  "rapp-mgmt POST /instances/{}/recover": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS createMOI on `RappInstance` (R1GAP v14 §5.7, HLD six states)",
+   "row": "S4.2"
+  },
+  "rapp-mgmt POST /instances/{}/rollback": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS createMOI on `RappInstance` (R1GAP v14 §5.7, HLD six states)",
+   "row": "S4.2"
+  },
+  "rapp-mgmt POST /instances/{}/terminate": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS createMOI on `RappInstance` (R1GAP v14 §5.7, HLD six states)",
+   "row": "S4.2"
+  },
+  "rapp-mgmt POST /instances/{}/upgrade": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS createMOI on `RappInstance` (R1GAP v14 §5.7, HLD six states)",
+   "row": "S4.2"
+  },
+  "rapp-mgmt POST /instances/{}/upgrade/resolve": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS createMOI on `RappInstance` (R1GAP v14 §5.7, HLD six states)",
+   "row": "S4.2"
+  },
+  "rapp-mgmt PUT /instances/{}/config": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS createMOI / modifyMOIAttributes on `RappInstance` (R1GAP v14 §5.7, HLD six states)",
+   "row": "S4.2"
+  }
+ }
+}

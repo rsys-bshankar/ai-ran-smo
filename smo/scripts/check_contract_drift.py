@@ -3,7 +3,7 @@
 (`specs/smo-schema-bundle/openapi/modules/<module>.yaml`), plan task S0.7.
 
     python scripts/check_contract_drift.py                    # fails when a module's drift grew against the baseline
-    python scripts/check_contract_drift.py --write-baseline   # after drift went down: commit scripts/contract_drift_baseline.json
+    python scripts/check_contract_drift.py --write-baseline   # after drift went down: commit scripts/contract_drift_baseline/
     python scripts/check_contract_drift.py --list MODULE      # the operations behind a module's counts
 
 An operation is a method and a path with every path parameter written `{}`. A contract's operations are its own paths (a `$ref`'d path item counts
@@ -31,7 +31,7 @@ SMO = Path(__file__).resolve().parent.parent
 BUNDLE = SMO.parent / "specs" / "smo-schema-bundle"
 MODULES = BUNDLE / "openapi" / "modules"
 GENERATED = SMO / "docs" / "openapi"
-BASELINE = SMO / "scripts" / "contract_drift_baseline.json"
+BASELINE_DIR = SMO / "scripts" / "contract_drift_baseline"     # one JSON file per module (scripts/baseline_dirs.py)
 METHODS = ("get", "put", "post", "patch", "delete")
 PROVMNS_TEMPLATES = {"/{className}={id}", "/{URI-LDN-first-part}"}
 
@@ -133,6 +133,20 @@ def drift() -> dict[str, dict]:
     return result
 
 
+def _baseline_dirs():
+    """scripts/baseline_dirs.py, imported from its path (this script is also loaded by file path, by check_interfaces.py and the tests)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("baseline_dirs", SMO / "scripts" / "baseline_dirs.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_baseline() -> dict[str, dict[str, int]]:
+    """The committed baseline: per module, the two drift counts, from that module's file of scripts/contract_drift_baseline/."""
+    return _baseline_dirs().read(BASELINE_DIR)
+
+
 def counts(result: dict) -> dict[str, dict[str, int]]:
     """The baseline shape: per module, the two drift counts."""
     return {m: {"code_only": len(r["code_only"]), "contract_only": len(r["contract_only"])} for m, r in sorted(result.items())}
@@ -154,7 +168,7 @@ def compare(current: dict, baseline: dict) -> tuple[list[str], list[str]]:
 def main(argv=None) -> int:
     """Prints the per-module table and checks it against the baseline; exit 1 when a count grew."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--write-baseline", action="store_true", help="record the current counts in scripts/contract_drift_baseline.json")
+    parser.add_argument("--write-baseline", action="store_true", help="record the current counts in scripts/contract_drift_baseline/")
     parser.add_argument("--list", metavar="MODULE", help="print the operations behind a module's counts")
     args = parser.parse_args(argv)
     result = drift()
@@ -169,11 +183,10 @@ def main(argv=None) -> int:
         note = "  (no contract yet)" if result[module].get("no_contract") else ""
         print(f"{module:28} {len(result[module]['agreed']):>7} {c['code_only']:>10} {c['contract_only']:>14}{note}")
     if args.write_baseline:
-        BASELINE.write_text(json.dumps({"_comment": "Written by scripts/check_contract_drift.py --write-baseline; counts may only go down (plan task S0.7).",
-                                        **current}, indent=2) + "\n")
-        print(f"wrote {BASELINE.relative_to(SMO)}")
+        written, removed = _baseline_dirs().write(BASELINE_DIR, current)
+        print(f"scripts/contract_drift_baseline/: written {', '.join(written) or 'nothing'}; removed {', '.join(removed) or 'nothing'}")
         return 0
-    baseline = {k: v for k, v in json.loads(BASELINE.read_text()).items() if not k.startswith("_")}
+    baseline = load_baseline()
     grown, shrunk = compare(current, baseline)
     for line in shrunk:
         print(f"lower than the baseline (run --write-baseline and commit it): {line}")

@@ -9,7 +9,7 @@
 | Depends on (over R1) | `R1Client` calls R1 Termination (`/bootstrap`) and SME (`/invoker-registrations`, `/oauth2/token`) for its own token; no other module |
 | Called by | Every backend module (imports); the SDK (`sdk/`) and the four sample rApps via `R1Client`. Not imported by `gui-bff` |
 | Database tables | The shared tables of 2.2, and `moi_store` (`mns/store.py`) in the schema of each module that mounts the ProvMnS router (the first is Echo, `echo.moi_store`, S1.6). Provides `Base`, the engine and sessions that modules' `models.py` use |
-| Unit tests | `tests/`; the Postgres-only ones are skipped without `SMO_TEST_POSTGRES_URL` (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
+| Unit tests | `tests/`; the Postgres-only ones are skipped without `SMO_TEST_POSTGRES_URL` (counts: [docs/test-counts/shared.md](../docs/test-counts/shared.md)) |
 | Status | Done. No OPEN_ITEMS ids |
 
 ## 1. High-level design (HLD)
@@ -398,7 +398,7 @@ cd smo/shared && PYTHONPATH=. python -m pytest tests/ -q
 
 ### 3.2 What is covered
 
-Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
+Counts per file: [`docs/test-counts/shared.md`](../docs/test-counts/shared.md).
 
 | Test file | Covers |
 |---|---|

@@ -1,0 +1,23 @@
+{
+ "consumer": {
+  "ran-analytics/app/main.py POST /sme/provider-registrations": "sme POST /provider-registrations"
+ },
+ "module": "ran-analytics",
+ "producer": {
+  "ran-analytics DELETE /producers/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS deleteMOI on `MDAFunction` [N] TS 28.104 (registry absorbed by MDAF)",
+   "row": "S7.5"
+  },
+  "ran-analytics GET /producers": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MDAFunction` [N] TS 28.104 (registry absorbed by MDAF)",
+   "row": "S7.5"
+  },
+  "ran-analytics POST /producers": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS createMOI on `MDAFunction` [N] TS 28.104 (registry absorbed by MDAF)",
+   "row": "S7.5"
+  }
+ }
+}

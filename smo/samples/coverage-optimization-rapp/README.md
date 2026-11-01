@@ -14,7 +14,7 @@ A Non-RT RIC rApp that learns how weak coverage, overshoot and pilot pollution r
 | Operator API | served on `:8000` as `/instances/...`; the instance's base URL is registered at rApp Management (`operatorApiBase` when the instance is created) and R1 Termination reaches it at `/rapps/<instance>/operator/...`. The page the GUI draws for it is declared in `manifest.yaml` (`operatorUi`) |
 | Call flow | [24 Coverage Optimization closed loop](../../docs/call-flows/24-coverage-optimization-closed-loop.md) |
 | Demo runbook | [DEMO_RUNBOOK.md section 26](../../DEMO_RUNBOOK.md) (Demo 00-11) |
-| Unit tests | `tests/`, SQLite, standalone; 99 % of `app/` (counts: [docs/TEST_COUNTS.md](../../docs/TEST_COUNTS.md)) |
+| Unit tests | `tests/`, SQLite, standalone; 99 % of `app/` (counts: [docs/test-counts/samples--coverage-optimization-rapp.md](../../docs/test-counts/samples--coverage-optimization-rapp.md)) |
 
 ## What it does
 
@@ -126,7 +126,7 @@ Paths are relative to the service root; through R1 Termination they sit under `/
 
 ```bash
 cd smo/samples/coverage-optimization-rapp
-PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # counts: docs/TEST_COUNTS.md
+PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # counts: docs/test-counts/samples--coverage-optimization-rapp.md
 ```
 
 The demo runs against a live stack, from inside the compose network (for example the `r1-termination` container). Steps are Demo 00 to 11:

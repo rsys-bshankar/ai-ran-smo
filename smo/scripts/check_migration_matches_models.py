@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compares the real Postgres schema, migrated to the head revision,
+"""Compares the real Postgres schema, migrated to every branch's head,
 against every module's own SQLAlchemy ORM model definitions, table by
 table and column by column.
 
@@ -72,19 +72,35 @@ ALL_MODULES = [
 ]
 
 
+def _known(scripts, revision: str) -> bool:
+    """Whether `revision` is in this checkout's history (a later release's revision is not)."""
+    try:
+        return scripts.get_revision(revision) is not None
+    except Exception:                                # alembic raises for an id it cannot resolve
+        return False
+
+
 def check_at_head(engine) -> None:
-    """Exits the process with a message unless the database is at the migration head: a model checked against an old schema would report drift that a migration has already fixed."""
+    """Exits the process with a message unless every branch of the database is at its migration head (the trunk, then one head per module branch,
+    docs/adr/0001-schema-migrations.md): a model checked against an old schema would report drift that a migration has already fixed."""
     from alembic.config import Config
     from alembic.runtime.migration import MigrationContext
     from alembic.script import ScriptDirectory
 
     config = Config(str(SMO_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(SMO_ROOT / "migrations"))
-    head = ScriptDirectory.from_config(config).get_current_head()
+    scripts = ScriptDirectory.from_config(config)
+    heads = sorted(scripts.get_heads())
     with engine.connect() as connection:
-        current = MigrationContext.configure(connection).get_current_revision()
-    if current != head:
-        sys.exit(f"the database is at revision {current!r}, the migration head is {head!r}: "
+        current = sorted(MigrationContext.configure(connection).get_current_heads())
+    applied, pending = set(), [h for h in current if scripts.get_revision(h) is not None] if all(_known(scripts, h) for h in current) else []
+    while pending:                                  # the revisions under the database's heads, through down_revision and depends_on
+        revision = scripts.get_revision(pending.pop())
+        if revision.revision not in applied:
+            applied.add(revision.revision)
+            pending.extend(revision._all_down_revisions)
+    if not current or not set(heads) <= applied:
+        sys.exit(f"the database is at {','.join(current) or '(none)'}, the migration heads are {','.join(heads)}: "
                  "run `python scripts/migrate.py` first")
 
 

@@ -1,0 +1,78 @@
+{
+ "consumer": {
+  "nfo/app/main.py GET /focom/inventory": "focom GET /inventory"
+ },
+ "module": "nfo",
+ "producer": {
+  "nfo DELETE /deployments/{}": {
+   "fate": "replaced",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)",
+   "row": "S4.4, S4.9"
+  },
+  "nfo DELETE /descriptors/{}": {
+   "fate": "replaced",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)",
+   "row": "S4.4, S4.9"
+  },
+  "nfo GET /deployments": {
+   "fate": "replaced",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)",
+   "row": "S4.4, S4.9"
+  },
+  "nfo GET /deployments/{}": {
+   "fate": "replaced",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)",
+   "row": "S4.4, S4.9"
+  },
+  "nfo GET /deployments/{}/operations": {
+   "fate": "replaced",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)",
+   "row": "S4.4, S4.9"
+  },
+  "nfo GET /deployments/{}/placement": {
+   "fate": "replaced",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)",
+   "row": "S4.4, S4.9"
+  },
+  "nfo GET /deployments/{}/resources": {
+   "fate": "replaced",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)",
+   "row": "S4.4, S4.9"
+  },
+  "nfo GET /descriptors": {
+   "fate": "replaced",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)",
+   "row": "S4.4, S4.9"
+  },
+  "nfo GET /operations/{}": {
+   "fate": "replaced",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)",
+   "row": "S4.4, S4.9"
+  },
+  "nfo POST /deployments": {
+   "fate": "replaced",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)",
+   "row": "S4.4, S4.9"
+  },
+  "nfo POST /deployments/{}/dms-notifications": {
+   "fate": "replaced",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)",
+   "row": "S4.4, S4.9"
+  },
+  "nfo POST /deployments/{}/heal": {
+   "fate": "replaced",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)",
+   "row": "S4.4, S4.9"
+  },
+  "nfo POST /deployments/{}/scale": {
+   "fate": "replaced",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)",
+   "row": "S4.4, S4.9"
+  },
+  "nfo POST /descriptors": {
+   "fate": "replaced",
+   "replacement": "O2dms Kubernetes-native profile v7 (deployment, operations, notifications)",
+   "row": "S4.4, S4.9"
+  }
+ }
+}

@@ -9,7 +9,7 @@
 | Depends on (over R1) | Caller-registered event callback URLs only; no other module |
 | Called by | R1 Termination (`/oauth2/introspect` on every proxied request); every module's `R1Client` (invoker onboarding and `/oauth2/token`); rApps and producers (publish, discover, subscribe); rApp Management (registers a package's declared providers and service APIs per instance); RAN Analytics (producer registration creates a service); GUI BFF |
 | Database tables | `service_profile`, `service_authz_policy`, `provider_registration`, `invoker_registration`, `issued_access_token`, `used_client_assertion`, `trusted_invoker`, `service_event_subscription` |
-| Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
+| Unit tests | `tests/`, SQLite, standalone (counts: [docs/test-counts/sme.md](../docs/test-counts/sme.md)) |
 | Status | Done for the subset in 1.2 |
 
 ## 1. High-level design (HLD)
@@ -248,7 +248,7 @@ cd smo/sme && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 ### 3.2 What is covered
 
-Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
+Counts per file: [`docs/test-counts/sme.md`](../docs/test-counts/sme.md).
 
 | Test file | Covers |
 |---|---|

@@ -9,7 +9,7 @@
 | Depends on (over R1) | DME (`GET /dme/data-jobs/{id}`, validates report inputs); AIMgF (`/aimgf/mlmf/subscriptions`, drift forwarding) |
 | Called by | Analytics producers (rApps, via `sdk.analytics`) publish reports; consumers (rApps, SA SMOS, GUI) subscribe, query and create MDA requests; MDA functions are platform configuration, written by an admin through the GUI BFF or by an SMO module, never by an rApp (call flow 08); ran-analytics is a separate producer registry, not an MDAF client: no code-level call either way |
 | Database tables | `mdaf_report`, `mda_subscription`, `mda_function`, `mda_request`, `mda_report_delivery` |
-| Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
+| Unit tests | `tests/`, SQLite, standalone (counts: [docs/test-counts/mdaf.md](../docs/test-counts/mdaf.md)) |
 | Status | Done. `STREAMING` reporting is recorded, not streamed (see 2.8) |
 | Time-driven behaviour | Push on publish: subscribers are notified when a report is stored; no timer |
 
@@ -276,7 +276,7 @@ cd smo/mdaf && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 ### 3.2 What is covered
 
-Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
+Counts per file: [`docs/test-counts/mdaf.md`](../docs/test-counts/mdaf.md).
 
 | File | Covers |
 |---|---|

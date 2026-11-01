@@ -9,7 +9,7 @@
 | Depends on (over R1) | nothing: Echo calls no other module |
 | Called by | its tests; later every MnS consumer through R1 |
 | Database tables | `echo.moi_store` (revision 0066, `create_moi_store(op, "echo")`); shared: `smo_event`, `audit_log`, `audit_head`, `idempotency_key`, `module_identity` |
-| Unit tests | `tests/`, on SQLite and, with `SMO_TEST_POSTGRES_URL`, on Postgres (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
+| Unit tests | `tests/`, on SQLite and, with `SMO_TEST_POSTGRES_URL`, on Postgres (counts: [docs/test-counts/echo.md](../docs/test-counts/echo.md)) |
 | Status | Done (S1.6). Off by default in compose and in the chart (1.5) |
 
 ## 1. High-level design (HLD)
@@ -140,7 +140,7 @@ SMO_TEST_POSTGRES_URL=postgresql+psycopg://smo:...@localhost:5432/smo PYTHONPATH
 
 ### 3.2 What is covered
 
-Every test in `test_echo.py` runs on SQLite and on Postgres (the `echo` fixture). Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
+Every test in `test_echo.py` runs on SQLite and on Postgres (the `echo` fixture). Counts per file: [`docs/test-counts/echo.md`](../docs/test-counts/echo.md).
 
 | Test file | Covers |
 |---|---|

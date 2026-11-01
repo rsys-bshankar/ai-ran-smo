@@ -133,7 +133,7 @@ jobs:
           kubectl -n smo get pods
           kubectl -n smo exec -i deploy/r1-termination -- python3 - < scripts/compose_e2e.py
           psql() { kubectl -n smo exec postgres-0 -- psql -U smo -d smo -Atc "$1"; }
-          echo "revision before: $(psql 'SELECT version_num FROM alembic_version')"
+          echo "revision before: $(psql "SELECT string_agg(version_num, ',' ORDER BY version_num) FROM alembic_version")"
           psql 'SELECT count(*) FROM audit_log' > "$RUNNER_TEMP/audit_before"
           echo "audit rows written by the previous release: $(cat "$RUNNER_TEMP/audit_before")"
 
@@ -195,7 +195,7 @@ jobs:
                 UNION ALL SELECT schemaname || '.' || indexname FROM pg_indexes WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
                 UNION ALL SELECT conrelid::regclass::text || '.' || conname || ' ' || pg_get_constraintdef(oid) FROM pg_constraint
                  WHERE connamespace NOT IN ('pg_catalog'::regnamespace, 'information_schema'::regnamespace)) s"; }
-          before=$(psql 'SELECT version_num FROM alembic_version'); generations > "$RUNNER_TEMP/generations_before"; schema > "$RUNNER_TEMP/schema_before"
+          before=$(psql "SELECT string_agg(version_num, ',' ORDER BY version_num) FROM alembic_version"); generations > "$RUNNER_TEMP/generations_before"; schema > "$RUNNER_TEMP/schema_before"
           echo "database at $before; deployments: $(wc -l < "$RUNNER_TEMP/generations_before")"
           # a long transaction on a table that a revision of this upgrade alters: the newest such revision's first table that the database already has
           # (OPS-UPGRADE-LANE). The migration is one transaction, so a lock on any of them holds the whole of it.
@@ -224,7 +224,7 @@ jobs:
           # nothing of the new release was applied
           generations > "$RUNNER_TEMP/generations_after"
           diff "$RUNNER_TEMP/generations_before" "$RUNNER_TEMP/generations_after"
-          [ "$(psql 'SELECT version_num FROM alembic_version')" = "$before" ]
+          [ "$(psql "SELECT string_agg(version_num, ',' ORDER BY version_num) FROM alembic_version")" = "$before" ]
           diff "$RUNNER_TEMP/schema_before" <(schema)
           # the old release is serving
           [ "$(kubectl -n smo get deploy r1-termination -o jsonpath='{.spec.template.spec.containers[0].image}' | sed 's/.*://')" = "prev" ]
@@ -246,7 +246,7 @@ jobs:
           kubectl -n smo get pods
           [ "$(kubectl -n smo get pods --no-headers | grep -vE 'Running|Completed|Terminating' | wc -l)" = "0" ]
           head=$(python3 scripts/upgrade_lane_targets.py head)
-          at=$(kubectl -n smo exec postgres-0 -- psql -U smo -d smo -Atc "SELECT version_num FROM alembic_version")
+          at=$(kubectl -n smo exec postgres-0 -- psql -U smo -d smo -Atc "SELECT string_agg(version_num, ',' ORDER BY version_num) FROM alembic_version")
           echo "database at $at, this checkout's head $head"
           [ "$at" = "$head" ]
 

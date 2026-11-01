@@ -1,0 +1,9 @@
+{
+ "files_without_description": 0,
+ "functions_without_description": 0,
+ "items_requiring_description": 124,
+ "module": "intent-service",
+ "source_files": 11,
+ "tests": 92,
+ "tests_without_docstring": 0
+}

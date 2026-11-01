@@ -306,6 +306,8 @@ smo/
   tests_integration/        in-process service mesh (loader.py, mesh.py) and cross-service tests,
                             incl. test_demo_runbook.py, which replays DEMO_RUNBOOK.md
   backup/                   the image of the compose `db-backup` service (Postgres 18 client, AWS CLI): off-site backups, docs/DISASTER_RECOVERY.md
+  changelog.d/              one changelog fragment per pull request, assembled into CHANGELOG.md at release (scripts/changelog.py)
+  history.d/                one file per item closed since November 2026, what a HISTORY.md entry holds (scripts/history_index.py)
   scripts/                  OpenAPI generation, migration-vs-models check, CM schema ingest, off-site backup and the restore drill (dr_*.sh),
                             TS 28.312 family generation, config_reference.py (the environment-variable reference)
   deploy/helm/smo/          the Helm chart (also the traces and logs lab stack, values-gated)
@@ -313,8 +315,10 @@ smo/
   docs/
     OBSERVABILITY.md        traces (Tempo), logs (Loki, Fluent Bit), Grafana, the queries by trace id and correlation id
     ARCHITECTURE.md         layers, golden rules, R1 conventions, standards per service
-    CONFIGURATION.md        every environment variable: default, secret or not, who reads it, what it does (generated, then described)
-    config_descriptions.json  the hand-written descriptions CONFIGURATION.md is merged from
+    configuration/          every environment variable: default, secret or not, who reads it, what it does; one <group>.md (generated) and
+                            <group>.json (the hand-written descriptions) per module, and an index (CONFIGURATION.md points here)
+    test-counts/            tests per suite, one generated file each, and an index (TEST_COUNTS.md points here)
+    plan/rows/              the open PR-CONV rows of the converged rewrite, one file per stage (moved from OPEN_ITEMS.md §7)
     RAPP_PACKAGING.md       rApp CSAR layout, manifest.yaml / capabilities.yaml, per-sample parameter tables
     schemas/                JSON Schema of the operator page a rApp declares (operatorUi) and its worked example
     STANDARDS.md            frozen decisions, TS 28.105/28.104/28.312 compliance matrices, runtime realisation

@@ -1,0 +1,80 @@
+{
+ "consumer": {
+  "onboarding/app/main.py DELETE /nfo/descriptors/{}": "nfo DELETE /descriptors/{}",
+  "onboarding/app/main.py GET /rapp-mgmt/instances/{}": "rapp-mgmt GET /instances/{}",
+  "onboarding/app/main.py POST /nfo/descriptors": "nfo POST /descriptors"
+ },
+ "module": "onboarding",
+ "producer": {
+  "onboarding DELETE /packages/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS deleteMOI on `RappPackage` (WG10 App Packaging v1.00, provisional until S0.14)",
+   "row": "S4.1, S4.2"
+  },
+  "onboarding GET /packages": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `RappPackage` (WG10 App Packaging v1.00, provisional until S0.14)",
+   "row": "S4.1, S4.2"
+  },
+  "onboarding GET /packages/{}/artifacts": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `RappPackage` (WG10 App Packaging v1.00, provisional until S0.14)",
+   "row": "S4.1, S4.2"
+  },
+  "onboarding GET /packages/{}/onboarding-status": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `RappPackage` (WG10 App Packaging v1.00, provisional until S0.14)",
+   "row": "S4.1, S4.2"
+  },
+  "onboarding GET /packages/{}/usage": {
+   "fate": "delete",
+   "replacement": "a package is in use when `RappInstance` objects name it; read through ProvMnS",
+   "row": "S4.2"
+  },
+  "onboarding POST /packages": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS createMOI on `RappPackage` (WG10 App Packaging v1.00, provisional until S0.14)",
+   "row": "S4.1, S4.2"
+  },
+  "onboarding POST /packages/upload": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS createMOI on `RappPackage` (WG10 App Packaging v1.00, provisional until S0.14)",
+   "row": "S4.1, S4.2"
+  },
+  "onboarding POST /packages/{}/cancel-delete": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `RappPackage` (administrative state)",
+   "row": "S4.1, S4.2"
+  },
+  "onboarding POST /packages/{}/deprecate": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `RappPackage` (administrative state)",
+   "row": "S4.1, S4.2"
+  },
+  "onboarding POST /packages/{}/deprime": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `RappPackage` (administrative state)",
+   "row": "S4.1, S4.2"
+  },
+  "onboarding POST /packages/{}/prime": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `RappPackage` (administrative state)",
+   "row": "S4.1, S4.2"
+  },
+  "onboarding POST /packages/{}/usage/start": {
+   "fate": "delete",
+   "replacement": "a package is in use when `RappInstance` objects name it; read through ProvMnS",
+   "row": "S4.2"
+  },
+  "onboarding POST /packages/{}/usage/{}/release": {
+   "fate": "delete",
+   "replacement": "a package is in use when `RappInstance` objects name it; read through ProvMnS",
+   "row": "S4.2"
+  },
+  "onboarding POST /packages/{}/usage/{}/stop": {
+   "fate": "delete",
+   "replacement": "a package is in use when `RappInstance` objects name it; read through ProvMnS",
+   "row": "S4.2"
+  }
+ }
+}

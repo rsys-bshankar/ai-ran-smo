@@ -6,6 +6,7 @@ Run with: cd smo && PYTHONPATH=shared python -m pytest tests_integration/test_in
 
 import copy
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -20,7 +21,7 @@ _spec.loader.exec_module(gate)
 def inputs():
     """The gate's real inputs, read once: served operations, calls, baseline, templates, contracts, appendix A, [D] ids, waivers."""
     import json
-    return {"ops": gate.produced(), "calls": gate.calls(), "baseline": json.loads(gate.BASELINE.read_text()), "tpl": gate.templates(),
+    return {"ops": gate.produced(), "calls": gate.calls(), "baseline": gate.merge(gate.baseline_dirs.read(gate.BASELINE_DIR)), "tpl": gate.templates(),
             "contract": gate.contracted(), "rows": gate.appendix_a(), "ids": gate.design_ids(), "waivers": gate.consumers_check.WAIVERS}
 
 
@@ -140,3 +141,41 @@ def test_a_caller_moved_to_the_prefix_its_operation_is_served_at_is_not_growth()
     assert gate.grown(other_target, base) == ["baseline grew: consumer sdk/smo_sdk/models.py GET /aimgf/storages"]
     kept = {"producer": {}, "consumer": {**base["consumer"], **moved["consumer"]}}
     assert gate.grown(kept, base) == ["baseline grew: consumer sdk/smo_sdk/models.py GET /aimgf/models"]
+
+
+def test_the_baseline_is_one_file_per_module_and_each_entry_is_in_its_modules_file():
+    """scripts/interface_baseline/ holds one file per module: a producer entry in the serving module's file, a consumer entry in the calling module's
+    (a sample's calls with its own routes); merging the files and splitting them again gives the same files, so a pull request on one module
+    changes that module's file only."""
+    parts = gate.baseline_dirs.read(gate.BASELINE_DIR)
+    for module, part in parts.items():
+        for side in ("producer", "consumer"):
+            assert all(gate.module_of(side, key) == module for key in part.get(side, {})), module
+    assert gate.split(gate.merge(parts)) == parts
+    assert gate.module_of("consumer", "samples/energy-saving-rapp/app/main.py GET /x") == "energy-saving-rapp"
+    assert gate.module_of("producer", "energy-saving-rapp GET /x") == "energy-saving-rapp"
+
+
+def test_growth_is_checked_against_the_base_refs_files_or_its_old_single_file(tmp_path, monkeypatch):
+    """The base ref's baseline is read from its directory, or from the single file it was before the split, so the "only shrink" rule holds across
+    the change itself; an entry added to one module's file is growth."""
+    import subprocess
+    repo = tmp_path / "repo"
+    (repo / "smo" / "scripts").mkdir(parents=True)
+    run = lambda *a: subprocess.run(["git", *a], cwd=repo, check=True, capture_output=True, text=True)   # noqa: E731
+    run("init", "-q")
+    run("config", "user.email", "t@example.org")
+    run("config", "user.name", "t")
+    old = {"producer": {"aimgf GET /a": {"fate": "delete", "row": "S2.7"}}, "consumer": {}}
+    (repo / "smo" / "scripts" / "interface_baseline.json").write_text(json.dumps(old))
+    run("add", "-A")
+    run("commit", "-qm", "single file")
+    assert gate.baseline_dirs.read_at("HEAD", "smo/scripts/interface_baseline", "smo/scripts/interface_baseline.json", repo) == {"": old}
+    run("rm", "-q", "smo/scripts/interface_baseline.json")
+    gate.baseline_dirs.write(repo / "smo" / "scripts" / "interface_baseline", gate.split(old))
+    run("add", "-A")
+    run("commit", "-qm", "per module")
+    parts = gate.baseline_dirs.read_at("HEAD", "smo/scripts/interface_baseline", "smo/scripts/interface_baseline.json", repo)
+    assert gate.merge(parts) == old
+    grown = {"producer": {**old["producer"], "dme GET /b": {"fate": "delete", "row": "S3.1"}}, "consumer": {}}
+    assert gate.grown(grown, gate.merge(parts)) == ["baseline grew: producer dme GET /b"]

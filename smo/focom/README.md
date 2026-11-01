@@ -9,7 +9,7 @@
 | Depends on (over R1) | none (inventory, alarm and performance callbacks go to subscriber URLs through the transactional outbox, `smo_shared.outbox`) |
 | Called by | NFO (`GET /focom/inventory`, to resolve `oCloudId`), SO SMOS (`POST /focom/resources/provision`), GUI / GUI BFF |
 | Database tables | `inventory_subscription`, `resource_type`, `resource_pool`, `resource`, `deployment_manager`, `ocloud_alarm`, `ocloud_alarm_subscription`, `ocloud_performance_metric`, `ocloud_performance_job`, `ocloud_performance_subscription`, `ocloud_location`, `ocloud_site`, `o2ims_object` |
-| Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
+| Unit tests | `tests/`, SQLite, standalone (counts: [docs/test-counts/focom.md](../docs/test-counts/focom.md)) |
 | Status | Done for the Phase 1 single-cluster scope. `SA-FOCOM-2`, `-6`, `-7` and `-9` are closed at the REST level; limits in [section 2.8](#28-limits-and-open-items) |
 | Time-driven behaviour | None: `collectionInterval`, `reportInterval` and `heartbeatInterval` are stored, not scheduled (`SA-FOCOM-6`) |
 
@@ -196,7 +196,7 @@ cd smo/focom && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 ### 3.2 What is covered
 
-Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
+Counts per file: [`docs/test-counts/focom.md`](../docs/test-counts/focom.md).
 
 | Test file | Covers |
 |---|---|
