@@ -1,0 +1,9 @@
+{
+ "files_without_description": 0,
+ "functions_without_description": 0,
+ "items_requiring_description": 288,
+ "module": "gui-bff",
+ "source_files": 40,
+ "tests": 439,
+ "tests_without_docstring": 0
+}

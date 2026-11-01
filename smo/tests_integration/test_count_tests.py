@@ -1,4 +1,4 @@
-"""The per-file part of `docs/TEST_COUNTS.md` (scripts/count_tests.py): node ids counted per file, the per-file rows of a suite, and their rendering.
+"""The per-suite files of `docs/test-counts/` (scripts/count_tests.py): node ids counted per file, the per-file rows of a suite, and their rendering.
 
 The script is loaded from its file; suites are small directories written into `tmp_path`, so no pytest collection runs here (CI's `--check` runs the
 real one). Run: `PYTHONPATH=shared python -m pytest tests_integration/test_count_tests.py -q` from `smo/`.
@@ -43,12 +43,36 @@ def test_per_file_numbers_that_do_not_add_up_stop_the_script(tmp_path):
         c.python_row(_suite(tmp_path), 5, {"tests/test_a.py": 4})
 
 
-def test_each_suite_is_rendered_as_a_collapsible_table_of_its_files():
-    """The per-file section has one `<details>` block per suite, with blank lines around its table (GitHub renders it only then) and `—` for no
-    collected number.
-    """
-    rows = [c.Row("demo", 1, 2, 4, (c.FileRow("tests/test_a.py", 2, 4),)), c.Row("sdk-go", 1, 3, None, (c.FileRow("a_test.go", 3, None),))]
-    text = c.render(rows)
-    assert "<details><summary><code>demo</code>: 1 file</summary>\n\n| file | test functions | collected tests |" in text
-    assert "| `tests/test_a.py` | 2 | 4 |\n\n</details>" in text
-    assert "| `a_test.go` | 3 | — |" in text
+def test_each_suite_is_rendered_in_a_file_of_its_own_and_the_index_holds_no_numbers():
+    """A suite's file has its totals and its files (`—` for no collected number); the index only links the suites, so a change to one suite's tests
+    changes that suite's file and nothing else; a sample's path is written with `--`."""
+    demo = c.Row("demo", 1, 2, 4, (c.FileRow("tests/test_a.py", 2, 4),))
+    go = c.Row("sdk-go", 1, 3, None, (c.FileRow("a_test.go", 3, None),))
+    files = c.expected_files([demo, go], ["demo", "sdk-go", "samples/x"])
+    assert "| `demo` | 1 | 2 | 4 |" in files["demo.md"] and "| `tests/test_a.py` | 2 | 4 |" in files["demo.md"]
+    assert "| `a_test.go` | 3 | — |" in files["sdk-go.md"]
+    assert "| `samples/x` | [samples--x.md](samples--x.md) |" in files["README.md"] and not any(ch.isdigit() for ch in files["README.md"].split("| suite |")[1])
+    more = c.expected_files([c.Row("demo", 1, 3, 5, (c.FileRow("tests/test_a.py", 3, 5),)), go], ["demo", "sdk-go", "samples/x"])
+    assert [name for name in files if files[name] != more[name]] == ["demo.md"]
+
+
+def test_check_fails_on_a_stale_or_left_over_file_and_write_touches_only_what_changed(tmp_path, monkeypatch, capsys):
+    """The gate's old failure case, per suite: a suite file that no longer matches the code fails `--check` with its diff, as does a file whose suite
+    is gone; `--write` rewrites only the files that differ and removes the left-over one."""
+    rows = [c.Row("demo", 1, 2, 4, (c.FileRow("tests/test_a.py", 2, 4),)), c.Row("other", 1, 1, 1, (c.FileRow("tests/test_b.py", 1, 1),))]
+    monkeypatch.setattr(c, "DOC_DIR", tmp_path)
+    monkeypatch.setattr(c, "count", lambda jobs, only=None: [r for r in rows if only is None or r.suite in only])
+    monkeypatch.setattr(c, "all_suite_names", lambda: ["demo", "other"])
+    assert c.main(["--write"]) == 0 and sorted(p.name for p in tmp_path.iterdir()) == ["README.md", "demo.md", "other.md"]
+    assert c.main(["--check"]) == 0
+    (tmp_path / "demo.md").write_text((tmp_path / "demo.md").read_text().replace("| 2 | 4 |", "| 2 | 3 |"))
+    (tmp_path / "gone.md").write_text("x")
+    other_before = (tmp_path / "other.md").stat().st_mtime_ns
+    capsys.readouterr()
+    assert c.main(["--check"]) == 1
+    out = capsys.readouterr()
+    assert "docs/test-counts/demo.md (committed)" in out.out and "gone.md: no suite has this file any more" in out.out and "demo.md, gone.md" in out.err
+    assert c.main(["--check", "--suite", "other"]) == 0                       # one suite: the others are not its business
+    assert c.main(["--write"]) == 0 and not (tmp_path / "gone.md").exists()
+    assert (tmp_path / "other.md").stat().st_mtime_ns == other_before        # unchanged, so not written
+    assert "written (demo.md)" in capsys.readouterr().out

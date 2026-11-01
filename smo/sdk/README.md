@@ -11,7 +11,7 @@
 | Called by | The four sample rApps (`../samples/{energy-saving,mobility-optimization,coverage-optimization,traffic-steering}-rapp/app/main.py`); any rApp author. No SMO module imports it |
 | Database tables | None |
 | Retries and idempotency | The Go and Java SDKs' policy (`smo_sdk/_retry.py`, 2.5): 4 attempts, 200 ms doubling to 5 s with jitter, `Retry-After` honoured up to 30 s, on a transport error or 429/502/503/504, only for calls safe to repeat; off or tuned by `SMO_SDK_RETRY*` (2.6). Every POST carries a generated `Idempotency-Key`; a mutating call that lost a write race (`409 CONCURRENT_MODIFICATION`) is sent once more with the same key (`smo_sdk/_common.py`) |
-| Unit tests | `tests/`, no network: a recording fake `R1Client` (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
+| Unit tests | `tests/`, no network: a recording fake `R1Client` (counts: [docs/test-counts/sdk.md](../docs/test-counts/sdk.md)) |
 | Status | Done. No OPEN_ITEMS ids |
 
 ## 1. High-level design (HLD)
@@ -342,7 +342,7 @@ cd smo/sdk && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 Each test asserts the verb, path, params and body the client sends against a scripted `RecordingR1Client`, plus `SdkError` on a 4xx.
 
-Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
+Counts per file: [`docs/test-counts/sdk.md`](../docs/test-counts/sdk.md).
 
 | Test file | Covers |
 |---|---|

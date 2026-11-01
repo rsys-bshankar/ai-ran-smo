@@ -1,0 +1,9 @@
+{
+ "files_without_description": 0,
+ "functions_without_description": 0,
+ "items_requiring_description": 200,
+ "module": "tests_integration",
+ "source_files": 109,
+ "tests": 796,
+ "tests_without_docstring": 0
+}

@@ -1,0 +1,9 @@
+{
+  "AIMGF_FEATURE_GROUP_TOKEN_<REF>": "The data-lake token of a feature group that was registered with `tokenRef: <ref>` (the reference upper-cased, `-` as `_`): the value AIMgF uses when it connects to the data lake. The database holds the name, never the value. Prefer `_FILE` (a mounted secret). A reference with neither set resolves to nothing; it never falls back to another secret.",
+  "AIMGF_FEATURE_GROUP_TOKEN_<REF>_FILE": "File holding the data-lake token for `tokenRef: <ref>` (the `*_FILE` form of `AIMGF_FEATURE_GROUP_TOKEN_<REF>`; set only one of the two).",
+  "AIMGF_TIMEOUT_EMULATION_SECONDS": "Seconds an emulation run may take before AIMgF fails it as `TIMEOUT` and notifies the caller. A request's own `timeoutSeconds` wins. Raise it for long emulations.",
+  "AIMGF_TIMEOUT_INFERENCE_SECONDS": "Seconds an inference job may take before AIMgF fails it as `TIMEOUT`. A request's own `timeoutSeconds` wins. Real-time inference needs this short; raising it only delays the failure.",
+  "AIMGF_TIMEOUT_SWEEP_SECONDS": "How often the AIMgF worker (`aimgf-worker`) fails the training, validation, emulation and inference runs past their deadline (default 60, at least 1), across all worker replicas (call flow 27e). Read once at the worker's start. A job read still sweeps too. Seconds, not a secret.",
+  "AIMGF_TIMEOUT_TRAINING_SECONDS": "Seconds a training run may take before AIMgF fails it as `TIMEOUT` and notifies the caller (default 30 minutes). A request's own `timeoutSeconds` wins.",
+  "AIMGF_TIMEOUT_VALIDATION_SECONDS": "Seconds a validation run may take before AIMgF fails it as `TIMEOUT` (default 15 minutes). A request's own `timeoutSeconds` wins."
+}

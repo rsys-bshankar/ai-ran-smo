@@ -9,7 +9,7 @@
 | Depends on (over R1) | SME (`/sme/provider-registrations`, `/sme/published-apis/v1/{apfId}/service-apis`) |
 | Called by | Analytics producer rApps via `sdk.analytics` (`register_producer`, `deregister_producer`, `list_producers`); GUI BFF (`POST` and `DELETE /ran-analytics/producers(/{id})`, admin; the console has a register form, no deregister button yet: `OPEN_ITEMS.md` GUI-11.1); MDAF (`GET /producers`, to check an rApp publisher, call flow 08c) |
 | Database tables | `mdaf_producer` |
-| Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
+| Unit tests | `tests/`, SQLite, standalone (counts: [docs/test-counts/ran-analytics.md](../docs/test-counts/ran-analytics.md)) |
 | Status | Done. Coverage is the thinnest in the repo by count (`../OPEN_ITEMS.md` OI-4) |
 
 ## 1. High-level design (HLD)
@@ -150,7 +150,7 @@ cd smo/ran-analytics && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 ### 3.2 What is covered
 
-Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
+Counts per file: [`docs/test-counts/ran-analytics.md`](../docs/test-counts/ran-analytics.md).
 
 | File | Covers |
 |---|---|

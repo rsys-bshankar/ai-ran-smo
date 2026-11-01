@@ -61,7 +61,7 @@ class Item:
 
 
 # The documentation baseline (scripts/check_code_docs.py --write-baseline) is data, not code: a documentation change lowers its counts in the same change.
-BASELINE_SUFFIX = "scripts/code_docs_baseline.json"
+BASELINE_DIR = "scripts/code_docs_baseline/"          # one JSON file per module (scripts/baseline_dirs.py)
 
 
 @dataclass
@@ -478,7 +478,7 @@ def main(argv: list[str] | None = None) -> int:
     for it in sorted(items, key=lambda i: i.path):
         r = results[it.path]
         ext = Path(it.path).suffix or Path(it.path).name
-        if r.status == "unverified" and it.path.endswith(BASELINE_SUFFIX):
+        if r.status == "unverified" and BASELINE_DIR in it.path and it.path.endswith(".json"):
             print(f"SKIP  {it.path}  (exempt: the documentation baseline, which a documentation change lowers)")
             continue
         if r.status == "unverified" and ext in allowed:

@@ -2,7 +2,7 @@
 """What the upgrade lane on kind (`.github/workflows/smo-upgrade-kind.yml`) starts from and what it locks, read from the repository at run time.
 
     python scripts/upgrade_lane_targets.py matrix               # the lane's job matrix (JSON): the newest release tag and the one before it
-    python scripts/upgrade_lane_targets.py head                 # the head revision of migrations/versions
+    python scripts/upgrade_lane_targets.py head                 # the heads of migrations/versions (one per branch), as alembic_version holds them
     python scripts/upgrade_lane_targets.py tables [--since REV] # "<revision> <schema.table>" per table an Alembic revision alters, newest first
 
 `matrix` finds the releases the way `check_previous_release_code.sh` and `check_upgrade_from_previous_release.sh` do: the `smo-v*` tags sorted by
@@ -71,9 +71,10 @@ def lane_matrix(tags: list[str]) -> dict:
 
 
 def revisions(versions: Path | None = None) -> list[tuple[str, Path]]:
-    """Every revision in `versions` (default `migrations/versions`) as (revision id, file), oldest first, by following `down_revision` from the base.
+    """Every revision in `versions` (default `migrations/versions`) as (revision id, file), oldest first: the shared trunk from the base, then each
+    module branch (`<label>_NNNN`, docs/adr/0001-schema-migrations.md) in label order, each in its own order.
 
-    Raises ValueError when the history is not one line (two heads, or a revision whose parent is missing), since then "the head" means nothing.
+    Raises ValueError when the trunk or a branch is not one line (two revisions of it with the same parent), or a revision's parent is missing.
     """
     versions = versions or VERSIONS
     parent: dict[str, str | None] = {}
@@ -89,15 +90,34 @@ def revisions(versions: Path | None = None) -> list[tuple[str, Path]]:
     children: dict[str | None, list[str]] = {}
     for rev, down in parent.items():
         children.setdefault(down, []).append(rev)
-    order, current = [], None
-    while children.get(current):
-        if len(children[current]) > 1:
-            raise ValueError(f"more than one revision follows {current}: {sorted(children[current])}")
-        current = children[current][0]
-        order.append(current)
+
+    def line(start: str | None, same_line) -> list[str]:
+        """The revisions after `start` that `same_line` keeps, in order; ValueError when two of them share a parent."""
+        order, current = [], start
+        while True:
+            following = sorted(c for c in children.get(current, []) if same_line(c))
+            if not following:
+                return order
+            if len(following) > 1:
+                raise ValueError(f"more than one revision follows {current}: {following}")
+            current = following[0]
+            order.append(current)
+
+    order = line(None, lambda rev: re.fullmatch(r"\d+", rev) is not None)
+    for first in sorted(c for c in children.get(order[-1] if order else None, []) if re.fullmatch(r"\d+", c) is None):
+        label = first.rsplit("_", 1)[0]
+        order += [first] + line(first, lambda rev, label=label: rev.rsplit("_", 1)[0] == label)
     if len(order) != len(parent):
         raise ValueError(f"the revisions do not form one line from the base: {sorted(set(parent) - set(order))} are not reached")
     return [(rev, files[rev]) for rev in order]
+
+
+def heads(versions: Path | None = None) -> str:
+    """What alembic_version holds once every branch is upgraded, comma separated and sorted (`scripts/check_revision_branches.py --heads`)."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import check_revision_branches as branches
+    revisions(versions)                              # refuses a history that is not a trunk and branches, as before
+    return ",".join(branches.recorded_heads(branches.revisions(versions or VERSIONS)))
 
 
 class _Recorder:
@@ -189,7 +209,7 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="command", required=True)
     sub.add_parser("matrix", help="the lane's job matrix, as JSON")
-    sub.add_parser("head", help="the head revision")
+    sub.add_parser("head", help="the heads, comma separated, as alembic_version holds them")
     tables = sub.add_parser("tables", help="'<revision> <schema.table>' for every table a revision alters, newest first")
     tables.add_argument("--since", help="cover every revision after this one (default: the head only)")
     args = ap.parse_args(argv)
@@ -197,7 +217,7 @@ def main(argv: list[str]) -> int:
         if args.command == "matrix":
             print(json.dumps(lane_matrix(release_tags())))
         elif args.command == "head":
-            print(revisions()[-1][0])
+            print(heads())
         else:
             rows = lock_candidates(args.since)
             if not rows:

@@ -3,7 +3,7 @@
 Covers, with small fixtures per language: that a change limited to comments, docstrings and layout passes the verifier, that a one-character change in code
 (or in a tool directive) fails it, that a file the verifier cannot classify is reported as not verified, and that the gate counts what the rule in
 `docs/CODE_DOCUMENTATION.md` asks for, treats routes, models and parametrized tests as the rule says, and flags a NEW undocumented function while an old one
-stays within the baseline. Also that the committed `scripts/code_docs_baseline.json` is current.
+stays within the baseline. Also that the committed `scripts/code_docs_baseline/` is current.
 
 Run: `cd smo && PYTHONPATH=shared python -m pytest tests_integration/test_code_docs_tools.py -q`. Needs `git`; the Go cases need `go`, the TypeScript cases need
 `node` and `smo/gui/node_modules` (`cd smo/gui && npm ci`), and each is skipped when its tool is missing (the CI job "Code documentation" has all of them).
@@ -464,9 +464,9 @@ def test_cli_markdown_needs_the_allow_flag(repo, capsys):
 
 
 def test_cli_the_documentation_baseline_is_exempt_but_other_json_is_not(repo, capsys):
-    """`scripts/code_docs_baseline.json` may change in a documentation change; any other JSON file is still not verified."""
-    (repo / "smo" / "scripts").mkdir()
-    (repo / "smo" / "scripts" / "code_docs_baseline.json").write_text("{}\n")
+    """A file of `scripts/code_docs_baseline/` may change in a documentation change; any other JSON file is still not verified."""
+    (repo / "smo" / "scripts" / "code_docs_baseline").mkdir(parents=True)
+    (repo / "smo" / "scripts" / "code_docs_baseline" / "mod.json").write_text("{}\n")
     code, out = run_verify(repo, capsys=capsys)
     assert code == 0 and "exempt" in out
     (repo / "smo" / "other.json").write_text("{}\n")
@@ -797,14 +797,14 @@ def gate_repo(tmp_path):
 
 def run_gate(repo, *extra, capsys):
     """Runs the gate over `repo` with its own baseline file and HEAD as the merge base; returns (exit code, printed output)."""
-    code = gate.main(["--root", str(repo), "--baseline", str(repo / "baseline.json"), "--base", "HEAD", *extra])
+    code = gate.main(["--root", str(repo), "--baseline", str(repo / "baseline"), "--base", "HEAD", *extra])
     return code, capsys.readouterr().out
 
 
 def test_gate_write_baseline_then_pass_then_fail_when_a_count_rises(gate_repo, capsys):
     """The baseline records today's counts; the same tree passes; a module whose count goes up fails, naming the module."""
     assert run_gate(gate_repo, "--write-baseline", capsys=capsys)[0] == 0
-    stored = json.loads((gate_repo / "baseline.json").read_text())["modules"]["mod"]
+    stored = gate.load_baseline(gate_repo / "baseline")["mod"]
     assert stored["functions_without_description"] == 1 and stored["files_without_description"] == 0
     assert run_gate(gate_repo, capsys=capsys)[0] == 0
     (gate_repo / "smo" / "mod" / "b.py").write_text('"""B."""\n\n\ndef another(x):\n    y = x\n    return y\n')
@@ -836,12 +836,12 @@ def test_gate_a_lower_count_is_reported_not_failed(gate_repo, capsys):
 
 
 def test_gate_the_committed_baseline_is_current():
-    """`scripts/code_docs_baseline.json` equals what the tools count in this tree; when a documentation change lowers a count, the same change lowers the baseline."""
+    """`scripts/code_docs_baseline/` (one file per module) equals what the tools count in this tree; when a documentation change lowers a count, the same change lowers the baseline."""
     if not (HAVE_GO and HAVE_TS):
         pytest.skip("needs go and the GUI's node_modules to count every language")
     root = gate.common.repo_root()
     counts = gate.tally(gate.analyze(gate.head_entries(root)))
-    stored = json.loads(gate.BASELINE.read_text())["modules"]
+    stored = gate.load_baseline()
     for mod, c in counts.items():
         for k in gate.KEYS:
             assert c[k] <= stored.get(mod, {}).get(k, 0), f"{mod}: {k} is {c[k]}, above the baseline"

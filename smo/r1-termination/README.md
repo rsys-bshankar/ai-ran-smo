@@ -203,7 +203,7 @@ cd smo/r1-termination && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 ### 3.2 What is covered
 
-Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
+Counts per file: [`docs/test-counts/r1-termination.md`](../docs/test-counts/r1-termination.md).
 
 | Test file | Covers |
 |---|---|

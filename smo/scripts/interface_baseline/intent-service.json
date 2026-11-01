@@ -1,0 +1,113 @@
+{
+ "consumer": {
+  "intent-service/app/main.py GET /rapp-mgmt/instances/{}": "rapp-mgmt GET /instances/{}"
+ },
+ "module": "intent-service",
+ "producer": {
+  "intent-service DELETE /intent-handling-functions/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS deleteMOI (in SO SMOS)",
+   "row": "S5.1"
+  },
+  "intent-service DELETE /intent-utility-formulas/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS deleteMOI (in SO SMOS)",
+   "row": "S5.1"
+  },
+  "intent-service DELETE /intents/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS deleteMOI (in SO SMOS)",
+   "row": "S5.1"
+  },
+  "intent-service GET /autonomy-dispatches": {
+   "fate": "delete",
+   "replacement": "autonomy dispatch retires; an rApp submits a Level-2 intent to SO SMOS",
+   "row": "S5.4, S5.9"
+  },
+  "intent-service GET /autonomy-dispatches/{}": {
+   "fate": "delete",
+   "replacement": "autonomy dispatch retires; an rApp submits a Level-2 intent to SO SMOS",
+   "row": "S5.4, S5.9"
+  },
+  "intent-service GET /intent-handling-functions": {
+   "fate": "replaced",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS getMOIAttributes (in SO SMOS)",
+   "row": "S5.1"
+  },
+  "intent-service GET /intent-reports": {
+   "fate": "replaced",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS getMOIAttributes (in SO SMOS)",
+   "row": "S5.1"
+  },
+  "intent-service GET /intent-reports/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS getMOIAttributes (in SO SMOS)",
+   "row": "S5.1"
+  },
+  "intent-service GET /intent-utility-formulas": {
+   "fate": "replaced",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS getMOIAttributes (in SO SMOS)",
+   "row": "S5.1"
+  },
+  "intent-service GET /intent-utility-formulas/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS getMOIAttributes (in SO SMOS)",
+   "row": "S5.1"
+  },
+  "intent-service GET /intents": {
+   "fate": "replaced",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS getMOIAttributes (in SO SMOS)",
+   "row": "S5.1"
+  },
+  "intent-service GET /intents/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS getMOIAttributes (in SO SMOS)",
+   "row": "S5.1"
+  },
+  "intent-service PATCH /intents/{}/admin-state": {
+   "fate": "replaced",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS modifyMOIAttributes `administrativeState` on `Intent` (in SO SMOS)",
+   "row": "S5.1"
+  },
+  "intent-service POST /autonomy-dispatches": {
+   "fate": "delete",
+   "replacement": "autonomy dispatch retires; an rApp submits a Level-2 intent to SO SMOS",
+   "row": "S5.4, S5.9"
+  },
+  "intent-service POST /autonomy-dispatches/{}/reject": {
+   "fate": "delete",
+   "replacement": "autonomy dispatch retires; an rApp submits a Level-2 intent to SO SMOS",
+   "row": "S5.4, S5.9"
+  },
+  "intent-service POST /autonomy-dispatches/{}/resolve": {
+   "fate": "delete",
+   "replacement": "autonomy dispatch retires; an rApp submits a Level-2 intent to SO SMOS",
+   "row": "S5.4, S5.9"
+  },
+  "intent-service POST /intent-handling-functions": {
+   "fate": "replaced",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS createMOI (in SO SMOS)",
+   "row": "S5.1"
+  },
+  "intent-service POST /intent-reports": {
+   "fate": "replaced",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS createMOI (in SO SMOS)",
+   "row": "S5.1"
+  },
+  "intent-service POST /intent-utility-formulas": {
+   "fate": "replaced",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS createMOI (in SO SMOS)",
+   "row": "S5.1"
+  },
+  "intent-service POST /intents": {
+   "fate": "replaced",
+   "replacement": "TS 28.312 v20.0.0 Intent MnS: TS 28.532 ProvMnS createMOI (in SO SMOS)",
+   "row": "S5.1"
+  },
+  "intent-service POST /intents/{}/negotiation-feedback": {
+   "fate": "replaced",
+   "replacement": "TS 28.312 v20.0.0 §4.6.2 negotiation: modifyMOIAttributes on `Intent` with the negotiation context (in SO SMOS)",
+   "row": "S5.1, S5.15"
+  }
+ }
+}

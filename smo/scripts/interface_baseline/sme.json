@@ -1,0 +1,90 @@
+{
+ "module": "sme",
+ "producer": {
+  "sme DELETE /invoker-registrations/{}": {
+   "fate": "replaced",
+   "replacement": "TS 29.222 CAPIF_API_Invoker_Management_API (`/api-invoker-management/v1/onboardedInvokers`)",
+   "row": "S1.16"
+  },
+  "sme DELETE /provider-registrations/{}": {
+   "fate": "replaced",
+   "replacement": "TS 29.222 CAPIF_API_Provider_Management_API (`/api-provider-management/v1/registrations`)",
+   "row": "S1.16"
+  },
+  "sme DELETE /trusted-invokers/{}": {
+   "fate": "replaced",
+   "replacement": "TS 29.222 CAPIF_Security_API `trustedInvokers` at its standard path",
+   "row": "S1.16"
+  },
+  "sme GET /invoker-registrations": {
+   "fate": "replaced",
+   "replacement": "TS 29.222 CAPIF_API_Invoker_Management_API (`/api-invoker-management/v1/onboardedInvokers`)",
+   "row": "S1.16"
+  },
+  "sme GET /provider-registrations": {
+   "fate": "replaced",
+   "replacement": "TS 29.222 CAPIF_API_Provider_Management_API (`/api-provider-management/v1/registrations`)",
+   "row": "S1.16"
+  },
+  "sme GET /trusted-invokers": {
+   "fate": "replaced",
+   "replacement": "TS 29.222 CAPIF_Security_API `trustedInvokers` at its standard path",
+   "row": "S1.16"
+  },
+  "sme GET /trusted-invokers/{}": {
+   "fate": "replaced",
+   "replacement": "TS 29.222 CAPIF_Security_API `trustedInvokers` at its standard path",
+   "row": "S1.16"
+  },
+  "sme POST /invoker-registrations": {
+   "fate": "replaced",
+   "replacement": "TS 29.222 CAPIF_API_Invoker_Management_API (`/api-invoker-management/v1/onboardedInvokers`)",
+   "row": "S1.16"
+  },
+  "sme POST /invoker-registrations/purge-stale": {
+   "fate": "delete",
+   "replacement": "worker task in process; not an interface",
+   "row": "S1.16"
+  },
+  "sme POST /invoker-registrations/{}/secret": {
+   "fate": "replaced",
+   "replacement": "TS 29.222 CAPIF_API_Invoker_Management_API (`/api-invoker-management/v1/onboardedInvokers`)",
+   "row": "S1.16"
+  },
+  "sme POST /oauth2/token": {
+   "fate": "replaced",
+   "replacement": "TS 29.222 CAPIF_Security_API token (`/capif-security/v1/securities/{id}/token`)",
+   "row": "S1.16"
+  },
+  "sme POST /provider-registrations": {
+   "fate": "replaced",
+   "replacement": "TS 29.222 CAPIF_API_Provider_Management_API (`/api-provider-management/v1/registrations`)",
+   "row": "S1.16"
+  },
+  "sme POST /trusted-invokers/{}/delete": {
+   "fate": "replaced",
+   "replacement": "TS 29.222 CAPIF_Security_API `trustedInvokers` at its standard path",
+   "row": "S1.16"
+  },
+  "sme POST /trusted-invokers/{}/update": {
+   "fate": "replaced",
+   "replacement": "TS 29.222 CAPIF_Security_API `trustedInvokers` at its standard path",
+   "row": "S1.16"
+  },
+  "sme PUT /invoker-registrations/{}": {
+   "fate": "replaced",
+   "replacement": "TS 29.222 CAPIF_API_Invoker_Management_API (`/api-invoker-management/v1/onboardedInvokers`)",
+   "row": "S1.16"
+  },
+  "sme PUT /invoker-registrations/{}/authz-scope": {
+   "fate": "replaced",
+   "replacement": "TS 28.319 `AccessRule` naming the invoker (ADR 0005 scope)",
+   "row": "S1.14"
+  },
+  "sme PUT /trusted-invokers/{}": {
+   "fate": "replaced",
+   "replacement": "TS 29.222 CAPIF_Security_API `trustedInvokers` at its standard path",
+   "row": "S1.16"
+  }
+ }
+}

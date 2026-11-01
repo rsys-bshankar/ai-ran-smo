@@ -1,0 +1,91 @@
+{
+ "consumer": {
+  "sa-smos/app/main.py GET /mdaf/reports/{}": "mdaf GET /reports/{}",
+  "sa-smos/app/main.py GET /rapp-mgmt/instances/{}/versions": "rapp-mgmt GET /instances/{}/versions",
+  "sa-smos/app/main.py GET /so-smos/orders/{}": "so-smos GET /orders/{}",
+  "sa-smos/app/main.py POST /aimgf/training-jobs": "aimgf POST /training-jobs",
+  "sa-smos/app/main.py POST /mdaf/subscriptions": "mdaf POST /subscriptions",
+  "sa-smos/app/main.py POST /nfo/deployments/{}/heal": "nfo POST /deployments/{}/heal",
+  "sa-smos/app/main.py POST /ran-nf-oam/config-jobs": "ran-nf-oam POST /config-jobs",
+  "sa-smos/app/main.py POST /rapp-mgmt/instances/{}/rollback": "rapp-mgmt POST /instances/{}/rollback",
+  "sa-smos/app/o1cm.py DELETE /intent-service/intent-handling-functions/{}": "intent-service DELETE /intent-handling-functions/{}",
+  "sa-smos/app/o1cm.py GET /intent-service/intent-handling-functions": "intent-service GET /intent-handling-functions",
+  "sa-smos/app/o1cm.py GET /intent-service/intents/{}": "intent-service GET /intents/{}",
+  "sa-smos/app/o1cm.py POST /dme/actions": "dme POST /actions",
+  "sa-smos/app/o1cm.py POST /intent-service/intent-handling-functions": "intent-service POST /intent-handling-functions",
+  "sa-smos/app/o1cm.py POST /intent-service/intent-reports": "intent-service POST /intent-reports"
+ },
+ "module": "sa-smos",
+ "producer": {
+  "sa-smos DELETE /o1-cm-handler/registration": {
+   "fate": "delete",
+   "replacement": "the O1-CM handler retires; SO SMOS enacts Level-2 intents",
+   "row": "S5.9"
+  },
+  "sa-smos GET /monitors": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS on `AssuranceClosedControlLoop` / `AssuranceGoal` [N] TS 28.536; outcomes as TS 28.312 intent reports to SO SMOS",
+   "row": "S5.8, S5.17"
+  },
+  "sa-smos GET /monitors/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS on `AssuranceClosedControlLoop` / `AssuranceGoal` [N] TS 28.536; outcomes as TS 28.312 intent reports to SO SMOS",
+   "row": "S5.8, S5.17"
+  },
+  "sa-smos GET /o1-cm-handler/enactments": {
+   "fate": "delete",
+   "replacement": "the O1-CM handler retires; SO SMOS enacts Level-2 intents",
+   "row": "S5.9"
+  },
+  "sa-smos GET /remedial-actions": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS on `AssuranceClosedControlLoop` / `AssuranceGoal` [N] TS 28.536; outcomes as TS 28.312 intent reports to SO SMOS",
+   "row": "S5.8, S5.17"
+  },
+  "sa-smos POST /monitors": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS on `AssuranceClosedControlLoop` / `AssuranceGoal` [N] TS 28.536; outcomes as TS 28.312 intent reports to SO SMOS",
+   "row": "S5.8, S5.17"
+  },
+  "sa-smos POST /monitors/{}/escalate": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS on `AssuranceClosedControlLoop` / `AssuranceGoal` [N] TS 28.536; outcomes as TS 28.312 intent reports to SO SMOS",
+   "row": "S5.8, S5.17"
+  },
+  "sa-smos POST /monitors/{}/evaluate": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS on `AssuranceClosedControlLoop` / `AssuranceGoal` [N] TS 28.536; outcomes as TS 28.312 intent reports to SO SMOS",
+   "row": "S5.8, S5.17"
+  },
+  "sa-smos POST /monitors/{}/remedial-actions": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS on `AssuranceClosedControlLoop` / `AssuranceGoal` [N] TS 28.536; outcomes as TS 28.312 intent reports to SO SMOS",
+   "row": "S5.8, S5.17"
+  },
+  "sa-smos POST /monitors/{}/reports": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS on `AssuranceClosedControlLoop` / `AssuranceGoal` [N] TS 28.536; outcomes as TS 28.312 intent reports to SO SMOS",
+   "row": "S5.8, S5.17"
+  },
+  "sa-smos POST /o1-cm-handler/intents": {
+   "fate": "delete",
+   "replacement": "the O1-CM handler retires; SO SMOS enacts Level-2 intents",
+   "row": "S5.9"
+  },
+  "sa-smos POST /o1-cm-handler/registration": {
+   "fate": "delete",
+   "replacement": "the O1-CM handler retires; SO SMOS enacts Level-2 intents",
+   "row": "S5.9"
+  },
+  "sa-smos PUT /monitors/{}/automation": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS on `AssuranceClosedControlLoop` / `AssuranceGoal` [N] TS 28.536; outcomes as TS 28.312 intent reports to SO SMOS",
+   "row": "S5.8, S5.17"
+  },
+  "sa-smos PUT /monitors/{}/remedy": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS on `AssuranceClosedControlLoop` / `AssuranceGoal` [N] TS 28.536; outcomes as TS 28.312 intent reports to SO SMOS",
+   "row": "S5.8, S5.17"
+  }
+ }
+}

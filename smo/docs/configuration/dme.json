@@ -1,0 +1,4 @@
+{
+  "DME_PRODUCER_HEALTH_CACHE_SECONDS": "DME: how long, in seconds, a producer's health answer is remembered when a type's status is computed (call flow 11c). Default 30; 0 asks the producer at every read.",
+  "SMO_RETENTION_DME_RECORDS_DAYS": "Days to keep a DME data record (by `produced_at`) before `dme-worker` purges it (task `purge-records`, hourly; call flow 12d). Default 0 keeps every record; `docs/RETENTION.md` proposes 30."
+}

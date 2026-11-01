@@ -1,0 +1,7 @@
+{
+  "SME_ALLOW_OPEN_ENROLLMENT": "`true`, `1`, `yes` or `on`: SME accepts invoker registration with no enrollment secret (role `internal`). Only for a lab with `SMO_ENROLLMENT_SECRET` unset; never in production.",
+  "SME_TOKEN_AUDIENCE": {
+    "description": "Audience SME requires in a client assertion for its token endpoint. Empty: `<SME_URL>/oauth2/token`. Set it when SME is published under another public URL than the one it is called by.",
+    "secret": false
+  }
+}

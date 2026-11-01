@@ -1,0 +1,4 @@
+{
+  "ECHO_MSAC_RULES": "Echo: the TS 28.319 MSAC rules per caller, as JSON from the caller (invoker id, or the console user) to a list of {dataNodeSelector, operations, action}. A caller not listed is not managed by MSAC; a setting that is not valid, or a rule that is not one, refuses every caller (fail closed). Read on every request.",
+  "ECHO_PLACEMENT": "Echo (the reference ProvMnS module): where its instances are for the ADR 0005 scope claim, as JSON from a DN prefix to {region, tenant, siteCluster} (the longest prefix that is the DN or one of its ancestors wins). Empty: nothing is placed, so only unscoped callers and SubNetwork claims reach an instance; not valid JSON: nothing is placed. Read on every request."
+}

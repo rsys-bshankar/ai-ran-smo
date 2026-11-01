@@ -1,4 +1,5 @@
-"""Schema migrations (PR-OPS-1.2, 1.3): one linear history, a baseline equal to 001_init.sql, stamping of existing databases.
+"""Schema migrations (PR-OPS-1.2, 1.3): a shared trunk to 0068 and then one branch per module (history.d/PARALLEL-SAFE.md), a baseline equal to
+001_init.sql, stamping of existing databases.
 
 The history tests need no database. The rest need SMO_TEST_POSTGRES_URL (CI's `migration-postgres` job, or a local server).
 """
@@ -22,7 +23,7 @@ MIGRATE = SMO_ROOT / "scripts" / "migrate.py"
 CHECK = SMO_ROOT / "scripts" / "check_migration_matches_models.py"
 ADMIN_URL = os.environ.get("SMO_TEST_POSTGRES_URL")
 needs_postgres = pytest.mark.skipif(not ADMIN_URL, reason="SMO_TEST_POSTGRES_URL not set")
-HEAD = "0068"         # raise this with every new revision: the tests below then check it is the head
+TRUNK_END = "0068"    # the shared trunk ends here; every later revision is on a branch (scripts/check_revision_branches.py), so nothing here names a head
 # The newest revision that alters a table, and that table: the lock tests hold it while migrating to that revision. Raise both with a revision that alters a
 # table (0065 only drops roles and 0066 only makes Echo's new schema, so neither can be blocked by a table lock; 0068 comments on smo_event, which takes its lock).
 LOCK_REVISION = "0068"
@@ -35,12 +36,129 @@ def _scripts() -> ScriptDirectory:
     return ScriptDirectory.from_config(config)
 
 
-def test_the_history_is_one_linear_chain_from_the_baseline():
-    """The migration history has one head and one root, `0001`, so two revisions that share a parent fail here and must be merged."""
+def _heads() -> str:
+    """The heads the history ends in, as `migrate.py` prints them: sorted, comma separated (`0068` until a branch has a revision)."""
+    return ",".join(sorted(_scripts().get_heads()))
+
+
+def _branch_checker():
+    spec = importlib.util.spec_from_file_location("check_revision_branches", SMO_ROOT / "scripts" / "check_revision_branches.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_trunk_is_one_linear_chain_from_the_baseline_to_0068():
+    """Revisions 0001 to 0068 are one chain: each has exactly one parent, the one before it, and the root is 0001."""
     scripts = _scripts()
-    assert len(scripts.get_heads()) == 1, "two revisions share a parent: merge them (alembic merge)"
-    revisions = list(scripts.walk_revisions())          # head first
-    assert revisions[-1].revision == "0001" and revisions[-1].down_revision is None
+    revision, seen = scripts.get_revision(TRUNK_END), []
+    while revision is not None:
+        seen.append(revision.revision)
+        assert not revision.branch_labels, revision.revision
+        parents = revision._normalized_down_revisions
+        assert len(parents) <= 1, f"{revision.revision} merges {parents}"
+        revision = scripts.get_revision(parents[0]) if parents else None
+    assert seen[-1] == "0001" and seen == [f"{n:04d}" for n in range(int(TRUNK_END), 0, -1)]
+
+
+def test_every_revision_after_the_trunk_is_on_a_labelled_branch_with_one_head():
+    """Every revision after 0068 carries a branch label (Alembic carries a branch's label to all its revisions), each branch has at most one head,
+    and the history's rules (scripts/check_revision_branches.py: ids, parents, labels) hold."""
+    scripts, trunk = _scripts(), {f"{n:04d}" for n in range(1, int(TRUNK_END) + 1)}
+    for revision in scripts.walk_revisions():
+        if revision.revision not in trunk:
+            assert revision.branch_labels, f"{revision.revision} has no branch label"
+    per_branch: dict[str, list[str]] = {}
+    for head in scripts.get_heads():
+        labels = scripts.get_revision(head).branch_labels or {"trunk"}
+        for label in labels:
+            per_branch.setdefault(label, []).append(head)
+    assert all(len(ends) == 1 for ends in per_branch.values()), per_branch
+    checker = _branch_checker()
+    found = checker.revisions()
+    assert checker.problems(found, checker.labels()) == []
+    assert ",".join(checker.heads(found)) == _heads()                    # the CI steps' dependency-free reading agrees with Alembic
+
+
+def _write_revision(directory: Path, rev: str, down, labels=None, depends=None, table: str | None = None) -> None:
+    """A minimal revision file in `directory` that makes (and drops) one table."""
+    table = table or f"t_{rev}"
+    directory.joinpath(f"{rev}_test.py").write_text(
+        f"from alembic import op\nrevision = {rev!r}\ndown_revision = {down!r}\nbranch_labels = {labels!r}\ndepends_on = {depends!r}\n\n\n"
+        f"def upgrade():\n    op.execute('CREATE TABLE {table} (id INTEGER)')\n\n\ndef downgrade():\n    op.execute('DROP TABLE {table}')\n")
+
+
+ENV_PY = '''from alembic import context
+context.configure(connection=context.config.attributes["connection"], target_metadata=None)
+with context.begin_transaction():
+    context.run_migrations()
+'''
+
+
+def test_depends_on_orders_a_revision_after_another_branchs_change(tmp_path):
+    """The example of a cross-module revision: `teiv_0001` needs a table `aimgf_0001` makes, so it says `depends_on = "aimgf_0001"`. Upgrading only
+    the teiv branch applies aimgf's revision first; each branch keeps its own head; the branch rules accept it; and a depends_on that names nothing
+    is a problem the CI check reports."""
+    from alembic import command
+    versions = tmp_path / "versions"
+    versions.mkdir()
+    (tmp_path / "env.py").write_text(ENV_PY)
+    (tmp_path / "script.py.mako").write_text((SMO_ROOT / "migrations" / "script.py.mako").read_text())
+    _write_revision(versions, "0068", None)
+    _write_revision(versions, "aimgf_0001", "0068", labels=("aimgf",), table="aimgf_model")
+    _write_revision(versions, "teiv_0001", "0068", labels=("teiv",), depends="aimgf_0001", table="teiv_model")
+    engine = create_engine(f"sqlite:///{tmp_path / 'db.sqlite'}")
+    with engine.connect() as connection:
+        config = Config()
+        config.set_main_option("script_location", str(tmp_path))
+        config.attributes["connection"] = connection
+        command.upgrade(config, "teiv@head")
+        connection.commit()
+        tables = set(connection.execute(text("SELECT name FROM sqlite_master WHERE type = 'table'")).scalars())
+        at = sorted(connection.execute(text("SELECT version_num FROM alembic_version")).scalars())
+    engine.dispose()
+    assert {"aimgf_model", "teiv_model"} <= tables and at == ["teiv_0001"]      # Alembic records aimgf_0001 through the revision that depends on it
+    found = _branch_checker().revisions(versions)
+    assert _branch_checker().recorded_heads(found) == at                  # what the CI steps compare with alembic_version
+    checker = _branch_checker()
+    assert checker.problems(checker.revisions(versions), {"shared", "aimgf", "teiv"}) == []
+    _write_revision(versions, "teiv_0002", "teiv_0001", depends="aimgf_0009")
+    assert checker.problems(checker.revisions(versions), {"shared", "aimgf", "teiv"}) == [
+        "teiv_0002_test.py: depends_on names 'aimgf_0009', which is not a revision"]
+
+
+# Each way a new revision can break the branch rules, and the line the CI check prints for it.
+@pytest.mark.parametrize("rev, down, labels, expected", [
+    ("0069", "0068", None, "0069_test.py: a new revision on the shared trunk (after 0068); give it a branch"),
+    ("aimgf_0001", "0068", None, "aimgf_0001_test.py: the first revision of branch 'aimgf' must say branch_labels = ('aimgf',), not None"),
+    ("aimgf_0001", "0067", ("aimgf",), "aimgf_0001_test.py: the first revision of branch 'aimgf' has down_revision '0067', not '0068'"),
+    ("nosuch_0001", "0068", ("nosuch",), "nosuch_0001_test.py: branch 'nosuch' is not 'shared' or a module of smo/"),
+    ("aimgf-1", "0068", ("aimgf",), "aimgf-1_test.py: revision 'aimgf-1' is neither a trunk revision (NNNN) nor a branch one (<module>_NNNN)"),
+])
+def test_an_unlabelled_or_misplaced_new_revision_is_refused(tmp_path, rev, down, labels, expected):
+    """The CI check (scripts/check_revision_branches.py) refuses a new trunk revision, a branch without its label, a wrong parent, an unknown module
+    and an id Alembic would misread, each with a line naming the file."""
+    checker = _branch_checker()
+    for n in range(1, int(TRUNK_END) + 1):
+        _write_revision(tmp_path, f"{n:04d}", f"{n - 1:04d}" if n > 1 else None)
+    _write_revision(tmp_path, rev, down, labels=labels)
+    found = checker.problems(checker.revisions(tmp_path), {"shared", "aimgf"})
+    assert len(found) == 1 and found[0].startswith(expected), found
+
+
+def test_a_number_taken_twice_on_a_branch_is_refused(tmp_path):
+    """Two pull requests on one module that both add `aimgf_0002` (two lanes on one branch, against the rule of smo/CLAUDE.md "Working in parallel")
+    give the branch two heads with one id: the check names both files."""
+    checker = _branch_checker()
+    for n in range(1, int(TRUNK_END) + 1):
+        _write_revision(tmp_path, f"{n:04d}", f"{n - 1:04d}" if n > 1 else None)
+    _write_revision(tmp_path, "aimgf_0001", "0068", labels=("aimgf",))
+    _write_revision(tmp_path, "aimgf_0002", "aimgf_0001")
+    (tmp_path / "aimgf_0002_test.py").rename(tmp_path / "aimgf_0002_alarms.py")
+    _write_revision(tmp_path, "aimgf_0002", "aimgf_0001")
+    found = checker.problems(checker.revisions(tmp_path), {"aimgf"})
+    assert any(f.startswith("aimgf_0002_test.py: revision id 'aimgf_0002' is also aimgf_0002_alarms.py") for f in found), found
+    assert any(f.startswith("branch 'aimgf' has 2 heads") for f in found), found
 
 
 def test_the_baseline_revision_runs_the_001_init_sql_file_unchanged():
@@ -51,11 +169,6 @@ def test_the_baseline_revision_runs_the_001_init_sql_file_unchanged():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     assert module.BASELINE_SQL == SMO_ROOT / "migrations" / "001_init.sql" and module.BASELINE_SQL.is_file()
-
-
-def test_the_head_is_the_revision_these_tests_expect():
-    """The head revision is the one this file names in `HEAD`, which is a reminder to update the tests that depend on it when a revision is added."""
-    assert _scripts().get_current_head() == HEAD, "a new revision: update HEAD here and add what it needs to the tests below"
 
 
 def test_every_revision_has_a_downgrade_or_says_it_cannot():
@@ -113,7 +226,7 @@ def test_a_fresh_database_and_a_hand_created_one_reach_the_same_schema(databases
     """
     fresh = _run(MIGRATE, databases["fresh"])
     assert fresh.returncode == 0, fresh.stderr
-    assert f"upgraded to {HEAD}" in fresh.stdout and "stamped" not in fresh.stdout
+    assert f"upgraded to {_heads()}" in fresh.stdout and "stamped" not in fresh.stdout
 
     engine = create_engine(databases["legacy"])        # created the way docker compose's initdb does: the file, no alembic
     with engine.begin() as connection:
@@ -124,7 +237,7 @@ def test_a_fresh_database_and_a_hand_created_one_reach_the_same_schema(databases
     assert "stamped the existing schema at 0001" in legacy.stdout
 
     assert _schema(databases["fresh"]) == _schema(databases["legacy"])
-    assert _run(MIGRATE, databases["legacy"], "--current").stdout.strip() == HEAD
+    assert _run(MIGRATE, databases["legacy"], "--current").stdout.strip() == _heads()
 
 
 @needs_postgres
@@ -183,26 +296,20 @@ def test_the_revision_after_the_baseline_applies_to_a_baseline_database_and_roll
     assert "notification_outbox" not in {table for table, *_ in at_baseline["constraints"]}
 
     up = _run(MIGRATE, databases["fresh"])
-    assert up.returncode == 0 and f"upgraded to {HEAD}" in up.stdout, up.stderr
+    assert up.returncode == 0 and f"upgraded to {_heads()}" in up.stdout, up.stderr
     assert any(table == "public.notification_outbox" for table, *_ in _schema(databases["fresh"])["columns"])
 
     at_head = _schema(databases["fresh"])
-    previous = _scripts().get_revision(HEAD).down_revision                                   # one step down, whatever the head is
-    one = _run(MIGRATE, databases["fresh"], "--downgrade", "-1")
+    previous = _scripts().get_revision(TRUNK_END).down_revision                              # below the trunk's end: every branch goes with it
+    one = _run(MIGRATE, databases["fresh"], "--downgrade", previous)
     assert one.returncode == 0 and f"downgraded to {previous}" in one.stdout, one.stderr
-    if HEAD == LOCK_REVISION:
-        assert _schema(databases["fresh"]) != at_head                                         # the head's change to a table is undone
-    else:                                                                                     # a head that alters no table (0065 drops roles): its downgrade recreates the role
-        engine = create_engine(databases["fresh"])
-        with engine.connect() as connection:
-            assert connection.execute(text("SELECT count(*) FROM pg_roles WHERE rolname = 'smo_mlmr'")).scalar_one() == 1
-        engine.dispose()
+    assert _schema(databases["fresh"]) != at_head                                             # 0068's change to smo_event is undone
     down = _run(MIGRATE, databases["fresh"], "--downgrade", "0001")
     assert down.returncode == 0 and "downgraded to 0001" in down.stdout, down.stderr
     assert _schema(databases["fresh"]) == at_baseline
 
     assert _run(MIGRATE, databases["fresh"]).returncode == 0           # and forward again
-    assert _run(MIGRATE, databases["fresh"], "--current").stdout.strip() == HEAD
+    assert _run(MIGRATE, databases["fresh"], "--current").stdout.strip() == _heads()
 
 
 # --- PR-OPS-3.2: a pod does not start on an older schema ----------------------------------------------------------------------------
@@ -214,19 +321,37 @@ def _migrate_module():
     return module
 
 
-# One row per database revision (None for none) and whether it counts as current for an image whose head is 0020.
-@pytest.mark.parametrize("db, expected", [
-    (None, False),                                  # no schema yet
-    ("0001", False), ("0019", False),               # older than the image's head: wait for the migration
-    ("0020", True),                                 # at the head
-    ("0021", True),                                 # past it (this image is the previous release): it runs on the newer schema
-    ("9999", True),
+IMAGE = ["teiv_0001", "aimgf_0002", "aimgf_0001", "0020", "0019", "0001"]   # newest first: a trunk to 0020, then an aimgf and a teiv branch
+IMAGE_HEADS = ("aimgf_0002", "teiv_0001")
+
+
+# One row per database state (its revisions, one per branch; None for no schema) and whether it counts as current for an image whose history is
+# IMAGE (trunk only: its first three entries left out, head 0020). `applied` is what the database has under its heads, when that is more than them.
+@pytest.mark.parametrize("db, image, heads, expected", [
+    (None, IMAGE[3:], ("0020",), False),                                   # no schema yet
+    (("0001",), IMAGE[3:], ("0020",), False),                              # older than the image's head: wait for the migration
+    (("0019",), IMAGE[3:], ("0020",), False),
+    (("0020",), IMAGE[3:], ("0020",), True),                               # at the head
+    (("0021",), IMAGE[3:], ("0020",), True),                               # past it (this image is the previous release): it runs on the newer schema
+    (("9999",), IMAGE[3:], ("0020",), True),
+    (("0020",), IMAGE, IMAGE_HEADS, False),                                # branches the database has not had yet
+    (("aimgf_0002",), IMAGE, IMAGE_HEADS, False),                          # aimgf at its head, teiv not there: every branch must be
+    (("aimgf_0001", "teiv_0001"), IMAGE, IMAGE_HEADS, False),              # aimgf one behind
+    (("aimgf_0002", "teiv_0001"), IMAGE, IMAGE_HEADS, True),               # every branch at its head
+    (("aimgf_0003", "teiv_0001"), IMAGE, IMAGE_HEADS, True),               # a branch past this image: a later release's schema
 ])
-def test_the_schema_is_current_when_the_database_is_at_or_past_the_head(db, expected):
-    """A schema is current when its revision is the image's head or later (a newer schema is fine for an older image during a rolling upgrade), and
-    not when there is none or it is older.
-    """
-    assert _migrate_module().schema_is_current(db, ["0020", "0019", "0018", "0001"]) is expected
+def test_the_schema_is_current_when_every_branch_is_at_or_past_its_head(db, image, heads, expected):
+    """A schema is current when every branch is at this image's head of it, or the database has a revision this image does not know (a newer schema
+    is fine for an older image during a rolling upgrade); not when there is none or any branch is behind."""
+    assert _migrate_module().schema_is_current(db, image, heads) is expected
+
+
+def test_a_head_recorded_only_through_a_revision_that_depends_on_it_counts_as_applied():
+    """With teiv_0001 depending on aimgf_0001, Alembic keeps only teiv_0001 in alembic_version; the schema is current because aimgf_0001 is under it."""
+    heads = ("aimgf_0001", "teiv_0001")
+    image = ["teiv_0001", "aimgf_0001", "0068"]
+    assert _migrate_module().schema_is_current(("teiv_0001",), image, heads) is False                      # its heads alone: aimgf_0001 seems missing
+    assert _migrate_module().schema_is_current(("teiv_0001",), image, heads, {"teiv_0001", "aimgf_0001", "0068"}) is True
 
 
 @needs_postgres
@@ -254,7 +379,7 @@ def test_a_row_naming_something_that_does_not_exist_stops_the_downgrade_across_0
         connection.execute(text("INSERT INTO a1_related.a1_ei_type VALUES ('orphan', 'test', gen_random_uuid())"))
     refused = _run(MIGRATE, url, "--downgrade", "0021")
     assert refused.returncode != 0 and "is not present in table" in (refused.stderr + refused.stdout)
-    assert _run(MIGRATE, url, "--current").stdout.strip() == HEAD                              # not half-way down
+    assert _run(MIGRATE, url, "--current").stdout.strip() == _heads()                              # not half-way down
     with engine.begin() as connection:
         connection.execute(text("DELETE FROM a1_related.a1_ei_type WHERE ei_type_id = 'orphan'"))
     engine.dispose()
@@ -281,7 +406,7 @@ def test_downgrading_0017_keeps_every_rapp_limit_row_including_one_without_an_ho
     assert rows == {"capped": 7, "blast-only": 2147483647}
     assert nullable == "NO"                                                                    # the old schema's NOT NULL is back
     assert _run(MIGRATE, url).returncode == 0                                                  # and it goes up again
-    assert _run(MIGRATE, url, "--current").stdout.strip() == HEAD
+    assert _run(MIGRATE, url, "--current").stdout.strip() == _heads()
     engine.dispose()
 
 

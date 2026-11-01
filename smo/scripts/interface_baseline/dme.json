@@ -1,0 +1,159 @@
+{
+ "consumer": {
+  "dme/app/main.py GET /ran-nf-oam/managed-entities": "ran-nf-oam GET /managed-entities",
+  "dme/app/main.py POST /ran-nf-oam/config-jobs": "ran-nf-oam POST /config-jobs"
+ },
+ "module": "dme",
+ "producer": {
+  "dme DELETE /data-jobs": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.4 data request / §5.2.5 data subscription (data job), R1AP path form",
+   "row": "S3.17"
+  },
+  "dme DELETE /data-jobs/{}": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.4 data request / §5.2.5 data subscription (data job), R1AP path form",
+   "row": "S3.17"
+  },
+  "dme DELETE /dme-types/{}": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.2 data registration / §5.2.3 data discovery, R1TD v05 type ids `namespace:name:semver`",
+   "row": "S3.17"
+  },
+  "dme DELETE /offers/{}": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.7 data offer service",
+   "row": "S3.17"
+  },
+  "dme DELETE /production-capabilities": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.2 data registration / §5.2.3 data discovery, R1TD v05 type ids `namespace:name:semver`",
+   "row": "S3.17"
+  },
+  "dme DELETE /production-capabilities/{}/types": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.2 data registration / §5.2.3 data discovery, R1TD v05 type ids `namespace:name:semver`",
+   "row": "S3.17"
+  },
+  "dme DELETE /type-subscriptions/{}": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.3 data discovery (type availability subscription)",
+   "row": "S3.17"
+  },
+  "dme GET /actions": {
+   "fate": "delete",
+   "replacement": "DME O1 action mediation retires; network writes are Level-2 intents to SO SMOS",
+   "row": "S3.12, S5.9"
+  },
+  "dme GET /actions/{}": {
+   "fate": "delete",
+   "replacement": "DME O1 action mediation retires; network writes are Level-2 intents to SO SMOS",
+   "row": "S3.12, S5.9"
+  },
+  "dme GET /data-jobs": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.4 data request / §5.2.5 data subscription (data job), R1AP path form",
+   "row": "S3.17"
+  },
+  "dme GET /data-jobs/{}": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.4 data request / §5.2.5 data subscription (data job), R1AP path form",
+   "row": "S3.17"
+  },
+  "dme GET /data-jobs/{}/records": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.6 data delivery (pull / push / streaming), R1TD v05 delivery schemas",
+   "row": "S3.17"
+  },
+  "dme GET /data-jobs/{}/status": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.4 data request / §5.2.5 data subscription (data job), R1AP path form",
+   "row": "S3.17"
+  },
+  "dme GET /dme-types": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.2 data registration / §5.2.3 data discovery, R1TD v05 type ids `namespace:name:semver`",
+   "row": "S3.17"
+  },
+  "dme GET /dme-types/{}": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.2 data registration / §5.2.3 data discovery, R1TD v05 type ids `namespace:name:semver`",
+   "row": "S3.17"
+  },
+  "dme GET /offers": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.7 data offer service",
+   "row": "S3.17"
+  },
+  "dme GET /offers/{}": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.7 data offer service",
+   "row": "S3.17"
+  },
+  "dme GET /production-capabilities": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.2 data registration / §5.2.3 data discovery, R1TD v05 type ids `namespace:name:semver`",
+   "row": "S3.17"
+  },
+  "dme GET /production-capabilities/{}": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.2 data registration / §5.2.3 data discovery, R1TD v05 type ids `namespace:name:semver`",
+   "row": "S3.17"
+  },
+  "dme GET /production-capabilities/{}/status": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.2 data registration / §5.2.3 data discovery, R1TD v05 type ids `namespace:name:semver`",
+   "row": "S3.17"
+  },
+  "dme GET /type-subscriptions": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.3 data discovery (type availability subscription)",
+   "row": "S3.17"
+  },
+  "dme GET /type-subscriptions/{}": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.3 data discovery (type availability subscription)",
+   "row": "S3.17"
+  },
+  "dme POST /actions": {
+   "fate": "delete",
+   "replacement": "DME O1 action mediation retires; network writes are Level-2 intents to SO SMOS",
+   "row": "S3.12, S5.9"
+  },
+  "dme POST /data-jobs": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.4 data request / §5.2.5 data subscription (data job), R1AP path form",
+   "row": "S3.17"
+  },
+  "dme POST /data-jobs/{}/records": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.6 data delivery (pull / push / streaming), R1TD v05 delivery schemas",
+   "row": "S3.17"
+  },
+  "dme POST /offers": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.7 data offer service",
+   "row": "S3.17"
+  },
+  "dme POST /offers/{}/notify": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.7 data offer service",
+   "row": "S3.17"
+  },
+  "dme POST /production-capabilities": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.2 data registration / §5.2.3 data discovery, R1TD v05 type ids `namespace:name:semver`",
+   "row": "S3.17"
+  },
+  "dme POST /type-subscriptions": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.3 data discovery (type availability subscription)",
+   "row": "S3.17"
+  },
+  "dme PUT /data-jobs/{}": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.4 data request / §5.2.5 data subscription (data job), R1AP path form",
+   "row": "S3.17"
+  }
+ }
+}

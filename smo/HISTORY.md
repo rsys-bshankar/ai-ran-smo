@@ -5325,3 +5325,12 @@ ADR 0008 section 3.5. The O1 simulator part of S1.10 was S0.15 (`oran-sim`, ADR 
 - **Not done:** CloudNativePG with TimescaleDB (PR-CONV-S1.10a); the stores in the chart and the two mirror packages made public (S1.10b); ADR 0006 slice 4
   (SB-7.6) and slice 5 (chart, the relay-lag alert and its runbook, a SASL_SSL listener, the mutation gate on `kafka_settings.py`: MSG-3.7). Licence notes: MinIO
   is AGPL-3.0 and optional; TimescaleDB's continuous aggregates and compression are under the Timescale License (recorded in S1.10a). The DR path was tried once by hand: `pg_dump -Fc` of the migrated database with the extension and `pg_restore` into a new one both succeed (a warning on TimescaleDB's own catalog); once S1.9 makes hypertables, `scripts/dr_*.sh` need Timescale's `timescaledb_pre_restore()` / `post_restore()` around the restore (S1.10a).
+
+## 12. Closed items since the fragment files (`history.d/`)
+
+From November 2026 a closed item is a file of its own, `history.d/<id>.md`, with what an entry of the sections above holds (`smo/CLAUDE.md`, "Working
+in parallel"); a pull request adds its file and never edits this one. The index below is written at release time by `scripts/history_index.py --write`;
+until then a fragment is pending (`--check` lists it). Code comments cite `history.d/<id>.md`.
+
+<!-- history.d index: written by scripts/history_index.py --write at release; do not edit by hand -->
+<!-- end of the history.d index -->

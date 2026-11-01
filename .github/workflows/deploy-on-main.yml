@@ -66,8 +66,8 @@ jobs:
           state=$(docker compose ps -a migrate --format json | jq -rs '.[0] | "\(.State) \(.ExitCode)"')
           echo "migrate: $state"
           [ "$state" = "exited 0" ]
-          head=$(ls migrations/versions | grep -oE '^[0-9]+' | sort | tail -1)
-          at=$(docker compose exec -T postgres psql -U smo -d smo -Atc "SELECT version_num FROM alembic_version")
+          head=$(python3 scripts/check_revision_branches.py --heads)   # one per branch (docs/adr/0001-schema-migrations.md)
+          at=$(docker compose exec -T postgres psql -U smo -d smo -Atc "SELECT string_agg(version_num, ',' ORDER BY version_num) FROM alembic_version")
           echo "database at $at, repository head $head"
           [ "$at" = "$head" ]
 

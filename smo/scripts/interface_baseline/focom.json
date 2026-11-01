@@ -1,0 +1,455 @@
+{
+ "module": "focom",
+ "producer": {
+  "focom DELETE /alarm-subscriptions/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom DELETE /artifact-resource-types/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom DELETE /artifact-resources/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom DELETE /cluster-resource-groups/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom DELETE /cluster-resource-types/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom DELETE /cluster-resources/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom DELETE /infrastructure-resource-types/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom DELETE /infrastructure-resources/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom DELETE /inventory/subscriptions/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom DELETE /locations/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom DELETE /node-cluster-types/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom DELETE /node-clusters/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom DELETE /o-cloud-sites/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom DELETE /performance-jobs/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom DELETE /performance-subscriptions/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom DELETE /provisioning-requests/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom DELETE /resource-pools/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom DELETE /resources/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /alarm-subscriptions": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /alarm-subscriptions/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /alarms": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /alarms/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /artifact-resource-types": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /artifact-resource-types/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /artifact-resources": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /artifact-resources/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /cluster-resource-groups": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /cluster-resource-groups/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /cluster-resource-types": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /cluster-resource-types/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /cluster-resources": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /cluster-resources/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /deployment-managers": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /deployment-managers/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /infrastructure-resource-types": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /infrastructure-resource-types/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /infrastructure-resources": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /infrastructure-resources/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /inventory": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /inventory/subscriptions": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /locations": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /locations/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /node-cluster-types": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /node-cluster-types/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /node-clusters": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /node-clusters/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /o-cloud-sites": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /o-cloud-sites/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /performance": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /performance-jobs": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /performance-jobs/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /performance-subscriptions": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /performance-subscriptions/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /provisioning-requests": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /provisioning-requests/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /resource-pools": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /resource-pools/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /resource-pools/{}/resources": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /resource-types": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /resource-types/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /resources/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /resources/{}/status": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom GET /resources/{}/utilisation": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 performance (measurement jobs and reports)",
+   "row": "S4.9"
+  },
+  "focom GET /topology": {
+   "fate": "replaced",
+   "replacement": "WG10 TE&IV R1 topology query (`HOSTED_ON_OCLOUD` edges written by FOCOM)",
+   "row": "S4.5"
+  },
+  "focom GET /utilisation": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 performance (measurement jobs and reports)",
+   "row": "S4.9"
+  },
+  "focom PATCH /alarms/{}/ack": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom PATCH /alarms/{}/clear": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom PATCH /alarms/{}/severity": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom PATCH /performance-jobs/{}": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom POST /alarm-subscriptions": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom POST /alarms/ingest": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 alarm / performance notifications to FOCOM's subscriptions (inbound callbacks)",
+   "row": "S4.9"
+  },
+  "focom POST /artifact-resource-types": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom POST /artifact-resources": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom POST /cluster-resource-groups": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom POST /cluster-resource-types": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom POST /cluster-resources": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom POST /infrastructure-resource-types": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom POST /infrastructure-resources": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom POST /inventory/subscriptions": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom POST /locations": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom POST /node-cluster-types": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom POST /node-clusters": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom POST /o-cloud-sites": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom POST /performance-jobs": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom POST /performance-subscriptions": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom POST /performance/ingest": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 alarm / performance notifications to FOCOM's subscriptions (inbound callbacks)",
+   "row": "S4.9"
+  },
+  "focom POST /provisioning-requests": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom POST /resource-pools": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom POST /resource-types": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 at its standard path (inventory, subscriptions, alarms, performance, provisioning)",
+   "row": "S4.9"
+  },
+  "focom POST /resources/provision": {
+   "fate": "replaced",
+   "replacement": "O2ims v12 `ProvisioningRequest`",
+   "row": "S4.9"
+  }
+ }
+}

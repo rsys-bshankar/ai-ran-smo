@@ -10,7 +10,7 @@
 | Called by | DME (`POST /config-jobs`, O1 action mediation), SO SMOS (`POST /config-jobs`), SA SMOS (`POST /config-jobs`), SDK `sdk.data` (`cell-guards`, `managed-entities`, `vendor-capabilities`, `capabilities`, `…/config`), reference rApps (`GET /alarms`, `POST /pm-reports`), GUI / GUI BFF |
 | Database tables | `o1_adaptor_endpoint`, `managed_entity`, `alarm`, `cm_schema_cache`, `vendor_capability`, `write_config_job` (versioned), `write_config_sub_change`, `pm_subscription`, `fm_subscription`, `software_management_job` (versioned), `msac_identity`, `msac_role`, `msac_access_rule`, `pm_file`, `file_subscription` |
 | Idempotency | `POST /config-jobs` accept an `Idempotency-Key` header (`smo_shared/idempotency.py`; the `idempotency_key` table is shared, not this module's) |
-| Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
+| Unit tests | `tests/`, SQLite, standalone (counts: [docs/test-counts/ran-nf-oam.md](../docs/test-counts/ran-nf-oam.md)) |
 | Status | Done for NETCONF-shaped and RESTCONF O1 CM dispatch. Open: alarm-storm correlation (`OI-1-alarm-storm`), TS 28.532 streaming reporting (`SA-RANOAM-8`, file reporting is built); MSAC, `accessScope`, DN refs and PerceivedSeverity are closed (`SA-RANOAM-1`, `-2`, `-4`, `-6-severity`); a VES event receiver (`SB-7`, off until it is given a password) and MSAC beyond writes (`MGT-2`, off until `RAN_NF_OAM_MSAC_REACH` is on) are built; see [section 2.8](#28-limits-and-open-items) |
 | Time-driven behaviour | The worker (`app/tasks.py`, `python -m smo_shared.worker`) runs the periodic tasks: wave and campaign advance, change windows, KPI schedules and guards, approval expiry, decision chaining and the purges. Endpoint health is not on a timer: it ages at the point of use (`/discover`, the config-write gate); retries run inline (see `docs/ARCHITECTURE.md`, Process state and scale-out) |
 
@@ -684,7 +684,7 @@ cd smo/ran-nf-oam && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 ### 3.2 What is covered
 
-Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
+Counts per file: [`docs/test-counts/ran-nf-oam.md`](../docs/test-counts/ran-nf-oam.md).
 
 | Test file | Covers |
 |---|---|

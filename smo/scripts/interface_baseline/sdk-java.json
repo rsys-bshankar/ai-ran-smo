@@ -1,0 +1,21 @@
+{
+ "consumer": {
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java DELETE /dme/data-jobs/{}": "dme DELETE /data-jobs/{}",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /aimgf/models": "aimgf GET /models",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /aimgf/models/{}": "aimgf GET /models/{}",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /dme/data-jobs": "dme GET /data-jobs",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /dme/data-jobs/{}": "dme GET /data-jobs/{}",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /dme/data-jobs/{}/records": "dme GET /data-jobs/{}/records",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /dme/data-jobs/{}/status": "dme GET /data-jobs/{}/status",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /dme/dme-types": "dme GET /dme-types",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /rapp-mgmt/instances/{}": "rapp-mgmt GET /instances/{}",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /rapp-mgmt/instances/{}/config": "rapp-mgmt GET /instances/{}/config",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java POST /dme/actions": "dme POST /actions",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java POST /dme/data-jobs": "dme POST /data-jobs",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java POST /rapp-mgmt/instances/{}/bootstrap-complete": "rapp-mgmt POST /instances/{}/bootstrap-complete",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java POST /rapp-mgmt/instances/{}/fault": "rapp-mgmt POST /instances/{}/fault",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java POST /rapp-mgmt/instances/{}/performance": "rapp-mgmt POST /instances/{}/performance",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java POST /rapp-mgmt/instances/{}/terminate": "rapp-mgmt POST /instances/{}/terminate"
+ },
+ "module": "sdk-java"
+}

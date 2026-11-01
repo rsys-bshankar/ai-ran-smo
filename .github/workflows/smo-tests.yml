@@ -2,10 +2,14 @@ name: SMO tests
 
 # No `paths:` filter, on purpose: these jobs are required status checks on `main`,
 # and a required check that never runs (a docs-only PR) would block the merge.
+# `merge_group`: the merge queue of `main` (smo/CLAUDE.md, "Working in parallel") runs these same jobs on the queued merge before it lands, so a
+# required check never waits on a run that does not come.
 on:
   push:
     branches: [main]
   pull_request:
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
 
 # Every job only checks out and runs tests: the GITHUB_TOKEN needs nothing
@@ -31,6 +35,19 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: smo/requirements/*.txt
+
+      # history.d/PARALLEL-SAFE.md: what lets pull requests of different lanes merge in any order. Each needs only the standard library.
+      #   - every revision after the shared trunk (0068) is on a labelled module branch, one head per branch (docs/adr/0001-schema-migrations.md);
+      #   - every changelog.d/ fragment parses (front matter with a section), every history.d/ fragment is well formed and the HISTORY.md index names
+      #     only fragments that exist (it is written at release; a fragment not in it yet is pending);
+      #   - every group file of docs/configuration/ is what the code and its descriptions make.
+      - name: Revisions on module branches, fragments well formed, configuration reference current
+        working-directory: smo
+        run: |
+          python scripts/check_revision_branches.py
+          python scripts/changelog.py --check
+          python scripts/history_index.py --check
+          python scripts/config_reference.py --check
 
       # Rules, and what is switched off and why: smo/ruff.toml.
       - name: ruff check
@@ -122,7 +139,7 @@ jobs:
         run: python scripts/check_breaking_changes.py
 
   # The code-documentation gate (smo/docs/CODE_DOCUMENTATION.md). `check_code_docs.py` counts, per module, the files and functions that still lack the description the rule asks for and fails
-  # when a count goes up against smo/scripts/code_docs_baseline.json or when a NEW file or function lacks one. A pull request titled `Docs(code): ...` is a documentation change: it must
+  # when a count goes up against smo/scripts/code_docs_baseline/ (one file per module) or when a NEW file or function lacks one. A pull request titled `Docs(code): ...` is a documentation change: it must
   # also pass `verify_docs_only.py`, which proves against the merge base that only comments, docstrings and layout changed (Markdown is allowed through unverified). The label
   # `docs-tooling` switches that proof off for the one kind of pull request that cannot satisfy it: a change to the verifier or the gate themselves. The tools' own tests run here
   # (not only in the integration job) because the TypeScript cases need smo/gui/node_modules.
@@ -178,7 +195,7 @@ jobs:
   # document (structural rules; problems inside the published 3GPP files are listed in the bundle's .redocly.lint-ignore.yaml), pyang --strict checks the
   # YANG modules the bundle names, every example validates (the Intent ones against Intent Service's own strict TS 28.312 models), the DDL applies to
   # Postgres 18 with TimescaleDB with one role per schema, and the drift between each module's generated OpenAPI and its contract may not grow
-  # (scripts/contract_drift_baseline.json). A required check: the owner adds "Contracts" to the branch protection of main.
+  # (scripts/contract_drift_baseline/, one file per module). A required check: the owner adds "Contracts" to the branch protection of main.
   contracts:
     name: Contracts
     runs-on: ubuntu-latest
@@ -229,12 +246,12 @@ jobs:
         working-directory: smo
         run: python scripts/check_contract_bundle.py --database-url postgresql://postgres:contracts-only@localhost:5432/smo
 
-      - name: Contract drift does not grow (scripts/contract_drift_baseline.json)
+      - name: Contract drift does not grow (scripts/contract_drift_baseline/, one file per module)
         working-directory: smo
         run: python scripts/check_contract_drift.py
 
   # Plan task S0.17, ADR 0011 section 7: every served route and every call of the SMO's own code is a bundle operation, a listed [D] exception, or
-  # waiting in smo/scripts/interface_baseline.json for the PR-CONV row that replaces or deletes it. Fails on a new private route or call, on a stale
+  # waiting in smo/scripts/interface_baseline/ (one file per module) for the PR-CONV row that replaces or deletes it. Fails on a new private route or call, on a stale
   # baseline entry, and (on a pull request) on a baseline that grew against the base branch. Required check (the owner sets it in branch protection).
   interfaces:
     name: Interfaces
@@ -261,7 +278,9 @@ jobs:
         working-directory: smo
         env:
           BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
+          QUEUE_BASE: ${{ github.event.merge_group.base_ref }}       # refs/heads/main when the merge queue runs it
         run: |
+          if [ -z "$BASE_REF" ] && [ -n "$QUEUE_BASE" ]; then BASE_REF="origin/${QUEUE_BASE#refs/heads/}"; fi
           if [ -n "$BASE_REF" ]; then
             python scripts/check_interfaces.py --base-ref "$BASE_REF"
           else
@@ -327,8 +346,8 @@ jobs:
         working-directory: smo
         run: PYTHONPATH=shared python -m pytest tests_integration/ -v
 
-      # The READMEs link to docs/TEST_COUNTS.md instead of stating hand-typed totals; this fails (with the diff) when tests were added or removed without regenerating it
-      - name: Test counts table is current (docs/TEST_COUNTS.md)
+      # The READMEs link to their suite's file in docs/test-counts/ instead of stating hand-typed totals; this fails (with the diff) when tests were added or removed without regenerating it
+      - name: Test counts are current (docs/test-counts/, one file per suite)
         working-directory: smo
         run: python scripts/count_tests.py --check
 
@@ -447,8 +466,8 @@ jobs:
           state=$(docker compose ps -a migrate --format json | jq -rs '.[0] | "\(.State) \(.ExitCode)"')
           echo "migrate: $state"
           [ "$state" = "exited 0" ]
-          head=$(ls migrations/versions | grep -oE '^[0-9]+' | sort | tail -1)
-          at=$(docker compose exec -T postgres psql -U smo -d smo -Atc "SELECT version_num FROM alembic_version")
+          head=$(python3 scripts/check_revision_branches.py --heads)   # one per branch (docs/adr/0001-schema-migrations.md)
+          at=$(docker compose exec -T postgres psql -U smo -d smo -Atc "SELECT string_agg(version_num, ',' ORDER BY version_num) FROM alembic_version")
           echo "database at $at, repository head $head"
           [ "$at" = "$head" ]
 
@@ -1707,8 +1726,8 @@ jobs:
           helm install smo deploy/helm/smo -n smo --create-namespace -f deploy/helm/smo/ci/kind-values.yaml -f .ci-mirror/helm-values.yaml --wait --timeout 12m
           kubectl -n smo get pods
           kubectl -n smo wait --for=condition=complete job/migrate --timeout=60s
-          head=$(ls migrations/versions | grep -oE '^[0-9]+' | sort | tail -1)
-          at=$(kubectl -n smo exec postgres-0 -- psql -U smo -d smo -Atc "SELECT version_num FROM alembic_version")
+          head=$(python3 scripts/check_revision_branches.py --heads)   # one per branch (docs/adr/0001-schema-migrations.md)
+          at=$(kubectl -n smo exec postgres-0 -- psql -U smo -d smo -Atc "SELECT string_agg(version_num, ',' ORDER BY version_num) FROM alembic_version")
           echo "database at $at, repository head $head"
           [ "$at" = "$head" ]
 
@@ -1966,8 +1985,8 @@ jobs:
           kubectl -n smo wait --for=condition=complete job/migrate --timeout=60s
           kubectl -n smo exec deploy/sme -- printenv SMO_DATABASE_URL
           primary=$(kubectl -n smo get cluster smo-pg -o jsonpath='{.status.currentPrimary}')
-          head=$(ls migrations/versions | grep -oE '^[0-9]+' | sort | tail -1)
-          at=$(kubectl -n smo exec "$primary" -c postgres -- psql -U postgres -d smo -Atc "SELECT version_num FROM alembic_version")
+          head=$(python3 scripts/check_revision_branches.py --heads)   # one per branch (docs/adr/0001-schema-migrations.md)
+          at=$(kubectl -n smo exec "$primary" -c postgres -- psql -U postgres -d smo -Atc "SELECT string_agg(version_num, ',' ORDER BY version_num) FROM alembic_version")
           echo "database at $at, repository head $head"
           [ "$at" = "$head" ]
 

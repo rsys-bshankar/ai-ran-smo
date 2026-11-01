@@ -1,0 +1,17 @@
+{
+ "consumer": {
+  "sdk-go/routes.go DELETE /sme/provider-registrations/{apf_id}": "sme DELETE /provider-registrations/{}",
+  "sdk-go/routes.go GET /aimgf/models": "aimgf GET /models",
+  "sdk-go/routes.go GET /dme/dme-types": "dme GET /dme-types",
+  "sdk-go/routes.go GET /dme/production-capabilities": "dme GET /production-capabilities",
+  "sdk-go/routes.go GET /dme/production-capabilities/{producer_id}/status": "dme GET /production-capabilities/{}/status",
+  "sdk-go/routes.go GET /rapp-mgmt/instances/{instance_id}": "rapp-mgmt GET /instances/{}",
+  "sdk-go/routes.go POST /dme/actions": "dme POST /actions",
+  "sdk-go/routes.go POST /invoker-registrations": "sme POST /invoker-registrations",
+  "sdk-go/routes.go POST /oauth2/token": "sme POST /oauth2/token",
+  "sdk-go/routes.go POST /rapp-mgmt/instances/{instance_id}/bootstrap-complete": "rapp-mgmt POST /instances/{}/bootstrap-complete",
+  "sdk-go/routes.go POST /rapp-mgmt/instances/{instance_id}/performance": "rapp-mgmt POST /instances/{}/performance",
+  "sdk-go/routes.go POST /sme/provider-registrations": "sme POST /provider-registrations"
+ },
+ "module": "sdk-go"
+}

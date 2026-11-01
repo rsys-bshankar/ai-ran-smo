@@ -10,7 +10,7 @@
 | Called by | rApps through the SDK (`sdk/smo_sdk/lifecycle.py`, `models.py`), MDAF (MLMF subscriptions and reports), SA SMOS and SO SMOS (training / validation / emulation / deploy / inference steps), GUI via the BFF |
 | Database tables | registry: `aiml_model`, `model_artifact`, `ml_model_coordination_group`, `ml_model_repository`, `ml_models_storage`, `ml_model_profile`, `model_change_subscription` (in the `aimgf` schema since revision 0064); lifecycle and runs: `model_lifecycle` (versioned), `training_job`, `validation_job`, `emulation_job`, `inference_job`, `certification_record`, `lifecycle_transition`, `mlmf_subscription`, `performance_report`, `feature_group`, `ml_training_function`, `ml_training_process`, `ml_training_report`, `ml_testing_function`, `ml_testing_report`, `aiml_inference_function`, `aiml_inference_emulation_function`, `aiml_inference_report`, `ml_model_loading_policy`, `ml_model_loading_request`, `ml_model_loading_process`, `ml_update_function`, `ml_update_request`, `ml_update_process`, `ml_update_report` |
 | Idempotency | `POST /training-jobs`, `/validation-jobs`, `/emulation-jobs`, `/models/{id}/inference-jobs`, `/models/{id}/runtime/scale`, `/mlmf/subscriptions`, `/mlmf/subscriptions/{id}/reports`, `/coordination-groups` accept an `Idempotency-Key` header (`smo_shared/idempotency.py`; the `idempotency_key` table is shared, not this module's) |
-| Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
+| Unit tests | `tests/`, SQLite, standalone (counts: [docs/test-counts/aimgf.md](../docs/test-counts/aimgf.md)) |
 | Status | Done. Open: `OI-1-weighted-triggers` (group-retrain `WEIGHTED_TRIGGERS` raises `NotImplementedError`), `OI-6.1-runtime-gate` (no operator gate on RuntimeLifecycle transitions); runtime scale takes no target size (NFO's scale has no argument) |
 
 ## 1. High-level design (HLD)
@@ -501,7 +501,7 @@ cd smo/aimgf && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 NFO, DME and the webhook are faked in-process; the database is SQLite. Most suites stand a double in for the registry (`FakeMlmr` over `app.registry.access`, fixture `mlmr` in `test_main.py`); the registry's own suites run on its real tables.
 
-Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
+Counts per file: [`docs/test-counts/aimgf.md`](../docs/test-counts/aimgf.md).
 
 | Test file | Covers |
 |---|---|
@@ -526,7 +526,7 @@ Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
 | `tests/test_runtime_nfo.py` | Call flow 17 (DOC-CF-1.5): a deploy NFO refuses or does not answer records nothing and leaves no descriptor; a refused descriptor instantiates nothing; terminate removes deployment and descriptor and a redeploy makes new ones; a refused terminate or unanswered scale leaves the runtime as it was; a job runtime goes with its descriptor, a refused one fails the request, one NFO did not remove keeps its ids; the workload read and the inference it allows (RUNNING, ABNORMAL, GONE, UNKNOWN, no state); no workload without a live runtime; a loading request redeploys a terminated runtime |
 | `tests/test_statemachine.py` | both FSMs (full pipeline, no shortcuts, retrain re-entry, rollback, reject, terminal states, state counts), inference FSM, retrain propagation policies, `ADVANCEABLE_EVENTS`, `TRAINABLE_STATES` |
 
-The counts are test functions; the suite reports more passed because some tests are parametrised (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)).
+The counts are test functions; the suite reports more passed because some tests are parametrised (counts: [docs/test-counts/aimgf.md](../docs/test-counts/aimgf.md)).
 
 ### 3.3 What is not covered here
 

@@ -13,7 +13,7 @@ Producer half. Each operation of `docs/openapi/*.json` (method and path, every p
     section 7 names: one row per operation, parsed here);
   - **standard as served** when appendix A classifies it "keep (standard)" (RESTCONF of the mock adaptor, the VES listener, CAPIF and introspection
     at their standard paths), with the standard named in the row;
-  - otherwise **waiting**: it must be in `scripts/interface_baseline.json` under `producer`, with its appendix A fate (replaced or delete) and the
+  - otherwise **waiting**: it must be in `scripts/interface_baseline/` under `producer`, with its appendix A fate (replaced or delete) and the
     PR-CONV row that removes or replaces it. A waiting operation not in the baseline fails the gate (a new private route).
 Consumer half. Every call the SMO's own code makes is resolved to a producer operation: the literal-path `R1Client` calls of the Python modules and
 the Python SDK (found by `tests_integration/test_r1_consumer_calls.py`, reused, not re-parsed), the Go SDK's route table (`sdk-go/routes.go`), the Java
@@ -41,7 +41,8 @@ SMO = Path(__file__).resolve().parent.parent
 OPENAPI = SMO / "docs" / "openapi"
 APPENDIX_A = SMO / "docs" / "adr" / "0011-appendix-a-route-map.md"
 ADR_0011 = SMO / "docs" / "adr" / "0011-standard-interfaces-only.md"
-BASELINE = SMO / "scripts" / "interface_baseline.json"
+BASELINE_DIR = SMO / "scripts" / "interface_baseline"     # one JSON file per module (scripts/baseline_dirs.py)
+LEGACY_BASELINE = "smo/scripts/interface_baseline.json"   # the single file it was before the split, still read at an older base ref
 GO_ROUTES = SMO / "sdk-go" / "routes.go"
 JAVA_ROUTES = SMO / "sdk-java" / "smo-sdk" / "src" / "main" / "java" / "io" / "smo" / "sdk" / "Routes.java"
 BFF_APP = SMO / "gui-bff" / "app"
@@ -58,6 +59,7 @@ def _load(name: str, path: Path):
 
 
 drift = _load("check_contract_drift", SMO / "scripts" / "check_contract_drift.py")
+baseline_dirs = _load("baseline_dirs", SMO / "scripts" / "baseline_dirs.py")
 consumers_check = _load("test_r1_consumer_calls", SMO / "tests_integration" / "test_r1_consumer_calls.py")
 
 
@@ -290,11 +292,11 @@ def evaluate(ops: dict[str, set[str]], call_list: list[dict], baseline: dict, tp
     for key in sorted(set(producer) - set(base_p)):
         problems.append(f"NEW non-standard, non-[D] route: {key} (make it a bundle operation or a listed [D] exception)")
     for key in sorted(set(base_p) - set(producer)):
-        problems.append(f"stale baseline entry (route replaced or deleted): producer {key}; remove it from scripts/interface_baseline.json")
+        problems.append(f"stale baseline entry (route replaced or deleted): producer {key}; remove it from scripts/interface_baseline/")
     for key in sorted(set(consumer) - set(base_c)):
         problems.append(f"NEW call to a route that is going away: {key} -> {consumer[key]}")
     for key in sorted(set(base_c) - set(consumer)):
-        problems.append(f"stale baseline entry (call moved or deleted): consumer {key}; remove it from scripts/interface_baseline.json")
+        problems.append(f"stale baseline entry (call moved or deleted): consumer {key}; remove it from scripts/interface_baseline/")
     problems += unresolved
     return {"summary": summary, "producer": producer, "consumer": consumer, "problems": problems}
 
@@ -337,9 +339,45 @@ def grown(baseline: dict, base: dict) -> list[str]:
     return out
 
 
+def module_of(side: str, key: str) -> str:
+    """The module a baseline entry belongs to: a producer entry's first word (the serving module); a consumer entry's calling file's module (the
+    first part of its path, or the sample's name for `samples/<rapp>/...`)."""
+    first = key.split(" ", 1)[0]
+    if side == "producer":
+        return first
+    parts = first.split("/")
+    return parts[1] if parts[0] == "samples" and len(parts) > 1 else parts[0]
+
+
+def merge(parts: dict[str, dict]) -> dict:
+    """The whole baseline from its per-module parts ({module: {"producer": ..., "consumer": ...}})."""
+    out: dict = {"producer": {}, "consumer": {}}
+    for part in parts.values():
+        for side in ("producer", "consumer"):
+            out[side].update(part.get(side, {}))
+    return out
+
+
+def split(baseline: dict) -> dict[str, dict]:
+    """The baseline cut into one part per module (the inverse of `merge`), each side sorted."""
+    parts: dict[str, dict] = {}
+    for side in ("producer", "consumer"):
+        for key, value in sorted(baseline.get(side, {}).items()):
+            parts.setdefault(module_of(side, key), {}).setdefault(side, {})[key] = value
+    return parts
+
+
+def base_baseline(base_ref: str) -> dict | None:
+    """The baseline at `base_ref`, merged: its per-module directory, or the single file it was before the split. None when it has neither."""
+    parts = baseline_dirs.read_at(base_ref, "smo/scripts/interface_baseline", LEGACY_BASELINE, SMO)
+    if parts is None:
+        return None
+    return parts[""] if "" in parts else merge(parts)
+
+
 def run(base_ref: str | None = None, write: bool = False) -> int:
     """Runs the gate on the repository and prints the per-module table; exit status 1 when it fails."""
-    baseline = json.loads(BASELINE.read_text()) if BASELINE.exists() else {}
+    baseline = merge(baseline_dirs.read(BASELINE_DIR))
     waivers = consumers_check.WAIVERS
     result = evaluate(produced(), calls(), baseline, templates(), contracted(), appendix_a(), design_ids(), waivers)
     print(f"{'module':28} {'bundle':>7} {'[D]':>5} {'std':>5} {'waiting':>8} {'callers':>8}")
@@ -348,18 +386,15 @@ def run(base_ref: str | None = None, write: bool = False) -> int:
     total = {k: sum(c[k] for c in result["summary"].values()) for k in ("bundle", "design", "standard", "waiting", "consumer_waiting")}
     print(f"{'total':28} {total['bundle']:>7} {total['design']:>5} {total['standard']:>5} {total['waiting']:>8} {total['consumer_waiting']:>8}")
     if write:
-        BASELINE.write_text(json.dumps({"_comment": "Written by scripts/check_interfaces.py --write-baseline; entries may only be removed (plan task S0.17). "
-                                        "producer: served routes neither in the bundle nor a listed [D] exception, with their ADR 0011 appendix A fate "
-                                        "and the PR-CONV row that removes them. consumer: calls of the SMO's own code that reach only such routes.",
-                                        "producer": result["producer"], "consumer": dict(sorted(result["consumer"].items()))}, indent=1) + "\n")
-        print(f"wrote {BASELINE.relative_to(SMO)}")
+        written, removed = baseline_dirs.write(BASELINE_DIR, split({"producer": result["producer"], "consumer": result["consumer"]}))
+        print(f"scripts/interface_baseline/: written {', '.join(written) or 'nothing'}; removed {', '.join(removed) or 'nothing'}")
         return 0
     problems = list(result["problems"])
     problems += [f"smo-teiv's own API named outside teiv/: {f} (D19)" for f in teiv_api_leaks()]
     if base_ref:
-        shown = subprocess.run(["git", "show", f"{base_ref}:smo/scripts/interface_baseline.json"], capture_output=True, text=True, cwd=SMO)
-        if shown.returncode == 0:
-            problems += grown(baseline, json.loads(shown.stdout))
+        base = base_baseline(base_ref)
+        if base is not None:
+            problems += grown(baseline, base)
         else:
             print(f"note: no baseline at {base_ref} (first introduction); growth not checked")
     for problem in problems:
@@ -372,7 +407,7 @@ def main(argv=None) -> int:
     """Command line: check, or write the baseline."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--base-ref", help="git ref whose baseline this one may not grow beyond (CI: the pull request's base)")
-    parser.add_argument("--write-baseline", action="store_true", help="write scripts/interface_baseline.json from today's routes and calls")
+    parser.add_argument("--write-baseline", action="store_true", help="write scripts/interface_baseline/ from today's routes and calls")
     args = parser.parse_args(argv)
     return run(args.base_ref, args.write_baseline)
 

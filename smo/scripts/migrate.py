@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Brings the SMO database to the latest schema revision (PR-OPS-1).
 
-    python scripts/migrate.py                 upgrade to head (the default)
-    python scripts/migrate.py --revision 0001 upgrade to a given revision
-    python scripts/migrate.py --downgrade -1  reverse one revision (or to a revision id); take a backup first
-    python scripts/migrate.py --current       print the database's revision and exit
-    python scripts/migrate.py --wait SECONDS  wait until the database is at (or past) this image's head revision, up to SECONDS; exit 1 if it is not
-                                              (what a Helm install's init containers run, so a pod never starts on an older schema, PR-OPS-3.2)
+    python scripts/migrate.py                 upgrade every branch to its head ("heads", the default; "head" means the same)
+    python scripts/migrate.py --revision 0001 upgrade to a given revision (a branch's own: aimgf@head, aimgf_0002)
+    python scripts/migrate.py --downgrade X   reverse to revision X (aimgf@-1: one step on branch aimgf; -1 only while the history has one head); take a backup first
+    python scripts/migrate.py --current       print the database's revisions (one per branch, comma separated) and exit
+    python scripts/migrate.py --wait SECONDS  wait until every branch of the database is at (or past) this image's head of it, up to SECONDS; exit 1 if
+                                              not (what a Helm install's init containers run, so a pod never starts on an older schema, PR-OPS-3.2)
+
+The history is a shared trunk (`0001` to `0068`) and then one branch per module (`<module>_NNNN`, branch label the module) and one `shared`
+branch (docs/adr/0001-schema-migrations.md, `scripts/check_revision_branches.py`). The database's `alembic_version` then holds one row per head.
 
 The URL comes from `SMO_DATABASE_URL` (or the `*_FILE` forms), as for every service.
 
@@ -57,8 +60,14 @@ def alembic_config(connection) -> Config:
     return config
 
 
+def current_heads(connection) -> tuple[str, ...]:
+    """The revisions the database is at, one per branch it has (sorted; empty for a database without the history)."""
+    return tuple(sorted(MigrationContext.configure(connection).get_current_heads()))
+
+
 def current_revision(connection) -> str | None:
-    return MigrationContext.configure(connection).get_current_revision()
+    """The database's revisions as one string, comma separated (`0068`, or `0068,aimgf_0002` once branches exist), or None."""
+    return ",".join(current_heads(connection)) or None
 
 
 def is_legacy(connection) -> bool:
@@ -67,17 +76,20 @@ def is_legacy(connection) -> bool:
     return "alembic_version" not in tables and LEGACY_MARKER_TABLE in tables
 
 
-def migrate(connection, revision: str = "head") -> str | None:
-    """Upgrades `connection`'s database to `revision`; returns the revision it is then at."""
+def migrate(connection, revision: str = "heads") -> str | None:
+    """Upgrades `connection`'s database to `revision` (default every branch's head); returns the revisions it is then at (`current_revision`)."""
     config = alembic_config(connection)
+    if revision == "head":
+        revision = "heads"                        # with branches "head" is ambiguous; it always meant "everything this image has"
     if is_legacy(connection):
         command.stamp(config, BASELINE)
         connection.commit()
-    at = current_revision(connection)
-    if revision == "head" and at is not None and at not in image_revisions(connection):
+    at = current_heads(connection)
+    known = set(image_revisions(connection))
+    if revision == "heads" and any(head not in known for head in at):
         # a revision this image does not know is a later release's: this image runs on that schema (expand and contract) and has nothing to upgrade.
         # Without this a rollback that runs this image's migrate Job again (to a revision made by `helm install`) ends in "Can't locate revision".
-        return at
+        return current_revision(connection)
     _with_lock_retries(connection, lambda: command.upgrade(config, revision))
     connection.commit()
     return current_revision(connection)
@@ -163,28 +175,57 @@ def ensure_timescaledb(connection, mode: str | None = None) -> str:
     return "created"
 
 
-def schema_is_current(db_revision: str | None, image_revisions: list[str]) -> bool:
-    """Whether a database at `db_revision` can serve code whose revision history is `image_revisions` (head first): it is at that head, or past it
-    (a revision this image does not know is a later one: the previous release's code runs on a newer schema, by the expand/contract rule)."""
-    if db_revision is None or not image_revisions:
+def schema_is_current(db_heads, image_revisions: list[str], image_heads, applied=None) -> bool:
+    """Whether a database at `db_heads` (what `alembic_version` holds) can serve code whose history is `image_revisions` and ends in `image_heads`:
+    every head of this image has been applied (`applied`: the revisions under `db_heads`, through parents and `depends_on`; default `db_heads`
+    themselves), or the database is past this image (a revision this image does not know is a later release's: the previous release's code runs on
+    a newer schema, by the expand/contract rule). Alembic records a revision a later one depends on only through that later one, so `db_heads` can be
+    fewer than `image_heads` on a database that is up to date."""
+    db_heads, image_heads = set(db_heads or ()), set(image_heads or ())
+    if not db_heads or not image_revisions:
         return False
-    return db_revision not in image_revisions or db_revision == image_revisions[0]
+    if any(head not in image_revisions for head in db_heads):
+        return True
+    return image_heads <= (set(applied) if applied is not None else db_heads)
+
+
+def applied_revisions(scripts, db_heads) -> set[str]:
+    """Every revision a database at `db_heads` has applied: the heads and everything under them, through `down_revision` and `depends_on`."""
+    pending, seen = list(db_heads), set()
+    while pending:
+        revision = scripts.get_revision(pending.pop())
+        if revision is None or revision.revision in seen:
+            continue
+        seen.add(revision.revision)
+        pending.extend(revision._all_down_revisions)
+    return seen
+
+
+def _scripts(connection):
+    from alembic.script import ScriptDirectory
+    return ScriptDirectory.from_config(alembic_config(connection))
 
 
 def image_revisions(connection) -> list[str]:
     """The revision ids of this checkout's migration history, newest first. A database revision that is not in this list was made by a later release."""
-    from alembic.script import ScriptDirectory
-    return [r.revision for r in ScriptDirectory.from_config(alembic_config(connection)).walk_revisions()]
+    return [r.revision for r in _scripts(connection).walk_revisions()]
+
+
+def image_heads(connection) -> tuple[str, ...]:
+    """The heads of this checkout's history (the trunk's end until a branch has a revision, then one per branch), sorted."""
+    return tuple(sorted(_scripts(connection).get_heads()))
 
 
 def wait_for_schema(seconds: float, interval: float = 3.0) -> bool:
-    """Blocks until the database answers and is at this image's head (or past it); False when `seconds` pass first."""
+    """Blocks until the database answers and every branch of it is at this image's head (or past it); False when `seconds` pass first."""
     deadline = time.monotonic() + seconds
     while True:
         try:
             engine = create_engine(resolve_database_url())
             with engine.connect() as connection:
-                if schema_is_current(current_revision(connection), image_revisions(connection)):
+                at, known = current_heads(connection), image_revisions(connection)
+                applied = applied_revisions(_scripts(connection), [h for h in at if h in known])
+                if schema_is_current(at, known, image_heads(connection), applied):
                     return True
         except Exception as exc:                  # the database is not up yet, or the migration has not made its tables: keep waiting
             print(f"waiting for the database: {type(exc).__name__}", flush=True)
@@ -194,23 +235,24 @@ def wait_for_schema(seconds: float, interval: float = 3.0) -> bool:
 
 
 def downgrade(connection, revision: str) -> str | None:
-    """Reverses to `revision` (a revision id, or `-1` for one step); returns the revision the database is then at."""
+    """Reverses to `revision` (a revision id, `<branch>@-1` for one step on a branch, `-1` while the history has one head); returns the revisions the
+    database is then at."""
     _with_lock_retries(connection, lambda: command.downgrade(alembic_config(connection), revision))
     connection.commit()
     return current_revision(connection)
 
 
 def main() -> int:
-    """Command-line entry: waits for the schema (`--wait`), prints the current revision (`--current`), downgrades (`--downgrade`), or upgrades to `--revision` (default head).
+    """Command-line entry: waits for the schema (`--wait`), prints the current revisions (`--current`), downgrades (`--downgrade`), or upgrades to `--revision` (default heads).
 
         Returns 0, or 1 only when `--wait` runs out. An upgrade of a database that is already past this image's head is a no-op that says so (the rolling-upgrade rule: a
         previous release's image must start against a newer schema). Errors from Alembic or the database propagate and end the process with a traceback.
     """
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--revision", default="head")
+    parser.add_argument("--revision", default="heads")
     parser.add_argument("--downgrade", metavar="REVISION", help="reverse to REVISION (-1: one step) instead of upgrading")
     parser.add_argument("--current", action="store_true")
-    parser.add_argument("--wait", type=float, metavar="SECONDS", help="wait for the database to be at this image's head instead of migrating it")
+    parser.add_argument("--wait", type=float, metavar="SECONDS", help="wait for every branch of the database to be at this image's head instead of migrating it")
     args = parser.parse_args()
     if args.wait is not None:
         ready = wait_for_schema(args.wait)
@@ -228,7 +270,8 @@ def main() -> int:
         print(f"timescaledb: {timescaledb}", flush=True)
         legacy = is_legacy(connection)
         revision = migrate(connection, args.revision)
-        if args.revision == "head" and revision not in image_revisions(connection):
+        known = set(image_revisions(connection))
+        if args.revision in ("head", "heads") and any(head not in known for head in current_heads(connection)):
             print(f"the database is at {revision}, a revision this image does not know (a later release): nothing to upgrade")
             return 0
         print(f"{'stamped the existing schema at ' + BASELINE + ' and ' if legacy else ''}upgraded to {revision}")

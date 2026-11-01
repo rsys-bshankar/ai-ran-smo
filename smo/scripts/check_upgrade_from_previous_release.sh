@@ -104,7 +104,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 config = Config("alembic.ini")
 config.set_main_option("script_location", "migrations")
-print(ScriptDirectory.from_config(config).get_current_head())
+print(repr(tuple(sorted(ScriptDirectory.from_config(config).get_heads()))))   # every branch head: the seeded revision follows them all
 PY
 )"
 cat > "$seeded/migrations/versions/9999_seeded_break.py" <<PY
@@ -112,7 +112,7 @@ cat > "$seeded/migrations/versions/9999_seeded_break.py" <<PY
 from alembic import op
 
 revision = "9999"
-down_revision = "$head_rev"
+down_revision = $head_rev
 branch_labels = None
 depends_on = None
 

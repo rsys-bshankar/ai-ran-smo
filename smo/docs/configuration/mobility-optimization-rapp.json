@@ -1,0 +1,3 @@
+{
+  "MOBILITY_SCHEDULE_TICK_SECONDS": "How often the Mobility Optimization rApp's worker (`mobility-optimization-rapp-worker`) looks for instances due a scheduled pass (default 15, at least 1), across all worker replicas (call flow 23f). An instance is due when its `evaluateEverySeconds` (instance configuration, 60 to 86400; absent: manual only) has passed since its last pass; the KPI check of a CIO change needs a pass about an hour after it. Read once at the worker's start. Seconds, not a secret."
+}

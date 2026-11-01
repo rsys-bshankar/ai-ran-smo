@@ -3,8 +3,13 @@
 
     python scripts/config_reference.py                 # a table: name, default, secret, module(s), file:line
     python scripts/config_reference.py --json          # the same as JSON (one object per variable, every read site)
-    python scripts/config_reference.py --write         # regenerate docs/CONFIGURATION.md from the code and docs/config_descriptions.json
-    python scripts/config_reference.py --check         # exit 1 when docs/CONFIGURATION.md is stale, or a variable has no description
+    python scripts/config_reference.py --write         # regenerate docs/configuration/ from the code and the descriptions beside it
+    python scripts/config_reference.py --check         # exit 1 when a file of docs/configuration/ is stale, or a variable has no description
+    python scripts/config_reference.py --check --module aimgf   # the same for one group only (a module, `shared`, `several` or `compose`)
+
+The reference is one file per group in `docs/configuration/`: `<group>.md` (generated) and `<group>.json` (the descriptions a person writes for that
+group's variables), with `README.md` (how to read the tables, and an index of the groups between markers). A pull request that adds a variable to a
+module changes that module's two files and nothing else (`smo/CLAUDE.md`, "Working in parallel"). `docs/CONFIGURATION.md` points here.
 
 The source is walked with `ast`, never imported, so no module needs its database or its secrets. Found:
 
@@ -24,9 +29,11 @@ The source is walked with `ast`, never imported, so no module needs its database
 Walked: `<module>/app`, `samples/*/app`, `shared/smo_shared`, `sdk/smo_sdk`, `gui-bff/app`, and the scripts that run inside the images
 (`scripts/migrate.py`, `scripts/db_roles.py`). Tests are not.
 
-`docs/config_descriptions.json` holds what a person writes (`{"NAME": "what it does, units, effect of changing it"}`); a value may also be
+`docs/configuration/<group>.json` holds what a person writes (`{"NAME": "what it does, units, effect of changing it"}`); a value may also be
 `{"description": "...", "secret": false}` to override the name heuristic (PASSWORD, SECRET, KEY, TOKEN in the name). Regeneration keeps it;
-a variable without an entry is rendered as `TODO`, and `tests_integration/test_config_reference.py` fails on one.
+a variable without an entry is rendered as `TODO`, and `tests_integration/test_config_reference.py` fails on one. A description goes in the file of
+its variable's group; one in another group's file (the variable moved, say from one module to several) is a problem `--check` names and `--write`
+moves, and a name described in two files is a problem.
 """
 
 import argparse
@@ -39,8 +46,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 SMO_ROOT = Path(__file__).resolve().parent.parent
-DOC = SMO_ROOT / "docs" / "CONFIGURATION.md"
-DESCRIPTIONS = SMO_ROOT / "docs" / "config_descriptions.json"
+DOC_DIR = SMO_ROOT / "docs" / "configuration"
+INDEX = DOC_DIR / "README.md"
 COMPOSE = SMO_ROOT / "docker-compose.yml"
 BEGIN, END = "<!-- BEGIN GENERATED: scripts/config_reference.py --write -->", "<!-- END GENERATED -->"
 
@@ -540,9 +547,34 @@ class Variable:
     description: str = "TODO"
 
 
-def load_descriptions(path: Path = DESCRIPTIONS) -> dict:
-    """The hand-written descriptions from `docs/config_descriptions.json`, or an empty dict when the file does not exist."""
-    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+def description_files(directory: Path | None = None) -> dict[str, dict]:
+    """{group: its descriptions} from every `<group>.json` of `docs/configuration/`."""
+    directory = directory or DOC_DIR
+    return {p.stem: json.loads(p.read_text(encoding="utf-8")) for p in sorted(directory.glob("*.json"))}
+
+
+def load_descriptions(directory: Path | None = None) -> dict:
+    """Every hand-written description, from all the groups' files (a name in two files keeps the first; `description_problems` reports it)."""
+    merged: dict = {}
+    for entries in description_files(directory).values():
+        for name, entry in entries.items():
+            merged.setdefault(name, entry)
+    return merged
+
+
+def description_problems(variables: list["Variable"], files: dict[str, dict]) -> list[str]:
+    """A name described in two files, or in a file that is not its group's."""
+    out, seen = [], {}
+    group_of = {v.name: v.group for v in variables}
+    for group, entries in files.items():
+        for name in entries:
+            if name in seen:
+                out.append(f"{name} is described in both docs/configuration/{seen[name]}.json and {group}.json")
+            seen.setdefault(name, group)
+            if name in group_of and group_of[name] != group:
+                out.append(f"{name} is described in docs/configuration/{group}.json; its group is {group_of[name]} "
+                           f"(python scripts/config_reference.py --write moves it)")
+    return out
 
 
 def build(reads: list[Read], descriptions: dict | None = None) -> list[Variable]:
@@ -622,21 +654,44 @@ def default_cell(variable: Variable) -> str:
     return " / ".join(f"`{_cell(d)}`" for d in variable.defaults)
 
 
-def render_markdown(variables: list[Variable]) -> str:
-    """The generated part of `docs/CONFIGURATION.md`: one table per group, in `_group_order`, each row giving the variable, default, whether it is secret, where it is read and its description."""
-    out: list[str] = []
+def _group_table(group: str, rows: list["Variable"]) -> list[str]:
+    """The `### <title>` heading and the table of one group."""
+    out = [f"### {GROUP_TITLES.get(group, f'`{group}`')}", "", "| Variable | Default | Secret | Read in | What it does |", "|---|---|---|---|---|"]
+    for v in rows:
+        marker = "file" if v.masked_file else "yes" if v.masked else ""
+        read_in = ", ".join(f"`{f}`" for f in v.files)
+        out.append(f"| `{v.name}` | {default_cell(v)} | {marker} | {read_in} | {_cell(v.description)} |")
+    return out
+
+
+def _groups(variables: list["Variable"]) -> dict[str, list["Variable"]]:
     groups: dict[str, list[Variable]] = defaultdict(list)
     for variable in variables:
         groups[variable.group].append(variable)
-    for group in sorted(groups, key=_group_order):
-        title = GROUP_TITLES.get(group, f"`{group}`")
-        out += [f"### {title}", "", "| Variable | Default | Secret | Read in | What it does |", "|---|---|---|---|---|"]
-        for v in groups[group]:
-            marker = "file" if v.masked_file else "yes" if v.masked else ""
-            read_in = ", ".join(f"`{f}`" for f in v.files)
-            out.append(f"| `{v.name}` | {default_cell(v)} | {marker} | {read_in} | {_cell(v.description)} |")
-        out.append("")
+    return dict(sorted(groups.items(), key=lambda item: _group_order(item[0])))
+
+
+def render_markdown(variables: list[Variable]) -> str:
+    """Every group's table, one after the other (what the group files hold, without their own header): for reading and for the tests."""
+    out: list[str] = []
+    for group, rows in _groups(variables).items():
+        out += _group_table(group, rows) + [""]
     return "\n".join(out)
+
+
+def render_files(variables: list["Variable"]) -> dict[str, str]:
+    """{file name: content} of the generated files of docs/configuration/: one `<group>.md` per group, and the index for README.md."""
+    files = {}
+    for group, rows in _groups(variables).items():
+        title = GROUP_TITLES.get(group, f"`{group}`")
+        files[f"{group}.md"] = "\n".join([
+            f"# Configuration: {title}", "",
+            "Generated by `python scripts/config_reference.py --write` (run from `smo/`); do not edit by hand. The descriptions are written in",
+            f"[`{group}.json`]({group}.json) beside this file; how to read the table: [`README.md`](README.md).", "",
+            *_group_table(group, rows), ""])
+    files["index"] = "\n".join(["| Group | Variables of |", "|---|---|"] + [
+        f"| [`{group}.md`]({group}.md) | {GROUP_TITLES.get(group, f'the module `{group}`')} |" for group in _groups(variables)]) + "\n"
+    return files
 
 
 def render_table(variables: list[Variable]) -> str:
@@ -658,7 +713,7 @@ def render_json(variables: list[Variable], reads: list[Read]) -> str:
 
 
 def documented_names(text: str) -> dict[str, str]:
-    """{variable: default cell} for every row of the generated tables in `docs/CONFIGURATION.md`."""
+    """{variable: default cell} for every row of the generated tables in `text` (the group files of `docs/configuration/`)."""
     found = {}
     for line in text.splitlines():
         match = re.match(r"^\| `(?P<name>[A-Za-z0-9_<>]+)` \| (?P<default>.*?) \| (?:file|yes|) \| ", line)
@@ -673,36 +728,94 @@ def splice(document: str, generated: str) -> str:
     return document[:start + len(BEGIN)] + "\n\n" + generated + "\n" + document[end:]
 
 
-def main(argv: list[str]) -> int:
-    """Command-line entry. By default prints the table; `--json` prints JSON; `--write` regenerates `docs/CONFIGURATION.md`; `--check` compares it with what would be generated.
+def committed_text(directory: Path | None = None) -> str:
+    """Every committed group file of docs/configuration/, one after the other (what `documented_names` reads)."""
+    directory = directory or DOC_DIR
+    return "\n".join(p.read_text(encoding="utf-8") for p in sorted(directory.glob("*.md")) if p.name != "README.md")
 
-        Problems (an unresolved read, a variable with no description, a description for a variable no code reads, a stale document) are printed to stderr. The exit
-        status is 1 only for `--check` or `--write` with a problem: `--write` still writes the file before reporting, and the plain table or JSON never fails.
+
+def _write_descriptions(variables: list["Variable"], files: dict[str, dict], directory: Path) -> list[str]:
+    """Moves every description into its variable's group file (sorted by name); returns the JSON files written or removed."""
+    group_of = {v.name: v.group for v in variables}
+    target: dict[str, dict] = defaultdict(dict)
+    for group, entries in files.items():
+        for name, entry in entries.items():
+            target[group_of.get(name, group)].setdefault(name, entry)
+    changed = []
+    for group in sorted(set(files) | set(target)):
+        path = directory / f"{group}.json"
+        entries = dict(sorted(target.get(group, {}).items()))
+        if not entries:
+            if path.exists():
+                path.unlink()
+                changed.append(path.name)
+            continue
+        text = json.dumps(entries, indent=2, ensure_ascii=False) + "\n"
+        if not path.exists() or path.read_text(encoding="utf-8") != text:
+            path.write_text(text, encoding="utf-8")
+            changed.append(path.name)
+    return changed
+
+
+def main(argv: list[str]) -> int:
+    """Command-line entry. By default prints the table; `--json` prints JSON; `--write` regenerates docs/configuration/; `--check` compares it with what would be generated.
+
+        Problems (an unresolved read, a variable with no description, a description for a variable no code reads, one in the wrong group's file or in
+        two files, a stale or left-over file) are printed to stderr. The exit status is 1 only for `--check` or `--write` with a problem: `--write` still
+        writes the files before reporting, and the plain table or JSON never fails. `--module` limits the files compared or written to one group.
     """
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--json", action="store_true", help="print JSON, one object per variable with every read site")
-    parser.add_argument("--write", action="store_true", help="regenerate the table in docs/CONFIGURATION.md")
-    parser.add_argument("--check", action="store_true", help="fail when docs/CONFIGURATION.md is stale or a description is missing")
+    parser.add_argument("--write", action="store_true", help="regenerate docs/configuration/")
+    parser.add_argument("--check", action="store_true", help="fail when a file of docs/configuration/ is stale or a description is missing")
+    parser.add_argument("--module", metavar="GROUP", help="only this group's files (a module, shared, several or compose)")
     args = parser.parse_args(argv[1:])
     reads, unresolved = collect()
-    variables = build(reads)
+    files = description_files()
+    variables = build(reads, load_descriptions())
+    if args.module and args.module not in {v.group for v in variables}:
+        raise SystemExit(f"config_reference: no group {args.module!r} (groups: {', '.join(sorted({v.group for v in variables}))})")
+
+    def mine(group: str) -> bool:
+        return not args.module or group == args.module
+
     problems = [f"unresolved environment read (add a `# config-ref: NAME` comment): {site}" for site in unresolved]
-    problems += [f"no description in docs/config_descriptions.json: {v.name}" for v in variables if v.description == "TODO"]
+    problems += [f"no description in docs/configuration/{v.group}.json: {v.name}" for v in variables if v.description == "TODO" and mine(v.group)]
     stale = sorted(set(load_descriptions()) - {v.name for v in variables})
     problems += [f"description for a variable no code reads: {name}" for name in stale]
+    expected = render_files(variables)
+    index = splice(INDEX.read_text(encoding="utf-8"), expected.pop("index"))
+    groups = [name[:-3] for name in expected]
+    leftover = [] if args.module else sorted(p.name for p in DOC_DIR.glob("*.md") if p.name != "README.md" and p.name not in expected)
     if args.write:
-        DOC.write_text(splice(DOC.read_text(encoding="utf-8"), render_markdown(variables)), encoding="utf-8")
-        print(f"wrote {DOC.relative_to(SMO_ROOT)}: {len(variables)} variables")
-    elif args.check:
-        expected = splice(DOC.read_text(encoding="utf-8"), render_markdown(variables))
-        if expected != DOC.read_text(encoding="utf-8"):
-            problems.append("docs/CONFIGURATION.md is stale: run python scripts/config_reference.py --write")
-    elif args.json:
-        print(render_json(variables, reads), end="")
+        written = [n for n, t in expected.items() if mine(n[:-3]) and (not (DOC_DIR / n).exists() or (DOC_DIR / n).read_text(encoding="utf-8") != t)]
+        for name in written:
+            (DOC_DIR / name).write_text(expected[name], encoding="utf-8")
+        for name in leftover:
+            (DOC_DIR / name).unlink()
+        if index != INDEX.read_text(encoding="utf-8"):
+            INDEX.write_text(index, encoding="utf-8")
+            written.append("README.md")
+        moved = _write_descriptions(variables, files, DOC_DIR)
+        print(f"docs/configuration/: {len(variables)} variables in {len(groups)} groups; written {', '.join(written) or 'nothing'}"
+              + (f"; removed {', '.join(leftover)}" if leftover else "") + (f"; descriptions {', '.join(moved)}" if moved else ""))
     else:
-        print(render_table(variables))
+        problems += [p for p in description_problems(variables, files) if not args.module or f"{args.module}" in p]
+        if args.check:
+            for name, text in expected.items():
+                if mine(name[:-3]) and (not (DOC_DIR / name).exists() or (DOC_DIR / name).read_text(encoding="utf-8") != text):
+                    problems.append(f"docs/configuration/{name} is stale: run python scripts/config_reference.py --write")
+            problems += [f"docs/configuration/{name} lists a group no code has any more: run python scripts/config_reference.py --write" for name in leftover]
+            if not args.module and index != INDEX.read_text(encoding="utf-8"):
+                problems.append("docs/configuration/README.md's index is stale: run python scripts/config_reference.py --write")
+        elif args.json:
+            print(render_json(variables, reads), end="")
+        else:
+            print(render_table(variables))
     for problem in problems:
         print(problem, file=sys.stderr)
+    if args.check and not problems:
+        print(f"docs/configuration/ is up to date ({len(variables)} variables{', group ' + args.module if args.module else ''})")
     return 1 if problems and (args.check or args.write) else 0
 
 

@@ -1,0 +1,106 @@
+{
+ "consumer": {
+  "mdaf/app/main.py GET /dme/data-jobs/{}": "dme GET /data-jobs/{}",
+  "mdaf/app/main.py GET /ran-analytics/producers": "ran-analytics GET /producers",
+  "mdaf/app/mda.py GET /aimgf/mlmf/subscriptions": "aimgf GET /mlmf/subscriptions",
+  "mdaf/app/mda.py POST /aimgf/mlmf/subscriptions/{}/reports": "aimgf POST /mlmf/subscriptions/{}/reports"
+ },
+ "module": "mdaf",
+ "producer": {
+  "mdaf DELETE /mda-functions/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS deleteMOI on `MDAFunction` [N] TS 28.104",
+   "row": "S7.5"
+  },
+  "mdaf DELETE /mda-requests/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS deleteMOI on `MDARequest` [N] TS 28.104",
+   "row": "S7.5"
+  },
+  "mdaf DELETE /subscriptions/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.104 MDA reporting (file, stream, notification) and TS 28.622 `NtfSubscriptionControl`",
+   "row": "S7.10, S1.13"
+  },
+  "mdaf GET /mda-functions": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MDAFunction` [N] TS 28.104",
+   "row": "S7.5"
+  },
+  "mdaf GET /mda-functions/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MDAFunction` [N] TS 28.104",
+   "row": "S7.5"
+  },
+  "mdaf GET /mda-reports": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MDAReport` [N] TS 28.104",
+   "row": "S7.5, S7.10"
+  },
+  "mdaf GET /mda-reports/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MDAReport` [N] TS 28.104",
+   "row": "S7.5, S7.10"
+  },
+  "mdaf GET /mda-reports/{}/file": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 file data reporting MnS (MDA report file)",
+   "row": "S7.10"
+  },
+  "mdaf GET /mda-requests": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MDARequest` [N] TS 28.104",
+   "row": "S7.5"
+  },
+  "mdaf GET /mda-requests/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MDARequest` [N] TS 28.104",
+   "row": "S7.5"
+  },
+  "mdaf GET /reports": {
+   "fate": "replaced",
+   "replacement": "TS 28.104 MDA reporting (file, stream, notification) and TS 28.622 `NtfSubscriptionControl`",
+   "row": "S7.10, S1.13"
+  },
+  "mdaf GET /reports/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.104 MDA reporting (file, stream, notification) and TS 28.622 `NtfSubscriptionControl`",
+   "row": "S7.10, S1.13"
+  },
+  "mdaf GET /subscriptions": {
+   "fate": "replaced",
+   "replacement": "TS 28.104 MDA reporting (file, stream, notification) and TS 28.622 `NtfSubscriptionControl`",
+   "row": "S7.10, S1.13"
+  },
+  "mdaf POST /mda-functions": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS createMOI on `MDAFunction` [N] TS 28.104",
+   "row": "S7.5"
+  },
+  "mdaf POST /mda-reports": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS createMOI on `MDAReport` [N] TS 28.104",
+   "row": "S7.5, S7.10"
+  },
+  "mdaf POST /mda-requests": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS createMOI on `MDARequest` [N] TS 28.104",
+   "row": "S7.5"
+  },
+  "mdaf POST /reports": {
+   "fate": "replaced",
+   "replacement": "TS 28.104 MDA reporting (file, stream, notification) and TS 28.622 `NtfSubscriptionControl`",
+   "row": "S7.10, S1.13"
+  },
+  "mdaf POST /subscriptions": {
+   "fate": "replaced",
+   "replacement": "TS 28.104 MDA reporting (file, stream, notification) and TS 28.622 `NtfSubscriptionControl`",
+   "row": "S7.10, S1.13"
+  },
+  "mdaf PUT /mda-functions/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS createMOI / modifyMOIAttributes on `MDAFunction` [N] TS 28.104",
+   "row": "S7.5"
+  }
+ }
+}

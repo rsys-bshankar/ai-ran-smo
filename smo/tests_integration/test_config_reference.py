@@ -1,7 +1,7 @@
 """The configuration reference lists every environment variable the code reads (PR-OPS-7.3).
 
-`scripts/config_reference.py` walks the source with `ast` and `docs/CONFIGURATION.md` is generated from it plus the hand-written
-`docs/config_descriptions.json`. A variable read in code and absent from the table fails here, and so does a row no code reads; the seeded-miss
+`scripts/config_reference.py` walks the source with `ast` and `docs/configuration/<group>.md` (one per group) is generated from it plus the
+hand-written `docs/configuration/<group>.json`. A variable read in code and absent from the table fails here, and so does a row no code reads; the seeded-miss
 tests below run a synthetic snippet through the same extraction function and show that it would.
 """
 
@@ -18,7 +18,7 @@ cr = importlib.util.module_from_spec(_spec)
 sys.modules["config_reference"] = cr
 _spec.loader.exec_module(cr)
 
-DOC = (SMO_ROOT / "docs" / "CONFIGURATION.md").read_text(encoding="utf-8")
+DOC = cr.committed_text()            # every committed group file of docs/configuration/, one after the other
 
 
 @pytest.fixture(scope="module")
@@ -39,16 +39,16 @@ def unread(reads, document: str) -> list[str]:
 
 
 def test_every_variable_read_in_code_is_in_the_table(walked):
-    """The walk finds more than 100 variables, and each one is in docs/CONFIGURATION.md."""
+    """The walk finds more than 100 variables, and each one is in docs/configuration/."""
     reads, _ = walked
     assert len({r.name for r in reads}) > 100, "the walk found almost nothing: it is not reading the source"
-    assert undocumented(reads, DOC) == [], "read in code, missing from docs/CONFIGURATION.md: run python scripts/config_reference.py --write"
+    assert undocumented(reads, DOC) == [], "read in code, missing from docs/configuration/: run python scripts/config_reference.py --write"
 
 
 def test_the_table_lists_no_variable_that_no_code_reads(walked):
     """The table has no row for a variable no code reads."""
     reads, _ = walked
-    assert unread(reads, DOC) == [], "listed in docs/CONFIGURATION.md but read nowhere: run python scripts/config_reference.py --write"
+    assert unread(reads, DOC) == [], "listed in docs/configuration/ but read nowhere: run python scripts/config_reference.py --write"
 
 
 def test_no_read_has_a_name_the_walk_cannot_work_out(walked):
@@ -58,7 +58,7 @@ def test_no_read_has_a_name_the_walk_cannot_work_out(walked):
 
 
 def test_every_variable_has_a_description_and_no_description_is_orphaned(walked):
-    """Every variable has a written description (no `TODO`) and `config_descriptions.json` has none for a variable that no longer exists."""
+    """Every variable has a written description (no `TODO`) and no `docs/configuration/<group>.json` has one for a variable that no longer exists."""
     reads, _ = walked
     variables = cr.build(reads)
     assert [v.name for v in variables if v.description == "TODO"] == []
@@ -73,10 +73,51 @@ def test_the_documented_defaults_are_the_code_defaults(walked):
     assert drifted == {}, "a default changed in code: run python scripts/config_reference.py --write"
 
 
-def test_the_committed_document_is_what_the_generator_writes(walked):
-    """docs/CONFIGURATION.md is byte for byte what `scripts/config_reference.py --write` produces."""
+def test_the_committed_files_are_what_the_generator_writes(walked):
+    """Each group file of docs/configuration/ is byte for byte what `scripts/config_reference.py --write` produces, there is no other, and the
+    README's index lists exactly the groups; every description is in its group's file, and none is in two."""
     reads, _ = walked
-    assert cr.splice(DOC, cr.render_markdown(cr.build(reads))) == DOC, "docs/CONFIGURATION.md is stale: run python scripts/config_reference.py --write"
+    variables = cr.build(reads)
+    expected = cr.render_files(variables)
+    index = expected.pop("index")
+    committed = {p.name: p.read_text(encoding="utf-8") for p in cr.DOC_DIR.glob("*.md") if p.name != "README.md"}
+    assert committed == expected, "docs/configuration/ is stale: run python scripts/config_reference.py --write"
+    assert cr.splice(cr.INDEX.read_text(encoding="utf-8"), index) == cr.INDEX.read_text(encoding="utf-8")
+    assert cr.description_problems(variables, cr.description_files()) == []
+
+
+def test_a_description_in_another_groups_file_or_in_two_files_is_named(walked):
+    """The per-module split holds: a description moved to the wrong group's file, or written twice, is a problem; the check can fail."""
+    reads, _ = walked
+    variables = cr.build(reads)
+    files = cr.description_files()
+    one = next(name for name in files["aimgf"])
+    files["dme"] = {**files["dme"], one: files["aimgf"][one]}
+    assert cr.description_problems(variables, files) == [
+        f"{one} is described in both docs/configuration/aimgf.json and dme.json",
+        f"{one} is described in docs/configuration/dme.json; its group is aimgf (python scripts/config_reference.py --write moves it)"]
+
+
+def test_a_stale_group_file_fails_the_check(walked, tmp_path, monkeypatch, capsys):
+    """The gate's old failure case, per group: a group file edited by hand (or left behind when its group's code changed) fails `--check` naming the
+    file, and `--write` puts it right and touches no other group's file."""
+    import shutil
+    shutil.copytree(cr.DOC_DIR, tmp_path / "configuration")
+    monkeypatch.setattr(cr, "DOC_DIR", tmp_path / "configuration")
+    monkeypatch.setattr(cr, "INDEX", tmp_path / "configuration" / "README.md")
+    monkeypatch.setattr(cr, "collect", lambda root=None: walked)
+    assert cr.main(["x", "--check"]) == 0
+    aimgf = tmp_path / "configuration" / "aimgf.md"
+    aimgf.write_text(aimgf.read_text().replace("| Variable |", "| Name |"))
+    (tmp_path / "configuration" / "gone.md").write_text("x")
+    capsys.readouterr()
+    assert cr.main(["x", "--check"]) == 1
+    err = capsys.readouterr().err
+    assert "docs/configuration/aimgf.md is stale" in err and "docs/configuration/gone.md lists a group no code has any more" in err
+    assert cr.main(["x", "--check", "--module", "dme"]) == 0                  # one group: the others are not its business
+    dme_before = (tmp_path / "configuration" / "dme.md").stat().st_mtime_ns
+    assert cr.main(["x", "--write"]) == 0 and cr.main(["x", "--check"]) == 0
+    assert (tmp_path / "configuration" / "dme.md").stat().st_mtime_ns == dme_before
 
 
 def test_secrets_are_marked(walked):

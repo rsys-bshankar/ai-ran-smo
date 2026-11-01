@@ -9,7 +9,7 @@
 | Depends on (over R1) | NFO (`POST /nfo/descriptors`, `DELETE /nfo/descriptors/{id}` on delete); rApp Management (`GET /rapp-mgmt/instances/{id}`, only to release an orphaned usage registration); the package location itself (plain HTTP GET, not over R1) |
 | Called by | rApp Management (`onboarding-status`, `usage/start`, `usage/stop`: the only writer of usage registrations); AIMgF (`onboarding-status`, for `aiCapabilities.runtimeProfiles`); GUI BFF (operator and admin actions, `usage/{id}/release` for an admin); operators |
 | Database tables | `application_package` (versioned), `artifact`, `package_usage_registration` |
-| Unit tests | `tests/`, SQLite, standalone (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
+| Unit tests | `tests/`, SQLite, standalone (counts: [docs/test-counts/onboarding.md](../docs/test-counts/onboarding.md)) |
 | Status | Done. Package signatures are verified against an operator-held trust store when one is configured (`PR-RAPP-1`; off by default, see 1.5, 2.6, 2.8) |
 
 ## 1. High-level design (HLD)
@@ -243,7 +243,7 @@ cd smo/onboarding && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 ### 3.2 What is covered
 
-Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
+Counts per file: [`docs/test-counts/onboarding.md`](../docs/test-counts/onboarding.md).
 
 | Test file | Covers |
 |---|---|

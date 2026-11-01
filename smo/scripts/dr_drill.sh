@@ -90,7 +90,7 @@ t2="$(now)"
 
 # 3. schema: the revision and table count the manifest records; migrate to this checkout's head (a no-op for a backup of this release; the
 #    forward upgrade for an older one) and compare every ORM model with the restored schema
-got_revision="$(sql -c 'SELECT version_num FROM alembic_version' | head -1)"
+got_revision="$(sql -c "SELECT string_agg(version_num, ',' ORDER BY version_num) FROM alembic_version")"
 got_tables="$(sql -c "SELECT count(*) FROM information_schema.tables WHERE table_type = 'BASE TABLE' AND table_schema NOT IN ('pg_catalog','information_schema')")"
 [ "$got_revision" = "$want_revision" ] && verdict "schema revision" ok "$got_revision" || verdict "schema revision" bad "restored $got_revision, manifest $want_revision"
 [ "$got_tables" = "$want_tables" ] && verdict "table count" ok "$got_tables" || verdict "table count" bad "restored $got_tables, manifest $want_tables"

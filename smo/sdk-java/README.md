@@ -10,7 +10,7 @@
 | Called by | Any Java rApp; the example `examples/hello-rapp`. No SMO module uses it |
 | Database tables | None |
 | Retries and idempotency | 4 attempts with exponential backoff on 429/502/503/504 and transport errors; every POST carries an `Idempotency-Key` its repeats reuse; the invoker registration is repeated only on 429/503; one repeat on `409 CONCURRENT_MODIFICATION` |
-| Unit tests | `smo-sdk` and `hello-rapp`, JUnit 6, no network beyond loopback; CI job `sdk-java` (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
+| Unit tests | `smo-sdk` and `hello-rapp`, JUnit 6, no network beyond loopback; CI job `sdk-java` (counts: [docs/test-counts/sdk-java.md](../docs/test-counts/sdk-java.md)) |
 | Status | RAPP-4.2 to 4.5 done for Java. Open: a run against the live compose stack, mTLS from the environment, the analytics / lifecycle / intent namespaces (`OPEN_ITEMS.md`, PR-RAPP-4) |
 
 ## 1. High-level design (HLD)

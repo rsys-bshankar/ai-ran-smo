@@ -1,0 +1,9 @@
+{
+ "files_without_description": 0,
+ "functions_without_description": 0,
+ "items_requiring_description": 54,
+ "module": "mock-o1-adaptor",
+ "source_files": 10,
+ "tests": 84,
+ "tests_without_docstring": 0
+}

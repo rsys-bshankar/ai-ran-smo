@@ -7,6 +7,7 @@ No database, cluster or network is needed. Run: `PYTHONPATH=shared python -m pyt
 import importlib.util
 import json
 import subprocess
+import sys
 import textwrap
 from pathlib import Path
 
@@ -49,20 +50,36 @@ def test_release_candidates_are_not_releases_to_upgrade_from(monkeypatch):
     assert t.release_tags() == ["smo-v0.8.0", "smo-v0.7.0"]
 
 
-def test_the_repository_history_is_one_line_and_its_head_is_the_newest_file():
-    """Every file of migrations/versions is on the one line from the base, and the head is the highest-numbered revision (what the lane waits for)."""
+def test_the_repository_history_covers_every_file_and_its_heads_are_the_branch_checks():
+    """Every file of migrations/versions is on the history (the trunk, then each branch), and `head` prints what the branch check says
+    alembic_version holds at "heads" (what the lane waits for)."""
     history = t.revisions()
     files = sorted(p for p in (SMO_ROOT / "migrations" / "versions").glob("*.py") if not p.name.startswith("__"))
-    assert [path for _, path in history] == files
-    assert history[-1][0] == files[-1].name.split("_")[0]
+    assert sorted(path for _, path in history) == files
+    expected = subprocess.run([sys.executable, str(SMO_ROOT / "scripts" / "check_revision_branches.py"), "--heads"], capture_output=True, text=True)
+    assert t.heads() == expected.stdout.strip()
 
 
-def test_two_heads_are_refused(tmp_path):
-    """Two revisions with the same parent leave no single head, so the script refuses rather than pick one."""
+def test_two_trunk_revisions_on_one_parent_are_refused(tmp_path):
+    """Two trunk revisions with the same parent leave no single line, so the script refuses rather than pick one."""
     write_revision(tmp_path, "0001", None, "pass\n")
     write_revision(tmp_path, "0002", "0001", "pass\n")
     write_revision(tmp_path, "0003", "0001", "pass\n")
     with pytest.raises(ValueError, match="more than one revision follows 0001"):
+        t.revisions(tmp_path)
+
+
+def test_module_branches_follow_the_trunk_and_each_is_one_line(tmp_path):
+    """Branches that all start at the trunk's end are not a fork: they come after the trunk, in label order, each in its own order; two revisions of
+    one branch on the same parent are refused."""
+    write_revision(tmp_path, "0001", None, "pass\n")
+    write_revision(tmp_path, "0002", "0001", "pass\n")
+    write_revision(tmp_path, "teiv_0001", "0002", "pass\n")
+    write_revision(tmp_path, "aimgf_0001", "0002", "pass\n")
+    write_revision(tmp_path, "aimgf_0002", "aimgf_0001", "pass\n")
+    assert [rev for rev, _ in t.revisions(tmp_path)] == ["0001", "0002", "aimgf_0001", "aimgf_0002", "teiv_0001"]
+    write_revision(tmp_path, "aimgf_0003", "aimgf_0001", "pass\n")
+    with pytest.raises(ValueError, match="more than one revision follows aimgf_0001"):
         t.revisions(tmp_path)
 
 

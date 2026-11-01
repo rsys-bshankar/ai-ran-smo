@@ -1,0 +1,447 @@
+{
+ "consumer": {
+  "ran-nf-oam/app/main.py DELETE /dme/production-capabilities/ran-nf-oam/types": "dme DELETE /production-capabilities/{}/types",
+  "ran-nf-oam/app/main.py GET /dme/data-jobs": "dme GET /data-jobs",
+  "ran-nf-oam/app/main.py GET /dme/dme-types": "dme GET /dme-types",
+  "ran-nf-oam/app/main.py POST /dme/data-jobs/{}/records": "dme POST /data-jobs/{}/records",
+  "ran-nf-oam/app/main.py POST /dme/production-capabilities": "dme POST /production-capabilities"
+ },
+ "module": "ran-nf-oam",
+ "producer": {
+  "ran-nf-oam DELETE /dme-jobs/{}": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.2 data registration: the producer side of a DME data job (R1TD v05)",
+   "row": "S3.17"
+  },
+  "ran-nf-oam DELETE /file-subscriptions/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 v19.1.0 file data reporting MnS (listAvailableFiles, notifyFileReady)",
+   "row": "S3.16"
+  },
+  "ran-nf-oam DELETE /fm-subscriptions/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.622 `PerfMetricJob` / `NtfSubscriptionControl` through the subscription manager",
+   "row": "S1.13, S3.16"
+  },
+  "ran-nf-oam DELETE /kpi-schedules/{}": {
+   "fate": "delete",
+   "replacement": "DME computes KPIs per ROP; no schedule or publish call",
+   "row": "S3.8"
+  },
+  "ran-nf-oam DELETE /lifecycle-subscriptions/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.622 `PerfMetricJob` / `NtfSubscriptionControl` through the subscription manager",
+   "row": "S1.13, S3.16"
+  },
+  "ran-nf-oam DELETE /managed-entities/{}/cells/{}/guards": {
+   "fate": "replaced",
+   "replacement": "TE&IV cell attributes and the cell lock table (one writer, SO SMOS)",
+   "row": "S3.1, S3.2"
+  },
+  "ran-nf-oam DELETE /msac/access-rules/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS deleteMOI on `Identity` / `Role` / `AccessRule` [N] TS 28.319",
+   "row": "S1.14"
+  },
+  "ran-nf-oam DELETE /msac/identities/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS deleteMOI on `Identity` / `Role` / `AccessRule` [N] TS 28.319",
+   "row": "S1.14"
+  },
+  "ran-nf-oam DELETE /msac/roles/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS deleteMOI on `Identity` / `Role` / `AccessRule` [N] TS 28.319",
+   "row": "S1.14"
+  },
+  "ran-nf-oam DELETE /o1-adaptor-endpoints/{}/host-keys/{}": {
+   "fate": "delete",
+   "replacement": "SSH host-key trust replaced by WG11 PKI certificates (CMPv2 / EST)",
+   "row": "S8.1"
+  },
+  "ran-nf-oam DELETE /pm-subscriptions/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.622 `PerfMetricJob` / `NtfSubscriptionControl` through the subscription manager",
+   "row": "S1.13, S3.16"
+  },
+  "ran-nf-oam GET /alarms": {
+   "fate": "replaced",
+   "replacement": "TS 28.111 v19.3.0 getAlarmList on `AlarmList` (comments, correlation and history are AlarmRecord attributes)",
+   "row": "S3.15"
+  },
+  "ran-nf-oam GET /alarms/counts": {
+   "fate": "replaced",
+   "replacement": "TS 28.111 v19.3.0 getAlarmCount",
+   "row": "S3.15"
+  },
+  "ran-nf-oam GET /alarms/stats": {
+   "fate": "replaced",
+   "replacement": "TS 28.111 v19.3.0 getAlarmCount",
+   "row": "S3.15"
+  },
+  "ran-nf-oam GET /alarms/{}/comments": {
+   "fate": "replaced",
+   "replacement": "TS 28.111 v19.3.0 getAlarmList on `AlarmList` (comments, correlation and history are AlarmRecord attributes)",
+   "row": "S3.15"
+  },
+  "ran-nf-oam GET /alarms/{}/correlated": {
+   "fate": "replaced",
+   "replacement": "TS 28.111 v19.3.0 getAlarmList on `AlarmList` (comments, correlation and history are AlarmRecord attributes)",
+   "row": "S3.15"
+  },
+  "ran-nf-oam GET /alarms/{}/history": {
+   "fate": "replaced",
+   "replacement": "TS 28.111 v19.3.0 getAlarmList on `AlarmList` (comments, correlation and history are AlarmRecord attributes)",
+   "row": "S3.15"
+  },
+  "ran-nf-oam GET /capabilities": {
+   "fate": "replaced",
+   "replacement": "TS 28.622 `MnsInfo` in the MnS registry",
+   "row": "S1.12"
+  },
+  "ran-nf-oam GET /cell-guards": {
+   "fate": "replaced",
+   "replacement": "TE&IV cell attributes and the cell lock table (one writer, SO SMOS)",
+   "row": "S3.1, S3.2"
+  },
+  "ran-nf-oam GET /config-jobs": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on the TS 28.541 NRM through RAN NF OAM's facade, called by SO SMOS only",
+   "row": "S3.3, S5.9"
+  },
+  "ran-nf-oam GET /config-jobs/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on the TS 28.541 NRM through RAN NF OAM's facade, called by SO SMOS only",
+   "row": "S3.3, S5.9"
+  },
+  "ran-nf-oam GET /files": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 v19.1.0 file data reporting MnS (listAvailableFiles, notifyFileReady)",
+   "row": "S3.16"
+  },
+  "ran-nf-oam GET /fm-subscriptions": {
+   "fate": "replaced",
+   "replacement": "TS 28.622 `PerfMetricJob` / `NtfSubscriptionControl` through the subscription manager",
+   "row": "S1.13, S3.16"
+  },
+  "ran-nf-oam GET /kpi-schedules": {
+   "fate": "delete",
+   "replacement": "DME computes KPIs per ROP; no schedule or publish call",
+   "row": "S3.8"
+  },
+  "ran-nf-oam GET /kpi-schedules/{}": {
+   "fate": "delete",
+   "replacement": "DME computes KPIs per ROP; no schedule or publish call",
+   "row": "S3.8"
+  },
+  "ran-nf-oam GET /kpis/{}": {
+   "fate": "replaced",
+   "replacement": "DME R1TD data types of KPI ROP rows (and D-02 matrix query)",
+   "row": "S3.8, S3.9"
+  },
+  "ran-nf-oam GET /kpis/{}/series": {
+   "fate": "replaced",
+   "replacement": "DME R1TD data types of KPI ROP rows (and D-02 matrix query)",
+   "row": "S3.8, S3.9"
+  },
+  "ran-nf-oam GET /lifecycle-subscriptions": {
+   "fate": "replaced",
+   "replacement": "TS 28.622 `PerfMetricJob` / `NtfSubscriptionControl` through the subscription manager",
+   "row": "S1.13, S3.16"
+  },
+  "ran-nf-oam GET /managed-entities": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `ManagedElement` (served by TE&IV)",
+   "row": "S3.1, S3.3"
+  },
+  "ran-nf-oam GET /managed-entities/health": {
+   "fate": "delete",
+   "replacement": "console aggregate, rebuilt from TS 28.111 alarm counts and TE&IV",
+   "row": "S6.2"
+  },
+  "ran-nf-oam GET /managed-entities/scopes": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS on `ManagedElement` with the ADR 0005 scope as a [D] attribute (TE&IV), read by TS 28.319 AccessRules",
+   "row": "S1.14, S3.1"
+  },
+  "ran-nf-oam GET /managed-entities/worst": {
+   "fate": "delete",
+   "replacement": "console aggregate, rebuilt from TS 28.111 alarm counts and TE&IV",
+   "row": "S6.2"
+  },
+  "ran-nf-oam GET /managed-entities/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `ManagedElement` (served by TE&IV)",
+   "row": "S3.1, S3.3"
+  },
+  "ran-nf-oam GET /managed-entities/{}/config": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `ManagedElement` (served by TE&IV)",
+   "row": "S3.1, S3.3"
+  },
+  "ran-nf-oam GET /managed-objects/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes with scope BASE_ONLY / BASE_NTH_LEVEL / BASE_SUBTREE (TE&IV)",
+   "row": "S1.4, S3.1"
+  },
+  "ran-nf-oam GET /managed-objects/{}/children": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes with scope BASE_ONLY / BASE_NTH_LEVEL / BASE_SUBTREE (TE&IV)",
+   "row": "S1.4, S3.1"
+  },
+  "ran-nf-oam GET /managed-objects/{}/subtree": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes with scope BASE_ONLY / BASE_NTH_LEVEL / BASE_SUBTREE (TE&IV)",
+   "row": "S1.4, S3.1"
+  },
+  "ran-nf-oam GET /msac/access-rules": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `Identity` / `Role` / `AccessRule` [N] TS 28.319",
+   "row": "S1.14"
+  },
+  "ran-nf-oam GET /msac/access-rules/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `Identity` / `Role` / `AccessRule` [N] TS 28.319",
+   "row": "S1.14"
+  },
+  "ran-nf-oam GET /msac/identities": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `Identity` / `Role` / `AccessRule` [N] TS 28.319",
+   "row": "S1.14"
+  },
+  "ran-nf-oam GET /msac/identities/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `Identity` / `Role` / `AccessRule` [N] TS 28.319",
+   "row": "S1.14"
+  },
+  "ran-nf-oam GET /msac/roles": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `Identity` / `Role` / `AccessRule` [N] TS 28.319",
+   "row": "S1.14"
+  },
+  "ran-nf-oam GET /msac/roles/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `Identity` / `Role` / `AccessRule` [N] TS 28.319",
+   "row": "S1.14"
+  },
+  "ran-nf-oam GET /o1-adaptor-endpoints/{}/host-keys": {
+   "fate": "delete",
+   "replacement": "SSH host-key trust replaced by WG11 PKI certificates (CMPv2 / EST)",
+   "row": "S8.1"
+  },
+  "ran-nf-oam GET /pm-files/{}/file": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 v19.1.0 file data reporting MnS (listAvailableFiles, notifyFileReady)",
+   "row": "S3.16"
+  },
+  "ran-nf-oam GET /pm-subscriptions": {
+   "fate": "replaced",
+   "replacement": "TS 28.622 `PerfMetricJob` / `NtfSubscriptionControl` through the subscription manager",
+   "row": "S1.13, S3.16"
+  },
+  "ran-nf-oam GET /topology": {
+   "fate": "replaced",
+   "replacement": "WG10 TE&IV R1 topology and inventory services (TE&IV module)",
+   "row": "S3.4"
+  },
+  "ran-nf-oam GET /topology/graph": {
+   "fate": "replaced",
+   "replacement": "WG10 TE&IV R1 topology and inventory services (TE&IV module)",
+   "row": "S3.4"
+  },
+  "ran-nf-oam GET /topology/links": {
+   "fate": "replaced",
+   "replacement": "WG10 TE&IV R1 topology and inventory services (TE&IV module)",
+   "row": "S3.4"
+  },
+  "ran-nf-oam GET /topology/links/counts": {
+   "fate": "replaced",
+   "replacement": "WG10 TE&IV R1 topology and inventory services (TE&IV module)",
+   "row": "S3.4"
+  },
+  "ran-nf-oam GET /topology/relation": {
+   "fate": "replaced",
+   "replacement": "WG10 TE&IV R1 topology and inventory services (TE&IV module)",
+   "row": "S3.4"
+  },
+  "ran-nf-oam PATCH /alarms/{}/ack": {
+   "fate": "replaced",
+   "replacement": "TS 28.111 v19.3.0 acknowledgeAlarms",
+   "row": "S3.15"
+  },
+  "ran-nf-oam PATCH /alarms/{}/clear": {
+   "fate": "replaced",
+   "replacement": "TS 28.111 v19.3.0 clearAlarms",
+   "row": "S3.15"
+  },
+  "ran-nf-oam POST /alarms/ingest": {
+   "fate": "replaced",
+   "replacement": "O1 alarm notifications: VES `stndDefined` notifyNewAlarm / notifyClearedAlarm (TS 28.111)",
+   "row": "S3.15"
+  },
+  "ran-nf-oam POST /alarms/{}/comments": {
+   "fate": "replaced",
+   "replacement": "TS 28.111 v19.3.0 getAlarmList on `AlarmList` (comments, correlation and history are AlarmRecord attributes)",
+   "row": "S3.15"
+  },
+  "ran-nf-oam POST /config-history/purge": {
+   "fate": "delete",
+   "replacement": "worker task in process; not an interface",
+   "row": "S3.3"
+  },
+  "ran-nf-oam POST /config-jobs": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on the TS 28.541 NRM through RAN NF OAM's facade, called by SO SMOS only",
+   "row": "S3.3, S5.9"
+  },
+  "ran-nf-oam POST /config-jobs/advance-due": {
+   "fate": "delete",
+   "replacement": "worker task in process; not an interface",
+   "row": "S3.3"
+  },
+  "ran-nf-oam POST /config-jobs/{}/abort": {
+   "fate": "replaced",
+   "replacement": "TS 28.312 operations on the Level-2 intent (admin state, delete); SO SMOS restores from its snapshot",
+   "row": "S5.6, S5.7"
+  },
+  "ran-nf-oam POST /config-jobs/{}/continue": {
+   "fate": "replaced",
+   "replacement": "TS 28.312 operations on the Level-2 intent (admin state, delete); SO SMOS restores from its snapshot",
+   "row": "S5.6, S5.7"
+  },
+  "ran-nf-oam POST /config-jobs/{}/halt": {
+   "fate": "replaced",
+   "replacement": "TS 28.312 operations on the Level-2 intent (admin state, delete); SO SMOS restores from its snapshot",
+   "row": "S5.6, S5.7"
+  },
+  "ran-nf-oam POST /config-jobs/{}/kpi-check": {
+   "fate": "replaced",
+   "replacement": "TS 28.312 operations on the Level-2 intent (admin state, delete); SO SMOS restores from its snapshot",
+   "row": "S5.6, S5.7"
+  },
+  "ran-nf-oam POST /config-jobs/{}/rollback": {
+   "fate": "replaced",
+   "replacement": "TS 28.312 operations on the Level-2 intent (admin state, delete); SO SMOS restores from its snapshot",
+   "row": "S5.6, S5.7"
+  },
+  "ran-nf-oam POST /dme-jobs": {
+   "fate": "replaced",
+   "replacement": "R1GAP v14 §5.2.2 data registration: the producer side of a DME data job (R1TD v05)",
+   "row": "S3.17"
+  },
+  "ran-nf-oam POST /file-subscriptions": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 v19.1.0 file data reporting MnS (listAvailableFiles, notifyFileReady)",
+   "row": "S3.16"
+  },
+  "ran-nf-oam POST /fm-subscriptions": {
+   "fate": "replaced",
+   "replacement": "TS 28.622 `PerfMetricJob` / `NtfSubscriptionControl` through the subscription manager",
+   "row": "S1.13, S3.16"
+  },
+  "ran-nf-oam POST /kpis/{}/publish": {
+   "fate": "delete",
+   "replacement": "DME computes KPIs per ROP; no schedule or publish call",
+   "row": "S3.8"
+  },
+  "ran-nf-oam POST /lifecycle-subscriptions": {
+   "fate": "replaced",
+   "replacement": "TS 28.622 `PerfMetricJob` / `NtfSubscriptionControl` through the subscription manager",
+   "row": "S1.13, S3.16"
+  },
+  "ran-nf-oam POST /managed-entities/{}/managed-objects/refresh": {
+   "fate": "replaced",
+   "replacement": "TE&IV discovery: RAN NF OAM writes the discovered NRM through TE&IV's ProvMnS",
+   "row": "S3.4"
+  },
+  "ran-nf-oam POST /msac/access-rules": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS createMOI on `Identity` / `Role` / `AccessRule` [N] TS 28.319",
+   "row": "S1.14"
+  },
+  "ran-nf-oam POST /msac/identities": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS createMOI on `Identity` / `Role` / `AccessRule` [N] TS 28.319",
+   "row": "S1.14"
+  },
+  "ran-nf-oam POST /msac/roles": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS createMOI on `Identity` / `Role` / `AccessRule` [N] TS 28.319",
+   "row": "S1.14"
+  },
+  "ran-nf-oam POST /o1-adaptor-endpoints/discover": {
+   "fate": "replaced",
+   "replacement": "pnfRegistration and NETCONF call-home (RFC 8071)",
+   "row": "S8.2"
+  },
+  "ran-nf-oam POST /o1-adaptor-endpoints/{}/heartbeat": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 heartbeat notification (`HeartbeatControl`, TS 28.622)",
+   "row": "S1.13"
+  },
+  "ran-nf-oam POST /pm-files": {
+   "fate": "replaced",
+   "replacement": "O1 file-ready notification and VES `stndDefined` PM from the element",
+   "row": "S3.16"
+  },
+  "ran-nf-oam POST /pm-reports": {
+   "fate": "replaced",
+   "replacement": "O1 file-ready notification and VES `stndDefined` PM from the element",
+   "row": "S3.16"
+  },
+  "ran-nf-oam POST /pm-subscriptions": {
+   "fate": "replaced",
+   "replacement": "TS 28.622 `PerfMetricJob` / `NtfSubscriptionControl` through the subscription manager",
+   "row": "S1.13, S3.16"
+  },
+  "ran-nf-oam POST /rapp-approvals/expire-due": {
+   "fate": "delete",
+   "replacement": "worker task in process; not an interface",
+   "row": "S3.3"
+  },
+  "ran-nf-oam POST /safeguard-refusals/purge": {
+   "fate": "delete",
+   "replacement": "worker task in process; not an interface",
+   "row": "S3.3"
+  },
+  "ran-nf-oam POST /software-campaigns/advance-due": {
+   "fate": "delete",
+   "replacement": "worker task in process; not an interface",
+   "row": "S3.3"
+  },
+  "ran-nf-oam PUT /kpi-schedules/{}": {
+   "fate": "delete",
+   "replacement": "DME computes KPIs per ROP; no schedule or publish call",
+   "row": "S3.8"
+  },
+  "ran-nf-oam PUT /managed-entities/{}/cells/{}/guards": {
+   "fate": "replaced",
+   "replacement": "TE&IV cell attributes and the cell lock table (one writer, SO SMOS)",
+   "row": "S3.1, S3.2"
+  },
+  "ran-nf-oam PUT /managed-entities/{}/scope": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS on `ManagedElement` with the ADR 0005 scope as a [D] attribute (TE&IV), read by TS 28.319 AccessRules",
+   "row": "S1.14, S3.1"
+  },
+  "ran-nf-oam PUT /managed-entities/{}/site-cluster": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS on `ManagedElement` with the ADR 0005 scope as a [D] attribute (TE&IV), read by TS 28.319 AccessRules",
+   "row": "S1.14, S3.1"
+  },
+  "ran-nf-oam PUT /msac/identities/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS createMOI / modifyMOIAttributes on `Identity` / `Role` / `AccessRule` [N] TS 28.319",
+   "row": "S1.14"
+  },
+  "ran-nf-oam PUT /msac/roles/{}": {
+   "fate": "replaced",
+   "replacement": "TS 28.532 ProvMnS createMOI / modifyMOIAttributes on `Identity` / `Role` / `AccessRule` [N] TS 28.319",
+   "row": "S1.14"
+  },
+  "ran-nf-oam PUT /o1-adaptor-endpoints/{}/host-keys": {
+   "fate": "delete",
+   "replacement": "SSH host-key trust replaced by WG11 PKI certificates (CMPv2 / EST)",
+   "row": "S8.1"
+  }
+ }
+}

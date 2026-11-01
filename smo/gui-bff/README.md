@@ -9,7 +9,7 @@
 | Depends on (over R1) | R1 Termination (`/bootstrap`, `/health`, every proxied `/<module>/...`) and, for its own token, SME's `/invoker-registrations` and `/oauth2/token` (URL discovered via R1 `/bootstrap`, or `SME_URL`) |
 | Called by | The GUI SPA (`../gui/`), and scripts via `POST /api/token` |
 | Database tables | `gui_user`, `gui_audit_log`, `gui_smo_credential`, `gui_setting`, `gui_login_failure`, `gui_revoked_session`, `gui_oidc_login`, `gui_user_totp`, `gui_recovery_code`, `gui_login_challenge`, `gui_rapp_pin`, `gui_user_preference`, `gui_kpi_layout`, `gui_export_job`, `gui_export_chunk` (own SQLite/SQLAlchemy store, not the SMO Postgres schema) |
-| Unit tests | `tests/`, SQLite, standalone; R1 and SME faked with `httpx.MockTransport`; a few more run only when `SMO_TEST_POSTGRES_URL` is set (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
+| Unit tests | `tests/`, SQLite, standalone; R1 and SME faked with `httpx.MockTransport`; a few more run only when `SMO_TEST_POSTGRES_URL` is set (counts: [docs/test-counts/gui-bff.md](../docs/test-counts/gui-bff.md)) |
 | Status | Done. OIDC login (SEC-6, opt-in) and multi-factor sign-in (SEC-7: one-time codes for local accounts, `GUI_LOGIN_MODE`, break-glass, `GUI_ADMIN_MFA_REQUIRED`, admin revoke-sessions and reset-code) are built; open: SEC-6.8 (LDAP bind, optional). Sessions are signed JWTs with a logout revocation list. Several instances work against one shared `GUI_DATABASE_URL`: signing key, lockout counters and SME credential live in it; see 2.8 |
 
 The console as a whole (pages, screenshots, role matrix, run instructions, `GUI_*` quick reference) is described in [`../gui/README.md`](../gui/README.md). This file documents only the BFF's own design and does not repeat the role tables there; the authoritative permission table is `app/rbac.py`.
@@ -481,7 +481,7 @@ cd smo/gui-bff && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 ### 3.2 What is covered
 
-What each file covers; how many tests each suite has is generated in [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md).
+What each file covers; how many tests each suite has is generated in [docs/test-counts/gui-bff.md](../docs/test-counts/gui-bff.md).
 
 | Test file | Covers |
 |---|---|

@@ -1,5 +1,5 @@
 """The contract gate of plan task S0.7: scripts/check_contract_bundle.py (structure, examples, YANG, DDL) and scripts/check_contract_drift.py (the drift
-between each module's generated OpenAPI and its contract, held to scripts/contract_drift_baseline.json).
+between each module's generated OpenAPI and its contract, held to scripts/contract_drift_baseline/, one file per module).
 
 Covers: the committed bundle passes (pyang and the DDL step run in the "Contracts" CI job, where pyang and a Postgres with TimescaleDB exist; here the
 YANG step is skipped without pyang and the DDL step runs only with SMO_CONTRACTS_DATABASE_URL set); each check fails on a defect seeded in a copy of the
@@ -153,6 +153,28 @@ def test_drift_fails_only_when_a_count_grows():
 
 
 def test_the_committed_drift_baseline_is_current():
-    """scripts/contract_drift_baseline.json equals today's counts, so the CI check neither fails nor hides a drop."""
-    baseline = {k: v for k, v in json.loads(drift_check.BASELINE.read_text()).items() if not k.startswith("_")}
+    """scripts/contract_drift_baseline/ (one file per module) equals today's counts, so the CI check neither fails nor hides a drop."""
+    baseline = drift_check.load_baseline()
     assert drift_check.counts(drift_check.drift()) == baseline
+
+
+def test_drift_that_grows_in_one_module_fails_against_that_modules_file(tmp_path, monkeypatch, capsys):
+    """The gate's old failure case, per module: a module's count above its own file fails the check and names the module; a drop is reported, and
+    --write-baseline rewrites that module's file only."""
+    import shutil
+    shutil.copytree(drift_check.BASELINE_DIR, tmp_path / "b")
+    monkeypatch.setattr(drift_check, "BASELINE_DIR", tmp_path / "b")
+    current = drift_check.counts(drift_check.drift())
+    grown = {m: dict(c) for m, c in current.items()}
+    grown["aimgf"]["code_only"] += 1
+    monkeypatch.setattr(drift_check, "counts", lambda result: grown)
+    capsys.readouterr()
+    assert drift_check.main([]) == 1
+    assert f"FAIL drift grew: aimgf: code_only {current['aimgf']['code_only']} -> {current['aimgf']['code_only'] + 1}" in capsys.readouterr().out
+    shrunk = {m: dict(c) for m, c in current.items()}
+    shrunk["dme"]["contract_only"] = max(0, shrunk["dme"]["contract_only"] - 1)
+    monkeypatch.setattr(drift_check, "counts", lambda result: shrunk)
+    before = {p.name: p.stat().st_mtime_ns for p in (tmp_path / "b").glob("*.json")}
+    assert drift_check.main(["--write-baseline"]) == 0
+    after = {p.name: p.stat().st_mtime_ns for p in (tmp_path / "b").glob("*.json")}
+    assert [name for name in after if after[name] != before[name]] == (["dme.json"] if current["dme"]["contract_only"] else [])
