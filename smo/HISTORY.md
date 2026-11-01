@@ -5205,7 +5205,9 @@ ADR 0008 section 3.5. The O1 simulator part of S1.10 was S0.15 (`oran-sim`, ADR 
   bundled Postgres; `off`); an external Postgres follows `postgres.external.timescaledb`. The `common_dme_telemetry` hypertables are S1.9's. **CloudNativePG:** its
   images have no TimescaleDB, so it is not a values change: the chart README says what the Cluster needs, and PR-CONV-S1.10a builds the image and the lane.
   Measured locally: `migrate` says `timescaledb: created` and reaches the head; `scripts/timescaledb_roundtrip.sh` puts 72 rows into a scratch hypertable (three
-  chunks) and reads them back with `time_bucket`.
+  chunks) and reads them back with `time_bucket`. On a server with the extension, revision `0029`'s downgrade (which makes a `public` view for every
+  base table outside `public`) also made views over TimescaleDB's catalog tables; it now skips a table that belongs to an extension
+  (`tests_integration/test_migrations.py` passes against both `postgres:18-alpine` and the TimescaleDB image).
 - **The object store (D10).** Compose profile `objectstore`: SeaweedFS `chrislusf/seaweedfs:4.48@sha256:4e61d15f…` (Apache-2.0), S3 API on `objectstore:8333`
   (loopback on the host), running as the image's `seaweed` user with no capability and a read-only root; the keys come from the new secret files
   `secrets/objectstore_access_key` / `objectstore_secret_key` (`scripts/init_secrets.sh`) and are written into the S3 identity file in `/tmp` at start.
