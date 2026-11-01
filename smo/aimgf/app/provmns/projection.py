@@ -349,7 +349,7 @@ def ensure_container(db: Session, dn: str) -> None:
     if moi_id == DEFAULT_ID and class_name in DEFAULT_CONTAINERS:
         _write(db, dn, class_name, {})
     elif class_name in BY_CLASS and _as_uuids([moi_id]):
-        project_one(db, _registry, BY_CLASS[class_name], _as_uuids([moi_id])[0])
+        project_one(db, BY_CLASS[class_name], _as_uuids([moi_id])[0])
 
 
 def _delete_subtree(db: Session, dn: str) -> list[ManagedObject]:
@@ -363,7 +363,7 @@ def _delete_subtree(db: Session, dn: str) -> list[ManagedObject]:
     return rows
 
 
-def project_one(db: Session, registry, projector: Projector, key: Any) -> str | None:
+def project_one(db: Session, projector: Projector, key: Any) -> str | None:
     """Brings the instance of row `key` in line with the row: written (and moved when its container changed), or deleted with what it contains
     when the row is gone. Returns its DN, None when there is none."""
     row = db.get(projector.table, key)
@@ -378,7 +378,7 @@ def project_one(db: Session, registry, projector: Projector, key: Any) -> str | 
     if dn is None:
         return None
     ensure_container(db, parent_of(dn) or ROOT_DN)
-    _write(db, dn, projector.moi_class, attributes_of(db, registry or _registry, projector, row))
+    _write(db, dn, projector.moi_class, attributes_of(db, registry(), projector, row))
     return dn
 
 
@@ -410,13 +410,11 @@ def _collect(session: Session, _flush_context) -> None:
         session.info.pop(_PENDING, None)
 
 
-_registry = None
-
-
-def use_registry(registry) -> None:
-    """Sets the class registry the projection validates against (the one the router serves with, service.py)."""
-    global _registry
-    _registry = registry
+def registry():
+    """The class registry AIMgF serves with (service.py's producer), the one the projection validates against; read when needed, so the projection
+    keeps no state of its own (`tests_integration/test_statelessness_guard.py`)."""
+    from .service import mns          # service.py imports this module, so not at the top
+    return mns.registry
 
 
 def _touched(session: Session) -> bool:
@@ -426,7 +424,7 @@ def _touched(session: Session) -> bool:
 
 def flush_projection(session: Session) -> None:
     """Projects everything the session has written so far (before_commit; the hooks call it too). Does not commit."""
-    if _registry is None or session.info.get(_BUSY) or not _touched(session):
+    if session.info.get(_BUSY) or not _touched(session):
         return
     session.info[_BUSY] = True
     try:
@@ -437,7 +435,7 @@ def flush_projection(session: Session) -> None:
                 if not pending:
                     break
                 for table, key in sorted(pending, key=lambda item: (PROJECTORS.index(BY_TABLE[item[0]]), str(item[1]))):
-                    project_one(session, _registry, BY_TABLE[table], key)
+                    project_one(session, BY_TABLE[table], key)
                 session.flush()
             session.info.pop(_PENDING, None)
     finally:
@@ -449,12 +447,11 @@ def _forget(session: Session, *_args) -> None:
     session.info.pop(_PENDING, None)
 
 
-def install() -> None:
-    """Listens on every Session (idempotent): collect after each flush, project before each commit, forget on rollback."""
-    if not event.contains(Session, "after_flush", _collect):
-        event.listen(Session, "after_flush", _collect)
-        event.listen(Session, "before_commit", flush_projection)
-        event.listen(Session, "after_soft_rollback", _forget)
+# Every Session of the process: collect after each flush, project before each commit, forget on a rollback. Listening at import (not from a
+# function) means the listeners exist exactly once, whoever imports this module.
+event.listen(Session, "after_flush", _collect)
+event.listen(Session, "before_commit", flush_projection)
+event.listen(Session, "after_soft_rollback", _forget)
 
 
 def project_all(db: Session) -> int:
@@ -464,6 +461,6 @@ def project_all(db: Session) -> int:
     for projector in PROJECTORS:
         column: Any = inspect(projector.table).primary_key[0]
         for key in db.scalars(select(column)).all():
-            count += project_one(db, _registry, projector, key) is not None
+            count += project_one(db, projector, key) is not None
     db.flush()
     return count

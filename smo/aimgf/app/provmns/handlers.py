@@ -28,12 +28,11 @@ import uuid
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import inspect, select
+from sqlalchemy import inspect
 
 from smo_shared.invoker import invoker_id
 from smo_shared.mns import IMoiLifecycleHandler, Moi, MoiContext, MnsError
 from smo_shared.mns.dn import parent_of
-from smo_shared.mns.store import ManagedObject
 
 from .. import models as m
 from ..common import _check_job_owner, _check_rapp_owns_models
@@ -115,7 +114,7 @@ def _changed(old: Moi, new: Moi) -> set[str]:
 
 def _refresh(ctx: MoiContext, table: type, key: Any) -> None:
     """Projects the row behind the instance just written, so the router's answer (and its moiVersion) is what AIMgF made of it."""
-    projection.project_one(ctx.session, None, projection.BY_TABLE[table], key)
+    projection.project_one(ctx.session, projection.BY_TABLE[table], key)
     ctx.session.flush()
 
 
@@ -247,11 +246,7 @@ class Request(IMoiLifecycleHandler):
     def before_create(self, ctx: MoiContext, moi: Moi) -> None:
         """Starts the run (every check of the route), named by the instance's UUID."""
         key = _uuid_id(moi)
-        _only(moi, self.takes, f"a new {moi.class_name}")
-        if moi.attributes.get("cancelRequest") or moi.attributes.get("suspendRequest"):
-            if moi.class_name != "MLModelLoadingRequest":
-                raise _veto(422, f"a new {moi.class_name} starts its run; cancel or suspend it afterwards", moi.dn,
-                            sorted(self.FLAGS & set(moi.attributes)))
+        _only(moi, self.takes, f"a new {moi.class_name}")       # the flags too, but a loading request's, which may start suspended or cancelled
         parent = parent_of(moi.dn)
         if parent is None or not parent.startswith(f"{ROOT_DN},{self.function_class}="):
             raise _veto(422, f"AIMgF keeps a {moi.class_name} under its {self.function_class}", moi.dn)
@@ -365,10 +360,10 @@ _TRAINING_TAKES = {"aIMLInferenceName", "fLRequirement", "candidateTrainingDataS
                    "mLKnowledgeName", "mLTrainingType", "expectedInferenceScope", "clusteringInfo", "mLModelRef", "mLModelCoordinationGroupRef"}
 
 
-def _caller_name(default: str) -> str:
-    """Who asks, for a run's producer: the invoker id the gateway stamped, or `default`."""
+def _caller_name() -> str:
+    """Who asks, for a run's producer: the invoker id the gateway stamped, or `provmns` for a call with none."""
     request = current_request.get()
-    return (invoker_id(request) if request is not None else None) or default
+    return (invoker_id(request) if request is not None else None) or "provmns"
 
 
 def _start_training_request(ctx: MoiContext, moi: Moi, key: uuid.UUID, function_id: uuid.UUID | None) -> None:
@@ -378,7 +373,7 @@ def _start_training_request(ctx: MoiContext, moi: Moi, key: uuid.UUID, function_
     if (a.get("mLModelRef") is None) == (a.get("mLModelCoordinationGroupRef") is None):
         raise _veto(422, "COORDINATION_GROUP_MISMATCH: exactly one of mLModelRef and mLModelCoordinationGroupRef", moi.dn,
                     ["mLModelRef", "mLModelCoordinationGroupRef"])
-    source = a.get("trainingRequestSource") or _caller_name("provmns")
+    source = a.get("trainingRequestSource") or _caller_name()
     _start_training(ctx.session, model_id=_ref(moi, "mLModelRef"), group_id=_ref(moi, "mLModelCoordinationGroupRef"), producer_id=source,
                     ml_training_type=a.get("mLTrainingType"), ml_training_function_id=function_id, training_request_source=source,
                     aiml_inference_name=a.get("aIMLInferenceName"), fl_requirement=a.get("fLRequirement"),
@@ -396,7 +391,7 @@ def _training_owner(ctx: MoiContext, job) -> None:
 
 def _start_testing_request(ctx: MoiContext, moi: Moi, key: uuid.UUID, function_id: uuid.UUID | None) -> None:
     _start_validation(ctx.session, model_id=_ref(moi, "mLModelRef"), group_id=_ref(moi, "mLModelCoordinationGroupRef"),
-                      producer_id=_caller_name("provmns"), request=_request(), ml_testing_function_id=function_id, validation_job_id=key,
+                      producer_id=_caller_name(), request=_request(), ml_testing_function_id=function_id, validation_job_id=key,
                       runtime_profile=_resolve_runtime_profile("VALIDATION", None, None))
 
 
@@ -407,7 +402,7 @@ def _testing_owner(ctx: MoiContext, job) -> None:
 def _start_update_request(ctx: MoiContext, moi: Moi, key: uuid.UUID, function_id: uuid.UUID | None) -> None:
     """MLUpdateRequest createMOI: `start_update` (POST /ml-update-requests' path) with the instance's attributes and the caller as its source."""
     a = moi.attributes
-    start_update(ctx.session, _request(), function_id=function_id, model_ids=_refs(moi, "mLModelRefList"), source=_caller_name("provmns"),
+    start_update(ctx.session, _request(), function_id=function_id, model_ids=_refs(moi, "mLModelRefList"), source=_caller_name(),
                  request_id=key, performance_gain_threshold=a.get("performanceGainThreshold"),
                  new_capability_version_ids=a.get("newCapabilityVersionId"), update_time_deadline=a.get("updateTimeDeadline"),
                  ml_update_reporting_period=a.get("mLUpdateReportingPeriod"))
@@ -481,8 +476,3 @@ HANDLERS: dict[str, IMoiLifecycleHandler] = {
     "MLModelLoadingProcess": ReadOnly("AIMgF makes a process when a request or policy loads models"),
     "AIMLInferenceReport": InferenceReport(),
 }
-
-
-def stored(session, dn: str) -> ManagedObject | None:
-    """The stored instance at `dn` (a test's and a hook's read)."""
-    return session.scalar(select(ManagedObject).where(ManagedObject.dn == dn))

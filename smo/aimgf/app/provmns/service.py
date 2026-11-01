@@ -77,13 +77,11 @@ class AimgfRegistry(ClassRegistry):
 
 def build(classes: Iterable[str] = CLASSES) -> ProvMnS:
     """AIMgF's ProvMnS: the registry above, the served classes with their hooks, the cross-cutting checks of S1.5 (claim scope, no instance placed,
-    no MSAC, audit on); the projection validates against the same registry."""
+    no MSAC, audit on); the projection validates against the registry of `mns` below."""
     registry = AimgfRegistry()
     mns = ProvMnS(source=projection.SOURCE, system_dn=ROOT_DN, registry=registry, classes=classes, checks=RouterChecks(module="aimgf"))
     for name in classes:
         mns.serve(name, HANDLERS[name])
-    projection.use_registry(registry)
-    projection.install()
     return mns
 
 
@@ -97,6 +95,39 @@ class RequestContext(BaseHTTPMiddleware):
             return await call_next(request)
         finally:
             current_request.reset(token)
+
+
+# The error body of TS 28.623 the router answers with (`smo_shared.mns.errors`: ErrorResponseDefault, ErrorResponseGet, ErrorResponsePatch in one
+# schema), and the statuses it answers with on its own: what `document` declares on the ProvMnS paths of AIMgF's OpenAPI.
+PROVMNS_ERROR = "ProvMnSErrorResponse"
+PROVMNS_ERROR_SCHEMA = {
+    "title": PROVMNS_ERROR, "type": "object", "required": ["status", "type", "reason", "title"],
+    "properties": {"status": {"type": "string"}, "type": {"type": "string"}, "reason": {"type": "string"}, "title": {"type": "string"},
+                   "badAttributes": {"type": "array", "items": {"type": "string"}}, "badObjects": {"type": "array", "items": {"type": "string"}},
+                   "badQueryParams": {"type": "array", "items": {"type": "string"}}, "badOp": {"type": "string"}},
+}
+PROVMNS_ERROR_STATUSES = ("400", "403", "404", "409", "412", "415", "422")
+
+
+def document(app) -> None:
+    """Makes AIMgF's OpenAPI say what the ProvMnS router answers on its paths: the TS 28.623 error body above for the statuses the router answers
+    with, instead of the SMO's ProblemDetails envelope `apply_r1_gateway_security` declares on every route (found by the contract test,
+    tests_integration/test_contract_schemathesis.py). The gateway's own statuses (401, 413, 429) and the 5xx keep the envelope. Wraps the
+    `app.openapi` already installed, so it is called after `apply_r1_gateway_security`."""
+    previous = app.openapi
+
+    def openapi() -> dict:
+        schema = previous()
+        schema.setdefault("components", {}).setdefault("schemas", {})[PROVMNS_ERROR] = PROVMNS_ERROR_SCHEMA
+        body = {"application/json": {"schema": {"$ref": f"#/components/schemas/{PROVMNS_ERROR}"}}}
+        for path, operations in schema.get("paths", {}).items():
+            if path.startswith("/ProvMnS/"):
+                for operation in operations.values():
+                    for status in PROVMNS_ERROR_STATUSES:
+                        operation["responses"][status] = {"description": "TS 28.623 error", "content": body}
+        return schema
+
+    app.openapi = openapi
 
 
 MNS_INFO = {

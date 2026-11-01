@@ -77,3 +77,4 @@ for _module in (registry_routes, registry_mlr, training_jobs, training_nrm, trai
 # registration (a stub until S1.12, provmns/service.py).
 app.include_router(provmns.router)
 app.add_middleware(provmns.RequestContext)
+provmns.document(app)
