@@ -53,6 +53,7 @@ from smo_shared.invoker import invoker_id
 from smo_shared.webhook import is_safe_webhook_destination
 from smo_shared.secretfile import read_secret
 
+from . import mns_registry
 from .models import (API_INVOKER_EVENTS, EVENT_TYPES, InvokerRegistration, IssuedAccessToken, ProviderRegistration,
                      ServiceAuthzPolicy, ServiceEventSubscription, ServiceProfile, TrustedInvoker, UsedClientAssertion)
 
@@ -85,6 +86,8 @@ apply_correlation_id(app)
 
 
 install_health(app, checks=[database_check])  # /live, /ready and the /health alias (PR-ST-7)
+# The MnS registry (plan tasks S1.7, S1.12): TS 28.622 MnsRegistry, MnsInfo and MgmtDataInfo over ProvMnS, at /ProvMnS/{version}/{LDN} (app/mns_registry.py)
+app.include_router(mns_registry.router)
 
 
 def _hash_secret(secret: str) -> str:

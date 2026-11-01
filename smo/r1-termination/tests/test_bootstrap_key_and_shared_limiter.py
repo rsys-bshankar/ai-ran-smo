@@ -33,7 +33,7 @@ def test_without_a_configured_key_bootstrap_is_open_and_a_sent_key_is_ignored():
 
 
 def test_with_a_key_bootstrap_needs_the_header_and_nothing_is_revealed_without_it(monkeypatch):
-    """With a key configured, a missing, wrong, empty or longer-than-right key is a 401 whose body names no address; the right key gets the two endpoint entries."""
+    """With a key configured, a missing, wrong, empty or longer-than-right key is a 401 whose body names no address; the right key gets the endpoint entries."""
     monkeypatch.setattr(gateway, "BOOTSTRAP_KEY", "s3cret-key")
     refused = [client.get("/bootstrap"), client.get("/bootstrap", headers={BOOTSTRAP_KEY_HEADER: "wrong"}),
                client.get("/bootstrap", headers={BOOTSTRAP_KEY_HEADER: ""}), client.get("/bootstrap", headers={BOOTSTRAP_KEY_HEADER: "s3cret-key-and-more"})]
@@ -41,7 +41,7 @@ def test_with_a_key_bootstrap_needs_the_header_and_nothing_is_revealed_without_i
         assert response.status_code == 401 and response.json()["title"] == "UNAUTHORIZED"
         assert "apiEndpoints" not in response.text and "sme" not in response.text.replace("smo", "")     # no address leaks in the refusal
     ok = client.get("/bootstrap", headers={BOOTSTRAP_KEY_HEADER: "s3cret-key"})
-    assert ok.status_code == 200 and {e["apiName"] for e in ok.json()["apiEndpoints"]} == {"service-apis", "published-apis"}
+    assert ok.status_code == 200 and {e["apiName"] for e in ok.json()["apiEndpoints"]} == {"service-apis", "published-apis", "so-smos", "aimgf"}
 
 
 def test_the_key_is_compared_in_constant_time_and_a_non_ascii_header_is_just_wrong(monkeypatch):

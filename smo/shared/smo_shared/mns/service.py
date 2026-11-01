@@ -111,10 +111,11 @@ def _changes(old: dict, new: dict) -> tuple[dict, dict]:
 
 class ProvMnS:
     """One module's ProvMnS producer (see the module description). `classes` limits the served classes (None: every class the registry knows);
-    `api_root` prefixes the `href` of notifications."""
+    `api_root` prefixes the `href` of notifications; `model` is the mapped class of the store (`ManagedObject`, the table `moi_store`, unless
+    another was made with `store.store_model`)."""
 
     def __init__(self, *, source: str, system_dn: str, registry: ClassRegistry | None = None, classes: Iterable[str] | None = None,
-                 api_root: str = "", checks: RouterChecks | None = None):
+                 api_root: str = "", checks: RouterChecks | None = None, model: type[ManagedObject] = ManagedObject):
         """Keeps the event `source` (`/smo/<module>`), the `systemDN` of the notifications, the registry (the shared default when not given), the served
         classes and the cross-cutting checks (checks.py; by default: claim scope with no placement, no MSAC, audit on, the module named after `source`)."""
         self.source = source
@@ -122,6 +123,7 @@ class ProvMnS:
         self.system_dn = system_dn
         self.registry = registry if registry is not None else default_registry()
         self.api_root = api_root.rstrip("/")
+        self.model = model
         self._served: set[str] | None = None if classes is None else set()
         self._handlers: dict[str, IMoiLifecycleHandler] = {}
         for name in classes or ():
@@ -197,7 +199,7 @@ class ProvMnS:
         self._require_served(class_name)
         attributes = self._resource_attributes(body, dn, class_name, moi_id)
         self.registry.validate(class_name, attributes)
-        row = db.get(ManagedObject, dn)
+        row = db.get(self.model, dn)
         _check_if_match(if_match, row, dn)
         ctx = MoiContext("createMOI", db, dn)
         if row is not None:
@@ -207,7 +209,7 @@ class ProvMnS:
         parent_dn = parent_of(dn)
         parent_class = None
         if parent_dn is not None:
-            parent = db.get(ManagedObject, parent_dn)
+            parent = db.get(self.model, parent_dn)
             if parent is None:
                 raise MnsError(422, "PARENT_NOT_FOUND", f"{parent_dn} does not exist", bad_objects=[parent_dn])
             parent_class = parent.object_class
@@ -217,7 +219,7 @@ class ProvMnS:
         moi = Moi(dn, class_name, moi_id, attributes, 0)
         handler = self._handler(class_name)
         handler.before_create(ctx, moi)
-        row = ManagedObject(dn=dn, object_class=class_name, moi_id=moi_id, parent_dn=parent_dn, depth=depth_of(dn), attributes=attributes)
+        row = self.model(dn=dn, object_class=class_name, moi_id=moi_id, parent_dn=parent_dn, depth=depth_of(dn), attributes=attributes)
         db.add(row)
         self._flush(db, dn)
         handler.after_create(ctx, _moi(row))
@@ -306,7 +308,7 @@ class ProvMnS:
         self._require_served(parse_dn(dn)[-1].class_name)
         base = self._existing(db, dn)
         _check_if_match(if_match, base, dn)
-        rows = list(db.scalars(select(ManagedObject).where(self._subtree(dn, (base.depth, None))).order_by(ManagedObject.dn.desc())))
+        rows = list(db.scalars(select(self.model).where(self._subtree(dn, (base.depth, None))).order_by(self.model.dn.desc())))
         if not all(self._allowed(caller, "deleteMOI", row.dn) for row in rows):
             raise MnsError(403, "SCOPE_DENIED", f"{dn} contains instances outside the caller's reach", bad_objects=[dn])
         ctx = MoiContext("deleteMOI", db, dn)
@@ -328,22 +330,21 @@ class ProvMnS:
             return False
         return True
 
-    @staticmethod
-    def _existing(db: Session, dn: str) -> ManagedObject:
-        row = db.get(ManagedObject, dn)
+    def _existing(self, db: Session, dn: str) -> ManagedObject:
+        row = db.get(self.model, dn)
         if row is None:
             raise MnsError(404, "MOI_NOT_FOUND", f"{dn} does not exist", bad_objects=[dn])
         return row
 
     # ------------------------------------------------------------------ the read
 
-    @staticmethod
-    def _subtree(base_dn: str, depths: tuple[int, int | None]):
+    def _subtree(self, base_dn: str, depths: tuple[int, int | None]):
         """The SQL condition for the base and its descendants within `depths` (lowest, highest or None): the DN range [base, base + "-"), which holds
         exactly the base and the DNs that start with `base,` (dn.py), so the primary key serves it."""
         lowest, highest = depths
-        condition = and_(ManagedObject.dn >= base_dn, ManagedObject.dn < base_dn + SUBTREE_UPPER, ManagedObject.depth >= lowest)
-        return condition if highest is None else and_(condition, ManagedObject.depth <= highest)
+        model = self.model
+        condition = and_(model.dn >= base_dn, model.dn < base_dn + SUBTREE_UPPER, model.depth >= lowest)
+        return condition if highest is None else and_(condition, model.depth <= highest)
 
     def get_moi_attributes(self, db: Session, dn: str, scope: Scope | None = None, filter_tree: tuple | None = None,
                            attributes: list[str] | None = None, fields: list[str] | None = None, limit: int = DEFAULT_LIMIT,
@@ -357,9 +358,9 @@ class ProvMnS:
         scope = scope or Scope()
         self._existing(db, dn)
         after = decode_cursor(cursor) if cursor else None
-        query = select(ManagedObject).where(self._subtree(dn, scope.depth_range(depth_of(dn)))).order_by(ManagedObject.dn)
+        query = select(self.model).where(self._subtree(dn, scope.depth_range(depth_of(dn)))).order_by(self.model.dn)
         if after is not None:
-            query = query.where(ManagedObject.dn > after)
+            query = query.where(self.model.dn > after)
         unrestricted = caller.scope is None and self.checks.msac.provider(caller) is None
         if filter_tree is None and unrestricted:
             query = query.limit(limit + 1)              # one more than the page tells whether a next page exists

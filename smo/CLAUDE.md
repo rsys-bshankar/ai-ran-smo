@@ -214,13 +214,11 @@ Docker compose runs the migrations itself (the `migrate` service); services star
   `scripts/interface_baseline/<module>.json` (`python scripts/check_interfaces.py --write-baseline`, which rewrites only the files that changed); the
   gate fails on a stale entry, and on a pull request it fails when an entry is added against the base branch. A new route is a bundle operation or a listed ADR 0011 [D] exception from the day it is added.
 - **Merge when green (standing instruction from the repository owner).** After opening a PR, watch it: fix CI failures and
-  review comments, and once every required check passes on the current head and the PR is mergeable, **add it to the merge queue**
-  (GitHub's "Merge when ready"; with the GitHub tools, enable auto-merge on it, which queues it once it is green). The queue squash-merges
-  it (title ending in `(#<number>)`) after the required checks pass again on it merged with everything queued ahead, so two green PRs that each
-  pass alone cannot break `main` together. Not required: the `github-advanced-security` check (Copilot AI findings), which fails when the
-  monthly Copilot quota is spent. Don't queue on red CI, on an unresolved blocking review, or when the person running the session says to hold
-  the PR. A `[cross-lane]` PR is not queued by a session: the owner merges it alone ("Working in parallel"). Until the owner turns the queue on,
-  squash-merge as before.
+  review comments, and once every required check passes on the current head and the PR is mergeable: required checks green →
+  `gh pr merge --squash --auto` (with the GitHub tools, enable auto-merge with the squash method); "Require branches to be up to date" stays
+  off, which is what lets lane PRs merge in any order. Not required: the `github-advanced-security` check (Copilot AI findings), which fails
+  when the monthly Copilot quota is spent. Don't merge on red CI, on an unresolved blocking review, or when the person running the session says
+  to hold the PR. A `[cross-lane]` PR is not merged by a session: the owner merges it alone ("Working in parallel").
 
 ## Working in parallel
 
@@ -242,13 +240,12 @@ The shared logs are assembled at release instead (`docs/RELEASES.md`, "Cutting a
 
 A pull request that must touch shared code — `shared/`, `r1-termination/`, the SDKs (`sdk/`, `sdk-go/`, `sdk-java/`), the GUI (`gui/`, `gui-bff/`),
 CI (`.github/`), `docker-compose.yml`, the chart, `migrations/` outside its branch and its module's entries, a new module, or this file — says so in its title, starting
-**`[cross-lane]`**. The owner merges it alone, with no other pull request in the queue, and the lanes then merge `main` into their branches.
+**`[cross-lane]`**. The owner merges it alone, with no other pull request merging at the same time, and the lanes then merge `main` into their branches.
 
-**The merge queue (the owner's GitHub setting).** In the repository's Settings → Rules → Rulesets (or Branches → the rule for `main`), require a
-merge queue on `main`: merge method **Squash**, build concurrency **5**, group size **1** to **5** (wait 5 minutes for a group), "Only merge
-non-failing pull requests", status check timeout 120 minutes; and keep the required status checks (the jobs of `.github/workflows/smo-tests.yml`,
-"Contracts" and "Interfaces" among them). `smo-tests.yml` runs on `merge_group` for this; a workflow added to the required checks later needs the
-same trigger. Allow auto-merge in Settings → General, so a session's "merge when green" queues the pull request.
+**Merging (the owner's GitHub setting).** The repository is owned by a personal account, where GitHub offers no merge queue. Required
+checks green → `gh pr merge --squash --auto`; "Require branches to be up to date" stays off in the rule for `main`, which is what lets lane PRs
+merge in any order (each lane touches only its own files, so a PR green on its own base stays green merged with the others). Allow auto-merge
+in Settings → General. The `merge_group` trigger in `smo-tests.yml` is left in place; it is harmless.
 
 
 

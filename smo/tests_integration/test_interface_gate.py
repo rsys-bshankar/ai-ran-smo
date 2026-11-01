@@ -177,5 +177,7 @@ def test_growth_is_checked_against_the_base_refs_files_or_its_old_single_file(tm
     run("commit", "-qm", "per module")
     parts = gate.baseline_dirs.read_at("HEAD", "smo/scripts/interface_baseline", "smo/scripts/interface_baseline.json", repo)
     assert gate.merge(parts) == old
+    # the gate runs from smo/ (CI's working directory): from a subdirectory the files are read all the same (ls-tree --full-tree)
+    assert gate.merge(gate.baseline_dirs.read_at("HEAD", "smo/scripts/interface_baseline", "smo/scripts/interface_baseline.json", repo / "smo")) == old
     grown = {"producer": {**old["producer"], "dme GET /b": {"fate": "delete", "row": "S3.1"}}, "consumer": {}}
     assert gate.grown(grown, gate.merge(parts)) == ["baseline grew: producer dme GET /b"]

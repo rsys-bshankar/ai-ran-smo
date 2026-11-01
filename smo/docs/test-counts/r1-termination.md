@@ -9,7 +9,7 @@ CI runs `--check` and fails when this file no longer matches the code.
 
 | suite | files | test functions | collected tests |
 |---|---:|---:|---:|
-| `r1-termination` | 10 | 153 | 351 |
+| `r1-termination` | 11 | 171 | 383 |
 
 ## Per test file
 
@@ -22,7 +22,8 @@ Paths are relative to `smo/r1-termination/`.
 | `tests/test_bootstrap_key_and_shared_limiter.py` | 11 | 11 |
 | `tests/test_introspection_cache.py` | 22 | 26 |
 | `tests/test_killswitch.py` | 11 | 21 |
-| `tests/test_main.py` | 41 | 47 |
+| `tests/test_main.py` | 42 | 48 |
+| `tests/test_mns_routing.py` | 17 | 31 |
 | `tests/test_mtls_routes.py` | 3 | 3 |
 | `tests/test_operator_api.py` | 21 | 31 |
 | `tests/test_roles.py` | 17 | 179 |

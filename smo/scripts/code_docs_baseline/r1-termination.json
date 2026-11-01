@@ -1,9 +1,9 @@
 {
  "files_without_description": 0,
  "functions_without_description": 0,
- "items_requiring_description": 48,
+ "items_requiring_description": 58,
  "module": "r1-termination",
- "source_files": 14,
- "tests": 153,
+ "source_files": 16,
+ "tests": 171,
  "tests_without_docstring": 0
 }

@@ -6,7 +6,8 @@
   lifecycle                IMoiLifecycleHandler, the hooks a module puts its behaviour in
   scope                    scope, filter, attribute selection and the hierarchical answer
   patch                    the merge-patch and JSON-patch formats
-  store                    the `moi_store` model and the Alembic helpers a module's revision calls
+  store                    the `moi_store` model (`store_model` for another table name) and the Alembic helpers a module's revision calls
+  mns_registry             the TS 28.622 MnS registry: what a producer registers, how a reader finds one, the start-up self-registration
   dn, errors               DN handling; the TS 28.532 error bodies
 """
 

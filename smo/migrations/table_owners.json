@@ -15,6 +15,7 @@
  "sme": [
   "invoker_registration",
   "issued_access_token",
+  "mns_registry",
   "provider_registration",
   "service_authz_policy",
   "service_event_subscription",

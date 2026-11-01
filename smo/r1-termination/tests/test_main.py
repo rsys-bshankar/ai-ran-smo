@@ -10,6 +10,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
+from app import main as gateway
 from app.main import app, ROUTES
 
 client = TestClient(app)
@@ -27,14 +28,23 @@ INTROSPECT_URL = f"{ROUTES['/sme']}/oauth2/introspect"
 AUTH_HEADERS = {"Authorization": "Bearer test-token"}  # accepted by every fake client below, which treats introspection as a no-op success
 
 
-def test_bootstrap_returns_only_service_and_published_apis():
-    """Section 4.1: BootstrapInformation ONLY ever contains service-apis
-    and published-apis entries, never events-subscription.
-    """
+def test_bootstrap_returns_the_service_and_published_apis_and_so_smos_and_aimgf():
+    """Section 4.1: BootstrapInformation holds service-apis and published-apis, never events-subscription; since PR-CONV-S1.8 it also names SO SMOS and
+    AIMgF, at their own addresses inside the network."""
     resp = client.get("/bootstrap")
     assert resp.status_code == 200
-    names = {e["apiName"] for e in resp.json()["apiEndpoints"]}
-    assert names == {"service-apis", "published-apis"}
+    entries = {e["apiName"]: e["apiEndPoint"]["uri"] for e in resp.json()["apiEndpoints"]}
+    assert list(entries) == ["service-apis", "published-apis", "so-smos", "aimgf"]
+    assert entries["so-smos"] == gateway.ROUTES["/so-smos"] and entries["aimgf"] == gateway.ROUTES["/aimgf"]
+
+
+def test_bootstrap_names_so_smos_and_aimgf_through_the_public_address_when_one_is_set(monkeypatch):
+    """With R1_PUBLIC_BASE_URL set the two module entries name this gateway's public address and the module's prefix, as SME's entries do."""
+    monkeypatch.setattr(gateway, "PUBLIC_BASE_URL", "https://r1.example:8443")
+    entries = {e["apiName"]: e for e in client.get("/bootstrap").json()["apiEndpoints"]}
+    assert entries["so-smos"]["apiEndPoint"]["uri"] == "https://r1.example:8443/so-smos"
+    assert entries["aimgf"]["apiEndPoint"]["uri"] == "https://r1.example:8443/aimgf"
+    assert entries["aimgf"]["tokenEndPoint"]["uri"] == "https://r1.example:8443/sme/oauth2/token"
 
 
 def test_bootstrap_entries_carry_a_token_endpoint():

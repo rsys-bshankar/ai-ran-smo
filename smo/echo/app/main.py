@@ -14,9 +14,11 @@ Configuration (read on every request, so a test or an operator can change it wit
   ECHO_MSAC_RULES    JSON: caller (invoker id or console user) -> list of TS 28.319 AccessRules {dataNodeSelector, operations, action}; a caller not
                      listed is not managed by MSAC. Not valid JSON, or a rule that is not one: every caller is managed and has no rule (refused).
 
-Echo is not reached through R1 by class name yet: SME's MnS registry (S1.7) and R1 Termination's routing by registry lookup (S1.8) do that, which is
-the last condition of milestone M1. Off by default in compose (profile `echo`) and in the chart (`modules.echo.enabled: false`): it is a reference and
-test module with no operator function.
+At start-up Echo registers itself in SME's MnS registry as the producer of its two classes (`smo_shared.mns.mns_registry`, plan tasks S1.7 and S1.12:
+an MnsInfo and a MgmtDataInfo, through R1 Termination with its own token, repeated until it succeeds; `SMO_MNS_REGISTRATION=off` skips it), and R1
+Termination routes `/ProvMnS/{version}/{LDN}` to it by class name with no entry of its own in the gateway's table (S1.8): milestone M1
+(`tests_integration/test_m1_echo_through_r1.py`). Off by default in compose (profile `echo`) and in the chart (`modules.echo.enabled: false`): it is a
+reference and test module with no operator function.
 """
 
 import json
@@ -31,6 +33,7 @@ from smo_shared.logconfig import install_logging
 from smo_shared.metrics import install_metrics
 from smo_shared.mns import ProvMnS, provmns_router
 from smo_shared.mns.checks import Caller, MsacStep, PrefixPlacement, RouterChecks, ScopeStep, Target, no_placement
+from smo_shared.mns.mns_registry import install_self_registration
 from smo_shared.openapi_security import apply_r1_gateway_security
 
 from . import models  # noqa: F401  (puts moi_store on the shared Base)
@@ -89,3 +92,4 @@ apply_r1_gateway_security(app)
 apply_correlation_id(app)  # also installs the trace context, the invoker and the scope context middlewares
 install_health(app, checks=[database_check])   # /live, /ready, /health, /version; Echo calls no other module, so no SME token check
 app.include_router(provmns_router(mns))
+REGISTRATION = install_self_registration(app, "echo", CLASSES)   # in SME's MnS registry, at start-up (PR-CONV-S1.12), so R1 routes by class (S1.8)

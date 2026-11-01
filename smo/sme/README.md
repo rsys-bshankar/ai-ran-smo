@@ -4,11 +4,11 @@
 
 | | |
 |---|---|
-| Standards basis | O-RAN R1 SME on 3GPP CAPIF (TS 23.222 / TS 29.222) |
+| Standards basis | O-RAN R1 SME on 3GPP CAPIF (TS 23.222 / TS 29.222); the MnS registry of TS 28.622 (MnsRegistry, MnsInfo) and TS 28.537 (MgmtDataInfo) over TS 28.532 ProvMnS |
 | R1 route / port | `/sme` via R1 Termination (container `:8000`) |
 | Depends on (over R1) | Caller-registered event callback URLs only; no other module |
-| Called by | R1 Termination (`/oauth2/introspect` on every proxied request); every module's `R1Client` (invoker onboarding and `/oauth2/token`); rApps and producers (publish, discover, subscribe); rApp Management (registers a package's declared providers and service APIs per instance); RAN Analytics (producer registration creates a service); GUI BFF |
-| Database tables | `service_profile`, `service_authz_policy`, `provider_registration`, `invoker_registration`, `issued_access_token`, `used_client_assertion`, `trusted_invoker`, `service_event_subscription` |
+| Called by | R1 Termination (`/oauth2/introspect` on every proxied request; the MnS registry read, to route `/ProvMnS/...` by class); every ProvMnS module (its registration at start-up, through R1); every module's `R1Client` (invoker onboarding and `/oauth2/token`); rApps and producers (publish, discover, subscribe); rApp Management (registers a package's declared providers and service APIs per instance); RAN Analytics (producer registration creates a service); GUI BFF |
+| Database tables | `service_profile`, `service_authz_policy`, `provider_registration`, `invoker_registration`, `issued_access_token`, `used_client_assertion`, `trusted_invoker`, `service_event_subscription`, `mns_registry` (the MnS registry's ProvMnS store, revision `sme_0001`) |
 | Unit tests | `tests/`, SQLite, standalone (counts: [docs/test-counts/sme.md](../docs/test-counts/sme.md)) |
 | Status | Done for the subset in 1.2 |
 
@@ -36,6 +36,7 @@ SME is a profile of 3GPP CAPIF (TS 23.222 architecture, TS 29.222 APIs), as R1AP
 | API Invoker Management | [`TS29222_CAPIF_API_Invoker_Management_API.yaml`](../../specs/5G_APIs/TS29222_CAPIF_API_Invoker_Management_API.yaml) | `/invoker-registrations` (public-key onboarding, server-generated id and secret; `PUT` key update, `DELETE` offboarding) |
 | Security API | [`TS29222_CAPIF_Security_API.yaml`](../../specs/5G_APIs/TS29222_CAPIF_Security_API.yaml) | `/trusted-invokers/{id}` (`PUT`, `GET`, `DELETE`, `POST .../update`, `POST .../delete` revocation); token issuance at `/oauth2/token`, with the `3gpp#aefId:apiName` scope and RFC 7523 client assertions |
 | Events API | [`TS29222_CAPIF_Events_API.yaml`](../../specs/5G_APIs/TS29222_CAPIF_Events_API.yaml) | `/capif-events/v1/{subscriberId}/subscriptions`; events `SERVICE_API_AVAILABLE`, `SERVICE_API_UNAVAILABLE`, `SERVICE_API_UPDATE`, `API_INVOKER_ONBOARDED`, `API_INVOKER_UPDATED`, `API_INVOKER_OFFBOARDED`; `CAPIFEventFilter` on `apiIds`, `apiInvokerIds` and `aefIds` |
+| MnS registry (TS 28.622, TS 28.537; plan tasks S1.7, S1.12) | [`TS28623_MnSRegistryNrm.yaml`](../../specs/5G_APIs/TS28623_MnSRegistryNrm.yaml) | `MnsRegistry`, `MnsInfo`, `MgmtDataInfo` over ProvMnS at `/ProvMnS/19.2.0/SubNetwork=SMO/MnsRegistry=1[/...]` (section 1.6) |
 
 Deliberate adaptations and omissions:
 
@@ -91,6 +92,30 @@ SME calls nothing but subscriber callbacks. It reads no other module's data, and
 | Idempotent deletes: deregistering an unknown or someone else's service, provider, trusted invoker, or subscription is a silent 204 (an unmatched owner is a no-op, nothing is notified). | Same shape as CAPIF core. |
 
 Failure behaviour: SME has no outbound dependency whose failure changes a response. If SME is down, R1 Termination fails closed: every proxied call returns 503 `AUTH_SERVICE_UNAVAILABLE` with `Retry-After: 5`, except one whose token answer the gateway still holds in its introspection cache (`R1_INTROSPECTION_CACHE_SECONDS`).
+
+### 1.6 The MnS registry
+
+Which module produces which managed-object classes, in the TS 28.622 form from the start (plan tasks S1.7, S1.12; the contract bundle's custom
+`mns_producers` table was never built: G12). `app/mns_registry.py` mounts the shared ProvMnS router for the three classes of the vendored MnS
+Registry NRM on SME's own store, `sme.mns_registry`; what a registration holds and how a reader finds a producer are `smo_shared/mns/mns_registry.py`.
+
+- **Layout.** `SubNetwork=SMO,MnsRegistry=1` holds one `MnsInfo=<module>` per producer (`mnsType` PROV_MNS, `mnsVersion`, `mnsAddress` = its
+  ProvMnS root, `mnsScope` when it holds only some DNs, `mnsCapability`, `mgmtDataInfoRef`) and the `MgmtDataInfo=<module>` it names, whose
+  `supportedManagementData` lists the classes the producer serves and its optimisation domains (the TS 28.537 values). TS 28.622's MnsInfo has
+  no attribute for classes; TS 28.537's MgmtDataInfo describes the management data a producer supplies, which is where they go.
+- **Registration.** Each ProvMnS module registers itself when it starts (`install_self_registration`; Echo first), through R1 Termination with its
+  own token: createMOI of its MgmtDataInfo, then of its MnsInfo. Repeating it unchanged (a restart, a second replica) changes nothing. An rApp
+  cannot write a ProvMnS resource through R1 (the role policy), so it cannot register a producer.
+- **The registry's own rows.** The first request on a database without them writes `SubNetwork=SMO` (not served here), the MnsRegistry and SME's
+  own MnsInfo and MgmtDataInfo, so a read always lists SME as the producer of the three classes. The MnsRegistry is read only: a new one, or its
+  deletion (a subtree delete that reaches it included), is 422 VETOED.
+- **Checks.** The attributes are validated against the TS 28.623 schema (the class registry); an MnsInfo's `mnsAddress` must be an http or https
+  URL with a host (R1 Termination forwards to it), else 422 VETOED. Every write is audited and idempotent like any ProvMnS write.
+- **Events** on the SMO event bus, in the transaction of the change (`docs/EVENTS.md`): `org.oran.smo.mnsregistry.ServiceReady` when an MnsInfo
+  is created, `org.oran.smo.mnsregistry.NotifyServiceChange` with `changeType` MODIFIED or REMOVED when one changes or goes. Delivery to CAPIF
+  subscribers is plan task S4.6.
+- **Discovery** by class, api-cat (an mnsType or an mnsCapability value) and optimisation domain: a flat getMOIAttributes of the registry and
+  `smo_shared.mns.mns_registry.discover`; R1 Termination routes `/ProvMnS/{version}/{LDN}` by `producer_for` (`r1-termination/README.md`).
 
 ## 2. Low-level design (LLD)
 
@@ -259,6 +284,7 @@ Counts per file: [`docs/test-counts/sme.md`](../docs/test-counts/sme.md).
 | | Invoker onboarding, token issue and introspection (server-generated id and secret, no cleartext secret or token, bad grant / client / secret, expired and unknown tokens) |
 | | Trusted invokers: validation, replace, redaction and reveal, update, revocation (by `aefId`, whole record), 404s |
 | | Registry reads (providers with service count, invokers without secrets, trusted invokers, event subscriptions) and health |
+| `tests/test_mns_registry.py` | The MnS registry (S1.7, S1.12): a read on a new database lists the registry and SME; a producer registers and is found by class, api-cat and domain; registering again unchanged answers 200 and publishes nothing; ServiceReady and NotifyServiceChange (MODIFIED, REMOVED); the MnsRegistry is read only; the container is not served; an `mnsAddress` that is no http(s) URL with a host is vetoed; schema validation; every write audited |
 | `tests/test_scope.py` | PR-SEC-10.3: an invoker without a claim is unscoped and introspection says nothing of one; the claim at registration is returned sorted by introspection; invalid claims are 422 with a fixed message and register nothing; an operator sets, replaces and removes a claim and it applies to tokens already issued; a scoped caller (or a module acting for a scoped rApp) cannot mint a wider invoker |
 | `tests/test_security.py` | Scope: unscoped and internal scopes, a `3gpp#` scope over published APIs (and introspection of it), unpublished API, wrong AEF, malformed entries, unknown scope, an API hidden from the invoker |
 | | Client assertions: RSA and EC keys, one token per assertion, wrong key / audience / issuer, expired, too long-lived, no `jti`, label-only invoker, secret and assertion together, malformed PEM at onboarding, key rotation, offboarding revokes tokens |

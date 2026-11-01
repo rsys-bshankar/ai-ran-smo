@@ -9,7 +9,7 @@ CI runs `--check` and fails when this file no longer matches the code.
 
 | suite | files | test functions | collected tests |
 |---|---:|---:|---:|
-| `sme` | 5 | 122 | 140 |
+| `sme` | 6 | 134 | 156 |
 
 ## Per test file
 
@@ -20,5 +20,6 @@ Paths are relative to `smo/sme/`.
 | `tests/test_enrollment.py` | 9 | 9 |
 | `tests/test_identity.py` | 4 | 4 |
 | `tests/test_main.py` | 81 | 81 |
+| `tests/test_mns_registry.py` | 12 | 16 |
 | `tests/test_scope.py` | 10 | 16 |
 | `tests/test_security.py` | 18 | 30 |

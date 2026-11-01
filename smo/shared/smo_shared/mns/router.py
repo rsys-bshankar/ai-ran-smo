@@ -48,6 +48,19 @@ LINK = "Link"                 # the response header that names the next page (RF
 ACCEPT = "accept"             # the request header that chooses the answer's form
 ANY_FORM = ""                 # what a request without Accept asks for: the hierarchical answer as application/json
 
+# The error answers the routes declare in the module's OpenAPI document: the TS 28.532 error body (errors.py) for every status the router itself
+# answers with. `x-smo-error-body` tells `smo_shared.openapi_security` that these are the operation's own error bodies, not the SMO's
+# ProblemDetails envelope (found when SME, under the schemathesis contract test, mounted the router: plan task S1.12).
+ERROR_BODY = {"title": "TS 28.532 error", "type": "object", "required": ["status", "type"],
+              "properties": {"status": {"type": "string"}, "type": {"type": "string"}, "reason": {"type": "string"}, "title": {"type": "string"},
+                             "badAttributes": {"type": "array", "items": {"type": "string"}},
+                             "badObjects": {"type": "array", "items": {"type": "string"}},
+                             "badQueryParams": {"type": "array", "items": {"type": "string"}}, "badOp": {"type": "string"}}}
+ERROR_STATUSES = (400, 403, 404, 409, 412, 415, 422)
+RESPONSES: dict[int | str, dict[str, Any]] = {status: {"description": "TS 28.532 error", "content": {"application/json": {"schema": ERROR_BODY}}}
+                                              for status in ERROR_STATUSES}
+OPENAPI_EXTRA = {"x-smo-error-body": "TS 28.532"}
+
 
 def _error(exc: MnsError, operation: str) -> JSONResponse:
     return JSONResponse(status_code=exc.status, content=exc.body(operation), headers=exc.headers)
@@ -108,7 +121,7 @@ def provmns_router(mns: ProvMnS, get_session: Callable | None = None) -> APIRout
     router = APIRouter(tags=["ProvMnS (TS 28.532)"])
     session = Depends(get_session or _default_session_dependency())
 
-    @router.put(PATH, status_code=201)
+    @router.put(PATH, status_code=201, responses=RESPONSES, openapi_extra=OPENAPI_EXTRA)
     async def create_moi(version: str, ldn: str, request: Request, db: Session = session) -> Response:
         """createMOI (TS 28.532): creates the instance the URI names, or replaces its attributes; an `Idempotency-Key` replays the first answer."""
         started, caller = time.perf_counter(), Caller.from_headers(request.headers)
@@ -128,7 +141,7 @@ def provmns_router(mns: ProvMnS, get_session: Callable | None = None) -> APIRout
         mns.checks.observe(_class_label(mns, ldn), "createMOI", response.status_code, started)
         return response
 
-    @router.get(PATH)
+    @router.get(PATH, responses=RESPONSES, openapi_extra=OPENAPI_EXTRA)
     def get_moi_attributes(version: str, ldn: str, request: Request, db: Session = session) -> Response:
         """getMOIAttributes (TS 28.532): the scoped, filtered instances, hierarchical or flat, one page at a time."""
         started, caller = time.perf_counter(), Caller.from_headers(request.headers)
@@ -137,7 +150,7 @@ def provmns_router(mns: ProvMnS, get_session: Callable | None = None) -> APIRout
         mns.checks.observe(_class_label(mns, ldn), "getMOIAttributes", response.status_code, started)
         return response
 
-    @router.patch(PATH)
+    @router.patch(PATH, responses=RESPONSES, openapi_extra=OPENAPI_EXTRA)
     async def modify_moi_attributes(version: str, ldn: str, request: Request, db: Session = session) -> Response:
         """modifyMOIAttributes (TS 28.532): a merge patch or a JSON patch, by Content-Type."""
         started, caller = time.perf_counter(), Caller.from_headers(request.headers)
@@ -153,7 +166,7 @@ def provmns_router(mns: ProvMnS, get_session: Callable | None = None) -> APIRout
         mns.checks.observe(_class_label(mns, ldn), "modifyMOIAttributes", response.status_code, started)
         return response
 
-    @router.delete(PATH, status_code=204)
+    @router.delete(PATH, status_code=204, responses=RESPONSES, openapi_extra=OPENAPI_EXTRA)
     def delete_moi(version: str, ldn: str, request: Request, db: Session = session) -> Response:
         """deleteMOI (TS 28.532): the instance and every instance it contains."""
         started, caller = time.perf_counter(), Caller.from_headers(request.headers)
