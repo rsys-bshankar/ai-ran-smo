@@ -39,12 +39,13 @@ from sqlalchemy.orm.exc import StaleDataError
 from .. import events
 from .dn import SUBTREE_UPPER, depth_of, parent_of, parse_dn, path_of
 from .errors import MnsError
-from .checks import INTERNAL, Caller, RouterChecks
+from .checks import INTERNAL, SESSION, Caller, RouterChecks
 from .lifecycle import DEFAULT_HANDLER, IMoiLifecycleHandler, Moi, MoiContext
 from .patch import JSON_PATCH_TYPES, MERGE_PATCH_TYPES, apply_json_patch, apply_merge_patch
 from .registry import ClassRegistry, default_registry
 from .scope import Scope, matches, select as select_fields
 from .store import ManagedObject
+from .subscriptions import CLASSES as SUBSCRIPTION_CLASSES, SubscriptionManager
 
 PROVMNS_VERSION = "19.2.0"          # D5: the one ProvMnS version every module serves (specs/smo-schema-bundle/openapi/common/provmns-root.yaml)
 DEFAULT_LIMIT = 100
@@ -80,13 +81,24 @@ def etag(version: int) -> str:
     return f'"{version}"'
 
 
+def public(attributes: dict | None) -> dict:
+    """The attributes a caller sees: every one but the hidden ones the producer keeps for itself (a name starting with `_`, which no class schema
+    declares, so a caller can never send one: subscriptions.py keeps a subscription's subscriber that way)."""
+    return {name: value for name, value in (attributes or {}).items() if not name.startswith("_")}
+
+
+def hidden(attributes: dict | None) -> dict:
+    """The hidden attributes of a stored instance (see `public`); a modify keeps them."""
+    return {name: value for name, value in (attributes or {}).items() if name.startswith("_")}
+
+
 def resource(row: ManagedObject) -> dict:
     """The TS 28.532 `Resource` of a stored instance."""
-    return {"id": row.moi_id, "objectClass": row.object_class, "objectInstance": row.dn, "attributes": dict(row.attributes or {})}
+    return {"id": row.moi_id, "objectClass": row.object_class, "objectInstance": row.dn, "attributes": public(row.attributes)}
 
 
 def _moi(row: ManagedObject) -> Moi:
-    return Moi(row.dn, row.object_class, row.moi_id, dict(row.attributes or {}), row.row_version)
+    return Moi(row.dn, row.object_class, row.moi_id, public(row.attributes), row.row_version)
 
 
 def _check_if_match(if_match: str | None, row: ManagedObject | None, dn: str) -> None:
@@ -112,10 +124,11 @@ def _changes(old: dict, new: dict) -> tuple[dict, dict]:
 class ProvMnS:
     """One module's ProvMnS producer (see the module description). `classes` limits the served classes (None: every class the registry knows);
     `api_root` prefixes the `href` of notifications; `model` is the mapped class of the store (`ManagedObject`, the table `moi_store`, unless
-    another was made with `store.store_model`)."""
+    another was made with `store.store_model`); `subscriptions` serves NtfSubscriptionControl and HeartbeatControl and delivers to them
+    (subscriptions.py; on unless False, when the registry knows the two classes)."""
 
     def __init__(self, *, source: str, system_dn: str, registry: ClassRegistry | None = None, classes: Iterable[str] | None = None,
-                 api_root: str = "", checks: RouterChecks | None = None, model: type[ManagedObject] = ManagedObject):
+                 api_root: str = "", checks: RouterChecks | None = None, model: type[ManagedObject] = ManagedObject, subscriptions: bool = True):
         """Keeps the event `source` (`/smo/<module>`), the `systemDN` of the notifications, the registry (the shared default when not given), the served
         classes and the cross-cutting checks (checks.py; by default: claim scope with no placement, no MSAC, audit on, the module named after `source`)."""
         self.source = source
@@ -128,6 +141,8 @@ class ProvMnS:
         self._handlers: dict[str, IMoiLifecycleHandler] = {}
         for name in classes or ():
             self.serve(name)
+        known = all(name in self.registry for name in SUBSCRIPTION_CLASSES)      # a registry without the Subscription Control NRM has none
+        self.subscriptions = SubscriptionManager(self) if subscriptions and known else None
 
     # ------------------------------------------------------------------ configuration
 
@@ -161,6 +176,8 @@ class ProvMnS:
                 "notificationType": notification_type, "eventTime": datetime.datetime.now(datetime.UTC).isoformat(), "systemDN": self.system_dn,
                 "sourceIndicator": "MANAGEMENT_OPERATION", **extra}
         events.publish(db, "provmns", notification_type, self.source, subject=dn, data=body)
+        if self.subscriptions is not None:
+            self.subscriptions.deliver(db, notification_type, dn, body)
 
     # ------------------------------------------------------------------ the writes
 
@@ -173,7 +190,8 @@ class ProvMnS:
                            bad_objects=[dn]) from None
 
     def _run(self, db: Session, work):
-        """Runs `work()` and commits; rolls back and re-raises on any exception."""
+        """Runs `work()` and commits (with `db` as the operation's session, `checks.SESSION`); rolls back and re-raises on any exception."""
+        token = SESSION.set(db)
         try:
             result = work()
             db.commit()
@@ -181,6 +199,8 @@ class ProvMnS:
         except BaseException:
             db.rollback()
             raise
+        finally:
+            SESSION.reset(token)
 
     def create_moi(self, db: Session, dn: str, body: Any, if_match: str | None = None, caller: Caller = INTERNAL) -> tuple[dict, bool, int]:
         """createMOI: (resource, created, moiVersion). Creates the instance at `dn` from the Resource `body`, or, when it exists, replaces its
@@ -219,11 +239,13 @@ class ProvMnS:
         moi = Moi(dn, class_name, moi_id, attributes, 0)
         handler = self._handler(class_name)
         handler.before_create(ctx, moi)
-        row = self.model(dn=dn, object_class=class_name, moi_id=moi_id, parent_dn=parent_dn, depth=depth_of(dn), attributes=attributes)
+        kept = self._stored(class_name, attributes)
+        extra = self.subscriptions.hidden_on_create(class_name, caller) if self.subscriptions is not None else {}
+        row = self.model(dn=dn, object_class=class_name, moi_id=moi_id, parent_dn=parent_dn, depth=depth_of(dn), attributes={**kept, **extra})
         db.add(row)
         self._flush(db, dn)
         handler.after_create(ctx, _moi(row))
-        self._notify(db, "notifyMOICreation", dn, {"attributeList": attributes} if attributes else {})
+        self._notify(db, "notifyMOICreation", dn, {"attributeList": kept} if kept else {})
         return resource(row), True, row.row_version
 
     @staticmethod
@@ -246,18 +268,27 @@ class ProvMnS:
             raise MnsError(400, "INVALID_BODY", "attributes must be an object", bad_attributes=["attributes"])
         return attributes
 
+    def _stored(self, class_name: str, attributes: dict) -> dict:
+        """The attributes as kept (a write-only one is not: subscriptions.py)."""
+        return self.subscriptions.stored(class_name, attributes) if self.subscriptions is not None else attributes
+
     def _replace(self, db: Session, ctx: MoiContext, row: ManagedObject, attributes: dict) -> dict:
-        """Changes a stored instance's attributes to `attributes`, with the modify hooks and notification; nothing at all when they are equal."""
+        """Changes a stored instance's attributes to `attributes`, with the modify hooks and notification; nothing at all when they are equal. The
+        hooks see the attributes as sent; what is kept leaves out a write-only one and keeps the hidden ones; a write that changes nothing kept
+        (only a write-only attribute) runs the hooks and notifies nothing."""
         old = _moi(row)
         if old.attributes == attributes:
             return resource(row)
         new = Moi(row.dn, row.object_class, row.moi_id, attributes, row.row_version)
         handler = self._handler(row.object_class)
         handler.before_modify(ctx, old, new)
-        row.attributes = attributes
+        kept = self._stored(row.object_class, attributes)
+        if kept == old.attributes:
+            return resource(row)
+        row.attributes = {**kept, **hidden(row.attributes)}
         self._flush(db, row.dn)
         handler.after_modify(ctx, old, _moi(row))
-        new_values, old_values = _changes(old.attributes, attributes)
+        new_values, old_values = _changes(old.attributes, kept)
         self._notify(db, "notifyMOIAttributeValueChanges", row.dn, {"attributeListValueChanges": [new_values, old_values]})
         return resource(row)
 
@@ -282,7 +313,7 @@ class ProvMnS:
         if row.object_class != rdns[-1].class_name:
             raise MnsError(409, "CLASS_MISMATCH", f"{dn} is a {row.object_class}", bad_objects=[dn])
         _check_if_match(if_match, row, dn)
-        current = dict(row.attributes or {})
+        current = public(row.attributes)
         if media_type in MERGE_PATCH_TYPES:
             identity = {"id": row.moi_id, "objectClass": row.object_class, "objectInstance": row.dn}
             attributes = apply_merge_patch(identity, current, body)
@@ -354,6 +385,15 @@ class ProvMnS:
         MAX_LIMIT, else a 400) after the `cursor`. Reads only; nothing is written."""
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= MAX_LIMIT:
             raise MnsError(400, "INVALID_QUERY", f"limit is an integer from 1 to {MAX_LIMIT}", bad_query_params=["limit"])
+        token = SESSION.set(db)
+        try:
+            return self._read(db, dn, scope, filter_tree, attributes, fields, limit, cursor, caller)
+        finally:
+            SESSION.reset(token)
+
+    def _read(self, db: Session, dn: str, scope: Scope | None, filter_tree: tuple | None, attributes: list[str] | None, fields: list[str] | None,
+              limit: int, cursor: str | None, caller: Caller) -> Page:
+        """getMOIAttributes' work, with `db` as the operation's session."""
         self.checks.authorize(caller, "getMOIAttributes", dn)
         scope = scope or Scope()
         self._existing(db, dn)

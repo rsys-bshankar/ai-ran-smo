@@ -261,6 +261,16 @@ class SelfRegistration:
         """Ends the attempts; one in progress finishes."""
         self._stopping.set()
 
+    def reset(self) -> None:
+        """Forgets every attempt, so the next `start()` registers again (a test that starts the same app twice, on two databases)."""
+        self._stopping.set()
+        if self._thread is not None:
+            self._thread.join(timeout=5)
+        self.registered.clear()
+        self._stopping.clear()
+        self._thread = None
+        self.attempts = 0
+
 
 def enabled() -> bool:
     """Whether a module registers at start-up: `SMO_MNS_REGISTRATION` (default `on`; `off`, `false`, `0` or `no` turn it off), read on every call."""

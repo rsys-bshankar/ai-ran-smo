@@ -432,3 +432,16 @@ def test_an_operation_without_its_own_error_bodies_still_gets_the_envelope_for_4
 
     response = app.openapi()["paths"]["/x"]["post"]["responses"]["422"]
     assert response == {"description": "mine", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}}
+
+
+def test_reset_lets_the_next_start_register_again():
+    """After `reset`, the registration starts from nothing: not registered, no attempt, a new thread on `start`."""
+    registration = reg.SelfRegistration("echo", ["SubNetwork"], put=lambda path, json=None: _Page(201, {}), address=ECHO)
+    registration.start()
+    assert registration.registered.wait(5)
+    registration.reset()
+    assert not registration.registered.is_set() and registration.attempts == 0 and registration._thread is None
+    assert not registration._stopping.is_set()
+    registration.start()
+    assert registration.registered.wait(5) and registration.attempts == 1
+    reg.SelfRegistration("x", ["SubNetwork"]).reset()                  # never started: nothing to wait for
