@@ -7,7 +7,7 @@
 Revisions `0001` to `TRUNK_END` (`0068`) are the shared trunk, one linear chain from the baseline. Every revision after it belongs to a branch:
 
   - its id is `<label>_NNNN`, NNNN counting from 0001 within the branch, and its file name starts with that id;
-  - `<label>` is `shared` (roles, extensions, anything no module owns) or a module: a directory of `smo/` with `app/` or `tests/`, its name with `-`
+  - `<label>` is `shared` (roles, extensions, anything no module owns) or a module: a directory of `smo/` with Python in `app/` or `tests/`, its name with `-`
     written `_` (Alembic reads `x-1` as "one before x", so a revision id never holds a hyphen);
   - the branch's first revision has `branch_labels = ("<label>",)` and `down_revision = "0068"`; every later one has `down_revision` = the branch's
     previous revision and no labels of its own (Alembic carries the label down the branch);
@@ -39,8 +39,9 @@ def label_of(module: str) -> str:
 
 
 def labels(root: Path = SMO_ROOT) -> set[str]:
-    """Every label a branch may have: `shared`, and each module of `root` (a directory with `app/` or `tests/`)."""
-    modules = {p.name for p in root.iterdir() if p.is_dir() and ((p / "app").is_dir() or (p / "tests").is_dir())}
+    """Every label a branch may have: `shared`, and each module of `root` (a directory whose `app/` or `tests/` holds Python; a directory left with
+    only caches is not a module)."""
+    modules = {p.name for p in root.iterdir() if p.is_dir() and any(next((p / d).rglob("*.py"), None) for d in ("app", "tests") if (p / d).is_dir())}
     return {SHARED} | {label_of(m) for m in modules}
 
 
