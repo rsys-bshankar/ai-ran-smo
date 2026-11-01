@@ -39,6 +39,8 @@ third class would add nothing the shared tests do not already cover.
                                                        └─ notifications ─▶ smo_event (event bus), audit_log
 ```
 
+Echo also serves `NtfSubscriptionControl` and `HeartbeatControl` (S1.13: the router's subscription manager, no code of Echo's) and registers them, so a subscription to Echo's instances is created through R1 like any of them; its routes decide with TS 28.319 AccessRules (S1.14), from SME's Identities when `SMO_ACCESS_RULES=sme`.
+
 Echo is reached through R1 by class name. At start-up it registers itself in SME's MnS registry (S1.7, S1.12: `install_self_registration` of
 `smo_shared.mns.mns_registry`, an MnsInfo and a MgmtDataInfo naming SubNetwork and ManagedElement, through R1 with its own token, repeated in the
 background until it succeeds; `SMO_MNS_REGISTRATION=off` skips it, `SMO_MNS_ADDRESS` changes the address it registers). R1 Termination's routing by

@@ -17,7 +17,7 @@ For each class the registry derives, from the `-Single` schema:
                 that is how `ManagedElement` gets `GNBDUFunction` (TS 28.541) as a child. `may_contain(parent, child)` reads this.
   roots         classes that may be created with no parent (`SubNetwork`, `ManagedElement` by default; `roots=` changes it).
 
-A class may also be registered by hand with its own attributes schema (`register`), for a class no 3GPP file defines (an ADR 0011 [D] class such as
+A parent may be given children its YAML does not name (`contain`). A class may also be registered by hand with its own attributes schema (`register`), for a class no 3GPP file defines (an ADR 0011 [D] class such as
 `RappInstance`, whose schema is in the bundle's module contract).
 
 Nothing here talks to a database or the network; the YAML is read once per registry, lazily, from `spec_dir` (by default the repository's
@@ -110,6 +110,7 @@ class ClassRegistry:
         self._index: dict[str, str] = {}                # class name -> the file of its -Single schema
         self._classes: dict[str, ClassInfo] = {}
         self._registered: dict[str, ClassInfo] = {}
+        self._contained: dict[str, frozenset[str]] = {}    # parent -> children added by `contain`
         self._validators: dict[str, Draft7Validator] = {}
         self._schema_registry: Registry = Registry(retrieve=self._retrieve)  # type: ignore[call-arg]  # attrs field alias mypy does not see
         for pattern in class_files:
@@ -159,6 +160,11 @@ class ClassRegistry:
                                            children=frozenset(children))
         self._validators.pop(name, None)
 
+    def contain(self, parent: str, children: Iterable[str]) -> None:
+        """Lets instances of `children` be created under an instance of `parent`, besides what the YAML says: for a class whose file declares no
+        name-containment (the TS 28.319 MSAC NRM's Identity, Role and AccessRule, which SME keeps under a SubNetwork, plan task S1.14)."""
+        self._contained[parent] = self._contained.get(parent, frozenset()) | frozenset(children)
+
     # ------------------------------------------------------------------ reading
 
     def names(self) -> list[str]:
@@ -182,7 +188,7 @@ class ClassRegistry:
         """Whether an instance of `child` may be created under an instance of `parent` (None: at the top, which only the roots may)."""
         if parent is None:
             return child in self.roots
-        return parent in self and child in self.info(parent).children
+        return parent in self and (child in self.info(parent).children or child in self._contained.get(parent, frozenset()))
 
     def validate(self, name: str, attributes: Any) -> None:
         """Checks `attributes` against class `name`; raises a 422 SCHEMA_VALIDATION_FAILED naming the attributes at fault (unknown names first)."""

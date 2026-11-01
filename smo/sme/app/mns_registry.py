@@ -28,10 +28,15 @@ from sqlalchemy.orm import Session
 
 from smo_shared import events
 from smo_shared.db import get_session
-from smo_shared.mns import IMoiLifecycleHandler, MnsError, Moi, MoiContext, ProvMnS, provmns_router
+from smo_shared.auth import AccessRuleAuthorizer
+from smo_shared.mns import ClassRegistry, IMoiLifecycleHandler, MnsError, Moi, MoiContext, ProvMnS, provmns_router
+from smo_shared.mns.checks import RouterChecks, ScopeStep
+from smo_shared.mns.subscriptions import CLASSES as SUBSCRIPTION_CLASSES
 from smo_shared.mns.dn import depth_of, parent_of, parse_dn
 from smo_shared.mns.mns_registry import REGISTRY_CLASSES, REGISTRY_DN, default_address, registration
 from smo_shared.mns.store import ManagedObject, store_model
+
+from . import msac_store
 
 MODULE = "sme"
 SOURCE = "/smo/sme"
@@ -101,9 +106,19 @@ class MnsInfoEvents(IMoiLifecycleHandler):
         _publish(ctx, "NotifyServiceChange", moi, "REMOVED")
 
 
-mns = ProvMnS(source=SOURCE, system_dn=REGISTRY_DN, classes=REGISTRY_CLASSES, model=RegistryObject)
+# SME's own class registry (the shared default stays as it is for the other modules of a process): the TS 28.319 MSAC NRM indexed, and its three
+# classes allowed under a SubNetwork (msac_store.py).
+CLASS_REGISTRY = ClassRegistry()
+CLASS_REGISTRY.index_file("TS28319_MsacNrm.yaml")
+CHECKS = RouterChecks(module=MODULE, scope=ScopeStep(authorizer=AccessRuleAuthorizer(msac_store.local_rules(RegistryObject))))
+mns = ProvMnS(source=SOURCE, system_dn=REGISTRY_DN, registry=CLASS_REGISTRY, classes=REGISTRY_CLASSES, model=RegistryObject, checks=CHECKS)
 mns.serve("MnsRegistry", ReadOnlyRegistry())
 mns.serve("MnsInfo", MnsInfoEvents())
+msac_store.serve(mns)
+# What SME registers as its own (plan tasks S1.12, S1.14): the registry's classes, TS 28.319's, the subscriptions (S1.13), and SubNetwork for reads of
+# its container, all within `SubNetwork=SMO` (its mnsScope), so R1 Termination routes a read of `SubNetwork=SMO` here and every other SubNetwork to
+# the producers of the network.
+OWN_CLASSES = (*REGISTRY_CLASSES, *msac_store.CLASSES, *SUBSCRIPTION_CLASSES, "SubNetwork")
 
 
 def _row(dn: str, attributes: dict) -> ManagedObject:
@@ -112,15 +127,28 @@ def _row(dn: str, attributes: dict) -> ManagedObject:
 
 
 def ensure_registry(db: Session) -> None:
-    """Writes the registry's container, the MnsRegistry and SME's own registration when the MnsRegistry is missing, and commits; nothing otherwise."""
-    if db.get(RegistryObject, REGISTRY_DN) is not None:
-        return
+    """Writes what SME's store must hold and does not (the registry's container, the MnsRegistry, SME's own registration as `OWN_CLASSES` within
+    `SubNetwork=SMO`, the five D15 roles) and commits; nothing when all is there. SME's registration is rewritten when it differs (an older release's)."""
+    changed = False
     if db.get(RegistryObject, SUBNETWORK_DN) is None:
         db.add(_row(SUBNETWORK_DN, {}))
-    db.add(_row(REGISTRY_DN, {}))
-    for dn, resource in registration(MODULE, REGISTRY_CLASSES, default_address(MODULE)):
-        db.add(_row(dn, resource["attributes"]))
-    db.commit()
+        changed = True
+    if db.get(RegistryObject, REGISTRY_DN) is None:
+        db.add(_row(REGISTRY_DN, {}))
+        changed = True
+    for dn, resource in registration(MODULE, OWN_CLASSES, default_address(MODULE), scope=[SUBNETWORK_DN]):
+        row = db.get(RegistryObject, dn)
+        if row is None:
+            db.add(_row(dn, resource["attributes"]))
+            changed = True
+        elif row.attributes != resource["attributes"]:
+            row.attributes = resource["attributes"]
+            changed = True
+    if changed:
+        db.flush()
+    changed = msac_store.ensure_d15_roles(db, RegistryObject) or changed
+    if changed:
+        db.commit()
 
 
 def registry_session(db: Session = Depends(get_session)) -> Iterator[Session]:
