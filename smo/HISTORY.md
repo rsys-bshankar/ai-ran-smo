@@ -4988,3 +4988,78 @@ imports it) and the CI workflow "TE&IV spike" (`.github/workflows/teiv-spike.yml
 - **Stage 3 rows:** PR-CONV-S3.1 and S3.4 amended; PR-CONV-S3.19 (ProvMnS read facade), S3.20 (model extension and neighbour queries), S3.21 (attributes
   and object version), S3.22 (notifications), S3.23 (packaging), S3.24 (WG10 TE&IV R1 API into `specs/`) added.
 - **Not done:** no module changed; smo-teiv's adapters and Helm chart not run; the build still downloads IETF and 3GPP YANG at build time, as upstream's does.
+
+### PR-CONV-S1.1 — `smo_shared.mns`: the generic TS 28.532 ProvMnS router
+
+Closed from `OPEN_ITEMS.md` (`PR-CONV-S1.1`), with S1.2 and S1.4 below in the same pull request. `shared/smo_shared/mns/`; documented in `shared/README.md`
+(1.2, 1.5, 2.1, 2.2, 2.4 "ProvMnS", 2.7, 2.8, 3.2), `docs/ARCHITECTURE.md` (R1 API conventions, "ProvMnS"), `docs/EVENTS.md`, `docs/STANDARDS.md`
+(compliance limits) and `docs/VALIDATION.md` V-21. The starter code (`SMO_Starter_Code_SDKs_and_Scaffold.zip`, `lib-smo-mns-common`) was read for its interface
+shape only: its in-memory store, its `/ProvMnS/v18/` paths and its `moiVersion` and lock fields inside the Resource were not taken.
+
+- **Operations.** `ProvMnS` (`service.py`) and `provmns_router` (`router.py`): createMOI (`PUT`, 201 created or 200 replaced), getMOIAttributes (`GET`),
+  modifyMOIAttributes (`PATCH`) and deleteMOI (`DELETE`, the instance and its subtree, deepest first) at D5's one form
+  `/ProvMnS/{version}/{URI-LDN-first-part}/{className}={id}`, the version from the one constant `PROVMNS_VERSION` (`19.2.0`; a test holds it equal to
+  `x-smo-provmns.version` of `specs/smo-schema-bundle/openapi/common/provmns-root.yaml`), any other version a 404. Bodies are the vendored
+  `TS28532_ProvMnS.yaml` `Resource`; errors are the TS 28.623 `ErrorResponseDefault`, `ErrorResponseGet` (`badQueryParams`) and `ErrorResponsePatch`
+  (`badOp`) shapes, never FastAPI's own 422 (the routes take the request apart by hand).
+- **Both patch formats** (`patch.py`): `application/merge-patch+json` and `application/3gpp-merge-patch+json` (RFC 7396 on `attributes`; all RFC 7396
+  Appendix A cases are tests), `application/json-patch+json` and `application/3gpp-json-patch+json` (RFC 6902: add, remove, replace, move, copy, test,
+  RFC 6901 escapes and `-`, all or nothing, the failing item's index in `badOp`; `test` uses JSON equality, so `true` is not `1`). Any other media type
+  is a 415.
+- **Store.** `moi_store` (`store.py`): `dn` TEXT COLLATE "C" primary key, `object_class`, `moi_id`, `parent_dn`, `depth`, `attributes` JSONB (GIN index),
+  `moi_version`, `created_at`, `updated_at`, in the mounting module's own schema. A module's revision calls `create_moi_store(op, schema)` in `upgrade()`
+  and `drop_moi_store(op, schema)` in `downgrade()`; `test_mns_store.py` proves on Postgres 18 that the helper makes exactly the model's table (columns,
+  nullability, collation, JSONB, the three indexes) and removes it. SQLite unit tests use `create_all(engine)`. The model is on its own `MnsBase`, so the
+  models check does not expect the table in modules that do not mount the router; no revision is added here (no module mounts it yet).
+- **moiVersion** is `versioning.Versioned`'s counter (the subclass maps `row_version` to the column `moi_version`), sent as the `ETag`. `If-Match` that
+  names another version is a 412 `STALE_VERSION` with the current ETag, before anything is written (weak tags and lists compare; `*` needs the instance);
+  a writer that commits between this request's read and write is the `StaleDataError` turned into 409 `CONCURRENT_MODIFICATION` (tested with
+  `testing.concurrent_commit_on`, which now takes the version column's name).
+- **Notifications.** notifyMOICreation, notifyMOIAttributeValueChanges (`attributeListValueChanges` = [new values, old values] of the changed attributes, a
+  missing value null) and notifyMOIDeletion are published on the event bus (`events.publish`, type `org.oran.smo.provmns.<notificationType>`, subject the
+  DN) in the same transaction as the change, with the TS 28.532 header (`href` in D5's form, `notificationId`, `eventTime`, `systemDN`) and
+  `sourceIndicator`; every one is validated against the vendored schema in the tests. A write that changes nothing publishes nothing. Delivery to
+  subscribers is S1.13.
+- **Decided, and not taken.** One instance per createMOI (contained objects in the body are a 422; createMOI of each child instead). A patch changes only
+  the target's `attributes` (TS 32.158 lets a 3GPP patch create and delete contained objects; refused 422, recorded). POST with a producer-assigned id
+  (the second path of the OpenAPI) and `dataNodeSelector` are not served. The registry reads the YAML at run time and finds the nearest `specs/5G_APIs`
+  above the package (so mutmut's copy works); the image does not carry it yet, which S1.6 adds with the first module that mounts the router.
+
+### PR-CONV-S1.2 — the class registry and the lifecycle hooks
+
+Closed from `OPEN_ITEMS.md` (`PR-CONV-S1.2`). `shared/smo_shared/mns/registry.py`, `lifecycle.py`.
+
+- **Registry.** `ClassRegistry` indexes every `X-Single` schema of `specs/5G_APIs/TS28541_*.yaml` and `TS28623_*.yaml`: **217 classes** in the vendored
+  release, every one of them resolvable (each `$ref` its attribute schemas reach, across files, resolves). Per class it derives the attribute schemas (the
+  `attributes` member, a `<Class>-Attr` schema such as SubNetwork's, and attributes some files write beside `attributes`, such as NROperatorCellDU's) and
+  the children (members and `allOf` branches that refer to an `X-Single` / `X-Multiple`, through `-ncO` schemas in other files: `SubNetwork-Single` names
+  the `-ncO` schemas of 25 specifications). Validation is Draft 7 (whose `$ref` ignores siblings, as OpenAPI 3.0 does) after `nullable: true` is turned
+  into JSON Schema; an attribute name no schema declares is refused too (the NRM schemas do not set `additionalProperties: false`). A class with no
+  registered schema is a 422 `CLASS_NOT_SUPPORTED`; a module may register a class by hand (an ADR 0011 [D] class) or index another file
+  (`index_file("TS28104_MdaNrm.yaml")`).
+- **Containment.** A child's class must be one its parent's class contains (NRCellDU under GNBDUFunction, not under SubNetwork), the parent must exist
+  (422 `PARENT_NOT_FOUND`), and only SubNetwork and ManagedElement stand at the top (`roots=` changes that).
+- **Hooks.** `IMoiLifecycleHandler`: before and after create, modify (also for a createMOI that replaces) and delete, each inside the transaction; a hook
+  vetoes by raising `MnsError` with a TS 28.532 error, which rolls back the change and its notification (tested for each of the six). `after_*` hooks run
+  before the commit, so they can still veto; work that must follow the commit belongs on the event bus.
+
+### PR-CONV-S1.4 — scope, filter and keyset paging
+
+Closed from `OPEN_ITEMS.md` (`PR-CONV-S1.4`). `shared/smo_shared/mns/scope.py` and `service.get_moi_attributes`.
+
+- **Scope.** BASE_ONLY, BASE_NTH_LEVEL, BASE_SUBTREE and BASE_ALL with `scopeLevel`, from the `scope` parameter's JSON object; a subtree is the DN range
+  [`dn,`, `dn-`) on the primary key (an id may hold no character that sorts between `,` and `-`), with the depth column for the level, so
+  ManagedElement=1's subtree never takes in ManagedElement=10 or ManagedElement=1-b.
+- **Filter.** The vendored OpenAPI types `filter` as a TS 32.161 Jex condition, and TS 32.161 is not in `specs/`: the grammar taken is the JSONPath
+  filter expression (`$[?(...)]` or bare; `@` paths with `.name`, `['name']`, `[index]`; `==`, `!=`, `<`, `<=`, `>`, `>=`, `&&`, `||`, `!`, parentheses;
+  string, number, boolean and null literals; a path alone tests existence). A comparison with a missing value is false; equality is JSON equality.
+  Bounded by length (2,000) and nesting (32). Evaluated in Python on the scoped rows, read in batches of 200.
+- **Selection and answer.** `attributes` and `fields` (paths, through arrays item by item); the hierarchical answer (TS 32.158: children nested by class
+  name, skeletons for unselected instances in between) or the flat one by `Accept`.
+- **Keyset paging.** `limit` (1–500) and an opaque `cursor` (the last DN of the page), with an RFC 8288 `Link: rel="next"`; a page is filled behind a
+  filter and the next link is given only when a further match exists. An SMO extension, recorded in STANDARDS.
+- **Property tests** (hypothesis, `test_mns_properties.py`, SQLite and Postgres): random trees whose ids share prefixes (`1`, `10`, `1-b`, `1.c`, `1_d`,
+  ...); every scope and level selects exactly the oracle's instances in DN order; for any page size and filter the pages together are the unpaged answer
+  without repeats; with instances added and removed between pages, the walk stays ordered, repeats nothing and misses nothing that was there throughout.
+- **Mutation gate.** `smo_shared/mns/` dn, errors, patch, scope, registry, service and router are in `[tool.mutmut] only_mutate`, and
+  `smo-mutation.yml` runs on a change to them. MUTATION_RESULT

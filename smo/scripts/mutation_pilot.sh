@@ -19,6 +19,8 @@
 # argument no code path read, a cast that does nothing at run time, a dict key a later key overwrote, a falsy `None` where `False` was meant): the code was changed to not have
 # them rather than a mutant being excused. The audit command line's help text is held in module constants, which mutmut does not mutate, and its presence is tested.
 #
+# PR-CONV-S1.4 added the ProvMnS router `mns/` (dn, errors, patch, scope, registry, service, router; tested by shared/tests/test_mns_*.py on SQLite: the Postgres runs
+# of those tests are skipped here). `mns/store.py` (DDL, held by test_mns_store.py on Postgres) and `mns/lifecycle.py` (no-op hooks) are not mutated.
 # Needs the dev requirements installed (requirements/dev.txt) and mutmut (requirements/mutation.txt). About four minutes.
 set -euo pipefail
 cd "$(dirname "$0")/../shared"

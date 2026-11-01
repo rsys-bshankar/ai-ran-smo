@@ -1,7 +1,8 @@
 name: SMO mutation testing
 
 # PR-V-2c: scripts/mutation_pilot.sh on 17 of the shared library's modules (the role policy, rate limiter, pagination and time helpers, the audit chain, idempotency,
-# error handling, the outbound-webhook guard, body-size cap, kill switch, secret reader, ...): a change no test notices fails the run.
+# error handling, the outbound-webhook guard, body-size cap, kill switch, secret reader, ...) and, since PR-CONV-S1.4, the ProvMnS router `smo_shared/mns/` (DNs,
+# errors, patch formats, scope and filter, class registry, operations, routes): a change no test notices fails the run.
 # Weekly, on demand, and on a pull request that changes the script, its configuration or those modules or their tests. About four minutes. Not a required check yet.
 
 on:
@@ -14,6 +15,7 @@ on:
       - "smo/scripts/mutation_pilot.sh"
       - "smo/shared/pyproject.toml"
       - "smo/shared/smo_shared/*.py"
+      - "smo/shared/smo_shared/mns/*.py"
       - "smo/shared/tests/**"
       - "smo/requirements/mutation.*"
 
