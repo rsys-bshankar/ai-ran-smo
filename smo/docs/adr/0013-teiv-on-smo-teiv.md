@@ -4,8 +4,8 @@
 > through the standards) stands, with the conditions of section 9. Nothing here is built into a module: the spike is `spikes/teiv/` (no module imports
 > it), and the work it found is the Stage 3 rows of section 10.
 
-Paths are relative to `smo/`. Written against `main` at 4a237de. smo-teiv was read at its tag and run (sections 2–3); the numbers are from
-`spikes/teiv/measure.py` (section 5). The architecture is [ADR 0008](0008-converged-architecture.md) (section 3.6, D6, D7, D19); the interfaces are
+Paths are relative to `smo/`. Written against `main` at 4a237de. smo-teiv was read at its tag and run, here and on a CI runner (sections 2–5); the numbers are
+from `spikes/teiv/measure.py`. The architecture is [ADR 0008](0008-converged-architecture.md) (section 3.6, D6, D7, D19); the interfaces are
 [ADR 0011](0011-standard-interfaces-only.md); the O1 simulator is [ADR 0012](0012-o1-simulator-oran-sc.md).
 
 ## 1. Question
@@ -57,6 +57,8 @@ groups, geo queries (PostGIS), and an XPath-like `targetFilter` / `scopeFilter` 
   profile with the 3GPP NRM, S3.3); b) a synthetic SubNetwork of 1,000 NRCellDU (334 gNBs, each a ManagedElement with a GNBDUFunction and a
   GNBCUCPFunction; per cell an NRSectorCarrier with a CommonBeamformingFunction, an NRCellCU and 8 NRCellRelation: 13,002 MOIs). The id of every
   entity is its 3GPP DN below the SubNetwork; the full DN is a `sourceId`.
+- Element identity comes from the SMO, not from the element: every m-release simulator calls its own ManagedElement `ManagedElement-002`, so `load.py`
+  names it by the element RAN NF OAM registered (the simulator's hostname), as TE&IV's writes must (S3.4).
 - Two things smo-teiv's ingestion insists on that its documentation does not stress: a relationship id may hold only RFC 3986 unreserved and
   sub-delim characters plus `:` (no `>` or `/`), and a relationship needs at least two `sourceIds`.
 
@@ -87,8 +89,29 @@ on smo-teiv's API and through the facade (section 7); one NRCellDU changed ten t
 | smo-teiv's own change notification | – | – **none**: it emits none (G5) |
 | the facade's notifyMOIAttributeValueChanges, raised once the change is visible | 31.6 | 63.1 |
 
-**CI run** (GitHub-hosted `ubuntu-latest` runner, both sources): the workflow "TE&IV spike" writes the same tables to its job summary and the artifact
-`teiv-spike-results`; the first run's numbers are in `HISTORY.md` PR-CONV-S0.13.
+**CI run** (GitHub-hosted `ubuntu-latest` runner, Azure, Linux x86-64, 4 CPUs, 16 GB; workflow "TE&IV spike", run 41266746841;
+`spikes/teiv/results/ci.md`, and the artifact `teiv-spike-results` of each run):
+
+| Load | MOIs | entities in smo-teiv | events | seconds |
+|---|---:|---:|---:|---:|
+| b) synthetic, 1,000 cells | 13,002 | 4,002 | 14 | **10.9** |
+| a) oran-sim O-DUs (2) | 6 | 6 | 1 | did not settle: both simulators name their ManagedElement `ManagedElement-002`, so their objects merged into one entity (section 4); `load.py` now names each by its registered element and the next run measures it |
+
+| Query | raw p50 / p95 / p99 ms | through the facade p50 / p95 / p99 ms | facade adds (p50) | target |
+|---|---|---|---:|---|
+| Q1 one cell by id | 2.2 / 4.6 / 6.0 | 1.5 / 2.2 / 3.1 | –0.7 | **pass** |
+| Q2 a cell's neighbours | – | – | – | **fail**: not expressible (G2) |
+| Q3 all cells under a GNBDUFunction | 3.8 / 6.4 / 9.4 | 3.4 / 6.0 / 12.9 | –0.4 | **pass** |
+| Q4 two-hop neighbours | – | – | – | **fail**: not expressible (G2) |
+| Q5 all cells of a SubNetwork with an attribute filter | 3.7 / 7.8 / 13.4 | 4.0 / 9.3 / 13.8 | 0.3 | **pass** |
+
+| Change of one NRCellDU | p50 ms | p95 ms |
+|---|---:|---:|
+| visible in smo-teiv's API | **32.5** | **48.5** |
+| smo-teiv's own change notification | – | – **none** (G5) |
+| the facade's notifyMOIAttributeValueChanges | 32.5 | 48.6 |
+
+(A negative "facade adds" is noise: the facade makes the same one request, and the two series run one after the other.)
 
 What the numbers say: on what smo-teiv can express, it is two orders of magnitude inside the target, and the facade's translation costs nothing
 measurable. Two of the five queries cannot be asked at all. A change is readable in tens of milliseconds, but nobody is told.
@@ -132,14 +155,14 @@ RAN NF OAM's own tree of the oran-sim O-DUs adds nothing new: an element root of
 
 smo-teiv is a separate service in another language. Measured locally after the 1,000-cell load (`docker compose stats`):
 
-| Part | Image | Memory |
+| Part | Image (local / CI) | Memory (local / CI) |
 |---|---:|---:|
-| ingestion (JVM) | 541 MB (one image for both processes) | 616 MiB |
-| exposure (JVM) | (same image) | 473 MiB |
-| Postgres 13 + PostGIS with the schema | 616 MB | 138 MiB |
-| Kafka (single node, KRaft) | apache/kafka | 467 MiB |
+| ingestion (JVM) | 541 MB / 360 MB (one image for both processes; the sizes are docker's, which counts differently on the two daemons) | 616 / 558 MiB |
+| exposure (JVM) | (same image) | 473 / 434 MiB |
+| Postgres 13 + PostGIS with the schema | 616 MB / 445 MB | 138 / 109 MiB |
+| Kafka (single node, KRaft) | apache/kafka | 467 / 441 MiB |
 
-About 1.7 GiB resident for the topology of 1,000 cells, against a few hundred MiB for a Python module on the SMO's shared Postgres. It also brings
+About 1.5 to 1.7 GiB resident for the topology of 1,000 cells, against a few hundred MiB for a Python module on the SMO's shared Postgres. It also brings
 a second Postgres (13, with PostGIS) beside the SMO's Postgres 18, and needs Kafka (D9 already plans Kafka, S1.10). A Java toolchain joins the build.
 
 ## 9. Decisions this spike settles

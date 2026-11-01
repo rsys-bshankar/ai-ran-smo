@@ -4971,7 +4971,10 @@ imports it) and the CI workflow "TE&IV spike" (`.github/workflows/teiv-spike.yml
   through the facade — Q1 one cell by id 3.6 / 5.3 and 3.6 / 5.6 (pass), Q3 cells under a GNBDUFunction 4.4 / 6.7 and 4.4 / 6.2 (pass), Q5 cells of a
   SubNetwork with an attribute filter 4.2 / 7.9 and 4.4 / 9.7 (pass), Q2 neighbours and Q4 two-hop neighbours not expressible (fail: smo-teiv has no
   neighbour relationship); a changed NRCellDU visible after 31.6 / 63.0 ms, and **smo-teiv emits no change notification**; the facade adds nothing
-  measurable. Runtime: one 541 MB image for both JVMs (616 + 473 MiB), the database image 616 MB (138 MiB), Kafka 467 MiB.
+  measurable. Runtime: one 541 MB image for both JVMs (616 + 473 MiB), the database image 616 MB (138 MiB), Kafka 467 MiB. **CI run** (GitHub-hosted
+  runner, 4 CPUs / 16 GB, run 41266746841; `spikes/teiv/results/ci.md`): load b) 10.9 s; facade p95 Q1 2.2, Q3 6.0, Q5 9.3 ms (pass), Q2 and Q4 not
+  expressible (fail); change visible 32.5 / 48.5 ms; 558 + 434 MiB for the JVMs. Source a) did not settle in that run (both simulators call their
+  ManagedElement `ManagedElement-002`); `load.py` names each by its registered element since.
 - **Model gaps** (ADR 0013 section 6): O-RAN class names for the gNB functions (G1); no NRCellRelation / NEIGHBOR_CELL or CO_COVERAGE_OVERLAY (G2); a few
   attributes per class, none of administrativeState, operationalState, cellState, pLMNInfoList (G3); no SubNetwork, CommonBeamformingFunction,
   NRFreqRelation or SON classes (G4); no notifications (G5); no write API (G6); no object version (G7); its own filter grammar (G8); the WG10 TE&IV R1 API

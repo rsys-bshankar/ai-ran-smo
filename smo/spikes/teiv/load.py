@@ -120,22 +120,23 @@ def synthetic(cells: int, subnetwork: str = "SubNetwork=Spike", per_gnb: int = 3
 
 
 def from_ran_nf_oam(url: str, elements: list[str], subnetwork: str = "SubNetwork=OranSim") -> list[Moi]:
-    """Source a): the subtree RAN NF OAM's `managed_object` table holds for each element (GET /managed-objects/{root}/subtree). It carries classes and
-    DNs, no attributes (the table has none, ADR 0008 section 3.6)."""
+    """Source a): the subtree RAN NF OAM's `managed_object` table holds for each element (GET /managed-objects/{root}/subtree, a nested `tree` with
+    `children`). It carries classes and DNs, no attributes (the table has none, ADR 0008 section 3.6)."""
     out = []
+
+    def walk(node: dict, parent_cls: str | None) -> None:
+        dn = node["dn"]
+        cls = node.get("class") or dn.rsplit(",", 1)[-1].split("=", 1)[0]
+        out.append(Moi(dn, f"{subnetwork},{dn}", cls, parent_cls, {}))
+        for child in node.get("children") or []:
+            walk(child, cls)
+
     with httpx.Client(base_url=url.rstrip("/"), timeout=30) as client:
         for ref in elements:
             root = ref if ref.startswith("ManagedElement=") else f"ManagedElement={ref}"
             r = client.get(f"/managed-objects/{root}/subtree")
             r.raise_for_status()
-            body = r.json()
-            nodes = body.get("items") or body.get("nodes") or ([body] if "dn" in body else [])
-            for node in nodes:
-                dn = node["dn"]
-                cls = node.get("objectClass") or dn.rsplit(",", 1)[-1].split("=", 1)[0]
-                parent = node.get("parentDn")
-                parent_cls = parent.rsplit(",", 1)[-1].split("=", 1)[0] if parent else None
-                out.append(Moi(dn, f"{subnetwork},{dn}", cls, parent_cls, {}))
+            walk(r.json()["tree"], None)
     return out
 
 
@@ -153,9 +154,10 @@ def _xml_attributes(node) -> dict:
     return out
 
 
-def from_netconf(uris: list[str], subnetwork: str = "SubNetwork=OranSim", credential: str = "oransim") -> list[Moi]:
+def from_netconf(uris: list[str], names: list[str] | None = None, subnetwork: str = "SubNetwork=OranSim", credential: str = "oransim") -> list[Moi]:
     """The simulators' ManagedElement as RAN NF OAM's NETCONF client reads it (get-config of `_3gpp-common-managed-element`), every list entry with an
-    `id` and `attributes` taken as an MOI. The element is named by the simulator's address, as the spike's operator registration does."""
+    `id` and `attributes` taken as an MOI. The ManagedElement is named by `names[i]`, the element RAN NF OAM registered it as (its hostname), when
+    given: every m-release simulator calls its own ManagedElement `ManagedElement-002`, so the simulator's id does not tell two elements apart."""
     import os
     import tempfile
     from urllib.parse import urlsplit
@@ -180,16 +182,20 @@ def from_netconf(uris: list[str], subnetwork: str = "SubNetwork=OranSim", creden
             reply = s.rpc('<rpc message-id="spike" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0"><get-config><source><running/></source>'
                           '<filter type="subtree"><ManagedElement xmlns="urn:3gpp:sa5:_3gpp-common-managed-element"/></filter></get-config></rpc>')
 
-        def walk(node, dn, parent_cls):
+        element = names[uris.index(uri)] if names else None
+
+        def walk(node, dn, parent_cls, element=element):
             for child in node:
                 cls = child.tag.rsplit("}", 1)[-1]
                 ident = next((c.text for c in child if c.tag.rsplit("}", 1)[-1] == "id"), None)
+                if cls == "ManagedElement" and element:
+                    ident = element
                 attrs = next((c for c in child if c.tag.rsplit("}", 1)[-1] == "attributes"), None)
                 if ident is None:
                     continue
                 me_dn = _child(dn, cls, ident)
                 out.append(Moi(me_dn, f"{subnetwork},{me_dn}", cls, parent_cls, _xml_attributes(attrs) if attrs is not None else {}))
-                walk(child, me_dn, cls)
+                walk(child, me_dn, cls, element)
         data = next((n for n in reply.iter() if n.tag.rsplit("}", 1)[-1] == "data"), reply)
         walk(data, "", None)
     return out
@@ -290,15 +296,23 @@ def main(argv: list[str] | None = None) -> int:
     a = p.parse_args(argv)
     mois: list[Moi] = []
     if a.oran_sim_log:
-        elements, uris = oran_sim_sources(a.oran_sim_log)
-        a.element += elements
+        names, uris = oran_sim_sources(a.oran_sim_log)
+        a.element += names
         a.netconf += uris
     if a.ran_nf_oam and a.element:
         mois += from_ran_nf_oam(a.ran_nf_oam, a.element)
     if a.netconf:
-        mois += from_netconf(a.netconf)
+        mois += from_netconf(a.netconf, names if a.oran_sim_log else None)
     if a.synthetic:
         mois += synthetic(a.synthetic)
+    merged: dict[str, Moi] = {}                       # one object reached through two sources (RAN NF OAM's root and the NETCONF read) is one MOI
+    for m in mois:
+        if m.dn in merged:
+            merged[m.dn].attributes.update(m.attributes)
+            merged[m.dn].parent_cls = merged[m.dn].parent_cls or m.parent_cls
+        else:
+            merged[m.dn] = m
+    mois = list(merged.values())
     events, gaps = to_events(mois)
     with open(a.events, "w", encoding="utf-8") as out:
         for body in events:
