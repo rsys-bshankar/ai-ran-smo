@@ -18,7 +18,7 @@ from smo_shared.pagination import PageLimit, PageOffset
 
 from ..governance.statemachine import ModelLifecycleEvent
 from ..models import MLTestingFunction, MLTestingReport, ValidationJob
-from ..common import RequestFlagsBody, RuntimeProfile, UserLabelBody, _Body, _check_job_owner, _get, _page, _s
+from ..common import RequestFlagsBody, RuntimeProfile, _Body, _check_job_owner, _get, _page, _s
 from ..execution import _expire_overdue_jobs, _nfo_terminate_execution, _resolve_runtime_profile
 from ..governance.lifecycle import _fire_model_event
 from ..testing.jobs import _start_validation
@@ -42,37 +42,6 @@ def _testing_function_view_for(db: Session):
         return {"id": str(f.ml_testing_function_id), "attributes": {
             "userLabel": f.user_label, "mLModelRef": sorted({str(m) for m in model_ids})}}
     return view
-
-
-@router.post("/ml-testing-functions", status_code=201)
-def create_ml_testing_function(body: UserLabelBody, db: Session = Depends(get_session)):
-    # Route notes: 201; no uniqueness rule.
-    f = MLTestingFunction(user_label=body.userLabel)
-    db.add(f)
-    db.commit()
-    return _testing_function_view_for(db)(f)
-
-
-@router.get("/ml-testing-functions")
-def list_ml_testing_functions(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
-    # Route notes: paginated; no timeout sweep.
-    return _page(db, select(MLTestingFunction), limit, offset, _testing_function_view_for(db))
-
-
-@router.get("/ml-testing-functions/{function_id}")
-def get_ml_testing_function(function_id: uuid.UUID, db: Session = Depends(get_session)):
-    # Route notes: 404 `NRM_OBJECT_NOT_FOUND` for an unknown id.
-    return _testing_function_view_for(db)(_get(db, MLTestingFunction, function_id, "MLTestingFunction"))
-
-
-@router.delete("/ml-testing-functions/{function_id}", status_code=204)
-def delete_ml_testing_function(function_id: uuid.UUID, db: Session = Depends(get_session)):
-    # Route notes: 204 whether or not it existed. Testing requests and reports that named the function keep their rows (the database sets the reference to
-    # NULL).
-    f = db.get(MLTestingFunction, function_id)
-    if f is not None:
-        db.delete(f)
-        db.commit()
 
 
 # Body of POST /ml-testing-requests. Exactly one of `mLModelRef` and `mLModelCoordinationGroupRef` is needed (422 `COORDINATION_GROUP_MISMATCH` otherwise, from
@@ -153,7 +122,16 @@ def modify_ml_testing_request(request_id: uuid.UUID, body: RequestFlagsBody, req
     _expire_overdue_jobs(db)
     job = _get(db, ValidationJob, request_id, "MLTestingRequest")
     _check_job_owner(db, request, job, "cancel or suspend its testing")   # call flow 02: 403 for another rApp's run
-    if body.cancelRequest:
+    apply_testing_flags(db, job, body.cancelRequest, body.suspendRequest)
+    db.commit()
+    return _testing_request_view(job)
+
+
+def apply_testing_flags(db: Session, job: ValidationJob, cancel: bool | None, suspend: bool | None) -> None:
+    """Applies the NRM control flags to a testing run (PATCH /ml-testing-requests/{id} and the MLTestingRequest hook of ProvMnS): cancel from RUNNING or
+    SUSPENDED (409 `TRAINING_JOB_ILLEGAL_TRANSITION` otherwise), tearing the runtime down and failing the model's VALIDATING state; suspend only from RUNNING;
+    `suspend` False resumes a SUSPENDED run and restarts its timeout clock. Cancel wins. Does not commit."""
+    if cancel:
         if job.status not in ("RUNNING", "SUSPENDED"):
             raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
                                    detail=f"cannot cancel a testing request in status {job.status}")
@@ -162,16 +140,14 @@ def modify_ml_testing_request(request_id: uuid.UUID, body: RequestFlagsBody, req
         _nfo_terminate_execution(job)
         if job.model_id is not None:
             _fire_model_event(db, job.model_id, ModelLifecycleEvent.VALIDATION_FAILED)
-    elif body.suspendRequest is True:
+    elif suspend is True:
         if job.status != "RUNNING":
             raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
                                    detail=f"cannot suspend a testing request in status {job.status}")
         job.status, job.suspend_request = "SUSPENDED", True
-    elif body.suspendRequest is False and job.status == "SUSPENDED":
+    elif suspend is False and job.status == "SUSPENDED":
         job.status, job.suspend_request = "RUNNING", False
         job.started_at = datetime.datetime.now(datetime.UTC)
-    db.commit()
-    return _testing_request_view(job)
 
 
 def _testing_report_view(r: MLTestingReport) -> dict:
@@ -182,19 +158,3 @@ def _testing_report_view(r: MLTestingReport) -> dict:
         "createdAt": r.created_at.isoformat()}}
 
 
-@router.get("/ml-testing-reports")
-def list_ml_testing_reports(testing_request_id: uuid.UUID | None = None, limit: int = PageLimit,
-                            offset: int = PageOffset, db: Session = Depends(get_session)):
-    # Route notes: the read first runs `_expire_overdue_jobs`, which fails every overdue run (and commits) before the view is built. Newest first;
-    # `testing_request_id` filters by validation job.
-    _expire_overdue_jobs(db)
-    stmt = select(MLTestingReport)
-    if testing_request_id:
-        stmt = stmt.where(MLTestingReport.validation_job_id == testing_request_id)
-    return _page(db, stmt.order_by(MLTestingReport.created_at.desc()), limit, offset, _testing_report_view)
-
-
-@router.get("/ml-testing-reports/{report_id}")
-def get_ml_testing_report(report_id: uuid.UUID, db: Session = Depends(get_session)):
-    # Route notes: 404 `NRM_OBJECT_NOT_FOUND` for an unknown id.
-    return _testing_report_view(_get(db, MLTestingReport, report_id, "MLTestingReport"))

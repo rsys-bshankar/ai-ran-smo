@@ -18,6 +18,7 @@ from sqlalchemy.pool import StaticPool
 from smo_shared import audit, events
 from smo_shared.db import Base, get_session
 from smo_shared.idempotency import IdempotencyKey
+from smo_shared.auth.roles import D15_ROLES
 from smo_shared.mns import mns_registry as registry
 
 from app.main import app
@@ -70,16 +71,32 @@ def _register(client, module="echo", classes=("SubNetwork", "ManagedElement"), a
 
 
 def test_a_registry_read_on_a_new_database_lists_the_registry_and_sme_itself(sme):
-    """The first request writes the registry's container, the MnsRegistry and SME's own registration; the read starts at the MnsRegistry."""
+    """The first request writes the registry's container, the MnsRegistry, SME's own registration (the registry's classes, TS 28.319's, the
+    subscriptions and its container, within `SubNetwork=SMO`) and the five D15 roles; the read starts at the MnsRegistry."""
     client, sessions = sme
     found = _read(client)
     assert [r["objectInstance"] for r in found] == [registry.REGISTRY_DN, registry.mgmt_data_info_dn("sme"), registry.mns_info_dn("sme")]
     (me,) = registry.entries(found)
-    assert me.classes == {"MnsRegistry", "MnsInfo", "MgmtDataInfo"} and me.address == "http://sme:8000/ProvMnS/19.2.0" and me.mns_type == "PROV_MNS"
+    assert me.classes == {"MnsRegistry", "MnsInfo", "MgmtDataInfo", "Identity", "Role", "AccessRule", "NtfSubscriptionControl", "HeartbeatControl",
+                          "SubNetwork"}
+    assert me.address == "http://sme:8000/ProvMnS/19.2.0" and me.mns_type == "PROV_MNS" and me.scope == ("SubNetwork=SMO",)
     with sessions() as db:
         assert db.get(RegistryObject, "SubNetwork=SMO") is not None
+        count = db.scalar(select(func.count()).select_from(RegistryObject))
         ensure_registry(db)                                                     # once there, nothing more is written
-        assert db.scalar(select(func.count()).select_from(RegistryObject)) == 4
+        assert db.scalar(select(func.count()).select_from(RegistryObject)) == count == 4 + sum(len(r) + 1 for r in D15_ROLES.values())
+
+
+def test_an_older_registration_of_sme_is_rewritten(sme):
+    """SME's own MnsInfo from the release before (the registry's classes only, no scope) is replaced by the current one on the next request."""
+    client, sessions = sme
+    _read(client)
+    with sessions() as db:
+        row = db.get(RegistryObject, registry.mns_info_dn("sme"))
+        row.attributes = {**row.attributes, "mnsScope": [["SubNetwork=OLD"]]}
+        db.commit()
+    (me,) = [e for e in registry.entries(_read(client)) if e.label == "sme"]
+    assert me.scope == ("SubNetwork=SMO",)
 
 
 def test_ensure_registry_keeps_a_container_that_is_already_there(sme):

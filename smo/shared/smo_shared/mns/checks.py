@@ -18,13 +18,14 @@ would tell the caller the DN exists); a write answers 403 SCOPE_DENIED (or MSAC_
 scoped read reaches below the base are filtered, never refused. Scope is checked before anything else of the request, so a refusal says nothing about
 the class, the body or the version.
 
-How S1.14 replaces the decision without touching the router: `Authorizer` is the one interface the scope step calls (`permits(caller, operation, target)`).
-`ClaimAuthorizer`, the default, applies the ADR 0005 claim (`smo_shared.scope.permits`). An `AccessRuleAuthorizer` that reads TS 28.319 Identity, Role and
-AccessRule (the ADR 0005 claim expressed as AccessRules) implements the same method and is passed as `RouterChecks(scope=ScopeStep(authorizer=...))` by the
-module; the router, the service and the other steps stay as they are. `Placement` (where a DN is: region, tenant, site cluster, SubNetworks) is
+The decision is one interface, `Authorizer` (`permits(caller, operation, target)`). The default is `smo_shared.auth.AccessRuleAuthorizer` (plan task
+S1.14): the ADR 0005 claim expressed as TS 28.319 AccessRules, and the AccessRules of the caller's Identity where the module reads them, so every ProvMnS
+route's scope check reads AccessRules. `ClaimAuthorizer` (the claim alone, `smo_shared.scope.permits`) is kept for a module that wants only that; a
+module passes either as `RouterChecks(scope=ScopeStep(authorizer=...))`, and the router, the service and the other steps stay as they are. `Placement` (where a DN is: region, tenant, site cluster, SubNetworks) is
 separate, so the same placement serves either decision.
 """
 
+import contextvars
 import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
@@ -75,6 +76,10 @@ class Caller:
 
 
 INTERNAL = Caller(invoker=None, role=ROLE_INTERNAL)        # a module calling its own producer in-process: unscoped, unmanaged
+
+# The session of the operation being decided, set by the service around each operation (service.py `_in_session`), so a decision that reads the
+# producer's own store reads it in the request's transaction (SME's AccessRules, `sme/app/msac_store.py`). None outside an operation.
+SESSION: contextvars.ContextVar[Session | None] = contextvars.ContextVar("smo_mns_session", default=None)
 
 
 # ---------------------------------------------------------------------------- 1. scope
@@ -138,12 +143,19 @@ class ClaimAuthorizer:
         return claims.permits(caller.scope, target.region, target.tenant, target.site_cluster, target.sub_networks)
 
 
+def default_authorizer() -> Authorizer:
+    """The scope step's decision unless a module gives its own: TS 28.319 AccessRules (`smo_shared.auth.AccessRuleAuthorizer`, plan task S1.14), the
+    ADR 0005 claim expressed as AccessRules and, when the module reads them, the AccessRules of the caller's Identity."""
+    from ..auth.access import AccessRuleAuthorizer       # imported here: smo_shared.auth builds on this module
+    return AccessRuleAuthorizer()
+
+
 @dataclass
 class ScopeStep:
     """Step 1: the target must be within the caller's reach (see the module description for the refusals)."""
 
     placement: Callable[[str], Target] = no_placement
-    authorizer: Authorizer = field(default_factory=ClaimAuthorizer)
+    authorizer: Authorizer = field(default_factory=default_authorizer)
 
     def allows(self, caller: Caller, operation: str, dn: str) -> bool:
         """Whether `caller` may do `operation` on `dn`."""

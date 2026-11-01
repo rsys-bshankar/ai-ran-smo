@@ -34,6 +34,7 @@ from smo_shared.metrics import install_metrics
 from smo_shared.mns import ProvMnS, provmns_router
 from smo_shared.mns.checks import Caller, MsacStep, PrefixPlacement, RouterChecks, ScopeStep, Target, no_placement
 from smo_shared.mns.mns_registry import install_self_registration
+from smo_shared.mns.subscriptions import CLASSES as SUBSCRIPTION_CLASSES
 from smo_shared.openapi_security import apply_r1_gateway_security
 
 from . import models  # noqa: F401  (puts moi_store on the shared Base)
@@ -92,4 +93,5 @@ apply_r1_gateway_security(app)
 apply_correlation_id(app)  # also installs the trace context, the invoker and the scope context middlewares
 install_health(app, checks=[database_check])   # /live, /ready, /health, /version; Echo calls no other module, so no SME token check
 app.include_router(provmns_router(mns))
-REGISTRATION = install_self_registration(app, "echo", CLASSES)   # in SME's MnS registry, at start-up (PR-CONV-S1.12), so R1 routes by class (S1.8)
+# in SME's MnS registry, at start-up (PR-CONV-S1.12), so R1 routes by class (S1.8): its two classes and the subscriptions every producer serves (S1.13)
+REGISTRATION = install_self_registration(app, "echo", (*CLASSES, *SUBSCRIPTION_CLASSES))

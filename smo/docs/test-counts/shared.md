@@ -9,7 +9,7 @@ CI runs `--check` and fails when this file no longer matches the code.
 
 | suite | files | test functions | collected tests |
 |---|---:|---:|---:|
-| `shared` | 65 | 886 | 1709 |
+| `shared` | 67 | 920 | 1920 |
 
 ## Per test file
 
@@ -20,6 +20,7 @@ Paths are relative to `smo/shared/`.
 | `tests/test_audit.py` | 18 | 19 |
 | `tests/test_audit_exact.py` | 17 | 17 |
 | `tests/test_audit_target.py` | 4 | 28 |
+| `tests/test_auth_access.py` | 15 | 176 |
 | `tests/test_bodylimit.py` | 9 | 9 |
 | `tests/test_business_metrics.py` | 11 | 11 |
 | `tests/test_correlation.py` | 9 | 9 |
@@ -42,13 +43,14 @@ Paths are relative to `smo/shared/`.
 | `tests/test_mns_checks.py` | 21 | 21 |
 | `tests/test_mns_dictionary.py` | 16 | 36 |
 | `tests/test_mns_exact.py` | 41 | 127 |
-| `tests/test_mns_mnsregistry.py` | 30 | 48 |
+| `tests/test_mns_mnsregistry.py` | 31 | 49 |
 | `tests/test_mns_patch.py` | 7 | 75 |
 | `tests/test_mns_properties.py` | 3 | 6 |
 | `tests/test_mns_registry.py` | 12 | 21 |
 | `tests/test_mns_router.py` | 24 | 66 |
 | `tests/test_mns_scope.py` | 21 | 93 |
 | `tests/test_mns_store.py` | 2 | 2 |
+| `tests/test_mns_subscriptions.py` | 18 | 34 |
 | `tests/test_module_identity.py` | 14 | 25 |
 | `tests/test_msac_and_axes.py` | 11 | 36 |
 | `tests/test_mtls.py` | 18 | 33 |

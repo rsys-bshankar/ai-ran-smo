@@ -1,14 +1,14 @@
 # AI Management Function (`aimgf/`)
 
-> AIMgF is the SMO's one AI/ML management service: it keeps the model registry (identity, versions, artifacts, coordination groups, TS 29.482 storages), owns model and runtime lifecycle state, drives training / validation / emulation / inference runs through NFO, gates a model's placement, records governance decisions, and exposes the TS 28.105 AI/ML NRM. Since S2.1–S2.3 of the [converged rewrite plan](../docs/plan/CONVERGED_REWRITE_PLAN.md) ([ADR 0010](../docs/adr/0010-aimgf-absorbs-mlmr-mllf.md)) MLMR and MLLF are packages of this module, and its code is organised by TS 28.105 capability (2.1).
+> AIMgF is the SMO's one AI/ML management service: it keeps the model registry (identity, versions, artifacts, coordination groups, TS 29.482 storages), owns model and runtime lifecycle state, drives training / validation / emulation / inference runs through NFO, gates a model's placement, records governance decisions, and serves the TS 28.105 AI/ML NRM over TS 28.532 ProvMnS (S2.7, S2.10: all twenty classes, plus the [D] MLModelGovernance with its servingState, 2.4). Since S2.1–S2.3 of the [converged rewrite plan](../docs/plan/CONVERGED_REWRITE_PLAN.md) ([ADR 0010](../docs/adr/0010-aimgf-absorbs-mlmr-mllf.md)) MLMR and MLLF are packages of this module, and its code is organised by TS 28.105 capability (2.1).
 
 | | |
 |---|---|
 | Standards basis | 3GPP TS 28.105 (AI/ML NRM) + internal lifecycle orchestration |
 | R1 route / port | `/aimgf` via R1 Termination (container :8000) |
 | Depends on (over R1) | NFO (`/nfo/descriptors`, `/nfo/deployments`), DME (`/dme/data-jobs`: check a training run's jobs; create and terminate a feature group's; `/dme/dme-types`), Onboarding (`/onboarding/packages/{id}/onboarding-status`). The registry and the deploy gate are in process |
-| Called by | rApps through the SDK (`sdk/smo_sdk/lifecycle.py`, `models.py`), MDAF (MLMF subscriptions and reports), SA SMOS and SO SMOS (training / validation / emulation / deploy / inference steps), GUI via the BFF |
-| Database tables | registry: `aiml_model`, `model_artifact`, `ml_model_coordination_group`, `ml_model_repository`, `ml_models_storage`, `ml_model_profile`, `model_change_subscription` (in the `aimgf` schema since revision 0064); lifecycle and runs: `model_lifecycle` (versioned), `training_job`, `validation_job`, `emulation_job`, `inference_job`, `certification_record`, `lifecycle_transition`, `mlmf_subscription`, `performance_report`, `feature_group`, `ml_training_function`, `ml_training_process`, `ml_training_report`, `ml_testing_function`, `ml_testing_report`, `aiml_inference_function`, `aiml_inference_emulation_function`, `aiml_inference_report`, `ml_model_loading_policy`, `ml_model_loading_request`, `ml_model_loading_process`, `ml_update_function`, `ml_update_request`, `ml_update_process`, `ml_update_report` |
+| Called by | rApps through the SDK (`sdk/smo_sdk/lifecycle.py`, `models.py`), MDAF (MLMF subscriptions and reports), SA SMOS and SO SMOS (training / validation / emulation / deploy / inference steps), GUI via the BFF; any TS 28.532 consumer at `/aimgf/ProvMnS/v19.2.0/ManagedElement=AIMgF/...` |
+| Database tables | registry: `aiml_model`, `model_artifact`, `ml_model_coordination_group`, `ml_model_repository`, `ml_models_storage`, `ml_model_profile`, `model_change_subscription` (in the `aimgf` schema since revision 0064); lifecycle and runs: `model_lifecycle` (versioned), `training_job`, `validation_job`, `emulation_job`, `inference_job`, `certification_record`, `lifecycle_transition`, `mlmf_subscription`, `performance_report`, `feature_group`, `ml_training_function`, `ml_training_process`, `ml_training_report`, `ml_testing_function`, `ml_testing_report`, `aiml_inference_function`, `aiml_inference_emulation_function`, `aiml_inference_report`, `ml_model_loading_policy`, `ml_model_loading_request`, `ml_model_loading_process`, `ml_update_function`, `ml_update_request`, `ml_update_process`, `ml_update_report`; the ProvMnS store `aimgf_moi_store` (revision `aimgf_0001`, the first of the `aimgf` branch) |
 | Idempotency | `POST /training-jobs`, `/validation-jobs`, `/emulation-jobs`, `/models/{id}/inference-jobs`, `/models/{id}/runtime/scale`, `/mlmf/subscriptions`, `/mlmf/subscriptions/{id}/reports`, `/coordination-groups` accept an `Idempotency-Key` header (`smo_shared/idempotency.py`; the `idempotency_key` table is shared, not this module's) |
 | Unit tests | `tests/`, SQLite, standalone (counts: [docs/test-counts/aimgf.md](../docs/test-counts/aimgf.md)) |
 | Status | Done. Open: `OI-1-weighted-triggers` (group-retrain `WEIGHTED_TRIGGERS` raises `NotImplementedError`), `OI-6.1-runtime-gate` (no operator gate on RuntimeLifecycle transitions); runtime scale takes no target size (NFO's scale has no argument) |
@@ -26,7 +26,8 @@ It provides:
 - two independent state machines per model (certification path, serving runtime);
 - training, validation, emulation and inference requests with their job state, operator approval gates, execution timeouts and completion notifications;
 - governance: approval, certification, promotion, rollback, deprecation, retirement, each recorded;
-- the TS 28.105 AI/ML NRM functions, requests, processes and reports as flat REST resources (a request resource and its job are the same row);
+- the TS 28.105 AI/ML NRM over TS 28.532 ProvMnS: the twenty classes in the DN tree of TS 28.105, each instance the projection of AIMgF's own row, each write run through the code of the REST route it replaces (2.4, "TS 28.105 over ProvMnS"); the requests, processes and inference resources the GUI and the SDK still call keep their REST routes until S2.11 and S6;
+- the lifecycle mapping: the 14 states to the HLD's 7 stages and the bundle's `servingState` (2.3, S2.6);
 - MLMF performance subscriptions and group-retrain propagation;
 - feature groups.
 
@@ -34,7 +35,7 @@ It provides:
 
 | Spec | Realised | Deliberately not |
 |---|---|---|
-| TS 28.105 ([`TS28105_AiMlNrm.yaml`](../../specs/5G_APIs/TS28105_AiMlNrm.yaml)) | All twenty IOCs as REST resources with the spec's attribute names, as `{"id", "attributes"}`: MLTrainingFunction / Request / Process / Report, MLTestingFunction / Request / Report, AIMLInferenceFunction, AIMLInferenceEmulationFunction, AIMLInferenceReport, MLModelLoadingPolicy / Request / Process, MLUpdateFunction / Request / Process / Report, and in the registry MLModel (writable attributes stored; `mLTrainingType`, `aIMLInferenceReportRefList`, `usedByFunctionRefList` read in process), MLModelRepository, MLModelCoordinationGroup (`memberMLModelRefList`, minItems 2) | DN containment tree: DN-typed attributes carry resource ids and resources are flat collections (the one recorded deviation, platform decision D-9). `MLTrainingFunction.ThresholdMonitors` (a TS 28.623 containment) is not modelled; threshold monitoring is MLMF (`guardKpiFloor`). FL/RL attributes are validated and stored, but there is no distributed-training engine |
+| TS 28.105 ([`TS28105_AiMlNrm.yaml`](../../specs/5G_APIs/TS28105_AiMlNrm.yaml)) | All twenty IOCs over TS 28.532 ProvMnS (`app/provmns/`, S2.7, S2.10) in TS 28.105's containment under `ManagedElement=AIMgF`, DN-typed attributes as DNs; `ManagedActivationScope` (a datatype, not a class) as AIMLInferenceFunction's `managedActivationScope`; some still also as REST resources with the spec's attribute names, as `{"id", "attributes"}`: MLTrainingFunction / Request / Process / Report, MLTestingFunction / Request / Report, AIMLInferenceFunction, AIMLInferenceEmulationFunction, AIMLInferenceReport, MLModelLoadingPolicy / Request / Process, MLUpdateFunction / Request / Process / Report, and in the registry MLModel (writable attributes stored; `mLTrainingType`, `aIMLInferenceReportRefList`, `usedByFunctionRefList` read in process), MLModelRepository, MLModelCoordinationGroup (`memberMLModelRefList`, minItems 2) | The REST resources that remain carry ids, not DNs, in their reference attributes (platform decision D-9, until S2.11 and S6 retire them). `MLTrainingFunction.ThresholdMonitors` (a TS 28.623 containment) is not modelled; threshold monitoring is MLMF (`guardKpiFloor`). FL/RL attributes are validated and stored, but there is no distributed-training engine |
 | TS 29.482 MLR ([`TS29482_MLR_MLModelManagement.yaml`](../../specs/5G_APIs/TS29482_MLR_MLModelManagement.yaml), [`ModelInformationDiscovery`](../../specs/5G_APIs/TS29482_MLR_ModelInformationDiscovery.yaml)) | `registry/mlr.py`: the `MLModel` record (`domain`, `customDomain`, `vendors`, `mlModelSize`, `mlModelSrcId`, `interopInfo`, `valServiceIds`, `adaeAnalyticsId`, `usageReqs` `SA-MLMR-8`, `phaseInfo` with `trainingInfo.baseModelId` `SA-MLMR-7`, `storeDiscReqs` `SA-MLMR-6`); `MLModelsStorage` / `MLModelProfile` as `/storages` (`SA-MLMR-1`); `storeDiscReqs` enforced for discovery and artifact download (`duration` 410 `MODEL_EXPIRED`, `accessReqs` judged on the gateway's `X-R1-Invoker-Id`, `timePeriod`); discovery `GET /models?filt-criteria=` with whole-object match (`SA-MLMR-9`) | The `anyOf` on `MLModel` and forward-compatible enum strings; `accessReqs.location` (stored, not enforced); creating a model from a profile; `supported-features` (accepted, ignored); `suppFeat` (stored) |
 | Internal | Model / runtime lifecycle FSMs, governance records, NFO-backed execution runtimes, stage timeouts, feature groups, MLMF, the deploy gate | |
 
@@ -115,7 +116,7 @@ By TS 28.105 capability (S2.3, ADR 0010 section 3.1). Each `jobs.py` is this bui
 | Package / file | TS 28.105 classes (v19.5.0) | Responsibility |
 |---|---|---|
 | `app/main.py` | | FastAPI app, middleware and probes; includes every router below |
-| `app/registry/routes.py` | `MLModel`, `MLModelRepository`, `MLModelCoordinationGroup` | Model registration, update, delete, owner, artifacts upload and download, coordination groups, the TS 28.105 views (`/ml-models/{id}`, `/ml-model-coordination-groups/{id}`, `/ml-model-repositories`), `GET /ml-models/{id}/nrm-refs` (was `mlmr/app/main.py`) |
+| `app/registry/routes.py` | `MLModel`, `MLModelRepository`, `MLModelCoordinationGroup` | Model registration, update, delete, owner, artifacts upload and download, coordination groups, the TS 28.105 view `/ml-models/{id}` and `/ml-model-repositories`; `ml_model_nrm_refs` (what the MLModel instance reads; its route went in S2.7) (was `mlmr/app/main.py`) |
 | `app/registry/mlr.py` | (TS 29.482) | `MLModel` record, `storeDiscReqs` enforcement, discovery, `/storages` and profiles, `PATCH /models/{id}/phase-info`, the registry's owner rule (was `mlmr/app/mlr.py`) |
 | `app/registry/models.py` | | The registry's seven tables (was `mlmr/app/models.py`) |
 | `app/registry/access.py` | | What the other packages read and write in process: `model_json`, `coordination_groups`, `record_phase` |
@@ -132,10 +133,16 @@ By TS 28.105 capability (S2.3, ADR 0010 section 3.1). Each `jobs.py` is this bui
 | `app/governance/statemachine.py` | | `ModelLifecycleState` (14) + events, `RuntimeLifecycleState` (8) + events, `InferenceState`, `GOVERNANCE_EVENTS`, `ADVANCEABLE_EVENTS`, `TRAINABLE_STATES`, `END_OF_LIFE_STATES`, `should_trigger_group_retrain` |
 | `app/governance/lifecycle.py` | | The lifecycle row: create, fire model and runtime events, views with the NFO workload |
 | `app/governance/routes.py` | | `advance` (the operator's decisions), the lifecycle reads, counts and histories |
+| `app/provmns/classes.py` | all twenty, `ManagedElement`, `MLModelGovernance` | `CLASSES`; the class registry (TS 28.541 / 28.623 and `TS28105_AiMlNrm.yaml`, MLModelGovernance registered from the bundle's schema, MLModel > MLModelGovernance), built once as `REGISTRY` |
+| `app/provmns/service.py` | | The `ProvMnS` of `smo_shared.mns` with the hooks below and the store `Instance` (`aimgf_moi_store`), its router at `/ProvMnS/{version}/...`, the middleware that hands the hooks the caller's request, start-up (`start`: the first projection), the scope and capability `main.py` registers with in SME's MnS registry (S1.12) |
+| `app/provmns/handlers.py` | | The `IMoiLifecycleHandler` of each class: what a createMOI, modifyMOIAttributes or deleteMOI does to AIMgF, through the REST routes' own code (`_start_training`, `_start_validation`, `start_update`, `start_loading`, `record_inference_report`, the flag functions) |
+| `app/provmns/projection.py` | | One `Projector` per table: every change to a mapped row written into `aimgf_moi_store` before its transaction commits, with its notification (`sourceIndicator` RESOURCE_OPERATION) |
+| `app/provmns/tree.py` | | The DN of each instance (ROOT `ManagedElement=AIMgF`, the `default` containers) |
+| `app/provmns/mapping.py` | | S2.6: `stage_of`, `serving_state_of`, `CLASS_LIFECYCLE` (2.3) |
 | `app/common.py` | | `_r1` (the one R1 client), model lookup and the owner rule, shared request bodies, the NRM base helpers |
 | `app/execution.py` | | The NFO execution runtimes of the runtime roles MLTF / MLVF / MLEF / MLIF, runtime profiles, timeouts and the sweep, completion notifications |
 | `app/ts28105.py` | | Pydantic models for the spec datatypes (closed enums, `extra="forbid"`, `dump()` to spec-shaped JSON) |
-| `app/models.py` | | The lifecycle, run and NRM tables |
+| `app/models.py` | | The lifecycle, run and NRM tables; `MOI_STORE`, the ProvMnS store on the shared `Base` |
 | `app/tasks.py` | | The worker's periodic work (`python -m smo_shared.worker`, compose service `aimgf-worker`): `expire-overdue-runs` every `AIMGF_TIMEOUT_SWEEP_SECONDS` (default 60) runs `execution._expire_overdue_jobs`, so a run nobody reads still times out (call flow 27e) |
 
 The package graph has no cycle at import: `common` and `governance/lifecycle` at the bottom, `execution` above them, the capability packages above that, `governance/routes` on top. Two calls go upward, through the package object rather than an import of the module (`training.jobs`, `update.nrm`, loaded by `main.py`): the timeout sweep into training, and a finished training run into its MLUpdateProcess. A function-local import would break the integration mesh, whose loader removes `app.*` from `sys.modules` after loading each service.
@@ -207,6 +214,13 @@ All tables are in the `aimgf` schema; only AIMgF's database role reads or writes
 | `ml_model_loading_policy` / `_request` / `_process` | FK `aiml_inference_function_id` (CASCADE); request `request_status`; process `loaded_ml_model_refs`, request and policy refs |
 | `ml_update_function` / `_request` / `_process` / `_report` | request → process → report chain (CASCADE); `ml_model_refs` |
 
+**The ProvMnS store** (`aimgf_moi_store`, revision `aimgf_0001`, the first revision of the `aimgf` migration branch; the columns of `smo_shared.mns.store` under AIMgF's own table name (`store_model`, as SME's `mns_registry`: `migrations/table_owners.json` names each table once and Echo's is `moi_store`),
+put on the shared `Base` as `MOI_STORE` in `app/models.py`)
+
+| Table | Notes |
+|---|---|
+| `aimgf_moi_store` | `dn` (PK, `COLLATE "C"`), `object_class`, `moi_id`, `parent_dn`, `depth`, `attributes` (JSONB, GIN index), `moi_version` (the ETag), `created_at`, `updated_at`. The TS 28.105 instances and MLModelGovernance: written by the projection in the transaction of each row's change, and by the router for a consumer's write (whose hook writes the row too); a projection, so its loss loses nothing (the first start projects again) |
+
 **Status vocabularies.** `TrainingJob.status` uses TS 28.105 `requestStatus` values plus `FAILED`; `CANCELLING` is never produced because cancellation is synchronous. `MLTrainingProcess.status` is mapped from the job (`IN_PROGRESS` → `RUNNING`, `NOT_STARTED` → `NOT_RUNNING`). `MLTestingRequest.requestStatus` maps validation `COMPLETED` and `FAILED` both to `FINISHED`; the outcome is in `MLTestingReport.mLTestingResult`. Full tables per resource: [call flow 27](../docs/call-flows/27-ts28105-provisioning-resources.md).
 
 ### 2.3 State machines
@@ -261,6 +275,43 @@ Deploy needs model state `CERTIFIED` or `PROMOTED` (`409 MODEL_NOT_CERTIFIED`). 
 
 **Job status (not a third FSM).** Training: `IN_PROGRESS` → `FINISHED` / `FAILED` / `CANCELLED`, `IN_PROGRESS` ⇄ `SUSPENDED` (suspend only from `IN_PROGRESS`, resume only from `SUSPENDED`; resume restarts the timeout clock). Validation: `RUNNING` → `COMPLETED` / `FAILED` / `CANCELLED`, `RUNNING` ⇄ `SUSPENDED` (NRM flags only). Emulation and inference: `RUNNING` → `COMPLETED` / `FAILED` (inference FSM: `COMPLETE`, `FAIL`). A job already terminal cannot be completed again (409 `TRAINING_JOB_ILLEGAL_TRANSITION`, which is also the code used for validation, emulation and inference jobs). Suspend and resume never touch the model lifecycle.
 
+**The lifecycle mapping (S2.6, ADR 0010 section 3.4).** The 14 states stay; `provmns/mapping.py` maps them onto the HLD's seven stages and the
+bundle's `servingState` (`stage_of`, `serving_state_of`), the governance instance (MLModelGovernance) carries the `servingState`, and
+`tests/test_provmns_mapping.py` holds the code to this table and the bundle's `x-smo-serving-state-map`. The console shows both labels from Stage 6
+(S6.2's row).
+
+| AIMgF state (14) | HLD stage (7): REGISTERED → TRAINING → TESTED → EMULATED → CERTIFIED → LOADED → ACTIVE | Bundle `servingState` |
+|---|---|---|
+| REGISTERED | REGISTERED | REGISTERED |
+| TRAINING | TRAINING | REGISTERED |
+| TRAINED | TRAINING (complete; waits at the `APPROVE_TRAINING` gate) | REGISTERED |
+| VALIDATING | TESTED (in progress) | REGISTERED |
+| VALIDATED | TESTED (waits at the `APPROVE_VALIDATION` gate) | VALIDATED |
+| EMULATING | EMULATED (in progress) | VALIDATED |
+| EMULATED | EMULATED | VALIDATED |
+| PENDING_APPROVAL | EMULATED (submitted for certification) | VALIDATED |
+| APPROVED | EMULATED (approved, not yet certified) | VALIDATED |
+| CERTIFIED | CERTIFIED; LOADED while its runtime is DEPLOYED, ACTIVATING or SCALING; ACTIVE while it is ACTIVE | VALIDATED; SERVING_ACTIVE while its runtime is ACTIVE |
+| PROMOTED | CERTIFIED (the serving version of its group); LOADED / ACTIVE from the runtime as above | VALIDATED; SERVING_ACTIVE while its runtime is ACTIVE |
+| DEPRECATED | none (end of life) | DEPRECATED |
+| RETIRED | none (end of life) | DEPRECATED |
+| FAILED | none; a retrain re-enters at TRAINING (the HLD re-enters at REGISTERED) | REGISTERED (the bundle has no failed value; `lifecycleState` beside it says FAILED) |
+
+Each TS 28.105 class on the 14 states (`CLASS_LIFECYCLE`, S2.10): a class moves a model into some states and acts only on a model in others.
+
+| Class | Moves a model into | Acts on a model in |
+|---|---|---|
+| MLModel | REGISTERED (registration) | |
+| MLTrainingRequest | TRAINING | REGISTERED, CERTIFIED, PROMOTED, FAILED, TRAINING (a new request supersedes the run) |
+| MLTrainingProcess, MLTrainingReport | TRAINED or FAILED (the run's end) | TRAINING |
+| MLTestingRequest | VALIDATING | TRAINED (with APPROVE_TRAINING) |
+| MLTestingReport | VALIDATED or FAILED | VALIDATING |
+| AIMLInferenceEmulationFunction | EMULATING, EMULATED (its emulation runs) | VALIDATED (with APPROVE_VALIDATION) |
+| MLModelLoadingPolicy, MLModelLoadingRequest, MLModelLoadingProcess, AIMLInferenceFunction, AIMLInferenceReport | none (the runtime: LOADED, ACTIVE) | CERTIFIED, PROMOTED |
+| MLUpdateRequest, MLUpdateProcess | TRAINING (one FINE_TUNING run per model) | CERTIFIED, PROMOTED |
+| MLModelGovernance | every state (it is the lifecycle) | every state |
+| MLModelRepository, MLModelCoordinationGroup, MLTrainingFunction, MLTestingFunction, MLUpdateFunction, MLUpdateReport | none | none |
+
 **Group retrain propagation** (`should_trigger_group_retrain`). A breached MLMF report on a model that belongs to a coordination group of the registry applies the group's `retrainPropagation`: `ANY_MEMBER_TRIGGERS` fires on one breach; `MAJORITY_TRIGGERS` needs more than half the members (the code passes `breached_count=1`, so it only fires for groups of one); `WEIGHTED_TRIGGERS` raises `NotImplementedError` (`OI-1-weighted-triggers`); other values raise `ValueError`; the report route answers either as `groupRetrainError`. When it fires, every currently `PROMOTED` member gets a `RE_TRAINING` run; non-`PROMOTED` members are skipped.
 
 ### 2.4 API
@@ -296,11 +347,9 @@ Paths are relative to `/aimgf`, the one prefix every route answers at (the regis
 | Method | Path | Purpose / notable errors |
 |---|---|---|
 | GET | `/ml-models/{id}` | `{"id", "attributes"}` with `mLModelId`, `mLModelVersion`, writable attributes, plus `mLTrainingType`, `aIMLInferenceReportRefList`, `usedByFunctionRefList` read in process from the training reports, inference reports and functions that name the model. 404 `MODEL_NOT_FOUND` |
-| GET | `/ml-model-coordination-groups/{id}` | `memberMLModelRefList`, `mLModelRepositoryRef`. 404 `NRM_OBJECT_NOT_FOUND` |
 | POST / GET | `/ml-model-repositories` | Create / list; views list contained `MLModel` and `MLModelCoordinationGroup` ids |
 | GET / DELETE | `/ml-model-repositories/{id}` | Get (404 `NRM_OBJECT_NOT_FOUND`) / delete: contained models and groups become uncontained, not deleted |
 | GET | `/health` | Liveness |
-| GET | `/ml-models/{id}/nrm-refs` | `mLTrainingType`, `aIMLInferenceReportRefList`, `usedByFunctionRefList`: the attributes `GET /ml-models/{id}` reads in process; 200 for any id |
 
 
 **Deploy gate** (`loading/gate.py`)
@@ -370,26 +419,80 @@ another model or subscription is 422 `IDEMPOTENCY_KEY_REUSED`, as is the same ke
 is stored whatever the group-retrain step does (MLMF-REPORT-REPLAY); a failure before the commit stores nothing and releases the key. The other SDK POSTs here are safe by their state (a repeat is
 refused 409) or by the unique feature-group name; each says why in a `# Not @idempotent` comment.
 
-**TS 28.105 NRM resources.** Each is `{"id", "attributes"}`; unknown ids are 404 `NRM_OBJECT_NOT_FOUND`; bodies reject unknown attributes (422).
+**TS 28.105 NRM resources still on REST** (until S2.11 and S6 move their callers; the functions, reports and the loading process are ProvMnS only since S2.7 / S2.10, below). Each is `{"id", "attributes"}`; unknown ids are 404 `NRM_OBJECT_NOT_FOUND`; bodies reject unknown attributes (422).
 
 | Resource | Routes | Behaviour |
 |---|---|---|
-| MLTrainingFunction | `POST`, `GET` (list, id), `PUT`, `DELETE` on `/ml-training-functions` | |
 | MLTrainingRequest | `POST`, `GET` (list, id), `PATCH`, `DELETE` on `/ml-training-requests` | `POST` = a `TrainingJob` started through `_start_training` (403 `MODEL_ACCESS_DENIED` for an rApp that is not the model's owner, `SEC-15.3c`); exactly one of `mLModelRef` / `mLModelCoordinationGroupRef`; `PATCH` takes `cancelRequest` / `suspendRequest`; `DELETE` cancels an in-flight run |
 | MLTrainingProcess | `GET` (list, id), `PATCH`, `POST .../progress` on `/ml-training-processes` | `PATCH` writes `priority`, `terminationConditions`, `cancelProcess`, `suspendProcess`; `progress` is the runtime's `ProcessMonitor` write-back, only while `RUNNING` |
-| MLTrainingReport | `GET` (list, id) on `/ml-training-reports` | Written on every completion |
-| MLTestingFunction | `POST`, `GET` (list, id), `DELETE` | |
 | MLTestingRequest | `POST`, `GET` (list, id), `PATCH` on `/ml-testing-requests` | `POST` = a `ValidationJob` (same gates, same ownership check, `SEC-15.3c`); `cancelRequest` fails a model-targeted `VALIDATING` model; suspend / resume |
-| MLTestingReport | `GET` (list, id) | |
 | AIMLInferenceFunction | `POST`, `GET` (list, id), `PATCH`, `DELETE` on `/aiml-inference-functions` | `activationStatus` gates inference on that function |
 | AIMLInferenceEmulationFunction | `POST`, `GET` (list, id), `DELETE` | |
 | AIMLInferenceReport | `POST`, `GET` (list, id) on `/aiml-inference-reports` | `POST` needs exactly one function ref (422 otherwise); an rApp may report only on models it owns (403 `MODEL_ACCESS_DENIED`, call flow 27d) |
 | MLModelLoadingPolicy | `POST`, `GET` (list, id), `DELETE`, `POST .../trigger` | `trigger` runs a loading process with no request behind it |
 | MLModelLoadingRequest | `POST`, `GET` (list, id), `PATCH` | Synchronous: deploys (via NFO) and activates each named model that still needs it, adds it to the function's `mLModelRefList`. All models are checked first (409 `MODEL_NOT_CERTIFIED`, or `LIFECYCLE_ILLEGAL_TRANSITION` when the runtime is terminating / terminated). `suspendRequest=true` waits until `PATCH`ed back; `cancelRequest=true` loads nothing. A run that fails part-way releases the NFO runtimes it already deployed (call flow 27d). `PATCH` (cancel, suspend, resume) by an rApp needs its models to be its own (403) |
-| MLModelLoadingProcess | `GET` (list, id) | |
-| MLUpdateFunction | `POST`, `GET` (list, id), `DELETE` | |
 | MLUpdateRequest | `POST`, `GET` (list, id), `PATCH` | `POST` runs `FINE_TUNING` training for every named model, all-or-nothing at start (empty list 422; each model must be `REGISTERED` / `CERTIFIED` / `PROMOTED` / `FAILED`); `PATCH` cancels or suspends / resumes all runs |
-| MLUpdateProcess, MLUpdateReport | `GET` (list, id) | Report written once every run is terminal; process `FINISHED` only if all runs succeeded, else `FAILED` (the request is `FINISHED` either way) |
+| MLUpdateProcess | `GET` (list, id) | Process `FINISHED` only if all runs succeeded, else `FAILED` (the request is `FINISHED` either way); its MLUpdateReport, written once every run is terminal, is read over ProvMnS |
+
+#### TS 28.105 over ProvMnS (S2.7, S2.10)
+
+AIMgF mounts the generic TS 28.532 router of `smo_shared.mns` (`app/provmns/`): createMOI (`PUT`), getMOIAttributes (`GET`, with scope, filter,
+attribute selection and paging), modifyMOIAttributes (`PATCH`, merge or JSON patch) and deleteMOI (`DELETE`) at
+`/ProvMnS/v19.2.0/ManagedElement=AIMgF/...` (`/aimgf/ProvMnS/...` through R1), with the router's own checks (claim scope, audit, idempotency, trace,
+metric) and its error bodies. The store is `aimgf.aimgf_moi_store`. The class registry adds `TS28105_AiMlNrm.yaml` (v19.5.0) to the default TS 28.541 /
+28.623 files, and MLModelGovernance, the bundle's [D] class (D-07, `specs/smo-schema-bundle/openapi/modules/aimgf.yaml`), under its MLModel.
+
+**Where each instance sits** (`provmns/tree.py`): `ManagedElement=AIMgF` holds the functions and the repositories, as TS 28.105 contains them; a
+request, process or report sits in its function, a loading policy, request or process and an inference report in their inference function, a model
+and a coordination group in their repository, the governance instance in its model. An instance's id is its row's UUID; `default` (in each function
+class and MLModelRepository) holds what names no function or repository. References are DNs (TS 28.623 `Dn`).
+
+**How AIMgF keeps it**. AIMgF's tables stay the truth its runs work on; every transaction that changes a mapped row also writes its instance
+(`provmns/projection.py`, on the session's `before_commit`), from the view the REST route renders, so a run's progress, a report, a loading
+process or a lifecycle change shows over ProvMnS as it happens, each with its TS 28.532 notification on the event bus (`sourceIndicator`
+RESOURCE_OPERATION). An attribute the class does not declare (`createdAt`, this build's own references) or whose value the schema refuses is left
+out. Rows that existed before revision `aimgf_0001` are projected at the first start (`provmns/service.py` `start`).
+
+**What a write does** (`provmns/handlers.py`; a refusal is the route's status with `type` VETOED and the route's code in `reason`, and nothing is
+written):
+
+| Class | createMOI | modifyMOIAttributes | deleteMOI |
+|---|---|---|---|
+| MLTrainingFunction, MLTestingFunction, MLUpdateFunction, AIMLInferenceFunction, AIMLInferenceEmulationFunction | The row, under ROOT, named by a UUID | The attributes it keeps a column for (`activationStatus` gates inference as the PATCH does) | The row; its requests and reports keep theirs (the database sets the reference to NULL) and move to `default` |
+| MLModelLoadingPolicy | The row, under its inference function | Its attributes | The row |
+| MLTrainingRequest | `_start_training`: every gate of `POST /ml-training-requests`, the owner rule (`SEC-15.3c`), the NFO runtime, the model to TRAINING | `cancelRequest`, `suspendRequest` only | Refused: the record stays; cancel ends it (deleted only with its function) |
+| MLTestingRequest | `_start_validation`: TRAINED and APPROVE_TRAINING, the owner rule | the flags | as above |
+| MLUpdateRequest | `start_update`: one FINE_TUNING run per model, all-or-nothing | the flags | as above |
+| MLModelLoadingRequest | `start_loading`: the deploy gate's rule (CERTIFIED or PROMOTED), deploy and activate, the owner rule | the flags (a resume loads) | as above |
+| MLTrainingProcess | Refused (made with its request) | `priority`, `terminationConditions`, `cancelProcess`, `suspendProcess` | Only with its function |
+| AIMLInferenceReport | `record_inference_report`, under its inference function, the owner rule | Refused | Only with its function |
+| MLModel, MLModelRepository, MLModelCoordinationGroup | Refused: registered through `/models`, `/ml-model-repositories`, `/coordination-groups` until S2.11 (an artifact and an owner come with a model) | Refused | Only with a container |
+| MLModelGovernance | Refused | Refused: a governance decision is `POST /models/{id}/advance` by a console user (D-07) until S2.11 | Refused |
+| MLTrainingReport, MLTestingReport, MLUpdateProcess, MLUpdateReport, MLModelLoadingProcess | Refused: AIMgF's own | Refused | Only with their function |
+| ManagedElement | Refused: `ManagedElement=AIMgF` is AIMgF | Refused | Refused |
+
+A write naming an id that is not a UUID, a request created outside the function class that contains it, or an attribute AIMgF keeps no column for
+(`priorityLabel`, `vnfParametersList`, ...) is 422 VETOED naming it. The hooks apply the owner rule to the caller the gateway stamped; the request
+reaches them through `provmns.RequestContext`.
+
+**The REST routes of the TS 28.105 classes, after S2.7 and S2.10** (`scripts/interface_baseline/aimgf.json` holds the ones still served):
+
+| Routes | Now | Why, and where it goes |
+|---|---|---|
+| `/ml-training-functions` (POST, GET, GET id, PUT, DELETE), `/ml-testing-functions` (POST, GET, GET id, DELETE), `/ml-update-functions` (POST, GET, GET id, DELETE) | Served by the class; deleted | Only AIMgF's own tests called them |
+| `/ml-training-reports`, `/ml-testing-reports`, `/ml-update-reports`, `/ml-model-loading-processes` (GET, GET id each) | Served by the class; deleted | as above |
+| `GET /ml-model-coordination-groups/{id}`, `GET /ml-models/{id}/nrm-refs` | Served by MLModelCoordinationGroup and MLModel; deleted | as above |
+| `/ml-training-requests`, `/ml-training-processes` (GET, PATCH), `/ml-testing-requests`, `/ml-update-requests`, `/ml-update-processes`, `/ml-model-loading-requests`, `/ml-model-loading-policies`, `/aiml-inference-functions`, `/aiml-inference-emulation-functions` | Served by the class too; the REST route waits in the baseline | The console's AI/ML pages and the BFF's role rules call them (S6.8 retires the pages onto the generic views of S6.2), and the integration suite; out of this lane |
+| `/aiml-inference-reports` (POST, GET, GET id) | The class serves create and read; the REST route waits | The Python SDK's `lifecycle` calls it (S2.11's SDK work) |
+| `POST /ml-training-processes/{id}/progress`, `POST /ml-model-loading-policies/{id}/trigger` | No ProvMnS equivalent (an action, not an attribute); waits | The R1 AI/ML workflow services (S2.11) |
+| `GET /ml-models/{id}` and the registry's writes (`/models`, `/coordination-groups`, `/ml-model-repositories`) | MLModel and its repository and group are read over ProvMnS; writes stay REST | Integration suite and SDK callers; R1GAP §5.6.2 registration on MLModel is S2.11 |
+| The job routes (`/training-jobs`, `/validation-jobs`, `/emulation-jobs`, inference jobs) | Their runs are the request instances above; the routes wait | S2.11 |
+
+**MnS registry and routing.** At start-up AIMgF registers in SME's MnS registry (TS 28.622 MnsInfo with its TS 28.537 MgmtDataInfo, S1.12)
+through `smo_shared.mns.mns_registry.install_self_registration`: the ProvMnS producer (PROV_MNS, v19.2.0) of its 22 classes, scoped to
+`ManagedElement=AIMgF`, with the capability ML_MODEL_MANAGEMENT, retried in the background until SME answers. R1 Termination then routes
+`/ProvMnS/19.2.0/ManagedElement=AIMgF/...` to AIMgF by registry lookup (S1.8); the scope is what sends these DNs here rather than to Echo, which
+serves ManagedElement with no scope.
 
 #### Where the registry and the deploy gate were
 
@@ -483,9 +586,10 @@ Errors are RFC 7807 ProblemDetails from `framework_error()`; the code is carried
 - Runtime scaling takes no target size (NFO scale has no replica or resource argument); there is no asynchronous completion from NFO (instantiate is synchronous).
 - No distributed-training engine consumes the FL / RL requirements.
 - Every NFO answer is checked (`_nfo_call`, 2.5): a refusal is 502 `UPSTREAM_FAILED`, no answer 503 `ENDPOINT_UNREACHABLE`, and nothing is committed. A job still ends when NFO does not terminate its runtime; the deployment's ids then stay on the job. A crash between the NFO call and `commit` leaves an NFO deployment AIMgF does not know of.
-- `GET /aiml-inference-reports` filters and paginates in Python after loading all rows (not SQL `LIMIT` / `OFFSET`), and `nrm-refs` scans all reports and functions.
+- `GET /aiml-inference-reports` filters and paginates in Python after loading all rows (not SQL `LIMIT` / `OFFSET`), and an MLModel's projection (`ml_model_nrm_refs`) scans all reports and functions.
 - A feature group registered with the deprecated clear-text `token` still has it in `feature_group.token` (not returned by any route); it is moved to a secret by registering the group again with a `tokenRef`. The SDK and the console send `tokenRef` (`SEC-15.2b`); the server still accepts `token` until a later minor release. `SEC-15.2b` in `OPEN_ITEMS.md`.
-- MLTrainingReport's `trainingProcessRef` is filled by the list / get views, not stored.
+- MLTrainingReport's `trainingProcessRef` is read from the job's process when the report is projected, not stored.
+- ProvMnS (2.4): the registry's classes and MLModelGovernance are read only until S2.11; a training request created over ProvMnS takes no `dmeDataJobIds`, `notificationUri`, `packageId`, `runtimeProfile` or `timeoutSeconds` (this build's own fields, which the REST route takes); the projection runs on every commit that touches a mapped row, which roughly doubles the time of a write-heavy suite on SQLite; `scripts/mutation_pilot.sh` does not yet run AIMgF's `provmns/` (its configuration is `aimgf/pyproject.toml`; adding the step is a `[cross-lane]` change).
 - Registry: artifacts are bytes in `model_artifact.content` until S2.5 moves them to the object store; only `.zip` names are accepted (S2.5 brings ONNX and Safetensors only). Coordination-group member ids are not checked against registered models, and `retrainPropagation` is checked only when a breach is reported. `model_change_subscription` is unused until R1GAP §5.6.5 (S1.13). A model registered before `SEC-15.3b` has no owner and stays open to every rApp until an operator sets one (`OPEN_ITEMS.md` `SEC-15.3c`). TS 29.482 limits are in 1.2.
 - Revision 0064 moved the registry's tables into the `aimgf` schema without changing them; the ORM still keeps no foreign key from the lifecycle and run tables to `aiml_model` (history outlives a model).
 
@@ -514,7 +618,7 @@ Counts per file: [`docs/test-counts/aimgf.md`](../docs/test-counts/aimgf.md).
 | `tests/test_on_behalf_owner.py` | `MLLF-NODEGROUP-OWNER`: an SMO module acting for another rApp (`X-R1-On-Behalf-Of`) is 403 `MODEL_ACCESS_DENIED` on node-groups (nothing written) and on every route of the `SEC-15.3c` table, while one acting for the owner, or for nobody, passes; an inference job a module requests records the rApp it acts for as `requested_by` |
 | `tests/test_runtime_model_checks.py` | `SEC-15.3`: activate of an unknown model is 404 with no lifecycle row; NOT_TRAINED and IN_TRAINING are 409 on deploy, activate and inference; TRAINED, IN_RETRAINING, DEPLOYED and no phase pass; another rApp is 403 on deploy and activate, the owner, the operator and an unowned model pass; inference by a non-owner by `accessReqs`; `SEC-15.3b`: scale, terminate and node-groups are 404 for an unknown model (no lifecycle row) and 403 for another rApp, the owner, the operator, a call with no role and an unowned model pass, terminate ignores the phase; `MLModelLoadingRequest` (create, resume) and the loading-policy trigger are 403 for a model of another rApp and all-or-nothing across owners |
 | `tests/test_advance_role.py` | `SEC-15.1`: an rApp token is 403 `ROLE_NOT_PERMITTED` on `advance` for a governance decision, `DEPRECATE`, `RETIRE` and an unknown event (the role comes before the event), with the lifecycle and the governance history unchanged; the console (`internal`) and a call without a role advance as before |
-| `tests/test_nrm.py` | TS 28.105 requests as real jobs, spec enum rejection, process flags and progress, chained training reports, testing requests, loading request / policy / process, inference-function gating, emulation reports, update request / report, 404 for unknown NRM objects, `?total=false` on an NRM list and on the in-memory inference-report list |
+| `tests/test_nrm.py` | TS 28.105 requests as real jobs (the functions, reports and the loading process read and written over ProvMnS since S2.7 / S2.10), spec enum rejection, process flags and progress, chained training reports, testing requests, loading request / policy / process, inference-function gating, emulation reports, update request / report, 404 for unknown NRM objects, `?total=false` on an NRM list and on the in-memory inference-report list |
 | `tests/test_runtime.py` | `containerResources` beside the raw profile (package, explicit, inference, unsized has none, memory that is not a quantity is 422); runtime profile sizing (package, explicit, unknown package), per-mode profiles, stage timeouts, lazy expiry, suspended runs pausing, timeouts never forcing an illegal transition, 5 s inference default, clock restart on NRM resume |
 | `tests/test_training_progress_and_counts.py` | `GUI-9.8` epoch progress: no epochs and no ETA at first, the ETA from the pace so far (status, list and progress answers), epoch-only and partial reports, no ETA before the first epoch or once suspended, refused reports (empty, beyond the total, negative, not `IN_PROGRESS`), the metrics writeback records whole-number epochs and ignores others. `GUI-9.4` models by stage: counts per state largest first, none is an empty list. `GUI-7.3`: `awaiting_decision` keeps exactly the lifecycles a person must decide on, by state and gate flag (table of ten), and the rest with `false` |
 | `tests/test_steps_and_feature_groups.py` | training steps (start, forward progress, no going back, suspended and ended runs, how a run ended, a finished run, validation); feature-group DME job (created with the group, none without `enableDme`, a refusal means no group, duplicate name first, delete terminates it, delete without a job) |
@@ -524,6 +628,9 @@ Counts per file: [`docs/test-counts/aimgf.md`](../docs/test-counts/aimgf.md).
 | `tests/test_governance_end_of_life.py` | Call flow 26 (DOC-CF-1.7): every model and runtime transition published as `model-lifecycle.state-changed` (certify, deploy, deprecate, retire with its teardown); a refused decision publishes nothing; the decider and rationale recorded as sent; RETIRE that NFO does not carry out answers 502 and leaves the model DEPRECATED with its runtime; a RETIRED model takes no new subscription or report, a DEPRECATED one and one with no lifecycle still do |
 | `tests/test_job_ownership.py` | Call flow 02 (DOC-CF-1.6): another rApp is 403 on every route that acts on a run (complete, progress, metrics, suspend, cancel, the NRM request and process routes) and the run stays IN_PROGRESS, while the owner, the console and a call with no role pass; resume; an owner-less model or one the registry forgot is open; a group run needs every known member; validation and emulation completes; testing and update request PATCH; an inference job resolved only by its requester or the owner, and a console-requested one only by the owner; a group retrain skips a member NFO refuses and starts the rest |
 | `tests/test_runtime_nfo.py` | Call flow 17 (DOC-CF-1.5): a deploy NFO refuses or does not answer records nothing and leaves no descriptor; a refused descriptor instantiates nothing; terminate removes deployment and descriptor and a redeploy makes new ones; a refused terminate or unanswered scale leaves the runtime as it was; a job runtime goes with its descriptor, a refused one fails the request, one NFO did not remove keeps its ids; the workload read and the inference it allows (RUNNING, ABNORMAL, GONE, UNKNOWN, no state); no workload without a live runtime; a loading request redeploys a terminated runtime |
+| `tests/test_provmns.py` | S2.7 / S2.10: every class served and resolvable, the governance schema equal to the bundle's, the S1.12 registration (scope and capability); a REST write projected (ROOT, `default`, DN references, the governance instance, a RESOURCE_OPERATION notification), the start-up projection, attributes left out; over ProvMnS: a training request starts a real run, cancelRequest ends it, a testing request after APPROVE_TRAINING, a refused one (409 VETOED with the route's code, nothing written), the owner rule (403), loading a CERTIFIED model to SERVING_ACTIVE and refusing an uncertified one, an update request's FINE_TUNING runs, an inference report, a training process's priority and flags; a function written through and its delete moving its requests to `default`; read-only classes, a request's delete, ROOT's delete, a non-UUID id and an attribute AIMgF does not take refused |
+| `tests/test_provmns_mapping.py` | S2.6: the 14 states to the 7 stages and servingState, row by row, with and without a runtime; the table equal to the bundle's `x-smo-serving-state-map`; LOADED / ACTIVE / SERVING_ACTIVE from the runtime for CERTIFIED and PROMOTED only; unknown states refused; every served class on the 14 states |
+| `tests/provmns_reads.py` | (helpers, not tests) ProvMnS reads and creates for the suites whose REST routes S2.7 / S2.10 replaced |
 | `tests/test_statemachine.py` | both FSMs (full pipeline, no shortcuts, retrain re-entry, rollback, reject, terminal states, state counts), inference FSM, retrain propagation policies, `ADVANCEABLE_EVENTS`, `TRAINABLE_STATES` |
 
 The counts are test functions; the suite reports more passed because some tests are parametrised (counts: [docs/test-counts/aimgf.md](../docs/test-counts/aimgf.md)).

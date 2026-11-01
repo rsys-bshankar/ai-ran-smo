@@ -19,6 +19,8 @@ from smo_shared.db import Base, get_session
 from smo_shared.idempotency import IdempotencyKey
 from smo_shared.testing import make_test_engine
 
+from provmns_reads import find, ids, instance
+
 from app import models as aimgf_models
 from app.main import app
 from app.models import AIMLInferenceFunction, AIMLInferenceReport, MLTrainingReport, ModelLifecycle, TrainingJob
@@ -36,7 +38,7 @@ def db_session_factory():
     Base.metadata.create_all(engine, tables=[
         cls.__table__ for module in (aimgf_models, registry_models) for cls in vars(module).values()
         if isinstance(cls, type) and issubclass(cls, Base) and cls is not Base and cls.__module__ == module.__name__
-    ] + [audit.AuditEntry.__table__, audit.AuditHead.__table__, IdempotencyKey.__table__])
+    ] + [aimgf_models.MOI_STORE, audit.AuditEntry.__table__, audit.AuditHead.__table__, IdempotencyKey.__table__])
     return sessionmaker(bind=engine)
 
 
@@ -623,7 +625,7 @@ def test_register_with_ts28105_attributes_and_nrm_view(client, db_session_factor
     assert attrs["supportedPerformanceIndicators"][0]["isSupportedForTesting"] is False
     assert (attrs["mLTrainingType"], attrs["usedByFunctionRefList"]) == ("INITIAL_TRAINING", [function_id])
     assert len(attrs["aIMLInferenceReportRefList"]) == 1
-    assert client.get(f"/ml-models/{model_id}/nrm-refs").json()["usedByFunctionRefList"] == [function_id]
+    assert ids(find(client, "MLModel", model_id)["usedByFunctionRefList"]) == [function_id]   # nrm-refs is the MLModel instance since S2.7
     assert client.get(f"/ml-model-repositories/{repo['id']}").json()["MLModel"] == [model_id]
     # this build's own view carries the writable spec attributes too
     assert client.get(f"/models/{model_id}").json()["mLModelRepositoryRef"] == repo["id"]
@@ -663,12 +665,13 @@ def test_coordination_group_nrm_view_and_repository_delete_uncontains(client):
     a = client.post("/models", json={"modelType": "a", "version": "1", "mLModelRepositoryRef": repo["id"]}).json()["modelId"]
     b = client.post("/models", json={"modelType": "b", "version": "1"}).json()["modelId"]
     group_id = client.post("/coordination-groups", json={"memberModelIds": [a, b], "mLModelRepositoryRef": repo["id"]}).json()["groupId"]
-    view = client.get(f"/ml-model-coordination-groups/{group_id}").json()
-    assert view["attributes"]["memberMLModelRefList"] == [a, b]
+    view = find(client, "MLModelCoordinationGroup", group_id)                 # a ProvMnS class since S2.10
+    assert ids(view["memberMLModelRefList"]) == [a, b]
+    assert f"MLModelRepository={repo['id']}" in instance(client, "MLModelCoordinationGroup", group_id)["objectInstance"]
     assert client.get(f"/ml-model-repositories/{repo['id']}").json()["MLModelCoordinationGroup"] == [group_id]
     assert client.delete(f"/ml-model-repositories/{repo['id']}").status_code == 204
     assert client.get(f"/models/{a}").json()["mLModelRepositoryRef"] is None
-    assert client.get(f"/ml-model-coordination-groups/{group_id}").json()["attributes"]["mLModelRepositoryRef"] is None
+    assert ",MLModelRepository=default," in instance(client, "MLModelCoordinationGroup", group_id)["objectInstance"]   # uncontained: the default repository
     assert client.get(f"/ml-model-repositories/{repo['id']}").status_code == 404
 
 

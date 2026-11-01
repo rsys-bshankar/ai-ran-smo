@@ -252,17 +252,20 @@ def test_migrating_twice_is_a_no_op_and_never_restamps(databases):
 
 @needs_postgres
 def test_a_database_at_a_later_revision_is_left_alone_by_this_images_migrate(databases):
-    """A rollback can run an older image's migrate Job against the schema of a later release: that is not an error, and it changes nothing."""
+    """A rollback can run an older image's migrate Job against the schema of a later release: that is not an error, and it changes nothing. One
+    head is moved to a later revision (with several module branches, `alembic_version` holds a row per head, and the version is its key)."""
     url = databases["fresh"]
     assert _run(MIGRATE, url).returncode == 0
     engine = create_engine(url)
     with engine.begin() as connection:
-        connection.execute(text("UPDATE alembic_version SET version_num = '9999'"))
+        first = connection.execute(text("SELECT min(version_num) FROM alembic_version")).scalar_one()
+        connection.execute(text("UPDATE alembic_version SET version_num = '9999' WHERE version_num = :first"), {"first": first})
+        current = ",".join(sorted(connection.execute(text("SELECT version_num FROM alembic_version")).scalars()))
     engine.dispose()
     again = _run(MIGRATE, url)
     assert again.returncode == 0, again.stderr
     assert "a revision this image does not know" in again.stdout
-    assert _run(MIGRATE, url, "--current").stdout.strip() == "9999"
+    assert _run(MIGRATE, url, "--current").stdout.strip() == current and "9999" in current
 
 
 @needs_postgres

@@ -117,6 +117,18 @@ Registry NRM on SME's own store, `sme.mns_registry`; what a registration holds a
 - **Discovery** by class, api-cat (an mnsType or an mnsCapability value) and optimisation domain: a flat getMOIAttributes of the registry and
   `smo_shared.mns.mns_registry.discover`; R1 Termination routes `/ProvMnS/{version}/{LDN}` by `producer_for` (`r1-termination/README.md`).
 
+### 1.7 Access control per TS 28.319 (plan task S1.14)
+
+`app/msac_store.py`: TS 28.319 `Identity`, `Role` and `AccessRule` over ProvMnS, under `SubNetwork=SMO` (`/ProvMnS/19.2.0/SubNetwork=SMO/AccessRule=...`).
+The five roles of ADR 0008 D15 (PLATFORM_ADMIN, NOC_OPERATOR, ML_ENGINEER, RAPP_DEVELOPER, READ_ONLY_AUDITOR) are written with their AccessRules the
+first time SME finds them missing (`smo_shared/auth/roles.py` says what each may do); they may be changed, not deleted. An Identity names a caller by
+`identityName` (the console's `smo-gui:<user>`, or an invoker id) and lists Roles; it carries no `credential`. An AccessRule outside the selector
+subset `smo_shared.msac` evaluates is refused. Every ProvMnS route of every module decides with `smo_shared.auth.AccessRuleAuthorizer` (the ADR 0005
+claim as AccessRules, plus the caller's Identity rules where the module reads them); SME's own routes read these rows in the request's session, so a
+NOC_OPERATOR cannot change the rules that bind it; another module reads them through R1 with `SMO_ACCESS_RULES=sme`. SME also serves
+`NtfSubscriptionControl` and `HeartbeatControl` like every producer (S1.13), and registers all these classes, and SubNetwork for reads of its
+container, within mnsScope `SubNetwork=SMO`.
+
 ## 2. Low-level design (LLD)
 
 ### 2.1 Code map
@@ -285,6 +297,7 @@ Counts per file: [`docs/test-counts/sme.md`](../docs/test-counts/sme.md).
 | | Trusted invokers: validation, replace, redaction and reveal, update, revocation (by `aefId`, whole record), 404s |
 | | Registry reads (providers with service count, invokers without secrets, trusted invokers, event subscriptions) and health |
 | `tests/test_mns_registry.py` | The MnS registry (S1.7, S1.12): a read on a new database lists the registry and SME; a producer registers and is found by class, api-cat and domain; registering again unchanged answers 200 and publishes nothing; ServiceReady and NotifyServiceChange (MODIFIED, REMOVED); the MnsRegistry is read only; the container is not served; an `mnsAddress` that is no http(s) URL with a host is vetoed; schema validation; every write audited |
+| `tests/test_msac_store.py` | TS 28.319 (S1.14): the five D15 roles and their rules; no credential; an AccessRule this build cannot evaluate is refused; a D15 role is not deleted; a caller with no Identity is unmanaged; a NOC_OPERATOR reads but cannot change the rules; an admin writes and an auditor reads only; an Identity with no rule reaches nothing; a rule change applies at once; the claim's SubNetwork axis |
 | `tests/test_scope.py` | PR-SEC-10.3: an invoker without a claim is unscoped and introspection says nothing of one; the claim at registration is returned sorted by introspection; invalid claims are 422 with a fixed message and register nothing; an operator sets, replaces and removes a claim and it applies to tokens already issued; a scoped caller (or a module acting for a scoped rApp) cannot mint a wider invoker |
 | `tests/test_security.py` | Scope: unscoped and internal scopes, a `3gpp#` scope over published APIs (and introspection of it), unpublished API, wrong AEF, malformed entries, unknown scope, an API hidden from the invoker |
 | | Client assertions: RSA and EC keys, one token per assertion, wrong key / audience / issuer, expired, too long-lived, no `jti`, label-only invoker, secret and assertion together, malformed PEM at onboarding, key rotation, offboarding revokes tokens |
