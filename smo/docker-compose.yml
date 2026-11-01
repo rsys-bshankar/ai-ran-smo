@@ -1045,9 +1045,10 @@ services:
   # so per-owner ACLs (PR-CONV-S1.15) can be added without renaming, and smo-teiv's ingestion topic (smo.teiv....) is not created here and is no module's but
   # TE&IV's. `kafka-init` creates the event bus's topic smo.events.v1 (6 partitions by default, one replica: one broker); the DME worker relays to it.
   kafka:
-    profiles: ["kafka"]
+    profiles: ["kafka", "teiv"]                    # TE&IV's smo-teiv shares this broker (S3.23)
     image: apache/kafka:3.9.1@sha256:4ceccc577f03f51f6af8dbfda55194d0d892f4fa7913ffbded567ce3895622ed
     restart: unless-stopped
+    networks: [default, teiv]                      # the DME worker's relay on default; smo-teiv's ingestion on teiv only
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     environment:
@@ -1090,6 +1091,130 @@ services:
       SMO_KAFKA_PARTITIONS: ${SMO_KAFKA_PARTITIONS:-6}
       SMO_KAFKA_REPLICATION: ${SMO_KAFKA_REPLICATION:-1}
 
+  # ---------------------------------------------------------------- TE&IV on O-RAN-SC smo-teiv (profile `teiv`, plan task S3.23, ADR 0013 section 8, D19)
+  # smo-teiv 0.3.0 with TE&IV's model extension (teiv/model/), built from the pinned tag (teiv/Dockerfile, teiv/Dockerfile.db; O-RAN-SC publishes no 0.3.0
+  # image; .github/workflows/teiv-image.yml builds and publishes the same two images for the chart). Not part of the default stack:
+  #   ./scripts/init_secrets.sh && docker compose --profile teiv up -d --build
+  # Two processes of one image: `teiv-ingestion` consumes TE&IV's CloudEvents from the topic smo.teiv.ingestion.v1 on the shared broker (`kafka`, which
+  # the profile starts too) and is the only writer of smo-teiv's database (D6); `teiv-exposure` serves smo-teiv's own REST API. D19 / ADR 0011: no module but
+  # TE&IV reaches the topic, the database or that API. The database and the API are on the network `teiv` only (internal: no egress), which only these
+  # services and the broker join, and they publish no port; the topic is reserved by name (smo_shared/kafka_settings.py refuses smo.teiv.* for any other
+  # producer, and the Kafka relay of the DME worker cannot be pointed at it); per-principal ACLs on the broker are PR-CONV-S1.15.
+  # TE&IV's own process (the facade, the only producer of the topic, S3.19) joins `teiv` when it exists. Memory: 3 GiB at 1,000 cells for these three and
+  # the broker (teiv/loadtest/budget.py, the CI workflow "TE&IV load"); the heap sizes and limits below hold it.
+  teiv-db:
+    profiles: ["teiv"]
+    build:
+      context: ./teiv
+      dockerfile: Dockerfile.db
+      additional_contexts:
+        teiv: ${TEIV_SOURCE:-https://github.com/o-ran-sc/smo-teiv.git#ee898469d2b9a3de5047ac6675f097ca72e97884}
+    image: local/smo-teiv-db:0.3.0-ext
+    restart: unless-stopped
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]      # the Postgres entrypoint chowns its data directory and drops to the postgres user
+    security_opt: ["no-new-privileges:true"]
+    networks: [teiv]
+    secrets: [teiv_db_password]
+    environment:
+      POSTGRES_DB: topology_exposure_db
+      POSTGRES_USER: topology_exposure_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/teiv_db_password
+    volumes:
+      - smo_teiv_pgdata:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits: { memory: 768m }
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U topology_exposure_user -d topology_exposure_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # Creates TE&IV's ingestion topic on the shared broker before smo-teiv's ingestion starts (the broker creates no topic on its own). smo-teiv's own
+  # admin client would make it with three replicas (upstream's default) and retry for ever on one broker; here it exists, with one.
+  teiv-kafka-init:
+    profiles: ["teiv"]
+    image: apache/kafka:3.9.1@sha256:4ceccc577f03f51f6af8dbfda55194d0d892f4fa7913ffbded567ce3895622ed
+    restart: "no"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 30s
+    networks: [teiv]
+    depends_on: { kafka: { condition: service_healthy } }
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic smo.teiv.ingestion.v1
+        --partitions 4 --replication-factor 1
+
+  teiv-ingestion:
+    profiles: ["teiv"]
+    build: &teiv_build
+      context: ./teiv
+      additional_contexts:
+        teiv: ${TEIV_SOURCE:-https://github.com/o-ran-sc/smo-teiv.git#ee898469d2b9a3de5047ac6675f097ca72e97884}
+    image: local/smo-teiv:0.3.0-ext
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: [/tmp]
+    networks: [teiv]
+    secrets:
+      - { source: teiv_db_password, target: SERVICE_DB_PASSWORD }     # read by Spring's configtree below, so the password is never an environment variable
+    environment: &teiv_env
+      SPRING_PROFILES_ACTIVE: ingestion
+      SPRING_CONFIG_IMPORT: optional:configtree:/run/secrets/
+      SERVICE_DB_URL: jdbc:postgresql://teiv-db:5432/topology_exposure_db
+      SERVICE_DB_REPLICA_URL: jdbc:postgresql://teiv-db:5432/topology_exposure_db
+      SERVICE_DB_USER: topology_exposure_user
+      # the shared broker, TE&IV's topic (one replica, as made by teiv-kafka-init) and a consumer group named for it
+      SPRING_APPLICATION_JSON: >-
+        {"kafka":{"server":{"bootstrap-server-host":"kafka","bootstrap-server-port":9092},
+        "topology-ingestion":{"topic":{"name":"smo.teiv.ingestion.v1","partitions":4,"replicas":1},"consumer":{"group-id":"smo.teiv.ingestion"}}}}
+      JAVA_TOOL_OPTIONS: -Xms256m -Xmx768m -XX:MaxMetaspaceSize=192m -XX:+ExitOnOutOfMemoryError
+    deploy:
+      resources:
+        limits: { memory: 1152m }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health/liveness > /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    depends_on:
+      teiv-db: { condition: service_healthy }
+      teiv-kafka-init: { condition: service_completed_successfully }
+
+  teiv-exposure:
+    profiles: ["teiv"]
+    build: *teiv_build
+    image: local/smo-teiv:0.3.0-ext
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: [/tmp]
+    networks: [teiv]
+    secrets:
+      - { source: teiv_db_password, target: SERVICE_DB_PASSWORD }
+    environment:
+      <<: *teiv_env
+      SPRING_PROFILES_ACTIVE: exposure,groups
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx384m -XX:MaxMetaspaceSize=192m -XX:+ExitOnOutOfMemoryError
+    deploy:
+      resources:
+        limits: { memory: 640m }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health/readiness > /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    depends_on:
+      teiv-db: { condition: service_healthy }
+
   gui:
     build: { context: ./gui }
     <<: *hardening
@@ -1097,6 +1222,8 @@ services:
     ports: ["3000:8080"]
 
 secrets:
+  teiv_db_password:               # smo-teiv's own database (profile teiv, S3.23), created by scripts/init_secrets.sh
+    file: ./secrets/teiv_db_password
   objectstore_access_key:         # the object store's access key id and secret key (profiles objectstore, minio), created by scripts/init_secrets.sh
     file: ./secrets/objectstore_access_key
   objectstore_secret_key:
@@ -1150,8 +1277,11 @@ secrets:
 
 networks:
   default:
+  teiv:                           # smo-teiv's database and API, its ingestion and the broker only (profile teiv, S3.23); internal: no route out
+    internal: true
 
 volumes:
+  smo_teiv_pgdata:
   smo_objectstore:
   smo_minio:
   smo_kafka:

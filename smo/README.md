@@ -253,6 +253,7 @@ The converged stack's stores, decided in ADR 0008 (section 3.5):
 | **SeaweedFS** object store, S3 API (Apache-2.0) | D10 | profile `objectstore` | later (S2.5) |
 | **MinIO**, the same S3 API (**AGPL-3.0**) | D10, optional | profile `minio` | no |
 | **Kafka**, the event-bus relay (ADR 0006 slices 1–3) | D9 | profile `kafka`, built with `SMO_WITH_KAFKA=1` | later (ADR 0006 slice 5) |
+| **smo-teiv 0.3.0**, TE&IV's topology store, with TE&IV's model extension (ADR 0013) | D19 | profile `teiv` (its Postgres, ingestion and exposure, on the `kafka` broker; reachable by nothing else) | `teiv.enabled`, with a broker of yours |
 
 **Licensing.** SeaweedFS is the default object store because it is Apache-2.0. MinIO is AGPL-3.0: running it unmodified as a separate service does not put the
 SMO under the AGPL, but changing MinIO and offering it over a network does oblige you to publish your changes; it is kept optional and isolated (its own profile,

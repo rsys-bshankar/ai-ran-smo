@@ -4,7 +4,7 @@
 > through the standards) stands, with the conditions of section 9. Nothing here is built into a module: the spike is `spikes/teiv/` (no module imports
 > it), and the work it found is the Stage 3 rows of section 10. **Section 11** (the extension spike, S3.20's go/no-go) recommends **go**: the missing
 > model is carried by model files and smo-teiv's own generator, with no change to smo-teiv's Java code. **The owner confirmed go on 1 November 2026**
-> (section 11.6): D19 is decided.
+> (section 11.6): D19 is decided. **Built** (section 11.7): smo-teiv packaged for the stack (S3.23) and the WG10 TE&IV R1 API in `specs/` (S3.24).
 
 Paths are relative to `smo/`. Written against `main` at 4a237de. smo-teiv was read at its tag and run, here and on a CI runner (sections 2–5); the numbers are
 from `spikes/teiv/measure.py`. The architecture is [ADR 0008](0008-converged-architecture.md) (section 3.6, D6, D7, D19); the interfaces are
@@ -339,3 +339,50 @@ Also not supported, and not needed: a scope filter that follows two associations
 - What S3.20 carries from here: the two modules (and S3.21's attributes in them); the generator run at image build (S3.23's mirror job builds the
   database image the same way); the NEIGHBOR_CELL direction (b5) and the fan-out two-hop read (b6) in S3.19's facade; the boolean-as-enumeration
   mapping until c1 is upstream; c1–c3 offered to O-RAN-SC with the model. No row of `OPEN_ITEMS.md` changes for a go.
+
+### 11.7 As built: the packaging (S3.23) and the WG10 TE&IV API (S3.24)
+
+**Packaging (S3.23).** `teiv/` holds what the spike built, moved out of `spikes/teiv/`: the two Dockerfiles (smo-teiv 0.3.0 from the tag's commit with
+the extension in its jar; its PostGIS 13 database with the schema smo-teiv's generator writes), `model/` and `maven-settings.xml`. The stack runs them as
+the compose profile `teiv` (`teiv-db`, `teiv-kafka-init`, `teiv-ingestion`, `teiv-exposure`) on the shared broker of the profile `kafka` (TE&IV's topic
+`smo.teiv.ingestion.v1`, four partitions, consumer group `smo.teiv.ingestion`), and as the chart's optional `teiv` (`templates/teiv.yaml`, which needs a
+broker address: the chart brings none, PR-CONV-S1.10b). `.github/workflows/teiv-image.yml` publishes the two images (`smo-teiv`, `smo-teiv-db`, tag
+`0.3.0-ext`) like `oran-sim-image.yml`; "TE&IV load" (`teiv-load.yml`) builds them, starts the profile, runs the budget and the isolation check. D19's
+isolation as built: in compose the database and both processes are on the internal network `teiv` only (no route out; nothing else on it but the broker)
+and publish no port; in the chart, NetworkPolicies admit the database from the two smo-teiv pods and the API from TE&IV's own pods only; the topic is
+reserved by name (`smo_shared.kafka_settings` refuses `smo.teiv.*`), and per-principal ACLs wait for S1.15. The database password is a file Spring reads
+through its configtree, never an environment variable. Memory: the heaps are fixed (ingestion `-Xmx768m`, exposure `-Xmx384m`) and each container has a
+limit; `teiv/loadtest/budget.py` at 1,000 cells (the 11.4 tree, 18,004 MOIs, visible after 55 s, then a minute of reads) measured a **peak of the sum of
+1,979 MiB** for the four containers (ingestion 635, exposure 416, database 336, Kafka 603 MiB peaks), inside the 3 GiB budget; 11.4's 2.6 GiB was the
+JVMs sized by default from a 16 GB host.
+
+**The WG10 TE&IV R1 API (S3.24).** O-RAN.WG10.TS.TE&IV-API.0-R005-v04.00 Annex A is `specs/oran/teiv/TEIV_API_R005_v04.yaml` (OpenAPI 3.0.3,
+`info.version` 1.2.1), extracted from the PDF's text layer with only extraction artefacts fixed (`specs/README.md` lists them). Its 16 operations against
+smo-teiv 0.3.0's own API (1.2.0), compared by method, path, operationId, parameters, request body and response codes: **all 16 exist in smo-teiv with the
+same method, path, operationId, parameters and body**; 14 are identical, and `updateClassifier` and `updateDecorator` differ only in that smo-teiv may
+answer 409, which the standard does not list. Every collection answer of smo-teiv adds paging links (`self`, `first`, `prev`, `next`, `last`) the
+standard does not define and leaves the standard's `required` members undeclared. smo-teiv's groups, `createSchema` / `deleteSchema`,
+`getEntitiesByDomain` and two deprecated paths have no standard counterpart and stay internal. The bundle's `teiv.yaml` `$ref`s the 16 and records the
+mapping (`x-smo-teiv-api`): G9 is closed.
+
+**The data model (TE&IV-DM R005 v06.00) against smo-teiv 0.3.0's model and the extension.** The standard's RAN module (revision 2026-07-03) has ten
+entity types, all in smo-teiv's (which adds `SMO` and `Sector` and sixteen relationships, the O1, E1, E2, F1 and open-fronthaul links); its physical
+domain adds `AntennaModule` with two relationships, and three of its cloud relationships and one physical one are named differently from smo-teiv's
+(`CLOUDIFIEDNF_REALIZED_BY_NFDEPLOYMENT` for `CLOUDIFIEDNF_COMPRISES_NFDEPLOYMENT`, `NFDEPLOYMENT_ASSIGNED_TO_OCLOUDNAMESPACE`,
+`NODECLUSTER_HOSTED_BY_OCLOUDSITE`, `PHYSICALAPPLIANCE_INSTALLED_AT_SITE`); smo-teiv's `oam` (ManagedElement), `equipment` and three `rel-*` modules are not
+in v06 at all. The standard has **no NRCellRelation and no neighbour relationship** (TE&IV-GAPUCR R005 v04.00 names NRCellRelation among the RAN resources
+TE&IV covers, but the data model does not carry it), nor SubNetwork, CommonBeamformingFunction, NRFreqRelation or a SON class: TE&IV's extension stays
+two domain modules of its own (`EXT_RAN`, `EXT_OAM`, ADR 0011 D-24). It uses only the extension point the data model gives a new domain — new modules with
+their own entity types and biDirectionalTopologyRelationships (Annex A's rules) — and augments or deviates nothing, so it never touches what the data
+model says MUST NOT be augmented (the `sourceIds` groupings, `decorators`, `classifiers`); `teiv/model/check_extension.py` holds that, and
+`pyang --strict` with smo-teiv's modules passes, in the Contracts job. One dependency to watch: `SUBNETWORK_CONTAINS_MANAGEDELEMENT` names smo-teiv's
+`ManagedElement`, which DM v06 does not define.
+
+**createUserDefinedSchema is not a way to load the extension.** TE&IV-CIMI R005 v07.00 section 4.5 defines user-defined data as data "for enriching
+Topology Entities and Topology Relationships" that already exist: classifiers (4.5.2) and decorators (4.5.3), nothing else; the API's
+`POST /user-defined-schemas` carries such a schema, and the API has no operation that creates a topology schema (`/schemas` is read-only). smo-teiv 0.3.0
+agrees (section 3: its `/user-defined-schemas` accepts classifiers and decorators only; its own `POST /schemas` is not in the standard). So there is no
+standard way to load new entity or relationship types at run time, and the extension stays what section 11.5 b built: model files in the image and in the
+schema generated at build. The DM v06 YANG itself is not yet in `specs/`: its source, gitlab.o-ran.org/wg10/teiv-dm, cannot be reached from the
+environment that wrote this, and the modules are not typed from the PDF (PR-CONV-S3.24a).
+

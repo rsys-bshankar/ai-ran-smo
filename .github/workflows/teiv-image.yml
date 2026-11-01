@@ -1,0 +1,81 @@
+name: smo-teiv images
+
+# Builds TE&IV's two smo-teiv images (plan task S3.23, smo/docs/adr/0013-teiv-on-smo-teiv.md section 8) from O-RAN-SC smo-teiv's pinned 0.3.0 tag with TE&IV's
+# model extension (smo/teiv/model/), and publishes them to GHCR as ghcr.io/<owner>/<repo>/smo-teiv:<tag> (both processes: ingestion and exposure) and
+# ghcr.io/<owner>/<repo>/smo-teiv-db:<tag> (its Postgres with the generated schema), the images the chart's optional `teiv` component runs.
+# O-RAN-SC released 0.3.0 as Maven artifacts only (its last container images are 0.2.0), so there is nothing to mirror: as for the O-RAN-SC simulator
+# (oran-sim-image.yml), the image is built from the tagged source in a mirror job. The source commit and the tag are read from docker-compose.yml's profile
+# `teiv`, so the images and the compose profile cannot drift apart; the Dockerfiles are smo/teiv/Dockerfile and Dockerfile.db, whose bases (Maven, Temurin,
+# PostGIS) come from the GHCR mirror like every other pinned image. The workflow "TE&IV load" builds the same Dockerfiles itself and does not need these.
+# It runs by hand and on a push to main that changes the Dockerfiles, the model or this file; never on a pull request, so a fork's change cannot reach the
+# token that writes packages. The packages are private until the repository owner makes them public once in the GitHub UI. The job summary gives the
+# digests of what it pushed; the Maven build resolves smo-teiv's dependencies from Maven Central at their pinned versions, but the images are not
+# reproducible bit for bit (layer timestamps), so each run can push other digests under the same tag.
+on:
+  push:
+    branches: [main]
+    paths:
+      - smo/teiv/Dockerfile
+      - smo/teiv/Dockerfile.db
+      - smo/teiv/maven-settings.xml
+      - smo/teiv/model/**
+      - .github/workflows/teiv-image.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: teiv-image
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and publish the smo-teiv images
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write      # push ghcr.io/<owner>/<repo>/smo-teiv and smo-teiv-db with GITHUB_TOKEN
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # PR-OPS-12.3: the Maven, Temurin and PostGIS bases come from the GHCR mirror when it answers (smo/docs/MIRROR.md)
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
+
+      - name: Log in to GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_ACTOR: ${{ github.actor }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
+
+      - name: Build and push
+        working-directory: smo
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          config=$(docker compose --profile teiv config --format json)
+          source=$(jq -r '.services["teiv-ingestion"].build.additional_contexts.teiv' <<<"$config")
+          tag=$(jq -r '.services["teiv-ingestion"].image' <<<"$config" | sed 's/.*://')
+          {
+            echo "### smo-teiv images"
+            echo
+            echo "| Source | Image | Digest |"
+            echo "|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for pair in smo-teiv:Dockerfile smo-teiv-db:Dockerfile.db; do
+            name=${pair%%:*}
+            dockerfile=${pair#*:}
+            image="ghcr.io/${REPOSITORY,,}/$name:$tag"
+            mapfile -t mirror < <(python3 scripts/ci_mirror.py build-contexts teiv -f "teiv/$dockerfile")
+            docker build --build-context "teiv=$source" "${mirror[@]}" -f "teiv/$dockerfile" -t "$image" teiv
+            docker push "$image"
+            digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$image")
+            echo "| \`$source\` | \`$image\` | \`${digest#*@}\` |" >> "$GITHUB_STEP_SUMMARY"
+          done

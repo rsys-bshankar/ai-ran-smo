@@ -20,5 +20,6 @@
   "SMO_KAFKA_PARTITIONS": "Compose only: the partitions `kafka-init` gives the events topic (default 6). Changing it later moves keys between partitions once.",
   "SMO_KAFKA_REPLICATION": "Compose only: the replication factor `kafka-init` gives the events topic (default 1: one broker).",
   "SMO_WITH_KAFKA": "Compose only: `1` builds the DME worker's image with the Kafka client (the Dockerfile's `WITH_KAFKA` build argument, `requirements/kafka.txt`), which the event-bus relay needs (default `0`: images without it).",
-  "SMO_WITH_TRACING": "Compose build argument: 1 installs the OpenTelemetry packages (requirements/tracing.txt) into the image. 0 (the default) builds the image without them."
+  "SMO_WITH_TRACING": "Compose build argument: 1 installs the OpenTelemetry packages (requirements/tracing.txt) into the image. 0 (the default) builds the image without them.",
+  "TEIV_SOURCE": "Compose `teiv` profile (plan task S3.23): the source smo-teiv's two images are built from, the named build context `teiv` of `teiv/Dockerfile` and `teiv/Dockerfile.db` (default: O-RAN-SC smo-teiv at the 0.3.0 tag's commit, ee898469d2b9). A local clone's path works too."
 }

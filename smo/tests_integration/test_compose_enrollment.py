@@ -14,7 +14,8 @@ SECRET_FILE = "/run/secrets/enrollment_secret"
 # services that never call another module through R1 (or are not ours): they hold no identity at SME
 NO_IDENTITY = {"postgres", "pgbouncer", "db-backup", "migrate", "r1-termination", "mock-o1-adaptor", "gui", "edge", "edge-tls", "netconf-lab", "netconf-lab-replay",
                "tempo", "loki", "fluent-bit", "grafana", "oran-sim-du",         # oran-sim-du: the O-RAN-SC simulator (ADR 0012), a network element, not a module
-               "objectstore", "objectstore-init", "minio", "minio-init", "kafka", "kafka-init"}   # S1.10's stores and their one-shot set-up steps: no SME identity
+               "objectstore", "objectstore-init", "minio", "minio-init", "kafka", "kafka-init",   # S1.10's stores and their one-shot set-up steps
+               "teiv-db", "teiv-kafka-init", "teiv-ingestion", "teiv-exposure"}   # smo-teiv (S3.23): O-RAN-SC's processes, reached by TE&IV only; no SME identity
 
 
 def _services():

@@ -3,7 +3,7 @@ name: TE&IV spike
 # Plan task S0.13 (smo/docs/adr/0013-teiv-on-smo-teiv.md): O-RAN-SC smo-teiv 0.3.0 run on the RAN NF OAM tree of the oran-sim O-DUs (source a) and on a
 # synthetic 1,000-cell tree (source b); load time, query latency (directly and through the TS 28.532 facade sketch), change-event latency and runtime
 # cost measured and uploaded as an artifact. Since the extension spike (plan task S3.20, ADR 0013 section 11) smo-teiv runs with TE&IV's model extension
-# (smo/spikes/teiv/model/: NRCellRelation and NEIGHBOR_CELL, CO_COVERAGE_OVERLAY, SubNetwork, CommonBeamformingFunction, NRFreqRelation, the SON
+# (smo/teiv/model/, moved there from the spike by S3.23: NRCellRelation and NEIGHBOR_CELL, CO_COVERAGE_OVERLAY, SubNetwork, CommonBeamformingFunction, NRFreqRelation, the SON
 # functions), generated into its schema with its own generator at image build, and the measurements include the neighbour and two-hop queries. Manual, weekly, and on a pull request only when it changes the spike itself (smo/spikes/teiv/ or this file),
 # never on every pull request: it builds two images from source and starts two stacks. It is not a required check.
 # The spike's code is smo/spikes/teiv/ (no module imports it). The main stack's compose commands take the GHCR mirror through the generated override
@@ -13,6 +13,8 @@ on:
   pull_request:
     paths:
       - smo/spikes/teiv/**
+      - smo/teiv/Dockerfile*
+      - smo/teiv/model/**
       - .github/workflows/teiv-spike.yml
   schedule:
     - cron: "23 4 * * 2"
