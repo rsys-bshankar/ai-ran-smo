@@ -84,7 +84,7 @@ def test_compose_probes_ready_on_every_service_built_from_the_shared_dockerfile(
     services = yaml.safe_load((SMO_ROOT / "docker-compose.yml").read_text())["services"]
     built = {name for name, svc in services.items()
              if isinstance(svc.get("build"), dict) and svc["build"].get("context") == "."
-             and name not in ("gui-bff", "migrate")}      # the BFF is not on smo_shared; migrate is a one-shot, not a server
+             and name not in ("gui-bff", "migrate", "objectstore-init", "minio-init")}   # the BFF is not on smo_shared; the others are one-shots, not servers
     assert len(built) >= 20
     workers = {name for name in built if "smo_shared.worker" in " ".join(services[name].get("command") or [])}
     assert workers == {"ran-nf-oam-worker", "mdaf-worker", "dme-worker", "rapp-mgmt-worker", "aimgf-worker", "energy-saving-rapp-worker", "mobility-optimization-rapp-worker",
@@ -96,4 +96,5 @@ def test_compose_probes_ready_on_every_service_built_from_the_shared_dockerfile(
         probe = " ".join(services[name]["healthcheck"]["test"])
         assert "/tmp/worker-heartbeat" in probe and "/ready" not in probe, name
     assert "healthcheck" not in services["gui-bff"]
-    assert "healthcheck" not in services["migrate"] and services["migrate"]["restart"] == "no"   # runs to completion and exits
+    for one_shot in ("migrate", "objectstore-init", "minio-init"):                               # runs to completion and exits
+        assert "healthcheck" not in services[one_shot] and services[one_shot]["restart"] == "no", one_shot

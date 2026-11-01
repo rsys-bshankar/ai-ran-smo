@@ -21,8 +21,8 @@
 # --- pinned by digest in the repository, copied to the mirror (every third-party image the repository pulls has a digest, OPEN_ITEMS.md PR-OPS-12.4) ---
 python:3.11-slim | sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 | python |
 python:3.14-slim | sha256:0741d101873c12ab927e6f8653feb8862b9bd58771177acb1b885b95141f91b4 | python |
-postgres:18-alpine | sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873 | postgres |
-timescale/timescaledb:2.31.0-pg18 | sha256:0fcff5761363809d1242f2261a3482197b5a5337407f8b97a976fb174206d579 | timescaledb | Postgres 18 with TimescaleDB for the Contracts job's DDL apply (plan task S0.7, D8)
+postgres:18-alpine | sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873 | postgres | the base of the backup image (backup/Dockerfile: pg_dump) and the CI jobs' scratch databases; the stack itself runs timescale/timescaledb since S1.10
+timescale/timescaledb:2.31.0-pg18 | sha256:0fcff5761363809d1242f2261a3482197b5a5337407f8b97a976fb174206d579 | timescaledb | the stack's Postgres since S1.10 (D8: docker-compose.yml's postgres, the chart's bundled postgres.image) and the Contracts job's DDL apply (plan task S0.7)
 nginxinc/nginx-unprivileged:1.31-alpine | sha256:b5047b9b76845eac124358373c6852377c52e4b05834a47647e955dd91cb8f1e | nginx-unprivileged |
 sysrepo/sysrepo-netopeer2 | sha256:36cc1d841c97f118d62f775024d60fb1ce210c3bca6b32135c1a9e5a358a1cc9 | sysrepo-netopeer2 | the compose file pins this one by digest alone, no tag; the mirror tags it `latest`
 drwetter/testssl.sh:3.2 | sha256:51e487545f506e4e58b3e557d99538dbc2e63eec40680a2f6f6c9eb5ae1296af | testssl |
@@ -35,7 +35,9 @@ eclipse-temurin:25-jre-noble | sha256:3f2223fe04b750aa5a8179e29b5c9a1ddf7665fc9b
 ubuntu:22.04 | sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11 | ubuntu | the base of the O-RAN-SC simulator image, oran-sim/Dockerfile (ADR 0012); the simulator itself is built, not copied: upstream publishes no image
 eclipse-temurin:21-jre-noble | sha256:161310cd5bd41fd549d19cf9f90b614897cb4a1532555c613b43b7e0628fe5d6 | eclipse-temurin | the runtime of the smo-teiv image of the TE&IV spike, spikes/teiv/Dockerfile (S0.13, ADR 0013)
 postgis/postgis:13-3.4-alpine | sha256:3ce9b8f4d0711d33cc5fa5e6c00dcb7965fa41467f78c0f3bc7fc7bc2357d85b | postgis | smo-teiv's own database image, spikes/teiv/Dockerfile.db (S0.13, ADR 0013)
-apache/kafka:3.9.1 | sha256:4ceccc577f03f51f6af8dbfda55194d0d892f4fa7913ffbded567ce3895622ed | kafka | smo-teiv's ingestion bus in the TE&IV spike, spikes/teiv/docker-compose.yml (S0.13, ADR 0013)
+apache/kafka:3.9.1 | sha256:4ceccc577f03f51f6af8dbfda55194d0d892f4fa7913ffbded567ce3895622ed | kafka | the stack's Kafka (docker-compose.yml profile kafka, D9, ADR 0006 slice 3) and smo-teiv's ingestion bus in the TE&IV spike (spikes/teiv/docker-compose.yml, ADR 0013); one broker for both from S3.23
+chrislusf/seaweedfs:4.48 | sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d | seaweedfs | the object store (D10, docker-compose.yml profile objectstore): SeaweedFS, Apache-2.0
+bitnamilegacy/minio:2025.7.23-debian-12-r5 | sha256:6dabb4a2088c9a79908de3bc05f4586c23ad2182c8908e7e3acbf61c1467fb20 | minio | the optional MinIO store (profile minio, D10; AGPL-3.0): MinIO publishes no community image any more, this is Bitnami's frozen last build (no updates)
 
 grafana/tempo:2.10.10 | sha256:12b0820f13ffa10ce956b6e9acc3b03f3cffded99109be6cc09d106fe56e5d38 | tempo |
 grafana/loki:3.7.9 | sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28 | loki |

@@ -3,7 +3,8 @@
 > **Status: spike result, 1 November 2026 (plan task S0.13, closed in `HISTORY.md` PR-CONV-S0.13).** Decision D19 (reuse smo-teiv, expose it only
 > through the standards) stands, with the conditions of section 9. Nothing here is built into a module: the spike is `spikes/teiv/` (no module imports
 > it), and the work it found is the Stage 3 rows of section 10. **Section 11** (the extension spike, S3.20's go/no-go) recommends **go**: the missing
-> model is carried by model files and smo-teiv's own generator, with no change to smo-teiv's Java code; the owner decides.
+> model is carried by model files and smo-teiv's own generator, with no change to smo-teiv's Java code. **The owner confirmed go on 1 November 2026**
+> (section 11.6): D19 is decided.
 
 Paths are relative to `smo/`. Written against `main` at 4a237de. smo-teiv was read at its tag and run, here and on a CI runner (sections 2–5); the numbers are
 from `spikes/teiv/measure.py`. The architecture is [ADR 0008](0008-converged-architecture.md) (section 3.6, D6, D7, D19); the interfaces are
@@ -324,6 +325,11 @@ accept, to be offered with the model (S3.20 "offered upstream"), not waited for:
 Also not supported, and not needed: a scope filter that follows two associations in one path (refused: "can only contain Root Object types").
 
 ### 11.6 Verdict: go
+
+> **Decision, 1 November 2026: go (D19 confirmed by the owner after the extension spike, #565).** TE&IV reuses O-RAN-SC smo-teiv, extended with model
+> files only (`spikes/teiv/model/`, taken into `teiv/` by S3.20), accepting about 2.6 GiB resident at 1,000 cells for smo-teiv's two processes, its
+> Postgres and Kafka (11.4: 1.07 GiB + 473 MiB + 529 MiB + 447 MiB on the CI runner). S3.23 holds that to a 3 GiB budget with a load test; S3.25 offers
+> c1–c3 and the extension upstream. Section 9's fallback is not taken.
 
 - **Reuse holds; S3.20 is model work only.** The whole model of section 11.1 is carried by TE&IV-owned YANG and smo-teiv's own generator. smo-teiv's
   Java code is unchanged (a): its start-up, ingestion and exposure serve the new types from the generated metadata. What else was needed is build

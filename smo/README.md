@@ -243,6 +243,26 @@ Size it one of three ways:
    connection (`POSTGRES_STATEMENT_TIMEOUT_MS`, `POSTGRES_IDLE_IN_TRANSACTION_TIMEOUT_MS` on the pgbouncer service). On Kubernetes, run the pooler of your Postgres operator
    (CloudNativePG's `Pooler`) point `postgres.external.host` and `port` at it and set `SMO_DB_POOLER: transaction` in each module's `env`; the chart does not run one.
 
+## Stores and optional profiles (plan task S1.10)
+
+The converged stack's stores, decided in ADR 0008 (section 3.5):
+
+| Store | Decision | In compose | In the chart |
+|---|---|---|---|
+| Postgres 18 with **TimescaleDB** (`timescale/timescaledb:2.31.0-pg18`) | D8 | the `postgres` service, always; `migrate` creates the extension | the bundled Postgres; an external one per `postgres.external.timescaledb` (chart README, "TimescaleDB") |
+| **SeaweedFS** object store, S3 API (Apache-2.0) | D10 | profile `objectstore` | later (S2.5) |
+| **MinIO**, the same S3 API (**AGPL-3.0**) | D10, optional | profile `minio` | no |
+| **Kafka**, the event-bus relay (ADR 0006 slices 1–3) | D9 | profile `kafka`, built with `SMO_WITH_KAFKA=1` | later (ADR 0006 slice 5) |
+
+**Licensing.** SeaweedFS is the default object store because it is Apache-2.0. MinIO is AGPL-3.0: running it unmodified as a separate service does not put the
+SMO under the AGPL, but changing MinIO and offering it over a network does oblige you to publish your changes; it is kept optional and isolated (its own profile,
+reached only over the S3 API) under the direction document's licensing rule (R10). MinIO no longer publishes community container images; the profile pins
+Bitnami's frozen last build (`bitnamilegacy/minio:2025.7.23`), which gets no updates: a lab convenience, not a production store. TimescaleDB's continuous
+aggregates and compression (used by S3.11's warm tier) are under the Timescale License, not Apache-2.0.
+
+The S3 client is `smo_shared.objectstore` (httpx and AWS Signature Version 4 from the standard library, no boto3; one bucket per use: models, CSARs, cold
+Parquet). Turning each on, with a round trip: `DEMO_RUNBOOK.md`, "The stores". The O-RAN-SC simulator is the profile `oran-sim` (S0.15, ADR 0012).
+
 ## Repository layout
 
 ```

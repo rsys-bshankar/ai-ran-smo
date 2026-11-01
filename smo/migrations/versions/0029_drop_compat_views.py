@@ -53,7 +53,8 @@ ADDED_AFTER_THE_VIEWS = {("nfo", "lcm_operation"): {"created_at"}}              
 
 
 def downgrade() -> None:
-    """Create the views again for every base table outside `public`, with the columns the tables had when the views were first made (`ADDED_AFTER_THE_VIEWS` are left out)."""
+    """Create the views again for every base table outside `public`, with the columns the tables had when the views were first made (`ADDED_AFTER_THE_VIEWS` are left out).
+    A table that belongs to an extension (TimescaleDB's catalog, on a server with it: S1.10) had no view and gets none."""
     bind = op.get_bind()
     columns: dict[tuple[str, str], list[str]] = {}
     rows = bind.exec_driver_sql("""
@@ -61,6 +62,9 @@ def downgrade() -> None:
         FROM information_schema.columns c
         JOIN information_schema.tables t ON t.table_schema = c.table_schema AND t.table_name = c.table_name AND t.table_type = 'BASE TABLE'
         WHERE c.table_schema NOT IN ('public', 'information_schema') AND c.table_schema !~ '^pg_'
+          AND NOT EXISTS (SELECT 1 FROM pg_class pc JOIN pg_namespace pn ON pn.oid = pc.relnamespace
+                          JOIN pg_depend d ON d.classid = 'pg_class'::regclass AND d.objid = pc.oid AND d.deptype = 'e'
+                          WHERE pn.nspname = c.table_schema AND pc.relname = c.table_name)
         ORDER BY c.table_schema, c.table_name, c.ordinal_position
     """)
     for schema, table, column in rows:

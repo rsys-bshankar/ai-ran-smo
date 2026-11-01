@@ -45,14 +45,14 @@ the digest (the other 14). The verification did its job and was not loosened; th
 
 ## The list
 
-20 packages (`<repo>` is the repository name, in lower case). The owner made all of them public (`OPS-12.2`) and checked that every digest-pinned source answers its pinned
+23 packages (`<repo>` is the repository name, in lower case). The owner made all of them public (`OPS-12.2`) except the two S1.10 added, `<repo>/mirror/seaweedfs` and `<repo>/mirror/minio`, which the mirror workflow creates on its first run after the merge and the owner then makes public (until then CI pulls those two from Docker Hub, with a warning; `scripts/ci_mirror.py`), and checked that every digest-pinned source answers its pinned
 digest at the mirror.
 
 | Package | Source images (tags) | Pinned by digest in the repository |
 |---|---|---|
 | `<repo>/mirror/python` | `python:3.11-slim`, `python:3.14-slim` | yes |
 | `<repo>/mirror/postgres` | `postgres:18-alpine` | yes |
-| `<repo>/mirror/timescaledb` | `timescale/timescaledb:2.31.0-pg18` (the Contracts job's scratch database, plan task S0.7) | yes |
+| `<repo>/mirror/timescaledb` | `timescale/timescaledb:2.31.0-pg18` (the stack's Postgres since S1.10, D8, and the Contracts job's scratch database, plan task S0.7) | yes |
 | `<repo>/mirror/nginx-unprivileged` | `nginxinc/nginx-unprivileged:1.31-alpine` | yes |
 | `<repo>/mirror/sysrepo-netopeer2` | `sysrepo/sysrepo-netopeer2` (digest only; mirrored as `latest`) | yes |
 | `<repo>/mirror/testssl` | `drwetter/testssl.sh:3.2` | yes |
@@ -64,7 +64,9 @@ digest at the mirror.
 | `<repo>/mirror/eclipse-temurin` | `eclipse-temurin:25-jre-noble`, `eclipse-temurin:21-jre-noble` (the runtime of smo-teiv in the TE&IV spike, `spikes/teiv/Dockerfile`) | yes |
 | `<repo>/mirror/ubuntu` | `ubuntu:22.04` (the base of the O-RAN-SC simulator image, `oran-sim/Dockerfile`, ADR 0012) | yes |
 | `<repo>/mirror/postgis` | `postgis/postgis:13-3.4-alpine` (smo-teiv's database in the TE&IV spike, `spikes/teiv/Dockerfile.db`, ADR 0013) | yes |
-| `<repo>/mirror/kafka` | `apache/kafka:3.9.1` (smo-teiv's ingestion bus in the TE&IV spike, `spikes/teiv/docker-compose.yml`) | yes |
+| `<repo>/mirror/kafka` | `apache/kafka:3.9.1` (the stack's Kafka, profile `kafka`, D9; and smo-teiv's ingestion bus in the TE&IV spike, `spikes/teiv/docker-compose.yml`) | yes |
+| `<repo>/mirror/seaweedfs` | `chrislusf/seaweedfs:4.48` (the object store, profile `objectstore`, D10) | yes |
+| `<repo>/mirror/minio` | `bitnamilegacy/minio:2025.7.23-debian-12-r5` (the optional MinIO store, profile `minio`, D10; Bitnami's frozen last build) | yes |
 | `<repo>/mirror/tempo` | `grafana/tempo:2.10.10` | yes |
 | `<repo>/mirror/loki` | `grafana/loki:3.7.9` | yes |
 | `<repo>/mirror/fluent-bit` | `fluent/fluent-bit:5.1.5` | yes |
@@ -109,7 +111,7 @@ repository pins. Tag and digest together is the form `kind` and `docker` already
 
 | Kind | Where | How |
 |---|---|---|
-| **Compose lanes** (`docker compose up --build`, `run`) | `smo-tests.yml` (`compose-e2e`, `compose-pooler`, `compose-replicas`, `obs-stack`, `compose-mtls`, `compose-pgtls`, `netconf-lab`), `deploy-on-main.yml`, `smo-dast.yml` (both jobs), `smo-gui-e2e.yml` (both), `smo-load.yml`, `smo-soak.yml`, `smo-stress.yml` (both), and `compose_new` of `scripts/check_upgrade_from_previous_release.sh` | The generated override is named in the job's `COMPOSE_FILE` (`docker-compose.yml:.ci-mirror/docker-compose.mirror.yml`, plus the lane's own overlay) or, in a lane that passes `-f`, as one more `-f`. Third-party services (`postgres`, `edge-tls`, `netconf-lab`, `tempo`, `loki`, `fluent-bit`, `grafana`) get `image:`; every service built from the root, `gui`, `pgbouncer` or `backup` Dockerfile gets named contexts |
+| **Compose lanes** (`docker compose up --build`, `run`) | `smo-tests.yml` (`compose-e2e`, `compose-pooler`, `compose-replicas`, `obs-stack`, `compose-stores`, `compose-kafka`, `compose-mtls`, `compose-pgtls`, `netconf-lab`), `deploy-on-main.yml`, `smo-dast.yml` (both jobs), `smo-gui-e2e.yml` (both), `smo-load.yml`, `smo-soak.yml`, `smo-stress.yml` (both), and `compose_new` of `scripts/check_upgrade_from_previous_release.sh` | The generated override is named in the job's `COMPOSE_FILE` (`docker-compose.yml:.ci-mirror/docker-compose.mirror.yml`, plus the lane's own overlay) or, in a lane that passes `-f`, as one more `-f`. Third-party services (`postgres`, `edge-tls`, `netconf-lab`, `tempo`, `loki`, `fluent-bit`, `grafana`) get `image:`; every service built from the root, `gui`, `pgbouncer` or `backup` Dockerfile gets named contexts |
 | **`docker build` of module images** | `image-scan.yml`, `smo-ha-kind.yml` (both), `smo-upgrade-kind.yml`, `smo-tests.yml` (`helm`, `postgres-ha`, `sdk-java`'s example) | `mapfile -t mirror < <(python3 scripts/ci_mirror.py build-contexts <dir>)` then `docker build ... "${mirror[@]}" ...`: one `--build-context '<FROM text>=docker-image://<mirror reference>'` per switched `FROM` (BuildKit named contexts replace the base image). The key is the whole `FROM` reference, digest included: a key without the digest does not match a digest-pinned `FROM` (shown with a local BuildKit and with `docker compose build` while writing this) |
 | **`docker run`** | `deploy-on-main.yml`, `smo-tests.yml`, `smo-load.yml`, `smo-soak.yml`, `smo-stress.yml`, `smo-dast.yml` (testssl.sh, Nuclei), `smo-gui-e2e.yml` (Keycloak), `smo-db-volume.yml`, `smo-dr.yml` (Postgres), and the demo consumer of both previous-release scripts | `"$SMO_IMAGE_..."` in place of the literal image |
 | **Service containers** | `smo-tests.yml` `migration-postgres` | A `services:` image is pulled by the runner before any step, so neither the mirror nor the fallback can be chosen. The Postgres is a `docker run -d` step now, with the same user, database, port and health check. A test fails if any workflow uses `services:` or `container:` |

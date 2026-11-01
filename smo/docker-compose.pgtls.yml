@@ -39,6 +39,7 @@ services:
         install -m 0600 -o postgres -g postgres /run/pgtls-src/tls.key /run/pgtls/tls.key &&
         exec docker-entrypoint.sh postgres
         -c log_min_duration_statement=${POSTGRES_SLOW_QUERY_MS:-500}
+        -c shared_preload_libraries=timescaledb -c timescaledb.telemetry_level=off
         -c ssl=on -c ssl_cert_file=/run/pgtls/tls.crt -c ssl_key_file=/run/pgtls/tls.key
         -c ssl_min_protocol_version=TLSv1.2
         -c hba_file=/etc/smo/pg_hba.conf

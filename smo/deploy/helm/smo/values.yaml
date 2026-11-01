@@ -19,7 +19,8 @@ image:
 # and point the chart at it: postgres.enabled=false and postgres.external.
 postgres:
   enabled: true
-  image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+  # Postgres 18 with TimescaleDB (D8, plan task S1.10): the image docker-compose.yml's postgres runs; the same layout and uid as postgres:18-alpine
+  image: timescale/timescaledb:2.31.0-pg18@sha256:0fcff5761363809d1242f2261a3482197b5a5337407f8b97a976fb174206d579
   pullPolicy: IfNotPresent                     # its own: image.pullPolicy is for the SMO images (CI sets it to Never for the ones it built)
   storage: 10Gi
   storageClassName: ""
@@ -51,6 +52,11 @@ postgres:
     # accepts writes is used, so a new primary is found after a failover without a change here. A service that always points at the primary
     # (CloudNativePG's <cluster>-rw, Patroni's leader service) needs neither.
     targetSessionAttrs: ""                     # "" | read-write | any | primary | prefer-standby
+    # D8: whether the migrate Job creates the TimescaleDB extension on this Postgres (scripts/migrate.py, SMO_TIMESCALEDB): auto creates it when the server has
+    # it and goes on without it otherwise; require stops the migration without it; off never touches it. The extension must be installed on the server and,
+    # for `CREATE EXTENSION`, the user above allowed to create it (on CloudNativePG: an image with TimescaleDB, `shared_preload_libraries`, and
+    # spec.bootstrap.initdb.postInitApplicationSQL; the chart README, "TimescaleDB"). The common_dme_telemetry hypertables (S1.9) will need it.
+    timescaledb: auto                          # auto | require | off
   # Disaster recovery (PR-HA-6.2, docs/DISASTER_RECOVERY.md), opt in. With a CloudNativePG cluster behind postgres.external, the Cluster's
   # spec.backup.barmanObjectStore archives the WAL to an S3-compatible bucket continuously (ci/cnpg-cluster-backup.yaml); this renders the
   # ScheduledBackup that takes the base backups the WAL is replayed on. The Cluster is not made by this chart, so `cluster` names it.

@@ -71,8 +71,44 @@ publishes nothing; giving it one is the whole change to add its events.
 `SMO_EVENT_BUS` chooses the publisher: `table` (default), `memory` (an in-process list, for tests) or `off`. On a database without the table (a module's
 SQLite unit tests) the table publisher keeps the event in memory, so a test of a change is not a test of the bus.
 
+## Kafka (the relay, ADR 0006 slices 1–3)
+
+A second sink beside the table: every event committed to `smo_event` also appears on a Kafka topic, in order per entity
+([adr/0006-msg-3-4-kafka-event-sink.md](adr/0006-msg-3-4-kafka-event-sink.md), D9, plan task S1.10). Code: `shared/smo_shared/kafka_relay.py` (the relay) and
+`kafka_settings.py` (its settings and the message mapping).
+
+- **A relay, not a publisher.** A Kafka produce cannot be part of the caller's Postgres transaction, so the relay is not an `EventPublisher`: `TablePublisher`
+  stays the only in-transaction publisher, and a shared worker task `kafka-relay` (one runner for the whole database) follows the table after commit. The table is
+  the buffer: with Kafka down, writers are unaffected and events wait. Kafka is in no module's `/ready`.
+- **Switching it on.** `SMO_KAFKA_RELAY=true` on a worker, with `SMO_EVENT_BUS=table` and an image built with the client (`WITH_KAFKA=1`, the `kafka` extra,
+  `requirements/kafka.txt`: confluent-kafka). Compose: the DME worker, profile `kafka` (one KRaft broker, PLAINTEXT on the compose network; `DEMO_RUNBOOK.md`):
+  `SMO_WITH_KAFKA=1 SMO_KAFKA_RELAY=true docker compose --profile kafka up -d --build`. A worker told to relay that cannot (no client, a setting missing)
+  refuses to start and says why. The settings are in `docs/CONFIGURATION.md` (`SMO_KAFKA_*`).
+- **Topic, key, message.** One topic, `smo.events.v1` (`SMO_KAFKA_EVENTS_TOPIC`). The key is the event's `subject` (else its `source`), so one entity's events
+  keep `smoseq` order on one partition; different entities may interleave. The value is the envelope above, unchanged, as UTF-8 JSON. Headers in CloudEvents binary
+  mode: `ce_id`, `ce_type`, `ce_source`, `ce_time`, `ce_specversion`, plus `smoseq` and `content-type: application/cloudevents+json`, so a consumer can filter
+  without parsing. An event larger than `SMO_KAFKA_MAX_MESSAGE_BYTES` (1 MiB) is skipped, logged and counted, never retried.
+- **Topic names per owner.** `smo.<owner>[.<stream>].v<N>`: the owner is the one part of the platform that writes the topic, so an ACL per prefix gives each
+  owner's principal Write on its own topics and nothing else (PR-CONV-S1.15). `smo.events.v1` is the event bus's; `smo.ves.in.v1` will be the VES input
+  (SB-7.6, ADR 0006 slice 4). The broker is the one S3.23 will share with smo-teiv; smo-teiv's ingestion topic (`smo.teiv.…`) is TE&IV's alone (D6): the relay
+  refuses a topic under `smo.teiv.`, and no module but TE&IV is given it.
+- **Position, duplicates, ordering.** The relay keeps its position in Postgres (`smo_event_relay`, revision 0068: `kafka:<topic>` → the highest `seq` the broker
+  acknowledged without a gap), moved after the acknowledgement. A crash between the two, or a database restore (which rewinds the position), sends events
+  again: **at least once**, and a consumer de-duplicates on the envelope `id`. The relay reads only events older than `SMO_KAFKA_RELAY_SETTLE_SECONDS` (3), so a
+  transaction that took a lower `seq` but committed later is not skipped (the hazard of "At least once, in order" above); the cost is about 3 s of lag plus the
+  worker's tick (5 s). The producer is idempotent with `acks=all`.
+- **Kafka down longer than the retention.** While the relay is on, `event-purge` keeps events past `SMO_EVENT_RETENTION_HOURS` that the relay has not sent, up
+  to `SMO_KAFKA_RELAY_MAX_HOLD_HOURS` (72) past their time (ADR 0006 Q2); after that they are lost to Kafka (not to the feed's own readers, which have the
+  same 24 h window). The gauges `smo_event_relay_lag_events` and `smo_event_relay_lag_seconds` show the backlog; the alert on them is ADR 0006 slice 5.
+- **Internal only.** The topic names every module's entities and Kafka ACLs are per topic, not per region or tenant, so it is platform-internal, like the
+  feed: never grant an rApp or a tenant Read on it.
+- **Security.** `SMO_KAFKA_SECURITY_PROTOCOL` is `SSL` unless set; `SASL_SSL` with SCRAM-SHA-512 is the production choice; `PLAINTEXT` starts with a warning
+  (the lab broker); `PLAIN` is refused without TLS; the host name is always verified under TLS. The SASL password and the TLS key passphrase are secrets
+  (`*_FILE`, `docs/SECRETS.md`), never logged: the producer configuration is logged with them masked.
+
 ## Not built
 
-- **Kafka** (`MSG-3.4`, `OPEN_ITEMS.md`): the publisher is an interface (`EventPublisher`) so a Kafka one can sit beside the table one; nothing needs it yet. Designed and decided (October 2026), not built: a relay that follows `smo_event`, not a Kafka `EventPublisher` ([adr/0006-msg-3-4-kafka-event-sink.md](adr/0006-msg-3-4-kafka-event-sink.md)).
+- **Kafka, the rest of ADR 0006:** slice 4 (SB-7.6: VES events read from `smo.ves.in.v1`) and slice 5 (the chart's `kafka:` values, the relay-lag alert and its
+  runbook, an optional egress rule); a SASL_SSL listener in the compose profile before the `compose-kafka` job becomes required (Q5).
 - **Subscriptions with callbacks.** A reader follows the feed; nothing is pushed to a URL. A module that wants to tell an outside party uses the outbox
   (`docs/NOTIFICATIONS.md`).
