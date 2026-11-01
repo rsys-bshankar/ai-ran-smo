@@ -17,6 +17,10 @@ import pytest
 SMO_ROOT = Path(__file__).resolve().parent.parent
 OWNERS = json.loads((SMO_ROOT / "migrations" / "table_owners.json").read_text())
 MODULES = [m for m in OWNERS if m != "shared" and not m.startswith("_")]      # `_retired` (a removed module's tables) and `_comment` are not modules
+# The ProvMnS router's store (smo_shared/mns/store.py): one `moi_store` in the schema of each module that mounts the router, each listed under its
+# module, so the one table name has several owners by design. A module's models put a copy of it on the shared metadata, which holds one table
+# per name, so only the first module loaded adds it there; the checks below leave it out and check it apart (each module that lists it mounts it).
+ROUTER_STORE = "moi_store"
 
 # Run in a process of its own: the other tests load modules into the shared metadata too, and the question here is what each module adds to a clean one.
 _PROBE = """
@@ -50,12 +54,20 @@ def declared() -> dict[str, list[str]]:
 def test_every_module_owns_exactly_the_tables_the_map_says(declared):
     """Each module's models declare exactly the tables the owner map lists for it."""
     for owner, tables in declared.items():
-        assert tables == sorted(OWNERS[owner]), f"{owner}: the models declare {sorted(tables)}, the map says {sorted(OWNERS[owner])}"
+        mine, mapped = sorted(set(tables) - {ROUTER_STORE}), sorted(set(OWNERS[owner]) - {ROUTER_STORE})
+        assert mine == mapped, f"{owner}: the models declare {mine}, the map says {mapped}"
+
+
+def test_the_router_store_is_listed_by_exactly_the_modules_that_mount_the_router():
+    """`moi_store` is in a module's list exactly when its models copy the router's store (`smo_shared.mns.store`) onto the shared metadata."""
+    models = {m: SMO_ROOT / m / "app" / "models.py" for m in MODULES}
+    mounting = sorted(m for m, path in models.items() if path.is_file() and "smo_shared.mns.store" in path.read_text(errors="ignore"))
+    assert mounting == sorted(m for m in MODULES if ROUTER_STORE in OWNERS[m])
 
 
 def test_no_table_has_two_owners():
     """No table is listed under more than one owner in the map."""
-    listed = [t for owner, tables in OWNERS.items() if owner != "_comment" for t in tables]
+    listed = [t for owner, tables in OWNERS.items() if owner != "_comment" for t in tables if t != ROUTER_STORE]
     duplicates = sorted({t for t in listed if listed.count(t) > 1})
     assert not duplicates, f"listed under more than one owner: {duplicates}"
 
