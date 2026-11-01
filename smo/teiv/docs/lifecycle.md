@@ -6,7 +6,7 @@ do is in [`../README.md`](../README.md). Three diagrams:
 
 | | Step | Who starts it | Ends with |
 |---|---|---|---|
-| a | Starting and becoming ready | the orchestrator (compose, Kubernetes) | a replica that answers `/live`, and `/ready` once smo-teiv answers and TE&IV's decorator schema is in it |
+| a | Starting and becoming ready | the orchestrator (compose, Kubernetes) | a replica that answers `/live`, and `/ready` once smo-teiv answers and TE&IV's decorator schema is in it (the probe loads it) |
 | b | A read (getMOIAttributes) | a caller of ProvMnS, through R1 by class name | the resources the scope and filter select, exactly, or a refusal with its reason |
 | c | Stopping, crashing and recovering | the orchestrator, a crash | nothing to recover: TE&IV holds nothing between requests |
 
@@ -23,24 +23,22 @@ sequenceDiagram
     participant R as R1 Termination and SME
 
     O->>T: start uvicorn app.main:app, MODULE teiv, UVICORN_WORKERS 3
-    par in the background, repeated until each succeeds
-        T->>X: GET /user-defined-schemas/smo-teiv-attrs/content
-        alt absent
-            T->>X: POST /user-defined-schemas with smo-teiv-attrs.yang as application/yang
-        end
-    and
-        T->>R: register MnsInfo with the 15 classes and the scope SubNetwork=SMO-RAN (a token from SME first)
-    end
+    T->>R: in the background until it succeeds - register MnsInfo with the 15 classes and the scope SubNetwork=SMO-RAN (a token from SME first)
     O->>T: GET /ready
     T->>X: GET /domains
-    alt smo-teiv answers and the schema is loaded
+    T->>X: GET /user-defined-schemas/smo-teiv-attrs/content
+    alt the schema is absent
+        T->>X: POST /user-defined-schemas with smo-teiv-attrs.yang as application/yang
+    end
+    alt smo-teiv answers and the schema is in it
         T-->>O: 200 ready
-    else either not yet
-        T-->>O: 503, no traffic until both
+    else smo-teiv does not answer, or refuses the schema
+        T-->>O: 503, no traffic until it does
     end
 ```
 
-smo-teiv may start after TE&IV, and R1 Termination and SME too: each step is retried (1, 2, 5, 10, 30 s, then every 30 s) and logged, never fatal.
+smo-teiv may start after TE&IV, and R1 Termination and SME too: the probe repeats the schema step until smo-teiv takes it (no thread of TE&IV's
+own does), and the registration is retried (1, 2, 5, 10, 30 s, then every 30 s) and logged, never fatal.
 Until TE&IV is registered, R1 answers a ProvMnS read of its classes 404 `NO_ROUTE`.
 
 ## b — A read
@@ -58,7 +56,7 @@ sequenceDiagram
     alt the base's class is not one of the 15
         T-->>C: 422 CLASS_NOT_SUPPORTED
     else served
-        par one request per class in the scope, and per reference attribute asked for
+        par at once (asyncio.gather on the read's own client, closed when the read returns), one request per class in the scope and per reference attribute asked for
             T->>X: GET the entities of a type, scopeFilter the sourceIds condition and the pushed-down equalities
         and
             T->>X: GET the relationships of a type (NEIGHBOR_CELL for adjacentNRCellRef), the same sourceIds condition
@@ -85,7 +83,7 @@ sequenceDiagram
     participant T as TE&IV
 
     O->>T: preStop sleep 5 s (Kubernetes), then SIGTERM
-    Note over T: uvicorn finishes in-flight reads for up to 20 s, the schema loader and the registration stop
+    Note over T: uvicorn finishes in-flight reads for up to 20 s, the registration stops
     O->>T: restart
     Note over T: nothing to restore, the schema is found present and the registration is repeated
 ```

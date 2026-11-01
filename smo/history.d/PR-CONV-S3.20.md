@@ -16,6 +16,6 @@ this adds is the face TS 28.541 callers see, in TE&IV's facade (`teiv/app/model.
   `smo-teiv-ext-ran.yang` now has its value, and `model/check_extension.py` rule E8 holds it.
 
 **Measured** (`teiv/loadtest/queries.py`, 1,000 cells, 8,000 relations, through TE&IV, 200 runs, 0 wrong answers; the Claude Code cloud container, 4
-CPUs): **Q2 p95 25.0 ms, Q4 p95 107.3 ms** (p50 16.7 and 79.0). The first port answered Q4 at 473 ms; what it took (a rebuilt trigram index after the
-bulk load, the short sourceIds condition, skipping references not selected, three TE&IV workers) is ADR 0013 section 12.4. D7 holds: Apache AGE is not
+CPUs): **Q2 p95 20.8 ms, Q4 p95 113.6 ms** (p50 16.3 and 82.9). The first port answered Q4 at 473 ms; what it took (a rebuilt trigram index after the
+bulk load, the short sourceIds condition, skipping references not selected, the read's requests sent at once, three TE&IV workers) is ADR 0013 section 12.4. D7 holds: Apache AGE is not
 reconsidered, and section 9's fallback is not taken.

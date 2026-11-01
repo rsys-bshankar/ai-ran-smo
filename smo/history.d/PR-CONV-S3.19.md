@@ -34,8 +34,8 @@ agreed: the generic ProvMnS route serving the 15 classes' four operations, and t
 (24 routes, all bundle operations). The WG10 answers' `required` members the standard declares and smo-teiv does not are present in every 0.3.0 answer
 (13 domains, the RAN entity and relationship types).
 
-**Measured** (`teiv/loadtest/queries.py`, 1,000 cells, through TE&IV, 200 runs, every answer checked: 0 wrong), p95: Q1 19.2 ms, Q3 16.6 ms, Q5 93.8 ms
-(and Q2 25.0, Q4 107.3: S3.20). The first port gave Q5 965 ms; what brought it down is ADR 0013 section 12.4.
+**Measured** (`teiv/loadtest/queries.py`, 1,000 cells, through TE&IV, 200 runs, every answer checked: 0 wrong), p95: Q1 18.8 ms, Q3 14.4 ms, Q5 75.1 ms
+(and Q2 20.8, Q4 113.6: S3.20). The first port gave Q5 965 ms; what brought it down is ADR 0013 section 12.4.
 
 **Not taken.** Reading a one-level scope by containment association (`/contained-by-nrCellCu[@id=...]`) with a btree index on smo-teiv's `REL_FK_*`
 columns: 4.6 ms against 8.8 ms for a cell's relations, but such a read misses an object whose containment edge was never written, which the sourceIds

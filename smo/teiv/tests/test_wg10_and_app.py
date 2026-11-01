@@ -6,7 +6,6 @@ import json
 
 import httpx
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from smo_shared import audit
@@ -80,14 +79,16 @@ def test_smo_teiv_down_is_a_503_problem_on_the_door(api, fake):
     assert r.status_code == 503 and r.json()["title"] == "TEIV_UNAVAILABLE" and r.headers["retry-after"] == "5"
 
 
-def test_ready_needs_smo_teiv_and_the_decorator_schema(teiv, fake):
-    """At start-up TE&IV loads its decorator schema into smo-teiv; ready answers once it has, and not while smo-teiv is down."""
-    with TestClient(teiv.app) as client:
-        assert teiv.SCHEMA.loaded.wait(10)
-        assert attrs.MODULE in fake.schemas
-        assert client.get("/ready").status_code == 200
-        fake.fail_with = 500
-        assert client.get("/ready").status_code == 503
+def test_ready_loads_the_decorator_schema_and_needs_smo_teiv(api, fake):
+    """The readiness probe loads TE&IV's decorator schema into smo-teiv when it is not there (once), and is not ready while smo-teiv is down."""
+    assert attrs.MODULE not in fake.schemas
+    assert api.get("/ready").status_code == 200
+    assert attrs.MODULE in fake.schemas
+    uploads = sum(1 for r in fake.requests if r.method == "POST" and r.url.path.endswith("/user-defined-schemas"))
+    assert api.get("/ready").status_code == 200
+    assert sum(1 for r in fake.requests if r.method == "POST" and r.url.path.endswith("/user-defined-schemas")) == uploads == 1
+    fake.fail_with = 500
+    assert api.get("/ready").status_code == 503
 
 
 def test_teiv_registers_its_fifteen_classes_under_its_mns_scope(teiv, monkeypatch):

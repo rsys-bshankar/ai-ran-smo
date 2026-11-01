@@ -410,7 +410,9 @@ hops (Q4) is the caller's fan-out of Q2 (11.5 b6), the TS 28.532 form: TS 28.532
 
 ### 12.2 The read (G8)
 
-A getMOIAttributes of a base, a scope and a filter becomes, sent together: the base (one entity read, when the scope selects it), one list per class
+A getMOIAttributes of a base, a scope and a filter becomes, sent together (`asyncio.gather` on an HTTP client of the read's own, closed when the
+read returns: the parallel requests are work of the request, not background work, so `scripts/check_statelessness.py` holds, and the client reuses
+one TLS context, since building one costs 16 ms): the base (one entity read, when the scope selects it), one list per class
 that can lie in the scope's depth range below the base's class, and, for the classes asked for, one list per reference attribute that is selected or
 filtered on. Each list has a sourceIds condition for "below the base", and smo-teiv compares it as `"CD_sourceIds"::text LIKE '%<text>%'` through its
 trigram index, where the trigrams every id shares (`urn:3gpp:dn:SubNetwork=`, `GNBCUCPFunction=1,`) make a long text slow. So the condition is at most
@@ -432,7 +434,7 @@ defect, logged). The caller's scope and MSAC apply as in the shared service (S1.
 smo-teiv's columns hold the attributes its model declares; the others (administrativeState, operationalState, cellState, plmnInfoInfoList, the SON
 functions' settings, ...: 94 names) are **decorators of TE&IV's own schema** `smo-teiv-attrs`, the data model's way to add data to an entity (CIMI
 section 4.5.3), one string leaf per attribute, generated from the shared class registry (`teiv/app/smo-teiv-attrs.yang`, `python -m app.attrs --write`)
-and loaded at start-up through createUserDefinedSchema; ready waits for it. A value is written as itself when it is plain text
+and loaded through createUserDefinedSchema by the readiness probe when it is not there, so a replica takes no traffic before it is. A value is written as itself when it is plain text
 (`[A-Za-z0-9 _.:/=,+-]`), else as `j:` and the base64url of its JSON (d2 below), and decoded on read; a decorator holding plain text can be filtered on
 in smo-teiv. **The version** of an object is a digest of its attributes in TS 28.541 form: smo-teiv's `lastModified` does not change when a decorator
 does (d3), the content does. A single-object read answers it as `ETag`; a modifyMOIAttributes, createMOI or deleteMOI checks the caller, the class, the
@@ -447,16 +449,16 @@ TE&IV with three uvicorn workers and the load client on the same host):
 
 | Query (TS 28.532 form) | p50 ms | p95 ms | p99 ms |
 |---|---:|---:|---:|
-| Q1 an NRCellDU, BASE_ONLY | 14.4 | 19.2 | 20.7 |
-| Q2 an NRCellCU, BASE_NTH_LEVEL 1, filter NRCellRelation, attributes adjacentNRCellRef | 16.7 | 25.0 | 30.5 |
-| Q3 a GNBDUFunction, BASE_NTH_LEVEL 1, filter NRCellDU | 11.0 | 16.6 | 19.9 |
-| Q4 Q2, then Q2 of each of its 8 neighbours at once (time to the last answer) | 79.0 | 107.3 | 128.9 |
-| Q5 the SubNetwork, BASE_ALL, filter NRCellDU and nRTAC equal to a value | 77.0 | 93.8 | 100.9 |
+| Q1 an NRCellDU, BASE_ONLY | 13.8 | 18.8 | 22.7 |
+| Q2 an NRCellCU, BASE_NTH_LEVEL 1, filter NRCellRelation, attributes adjacentNRCellRef | 16.3 | 20.8 | 22.7 |
+| Q3 a GNBDUFunction, BASE_NTH_LEVEL 1, filter NRCellDU | 11.7 | 14.4 | 16.0 |
+| Q4 Q2, then Q2 of each of its 8 neighbours at once (time to the last answer) | 82.9 | 113.6 | 132.0 |
+| Q5 the SubNetwork, BASE_ALL, filter NRCellDU and nRTAC equal to a value | 57.6 | 75.1 | 96.6 |
 
 What it took, measured on the way: the first port (whole-DN sourceIds conditions, every reference read, one worker) gave Q4 473 ms and Q5 965 ms
 p95. Reading references early only below a non-SubNetwork base and filling them object by object for a few objects brought Q5 under 150 ms. For Q4
 the limit was smo-teiv's database (15.5 ms of Postgres CPU per Q2): a fresh trigram index (below), the short two-term condition, skipping the
-references not selected, and three TE&IV workers brought it to 107 ms. **After a bulk load, `REINDEX SCHEMA teiv_data; ANALYZE;`**: the
+references not selected, and three TE&IV workers brought it to 114 ms. **After a bulk load, `REINDEX SCHEMA teiv_data; ANALYZE;`**: the
 insert-then-decorate load leaves smo-teiv's GIN trigram indexes about five times their size (9.9 MB against 2.1 MB rebuilt, NRCellRelation's sourceIds)
 and a subtree read through them three times slower; `budget.py` runs it after its load, and `teiv/README.md` ("Operating") tells an operator to. The
 same reads through R1 Termination are measured by the "TE&IV load" workflow once TE&IV is a service of the stack (the wiring pull request that follows).

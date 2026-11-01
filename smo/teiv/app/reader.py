@@ -1,7 +1,7 @@
 """getMOIAttributes over smo-teiv (plan tasks S3.19, S3.20; ADR 0013 G1, G8, section 7): what TE&IV reads from smo-teiv for one TS 28.532 read, and the
 TS 28.532 resources it makes of the answers.
 
-How a read becomes smo-teiv requests (all sent together, `ThreadPoolExecutor`, on one client):
+How a read becomes smo-teiv requests (all sent together with asyncio.gather, on a client of the read's own that is closed with it):
 
   the base            one entity read, by its class's type and domain and `urn:3gpp:dn:<DN>` (model.py); 404 MOI_NOT_FOUND when smo-teiv has none
   below the base      per class that can lie in the scope's depth range below the base's class (model.descendants), one paged list of that type with
@@ -32,10 +32,10 @@ NRFreqRelation edges). Two hops are the same read of each adjacent cell, sent to
 filter follows one association, and its OR of ids is slow (c3).
 """
 
+import asyncio
 import hashlib
 import json
 import os
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from smo_shared.mns.dn import depth_of, parse_dn
@@ -144,17 +144,23 @@ class Pushdown:
 
 
 class TeivReader:
-    """The reads of the module description, on one SmoTeivClient."""
+    """The reads of the module description, on one SmoTeivClient. A read is synchronous for its caller (the shared ProvMnS service runs it in a
+    worker thread) and asynchronous inside: its smo-teiv requests go out together on a client of its own (`SmoTeivClient.read_client`), awaited
+    with `asyncio.gather`, and the client is closed when the read returns, so nothing outlives the request."""
 
-    def __init__(self, client: SmoTeivClient, workers: int = 16):
-        """`workers` bounds the requests one read sends at once."""
+    def __init__(self, client: SmoTeivClient):
         self.client = client
-        self.pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="teiv-read")
 
     def close(self) -> None:
-        """Stops the pool and closes the client."""
-        self.pool.shutdown(wait=False, cancel_futures=True)
+        """Closes the client."""
         self.client.close()
+
+    def _run(self, read):
+        """Runs `read(http)` (a coroutine function of a read's client) to its end, on a client opened for it and closed after."""
+        async def go():
+            async with self.client.read_client() as http:
+                return await read(http)
+        return asyncio.run(go())
 
     @staticmethod
     def teiv_class(dn: str) -> model.TeivClass:
@@ -166,23 +172,41 @@ class TeivReader:
         return model.CLASSES[name]
 
     def base(self, dn: str) -> dict | None:
-        """The resource at `dn` (None when smo-teiv has no such object), with its references."""
+        """The resource at `dn` (None when smo-teiv has no such object), with its references, read one request after the other on the synchronous
+        client: the writes' checks call it from the router's event loop, where a read's own loop cannot run (and a write waits on no fan-out)."""
         cls = self.teiv_class(_safe_dn(dn))
         body = self.client.get_entity(cls.domain, cls.entity_type, model.teiv_id(dn))
         found = _entities(body, cls) if body else []
         if not found:
             return None
         resource = resource_of(cls, found[0])
-        self._fill_references([resource], dn, exact=True)
+        refs = {}
+        for key, ref in model.REFERENCES.items():
+            if key[0] == cls.name:
+                path = f"/domains/{ref.domain}/relationship-types/{ref.relationship_type}/relationships"
+                pages = self.client.pages(path, {"targetFilter": "/sourceIds", "scopeFilter": needle(dn, below=False)})
+                refs[key] = [r for page in pages for block in page.get("items", []) for r in block.get(ref.relationship, [])]
+        self._apply_references([resource], refs)
         return resource
 
-    def _candidates(self, cls: model.TeivClass, base_dn: str, push: Pushdown, fields: str = ENTITY_FIELDS) -> list[dict]:
+    async def _base(self, http, dn: str) -> dict | None:
+        """`base` on a read's client, its references read at once."""
+        cls = self.teiv_class(_safe_dn(dn))
+        body = await self.client.aget_entity(http, cls.domain, cls.entity_type, model.teiv_id(dn))
+        found = _entities(body, cls) if body else []
+        if not found:
+            return None
+        resource = resource_of(cls, found[0])
+        await self._fill_references(http, [resource], dn, exact=True)
+        return resource
+
+    async def _candidates(self, http, cls: model.TeivClass, base_dn: str, push: Pushdown, fields: str = ENTITY_FIELDS) -> list[dict]:
         """The objects of `cls` below `base_dn` that the pushdown leaves (every page), with the entity `fields` (smo-teiv's targetFilter)."""
         terms = [needle(base_dn, below=True)] + push.scope_filter(cls)
         inside = base_dn + ","
         path = f"/domains/{cls.domain}/entity-types/{cls.entity_type}/entities"
         out, limit = [], max_scope_objects()
-        for body in self.client.pages(path, {"targetFilter": fields, "scopeFilter": ";".join(terms)}):
+        for body in await self.client.apages(http, path, {"targetFilter": fields, "scopeFilter": ";".join(terms)}):
             if body.get("totalCount", 0) > limit:
                 raise MnsError(422, "NOT_EXPRESSIBLE", f"the scope selects {body['totalCount']} {cls.name} objects, more than TE&IV fetches for one "
                                f"read ({limit}): narrow the scope, or filter by class or by an attribute TE&IV's store holds",
@@ -195,6 +219,10 @@ class TeivReader:
         MOI_NOT_FOUND when the base does not exist. `selected_attributes`, when given, are the attributes the caller selected: a reference
         attribute neither selected nor in the filter is not read (the objects below the base come back without it, as the selection would leave
         them)."""
+        return self._run(lambda http: self._subtree(http, base_dn, scope, tree, selected_attributes))
+
+    async def _subtree(self, http, base_dn: str, scope: Scope, tree, selected_attributes: set[str] | None) -> list[dict]:
+        """`subtree` on a read's client."""
         base_cls = self.teiv_class(_safe_dn(base_dn))
         base_depth = depth_of(base_dn)
         lowest, highest = scope.depth_range(base_depth)
@@ -208,37 +236,44 @@ class TeivReader:
         ref_kinds = [(k, ref) for k, ref in model.REFERENCES.items() if k[0] in wanted
                      and (selected_attributes is None or k[1] in selected_attributes or k[1] in in_filter)]
         filter_needs_refs = any(attribute in in_filter for (_cls, attribute), _ref in ref_kinds)
-        early = ref_kinds and (base_cls.name != "SubNetwork" or filter_needs_refs)
-        ref_jobs = self._reference_jobs(ref_kinds, needle(base_dn, below=True)) if early else {}
+        early = bool(ref_kinds) and (base_cls.name != "SubNetwork" or filter_needs_refs)
         # nothing selected or filtered on is a stored attribute (a neighbour read selects adjacentNRCellRef only): the ids alone
         refs_only = selected_attributes is not None and {a for _cls, a in model.REFERENCES} >= (selected_attributes | in_filter)
         fields = "/sourceIds" if refs_only else ENTITY_FIELDS
-        futures = [self.pool.submit(self._candidates, model.CLASSES[c], base_dn, push, fields) for c in wanted]
-        base_future = self.pool.submit(self.base, base_dn) if lowest == base_depth else None
+        with_base = lowest == base_depth
+        early_kinds = ref_kinds if early else []
+        answers = await asyncio.gather(
+            *(self._candidates(http, model.CLASSES[c], base_dn, push, fields) for c in wanted),
+            *([self._base(http, base_dn)] if with_base else []),
+            *(self._relationships(http, ref, needle(base_dn, below=True)) for _k, ref in early_kinds))
+        lists, rest = answers[:len(wanted)], answers[len(wanted):]
+        base = rest[0] if with_base else None
+        refs = dict(zip((k for k, _ref in early_kinds), rest[1 if with_base else 0:]))
         found = []
-        for future in futures:
-            for item in future.result():
+        for items in lists:
+            for item in items:
                 depth = depth_of(item["objectInstance"])
                 if depth > base_depth and depth >= lowest and (highest is None or depth <= highest):
                     found.append(item)
-        base = base_future.result() if base_future is not None else None
-        if base is None and (base_future is not None or not found) and self.base(base_dn) is None:
+        if base is None and (with_base or not found) and await self._base(http, base_dn) is None:
             raise MnsError(404, "MOI_NOT_FOUND", f"{base_dn} does not exist")
         if early:
-            self._apply_references(found, ref_jobs)
+            self._apply_references(found, refs)
             selected = [r for r in found if matches(tree, r)]
         else:
             selected = [r for r in found if matches(tree, r)]
-            self._fill_references(selected, base_dn, exact=False, kinds=ref_kinds)
+            await self._fill_references(http, selected, base_dn, exact=False, kinds=ref_kinds)
         if base is not None and matches(tree, base):
             selected.append(base)
         return sorted(selected, key=lambda r: r["objectInstance"])
 
-    def _reference_jobs(self, kinds, condition: str) -> dict:
-        """The relationship reads of `kinds` ((class, attribute), Reference) whose sourceIds meet `condition` (needle), started."""
-        return {k: self.pool.submit(self._relationships, ref, condition) for k, ref in kinds}
+    async def _references(self, http, kinds, condition: str) -> dict:
+        """{(class, attribute): relationships} of `kinds` ((class, attribute), Reference) whose sourceIds meet `condition` (needle), read at once."""
+        kinds = list(kinds)
+        found = await asyncio.gather(*(self._relationships(http, ref, condition) for _k, ref in kinds))
+        return dict(zip((k for k, _ref in kinds), found))
 
-    def _fill_references(self, resources: list[dict], prefix_dn: str, exact: bool, kinds=None) -> None:
+    async def _fill_references(self, http, resources: list[dict], prefix_dn: str, exact: bool, kinds=None) -> None:
         """Sets the reference attributes of `resources` from their relationships (module description): one exact read per object and kind for a few
         objects (SMALL_FILL), else one read per kind of everything below `prefix_dn` (`exact`: the object at `prefix_dn` alone); `kinds`: the
         references to read (default every one of the resources' classes)."""
@@ -246,21 +281,21 @@ class TeivReader:
         if not kinds:
             return
         if exact or len(resources) > SMALL_FILL:
-            self._apply_references(resources, self._reference_jobs(kinds, needle(prefix_dn, below=not exact)))
+            self._apply_references(resources, await self._references(http, kinds, needle(prefix_dn, below=not exact)))
             return
-        jobs = [(r, self._reference_jobs([(k, ref) for k, ref in kinds if k[0] == r["objectClass"]], needle(r["objectInstance"], below=False)))
-                for r in resources]
-        for resource, job in jobs:
-            self._apply_references([resource], job)
+        per_object = await asyncio.gather(*(self._references(http, [(k, ref) for k, ref in kinds if k[0] == r["objectClass"]],
+                                                             needle(r["objectInstance"], below=False)) for r in resources))
+        for resource, refs in zip(resources, per_object):
+            self._apply_references([resource], refs)
 
     @staticmethod
-    def _apply_references(resources: list[dict], jobs: dict) -> None:
-        """Maps the relationships the `jobs` read onto the reference attributes of `resources`."""
+    def _apply_references(resources: list[dict], refs: dict) -> None:
+        """Maps the relationships read (`refs`, by (class, attribute)) onto the reference attributes of `resources`."""
         by_dn = {r["objectInstance"]: r for r in resources}
-        for (cls_name, attribute), job in jobs.items():
+        for (cls_name, attribute), rels in refs.items():
             ref = model.REFERENCES[(cls_name, attribute)]
             values: dict[str, list[str]] = {}
-            for rel in job.result():
+            for rel in rels:
                 if ref.owner_source is not None:
                     sources = rel.get("sourceIds") or []
                     if len(sources) <= ref.owner_source:
@@ -277,11 +312,11 @@ class TeivReader:
                 if item is not None and item["objectClass"] == cls_name:
                     item["attributes"][attribute] = sorted(targets) if ref.many else targets[0]
 
-    def _relationships(self, ref: model.Reference, condition: str) -> list[dict]:
+    async def _relationships(self, http, ref: model.Reference, condition: str) -> list[dict]:
         """Every relationship of `ref`'s type whose sourceIds meet `condition` (a scopeFilter, needle)."""
         path = f"/domains/{ref.domain}/relationship-types/{ref.relationship_type}/relationships"
         out = []
-        for body in self.client.pages(path, {"targetFilter": "/sourceIds", "scopeFilter": condition}):
+        for body in await self.client.apages(http, path, {"targetFilter": "/sourceIds", "scopeFilter": condition}):
             out += [r for block in body.get("items", []) for r in block.get(ref.relationship, [])]
         return out
 

@@ -27,8 +27,8 @@ notifications on it (S3.22). TE&IV has no table of the SMO's database of its own
 ```
 
 - **TE&IV's process** (`app/`): a FastAPI app on the shared router of `smo_shared.mns`, so the URI, the error bodies, the hierarchical and flat answers,
-  paging and the S1.5 checks (caller and scope, MSAC, trace, metrics) are the shared ones; only the store is smo-teiv. At start-up it loads its decorator
-  schema into smo-teiv and registers its 15 classes in SME's MnS registry under its MnS scope (`TEIV_MNS_SCOPE`, `SubNetwork=SMO-RAN`), so R1 Termination
+  paging and the S1.5 checks (caller and scope, MSAC, trace, metrics) are the shared ones; only the store is smo-teiv. Its readiness probe loads its decorator
+  schema into smo-teiv, and at start-up it registers its 15 classes in SME's MnS registry under its MnS scope (`TEIV_MNS_SCOPE`, `SubNetwork=SMO-RAN`), so R1 Termination
   routes `/ProvMnS/...` of those classes under that scope to it by class name (S1.8, S1.12).
   - **getMOIAttributes** (G1, G8): a DN is smo-teiv's id `urn:3gpp:dn:<DN>`, a class one of smo-teiv's entity types (`app/model.py`), an attribute its
     column under its TS 28.541 name or a decorator of TE&IV's schema; a reference (nRSectorCarrierRef, nRFreqRelationRef, adjacentNRCellRef) comes back
@@ -51,7 +51,7 @@ notifications on it (S3.22). TE&IV has no table of the SMO's database of its own
   allows. The data model's user-defined schemas cannot carry them: they are classifiers and decorators only (TE&IV-CIMI R005 v07.00 section 4.5).
 - **TE&IV's decorator schema** (`app/smo-teiv-attrs.yang`, S3.21): the TS 28.541 attributes no column of smo-teiv's holds (administrativeState,
   operationalState, cellState, plmnInfoInfoList, ...: 94) as decorators, the data model's own way to add data to an entity (CIMI section 4.5.3), generated
-  from the shared class registry and loaded through createUserDefinedSchema.
+  from the shared class registry and loaded through createUserDefinedSchema by the readiness probe.
 - **The shared broker** of the compose profile `kafka` (ADR 0006): smo-teiv's ingestion reads TE&IV's topic `smo.teiv.ingestion.v1` (four partitions),
   consumer group `smo.teiv.ingestion`. The topic is TE&IV's by name: `smo_shared.kafka_settings` refuses `smo.teiv.*` to every other producer.
 - **Isolation (D19).** No module but TE&IV reaches the topic, the database or smo-teiv's API: in compose, the database and the two processes are on the
@@ -65,11 +65,11 @@ notifications on it (S3.22). TE&IV has no table of the SMO's database of its own
 
 | File | What it is |
 |---|---|
-| `app/main.py` | the app: the shared ProvMnS router on `TeivProvMnS`, the WG10 router, the probes (ready: smo-teiv answers `/domains` and the decorator schema is loaded), the ETag middleware, the schema loader and the MnS registration started with the app |
+| `app/main.py` | the app: the shared ProvMnS router on `TeivProvMnS`, the WG10 router, the probes (ready: smo-teiv answers `/domains` and the decorator schema is in it, the probe loading it when it is not), the ETag middleware, the MnS registration started with the app |
 | `app/model.py` | the map (G1): the 15 classes (TS 28.541 name, smo-teiv module, entity type, domain, native attributes and their smo-teiv names, the booleans held as the extension's `true` / `false`), containment, the three reference attributes and the relationships they are read from, ids and DNs |
-| `app/attrs.py`, `app/smo-teiv-attrs.yang` | the decorator schema: generated from the class registry (`python -m app.attrs --write`; a test holds it current), loaded at start-up; the value codec (plain text as itself, anything else `j:` + base64url of its JSON, so no value smo-teiv writes into its SQL holds a quote) |
+| `app/attrs.py`, `app/smo-teiv-attrs.yang` | the decorator schema: generated from the class registry (`python -m app.attrs --write`; a test holds it current), loaded by the readiness probe; the value codec (plain text as itself, anything else `j:` + base64url of its JSON, so no value smo-teiv writes into its SQL holds a quote) |
 | `app/client.py` | the only client of smo-teiv's API: bounded timeouts, a 5xx / timeout / transport failure is 503 TEIV_UNAVAILABLE, another 4xx 502 TEIV_REFUSED, paging |
-| `app/reader.py` | getMOIAttributes over smo-teiv: the base, the candidates per class with the sourceIds condition (`needle`), the filter's pushdown and TE&IV's exact evaluation, the references from relationships, the refusals, the version |
+| `app/reader.py` | getMOIAttributes over smo-teiv, a read's requests sent at once (`asyncio.gather` on a client of the read's own, closed with it): the base, the candidates per class with the sourceIds condition (`needle`), the filter's pushdown and TE&IV's exact evaluation, the references from relationships, the refusals, the version |
 | `app/provmns.py` | `TeivProvMnS`: the shared service's contract for the four operations with smo-teiv as the store; the writes' checks (caller, class, instance, If-Match) and 501 |
 | `app/wg10.py` | the 16 WG10 operations passed to smo-teiv, with the door's rules and the audit of the writes |
 | `app/ingest.py` | TE&IV's writes in smo-teiv's forms: ingestion CloudEvents (entities, containment, references, NEIGHBOR_CELL reversed) and the updateDecorator calls (at most 100 entities each); used by the load test and the tests now, by S3.4's write path next |
@@ -99,11 +99,11 @@ container, 1,000 cells, 200 runs each, TE&IV with three workers; every answer ri
 
 | Query | p50 ms | p95 ms | p99 ms |
 |---|---:|---:|---:|
-| Q1 one cell (NRCellDU, BASE_ONLY) | 14.4 | 19.2 | 20.7 |
-| Q2 a cell's neighbours (its NRCellRelation's adjacentNRCellRef) | 16.7 | 25.0 | 30.5 |
-| Q3 the cells of a GNBDUFunction | 11.0 | 16.6 | 19.9 |
-| Q4 two hops (Q2, then Q2 of each neighbour, at once) | 79.0 | 107.3 | 128.9 |
-| Q5 a SubNetwork's cells with nRTAC equal to a value | 77.0 | 93.8 | 100.9 |
+| Q1 one cell (NRCellDU, BASE_ONLY) | 13.8 | 18.8 | 22.7 |
+| Q2 a cell's neighbours (its NRCellRelation's adjacentNRCellRef) | 16.3 | 20.8 | 22.7 |
+| Q3 the cells of a GNBDUFunction | 11.7 | 14.4 | 16.0 |
+| Q4 two hops (Q2, then Q2 of each neighbour, at once) | 82.9 | 113.6 | 132.0 |
+| Q5 a SubNetwork's cells with nRTAC equal to a value | 57.6 | 75.1 | 96.6 |
 
 ## 3. Tests
 
@@ -115,7 +115,7 @@ class name: `tests_integration/test_teiv_through_r1.py`.
 | File | What it covers |
 |---|---|
 | [`tests/test_provmns.py`](tests/test_provmns.py) | Q1 to Q5 answered exactly (TS names, decorators, references, the reversed NEIGHBOR_CELL side), what goes down to smo-teiv (class, native and decorator equalities, ids only for a reference selection), the short sourceId condition never leaking a lookalike, the refusals (404, 422, 502, 503 with Retry-After), paging, a scoped caller, the version and If-Match (412), the writes' 501 |
-| [`tests/test_wg10_and_app.py`](tests/test_wg10_and_app.py) | the 16 WG10 operations under their ids, smo-teiv's answers passed through, only the standard's parameters, a scoped caller refused, TE&IV's own schema and decorators refused, a decorator value smo-teiv would paste into its SQL refused, the writes audited, readiness and the schema loaded at start-up, the registration's classes and scope, the timeout settings |
+| [`tests/test_wg10_and_app.py`](tests/test_wg10_and_app.py) | the 16 WG10 operations under their ids, smo-teiv's answers passed through, only the standard's parameters, a scoped caller refused, TE&IV's own schema and decorators refused, a decorator value smo-teiv would paste into its SQL refused, the writes audited, readiness and the schema loaded by it once, the registration's classes and scope, the timeout settings |
 | [`tests/test_model_attrs_ingest.py`](tests/test_model_attrs_ingest.py) | the 15 classes and their ids, the booleans, containment, the decorator codec, the decorator schema current and loaded as application/yang, the encoder's NEIGHBOR_CELL direction and batch limit |
 | [`tests/test_isolation.py`](tests/test_isolation.py) | the profile's services on the internal network only, no published port, no other service naming the database, the API or the topic, the relay refusing the topic, compose and the chart running the same images, topic, heaps and limits, both images from the pinned tag |
 | [`tests/test_check_extension.py`](tests/test_check_extension.py) | the extension modules pass the data model's rules, and a module breaking each rule (E1–E8) is reported (skipped without pyang) |

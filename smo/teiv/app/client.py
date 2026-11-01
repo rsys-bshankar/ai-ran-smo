@@ -52,20 +52,68 @@ def unavailable(reason: str) -> MnsError:
 
 
 class SmoTeivClient:
-    """A synchronous client of smo-teiv's API with bounded timeouts (module description); thread-safe (httpx.Client is), so the reader's fan-out
-    shares one."""
+    """A client of smo-teiv's API with bounded timeouts (module description): a synchronous one for single calls (the probes, the WG10 door), and an
+    asynchronous one per ProvMnS read (`read_client`), on which the reader sends that read's requests at once."""
 
     def __init__(self, base_url: str | None = None, transport: httpx.BaseTransport | None = None):
         """`base_url` defaults to TEIV_EXPOSURE_URL; `transport` replaces the network (a test's fake smo-teiv)."""
         base = (base_url or os.environ.get("TEIV_EXPOSURE_URL") or "http://teiv-exposure:8080").rstrip("/")
         timeout = httpx.Timeout(_float("TEIV_READ_TIMEOUT_SECONDS", 5.0), connect=_float("TEIV_CONNECT_TIMEOUT_SECONDS", 2.0))
         connections = int(_float("TEIV_MAX_CONNECTIONS", 32))
-        self.http = httpx.Client(base_url=base + API, timeout=timeout, transport=transport,
+        self.base_url, self.timeout, self.connections = base + API, timeout, connections
+        self.http = httpx.Client(base_url=self.base_url, timeout=timeout, transport=transport,
                                  limits=httpx.Limits(max_connections=connections, max_keepalive_connections=connections))
+        self.async_transport: httpx.AsyncBaseTransport | None = transport if isinstance(transport, httpx.AsyncBaseTransport) else None
+        self.tls = httpx.create_ssl_context()       # made once: building it is most of what opening a read's client costs
+
+    def use_transport(self, transport: httpx.MockTransport) -> None:
+        """Sends every request, the reads' too, to `transport` (a test's fake smo-teiv)."""
+        self.http.close()
+        self.http = httpx.Client(base_url=self.base_url, timeout=self.timeout, transport=transport)
+        self.async_transport = transport
 
     def close(self) -> None:
         """Closes the connections."""
         self.http.close()
+
+    # ---- the reads' asynchronous side: one AsyncClient per ProvMnS read, its requests sent at once (reader.py), closed with the read
+
+    def read_client(self) -> httpx.AsyncClient:
+        """The client of one read: at most TEIV_MAX_CONNECTIONS requests at once, the same timeouts; closed by the read (`async with`)."""
+        return httpx.AsyncClient(base_url=self.base_url, timeout=self.timeout, transport=self.async_transport, verify=self.tls,
+                                 limits=httpx.Limits(max_connections=self.connections, max_keepalive_connections=self.connections))
+
+    async def _asend(self, http: httpx.AsyncClient, path: str, params: dict | None = None) -> httpx.Response:
+        """One GET on a read's client; MnsError 503 for a transport failure or a 5xx, as `_send`."""
+        try:
+            response = await http.get(path, params={k: v for k, v in (params or {}).items() if v is not None})
+        except httpx.TimeoutException:
+            raise unavailable("timed out") from None
+        except httpx.TransportError as exc:
+            raise unavailable(type(exc).__name__) from None
+        if response.status_code >= 500:
+            log.warning("smo-teiv answered %s for GET %s", response.status_code, path)
+            raise unavailable(f"HTTP {response.status_code}")
+        return response
+
+    async def aget_entity(self, http: httpx.AsyncClient, domain: str, entity_type: str, identifier: str) -> dict | None:
+        """`get_entity` on a read's client."""
+        path = f"/domains/{domain}/entity-types/{entity_type}/entities/{quote(identifier, safe='')}"
+        response = await self._asend(http, path)
+        if response.status_code == 404:
+            return None
+        return self._json(response, path)
+
+    async def apages(self, http: httpx.AsyncClient, path: str, params: dict) -> list[dict]:
+        """`pages` on a read's client: every page of a list answer."""
+        out, offset = [], 0
+        while True:
+            body = self._json(await self._asend(http, path, {**params, "offset": offset, "limit": PAGE}), path)
+            out.append(body)
+            seen = sum(len(v) for block in body.get("items", []) for v in block.values())
+            offset += PAGE
+            if not seen or offset >= body.get("totalCount", 0):
+                return out
 
     def _send(self, method: str, path: str, **kwargs) -> httpx.Response:
         """One request; MnsError 503 for a transport failure or a 5xx."""

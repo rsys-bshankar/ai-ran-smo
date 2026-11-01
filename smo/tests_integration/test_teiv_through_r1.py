@@ -64,7 +64,7 @@ def stack(loaded_apps, teiv_parts, db_connection, monkeypatch):
     main, ingest, tree, fake_teiv = teiv_parts
     mois = tree.synthetic(CELLS)
     fake = fake_teiv.FakeTeiv().load(*ingest.encode(mois))
-    monkeypatch.setattr(main.client, "http", httpx.Client(base_url="http://teiv-exposure:8080/topology-inventory/v1", transport=fake.transport()))
+    main.client.use_transport(fake.transport())
     sessions = sessionmaker(bind=db_connection, join_transaction_mode="create_savepoint", expire_on_commit=False)
 
     def session():
@@ -90,7 +90,9 @@ def stack(loaded_apps, teiv_parts, db_connection, monkeypatch):
     for verb in ("get", "post", "put", "patch", "delete"):
         monkeypatch.setattr(httpx, verb, call(verb))
     real_async_client = httpx.AsyncClient
-    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: real_async_client(transport=_Hosts(apps), timeout=kwargs.get("timeout")))
+    # R1 Termination's outbound calls go to the apps by host; TE&IV's own reads (a client with the fake smo-teiv's transport) pass as they are
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: real_async_client(**kwargs) if kwargs.get("transport") is not None
+                        else real_async_client(transport=_Hosts(apps), timeout=kwargs.get("timeout")))
     monkeypatch.setattr(r1_client, "_identity", r1_client._ModuleIdentity(store=False))
     monkeypatch.setenv("SMO_MNS_REGISTRATION", "on")
     r1.mns_routing.CACHE.clear()

@@ -64,7 +64,7 @@ def sessions():
 def teiv(fake, sessions, monkeypatch):
     """TE&IV's app.main on the fake (its client's connection replaced) and on `sessions`."""
     from app import main
-    monkeypatch.setattr(main.client, "http", httpx.Client(base_url="http://teiv-exposure:8080/topology-inventory/v1", transport=fake.transport()))
+    main.client.use_transport(fake.transport())
 
     def session():
         db = sessions()
