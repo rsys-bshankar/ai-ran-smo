@@ -432,7 +432,8 @@ jobs:
           # No TLS terminator in front of the GUI in CI.
           GUI_COOKIE_SECURE: "false"
           SMO_BUILD_SHA: ${{ github.sha }}    # GET /version answers it (PR-OBS-8.1)
-        run: docker compose up -d --build
+        # profile echo: the reference ProvMnS module (PR-CONV-S1.6), off by default, runs here so its image (with specs/5G_APIs) and its role are proved
+        run: docker compose --profile echo up -d --build
 
       # PR-OPS-1.5: the one-shot migrate service created the schema (the stack no longer mounts 001_init.sql into
       # Postgres) and the database is at the newest revision in the repository.
