@@ -32,14 +32,13 @@ call flow 26e).
 sequenceDiagram
     participant S as Operator (GUI) / rApp (SDK)
     participant AIM as AIMgF
-    participant MLMR as MLMR
     participant DME as DME
 
     S->>AIM: POST /aimgf/mlmf/subscriptions?model_id&dme_type_id&notification_destination?<br/>{metric_types, guard_kpi_floor?, guard_kpi_ceiling?}
     alt a floor or ceiling that is not a number
         AIM-->>S: 422 SCHEMA_VALIDATION_FAILED
     else
-        AIM->>MLMR: GET /mlmr/models/{id}
+        Note over AIM: the model read from the registry in process
         alt unknown model, another rApp's, or RETIRED
             AIM-->>S: 404 MODEL_NOT_FOUND · 403 MODEL_ACCESS_DENIED · 409 LIFECYCLE_ILLEGAL_TRANSITION
         else
@@ -63,7 +62,6 @@ from MDAF (13c) and the owner rApp (13b). The destination is checked by the outb
 sequenceDiagram
     participant P as Owner rApp (SDK) / Admin (GUI)
     participant AIM as AIMgF
-    participant MLMR as MLMR
 
     P->>AIM: POST /aimgf/mlmf/subscriptions/{id}/reports {metric: number, …}
     alt unknown subscription, another rApp's model, or RETIRED
@@ -73,7 +71,7 @@ sequenceDiagram
     else
         Note over AIM: breached = a guarded metric the report carries is below its floor or above its ceiling<br/>missingMetrics = the guarded metrics it does not carry (not a breach)<br/>report and the subscriber's push committed together (13d)
         opt breached and the model is in a coordination group
-            AIM->>MLMR: GET /mlmr/coordination-groups
+            Note over AIM: the registry's coordination groups read in process
             Note over AIM: retrainPropagation decides, then each PROMOTED member retrained on its own (call flow 02e)<br/>a failure here is groupRetrainError {code, detail}, the report kept
         end
         AIM-->>P: 200 {reportId, breachedFloor, missingMetrics, groupRetrainTriggered?, retrainedModelIds?, retrainSkipped?, groupRetrainError?}
@@ -143,7 +141,7 @@ sequenceDiagram
 - MLMF watches a model's performance, distinct from MDAF's RAN analytics (AI/ML Workflow LLD section 2); MDAF feeds it drift reports.
 - A guard is a floor (higher is better) or a ceiling (lower is better). A breach needs the metric in the report: a report that does not carry a guarded
   metric lists it in `missingMetrics` instead (DOC-CF-1.8).
-- A subscription names a model MLMR knows and a DME type DME knows; floors, ceilings and reported values are numbers (DOC-CF-1.8).
+- A subscription names a model AIMgF's registry knows and a DME type DME knows; floors, ceilings and reported values are numbers (DOC-CF-1.8).
 - The push goes through the transactional outbox: sent after the report commits, retried by the worker's sweep, never failing the report (PR-MSG-1.7).
 - A destination is optional: a pull-only subscriber reads the reports. Unsubscribing twice is not an error.
 - A breach retrains a coordination group only through its `retrainPropagation` and only its PROMOTED members, each on its own (call flow 02e).

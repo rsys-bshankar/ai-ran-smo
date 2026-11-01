@@ -1,6 +1,6 @@
 /** Sections `aiml.repositories`, `aiml.storages` and `aiml.artifactVersions` (Registry tab, feature 8): MLMR's TS 28.105 model repositories
  * (label, model and group counts), its model storages (profiles, addresses, supported features) and every model's artifact versions as download
- * links (`GET /mlmr/models/{id}/artifact/{version}` through the BFF). All three are server-paged and read-only: the BFF exposes no write on
+ * links (`GET /aimgf/models/{id}/artifact/{version}` through the BFF). All three are server-paged and read-only: the BFF exposes no write on
  * repositories or storages (README, Known limits). MLMR serves no list of a model's artifact versions; they are counted from its
  * `artifactLocation` (`model-artifact:<model id>:<latest version>`, data/board.ts `ARTIFACT_LOCATION_RE`). */
 import type { Model } from "../../../api/types";

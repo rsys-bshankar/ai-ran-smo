@@ -267,7 +267,7 @@ def test_ran_nf_oam_config_write_rejected_by_mock_o1_adaptor_is_recorded(mesh, l
     assert sub_change["rejectionReason"] == "NETCONF_RPC_FAILED"
 
 
-def test_ts28105_nrm_pipeline_across_aimgf_mlmr_and_nfo(mesh):
+def test_ts28105_nrm_pipeline_across_aimgf_its_registry_and_nfo(mesh):
     """Wave 4 (TS 28.105 at REST level): an MLTrainingRequest through real
     AIMgF -> MLMR (model existence) -> NFO (MLTF runtime), its report, a
     model loaded onto an AIMLInferenceFunction through the real

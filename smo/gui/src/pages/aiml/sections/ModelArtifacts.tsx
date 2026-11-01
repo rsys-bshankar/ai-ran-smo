@@ -1,5 +1,5 @@
 /** Section `aiml.artifacts`: the selected model's artifact versions (download links through the BFF), the artifact upload (`POST
- * /mlmr/models/{id}/artifact`, multipart) and, once the model is CERTIFIED or PROMOTED, the MLLF "deploy to node groups" form. Both forms are
+ * /aimgf/models/{id}/artifact`, multipart) and, once the model is CERTIFIED or PROMOTED, the MLLF "deploy to node groups" form. Both forms are
  * role-gated with `Can`. Reads the same model and lifecycle queries as the detail panel (shared cache, no extra call). */
 import { useState } from "react";
 

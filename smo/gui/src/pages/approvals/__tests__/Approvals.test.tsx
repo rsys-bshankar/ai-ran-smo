@@ -274,7 +274,7 @@ describe("two-person approval (opt-in; a request that needs one approval looks a
         { modelId: "m-1", modelLifecycleState: "TRAINED", runtimeLifecycleState: "NOT_DEPLOYED", trainingApproved: false, validationApproved: false, trainingJobId: null, clearedNodeGroups: [], nfDeploymentDescriptorId: null, nfDeploymentId: null },
         { modelId: "m-2", modelLifecycleState: "PENDING_APPROVAL", runtimeLifecycleState: "NOT_DEPLOYED", trainingApproved: true, validationApproved: true, trainingJobId: null, clearedNodeGroups: [], nfDeploymentDescriptorId: null, nfDeploymentId: null },
       ], total: 2, limit: 25, offset: 0 },
-      "GET /smo/mlmr/models": { items: [{ modelId: "m-1", modelType: "coverage-model", version: "1.2" }, { modelId: "m-2", modelType: "es-model", version: "3.0" }], total: 2, limit: 200, offset: 0 },
+      "GET /smo/aimgf/models": { items: [{ modelId: "m-1", modelType: "coverage-model", version: "1.2" }, { modelId: "m-2", modelType: "es-model", version: "3.0" }], total: 2, limit: 200, offset: 0 },
     };
     const calls = bff("operator", gates);
     window.location.hash = "#models";

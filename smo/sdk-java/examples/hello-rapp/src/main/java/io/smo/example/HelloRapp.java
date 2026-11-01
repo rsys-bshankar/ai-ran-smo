@@ -25,7 +25,7 @@ import java.util.function.Function;
  *   <li>gets an access token (the SDK enrols an invoker at SME, or uses the one rApp Management issued);</li>
  *   <li>registers the operator API of its instance, where the GUI reaches the page the package declares;</li>
  *   <li>reports a heartbeat to rApp Management every {@code HELLO_HEARTBEAT_SECONDS};</li>
- *   <li>on "Run now" reads a data route (DME types) and an AI route (MLMR models) and records what it saw;</li>
+ *   <li>on "Run now" reads a data route (DME types) and an AI route (the registry's models) and records what it saw;</li>
  *   <li>on SIGTERM reports a final heartbeat, clears the operator API and deregisters its own invoker.</li>
  * </ol>
  * It takes no action on the network. Configuration is the environment ({@link Settings#fromEnv}) plus the SDK's own
@@ -134,7 +134,7 @@ public final class HelloRapp implements AutoCloseable {
     }
 
     /**
-     * A run: reads the data types DME knows and the models MLMR holds and records the counts. {@code dryRun} is accepted from the
+     * A run: reads the data types DME knows and the models AIMgF's registry holds and records the counts. {@code dryRun} is accepted from the
      * operator page and changes nothing here, as the rApp acts on nothing anyway.
      */
     ObjectNode run(boolean dryRun) {

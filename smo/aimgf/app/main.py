@@ -16,8 +16,8 @@ The code is organised by TS 28.105 capability (S2.3 of `docs/plan/CONVERGED_REWR
 There is no `mltf`, `mtef`, `mlvf`, `mlef` or `mlif` package: training, validation, emulation and inference run as NFO workloads AIMgF asks for
 (`execution.py`, golden rules 3 and 4 of `docs/ARCHITECTURE.md`), and MTEF is a retired name.
 
-Where it sits: rApps (through the SDK), the GUI BFF, MDAF, SA SMOS and SO SMOS call it over R1, at `/aimgf/...` and, until S2.4 moves the last callers,
-at the old `/mlmr/...` and `/mllf/...` prefixes, which R1 Termination's routing table now sends to this process (the README lists the routes). It calls NFO,
+Where it sits: rApps (through the SDK), the GUI BFF, MDAF, SA SMOS and SO SMOS call it over R1 at `/aimgf/...`, the one prefix every route answers at (the
+registry and the deploy gate too: S2.4 moved their callers and deleted MLMR's and MLLF's gateway prefixes). It calls NFO,
 DME and Onboarding through `common._r1`, one `R1Client` for the module, and caller-supplied notification URLs only through the transactional outbox.
 
 Before editing: (1) `import httpx` and `R1Client` stay imported here although this file does not call them: the tests patch `app.main.httpx.post` and

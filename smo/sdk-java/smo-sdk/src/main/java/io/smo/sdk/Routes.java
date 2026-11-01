@@ -19,9 +19,9 @@ public final class Routes {
     public static final Route DME_RECORDS = Route.get("/dme/data-jobs/{}/records", "limit");
     public static final Route DME_ACTIONS = Route.post("/dme/actions", Set.of("requestedBy", "changes"));
 
-    // MLMR (AI models)
-    public static final Route MLMR_MODELS = Route.get("/mlmr/models", "limit", "offset");
-    public static final Route MLMR_MODEL_GET = Route.get("/mlmr/models/{}");
+    // AIMgF's model registry (AI models)
+    public static final Route AIMGF_MODELS = Route.get("/aimgf/models", "limit", "offset");
+    public static final Route AIMGF_MODEL_GET = Route.get("/aimgf/models/{}");
 
     // SME (platform)
     public static final Route SME_DISCOVER = Route.get("/sme/service-apis/v1/allServiceAPIs",
@@ -39,7 +39,7 @@ public final class Routes {
 
     public static final List<Route> ALL = List.of(
             DME_TYPES, DME_JOBS_LIST, DME_JOB_CREATE, DME_JOB_GET, DME_JOB_STATUS, DME_JOB_DELETE, DME_RECORDS, DME_ACTIONS,
-            MLMR_MODELS, MLMR_MODEL_GET, SME_DISCOVER,
+            AIMGF_MODELS, AIMGF_MODEL_GET, SME_DISCOVER,
             INSTANCE_GET, INSTANCE_CONFIG, INSTANCE_PERFORMANCE, INSTANCE_FAULT, INSTANCE_OPERATOR_API_PUT,
             INSTANCE_OPERATOR_API_DELETE, INSTANCE_BOOTSTRAP_COMPLETE, INSTANCE_TERMINATE);
 }

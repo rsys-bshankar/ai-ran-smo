@@ -17,9 +17,7 @@ modules:
   ran-nf-oam-worker: { replicas: 2 }
   nfo: { replicas: 2 }
   focom: { replicas: 2 }
-  mlmr: { replicas: 2 }
   aimgf: { replicas: 2 }
-  mllf: { replicas: 2 }
   ran-analytics: { replicas: 2 }
   mdaf: { replicas: 2 }
   intent-service: { replicas: 2 }

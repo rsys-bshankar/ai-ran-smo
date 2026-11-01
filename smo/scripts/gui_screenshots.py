@@ -526,7 +526,7 @@ def lcm_aiml(w: Walk):
         dlg.get_by_label(label).fill(value)
     w.shot(p, "lcm/aiml-register-model-dialog")
     w.click(p, dlg.get_by_role("button", name="Register"))
-    mid = w.wait_for("the model", lambda: next((m["modelId"] for m in w.items("/mlmr/models") if m["modelType"] == mtype), None))
+    mid = w.wait_for("the model", lambda: next((m["modelId"] for m in w.items("/aimgf/models") if m["modelType"] == mtype), None))
     w.ctx["model"] = mid
 
     def state():
@@ -627,7 +627,7 @@ def lcm_aiml(w: Walk):
 
     # a second model whose training run fails (reported as the trainer would), then Retry training
     mtype2 = f"HandoverFailurePredictor-{w.run}"
-    mid2 = w.api("POST", "/mlmr/models", json={"modelType": mtype2, "version": "1.0.0", "description": "Too-late handovers per cell pair",
+    mid2 = w.api("POST", "/aimgf/models", json={"modelType": mtype2, "version": "1.0.0", "description": "Too-late handovers per cell pair",
                                                  "owner": "ran-optimisation", "inputDataType": "RAN.PMCounters.HO_PERFORMANCE"})["modelId"]
     select(mtype2)
     w.click(p, w.section(p, "aiml.detail").get_by_role("button", name="Request training"))
@@ -647,7 +647,7 @@ def lcm_aiml(w: Walk):
     form.get_by_label("Use cases").fill("load-forecast, handover-robustness")
     w.shot(p, "lcm/aiml-coordination-group-form")
     w.click(p, form.get_by_role("button", name="Create"))
-    w.ctx["group"] = next(g["groupId"] for g in w.items("/mlmr/coordination-groups") if mid in g["memberModelIds"])
+    w.ctx["group"] = next(g["groupId"] for g in w.items("/aimgf/coordination-groups") if mid in g["memberModelIds"])
 
     # MLMF: subscribe the promoted model with a floor, then reports above and under it
     prb = next(t["dmeTypeId"] for t in w.items("/dme/dme-types") if t["typeName"] == "RAN.PMCounters.PRB_UTILIZATION")
@@ -884,7 +884,7 @@ def lcm_kpis(w: Walk):
     w.shot(p, "lcm/kpis-analytics-report-dialog")
 
     order = w.ctx.get("order") or next(o["orderId"] for o in reversed(w.items("/so-smos/orders")) if all(s["status"] == "COMPLETED" for s in o["steps"]))
-    group = w.ctx.get("group") or w.items("/mlmr/coordination-groups")[-1]["groupId"]
+    group = w.ctx.get("group") or w.items("/aimgf/coordination-groups")[-1]["groupId"]
 
     def register(target, thresholds, shot_name=None):
         # a monitor through the form; returns its id
@@ -1197,7 +1197,7 @@ def _flow_subjects(w: Walk) -> dict[str, str]:
     if blocked:
         found["06-blocked"] = blocked[-1]
     lifecycles = {x["modelId"]: x for x in w.items("/aimgf/model-lifecycles")}
-    promoted = [m["modelId"] for m in w.items("/mlmr/models") if m["modelType"].startswith("CellLoadForecaster-")
+    promoted = [m["modelId"] for m in w.items("/aimgf/models") if m["modelType"].startswith("CellLoadForecaster-")
                 and lifecycles.get(m["modelId"], {}).get("runtimeLifecycleState") == "ACTIVE"]
     if promoted:
         found["02"] = promoted[-1]

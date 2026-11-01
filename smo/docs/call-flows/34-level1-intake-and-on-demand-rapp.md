@@ -236,7 +236,7 @@ so clauses other than the TS 28.532 operations and the TS 29.222 APIs are given 
 ## What the code does today
 
 None of this runs yet. Today an operator's intent goes to Intent Service (call flow 09), SO SMOS runs ordered service-order steps (call flow 10), an rApp
-is instantiated by hand through rApp Management (call flow 01), registers at SME, loads its model through MLMR and MLLF (call flow 02) and writes through
+is instantiated by hand through rApp Management (call flow 01), registers at SME, loads its model through AIMgF's registry and deploy gate (call flow 02) and writes through
 autonomy dispatch or DME `/actions`, not a Level-2 intent. The rows that build this flow: **PR-CONV-S5.1** (Intent Service into SO SMOS), **S5.2**
 (Level-1 intake), **S5.3** (playbooks and selection), **S5.15** (pre-evaluation), **S4.1** (ASD `intentCapabilityProfile`), **S4.2** (`RappInstance`
 over ProvMnS), **S4.3** (warm start), **S4.4** and **S4.9** (NFO's O2dms driver, O2 detail), **S4.8** (registration), **S1.12** and **S1.16** (SME as the CAPIF core function),

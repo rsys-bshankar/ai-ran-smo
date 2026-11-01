@@ -237,13 +237,13 @@ def test_without_a_module_name_or_with_the_store_off_each_process_registers_its_
 
 
 def test_a_module_with_no_database_registers_its_own_instead_of_failing(sme, monkeypatch):
-    """DOC-CF-2.4: a module that has no database (MLLF: MODULE set, no SMO_DATABASE_URL) cannot open the store; it gets a token by registering on its own,
+    """DOC-CF-2.4: a module that has no database (MODULE set, no SMO_DATABASE_URL, as the MLLF service was) cannot open the store; it gets a token by registering on its own,
     as with the store off, where the first call used to raise (a 503 on /ready, a 500 on the first request)."""
     import smo_shared.module_identity as module_identity
 
     def no_database(*a, **kw):
         raise RuntimeError("SMO_DATABASE_URL is not set")
-    monkeypatch.setenv("MODULE", "mllf")
+    monkeypatch.setenv("MODULE", "no-database-module")
     monkeypatch.delenv("SMO_MODULE_IDENTITY_STORE", raising=False)
     monkeypatch.setattr(module_identity, "DbIdentityStore", no_database)
     client = _ModuleIdentity()

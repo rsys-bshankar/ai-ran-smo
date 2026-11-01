@@ -57,8 +57,8 @@ var (
 	dmeProducerStatusRoute = gw("dme", "GET", "/production-capabilities/{producer_id}/status")
 	dmeActionsRoute        = gw("dme", "POST", "/actions")
 
-	// models (MLMR)
-	mlmrModelsRoute = gw("mlmr", "GET", "/models")
+	// models (AIMgF's registry)
+	aimgfModelsRoute = gw("aimgf", "GET", "/models")
 
 	// platform (SME)
 	smeRegisterProviderRoute   = gw("sme", "POST", "/provider-registrations")
@@ -78,7 +78,7 @@ var (
 var allRoutes = []route{
 	bootstrapRoute, invokerRegistrationRoute, tokenRoute,
 	dmeTypesRoute, dmeProducersRoute, dmeProducerStatusRoute, dmeActionsRoute,
-	mlmrModelsRoute,
+	aimgfModelsRoute,
 	smeRegisterProviderRoute, smeDeregisterProviderRoute, smeDiscoverRoute,
 	instanceRoute, operatorAPIGetRoute, operatorAPIPutRoute, operatorAPIDeleteRoute, bootstrapCompleteRoute, performanceRoute,
 }

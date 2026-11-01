@@ -1,11 +1,11 @@
 """The model registry as the other capability packages of AIMgF use it: in-process reads and the one write, in the caller's database session.
 
-What it is: three functions over the registry's tables (`registry/models.py`), which AIMgF reached over R1 at `/mlmr/*` while the registry was a service of its
+What it is: three functions over the registry's tables (`registry/models.py`), which AIMgF reached over R1 while the registry was a service of its
 own (MLMR, until S2.1 of `docs/plan/CONVERGED_REWRITE_PLAN.md`; ADR 0010 section 3.1):
 
-  model_json(db, id)          a model's management JSON, the body `GET /models/{id}` answers, or None (was `GET /mlmr/models/{id}`)
-  coordination_groups(db)     every coordination group, as `GET /coordination-groups` lists them (was `GET /mlmr/coordination-groups`, one page)
-  record_phase(db, id, body)  merges a TS 29.482 `phaseInfo` write into the model (was `PATCH /mlmr/models/{id}/phase-info`, best effort)
+  model_json(db, id)          a model's management JSON, the body `GET /models/{id}` answers, or None (was MLMR's model read over R1)
+  coordination_groups(db)     every coordination group, as `GET /coordination-groups` lists them (was MLMR's group list over R1, one page)
+  record_phase(db, id, body)  merges a TS 29.482 `phaseInfo` write into the model (was MLMR's phase route over R1, best effort)
 
 Where it sits: called by the ownership and lookup helpers of `common.py` and by the training and monitoring packages; it calls nothing outside this package.
 The other packages call these through the module (`registry.model_json(...)`), never by importing the names, so the unit tests can stand a double in for the

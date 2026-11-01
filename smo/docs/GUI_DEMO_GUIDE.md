@@ -118,7 +118,7 @@ the network, which only a demo does, and only an admin can press."
 
 **Do**
 
-1. **3 · Train**: AIMgF runs a training job on the MLTF runtime, TRAINING → TRAINED, the artifact stored in MLMR.
+1. **3 · Train**: AIMgF runs a training job on the MLTF runtime, TRAINING → TRAINED, the artifact stored in AIMgF's registry.
 2. **AI/ML** → **Models** → the EnergySavingPredictor model → **Approve training** (or **Approvals** → **Model gates**).
 
 **Show** the model's state and lifecycle history, and its training job with the metrics it reported (**AI/ML** → training jobs).
@@ -150,7 +150,7 @@ the network, which only a demo does, and only an admin can press."
 
 ### Step 07 — Deploy the inference runtime
 
-**Do** **7 · Deploy the runtime**: MLLF checks the model is CERTIFIED and PROMOTED, then AIMgF and NFO deploy the inference function.
+**Do** **7 · Deploy the runtime**: AIMgF's deploy gate checks the model is CERTIFIED or PROMOTED, then AIMgF and NFO deploy the inference function.
 
 **Show** **AI/ML**: the model's runtime is ACTIVE. (Pressed before step 06, the rApp answers that the model is not certified: worth showing.)
 

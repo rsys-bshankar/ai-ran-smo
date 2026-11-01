@@ -101,7 +101,7 @@ DECISIONS_24H = {f"decisions24h.{d}": Count("/ran-nf-oam/decision-records", (("d
 DECISIONS_24H["decisions24h.total"] = Count("/ran-nf-oam/decision-records", since_hours=24)
 ESCALATIONS = {"escalations.total": Count("/sa-smos/remedial-actions", (("outcome", "ESCALATED"),))}
 BREACHES = {"mlmfBreaches.total": Count("/aimgf/mlmf/reports", (("breached_only", "true"),))}
-MODELS = {"models.total": Count("/mlmr/models"), "trainingJobs.total": Count("/aimgf/training-jobs")}
+MODELS = {"models.total": Count("/aimgf/models"), "trainingJobs.total": Count("/aimgf/training-jobs")}
 ELEMENTS = {"elements.total": Count("/ran-nf-oam/managed-entities")}
 
 # The counts each page asks for, by the page's name in the URL. "nav" is the sidebar's badges, asked on every page, so it is kept small.

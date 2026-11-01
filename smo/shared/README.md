@@ -345,7 +345,7 @@ No background tasks.
 
 The ProvMnS router (`mns/errors.py`) answers with TS 28.623 bodies (`{status, type, reason, title, badAttributes | badObjects | badQueryParams | badOp}`), not ProblemDetails. Its codes (`type`): 400 `INVALID_DN`, `INVALID_BODY`, `INVALID_QUERY`; 404 `MOI_NOT_FOUND`, `UNKNOWN_VERSION`; 409 `CLASS_MISMATCH`, `CONCURRENT_MODIFICATION`, `VETOED` (a hook's, by convention); 412 `STALE_VERSION`; 415 `UNSUPPORTED_MEDIA_TYPE`; 422 `CLASS_NOT_SUPPORTED`, `SCHEMA_VALIDATION_FAILED`, `CONTAINMENT_VIOLATION`, `PARENT_NOT_FOUND`, `PATCH_FAILED`, `INVALID_BODY` (contained objects in a createMOI).
 
-Defined but never raised anywhere in the repo: `NODE_GROUP_NOT_CLEARED` (MLLF deploy now stamps node groups instead of checking them).
+Defined but never raised anywhere in the repo: `NODE_GROUP_NOT_CLEARED` (AIMgF's deploy gate stamps node groups instead of checking them).
 
 `problem()` itself accepts any status and title, so modules also raise ad-hoc titles (see each module README, and `gui-bff`, which uses its own flat `{title, status, detail}` helper).
 

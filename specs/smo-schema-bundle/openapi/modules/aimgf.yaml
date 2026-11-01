@@ -10,8 +10,6 @@ info:
 x-smo-module: aimgf
 x-smo-code-modules:
 - aimgf
-- mlmr
-- mllf
 x-smo-mns-root: ../common/provmns-root.yaml
 x-smo-standards:
 - '[N] TS 28.105 v19.5.0'

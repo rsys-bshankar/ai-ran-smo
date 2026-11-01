@@ -28,7 +28,7 @@ from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 from smo_shared import mtls
 
 SERVERS = [
-    "r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam", "nfo", "focom", "mlmr", "aimgf", "mllf", "ran-analytics", "mdaf",
+    "r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam", "nfo", "focom", "aimgf", "ran-analytics", "mdaf",
     "intent-service", "so-smos", "sa-smos", "energy-saving-rapp", "mobility-optimization-rapp", "coverage-optimization-rapp", "traffic-steering-rapp",
 ]
 PLAIN = ["mock-o1-adaptor", "gui-bff"]

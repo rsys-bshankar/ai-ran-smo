@@ -60,7 +60,7 @@ def test_a_trailing_newline_does_not_widen_the_rapp_change_allow_list():
     assert roles.rapp_may_change("/ran-nf-oam", "POST", "/config-jobs")
     assert not roles.rapp_may_change("/ran-nf-oam", "POST", "/config-jobs\n")
     assert not roles.rapp_may_change("/sme", "POST", "/provider-registrations\n")
-    assert not roles.rapp_may_change("/mllf", "POST", "/models/m/deploy\n")
+    assert not roles.rapp_may_change("/aimgf", "POST", "/models/m/deploy\n")
 
 
 def test_the_kill_switch_exemption_list_matches_the_whole_path():

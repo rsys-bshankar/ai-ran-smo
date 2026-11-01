@@ -41,16 +41,14 @@ ALLOWED: dict[str, str] = {
     "/aimgf/models/{}/runtime/activate": "b: legal only from DEPLOYED; a repeat is 409",
     "/aimgf/models/{}/runtime/terminate": "b: TERMINATED has no REQUEST_TERMINATION edge; a repeat is 409 before the NFO delete",
     "/aimgf/feature-groups": "c: unique featureGroupName; a repeat is 409 FEATURE_GROUP_ALREADY_REGISTERED",
+    "/aimgf/models/{}/deploy": "b: the deploy gate replaces clearedNodeGroups wholesale on the lifecycle row",
+    "/aimgf/models": "c: unique (model type, version); a repeat is 409 MODEL_ALREADY_REGISTERED",
+    "/aimgf/models/{}/artifact": "a*: multipart upload; the SDK sends it without an Idempotency-Key and never repeats it",
     # dme
     "/dme/production-capabilities": "c: upserts the producer, the type and the link; an unchanged repeat re-sends nothing",
     "/dme/offers/{}/notify": "b: an acknowledgement that writes nothing",
     # intent-service
     "/intent-service/intent-handling-functions": "c: upsert by rmihId; a repeat writes the same row",
-    # mllf
-    "/mllf/models/{}/deploy": "b: replaces clearedNodeGroups wholesale on AIMgF's lifecycle row (the deploy gate, AIMgF's process since S2.2)",
-    # mlmr
-    "/mlmr/models": "c: unique (model type, version); a repeat is 409 MODEL_ALREADY_REGISTERED",
-    "/mlmr/models/{}/artifact": "a*: multipart upload; the SDK sends it without an Idempotency-Key and never repeats it",
     # ran-analytics
     "/ran-analytics/producers": "c: upsert on (producer, analytics type)",
     # rapp-mgmt
@@ -194,7 +192,7 @@ def _status_of(call: ast.Call, positional: int | None) -> int:
 
 def _server_posts(module: str, gateway_prefix: str | None = None) -> dict[str, dict]:
     """Every POST handler of `<module>/app/**/*.py` by normalized gateway path (`/<gateway_prefix or module><prefix><path>`): `gateway_prefix` is an R1
-    prefix the gateway's routing table sends to this module's process although it names another (S2.1, S2.2: `/mlmr` and `/mllf` reach AIMgF).
+    prefix the gateway's routing table sends to this module's process although it names another (none since S2.4; MLMR's and MLLF's did until then).
 
     Each value holds the file and line, the handler name, the route's status code, and the `@idempotent` decorator's module name and status
     code (None when the handler is not decorated). An `APIRouter(prefix=...)` assigned at module level adds its prefix.

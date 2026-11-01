@@ -5,7 +5,7 @@ A caller that sends a body larger than the cap is answered 413 before the servic
 uploads), stopping the read at the cap. Without a cap one request can make a service buffer as much memory as the
 caller cares to send.
 
-    app.add_middleware(BodySizeLimit, settings=lambda: (default_bytes, {"/mlmr/models/*/artifact": 50 * MIB}))
+    app.add_middleware(BodySizeLimit, settings=lambda: (default_bytes, {"/aimgf/models/*/artifact": 50 * MIB}))
 
 `settings` is called per request, so a limit can come from the environment at run time. Overrides match the
 request path with `fnmatch`, `*` standing for anything (use it for one path segment: `/a/*/b`); the first match wins,

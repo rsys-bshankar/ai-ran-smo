@@ -265,9 +265,9 @@ def test_the_retry_after_a_401_is_a_second_counted_call(monkeypatch):
     answers = iter([httpx.Response(401), httpx.Response(200)])
     monkeypatch.setattr(r1_client.httpx, "get", lambda *a, **k: next(answers))
     monkeypatch.setattr(r1_client, "_module_token", lambda base, refresh=False: "tok")
-    f0, o0 = _calls("r1", "mlmr", "GET", "4xx"), _calls("r1", "mlmr", "GET", "2xx")
-    assert r1_client.R1Client().get("/mlmr/models").status_code == 200
-    assert _calls("r1", "mlmr", "GET", "4xx") == f0 + 1 and _calls("r1", "mlmr", "GET", "2xx") == o0 + 1
+    f0, o0 = _calls("r1", "aimgf", "GET", "4xx"), _calls("r1", "aimgf", "GET", "2xx")
+    assert r1_client.R1Client().get("/aimgf/models").status_code == 200
+    assert _calls("r1", "aimgf", "GET", "4xx") == f0 + 1 and _calls("r1", "aimgf", "GET", "2xx") == o0 + 1
 
 
 def test_webhooks_are_counted_under_one_constant_target_never_the_host(monkeypatch):

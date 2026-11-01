@@ -151,9 +151,9 @@ def test_outbox_backlog_and_oldest_pending_age_are_this_modules_rows_only(monkey
         assert dict(_outbox_rows(s)) == {("sme", PENDING): 2, ("sme", SENT): 0, ("sme", DEAD): 1}
         ((labels, age),) = list(_outbox_age_rows(s))
         assert labels == ("sme",) and 99 <= age < 130                      # the dme row and the DEAD one are not counted
-    monkeypatch.setenv("MODULE", "mlmr")
+    monkeypatch.setenv("MODULE", "aimgf")
     with sessionmaker(bind=engine)() as s:
-        assert list(_outbox_age_rows(s)) == [(("mlmr",), 0.0)]
+        assert list(_outbox_age_rows(s)) == [(("aimgf",), 0.0)]
 
 
 def test_a_worker_task_that_ran_or_failed_is_counted_and_records_its_last_success():

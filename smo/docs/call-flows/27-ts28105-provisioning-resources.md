@@ -192,7 +192,7 @@ sequenceDiagram
 ```
 
 A loading request is cancelled or suspended with `PATCH /ml-model-loading-requests/{id}`; an rApp only for its own models (403), the console (operator) for any. Loading uses AIMgF's own
-runtime steps (call flow 17), not MLLF, so no node groups are set and no runtime profile is sent. **Phase 1:** there is no unload: cancelling a request
+runtime steps (call flow 17), not the deploy gate, so no node groups are set and no runtime profile is sent. **Phase 1:** there is no unload: cancelling a request
 does not remove what it loaded (`OPEN_ITEMS.md` AIML-UNLOAD), and nothing in the platform evaluates a loading policy; an SMO module or an admin in the
 console triggers it.
 
