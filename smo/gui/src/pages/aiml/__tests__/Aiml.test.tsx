@@ -31,7 +31,7 @@ function bff(role: "viewer" | "operator" | "admin") {
     "GET /me": { username: "ana", role, csrfToken: "c", local: true, totpEnrolled: true, mfaEnrolmentRequired: false },
     "GET /permissions": { role, rules },
     "GET /summary/aiml": { page: "aiml", computedAt: "now", counts: { "models.total": 3, "trainingJobs.total": 2, "mlmfBreaches.total": 1 }, partial: [] },
-    "GET /smo/mlmr/models": page([model(A, "coverage-model"), model(B, "load-model"), model(C, "steer-model")]),
+    "GET /smo/aimgf/models": page([model(A, "coverage-model"), model(B, "load-model"), model(C, "steer-model")]),
     "GET /smo/aimgf/model-lifecycles": page([life(A, "PROMOTED", "ACTIVE"), life(C, "TRAINING")]),
     "GET /smo/aimgf/model-lifecycles/counts": { groups: [{ state: "TRAINING", count: 40 }, { state: "PROMOTED", count: 1 }, { state: "RETIRED", count: 2 }] },
     "GET /smo/aimgf/mlmf/subscriptions": (c: Call) => page(c.query.get("model_id") && c.query.get("model_id") !== A ? [] : [{ subscriptionId: "s1", modelId: A, metricTypes: ["accuracy"], dmeTypeId: "d", guardKpiFloor: { accuracy: 0.85 }, notificationDestination: null }]),
@@ -41,20 +41,20 @@ function bff(role: "viewer" | "operator" | "admin") {
       { reportId: "r1", subscriptionId: "s1", metrics: { accuracy: 0.9, f1Score: 0.85 }, breachedFloor: false, reportedAt: "2026-10-09T10:00:00Z" }]),
     "GET /smo/aimgf/training-jobs": (c: Call) => page([job(J1, "IN_PROGRESS"), job(J2, "SUSPENDED")].filter((j) => !c.query.get("status") || j.status === c.query.get("status"))),
     "GET /smo/aimgf/inference-jobs": page([]),
-    [`GET /smo/mlmr/models/${A}`]: model(A, "coverage-model"),
+    [`GET /smo/aimgf/models/${A}`]: model(A, "coverage-model"),
     [`GET /smo/aimgf/models/${A}/lifecycle`]: life(A, "PROMOTED", "ACTIVE"),
     [`GET /smo/aimgf/models/${A}/governance-history`]: page([{ certificationRecordId: "g1", modelId: A, decision: "PROMOTE", decidedBy: "admin-1", rationale: "Emulation clean", decidedAt: "2026-10-09T11:02:00Z" }]),
     [`GET /smo/aimgf/models/${A}/lifecycle-history`]: page([{ fsm: "MODEL", fromState: "CERTIFIED", toState: "PROMOTED", event: "PROMOTE", occurredAt: "2026-10-09T11:02:00Z" }]),
-    [`GET /smo/mlmr/models/${B}`]: model(B, "load-model"),
+    [`GET /smo/aimgf/models/${B}`]: model(B, "load-model"),
     [`GET /smo/aimgf/models/${B}/lifecycle`]: life(B, "REGISTERED"),
-    [`PUT /smo/mlmr/models/${B}/owner`]: { modelId: B, owner: "es-client", previousOwner: null, changed: true },
-    [`PUT /smo/mlmr/models/${A}/owner`]: { modelId: A, owner: "mobility-client", previousOwner: "ops", changed: true },
+    [`PUT /smo/aimgf/models/${B}/owner`]: { modelId: B, owner: "es-client", previousOwner: null, changed: true },
+    [`PUT /smo/aimgf/models/${A}/owner`]: { modelId: A, owner: "mobility-client", previousOwner: "ops", changed: true },
     [`POST /smo/aimgf/models/${A}/advance`]: { modelId: A },
     [`POST /smo/aimgf/training-jobs/${J1}/suspend`]: { trainingJobId: J1, status: "SUSPENDED" },
     [`POST /smo/aimgf/training-jobs/${J2}/resume`]: { trainingJobId: J2, status: "IN_PROGRESS" },
-    "GET /smo/mlmr/ml-model-repositories": page([{ id: "r-1", attributes: { userLabel: "main repo" }, MLModel: [A, B], MLModelCoordinationGroup: [] }]),
-    "GET /smo/mlmr/storages": page([{ storageId: "st-1", mlModelsAddresses: ["s3://models"], suppFeat: "0" }]),
-    "GET /smo/mlmr/coordination-groups": page([]),
+    "GET /smo/aimgf/ml-model-repositories": page([{ id: "r-1", attributes: { userLabel: "main repo" }, MLModel: [A, B], MLModelCoordinationGroup: [] }]),
+    "GET /smo/aimgf/storages": page([{ storageId: "st-1", mlModelsAddresses: ["s3://models"], suppFeat: "0" }]),
+    "GET /smo/aimgf/coordination-groups": page([]),
   });
 }
 
@@ -185,7 +185,7 @@ describe("model owner (SEC-15.3c)", () => {
     await click(save);
     await settle();
     const put = calls.find((c) => c.method === "PUT")!;
-    expect(put.path).toBe(`/smo/mlmr/models/${B}/owner`);
+    expect(put.path).toBe(`/smo/aimgf/models/${B}/owner`);
     expect(put.body).toEqual({ owner: "es-client" });
   });
 
@@ -304,7 +304,7 @@ describe("tabs", () => {
     expect(container.querySelector('[data-section="aiml.repositories"]')!.textContent).toContain("main repo");
     expect(container.querySelector('[data-section="aiml.storages"]')!.textContent).toContain("s3://models");
     const links = [...container.querySelectorAll('[data-section="aiml.artifactVersions"] a')].map((a) => a.getAttribute("href"));
-    expect(links).toEqual([`/api/smo/mlmr/models/${A}/artifact/2`, `/api/smo/mlmr/models/${A}/artifact/1`]);
+    expect(links).toEqual([`/api/smo/aimgf/models/${A}/artifact/2`, `/api/smo/aimgf/models/${A}/artifact/1`]);
   });
 
   // A link saved before the redesign (#groups) still opens the coordination-groups tab, and clicking a tab switches to it.

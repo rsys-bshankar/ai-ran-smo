@@ -131,7 +131,7 @@ sequenceDiagram
             R-->>J: the error, exit 1
         else
             R->>DB: COMMIT
-            R-->>J: roles ready: smo_onboarding, smo_mlmr, ...
+            R-->>J: roles ready: smo_onboarding, smo_ran_analytics, ...
         end
     end
 ```

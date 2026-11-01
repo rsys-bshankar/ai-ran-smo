@@ -7,7 +7,7 @@
 |---|---|
 | Standards basis | Internal logic (AI Runtime SDK: a thin client over the R1 interface; six namespaces data/analytics/models/lifecycle/intent/platform) |
 | R1 route / port | None: a library (`smo_sdk`). Copied into every service image at `/srv/sdk` and put on `PYTHONPATH`; only the sample rApps import it |
-| Depends on (over R1) | R1 Termination, for routes of SME, DME, RAN NF OAM (read-only inventory), MLMR, AIMgF, MLLF, MDAF, RAN Analytics, Intent Service. Through `smo_shared.r1_client.R1Client` |
+| Depends on (over R1) | R1 Termination, for routes of SME, DME, RAN NF OAM (read-only inventory), AIMgF, MDAF, RAN Analytics, Intent Service. Through `smo_shared.r1_client.R1Client` |
 | Called by | The four sample rApps (`../samples/{energy-saving,mobility-optimization,coverage-optimization,traffic-steering}-rapp/app/main.py`); any rApp author. No SMO module imports it |
 | Database tables | None |
 | Retries and idempotency | The Go and Java SDKs' policy (`smo_sdk/_retry.py`, 2.5): 4 attempts, 200 ms doubling to 5 s with jitter, `Retry-After` honoured up to 30 s, on a transport error or 429/502/503/504, only for calls safe to repeat; off or tuned by `SMO_SDK_RETRY*` (2.6). Every POST carries a generated `Idempotency-Key`; a mutating call that lost a write race (`409 CONCURRENT_MODIFICATION`) is sent once more with the same key (`smo_sdk/_common.py`) |
@@ -28,8 +28,8 @@ The SDK invents no interface of its own; it mirrors the platform routes, which i
 |---|---|---|
 | `data` | DME; RAN NF OAM reads | R1AP clause 7 data management; O-RAN ICS (`info-types`, `info-producers`, `info-jobs`) as modelled by DME |
 | `analytics` | MDAF; RAN Analytics (producer registration) | TS 28.104 MDA NRM (`MDARequest`, `MDAReport`, `MDAType`) |
-| `models` | MLMR | TS 28.105 / TS 29.482 `MLModelManagement` |
-| `lifecycle` | AIMgF; MLLF | TS 28.105 AI/ML NRM (training/validation/emulation/inference jobs, inference reports) |
+| `models` | AIMgF (registry) | TS 28.105 / TS 29.482 `MLModelManagement` |
+| `lifecycle` | AIMgF | TS 28.105 AI/ML NRM (training/validation/emulation/inference jobs, inference reports) |
 | `intent` | Intent Service | TS 28.312 Intent NRM (`intentExpectations`, `intentReportControl`, `intentHandlingCapabilityList`, ...) |
 | `platform` | SME; DME for O1 actions | CAPIF (TS 29.222: provider registration, publish/discover, events) |
 
@@ -180,22 +180,22 @@ Usage: `sdk = AiRuntimeSdk()` (or `AiRuntimeSdk(r1=R1Client(base_url, bearer_tok
 | `query_mda_reports(mda_type=None, report_kind=None, managed_entity=None, mda_request_id=None)` | `GET /mdaf/mda-reports` | unset filters omitted |
 | `get_prediction(managed_entity, pm_name=None)` -> `dict \| None` | `GET /mdaf/mda-reports?report_kind=PREDICTION&managed_entity=` | Takes the first (newest) report; with `pm_name` returns just that `pmPredictions` entry, else the report; `None` if no report or no such `pm_name` |
 
-#### `sdk.models` (`ModelsClient`, MLMR)
+#### `sdk.models` (`ModelsClient`, AIMgF registry)
 
 | Method | Route | Notes |
 |---|---|---|
-| `register_model(model_type, version, required_resource_type_id=None, description=None, author=None, owner=None, input_data_type=None, output_data_type=None, target_environments=None, domain=None, custom_domain=None, vendors=None)` | `POST /mlmr/models` | `domain` is SPEECH_RECOGNITION / IMAGE_RECOGNITION / IMAGE_PROCESSING / LOCATION_PREDICTION / CUSTOM, else 422; duplicate (type, version) is 409 `MODEL_ALREADY_REGISTERED` |
-| `discover_models(model_type=None)` | `GET /mlmr/models` | |
-| `get_model(model_id)` | `GET /mlmr/models/{id}` | |
-| `update_model(model_id, model_type, version, **fields)` | `PUT /mlmr/models/{id}` | `model_type`/`version` are the immutable identity (400 `MODEL_IDENTITY_IMMUTABLE` on mismatch); `fields` use the route's camelCase names |
-| `deregister_model(model_id)` -> None | `DELETE /mlmr/models/{id}` | |
-| `upload_artifact(model_id, filename, content: bytes)` | `POST /mlmr/models/{id}/artifact` (multipart `file`, `application/zip`) | 415 `ARTIFACT_FORMAT_INVALID` |
-| `store_model(model_type, version, artifact: bytes, filename="model.zip", **metadata)` | `GET /mlmr/models`, then `POST /mlmr/models` (if absent), then `POST /mlmr/models/{id}/artifact` | Reuses the model registered under (type, version), else registers it with `metadata`; stores the next artifact version |
-| `download_artifact(model_id, artifact_version)` -> raw `httpx.Response` | `GET /mlmr/models/{id}/artifact/{version}` | bytes in `.content`; raises `SdkError(status, text)` on 4xx/5xx |
-| `create_coordination_group(member_model_ids, member_use_cases=None, shared_feature_pipeline_ref=None, retrain_propagation="ANY_MEMBER_TRIGGERS")` | `POST /mlmr/coordination-groups` | |
-| `list_coordination_groups()` | `GET /mlmr/coordination-groups` | |
+| `register_model(model_type, version, required_resource_type_id=None, description=None, author=None, owner=None, input_data_type=None, output_data_type=None, target_environments=None, domain=None, custom_domain=None, vendors=None)` | `POST /aimgf/models` | `domain` is SPEECH_RECOGNITION / IMAGE_RECOGNITION / IMAGE_PROCESSING / LOCATION_PREDICTION / CUSTOM, else 422; duplicate (type, version) is 409 `MODEL_ALREADY_REGISTERED` |
+| `discover_models(model_type=None)` | `GET /aimgf/models` | |
+| `get_model(model_id)` | `GET /aimgf/models/{id}` | |
+| `update_model(model_id, model_type, version, **fields)` | `PUT /aimgf/models/{id}` | `model_type`/`version` are the immutable identity (400 `MODEL_IDENTITY_IMMUTABLE` on mismatch); `fields` use the route's camelCase names |
+| `deregister_model(model_id)` -> None | `DELETE /aimgf/models/{id}` | |
+| `upload_artifact(model_id, filename, content: bytes)` | `POST /aimgf/models/{id}/artifact` (multipart `file`, `application/zip`) | 415 `ARTIFACT_FORMAT_INVALID` |
+| `store_model(model_type, version, artifact: bytes, filename="model.zip", **metadata)` | `GET /aimgf/models`, then `POST /aimgf/models` (if absent), then `POST /aimgf/models/{id}/artifact` | Reuses the model registered under (type, version), else registers it with `metadata`; stores the next artifact version |
+| `download_artifact(model_id, artifact_version)` -> raw `httpx.Response` | `GET /aimgf/models/{id}/artifact/{version}` | bytes in `.content`; raises `SdkError(status, text)` on 4xx/5xx |
+| `create_coordination_group(member_model_ids, member_use_cases=None, shared_feature_pipeline_ref=None, retrain_propagation="ANY_MEMBER_TRIGGERS")` | `POST /aimgf/coordination-groups` | |
+| `list_coordination_groups()` | `GET /aimgf/coordination-groups` | |
 
-#### `sdk.lifecycle` (`LifecycleClient`, AIMgF and MLLF)
+#### `sdk.lifecycle` (`LifecycleClient`, AIMgF)
 
 | Method | Route | Notes |
 |---|---|---|
@@ -233,7 +233,7 @@ Usage: `sdk = AiRuntimeSdk()` (or `AiRuntimeSdk(r1=R1Client(base_url, bearer_tok
 | `create_feature_group(feature_group_name, feature_list, datalake_source, host, port, bucket, token=None, db_org=None, measurement=None, enable_dme=False, measured_obj_class=None, dme_port=None, source_name=None, dme_type_id=None, data_delivery_method="PULL_HTTP", *, token_ref=None)` | `POST /aimgf/feature-groups` | give `token_ref` (the name of a secret AIMgF resolves itself, `docs/SECRETS.md`) and `db_org` and `measurement` by keyword. `token` (clear text) is **deprecated** (`SEC-15.2b`): still sent, with a `DeprecationWarning`, dropped by the server in a later minor release; exactly one of `token_ref` and `token`, else `ValueError`. The answer has `tokenSet` and `tokenRef`, never a token. With `enable_dme`, AIMgF creates the group's DME data job of `dme_type_id` (required then) |
 | `list_feature_groups()` | `GET /aimgf/feature-groups` | a group shows `tokenSet` and `tokenRef`, never a token |
 | `delete_feature_group(feature_group_name)` | `DELETE /aimgf/feature-groups/{name}` | also terminates the group's DME data job |
-| `deploy_model(model_id, node_groups: list[str])` | `POST /mllf/models/{id}/deploy` | body is the plain list; 404 `MODEL_NOT_FOUND`, 409 `MODEL_NOT_CERTIFIED` unless CERTIFIED or PROMOTED |
+| `deploy_model(model_id, node_groups: list[str])` | `POST /aimgf/models/{id}/deploy` | body is the plain list; 404 `MODEL_NOT_FOUND`, 409 `MODEL_NOT_CERTIFIED` unless CERTIFIED or PROMOTED |
 
 #### `sdk.intent` (`IntentClient`, Intent Service)
 
@@ -294,9 +294,9 @@ How it composes with the two older repeats. Outermost is the **409** repeat: a m
 
 | Kind | Routes | A repeat after a lost answer |
 |---|---|---|
-| Replayed (`@idempotent`, PR-ST-3) | `POST /aimgf/training-jobs`, `/aimgf/validation-jobs`, `/aimgf/emulation-jobs`, `/aimgf/models/{id}/inference-jobs`, `/aimgf/models/{id}/runtime/scale`, `/aimgf/mlmf/subscriptions`, `/aimgf/mlmf/subscriptions/{id}/reports`; `POST /dme/type-subscriptions`, `/dme/data-jobs`, `/dme/offers`, `/dme/data-jobs/{id}/records`, `/dme/actions`; `POST /intent-service/intents`, `/intent-service/intent-reports`, `/intent-service/autonomy-dispatches`; `POST /mdaf/reports`, `/mdaf/subscriptions`, `/mdaf/mda-requests`, `/mdaf/mda-reports`; `POST /mlmr/coordination-groups`; `POST /rapp-mgmt/instances/{id}/performance`, `/fault`; `POST /sme/capif-events/v1/{id}/subscriptions` | Answered from the stored first answer, same status and body, with `Idempotent-Replayed: true`; nothing runs twice. The same key with another body, or on another resource's path, is `422 IDEMPOTENCY_KEY_REUSED`. For `/dme/actions` the stored answer may be `202 UNCONFIRMED`: replay the `actionId` in a new call to learn the outcome (`execute_action(action_id=...)`) |
-| Safe by state, or by the route's own key | The job completions, suspend, resume, `resolve`, the model runtime's deploy, activate and terminate, `bootstrap-complete`; the upserts (`/dme/production-capabilities`, `/sme/provider-registrations`, `/sme/published-apis/...`, `/ran-analytics/producers`, `/intent-service/intent-handling-functions`) and the unique names (`/aimgf/feature-groups`, `/mlmr/models`) | Nothing is written twice. A state transition is refused `409` (an illegal transition) and an already used unique name is `409` too, raised as `SdkError` although the first attempt worked: read the resource to see its state. An upsert answers as the first did |
-| Never repeated | `upload_artifact` (`POST /mlmr/models/{id}/artifact`): sent with `files`, so with no key and no retry (2.5 above) | A transport error is raised; the upload may have stored a new artifact version, so check before uploading again |
+| Replayed (`@idempotent`, PR-ST-3) | `POST /aimgf/training-jobs`, `/aimgf/validation-jobs`, `/aimgf/emulation-jobs`, `/aimgf/models/{id}/inference-jobs`, `/aimgf/models/{id}/runtime/scale`, `/aimgf/mlmf/subscriptions`, `/aimgf/mlmf/subscriptions/{id}/reports`; `POST /dme/type-subscriptions`, `/dme/data-jobs`, `/dme/offers`, `/dme/data-jobs/{id}/records`, `/dme/actions`; `POST /intent-service/intents`, `/intent-service/intent-reports`, `/intent-service/autonomy-dispatches`; `POST /mdaf/reports`, `/mdaf/subscriptions`, `/mdaf/mda-requests`, `/mdaf/mda-reports`; `POST /aimgf/coordination-groups`; `POST /rapp-mgmt/instances/{id}/performance`, `/fault`; `POST /sme/capif-events/v1/{id}/subscriptions` | Answered from the stored first answer, same status and body, with `Idempotent-Replayed: true`; nothing runs twice. The same key with another body, or on another resource's path, is `422 IDEMPOTENCY_KEY_REUSED`. For `/dme/actions` the stored answer may be `202 UNCONFIRMED`: replay the `actionId` in a new call to learn the outcome (`execute_action(action_id=...)`) |
+| Safe by state, or by the route's own key | The job completions, suspend, resume, `resolve`, the model runtime's deploy, activate and terminate, `bootstrap-complete`; the upserts (`/dme/production-capabilities`, `/sme/provider-registrations`, `/sme/published-apis/...`, `/ran-analytics/producers`, `/intent-service/intent-handling-functions`) and the unique names (`/aimgf/feature-groups`, `/aimgf/models`) | Nothing is written twice. A state transition is refused `409` (an illegal transition) and an already used unique name is `409` too, raised as `SdkError` although the first attempt worked: read the resource to see its state. An upsert answers as the first did |
+| Never repeated | `upload_artifact` (`POST /aimgf/models/{id}/artifact`): sent with `files`, so with no key and no retry (2.5 above) | A transport error is raised; the upload may have stored a new artifact version, so check before uploading again |
 
 Two choices where Go and Java differ: the jitter (Go: equal jitter; Java: full jitter, 0 to the delay) and `Retry-After` (Go: the longer of it and the backoff; Java: it replaces the backoff). This SDK follows Go in both, so a server's hint never makes the SDK retry faster than its own backoff. Neither Go nor Java reads its policy from the environment; this SDK does (2.6).
 
@@ -370,8 +370,8 @@ Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
 - [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md): golden rule 6, the R1 API conventions (pagination envelope, errors)
 - [`../docs/call-flows/26-model-governance-and-end-of-life.md`](../docs/call-flows/26-model-governance-and-end-of-life.md): `advance_model_lifecycle`
 - Call flows 02 (model train to inference), 05 (EI / DME consumption), 08 (analytics production), 09 (intent), 11-13 (DME type / record / MLMF subscription lifecycles), 17 (model runtime), 22-25 (the four closed loops built on the SDK) in [`../docs/call-flows/`](../docs/call-flows/)
-- OpenAPI of the targeted services: [`../docs/openapi/`](../docs/openapi/) (`dme.json`, `mdaf.json`, `ran-analytics.json`, `mlmr.json`, `aimgf.json`, `mllf.json`, `intent-service.json`, `sme.json`, `ran-nf-oam.json`)
+- OpenAPI of the targeted services: [`../docs/openapi/`](../docs/openapi/) (`dme.json`, `mdaf.json`, `ran-analytics.json`, `aimgf.json`, `intent-service.json`, `sme.json`, `ran-nf-oam.json`)
 - [`../sdk-go/README.md`](../sdk-go/README.md): the Go SDK, a second implementation of the same token flow (`R1Client`'s, for an rApp), retry and error mapping; its `Data().MediateAction` takes the MSAC credential as `WithMSACCredential`, and the Java SDK's `DataClient.mediateAction` as `MsacCredential` (`SEC-15.6b`, as `msac_credential` here)
 - [`../shared/README.md`](../shared/README.md): `R1Client`, token acquisition, error and pagination helpers
-- Backend module READMEs: [`../dme/README.md`](../dme/README.md), [`../mdaf/README.md`](../mdaf/README.md), [`../mlmr/README.md`](../mlmr/README.md), [`../aimgf/README.md`](../aimgf/README.md), [`../mllf/README.md`](../mllf/README.md), [`../intent-service/README.md`](../intent-service/README.md), [`../sme/README.md`](../sme/README.md)
+- Backend module READMEs: [`../dme/README.md`](../dme/README.md), [`../mdaf/README.md`](../mdaf/README.md), [`../aimgf/README.md`](../aimgf/README.md), [`../intent-service/README.md`](../intent-service/README.md), [`../sme/README.md`](../sme/README.md)
 - [`../docs/RAPP_PACKAGING.md`](../docs/RAPP_PACKAGING.md): `capabilities.yaml` declares which namespaces an rApp uses

@@ -45,7 +45,7 @@ RANK = {Role.VIEWER: 0, Role.OPERATOR: 1, Role.ADMIN: 2}
 # minus DME's push/pull aliases, which are rApp data-plane paths).
 MODULES = [
     "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam", "nfo", "focom",
-    "aimgf", "mlmr", "mllf", "ran-analytics", "mdaf", "intent-service", "so-smos", "sa-smos",
+    "aimgf", "ran-analytics", "mdaf", "intent-service", "so-smos", "sa-smos",
 ]
 # A rApp's own operator API is not in this list: its page, and the routes the GUI may call on it, are declared by its package and allowed by rapps.py / operator_ui.py (PR-GUI-8).
 
@@ -151,19 +151,17 @@ RULES: list[Rule] = [
     _rule("DELETE", "/rapp-mgmt/instances/{id}", A),
     _rule("POST", "/rapp-mgmt/instances/{id}/(performance|fault)", A),   # test-data injection
 
-    # --- AI Platform (Wave 1 split of the former ai-ml-workflow: MLMR owns
-    # the model/artifact/coordination-group rows, AIMgF owns lifecycle
-    # state/training/validation/emulation/inference/MLMF/feature-groups,
-    # MLLF owns deploy). AIMgF's own internal
-    # PATCH /models/{id}/runtime/node-groups is deliberately absent — a
-    # machine-to-machine route only MLLF calls, same as the SME/DME/NFO
-    # internal routes above.
-    _rule("POST", "/mlmr/models", O),
-    _rule("PUT", "/mlmr/models/{id}", O),
-    _rule("DELETE", "/mlmr/models/{id}", A),
-    _rule("PUT", "/mlmr/models/{id}/owner", A),   # SEC-15.3c: giving a model an owner (or another) decides which rApp may act on it, so it is an admin's, like deleting it
-    _rule("POST", "/mlmr/models/{id}/artifact", O),
-    _rule("POST", "/mlmr/coordination-groups", O),
+    # --- AI/ML: AIMgF, one module since S2.1-S2.4 (the model registry, the
+    # lifecycle, training/validation/emulation/inference, MLMF, feature
+    # groups and the deploy gate). PATCH /models/{id}/runtime/node-groups is
+    # deliberately absent: the console clears node groups through the deploy
+    # gate (/models/{id}/deploy), which checks the certification first.
+    _rule("POST", "/aimgf/models", O),
+    _rule("PUT", "/aimgf/models/{id}", O),
+    _rule("DELETE", "/aimgf/models/{id}", A),
+    _rule("PUT", "/aimgf/models/{id}/owner", A),   # SEC-15.3c: giving a model an owner (or another) decides which rApp may act on it, so it is an admin's, like deleting it
+    _rule("POST", "/aimgf/models/{id}/artifact", O),
+    _rule("POST", "/aimgf/coordination-groups", O),
     # Wave 2: the six governance decisions (Approval/Certification/
     # Promotion/Rollback plus the submit/reject pair framing approval) are
     # admin-only, the same elevated stakes DEPRECATE/RETIRE already get —
@@ -185,7 +183,7 @@ RULES: list[Rule] = [
     _rule("POST", "/aimgf/models/{id}/inference-jobs", O),
     _rule("POST", "/aimgf/models/{id}/runtime/terminate", A),  # tearing down a runtime is destructive, like the DELETEs above
     _rule("POST", "/aimgf/models/{id}/runtime/(deploy|activate|scale)", O),
-    _rule("POST", "/mllf/models/{id}/deploy", O),
+    _rule("POST", "/aimgf/models/{id}/deploy", O),
     _rule("POST", "/aimgf/inference-jobs/{id}/resolve", O),
     _rule("POST", "/aimgf/training-jobs", O),
     _rule("DELETE", "/aimgf/training-jobs/{id}", O),        # cancel, not a hard delete

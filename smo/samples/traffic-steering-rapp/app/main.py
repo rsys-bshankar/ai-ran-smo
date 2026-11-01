@@ -544,7 +544,7 @@ def _jobs(inst: TrafficInstance, **updates) -> None:
 
 @app.post("/instances/{instance_id}/lifecycle/train")
 def train(instance_id: uuid.UUID, db: Session = Depends(get_session)):
-    """TRAINING on MLTF: registered in MLMR, trained on load history in which
+    """TRAINING on MLTF: registered in AIMgF's model registry, trained on load history in which
     the biases varied, stored as an artifact."""
     inst = _instance(db, instance_id)
     version = inst.model_version or f"1.0.0-{str(inst.instance_id)[:8]}"
@@ -609,7 +609,7 @@ def emulate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
 @app.post("/instances/{instance_id}/lifecycle/deploy")
 def deploy(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     """MLIF deployment once the model is certified; the serving model is
-    loaded from MLMR."""
+    loaded from AIMgF's model registry."""
     inst = _instance(db, instance_id)
     sdk.lifecycle.deploy_model(inst.model_id, NODE_GROUPS)
     sdk.lifecycle.deploy_runtime(inst.model_id, package_id=inst.package_id)

@@ -68,7 +68,7 @@ limit below is tracked in [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md) §3.
 | TS 28.104 | MDAF | 48/48 rows | `STREAMING` is recorded, not streamed (SA-MDA-5, no TS 28.532 streaming transport); `recommendationFilter`, `performanceThresholdInfo`, `analysisRequirements`, `thresholdMonitorRefList` stored not enforced; `areaScope` stored not matched; backing-model refs set by the caller; flat addressing |
 | TS 28.312 | Intent Service | 91/91 rows | Flat addressing; `DateTime` / `FullTime` checked by shape; the Intent Service validates and routes, the RMIHs realise the expectations (SA SMOS: `IS_EQUAL_TO` target setting only) |
 | TS 28.105 | AIMgF (one module since S2.1–S2.3, ADR 0010: the registry and the deploy gate are its packages), runtime | 125/126 attributes | `ThresholdMonitors` (TS 28.623 containment, MLMF equivalent); FL/RL stored, no training engine; runtime scale has no target size; flat addressing |
-| TS 29.482 | AIMgF (`registry`, MLMR until S2.1) | `MLModel`, storages / profiles, `storeDiscReqs`, discovery at REST level | `accessReqs.location` not enforced; phase written at training start / success only; the `MLModel` `anyOf` and forward-compatible enums not honoured |
+| TS 29.482 | AIMgF (`registry`) | `MLModel`, storages / profiles, `storeDiscReqs`, discovery at REST level | `accessReqs.location` not enforced; phase written at training start / success only; the `MLModel` `anyOf` and forward-compatible enums not honoured |
 | TS 28.532 / 28.111 / 28.319 | RAN NF OAM | MSAC, `accessScope`, `PerceivedSeverity`, DN refs and file reporting closed | Streaming reporting (SA-RANOAM-8); DN containment tree (SA-RANOAM-4); MSAC guards CM writes, and with `RAN_NF_OAM_MSAC_REACH` on (`MGT-2`, off by default) config reads, subscriptions, alarm changes, software jobs, file routes, and the list routes and subscription deletes (`MGT-2.6`); Jex subset for `dataNodeSelector` |
 | O2IMS | FOCOM | Inventory sites, fault, performance, artifacts / cluster / infrastructure / provisioning at REST level | `FILE` / `STREAM` performance reporting; no real cluster behind a ProvisioningRequest; flat addressing |
 | TS 28.541 + WG10/WG5 | RAN NF OAM | 3GPP descriptor plus WG10 O1 NRM and WG5 O-DU / O-CU descriptors bundled | The 3GPP common YANG modules are not in `specs/`, so the attributes they contribute are missing from the YANG descriptors; WG4 M-plane not ingested |
@@ -150,9 +150,9 @@ optionally the function (must be ACTIVATED with the model loaded).
 | MLModelLoadingRequest | AIMgF | `/aimgf/ml-model-loading-requests` |
 | MLModelLoadingPolicy | AIMgF | `/aimgf/ml-model-loading-policies` |
 | MLModelLoadingProcess | AIMgF | `/aimgf/ml-model-loading-processes` |
-| MLModel | AIMgF (registry) | `/mlmr/ml-models/{id}` (+ `/mlmr/models`), served by AIMgF; `/aimgf/...` after S2.4 |
-| MLModelRepository | AIMgF (registry) | `/mlmr/ml-model-repositories`, served by AIMgF; `/aimgf/...` after S2.4 |
-| MLModelCoordinationGroup | AIMgF (registry) | `/mlmr/ml-model-coordination-groups/{id}` (+ `/mlmr/coordination-groups`), served by AIMgF; `/aimgf/...` after S2.4 |
+| MLModel | AIMgF (registry) | `/aimgf/ml-models/{id}` (+ `/aimgf/models`), served by AIMgF; `/aimgf/...` after S2.4 |
+| MLModelRepository | AIMgF (registry) | `/aimgf/ml-model-repositories`, served by AIMgF; `/aimgf/...` after S2.4 |
+| MLModelCoordinationGroup | AIMgF (registry) | `/aimgf/ml-model-coordination-groups/{id}` (+ `/aimgf/coordination-groups`), served by AIMgF; `/aimgf/...` after S2.4 |
 | MLUpdateFunction | AIMgF | `/aimgf/ml-update-functions` |
 | MLUpdateRequest | AIMgF | `/aimgf/ml-update-requests` |
 | MLUpdateProcess | AIMgF | `/aimgf/ml-update-processes` |

@@ -302,7 +302,7 @@ def test_the_routing_table_and_the_specs_line_up():
 SNIPPET_OK = '''
 _r1 = R1Client()
 def f(model_id, x):
-    _r1.get(f"/mlmr/models/{model_id}")
+    _r1.get(f"/aimgf/models/{model_id}")
     _r1.get(path_from_somewhere)
 '''
 

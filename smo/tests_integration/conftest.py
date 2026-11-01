@@ -40,7 +40,7 @@ os.environ.setdefault("SME_ALLOW_OPEN_ENROLLMENT", "true")
 
 ALL_MODULES = [
     "r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam",
-    "nfo", "focom", "aimgf", "mlmr", "mllf", "ran-analytics", "mdaf",
+    "nfo", "focom", "aimgf", "ran-analytics", "mdaf",
     "intent-service", "so-smos", "sa-smos", "mock-o1-adaptor",
     # Wave 10.1: the EnergySaving reference rApp, an R1 consumer of all of the above
     "samples/energy-saving-rapp",

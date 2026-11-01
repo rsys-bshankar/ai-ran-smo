@@ -75,23 +75,11 @@ services:
     volumes:
       - ./certs/mtls/focom:/run/mtls:ro
     healthcheck: *mtls_probe
-  mlmr:
-    environment:
-      SMO_MTLS: "on"
-    volumes:
-      - ./certs/mtls/mlmr:/run/mtls:ro
-    healthcheck: *mtls_probe
   aimgf:
     environment:
       SMO_MTLS: "on"
     volumes:
       - ./certs/mtls/aimgf:/run/mtls:ro
-    healthcheck: *mtls_probe
-  mllf:
-    environment:
-      SMO_MTLS: "on"
-    volumes:
-      - ./certs/mtls/mllf:/run/mtls:ro
     healthcheck: *mtls_probe
   ran-analytics:
     environment:

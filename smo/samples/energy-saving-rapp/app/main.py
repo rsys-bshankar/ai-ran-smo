@@ -8,8 +8,8 @@ R1 only, never another module's database:
 
   * data — the PRB_UTILIZATION dataset (O1 PM → RAN NF OAM → DME) and the
     Digital Twin PRB_UTILIZATION_SIM dataset; cell guards; config read-back
-  * models / lifecycle — MLMR model + artifact; AIMgF training, validation,
-    emulation, certification (operator), MLLF + MLIF runtime, inference
+  * models / lifecycle — model registry entry + artifact; AIMgF training, validation,
+    emulation, certification (operator), the deploy gate + MLIF runtime, inference
   * analytics — MDAF's PRB prediction for a cell, when there is one
   * intent — AutonomyDispatch for a LOCK (AUTONOMOUS/ASSIST/SHADOW)
   * platform — direct DME O1 actions for service-restoring writes
@@ -495,7 +495,7 @@ def _jobs(inst: EnergySavingInstance, **updates) -> None:
 @app.post("/instances/{instance_id}/lifecycle/train")
 def train(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     """TRAINING on the package's MLTF runtime profile: the model is
-    registered in MLMR, trained on PRB history and stored there as an
+    registered in AIMgF's model registry, trained on PRB history and stored there as an
     artifact (TC03)."""
     inst = _instance(db, instance_id)
     version = inst.model_version or f"1.0.0-{str(inst.instance_id)[:8]}"
@@ -559,9 +559,9 @@ def emulate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
 @app.post("/instances/{instance_id}/lifecycle/deploy")
 def deploy(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     """MLIF deployment once an operator has certified the model (TC07):
-    MLLF clears the node groups (it checks CERTIFIED), AIMgF instantiates
+    AIMgF's deploy gate clears the node groups (it checks CERTIFIED), AIMgF instantiates
     the inference runtime through NFO and activates it, and the serving
-    model is loaded from its MLMR artifact."""
+    model is loaded from its registry artifact."""
     inst = _instance(db, instance_id)
     sdk.lifecycle.deploy_model(inst.model_id, NODE_GROUPS)
     sdk.lifecycle.deploy_runtime(inst.model_id, package_id=inst.package_id)

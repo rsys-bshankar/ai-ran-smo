@@ -27,12 +27,11 @@ registered the model (`sdk.models.register_model`, `sdk.lifecycle.start_training
 *Operator (GUI)* and *Admin (GUI)* stand for the console's path. In the console, the job routes and the two training gates need the
 **operator** role, the governance decisions (submit, approve, reject, certify, promote, rollback) **admin**.
 
-**Who may act on what.** MLMR records the model's `owner`: the rApp that registered it. A caller with the rApp role may start a run on, act
+**Who may act on what.** AIMgF's registry records the model's `owner`: the rApp that registered it. A caller with the rApp role may start a run on, act
 on a running job of (complete, report progress or metrics, suspend, resume, cancel, and the same through the TS 28.105 request and process
 resources), or file a performance report for, only a model it owns; another rApp is **403 `MODEL_ACCESS_DENIED`** and nothing changes. A
-coordination-group job needs every member MLMR knows to be the caller's. A model with no owner, or one MLMR no longer knows, is open to any
-rApp. An SMO module that passes an rApp's request on (MLLF's node-group placement, with the rApp in `X-R1-On-Behalf-Of`) is asked as that rApp, and
-MLLF passes the 403 on (MLLF-NODEGROUP-OWNER). The console, an SMO module on its own account (MDAF's drift forwarding, SA SMOS's group retrain) and a
+coordination-group job needs every member the registry knows to be the caller's. A model with no owner, or one the registry no longer knows, is open
+to any rApp. An SMO module that passes an rApp's request on, with the rApp in `X-R1-On-Behalf-Of`, is asked as that rApp (MLLF-NODEGROUP-OWNER). The console, an SMO module on its own account (MDAF's drift forwarding, SA SMOS's group retrain) and a
 call with no role are not asked. An rApp never fires a governance decision (403 `ROLE_NOT_PERMITTED`).
 
 ## Model states
@@ -62,21 +61,20 @@ There is no shortcut: a retrain always re-enters at `TRAINING` and goes through 
 ```mermaid
 sequenceDiagram
     participant R as Owner rApp (SDK) / Operator (GUI)
-    participant MLMR as MLMR
     participant AIM as AIMgF
     participant DME as DME
     participant NFO as NFO
 
-    R->>MLMR: POST /mlmr/models {modelType, version, inputDataType, outputDataType}
-    Note over MLMR: owner = the caller's invoker id (an rApp)
-    MLMR-->>R: 201 {modelId}
+    R->>AIM: POST /aimgf/models {modelType, version, inputDataType, outputDataType}
+    Note over AIM: the registry: owner = the caller's invoker id (an rApp)
+    AIM-->>R: 201 {modelId}
 
     R->>AIM: POST /aimgf/training-jobs {modelId, producerId, dmeDataJobIds?, runtimeProfile? or packageId?, notificationUri?, timeoutSeconds?}
     opt dmeDataJobIds
         AIM->>DME: GET /dme/data-jobs/{id} (each)
         Note over AIM: one unknown is 422 DME_ARTIFACT_NOT_FOUND
     end
-    AIM->>MLMR: GET /mlmr/models/{id}
+    Note over AIM: the model read from the registry in process
     alt unknown, another rApp's, or not REGISTERED, CERTIFIED, PROMOTED, FAILED or TRAINING
         AIM-->>R: 404 MODEL_NOT_FOUND · 403 MODEL_ACCESS_DENIED · 409 LIFECYCLE_ILLEGAL_TRANSITION
     else
@@ -84,7 +82,7 @@ sequenceDiagram
         AIM->>NFO: POST /nfo/descriptors {workloadTemplate {jobKind TRAINING, jobId, resources}}
         AIM->>NFO: POST /nfo/deployments {descriptor}
         alt NFO instantiates
-            AIM->>MLMR: PATCH /mlmr/models/{id}/phase-info IN_TRAINING or IN_RETRAINING (best effort)
+            Note over AIM: the registry's phaseInfo IN_TRAINING or IN_RETRAINING, in the same commit
             AIM-->>R: 201 {trainingJobId}
         else NFO refuses or does not answer
             AIM-->>R: 502 UPSTREAM_FAILED / 503 (no job kept, model as it was)
@@ -99,7 +97,6 @@ sequenceDiagram
     participant R as Owner rApp (SDK) / Operator (GUI)
     participant AIM as AIMgF
     participant NFO as NFO
-    participant MLMR as MLMR
 
     R->>AIM: POST /aimgf/training-jobs/{id}/progress {step?, epoch?, totalEpochs?}
     Note over AIM: steps DATA_EXTRACTION, TRAINING, TRAINED_MODEL, forward only<br/>etaSeconds from the pace of the epochs, only while IN_PROGRESS
@@ -113,7 +110,7 @@ sequenceDiagram
     else
         AIM->>NFO: DELETE /nfo/deployments/{id} and /nfo/descriptors/{id}
         Note over AIM: succeeded → TRAINING_COMPLETE → TRAINED<br/>failed → TRAINING_FAILED → FAILED<br/>MLTrainingReport written, the requester's notificationUri queued (outbox)
-        AIM->>MLMR: PATCH phase TRAINED (best effort, success only)
+        Note over AIM: the registry's phase TRAINED (success only), in the same commit
         AIM-->>R: 200 {status FINISHED or FAILED}
     end
 
@@ -229,7 +226,7 @@ sequenceDiagram
     else another rApp's model
         AIM-->>R: 403 MODEL_ACCESS_DENIED, nothing deployed
     end
-    Note over R,AIM: the node-group placement through MLLF (POST /mllf/models/{id}/deploy, 17b)<br/>has the same owner check: another rApp is 403 MODEL_ACCESS_DENIED
+    Note over R,AIM: the node-group placement through the deploy gate (POST /aimgf/models/{id}/deploy, 17b)<br/>has the same owner check: another rApp is 403 MODEL_ACCESS_DENIED
 
     C->>AIM: POST /aimgf/models/{id}/inference-jobs?notification_destination&timeout_seconds
     AIM->>NFO: GET /nfo/deployments/{nfDeploymentId}
@@ -266,7 +263,6 @@ sequenceDiagram
     participant S as Subscriber (SA SMOS, Operator (GUI), owner rApp)
     participant P as Owner rApp (SDK) / MDAF
     participant AIM as AIMgF
-    participant MLMR as MLMR
     participant NFO as NFO
 
     S->>AIM: POST /aimgf/mlmf/subscriptions {modelId, metricTypes, dmeTypeId, guardKpiFloor?, guardKpiCeiling?, notificationDestination?}
@@ -279,9 +275,9 @@ sequenceDiagram
         Note over AIM: breachedFloor = a guarded metric the report carries is under its floor or over its ceiling<br/>missingMetrics = the guarded metrics it does not carry (not a breach)<br/>report and the subscriber's push committed first (outbox)
         AIM-)S: POST notificationDestination {reportId, modelId, metrics, breachedFloor, missingMetrics}
         opt breached and the model is in a coordination group
-            AIM->>MLMR: GET /mlmr/coordination-groups
+            Note over AIM: the registry's coordination groups read in process
             Note over AIM: retrainPropagation decides: ANY_MEMBER_TRIGGERS fires on one breach<br/>MAJORITY_TRIGGERS counts this one report, so fires only for a group of one<br/>WEIGHTED_TRIGGERS is reserved: answered as groupRetrainError
-            loop each PROMOTED member MLMR knows
+            loop each PROMOTED member the registry knows
                 AIM->>NFO: training runtime, as in 02a (producer aimgf:group-retrain)
                 alt started
                     Note over AIM: member → TRAINING, committed on its own
@@ -290,7 +286,7 @@ sequenceDiagram
                 end
             end
         end
-        Note over AIM: the report is stored: a failure of the group step (MLMR or NFO not answering, WEIGHTED_TRIGGERS)<br/>is logged and answered as groupRetrainError {code, detail}, never a 500 (MLMF-REPORT-REPLAY)
+        Note over AIM: the report is stored: a failure of the group step (NFO not answering, a failing registry read, WEIGHTED_TRIGGERS)<br/>is logged and answered as groupRetrainError {code, detail}, never a 500 (MLMF-REPORT-REPLAY)
         AIM-->>P: 200 {reportId, breachedFloor, missingMetrics, groupRetrainTriggered?, retrainedModelIds?, retrainSkipped?, groupRetrainError?}
     end
 ```
@@ -308,7 +304,7 @@ replaces it at the next deploy. There are no model versions side by side (OPEN_I
 - No lightweight update path: retraining re-enters at `TRAINING` and goes through both gates and governance again.
 - `ModelLifecycle` and `RuntimeLifecycle` are independent: retraining a PROMOTED model does not take its runtime down, and the runtime is
   scaled or terminated without touching certification (call flow 17).
-- AIMgF's `model_lifecycle` row is the one record of both states and of `clearedNodeGroups`; MLMR keeps none of it, only the model and its owner.
+- AIMgF's `model_lifecycle` row is the one record of both states and of `clearedNodeGroups`; the registry keeps none of it, only the model and its owner.
 - Every run (training, validation, emulation) gets its own NFO runtime, removed when the run ends. Inference does not: it uses the serving
   deployment made at deploy.
 - The completion routes are the only way a stage ends; `advance` takes only governance and end-of-life events (call flow 26).

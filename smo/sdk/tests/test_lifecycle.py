@@ -261,7 +261,7 @@ def test_deploy_model_sends_raw_unwrapped_body(client, r1):
     model_id = uuid.uuid4()
     client.deploy_model(model_id, ["ng-1", "ng-2"])
     assert r1.calls[0] == {
-        "verb": "post", "path": f"/mllf/models/{model_id}/deploy",
+        "verb": "post", "path": f"/aimgf/models/{model_id}/deploy",
         "params": None, "files": None, "json": ["ng-1", "ng-2"],
     }
 

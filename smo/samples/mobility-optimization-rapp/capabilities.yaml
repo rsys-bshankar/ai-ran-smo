@@ -8,9 +8,9 @@ capabilities:
         (Digital Twin, injected faults) for emulation; cell guards and O1
         config read-back from RAN NF OAM.
     - namespace: models
-      description: Registers MobilityRobustnessPredictor in MLMR and stores its artifact, via sdk.models.
+      description: Registers MobilityRobustnessPredictor in AIMgF's model registry and stores its artifact, via sdk.models.
     - namespace: lifecycle
-      description: AIMgF training/validation/emulation jobs, MLLF + MLIF runtime deployment, inference jobs.
+      description: AIMgF training/validation/emulation jobs, AIMgF's deploy gate + MLIF runtime deployment, inference jobs.
     - namespace: intent
       description: AutonomyDispatch of CIO changes (SHADOW / ASSIST / AUTONOMOUS), via sdk.intent.
     - namespace: platform

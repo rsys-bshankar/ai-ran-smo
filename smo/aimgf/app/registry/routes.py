@@ -1,9 +1,8 @@
 """The model registry's routes (TS 28.105 MLModel, MLModelRepository and MLModelCoordinationGroup; artifacts; the TS 29.482 model-management API
 is `mlr.py`): the `registry` package of AIMgF, which was the MLMR service until S2.1 (`docs/plan/CONVERGED_REWRITE_PLAN.md`, ADR 0010 section 3.1).
 
-Where it sits: an `APIRouter` included at the root of AIMgF's app (`main.py`). R1 Termination reaches it through two prefixes while the callers move: `/aimgf/...`
-and, until S2.4 moves the last caller and deletes the prefix, `/mlmr/...`, which the gateway's routing table now sends to AIMgF's process (`aimgf/README.md`
-lists the routes). It makes no R1 call: AIMgF's lifecycle and NRM cross-references are read in process (`_check_no_live_runtime`, `ml_model_nrm_refs`).
+Where it sits: an `APIRouter` included by AIMgF's app (`main.py`), reached at R1 under `/aimgf/...` like every other route of the module (since S2.4;
+`aimgf/README.md` 2.4 lists them). It makes no R1 call: AIMgF's lifecycle and NRM cross-references are read in process (`_check_no_live_runtime`, `ml_model_nrm_refs`).
 The other packages of AIMgF read and write the registry through `access.py`, not through these routes.
 
 What it owns: a model's identity (`model_type` + `version` is unique), its registration metadata and TS 28.105 attributes, the uploaded artifact bytes (kept
@@ -333,7 +332,7 @@ def _audit_owner_change(request: Request, db: Session, model_id: uuid.UUID, prev
     The caller commits, so the change and its row are one transaction.
     """
     audit.record(db, actor=acting_user(request) or invoker_id(request) or "unknown", role=role_of(request), action="SET_MODEL_OWNER",
-                 target=f"/mlmr/models/{model_id}/owner", result="200", correlation_id=get_correlation_id(),
+                 target=f"/aimgf/models/{model_id}/owner", result="200", correlation_id=get_correlation_id(),
                  detail={"modelId": str(model_id), "previousOwner": previous, "newOwner": new})
 
 
@@ -346,7 +345,7 @@ def set_model_owner(request: Request, model_id: uuid.UUID, body: SetModelOwnerRe
     # SEC-15.3c part 3. Decision: an operator (role `internal`: the console, an SMO module) may set the owner of an owner-less model AND change an existing one (re-assigning a model when
     # an rApp is replaced); it cannot clear it (an owner-less model is open to every rApp, which is the state this route exists to end). The role check comes first, before the model is
     # looked up, so an rApp learns nothing about a model; a call with no role (in-process) is let through like the other role checks of this module. The change and its audit row
-    # (`smo_shared.audit`, the hash chain: action SET_MODEL_OWNER, target `/mlmr/models/{id}/owner`, detail modelId, previousOwner, newOwner) are one transaction: no owner change without
+    # (`smo_shared.audit`, the hash chain: action SET_MODEL_OWNER, target `/aimgf/models/{id}/owner`, detail modelId, previousOwner, newOwner) are one transaction: no owner change without
     # its row. The actor is the person the console says it acts for (`X-R1-Acting-User`), else the caller's invoker id. An unchanged owner writes no row.
     if role_of(request) == ROLE_RAPP:
         raise framework_error(FrameworkError.ROLE_NOT_PERMITTED, detail="the owner of a model is set by the operator or an SMO module, not by an rApp")

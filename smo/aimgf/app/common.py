@@ -2,7 +2,7 @@
 base of the TS 28.105 NRM resources.
 
 What it is: `_r1` (the module's only `R1Client`; every call to NFO, DME and Onboarding goes through it, smo/CLAUDE.md); the model lookup (`_get_model`,
-`_get_model_or_none`), now an in-process read of the registry (`registry.access`, S2.1) instead of `GET /mlmr/models/{id}`; the owner rule, written once in
+`_get_model_or_none`), an in-process read of the registry (`registry.access`, S2.1; MLMR's R1 route before); the owner rule, written once in
 `_owner_may_act` and applied by `_owned_model`, `_serving_model`, `_check_rapp_owns*`, `_check_job_owner` and `_check_inference_resolver` (SEC-15.3,
 MLLF-NODEGROUP-OWNER); the phase write-back (`_record_phase`, SA-MLMR-7); the sizing and completion bodies (`RuntimeProfile`, `RuntimeSizing`,
 `CompleteJobRequest`); and the NRM helpers (`_Body`, `_get`, `_page`, `_monitor`, the request and process flag bodies).

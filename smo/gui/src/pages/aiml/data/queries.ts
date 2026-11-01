@@ -13,7 +13,7 @@ import { useSummary } from "../../../data/summary";
 import type { LifecycleTransition, NrmObject } from "./types";
 
 /** MLMR registered models (`model_type` filter). */
-export const MODELS = "/mlmr/models";
+export const MODELS = "/aimgf/models";
 /** AIMgF lifecycle rows (no filter). */
 export const LIFECYCLES = "/aimgf/model-lifecycles";
 /** AIMgF training jobs (`model_id`, `status`). */
@@ -21,7 +21,7 @@ export const TRAINING_JOBS = "/aimgf/training-jobs";
 /** AIMgF inference jobs (`model_id`, `status`). */
 export const INFERENCE_JOBS = "/aimgf/inference-jobs";
 /** MLMR coordination groups. */
-export const GROUPS = "/mlmr/coordination-groups";
+export const GROUPS = "/aimgf/coordination-groups";
 /** AIMgF MLMF performance subscriptions (`model_id`). */
 export const MLMF_SUBSCRIPTIONS = "/aimgf/mlmf/subscriptions";
 /** AIMgF MLMF reports across every subscription, newest first (`breached_only`). */
@@ -29,9 +29,9 @@ export const MLMF_REPORTS = "/aimgf/mlmf/reports";
 /** AIMgF feature groups (operator-only reads: they hold datalake credentials). */
 export const FEATURE_GROUPS = "/aimgf/feature-groups";
 /** MLMR TS 28.105 model repositories (feature 8). */
-export const REPOSITORIES = "/mlmr/ml-model-repositories";
+export const REPOSITORIES = "/aimgf/ml-model-repositories";
 /** MLMR model storages (feature 8). */
-export const STORAGES = "/mlmr/storages";
+export const STORAGES = "/aimgf/storages";
 /** DME data types, for the MLMF and feature-group forms. */
 export const DME_TYPES = "/dme/dme-types";
 /** AIMgF's count of lifecycle rows per state (GUI-9.8). */
@@ -70,7 +70,7 @@ export const mlmrModel = (id: string) => `${MODELS}/${id}`;
 /** MLMR `PUT /models/{id}/owner` (SEC-15.3c): gives a model an owner, or another; an admin's call. */
 export const mlmrModelOwner = (id: string) => `${mlmrModel(id)}/owner`;
 /** MLLF path of one model. */
-export const mllfModel = (id: string) => `/mllf/models/${id}`;
+export const mllfModel = (id: string) => `/aimgf/models/${id}`;
 /** Where the browser downloads one artifact version of a model (the BFF proxies `/api/smo/<module>/...`). */
 export const artifactHref = (modelId: string, version: number) => `/api/smo${mlmrModel(modelId)}/artifact/${version}`;
 

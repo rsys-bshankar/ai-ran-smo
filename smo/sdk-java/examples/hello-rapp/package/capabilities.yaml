@@ -6,7 +6,7 @@ capabilities:
     - namespace: data
       description: Reads the DME type catalogue (GET /dme/dme-types) on every run, via the Java SDK's data().listTypes.
     - namespace: models
-      description: Reads the models MLMR holds (GET /mlmr/models) on every run, via the Java SDK's models().listModels.
+      description: Reads the models AIMgF's registry holds (GET /aimgf/models) on every run, via the Java SDK's models().listModels.
   provides: []
 
 consumedServices:

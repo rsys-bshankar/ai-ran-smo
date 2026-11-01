@@ -48,7 +48,7 @@ standalone against SQLite, `PYTHONPATH` pointed at both itself and
 
 ```bash
 cd smo
-for m in onboarding rapp-mgmt ran-nf-oam aimgf mlmr mllf so-smos \
+for m in onboarding rapp-mgmt ran-nf-oam aimgf so-smos \
          sme dme r1-termination nfo focom ran-analytics mdaf \
          intent-service sa-smos mock-o1-adaptor sdk; do
   (cd "$m" && PYTHONPATH=.:../shared python -m pytest tests/ -q) || break

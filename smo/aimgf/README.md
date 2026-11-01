@@ -6,7 +6,6 @@
 |---|---|
 | Standards basis | 3GPP TS 28.105 (AI/ML NRM) + internal lifecycle orchestration |
 | R1 route / port | `/aimgf` via R1 Termination (container :8000) |
-| R1 routes served by this process until S2.4 | `/mlmr/*` (the registry) and `/mllf/*` (the deploy gate): R1 Termination's routing table sends both prefixes here; the list is in [2.4](#routes-served-where-until-s24) |
 | Depends on (over R1) | NFO (`/nfo/descriptors`, `/nfo/deployments`), DME (`/dme/data-jobs`: check a training run's jobs; create and terminate a feature group's; `/dme/dme-types`), Onboarding (`/onboarding/packages/{id}/onboarding-status`). The registry and the deploy gate are in process |
 | Called by | rApps through the SDK (`sdk/smo_sdk/lifecycle.py`, `models.py`), MDAF (MLMF subscriptions and reports), SA SMOS and SO SMOS (training / validation / emulation / deploy / inference steps), GUI via the BFF |
 | Database tables | registry: `aiml_model`, `model_artifact`, `ml_model_coordination_group`, `ml_model_repository`, `ml_models_storage`, `ml_model_profile`, `model_change_subscription` (in the `aimgf` schema since revision 0064); lifecycle and runs: `model_lifecycle` (versioned), `training_job`, `validation_job`, `emulation_job`, `inference_job`, `certification_record`, `lifecycle_transition`, `mlmf_subscription`, `performance_report`, `feature_group`, `ml_training_function`, `ml_training_process`, `ml_training_report`, `ml_testing_function`, `ml_testing_report`, `aiml_inference_function`, `aiml_inference_emulation_function`, `aiml_inference_report`, `ml_model_loading_policy`, `ml_model_loading_request`, `ml_model_loading_process`, `ml_update_function`, `ml_update_request`, `ml_update_process`, `ml_update_report` |
@@ -45,7 +44,7 @@ Full per-IOC compliance matrix (20/20 IOCs, 125/126 attributes compliant): [`../
 
 ```
  rApps (SDK) / GUI (BFF) / SA SMOS / SO SMOS / MDAF
-              │ R1: /aimgf/*, and /mlmr/*, /mllf/* until S2.4
+              │ R1: /aimgf/* (every route, the registry and the deploy gate too)
               ▼
    ┌──────────────────────── AIMgF (one process) ─────────────────────────┐
    │ registry ◀── in process ── training · testing · emulation · loading  │
@@ -63,7 +62,7 @@ The packages call each other in process; nothing in AIMgF calls AIMgF over R1. A
 
 #### AI/ML responsibility by package
 
-ADR 0010 section 3.1. The services MLMR and MLLF are gone as code (their containers answer only health probes until S2.8); every responsibility they had is a package here. Platform-wide ownership: [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md).
+ADR 0010 section 3.1. The services MLMR and MLLF are gone (S2.8 removed them); every responsibility they had is a package here. Platform-wide ownership: [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md).
 
 | Responsibility | Package | Was |
 |---|---|---|
@@ -268,7 +267,7 @@ Deploy needs model state `CERTIFIED` or `PROMOTED` (`409 MODEL_NOT_CERTIFIED`). 
 
 Every list route also takes the optional `total` (boolean, default `true`, the shared `smo_shared.pagination` parameter): `total=false` skips the `COUNT(*)` of the whole result, leaves `total` out of the envelope and adds `hasMore`.
 
-Paths are relative to `/aimgf` (and, for the registry and the gate, also to `/mlmr` and `/mllf` until S2.4: see the end of this section). Lists are `{items, total, limit, offset}` with `limit` / `offset`. Several routes take scalar inputs as query parameters (`advance`, `inference-jobs`, `resolve`, MLMF `subscriptions`); check [`../docs/openapi/aimgf.json`](../docs/openapi/aimgf.json) for exact shapes. Every `{id}` lookup that misses is 404 with the resource's `*_NOT_FOUND` code (2.7).
+Paths are relative to `/aimgf`, the one prefix every route answers at (the registry and the deploy gate too, since S2.4). Lists are `{items, total, limit, offset}` with `limit` / `offset`. Several routes take scalar inputs as query parameters (`advance`, `inference-jobs`, `resolve`, MLMF `subscriptions`); check [`../docs/openapi/aimgf.json`](../docs/openapi/aimgf.json) for exact shapes. Every `{id}` lookup that misses is 404 with the resource's `*_NOT_FOUND` code (2.7).
 
 **Registry: models and artifacts** (`registry/routes.py`, `registry/mlr.py`)
 
@@ -280,7 +279,7 @@ Paths are relative to `/aimgf` (and, for the registry and the gate, also to `/ml
 | POST / GET / PUT / PATCH / DELETE | `/storages`, `/storages/{id}` | TS 29.482 `MLModelsStorage` with its `mlModels` profiles; GET filters `storage-ids`, `profile-ids`. 404 `NRM_OBJECT_NOT_FOUND` / `MODEL_NOT_FOUND`, 422 on a bad body |
 | GET | `/models/{id}` | Model view (the same JSON the packages read in process, `access.model_json`). 404 `MODEL_NOT_FOUND` |
 | PUT | `/models/{id}` | Replaces the metadata fields; `modelType` / `version` must match (400 `MODEL_IDENTITY_IMMUTABLE`). Also takes `trainingDataLineage`, `integrityHash`. `owner` replaces the stored one for an `internal` caller or none. For a caller with role `rapp` (`SEC-15.3c`): 403 `MODEL_ACCESS_DENIED` when the model has an owner that is not the caller (an owner-less model is open to any rApp); the body's `owner` is accepted and ignored when it equals the stored one or is omitted (an omitted `owner` keeps the stored one rather than clearing it), and 403 `MODEL_OWNER_IMMUTABLE` when it is anything else, an empty string and a claim on an owner-less model included |
-| PUT | `/models/{id}/owner` | Gives a model an owner, or changes it (`SEC-15.3c`, part 3): body `{owner}`, one token of 1 to 255 characters with no whitespace (422 otherwise; an owner cannot be cleared here). **Operator and SMO modules only**: an rApp is refused 403 `ROLE_NOT_PERMITTED` (by the gateway, `INTERNAL_ONLY`, and again here, before the model is looked up); 404 `MODEL_NOT_FOUND`. The operator may set the owner of an owner-less model **and change an existing one**. 200 `{modelId, owner, previousOwner, changed}`; the same owner again is 200 with `changed` false and writes nothing. A change writes one row to the audit chain (`smo_shared.audit`, action `SET_MODEL_OWNER`, target `/mlmr/models/{id}/owner`, `detail` `{modelId, previousOwner, newOwner}`, actor the person the console acts for, `X-R1-Acting-User`, else the caller's invoker id) in the same transaction as the change. A `PUT /models/{id}` from role `internal` that changes the `owner` (or clears it) is audited the same way. The console's **Set owner** button (admin) calls this route |
+| PUT | `/models/{id}/owner` | Gives a model an owner, or changes it (`SEC-15.3c`, part 3): body `{owner}`, one token of 1 to 255 characters with no whitespace (422 otherwise; an owner cannot be cleared here). **Operator and SMO modules only**: an rApp is refused 403 `ROLE_NOT_PERMITTED` (by the gateway, `INTERNAL_ONLY`, and again here, before the model is looked up); 404 `MODEL_NOT_FOUND`. The operator may set the owner of an owner-less model **and change an existing one**. 200 `{modelId, owner, previousOwner, changed}`; the same owner again is 200 with `changed` false and writes nothing. A change writes one row to the audit chain (`smo_shared.audit`, action `SET_MODEL_OWNER`, target `/aimgf/models/{id}/owner`, `detail` `{modelId, previousOwner, newOwner}`, actor the person the console acts for, `X-R1-Acting-User`, else the caller's invoker id) in the same transaction as the change. A `PUT /models/{id}` from role `internal` that changes the `owner` (or clears it) is audited the same way. The console's **Set owner** button (admin) calls this route |
 | DELETE | `/models/{id}` | 204; 409 `MODEL_IN_USE` while the model's serving runtime is in a live state (its lifecycle row read in process, call flow 26e); deletes artifacts, then the model; unknown id is a no-op (204 for every caller). For a caller with role `rapp`: 403 `MODEL_ACCESS_DENIED` when the model has an owner that is not the caller, and nothing is deleted (`SEC-15.3d`); an owner-less model, role `internal` and no role are not refused |
 | POST | `/models/{id}/artifact` | Multipart `file`, must end `.zip` (415 `ARTIFACT_FORMAT_INVALID`). Returns `artifactId`, `artifactVersion`, `sizeBytes`. 404 `MODEL_NOT_FOUND`, then for a caller with role `rapp` 403 `MODEL_ACCESS_DENIED` when the model has an owner that is not the caller (`SEC-15.3d`; no artifact is stored) |
 | GET | `/models/{id}/artifact/{artifactVersion}` | Zip bytes with `Content-Disposition`. 404 `ARTIFACT_VERSION_NOT_FOUND`, 410 `MODEL_EXPIRED`, 403 `MODEL_ACCESS_DENIED` (`storeDiscReqs`). `SEC-15.3d`: a caller with role `rapp` that is not the owner of an owned model also gets 403 when the model sets no `accessReqs` (a model is its owner's unless it says otherwise); with `accessReqs`, PUBLICLY_AVAILABLE and RESTRICTED naming the caller let it through as before. Role `internal`, no role and an owner-less model keep the old rule |
@@ -392,38 +391,12 @@ refused 409) or by the unique feature-group name; each says why in a `# Not @ide
 | MLUpdateRequest | `POST`, `GET` (list, id), `PATCH` | `POST` runs `FINE_TUNING` training for every named model, all-or-nothing at start (empty list 422; each model must be `REGISTERED` / `CERTIFIED` / `PROMOTED` / `FAILED`); `PATCH` cancels or suspends / resumes all runs |
 | MLUpdateProcess, MLUpdateReport | `GET` (list, id) | Report written once every run is terminal; process `FINISHED` only if all runs succeeded, else `FAILED` (the request is `FINISHED` either way) |
 
-#### Routes served where until S2.4
+#### Where the registry and the deploy gate were
 
-AIMgF serves the registry and the deploy gate at the root of its app. R1 Termination's routing table sends the old prefixes to AIMgF's process (`MLMR_URL` and `MLLF_URL`, default `http://aimgf:8000`), so every route MLMR and MLLF answered still answers at the same R1 path, and the same handler is also reachable at `/aimgf/...`, where S2.4 moves the callers. This is the one transitional step of S2.1–S2.3: S2.4 moves every caller (the GUI, the BFF, the three SDKs, `bodylimit`'s artifact override, the gateway's role rules) to the `/aimgf` column, then deletes the `/mlmr` and `/mllf` entries of `ROUTES` in `r1-termination/app/main.py`; S2.8 then removes the placeholder `mlmr` and `mllf` services. `scripts/interface_baseline.json` files these routes under `aimgf`, each with `movedFrom` naming its old entry.
-
-| Old R1 path (answers until S2.4) | Served by AIMgF at (R1: `/aimgf` + this) | Code |
-|---|---|---|
-| `GET /mlmr/coordination-groups` | `GET /coordination-groups` | `aimgf/app/registry/routes.py` |
-| `POST /mlmr/coordination-groups` | `POST /coordination-groups` | `aimgf/app/registry/routes.py` |
-| `GET /mlmr/ml-model-coordination-groups/{group_id}` | `GET /ml-model-coordination-groups/{group_id}` | `aimgf/app/registry/routes.py` |
-| `GET /mlmr/ml-model-repositories` | `GET /ml-model-repositories` | `aimgf/app/registry/routes.py` |
-| `POST /mlmr/ml-model-repositories` | `POST /ml-model-repositories` | `aimgf/app/registry/routes.py` |
-| `GET /mlmr/ml-model-repositories/{repository_id}` | `GET /ml-model-repositories/{repository_id}` | `aimgf/app/registry/routes.py` |
-| `DELETE /mlmr/ml-model-repositories/{repository_id}` | `DELETE /ml-model-repositories/{repository_id}` | `aimgf/app/registry/routes.py` |
-| `GET /mlmr/ml-models/{model_id}` | `GET /ml-models/{model_id}` | `aimgf/app/registry/routes.py` |
-| `GET /mlmr/models` | `GET /models` | `aimgf/app/registry/routes.py` |
-| `POST /mlmr/models` | `POST /models` | `aimgf/app/registry/routes.py` |
-| `GET /mlmr/models/{model_id}` | `GET /models/{model_id}` | `aimgf/app/registry/routes.py` |
-| `PUT /mlmr/models/{model_id}` | `PUT /models/{model_id}` | `aimgf/app/registry/routes.py` |
-| `DELETE /mlmr/models/{model_id}` | `DELETE /models/{model_id}` | `aimgf/app/registry/routes.py` |
-| `POST /mlmr/models/{model_id}/artifact` | `POST /models/{model_id}/artifact` | `aimgf/app/registry/routes.py` |
-| `GET /mlmr/models/{model_id}/artifact/{artifact_version}` | `GET /models/{model_id}/artifact/{artifact_version}` | `aimgf/app/registry/routes.py` |
-| `PUT /mlmr/models/{model_id}/owner` | `PUT /models/{model_id}/owner` | `aimgf/app/registry/routes.py` |
-| `PATCH /mlmr/models/{model_id}/phase-info` | `PATCH /models/{model_id}/phase-info` | `aimgf/app/registry/mlr.py` |
-| `GET /mlmr/storages` | `GET /storages` | `aimgf/app/registry/mlr.py` |
-| `POST /mlmr/storages` | `POST /storages` | `aimgf/app/registry/mlr.py` |
-| `GET /mlmr/storages/{storage_id}` | `GET /storages/{storage_id}` | `aimgf/app/registry/mlr.py` |
-| `PUT /mlmr/storages/{storage_id}` | `PUT /storages/{storage_id}` | `aimgf/app/registry/mlr.py` |
-| `PATCH /mlmr/storages/{storage_id}` | `PATCH /storages/{storage_id}` | `aimgf/app/registry/mlr.py` |
-| `DELETE /mlmr/storages/{storage_id}` | `DELETE /storages/{storage_id}` | `aimgf/app/registry/mlr.py` |
-| `POST /mllf/models/{model_id}/deploy` | `POST /models/{model_id}/deploy` | `aimgf/app/loading/gate.py` |
-
-The calls the two services made over R1 are gone, not moved: the registry reads the lifecycle row before a delete and the NRM cross-references in process, and the gate reads and writes the lifecycle row in process. AIMgF's own calls to `/mlmr/*` (model lookup, coordination groups, the phase write-back) are in-process reads of the registry (`registry/access.py`).
+Until S2.4 the registry's 23 routes and the deploy gate answered also under MLMR's and MLLF's gateway prefixes, which R1 Termination sent to this process
+(S2.1, S2.2). S2.4 moved every caller (the three SDKs, the GUI, the BFF and its role rules, the gateway's rApp allow-list and the 50 MiB artifact body
+limit) to `/aimgf` and deleted the two prefixes from R1's routing table, so each route answers at exactly one place; `scripts/check_no_old_ml_prefixes.py`
+(CI job `Interfaces`) keeps the old paths out of the repository. S2.8 then removed the two services.
 
 ### 2.5 Interactions
 
@@ -514,7 +487,6 @@ Errors are RFC 7807 ProblemDetails from `framework_error()`; the code is carried
 - A feature group registered with the deprecated clear-text `token` still has it in `feature_group.token` (not returned by any route); it is moved to a secret by registering the group again with a `tokenRef`. The SDK and the console send `tokenRef` (`SEC-15.2b`); the server still accepts `token` until a later minor release. `SEC-15.2b` in `OPEN_ITEMS.md`.
 - MLTrainingReport's `trainingProcessRef` is filled by the list / get views, not stored.
 - Registry: artifacts are bytes in `model_artifact.content` until S2.5 moves them to the object store; only `.zip` names are accepted (S2.5 brings ONNX and Safetensors only). Coordination-group member ids are not checked against registered models, and `retrainPropagation` is checked only when a breach is reported. `model_change_subscription` is unused until R1GAP §5.6.5 (S1.13). A model registered before `SEC-15.3b` has no owner and stays open to every rApp until an operator sets one (`OPEN_ITEMS.md` `SEC-15.3c`). TS 29.482 limits are in 1.2.
-- Until S2.4 the registry and the gate answer at two R1 paths (`/mlmr` or `/mllf`, and `/aimgf`); the gateway's rApp allow-list (`smo_shared/roles.py`) and the 50 MiB artifact body limit name the old prefix only, so an rApp writes to the registry through `/mlmr` until S2.4 moves those rules with the callers.
 - Revision 0064 moved the registry's tables into the `aimgf` schema without changing them; the ORM still keeps no foreign key from the lifecycle and run tables to `aiml_model` (history outlives a model).
 
 ## 3. Unit tests
@@ -558,7 +530,7 @@ The counts are test functions; the suite reports more passed because some tests 
 
 ### 3.3 What is not covered here
 
-- Cross-module behaviour with the real NFO / MDAF, the old `/mlmr` and `/mllf` prefixes reaching AIMgF through the mesh's copy of R1's routing table, and the GUI RBAC rules: `tests_integration/` (`test_cross_service.py`, rApp closed-loop suites, `test_demo_runbook.py`) and `test_openapi_specs.py`, which checks `docs/openapi/aimgf.json` against the live schema.
+- Cross-module behaviour with the real NFO / MDAF and the GUI RBAC rules: `tests_integration/` (`test_cross_service.py`, rApp closed-loop suites, `test_demo_runbook.py`) and `test_openapi_specs.py`, which checks `docs/openapi/aimgf.json` against the live schema.
 - Postgres-only behaviour (CHECK constraints, `ON DELETE` actions, array columns): not exercised under SQLite; `scripts/check_migration_matches_models.py` checks model / migration column agreement.
 - Failure of NFO responses (non-200) is not covered.
 
@@ -570,4 +542,4 @@ The counts are test functions; the suite reports more passed because some tests 
 - Spec: [`TS28105_AiMlNrm.yaml`](../../specs/5G_APIs/TS28105_AiMlNrm.yaml)
 - Platform rules: [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md); open items: [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md); history: [`../HISTORY.md`](../HISTORY.md)
 - Decision record: [ADR 0010](../docs/adr/0010-aimgf-absorbs-mlmr-mllf.md); plan: [Stage 2](../docs/plan/CONVERGED_REWRITE_PLAN.md#stage-2--aimgf-absorbs-mlmr-and-mllf)
-- Related READMEs: [`../nfo/README.md`](../nfo/README.md); the placeholders [`../mlmr/README.md`](../mlmr/README.md) and [`../mllf/README.md`](../mllf/README.md) (removed by S2.8)
+- Related READMEs: [`../nfo/README.md`](../nfo/README.md)

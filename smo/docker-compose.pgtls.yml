@@ -72,7 +72,6 @@ services:
   traffic-steering-rapp-worker: *pgtls_client
   nfo: *pgtls_client
   focom: *pgtls_client
-  mlmr: *pgtls_client
   aimgf: *pgtls_client
   ran-analytics: *pgtls_client
   mdaf: *pgtls_client

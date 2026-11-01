@@ -550,7 +550,7 @@ def _jobs(inst: MobilityInstance, **updates) -> None:
 
 @app.post("/instances/{instance_id}/lifecycle/train")
 def train(instance_id: uuid.UUID, db: Session = Depends(get_session)):
-    """TRAINING on MLTF: registered in MLMR, trained on handover history, stored as an artifact."""
+    """TRAINING on MLTF: registered in AIMgF's model registry, trained on handover history, stored as an artifact."""
     inst = _instance(db, instance_id)
     version = inst.model_version or f"1.0.0-{str(inst.instance_id)[:8]}"
     if inst.model_id is None:
@@ -615,7 +615,7 @@ def emulate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
 def deploy(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     """MLIF deployment once the model is certified. The gNB's DMRO bounds
     are applied and verified (D10.2-1), and the serving model is loaded
-    from MLMR."""
+    from AIMgF's model registry."""
     inst = _instance(db, instance_id)
     sdk.lifecycle.deploy_model(inst.model_id, NODE_GROUPS)
     sdk.lifecycle.deploy_runtime(inst.model_id, package_id=inst.package_id)

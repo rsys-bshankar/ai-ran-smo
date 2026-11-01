@@ -56,13 +56,13 @@ The compliance matrix is in `../docs/STANDARDS.md` ("TS 28.104").
 
 MDAF consumes DME's data plane like any rApp and never touches DME's O1 action-mediation path. It calls RAN Analytics only
 to check that an rApp publishing a report is a registered producer of its type (`GET /ran-analytics/producers`, call flow
-08c), and never MLMR or NFO. Cross-module references are bare UUIDs.
+08c), and never AIMgF's registry or NFO. Cross-module references are bare UUIDs.
 
 ### 1.4 Ownership
 
 | Owns | Does not own → owner |
 |---|---|
-| Analytics, prediction and drift reports (`reportKind` `ANALYTICS` / `PREDICTION` / `DRIFT`) | Training, model repository → AIMgF / MLMR |
+| Analytics, prediction and drift reports (`reportKind` `ANALYTICS` / `PREDICTION` / `DRIFT`) | Training, model repository → AIMgF |
 | Analytics subscriptions with `ThresholdInfo` edge-triggered `UP` / `DOWN` / `UP_AND_DOWN` crossings and hysteresis | Data storage → DME |
 | TS 28.104 `MDAFunction`, `MDARequest`, `MDAReport`, request matching and delivery (`app/mda.py`) | Use-case analytics production (traffic / energy / coverage) → RAN Analytics (`../ran-analytics/README.md`) |
 | Drift → retrain signal: a `DRIFT` report naming `mLModelRef` is forwarded to that model's AIMgF MLMF subscriptions | Retrain decision (guard-KPI floor) → AIMgF |

@@ -82,15 +82,15 @@ def test_store_model_registers_once_then_adds_artifact_versions():
         return FakeResponse(201, {"modelId": "m-1"})
 
     r1 = RoutedR1({
-        ("get", "/mlmr/models"): lambda params: FakeResponse(200, {"items": models}),
-        ("post", "/mlmr/models"): register,
-        ("post", "/mlmr/models/m-1/artifact"): FakeResponse(201, {"modelId": "m-1", "artifactVersion": 1}),
+        ("get", "/aimgf/models"): lambda params: FakeResponse(200, {"items": models}),
+        ("post", "/aimgf/models"): register,
+        ("post", "/aimgf/models/m-1/artifact"): FakeResponse(201, {"modelId": "m-1", "artifactVersion": 1}),
     })
     client = ModelsClient(r1)
     assert client.store_model("EnergySavingPredictor", "1.0.0", b"zip", description="x")["modelId"] == "m-1"
     client.store_model("EnergySavingPredictor", "1.0.0", b"zip2")
     assert [path for verb, path, _ in r1.calls if verb == "post"] == [
-        "/mlmr/models", "/mlmr/models/m-1/artifact", "/mlmr/models/m-1/artifact"]
+        "/aimgf/models", "/aimgf/models/m-1/artifact", "/aimgf/models/m-1/artifact"]
 
 
 def test_lifecycle_wrappers(r1):

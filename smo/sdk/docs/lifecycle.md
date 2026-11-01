@@ -153,7 +153,7 @@ sequenceDiagram
     participant SDK as smo_sdk
     participant DME as DME
     participant SME as SME
-    participant MLMR as MLMR
+    participant AIMGF as AIMgF (registry)
 
     App->>SDK: data.get_dataset(name, consumer_id, lifecycle_stage)
     SDK->>DME: GET /dme/dme-types, GET /dme/data-jobs?dme_type_id&consumer_id
@@ -173,7 +173,7 @@ sequenceDiagram
     SDK->>SME: /sme/provider-registrations, /sme/published-apis/v1/{apfId}/service-apis,<br/>/sme/capif-events/v1/{subscriberId}/subscriptions
     Note over SME: an rApp only as itself, else 403 (call flow 18)
     App->>SDK: models.store_model(type, version, artifact)
-    SDK->>MLMR: discover the model of that type and version, register it if absent, upload the artifact
+    SDK->>AIMGF: discover the model of that type and version, register it if absent, upload the artifact
 ```
 
 Nothing the SDK creates is torn down by the SDK: an instance's data jobs, producers, services and policies go when rApp Management terminates the

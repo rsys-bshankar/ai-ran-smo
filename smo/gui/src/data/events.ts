@@ -71,7 +71,7 @@ export const LIST_PATHS: Record<string, string[]> = {
   escalations: ["/sa-smos/remedial-actions"],
   mlmfBreaches: ["/aimgf/mlmf/reports"],
   modelGates: ["/aimgf/model-lifecycles"],
-  models: ["/mlmr/models"],
+  models: ["/aimgf/models"],
   trainingJobs: ["/aimgf/training-jobs"],
   elements: ["/ran-nf-oam/managed-entities"],
 };

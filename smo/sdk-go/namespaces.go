@@ -1,4 +1,4 @@
-// namespaces.go holds the typed helpers an rApp starts with: Data (DME), Models (MLMR), Platform (SME) and RApp (the
+// namespaces.go holds the typed helpers an rApp starts with: Data (DME), Models (AIMgF's registry), Platform (SME) and RApp (the
 // instance's own routes at rApp Management), plus Object and Page, the shapes they return. Each method is one route of
 // routes.go sent through Client.Do, so the token, retries and error mapping apply.
 //
@@ -162,18 +162,18 @@ func (d DataClient) MediateAction(ctx context.Context, req ActionRequest, opts .
 	return o, d.c.callWith(ctx, dmeActionsRoute, nil, nil, body, hdr, &o)
 }
 
-// ---------------------------------------------------------------- models (MLMR)
+// ---------------------------------------------------------------- models (AIMgF's registry)
 
-// ModelsClient is sdk.models: MLMR (TS 28.105 / TS 29.482 MLModelManagement). Only the list read.
+// ModelsClient is sdk.models: AIMgF's model registry (TS 28.105 / TS 29.482 MLModelManagement). Only the list read.
 type ModelsClient struct{ c *Client }
 
 // Models returns the models namespace.
 func (c *Client) Models() ModelsClient { return ModelsClient{c} }
 
-// List is GET /mlmr/models; query carries the route's own filters and paging (limit, offset, ...).
+// List is GET /aimgf/models; query carries the route's own filters and paging (limit, offset, ...).
 func (m ModelsClient) List(ctx context.Context, query url.Values) (Page[Object], error) {
 	var p Page[Object]
-	return p, m.c.call(ctx, mlmrModelsRoute, nil, query, nil, &p)
+	return p, m.c.call(ctx, aimgfModelsRoute, nil, query, nil, &p)
 }
 
 // ---------------------------------------------------------------- platform (SME)

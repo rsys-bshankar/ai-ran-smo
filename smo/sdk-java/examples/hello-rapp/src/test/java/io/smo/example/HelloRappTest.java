@@ -28,7 +28,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-/** The example rApp against a stand-in for R1 Termination, SME, DME, MLMR and rApp Management. */
+/** The example rApp against a stand-in for R1 Termination, SME, DME, AIMgF and rApp Management. */
 class HelloRappTest {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String INSTANCE = "11111111-2222-3333-4444-555555555555";
@@ -55,11 +55,12 @@ class HelloRappTest {
                 "PUT /rapp-mgmt/instances/" + INSTANCE + "/operator-api", "{\"operatorApiBase\":\"x\"}",
                 "POST /rapp-mgmt/instances/" + INSTANCE + "/performance", "{\"status\":\"recorded\"}",
                 "GET /dme/dme-types", "{\"items\":[{\"id\":\"a\"},{\"id\":\"b\"},{\"id\":\"c\"}],\"total\":3}",
-                "GET /mlmr/models", "{\"items\":[{\"id\":\"m\"}],\"total\":1}");
+                "GET /aimgf/models", "{\"items\":[{\"id\":\"m\"}],\"total\":1}");
         platform.createContext("/", exchange -> {
             String key = exchange.getRequestMethod() + " " + exchange.getRequestURI().getPath();
-            calls.add(key);
+            // the body first: a test that waits for the call (awaitCall) then reads its body must find it
             bodies.put(key, new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            calls.add(key);
             if (!key.startsWith("GET /bootstrap") && !key.startsWith("POST /sme/") && !"Bearer tok".equals(exchange.getRequestHeaders().getFirst("Authorization"))
                     && !key.startsWith("DELETE /sme/")) {
                 exchange.sendResponseHeaders(401, -1);
@@ -122,7 +123,7 @@ class HelloRappTest {
     }
 
     /**
-     * Pins that a run reads DME and MLMR, answers 202 with the counts, and the status and runs routes show it.
+     * Pins that a run reads DME and AIMgF's registry, answers 202 with the counts, and the status and runs routes show it.
      */
     @Test
     void aRunReadsADataRouteAndAnAiRouteAndTheOperatorPageSeesIt() throws Exception {

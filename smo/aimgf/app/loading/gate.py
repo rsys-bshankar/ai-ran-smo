@@ -4,8 +4,7 @@ the node groups it is cleared for are recorded on its lifecycle row.
 This was the MLLF service until S2.2 (`docs/plan/CONVERGED_REWRITE_PLAN.md`, ADR 0010 section 3.1): one route that read AIMgF's lifecycle and wrote the
 node groups back over R1, two round trips with a window between them. It is now an in-process check of the same row, read and written in one transaction.
 
-Where it sits: one route, `POST /models/{id}/deploy`, included at the root of AIMgF's app; until S2.4 moves the last callers, R1 Termination also sends the
-old `/mllf/models/{id}/deploy` here. It deploys nothing: the serving runtime is `loading/runtime.py` (call flow 17), and the state machine is
+Where it sits: one route, `POST /models/{id}/deploy` (at R1, `/aimgf/models/{id}/deploy`), included by AIMgF's app. It deploys nothing: the serving runtime is `loading/runtime.py` (call flow 17), and the state machine is
 `governance/statemachine.py`'s `RuntimeLifecycleState`.
 
 Ownership (MLLF-NODEGROUP-OWNER): the owner rule is AIMgF's own (`common._owned_model`), judged on the caller the gateway stamped: an rApp places only a

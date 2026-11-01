@@ -281,12 +281,12 @@ Stage 1 ends at milestone M1 (week 5): a reference "Echo" MnS module, built only
 
 ## Stage 2 — AIMgF absorbs MLMR and MLLF
 
-Stage 2 ends at milestone M2 (week 5, in parallel with Stage 1): one AI/ML service, old `/mlmr/*` and `/mllf/*` routes deleted once every caller uses /aimgf/\*, and model artifacts in the object store. Code moves first; ProvMnS exposure of `AIMLModel` follows once S1.1 lands. Today 27 non-test files call the two old prefixes: 11 in the GUI, 3 each in the BFF, Python SDK and Java SDK, 2 in AIMgF, and 1 each in the Go SDK, shared, scripts, R1 and MLMR itself.
+Stage 2 ends at milestone M2 (week 5, in parallel with Stage 1): one AI/ML service, the old MLMR and MLLF prefixes deleted once every caller uses /aimgf/\*, and model artifacts in the object store. Code moves first; ProvMnS exposure of `AIMLModel` follows once S1.1 lands. Today 27 non-test files call the two old prefixes: 11 in the GUI, 3 each in the BFF, Python SDK and Java SDK, 2 in AIMgF, and 1 each in the Go SDK, shared, scripts, R1 and MLMR itself.
 
 | ID | Task | Repo area | Needs | Done when | Status |
 | --- | --- | --- | --- | --- | --- |
-| S2.1 | Move MLMR into `aimgf/app/mlmr/`. Its 7 tables move into the aimgf schema in one Alembic revision in the same PR | `aimgf/`, `migrations/` | D4 | AIMgF suite green, including the TS 29.482 MLR conformance tests moved from `mlmr/` | Not started |
-| S2.2 | Move the MLLF deploy gate into `aimgf/app/mllf/`; the certification check becomes an in-process call instead of an R1 round trip | `aimgf/` | S2.1 | Deploy-gate tests pass with no MLLF container | Not started |
+| S2.1 | Move MLMR into AIMgF (its `registry` package). Its 7 tables move into the aimgf schema in one Alembic revision in the same PR | `aimgf/`, `migrations/` | D4 | AIMgF suite green, including the TS 29.482 MLR conformance tests moved from `mlmr/` | Not started |
+| S2.2 | Move the MLLF deploy gate into AIMgF (`loading/gate.py`); the certification check becomes an in-process call instead of an R1 round trip | `aimgf/` | S2.1 | Deploy-gate tests pass with no MLLF container | Not started |
 | S2.3 | Organise AIMgF's code by TS 28.105 capability (model registry, training, testing and emulation requests, loading, inference function). No `mltf`, `mtef` or `mlvf` module: those are runtime roles NFO places, and MTEF bundling is retired (golden rules 3 and 4 unchanged) | `aimgf/` | S2.1 | Code map in the README matches the packages | Not started |
 | S2.4 | Move every caller to `/aimgf/*` in one PR series: the three SDKs, the GUI, the BFF and R1's routing table; no alias | `r1-termination/`, `sdk*/`, `gui/`, `gui-bff/` | S2.2 | A CI grep finds no caller of the old prefixes | Not started |
 | S2.5 | Artifacts out of the database: `model_artifact.content` bytes copied to the object store with a SHA-256 digest; only ONNX and Safetensors accepted, pickle refused (Part 2 §1) | `aimgf/`, `migrations/` | S2.1, S1.10 | Upgrade from 0.9.0 keeps every artifact readable (upgrade lane) | Not started |

@@ -61,7 +61,7 @@ Logic is in `app/engine.py` (guards, bounds, KPI check; no I/O) and `app/model/C
 | `app/main.py` | FastAPI service: instance binding, lifecycle, evaluate loop (`run_pass`, `run_due_passes`), dispatch and approval follow-up, audit, dashboard |
 | `app/tasks.py` | The worker's task `evaluate-due` (every `COVERAGE_SCHEDULE_TICK_SECONDS`, default 15) |
 | `app/engine.py` | Guards, bounds, KPI check, per-cell plan (no I/O) |
-| `app/model/CoverageModel.py` | Sensitivity model, joint optimiser, MLMR artifact (JSON in a zip) |
+| `app/model/CoverageModel.py` | Sensitivity model, joint optimiser, registry artifact (JSON in a zip) |
 | `app/model/{Training,Validation,Emulation,Inference}Logic.py` | The four execution modes |
 | `app/model/series.py` | Counter parsing, shares, overlaps, cell snapshots |
 | `app/producer.py` | Propagation model, sample history, Digital Twin `COVERAGE_PERFORMANCE_SIM` producer |
@@ -77,7 +77,7 @@ Logic is in `app/engine.py` (guards, bounds, KPI check; no I/O) and `app/model/C
 
 Package layout and field meanings are in [RAPP_PACKAGING.md](../../docs/RAPP_PACKAGING.md); the rApp's place in the platform is in [ARCHITECTURE.md](../../docs/ARCHITECTURE.md#reference-rapps).
 
-- `manifest.yaml`: all four execution modes, three autonomy modes, required services DME, AIMgF, MLMR, MLLF and RAN-NF-OAM, and a runtime profile per mode.
+- `manifest.yaml`: all four execution modes, three autonomy modes, required services DME, AIMgF and RAN-NF-OAM, and a runtime profile per mode.
 - `capabilities.yaml` consumes `data`, `models`, `lifecycle`, `intent` and `platform`, and provides the `COVERAGE_PERFORMANCE_SIM` dataset under `data`. Supported actions are `DOWNTILT`, `UPTILT`, `POWER_UP`, `POWER_DOWN` and `REVERT`.
 - No `analytics` namespace. The rApp derives its features from the DME datasets and calls no MDAF prediction or report.
 - Nothing else is provided: there is no SDK surface for an rApp to serve to others.

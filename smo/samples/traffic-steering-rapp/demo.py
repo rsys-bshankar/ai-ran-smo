@@ -220,7 +220,7 @@ def demo_06(state: dict) -> None:
 
 
 def demo_07(state: dict) -> None:
-    """Deploy the runtime. MLLF checks the model; AIMgF and NFO deploy MLIF."""
+    """Deploy the runtime. AIMgF's deploy gate checks the model; AIMgF and NFO deploy MLIF."""
     deployed = call("post", "traffic-steering-rapp", f"/instances/{state['instanceId']}/lifecycle/deploy")
     show("runtime lifecycle", deployed["lifecycle"]["runtimeLifecycleState"])
     state["runtime"] = deployed["lifecycle"]["runtimeLifecycleState"]

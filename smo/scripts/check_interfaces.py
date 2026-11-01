@@ -23,8 +23,9 @@ waiting operation must be in the baseline under `consumer` (a NEW caller of a ro
 (unless `tests_integration/r1_consumer_waivers.json` waives it). Also: nothing outside `teiv/` names smo-teiv's own API (`/topology-inventory/`, D19).
 The baseline only shrinks: an entry whose route or call is gone is stale and fails the gate (remove it in the PR that replaced or deleted the route),
 and with `--base-ref` an entry that the base does not have fails too, unless it is a move: a route now served by the module R1 Termination's routing
-table sends the old prefix to (S2.1 and S2.2: `/mlmr` and `/mllf` reach AIMgF), which keeps its appendix A row and records the entry it was as
-`movedFrom`, or a call that moved to another file of the same module with the same target; each base entry can be moved once, so the count cannot grow.
+table sends the old prefix to (S2.1 to S2.4: MLMR's and MLLF's prefixes reached AIMgF until S2.4 deleted them), which keeps its appendix A row and records the entry it was as
+`movedFrom`, or a call to the same target that moved to another file of the same module or, in the same file, to the prefix the operation is served at; each
+base entry can be moved once, so the count cannot grow.
 Tests: `tests_integration/test_interface_gate.py`.
 """
 
@@ -116,14 +117,19 @@ def contracted() -> dict[str, set[str]]:
     return out
 
 
+# Modules absorbed into another by a decision record, whose rows in appendix A (a snapshot of the routes at cf95d1e) describe routes the absorbing module
+# now serves: ADR 0010 moved MLMR and MLLF into AIMgF (S2.1, S2.2), and S2.4 / S2.8 removed their prefixes and services.
+ABSORBED = {"aimgf": ["mllf", "mlmr"]}
+
+
 def folded_modules() -> dict[str, list[str]]:
-    """{module: [old module names]} for each R1 prefix whose routing-table entry sends it to another module's process (`/mlmr` and `/mllf` to AIMgF, S2.1 and
-    S2.2): that module now serves the old module's routes, with the old module's appendix A rows."""
-    out: dict[str, list[str]] = {}
+    """{module: [old module names]} whose appendix A rows apply to this module's routes: the modules ADR 0010 absorbed (`ABSORBED`), and any R1 prefix
+    whose routing-table entry sends it to another module's process (none since S2.4; MLMR's and MLLF's did from S2.1)."""
+    out: dict[str, list[str]] = {k: list(v) for k, v in ABSORBED.items()}
     for prefix, module in sorted(consumers_check.gateway_routes().items()):
-        if prefix.lstrip("/") != module:
-            out.setdefault(module, []).append(prefix.lstrip("/"))
-    return out
+        if prefix.lstrip("/") != module and prefix.lstrip("/") not in out.setdefault(module, []):
+            out[module].append(prefix.lstrip("/"))
+    return {k: sorted(v) for k, v in out.items() if v}
 
 
 def row_for(module: str, op: str, rows: dict, folded: dict[str, list[str]]) -> tuple[dict | None, str | None]:
@@ -296,8 +302,9 @@ def evaluate(ops: dict[str, set[str]], call_list: list[dict], baseline: dict, tp
 def grown(baseline: dict, base: dict) -> list[str]:
     """Entries of `baseline` the base ref's baseline does not have: the baseline may only shrink. A move is not growth, and each base entry moves once:
     a producer entry whose `movedFrom` names a base entry this baseline no longer has (the route is served by another module's process at the same
-    path), and a consumer entry for the same call and the same target operation as a base entry of another file of the same module that this baseline
-    no longer has (the code moved between files)."""
+    path), and a consumer entry with the same target operation as a base entry this baseline no longer has, either for the same call from another file
+    of the same module (the code moved between files) or from the same file with the same method through another prefix (the caller moved to the
+    prefix the operation is served at, S2.4)."""
     out = []
     now_p, base_p = baseline.get("producer", {}), base.get("producer", {})
     gone_p = set(base_p) - set(now_p)
@@ -313,10 +320,16 @@ def grown(baseline: dict, base: dict) -> list[str]:
     def op_of(target: str) -> str:
         return target.split(" ", 1)[1] if " " in target else target
 
+    def method_of(key: str) -> str:
+        return key.partition(" ")[2].partition(" ")[0]
+
     for key in sorted(set(now_c) - set(base_c)):
         file, _, call = key.partition(" ")
-        match = next((old for old in sorted(gone_c) if old.partition(" ")[2] == call and old.split("/", 1)[0] == file.split("/", 1)[0]
-                      and op_of(base_c[old]) == op_of(now_c[key])), None)
+        # the same call moved to another file of the same module, or the same file now reaching the same operation through another prefix (S2.4: a
+        # caller of the MLMR or MLLF prefix moved to /aimgf, where the operation was served all along)
+        match = next((old for old in sorted(gone_c) if op_of(base_c[old]) == op_of(now_c[key]) and (
+            (old.partition(" ")[2] == call and old.split("/", 1)[0] == file.split("/", 1)[0])
+            or (old.partition(" ")[0] == file and method_of(old) == method_of(key)))), None)
         if match is not None:
             gone_c.discard(match)
             continue

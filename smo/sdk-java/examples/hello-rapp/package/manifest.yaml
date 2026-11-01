@@ -8,7 +8,7 @@ version: 1.0.0
 vendor: Radisys
 ownerTeam: AI-RAN-SMO
 description: >
-  Example rApp written in Java with the Java AI Runtime SDK. Reads DME types and MLMR models,
+  Example rApp written in Java with the Java AI Runtime SDK. Reads DME types and the registry's models,
   reports a heartbeat, serves a small operator page. Takes no action on the network.
 useCase: SDK example
 domain: RAN
@@ -22,7 +22,6 @@ autonomyModes:
 
 requiredServices:
   - DME
-  - MLMR
 
 runtimeProfiles:
   INFERENCE:
@@ -31,7 +30,7 @@ runtimeProfiles:
     gpu: 0
 
 # AI-10.1/10.3: the most one instance may do on the network, put in force at RAN NF OAM when the instance bootstraps. The example writes no
-# configuration at all (it reads DME types and MLMR models), so it declares the smallest limits Onboarding accepts (0 is not a limit): any config
+# configuration at all (it reads DME types and the registry's models), so it declares the smallest limits Onboarding accepts (0 is not a limit): any config
 # job past one an hour, or one that names more than one managed element, is something this rApp does not do.
 limits:
   configJobsPerHour: 1

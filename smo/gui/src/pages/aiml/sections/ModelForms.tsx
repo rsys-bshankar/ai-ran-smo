@@ -1,4 +1,4 @@
-/** The two model dialogs: register a model (`POST /mlmr/models`) and edit its metadata (`PUT /mlmr/models/{id}`). Opened from the stage board's
+/** The two model dialogs: register a model (`POST /aimgf/models`) and edit its metadata (`PUT /aimgf/models/{id}`). Opened from the stage board's
  * header and the detail panel; the caller gates them with `Can`. A model's type and version are its identity: the edit form sends them unchanged. */
 import { useState, type FormEvent } from "react";
 
@@ -64,7 +64,7 @@ export function EditModel({ model, onClose }: { model: Model; onClose: () => voi
   );
 }
 
-/** The set-owner dialog (SEC-15.3c): the invoker ID of the rApp that owns the model, sent to `PUT /mlmr/models/{id}/owner` (admin; MLMR audits the change with the old and new owner).
+/** The set-owner dialog (SEC-15.3c): the invoker ID of the rApp that owns the model, sent to `PUT /aimgf/models/{id}/owner` (admin; MLMR audits the change with the old and new owner).
  * Until a model has an owner any rApp may act on it; the dialog says so. The owner cannot be cleared here (MLMR refuses an empty one). */
 export function SetOwner({ model, onClose }: { model: Model; onClose: () => void }) {
   const [owner, setOwner] = useState(model.owner ?? "");
