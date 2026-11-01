@@ -705,6 +705,7 @@ services:
     environment:
       SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway (DOC-CF-3.1)
       <<: *db_env
       SMO_DATABASE_URL: postgresql+psycopg://smo_echo@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}

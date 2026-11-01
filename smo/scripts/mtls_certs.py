@@ -51,7 +51,7 @@ DEFAULT_DIR = SMO_ROOT / "certs" / "mtls"
 
 # The compose services that take part (docker-compose.mtls.yml gives each one its directory). Not here: mock-o1-adaptor (a stand-in for a network function
 # outside the SMO, plain HTTP), gui-bff and gui (the browser's side; the BFF is a client only, and has a certificate), the databases, the edge.
-SERVERS = ("r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam", "nfo", "focom", "mlmr", "aimgf", "mllf", "ran-analytics", "mdaf",
+SERVERS = ("r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam", "nfo", "focom", "mlmr", "aimgf", "mllf", "ran-analytics", "mdaf", "echo",
            "intent-service", "so-smos", "sa-smos", "energy-saving-rapp", "mobility-optimization-rapp", "coverage-optimization-rapp", "traffic-steering-rapp")
 CLIENT_ONLY = ("ran-nf-oam-worker", "mdaf-worker", "dme-worker", "rapp-mgmt-worker", "aimgf-worker", "energy-saving-rapp-worker", "mobility-optimization-rapp-worker",
                "coverage-optimization-rapp-worker", "traffic-steering-rapp-worker", "gui-bff", "runbook")   # no server port (a worker), a plain server (the BFF), or a test driver

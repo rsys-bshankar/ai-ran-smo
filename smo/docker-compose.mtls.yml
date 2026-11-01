@@ -105,6 +105,12 @@ services:
     volumes:
       - ./certs/mtls/mdaf:/run/mtls:ro
     healthcheck: *mtls_probe
+  echo:
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/echo:/run/mtls:ro
+    healthcheck: *mtls_probe
   intent-service:
     environment:
       SMO_MTLS: "on"

@@ -168,5 +168,5 @@ def test_the_dockerfile_command_reads_its_settings_from_the_environment_and_exec
     grace = int(re.search(r"UVICORN_GRACEFUL_SHUTDOWN_SECONDS=(\d+)", text).group(1))
     compose = (SMO_ROOT / "docker-compose.yml").read_text()
     periods = [int(m) for m in re.findall(r"stop_grace_period: (\d+)s", compose)]
-    services = len(re.findall(r"^    build: \{ context: \., args: \{ <<: \*build_info, MODULE:", compose, flags=re.M))
+    services = len(re.findall(r"^    build: \{ context: \., (?:additional_contexts: \{ specs: \.\./specs/5G_APIs \}, )?args: \{ <<: \*build_info, MODULE:", compose, flags=re.M))
     assert len(periods) == services and min(periods) > grace
