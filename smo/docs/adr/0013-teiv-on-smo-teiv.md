@@ -2,7 +2,8 @@
 
 > **Status: spike result, 1 November 2026 (plan task S0.13, closed in `HISTORY.md` PR-CONV-S0.13).** Decision D19 (reuse smo-teiv, expose it only
 > through the standards) stands, with the conditions of section 9. Nothing here is built into a module: the spike is `spikes/teiv/` (no module imports
-> it), and the work it found is the Stage 3 rows of section 10.
+> it), and the work it found is the Stage 3 rows of section 10. **Section 11** (the extension spike, S3.20's go/no-go) recommends **go**: the missing
+> model is carried by model files and smo-teiv's own generator, with no change to smo-teiv's Java code; the owner decides.
 
 Paths are relative to `smo/`. Written against `main` at 4a237de. smo-teiv was read at its tag and run, here and on a CI runner (sections 2–5); the numbers are
 from `spikes/teiv/measure.py`. The architecture is [ADR 0008](0008-converged-architecture.md) (section 3.6, D6, D7, D19); the interfaces are
@@ -191,3 +192,125 @@ a second Postgres (13, with PostGIS) beside the SMO's Postgres 18, and needs Kaf
 | PR-CONV-S3.22 (new) | TS 28.532 notifications from TE&IV's write path through NtfSubscriptionControl | G5 |
 | PR-CONV-S3.23 (new) | smo-teiv packaged for the stack: built from the pinned tag in a mirror job (as `oran-sim-image.yml`), compose and chart, its Postgres and Kafka, a memory budget | section 8 |
 | PR-CONV-S3.24 (new) | The O-RAN WG10 TE&IV R1 API into `specs/`, its version recorded, `teiv.yaml` lists its operations | G9 |
+
+## 11. Extension spike
+
+> **Extension spike, 1 November 2026 (S3.20's go/no-go, section 9's condition). Recommendation: go.** Written against `main` at f18c2bb (#564). The
+> spike is `spikes/teiv/model/` and the changed `spikes/teiv/` files; results in `spikes/teiv/results/ext-*`. The owner decides before S3.20 starts.
+
+### 11.1 Question
+
+Can TE&IV add the model smo-teiv 0.3.0 lacks (G2, G4: NRCellRelation and NEIGHBOR_CELL, CO_COVERAGE_OVERLAY, SubNetwork, CommonBeamformingFunction,
+NRFreqRelation, CESManagementFunction, DESManagementFunction, DMROFunction, CCOFunction, DLBOFunction) by supplying model files only, generated with
+smo-teiv's own generator, with no change to smo-teiv's Java code? If not, section 9's fallback applies: TE&IV on the SMO's own Postgres, keeping
+smo-teiv's model shape.
+
+### 11.2 How smo-teiv defines its model (read at tag 0.3.0 and run)
+
+| Part | What it does | Can it take a new model without code? |
+|---|---|---|
+| YANG | `teiv/src/main/resources/models/*.yang`: one module per domain (`or-teiv-yext:domain`), a YANG `list` per entity type, an `or-teiv-yext:biDirectionalTopologyRelationship` per relationship type (`aSide` / `bSide` leaves, cardinality from leaf vs leaf-list and `mandatory`); `models/import/` holds the 3GPP and IETF modules they import (downloaded by the Maven build) | yes: a new module is a new file |
+| Generator | `pgsql-schema-generator` 1.2.1, a Spring Boot program: reads one directory of YANG, writes four SQL scripts: the data tables (`teiv_data`, a table per entity type; a relationship as columns on the 1 side, or a table of its own for N:M and for one between two entities of one type), the model metadata (`teiv_model.module_reference` with each module's text in base64, `entity_info`, `relationship_info`, `hash_info` for names over 63 characters), consumer data, groups. Upstream commits its output as `docker-compose/sql_scripts/` | yes. Run over smo-teiv's own YANG it reproduces the committed scripts **line for line** (the data, consumer-data and groups scripts identically; the model script differs only where newer 3GPP import files were given, which the spike then took from the committed script itself) |
+| Start-up | `PostgresSchemaLoader` builds the `SchemaRegistry` (modules, domains, entity types with their columns from `information_schema`, relationship types) from the `teiv_model` tables; no Java class, jOOQ record or constant names an entity or relationship type | yes |
+| Ingestion | validates each CloudEvent against the YANG of `module_reference`, but only of the modules whose file is on the jar's classpath in `models/` (or `models/import/`) (`YangModelLoader`) | yes, with the YANG file in the jar's `models/` at build time (a resource, section 11.5 b) |
+| Exposure | domains, entity types, relationship types, entity and relationship reads, `targetFilter` / `scopeFilter` all resolve through the registry | yes, shown: the new domains `EXT_RAN` and `EXT_OAM`, their 9 + 1 entity types and 14 relationship types are served and queried (section 11.4) |
+
+### 11.3 The extension
+
+TE&IV-owned YANG in the TE&IV-DM style, TS 28.541 / TS 28.622 class and attribute names (`spikes/teiv/model/`):
+
+- `smo-teiv-ext-ran` (domain `EXT_RAN`, imports smo-teiv's RAN module, so the domain also sees NRCellCU, NRCellDU, NRSectorCarrier): the classes
+  NRCellRelation, NRFreqRelation, CommonBeamformingFunction, CESManagementFunction, DESManagementFunction, DMROFunction, DLBOFunction, CCOFunction;
+  the relationships `NRCELLCU_CONTAINS_{NRCELLRELATION, NRFREQRELATION, CESMANAGEMENTFUNCTION, DESMANAGEMENTFUNCTION, DMROFUNCTION, DLBOFUNCTION}`,
+  `NRSECTORCARRIER_CONTAINS_COMMONBEAMFORMINGFUNCTION` (TS 28.622 name-containment), `NRCELLRELATION_ADJACENT_NRCELLCU` (adjacentNRCellRef),
+  `NRCELLRELATION_USES_NRFREQRELATION` (nRFreqRelationRef), and ADR 0008's cell edges `NRCELLCU_NEIGHBOR_CELL_NRCELLCU` (one per NRCellRelation) and
+  `NRCELLDU_CO_COVERAGE_OVERLAY_NRCELLDU` (from a relation whose isESCoveredBy is YES).
+- `smo-teiv-ext-oam` (domain `EXT_OAM`): SubNetwork, `SUBNETWORK_CONTAINS_{SUBNETWORK, MANAGEDELEMENT, CCOFUNCTION}`.
+- The cell-level SON functions are contained by the NRCellCU, CCOFunction by the SubNetwork (TS 28.541 allows other parents too; one each is enough
+  for the spike). The attributes are a TS 28.541 subset per class: G3's full attribute sets are S3.21, by the same mechanism.
+
+Generated: 9 entity tables, 4 relationship tables (the two cell edges and SUBNETWORK_CONTAINS_SUBNETWORK, all M:N or same-type; NEIGHBOR_CELL's sourceIds
+name its NRCellRelation), relationship columns on the 1 side of the rest (some on smo-teiv's own NRCellCU, NRSectorCarrier and ManagedElement tables,
+added by the generator, not by hand).
+
+### 11.4 Measurements
+
+Synthetic tree of `load.py`: 1,000 NRCellDU in one SubNetwork, 334 gNBs, **8 NRCellRelation per cell**, plus per cell an NRFreqRelation, four SON
+functions and a CommonBeamformingFunction, and a CCOFunction: **18,004 MOIs, every one mapped** (no class or relationship gap left; G3's attributes
+remain, `results/ext-b.gaps.json`), **44,003 relationships**, 61 events. Q2 and Q4 are checked against the tree on every 97th cell (11 cells): all
+correct. Target: p95 ≤ 150 ms at 1,000 cells (PR-CONV-S3.19 / S3.20, D7).
+
+**Local run** (the Claude Code cloud container: Linux x86-64, 4 CPUs, 16 GB; `results/ext-local.md`):
+
+| Load | MOIs | entities | relationships | events | seconds (all visible) |
+|---|---:|---:|---:|---:|---:|
+| synthetic, 1,000 cells, 8 relations per cell | 18,004 | 18,004 | 44,003 | 61 | **47.2** |
+| S0.13's tree on smo-teiv's own model (section 5) | 13,002 | 4,002 | about 4,700 | 14 | 11.9 |
+
+| Query | raw p50 / p95 / p99 ms | through the facade p50 / p95 / p99 ms | answer | target |
+|---|---|---|---:|---|
+| Q1 one cell by id | 2.8 / 5.4 / 6.1 | 2.6 / 3.4 / 6.5 | 1 | **pass** (S0.13: 5.6) |
+| **Q2 a cell's neighbours** (NEIGHBOR_CELL, one request) | 6.1 / 9.0 / 10.3 | **5.8 / 7.7 / 8.2** | 8 | **pass** |
+| Q2r a cell's NRCellRelation objects (the TS 28.532 form) | 15.3 / 20.5 / 22.2 | 14.2 / 20.4 / 23.0 | 8 | **pass** |
+| Q3 all cells under a GNBDUFunction | 3.6 / 4.4 / 4.7 | 3.9 / 4.8 / 5.3 | 3 | **pass** (S0.13: 6.2) |
+| **Q4 two-hop neighbours** (1 request, then 8 together) | 28.3 / 35.9 / 40.7 | **29.0 / 48.4 / 69.0** | 24 | **pass** |
+| Q4or two-hop, the second hop as one request (8 ids joined with `or`) | 2,199 / 2,328 / 2,343 | 2,124 / 2,230 / 2,354 | 24 | fail (20 runs; 11.5 c3) |
+| Q5 all cells in a SubNetwork with an attribute filter | 4.3 / 6.0 / 6.8 | 4.0 / 6.3 / 6.8 | 18 | **pass** (S0.13: 9.7) |
+
+| Change of one NRCellDU | p50 ms | p95 ms |
+|---|---:|---:|
+| visible in smo-teiv's API | 27.8 | 43.5 (S0.13: 63.0) |
+
+Runtime after the load: ingestion 1.05 GiB (S0.13: 616 MiB), exposure 527 MiB (473), Postgres 556 MiB (138), Kafka 494 MiB; images unchanged in size.
+
+**CI run:** see the pull request of this addendum (workflow "TE&IV spike", artifact `teiv-spike-results`); its numbers are added here once it has run.
+
+Nothing regressed: Q1, Q3 and Q5 are at or below S0.13's numbers on a tree four and a half times as large. The load takes four times as long for
+four and a half times the entities and about nine times the relationships (one initial load; a change is visible in under 50 ms p95). Q4 meets the
+target only in the fan-out form: smo-teiv's scope filter follows one association (`/a/b[...]` is refused), and its OR of ids is slow (11.5 c3).
+
+### 11.5 Every change, by class
+
+**(a) Model files and the generator only**
+
+1. `smo-teiv-ext-ran.yang`, `smo-teiv-ext-oam.yang` (about 790 lines of YANG), run through smo-teiv's generator unchanged (`model/build-model.sh schema`).
+2. Types the generator cannot map are written as types it can, in the model files: it maps no YANG `boolean`, `uint16`, `uint8` (it writes a column
+   of type `null`, and the database refuses the script; shown with a probe module), so a TS 28.541 boolean (isHOAllowed, cesSwitch, dmroControl,
+   dlboControl, cCOControl, ...) is an enumeration `true` / `false` (the same JSON text, quoted), a uint16 is uint32. Typedefs resolve to their base
+   types and need nothing.
+
+**(b) Configuration** (the spike's build and TE&IV's own conventions; nothing in smo-teiv)
+
+3. Build: the extension YANG is copied into `teiv/src/main/resources/models/` before smo-teiv's Maven build, so it is in the jar (ingestion
+   validates only against modules found there, 11.2), and `Dockerfile.db` runs the generator at build and initialises the database with its output
+   instead of the committed scripts (`spikes/teiv/Dockerfile`, `Dockerfile.db`, `model/build-model.sh`).
+4. Build, hermetic: the five import modules (3GPP common types and extensions, IETF inet, yang and geo-location types) are decoded from smo-teiv's own
+   committed `00_init-teiv-exposure-model.sql`, so they are exactly the revisions 0.3.0 was generated with, and the build no longer downloads from
+   www.ietf.org or forge.3gpp.org (`-Dmaven.antrun.skip`; section 3 listed those downloads as a cost).
+5. TE&IV's write convention: NEIGHBOR_CELL is written with the **neighbour as aSide** and the cell holding the NRCellRelation as bSide, because
+   smo-teiv resolves a scope filter on a same-type relationship towards the aSide only (c2); `/neighbor-of-nrCellCu[@id='<cell>']` then returns the
+   cell's neighbours. CO_COVERAGE_OVERLAY likewise answers "which cells cover this cell", not the reverse. TE&IV is the only writer (D6), so the
+   convention holds.
+6. TE&IV's facade asks the second hop of Q4 as one one-hop request per first-hop neighbour, sent together (`facade.neighbours`).
+
+**(c) Patches to smo-teiv's code: none needed.** Three limits found, each worked around above; each is a small patch upstream would plausibly
+accept, to be offered with the model (S3.20 "offered upstream"), not waited for:
+
+| # | Limit | Where | Patch | Upstream would accept? |
+|---|---|---|---|---|
+| c1 | No YANG `boolean` (nor `uint16`, `uint8`, `int8`, `int16`) | generator `YangModelProcessor.createDataTypeMapping`; runtime `schema.DataType.fromDbDataType` throws on a `bool` column at start-up; `TeivDbOperations`, `PathToJooqRefinement`, `BasePathRefinement` handle values by type | the mappings, a `BOOLEAN` data type through ingestion and the filter grammar: about 5 files, 30–60 lines with tests | likely: base YANG types, and no upstream model uses them yet |
+| c2 | A scope filter on a relationship between two entities of one type works in one direction only: `/<aSide association>[@id=X]` returns X itself | `ConditionFactory.AssociationCondition.checkSameEntityRelationship` filters on the column the join uses | choose the other column for the join: about 10–20 lines with tests | likely: a defect; no upstream model has such a relationship, so it was never exercised |
+| c3 | Relationship tables get no btree index on their `aSide_*` / `bSide_*` columns (the generator indexes only JSONB columns), and an `or` of ids becomes an OR of `EXISTS` subqueries evaluated row by row: Q4or 2.2 s; with the four indexes added by hand, 0.2 s (one measurement) | generator `TableBuilder` / `PostgresIndex` | index the side columns of relationship tables: about 10 lines | likely: a plain performance fix |
+
+Also not supported, and not needed: a scope filter that follows two associations in one path (refused: "can only contain Root Object types").
+
+### 11.6 Verdict: go
+
+- **Reuse holds; S3.20 is model work only.** The whole model of section 11.1 is carried by TE&IV-owned YANG and smo-teiv's own generator. smo-teiv's
+  Java code is unchanged (a): its start-up, ingestion and exposure serve the new types from the generated metadata. What else was needed is build
+  configuration and TE&IV's own conventions (b). Section 9's fallback is **not** taken.
+- **D7 holds.** The neighbour (Q2, p95 7.7 ms) and two-hop (Q4, p95 48.4 ms) queries are relational and well inside 150 ms at 1,000 cells with 8,000
+  relations. Apache AGE is not reconsidered.
+- What S3.20 carries from here: the two modules (and S3.21's attributes in them); the generator run at image build (S3.23's mirror job builds the
+  database image the same way); the NEIGHBOR_CELL direction (b5) and the fan-out two-hop read (b6) in S3.19's facade; the boolean-as-enumeration
+  mapping until c1 is upstream; c1–c3 offered to O-RAN-SC with the model. No row of `OPEN_ITEMS.md` changes for a go.

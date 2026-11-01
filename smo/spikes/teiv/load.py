@@ -10,11 +10,12 @@ Sources of the tree (a list of `Moi`: DN, class, attributes):
                                        what a) becomes once RAN NF OAM walks a 3GPP model (S3.3); used because RAN NF OAM's tree of an oran-sim element is
                                        today its root alone (its walk needs a YANG profile that has no 3GPP NRM yet)
   --synthetic N                        source b): N NRCellDU in a SubNetwork, three per gNB, each gNB a ManagedElement with a GNBDUFunction (cells,
-                                       sector carriers, a CommonBeamformingFunction per carrier) and a GNBCUCPFunction (NRCellCU, about eight
-                                       NRCellRelation per cell, TS 28.541 contains them under the NRCellCU)
+                                       sector carriers, a CommonBeamformingFunction per carrier) and a GNBCUCPFunction (NRCellCU, eight
+                                       NRCellRelation, an NRFreqRelation and the four cell-level SON functions per cell, TS 28.541 contains
+                                       them under the NRCellCU), and a CCOFunction under the SubNetwork
 
 Output: CloudEvents of type `ran-logical-topology.merge` (smo-teiv's ingestion contract: entities and relationships by YANG module and type, ids
-`urn:3gpp:dn:<DN>`), one per line in the header syntax of `kafka-console-producer --property parse.headers=true` (`key:::value` headers separated
+`urn:3gpp:dn:<DN>`; the model is smo-teiv 0.3.0's with TE&IV's extension of spikes/teiv/model/, plan task S3.20), one per line in the header syntax of `kafka-console-producer --property parse.headers=true` (`key:::value` headers separated
 by `,`, then `,,,` before the body), and a
 gap report (JSON): every class and attribute of the tree with no home in smo-teiv's model, and how often.
 
@@ -33,8 +34,9 @@ from dataclasses import dataclass, field
 
 import httpx
 
-# What smo-teiv 0.3.0 can hold (teiv/src/main/resources/models/*.yang at tag 0.3.0): the TS 28.541 class, the smo-teiv entity it maps to, and the
-# attributes smo-teiv has for it. A class or an attribute not listed is a model gap.
+# What smo-teiv 0.3.0 can hold (teiv/src/main/resources/models/*.yang at tag 0.3.0), and with it TE&IV's model extension (spikes/teiv/model/*.yang,
+# plan task S3.20): the TS 28.541 class, the smo-teiv entity it maps to (module:type), and the attributes the model has for it. A class or an attribute
+# not listed is a model gap.
 CLASS_MAP: dict[str, tuple[str, set[str]]] = {
     "ManagedElement": ("o-ran-smo-teiv-oam:ManagedElement", set()),
     "GNBDUFunction": ("o-ran-smo-teiv-ran:ODUFunction", {"gNBDUId", "gNBId", "gNBIdLength"}),
@@ -42,7 +44,27 @@ CLASS_MAP: dict[str, tuple[str, set[str]]] = {
     "NRCellDU": ("o-ran-smo-teiv-ran:NRCellDU", {"cellLocalId", "nCI", "nRPCI", "nRTAC"}),
     "NRCellCU": ("o-ran-smo-teiv-ran:NRCellCU", {"cellLocalId", "nCI", "nRTAC"}),
     "NRSectorCarrier": ("o-ran-smo-teiv-ran:NRSectorCarrier", {"arfcnDL", "arfcnUL", "frequencyDL", "frequencyUL", "bSChannelBwDL"}),
+    # the extension (G2, G4)
+    "SubNetwork": ("smo-teiv-ext-oam:SubNetwork", {"dnPrefix", "userLabel", "userDefinedNetworkType", "setOfMcc", "priorityLabel"}),
+    "NRCellRelation": ("smo-teiv-ext-ran:NRCellRelation", {"nRTCI", "cellIndividualOffset", "isRemoveAllowed", "isHOAllowed", "isESCoveredBy",
+                                                          "isENDCAllowed", "isMLBAllowed"}),
+    "NRFreqRelation": ("smo-teiv-ext-ran:NRFreqRelation", {"offsetMO", "cellReselectionPriority", "pMax", "qOffsetFreq", "qRxLevMin",
+                                                          "tReselectionNr"}),
+    "CommonBeamformingFunction": ("smo-teiv-ext-ran:CommonBeamformingFunction", {"coverageShape", "digitalAzimuth", "digitalTilt"}),
+    "CESManagementFunction": ("smo-teiv-ext-ran:CESManagementFunction", {"cesSwitch", "intraRatEsActivationOriginalCellLoadParameters",
+                                                                        "energySavingState", "energySavingControl"}),
+    "DESManagementFunction": ("smo-teiv-ext-ran:DESManagementFunction", {"desSwitch", "intraRatEsActivationOriginalCellLoadParameters",
+                                                                        "energySavingState", "isProbingCapable"}),
+    "DMROFunction": ("smo-teiv-ext-ran:DMROFunction", {"maximumDeviationHoTriggerLow", "maximumDeviationHoTriggerHigh",
+                                                      "minimumTimeBetweenHoTriggerChange", "tstoreUEcntxt", "dmroControl"}),
+    "DLBOFunction": ("smo-teiv-ext-ran:DLBOFunction", {"dlboControl", "maximumDeviationHoTriggerLow", "maximumDeviationHoTriggerHigh",
+                                                      "minimumTimeBetweenHoTriggerChange"}),
+    "CCOFunction": ("smo-teiv-ext-ran:CCOFunction", {"cCOControl"}),
 }
+# smo-teiv's domain of each module (or-teiv-yext:domain): an API path names the domain, and a domain sees its own module's types and those of the
+# modules it imports (EXT_RAN imports smo-teiv's RAN, EXT_OAM imports OAM and EXT_RAN).
+DOMAINS = {"o-ran-smo-teiv-oam": "OAM", "o-ran-smo-teiv-ran": "RAN", "o-ran-smo-teiv-rel-oam-ran": "REL_OAM_RAN", "smo-teiv-ext-ran": "EXT_RAN",
+           "smo-teiv-ext-oam": "EXT_OAM"}
 # Containment parent class -> child class -> the smo-teiv relationship that carries it (module:TYPE), when one exists.
 CONTAINMENT: dict[tuple[str, str], str] = {
     ("ManagedElement", "GNBDUFunction"): "o-ran-smo-teiv-rel-oam-ran:MANAGEDELEMENT_MANAGES_ODUFUNCTION",
@@ -50,9 +72,31 @@ CONTAINMENT: dict[tuple[str, str], str] = {
     ("GNBDUFunction", "NRCellDU"): "o-ran-smo-teiv-ran:ODUFUNCTION_PROVIDES_NRCELLDU",
     ("GNBDUFunction", "NRSectorCarrier"): "o-ran-smo-teiv-ran:ODUFUNCTION_PROVIDES_NRSECTORCARRIER",
     ("GNBCUCPFunction", "NRCellCU"): "o-ran-smo-teiv-ran:OCUCPFUNCTION_PROVIDES_NRCELLCU",
+    # the extension
+    ("SubNetwork", "SubNetwork"): "smo-teiv-ext-oam:SUBNETWORK_CONTAINS_SUBNETWORK",
+    ("SubNetwork", "ManagedElement"): "smo-teiv-ext-oam:SUBNETWORK_CONTAINS_MANAGEDELEMENT",
+    ("SubNetwork", "CCOFunction"): "smo-teiv-ext-oam:SUBNETWORK_CONTAINS_CCOFUNCTION",
+    ("NRCellCU", "NRCellRelation"): "smo-teiv-ext-ran:NRCELLCU_CONTAINS_NRCELLRELATION",
+    ("NRCellCU", "NRFreqRelation"): "smo-teiv-ext-ran:NRCELLCU_CONTAINS_NRFREQRELATION",
+    ("NRSectorCarrier", "CommonBeamformingFunction"): "smo-teiv-ext-ran:NRSECTORCARRIER_CONTAINS_COMMONBEAMFORMINGFUNCTION",
+    ("NRCellCU", "CESManagementFunction"): "smo-teiv-ext-ran:NRCELLCU_CONTAINS_CESMANAGEMENTFUNCTION",
+    ("NRCellCU", "DESManagementFunction"): "smo-teiv-ext-ran:NRCELLCU_CONTAINS_DESMANAGEMENTFUNCTION",
+    ("NRCellCU", "DMROFunction"): "smo-teiv-ext-ran:NRCELLCU_CONTAINS_DMROFUNCTION",
+    ("NRCellCU", "DLBOFunction"): "smo-teiv-ext-ran:NRCELLCU_CONTAINS_DLBOFUNCTION",
 }
-# A TS 28.541 reference attribute that is an edge in smo-teiv: NRCellDU.nRSectorCarrierRef -> NRCELLDU_USES_NRSECTORCARRIER.
-REFERENCES: dict[tuple[str, str], str] = {("NRCellDU", "nRSectorCarrierRef"): "o-ran-smo-teiv-ran:NRCELLDU_USES_NRSECTORCARRIER"}
+# A TS 28.541 reference attribute that is an edge in smo-teiv: NRCellDU.nRSectorCarrierRef -> NRCELLDU_USES_NRSECTORCARRIER; with the extension
+# NRCellRelation.adjacentNRCellRef and nRFreqRelationRef.
+REFERENCES: dict[tuple[str, str], str] = {
+    ("NRCellDU", "nRSectorCarrierRef"): "o-ran-smo-teiv-ran:NRCELLDU_USES_NRSECTORCARRIER",
+    ("NRCellRelation", "adjacentNRCellRef"): "smo-teiv-ext-ran:NRCELLRELATION_ADJACENT_NRCELLCU",
+    ("NRCellRelation", "nRFreqRelationRef"): "smo-teiv-ext-ran:NRCELLRELATION_USES_NRFREQRELATION",
+}
+# The cell-to-cell edges of ADR 0008 section 3.4, derived from each NRCellRelation: NEIGHBOR_CELL with the adjacent NRCellCU as its aSide and the
+# relation's own NRCellCU as its bSide (smo-teiv 0.3.0 resolves a scope filter on a same-type relationship towards the aSide only, so this is the
+# direction in which "the neighbours of X" can be asked: spikes/teiv/model/smo-teiv-ext-ran.yang), and CO_COVERAGE_OVERLAY from the adjacent cell's NRCellDU to the source cell's NRCellDU when the relation says the adjacent cell covers
+# the source cell for energy saving (isESCoveredBy YES).
+NEIGHBOR_CELL = "smo-teiv-ext-ran:NRCELLCU_NEIGHBOR_CELL_NRCELLCU"
+CO_COVERAGE_OVERLAY = "smo-teiv-ext-ran:NRCELLDU_CO_COVERAGE_OVERLAY_NRCELLDU"
 TEIV_ID = "urn:3gpp:dn:"
 MAX_ENTITIES_PER_EVENT = 300            # keeps an event well under Kafka's default 1 MB message size
 
@@ -60,12 +104,14 @@ MAX_ENTITIES_PER_EVENT = 300            # keeps an event well under Kafka's defa
 @dataclass
 class Moi:
     """One managed object instance: its DN below the SubNetwork (the id smo-teiv keys it by), its full DN (with the SubNetwork, kept as a sourceId so a
-    SubNetwork scope can still be asked for), its class, its parent's class and its attributes."""
+    SubNetwork scope can still be asked for), its class, its parent's class and its attributes; `parent_dn` when the parent is not the DN's own
+    prefix (a ManagedElement or a CCOFunction in its SubNetwork)."""
     dn: str
     full_dn: str
     cls: str
     parent_cls: str | None
     attributes: dict = field(default_factory=dict)
+    parent_dn: str | None = None
 
 
 def _child(dn: str, cls: str, ident: str) -> str:
@@ -73,15 +119,19 @@ def _child(dn: str, cls: str, ident: str) -> str:
 
 
 def synthetic(cells: int, subnetwork: str = "SubNetwork=Spike", per_gnb: int = 3, neighbours: int = 8, seed: int = 7) -> list[Moi]:
-    """Source b): `cells` NRCellDU, `per_gnb` to a gNB; per cell an NRSectorCarrier (with a CommonBeamformingFunction) on the DU side and an NRCellCU
-    with `neighbours` NRCellRelation (adjacentNRCellRef to cells of nearby gNBs) on the CU side. Attribute values are plausible, not real."""
+    """Source b): a SubNetwork (with a CCOFunction) of `cells` NRCellDU, `per_gnb` to a gNB; per cell an NRSectorCarrier (with a
+    CommonBeamformingFunction) on the DU side and, on the CU side, an NRCellCU with an NRFreqRelation, the four cell-level SON functions
+    (CESManagementFunction, DESManagementFunction, DMROFunction, DLBOFunction) and `neighbours` NRCellRelation (adjacentNRCellRef to the NRCellCU of
+    cells of nearby gNBs; the first one also says the adjacent cell covers this one for energy saving). Attribute values are plausible, not real."""
     rnd = random.Random(seed)  # noqa: S311 — synthetic test data, not security
-    out: list[Moi] = []
+    out: list[Moi] = [Moi(subnetwork, subnetwork, "SubNetwork", None, {"dnPrefix": "", "userLabel": "spike", "setOfMcc": ["001"], "priorityLabel": 1}),
+                      Moi(f"{subnetwork},CCOFunction=1", f"{subnetwork},CCOFunction=1", "CCOFunction", "SubNetwork", {"cCOControl": True},
+                          parent_dn=subnetwork)]
     gnbs = (cells + per_gnb - 1) // per_gnb
-    cell_dns: list[str] = []
+    cu_cells: list[str] = []
     for g in range(gnbs):
         me = f"ManagedElement=gNB-{g:04d}"
-        out.append(Moi(me, f"{subnetwork},{me}", "ManagedElement", None, {"vendorName": "spike", "swVersion": "1.0"}))
+        out.append(Moi(me, f"{subnetwork},{me}", "ManagedElement", "SubNetwork", {"vendorName": "spike", "swVersion": "1.0"}, parent_dn=subnetwork))
         du = _child(me, "GNBDUFunction", "1")
         out.append(Moi(du, f"{subnetwork},{du}", "GNBDUFunction", "ManagedElement",
                        {"gNBDUId": g, "gNBId": 1000 + g, "gNBIdLength": 22, "gNBDUName": f"du-{g}", "administrativeState": "UNLOCKED"}))
@@ -98,24 +148,37 @@ def synthetic(cells: int, subnetwork: str = "SubNetwork=Spike", per_gnb: int = 3
                             "configuredMaxTxPower": 40000}))
             bf = _child(sc, "CommonBeamformingFunction", "1")
             out.append(Moi(bf, f"{subnetwork},{bf}", "CommonBeamformingFunction", "NRSectorCarrier",
-                           {"coverageShape": 1, "digitalAzimuth": 120 * c, "digitalTilt": 3}))
+                           {"coverageShape": 1, "digitalAzimuth": 1200 * c - 1200, "digitalTilt": 30}))
             cell = _child(du, "NRCellDU", str(c + 1))
-            cell_dns.append(cell)
             out.append(Moi(cell, f"{subnetwork},{cell}", "NRCellDU", "GNBDUFunction",
                            {"cellLocalId": c + 1, "nCI": (1000 + g) * 16 + c, "nRPCI": n % 1008, "nRTAC": 100 + g % 50,
                             "administrativeState": rnd.choice(["UNLOCKED", "UNLOCKED", "LOCKED"]), "operationalState": "ENABLED",
                             "cellState": "ACTIVE", "ssbFrequency": 630000 + c, "pLMNInfoList": [{"mcc": "001", "mnc": "01", "sst": 1}],
                             "nRSectorCarrierRef": [sc]}))
             ccu = _child(cu, "NRCellCU", str(c + 1))
+            cu_cells.append(ccu)
             out.append(Moi(ccu, f"{subnetwork},{ccu}", "NRCellCU", "GNBCUCPFunction", {"cellLocalId": c + 1, "nCI": (1000 + g) * 16 + c, "nRTAC": 100 + g % 50}))
+            fr = _child(ccu, "NRFreqRelation", "1")
+            out.append(Moi(fr, f"{subnetwork},{fr}", "NRFreqRelation", "NRCellCU",
+                           {"offsetMO": {"rsrpOffsetSsb": 0}, "cellReselectionPriority": 5, "pMax": 23, "qOffsetFreq": 0, "qRxLevMin": -120,
+                            "tReselectionNr": 1}))
+            for cls, attrs in (("CESManagementFunction", {"cesSwitch": True, "energySavingState": "isNotEnergySaving",
+                                                          "intraRatEsActivationOriginalCellLoadParameters": {"loadThreshold": 10, "timeDuration": 900}}),
+                               ("DESManagementFunction", {"desSwitch": False, "energySavingState": "isNotEnergySaving", "isProbingCapable": "no"}),
+                               ("DMROFunction", {"dmroControl": True, "maximumDeviationHoTriggerLow": -6, "maximumDeviationHoTriggerHigh": 6,
+                                                 "minimumTimeBetweenHoTriggerChange": 60, "tstoreUEcntxt": 50}),
+                               ("DLBOFunction", {"dlboControl": True, "maximumDeviationHoTriggerLow": -4, "maximumDeviationHoTriggerHigh": 4,
+                                                 "minimumTimeBetweenHoTriggerChange": 60})):
+                son = _child(ccu, cls, "1")
+                out.append(Moi(son, f"{subnetwork},{son}", cls, "NRCellCU", attrs))
     # neighbours: each cell's NRCellRelation points at `neighbours` cells of nearby gNBs (a ring, so two-hop neighbourhoods overlap as in a real grid)
-    for n, cell in enumerate(cell_dns):
-        cu_cell = cell.replace("GNBDUFunction=1,NRCellDU=", "GNBCUCPFunction=1,NRCellCU=")
+    for n, ccu in enumerate(cu_cells):
         for k in range(1, neighbours + 1):
-            target = cell_dns[(n + k * per_gnb + (k % per_gnb)) % len(cell_dns)]
-            rel = _child(cu_cell, "NRCellRelation", str(k))
+            target = cu_cells[(n + k * per_gnb + (k % per_gnb)) % len(cu_cells)]
+            rel = _child(ccu, "NRCellRelation", str(k))
             out.append(Moi(rel, f"{subnetwork},{rel}", "NRCellRelation", "NRCellCU",
-                           {"nRTCI": k, "adjacentNRCellRef": target, "isHOAllowed": True, "isRemoveAllowed": True, "cellIndividualOffset": {"rsrpOffsetSsb": 0}}))
+                           {"nRTCI": k, "adjacentNRCellRef": target, "nRFreqRelationRef": _child(ccu, "NRFreqRelation", "1"), "isHOAllowed": True,
+                            "isRemoveAllowed": True, "isESCoveredBy": "YES" if k == 1 else "NO", "cellIndividualOffset": {"rsrpOffsetSsb": 0}}))
     return out
 
 
@@ -219,15 +282,33 @@ def oran_sim_sources(logs: list[str]) -> tuple[list[str], list[str]]:
     return elements, uris
 
 
-def to_events(mois: list[Moi], source: str = "spike-loader") -> tuple[list[dict], dict]:
-    """(events, gaps): the CloudEvent bodies for smo-teiv (entities and relationships, at most MAX_ENTITIES_PER_EVENT entities each, a relationship in
-    the same event as its later end) and the model gaps: classes with no smo-teiv entity, attributes with no smo-teiv attribute, containments and
-    references with no smo-teiv relationship, each with a count."""
+def _value(v):
+    """An attribute value as smo-teiv's ingestion takes it: a digit string as a number, a boolean as the text of the extension's Boolean_Type
+    enumeration (smo-teiv's schema generator has no YANG boolean, spikes/teiv/model/smo-teiv-ext-ran.yang)."""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    return int(v) if isinstance(v, str) and v.lstrip("-").isdigit() else v
+
+
+def _du_cell(cu_cell: str) -> str:
+    """The NRCellDU DN of the cell whose NRCellCU DN is given (the spike's trees name both sides of a cell alike)."""
+    return cu_cell.replace("GNBCUCPFunction=1,NRCellCU=", "GNBDUFunction=1,NRCellDU=")
+
+
+def to_events(mois: list[Moi], source: str = "spike-loader", relationships_per_event: int = 1000) -> tuple[list[dict], dict]:
+    """(events, gaps): the CloudEvent bodies for smo-teiv and the model gaps.
+
+    Entities go at most MAX_ENTITIES_PER_EVENT to an event, each containment or reference relationship in the event of its later end. A relationship
+    whose other end is not written yet (a neighbour in a later gNB) waits, and the waiting ones follow in events of relationships only, at most
+    `relationships_per_event` each, once every entity is written. The gaps: classes with no smo-teiv entity, attributes with no smo-teiv attribute,
+    containments and references with no smo-teiv relationship, each with a count."""
     gaps: dict[str, Counter] = {"classes": Counter(), "attributes": Counter(), "relationships": Counter()}
     by_dn = {m.dn: m for m in mois}
     batches: list[dict] = []
     entities: dict[str, list] = {}
     relationships: dict[str, list] = {}
+    waiting: list[tuple[str, dict]] = []
+    written: set[str] = set()
     count = 0
 
     def flush():
@@ -236,15 +317,20 @@ def to_events(mois: list[Moi], source: str = "spike-loader") -> tuple[list[dict]
             batches.append({"entities": [{k: v} for k, v in entities.items()], "relationships": [{k: v} for k, v in relationships.items()]})
         entities, relationships, count = {}, {}, 0
 
-    def rel(kind: str, a: str, b: str):
-        relationships.setdefault(kind, []).append({"id": f"urn:oran:smo:teiv:{kind.split(':')[1]}={a};{b}", "aSide": TEIV_ID + a, "bSide": TEIV_ID + b,
-                                                   "sourceIds": [TEIV_ID + a, TEIV_ID + b]})   # smo-teiv wants two
+    def rel(kind: str, a: str, b: str, extra_source: str | None = None):
+        body = {"id": f"urn:oran:smo:teiv:{kind.split(':')[1]}={a};{b}", "aSide": TEIV_ID + a, "bSide": TEIV_ID + b,
+                "sourceIds": [TEIV_ID + a, TEIV_ID + b] + ([TEIV_ID + extra_source] if extra_source else [])}   # smo-teiv wants two
+        if a in written and b in written:
+            relationships.setdefault(kind, []).append(body)
+        else:
+            waiting.append((kind, body))
 
     for m in mois:
         if m.cls not in CLASS_MAP:
             gaps["classes"][m.cls] += 1
             continue
         teiv_type, known = CLASS_MAP[m.cls]
+        written.add(m.dn)
         attrs = {}
         for k, v in m.attributes.items():
             if (m.cls, k) in REFERENCES:
@@ -252,16 +338,21 @@ def to_events(mois: list[Moi], source: str = "spike-loader") -> tuple[list[dict]
                     if target in by_dn:
                         rel(REFERENCES[(m.cls, k)], m.dn, target)
             elif k in known:
-                attrs[k] = int(v) if isinstance(v, str) and v.lstrip("-").isdigit() else v
+                attrs[k] = _value(v)
             else:
                 gaps["attributes"][f"{m.cls}.{k}"] += 1
+        if m.cls == "NRCellRelation" and m.attributes.get("adjacentNRCellRef") in by_dn:
+            source_cell, target = m.dn.rsplit(",", 1)[0], m.attributes["adjacentNRCellRef"]
+            rel(NEIGHBOR_CELL, target, source_cell, extra_source=m.dn)
+            if m.attributes.get("isESCoveredBy") == "YES" and _du_cell(target) in by_dn and _du_cell(source_cell) in by_dn:
+                rel(CO_COVERAGE_OVERLAY, _du_cell(target), _du_cell(source_cell), extra_source=m.dn)
         entity = {"id": TEIV_ID + m.dn, "sourceIds": [TEIV_ID + m.full_dn]}
         if attrs:
             entity["attributes"] = attrs
         entities.setdefault(teiv_type, []).append(entity)
         count += 1
         if m.parent_cls:
-            parent_dn = m.dn.rsplit(",", 1)[0]
+            parent_dn = m.parent_dn or m.dn.rsplit(",", 1)[0]
             kind = CONTAINMENT.get((m.parent_cls, m.cls))
             if kind:
                 rel(kind, parent_dn, m.dn)
@@ -270,10 +361,22 @@ def to_events(mois: list[Moi], source: str = "spike-loader") -> tuple[list[dict]
         if count >= MAX_ENTITIES_PER_EVENT:
             flush()
     flush()
-    for m in mois:                                              # a neighbour is an NRCellRelation: smo-teiv has no relationship for it (counted once)
-        if m.cls == "NRCellRelation":
-            gaps["relationships"]["NRCellRelation (neighbour, NRCellCU -> adjacent NRCellDU / NRCellCU)"] += 1
+    for i in range(0, len(waiting), relationships_per_event):
+        chunk: dict[str, list] = {}
+        for kind, body in waiting[i:i + relationships_per_event]:
+            chunk.setdefault(kind, []).append(body)
+        batches.append({"entities": [], "relationships": [{k: v} for k, v in chunk.items()]})
     return batches, {k: dict(v) for k, v in gaps.items()}
+
+
+def relationship_counts(events: list[dict]) -> dict[str, int]:
+    """How many relationships of each smo-teiv type (module:TYPE) the events carry: what measure.py waits for after a load."""
+    out: Counter = Counter()
+    for body in events:
+        for block in body["relationships"]:
+            for kind, items in block.items():
+                out[kind] += len(items)
+    return dict(out)
 
 
 def cloud_event_line(body: dict, ce_type: str = "ran-logical-topology.merge", source: str = "spike-loader") -> str:
@@ -317,7 +420,8 @@ def main(argv: list[str] | None = None) -> int:
     with open(a.events, "w", encoding="utf-8") as out:
         for body in events:
             out.write(cloud_event_line(body) + "\n")
-    report = {"mois": len(mois), "byClass": dict(Counter(m.cls for m in mois)), "events": len(events), "gaps": gaps}
+    report = {"mois": len(mois), "byClass": dict(Counter(m.cls for m in mois)), "events": len(events),
+              "relationships": relationship_counts(events), "gaps": gaps}
     if a.gaps:
         with open(a.gaps, "w", encoding="utf-8") as out:
             json.dump(report, out, indent=1)

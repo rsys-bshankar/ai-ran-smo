@@ -5,7 +5,8 @@
 # writer of the store (D6), `teiv-exposure` serves smo-teiv's own REST API on 127.0.0.1:31074 (spikes/teiv/load.py, measure.py and facade.py call it;
 # no module may, ADR 0011 / D19). Images: every one is pinned by digest and listed in deploy/mirror/images.txt; in CI the SMO_IMAGE_* variables
 # of scripts/ci_mirror.py setup point them at the GHCR mirror, and without them the upstream pins below are used. smo-teiv itself is built from
-# the 0.3.0 tag's commit (spikes/teiv/Dockerfile; TEIV_SOURCE points elsewhere, a local clone for example).
+# the 0.3.0 tag's commit (spikes/teiv/Dockerfile; TEIV_SOURCE points elsewhere, a local clone for example), with TE&IV's model extension
+# (spikes/teiv/model/, plan task S3.20) in its models and in the schema Dockerfile.db generates with smo-teiv's own generator.
 name: teiv-spike
 
 x-teiv-build: &teiv_build
@@ -33,8 +34,9 @@ services:
       dockerfile: Dockerfile.db
       additional_contexts:
         teiv: ${TEIV_SOURCE:-https://github.com/o-ran-sc/smo-teiv.git#ee898469d2b9a3de5047ac6675f097ca72e97884}
+        "maven:3.9.11-eclipse-temurin-21-noble@sha256:6fdc855a6ed81d288ca7ca37ac6ff5e9308b612485c0801d70b25a858c83d237": docker-image://${SMO_IMAGE_MAVEN_3_9_11_ECLIPSE_TEMURIN_21_NOBLE:-maven:3.9.11-eclipse-temurin-21-noble@sha256:6fdc855a6ed81d288ca7ca37ac6ff5e9308b612485c0801d70b25a858c83d237}
         "postgis/postgis:13-3.4-alpine@sha256:3ce9b8f4d0711d33cc5fa5e6c00dcb7965fa41467f78c0f3bc7fc7bc2357d85b": docker-image://${SMO_IMAGE_POSTGIS_13_3_4_ALPINE:-postgis/postgis:13-3.4-alpine@sha256:3ce9b8f4d0711d33cc5fa5e6c00dcb7965fa41467f78c0f3bc7fc7bc2357d85b}
-    image: local/teiv-spike-db:0.3.0
+    image: local/teiv-spike-db:0.3.0-ext
     environment:
       POSTGRES_DB: topology_exposure_db
       POSTGRES_USER: topology_exposure_user
@@ -67,7 +69,7 @@ services:
 
   teiv-ingestion:
     build: *teiv_build
-    image: local/teiv-spike:0.3.0
+    image: local/teiv-spike:0.3.0-ext
     environment:
       <<: *teiv_env
       SPRING_PROFILES_ACTIVE: ingestion
@@ -79,7 +81,7 @@ services:
 
   teiv-exposure:
     build: *teiv_build
-    image: local/teiv-spike:0.3.0
+    image: local/teiv-spike:0.3.0-ext
     environment:
       <<: *teiv_env
       SPRING_PROFILES_ACTIVE: exposure,groups

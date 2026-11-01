@@ -1,0 +1,61 @@
+{
+ "mois": 18004,
+ "byClass": {
+  "SubNetwork": 1,
+  "CCOFunction": 1,
+  "ManagedElement": 334,
+  "GNBDUFunction": 334,
+  "GNBCUCPFunction": 334,
+  "NRSectorCarrier": 1000,
+  "CommonBeamformingFunction": 1000,
+  "NRCellDU": 1000,
+  "NRCellCU": 1000,
+  "NRFreqRelation": 1000,
+  "CESManagementFunction": 1000,
+  "DESManagementFunction": 1000,
+  "DMROFunction": 1000,
+  "DLBOFunction": 1000,
+  "NRCellRelation": 8000
+ },
+ "events": 61,
+ "relationships": {
+  "smo-teiv-ext-oam:SUBNETWORK_CONTAINS_CCOFUNCTION": 1,
+  "smo-teiv-ext-oam:SUBNETWORK_CONTAINS_MANAGEDELEMENT": 334,
+  "o-ran-smo-teiv-rel-oam-ran:MANAGEDELEMENT_MANAGES_ODUFUNCTION": 334,
+  "o-ran-smo-teiv-rel-oam-ran:MANAGEDELEMENT_MANAGES_OCUCPFUNCTION": 334,
+  "o-ran-smo-teiv-ran:ODUFUNCTION_PROVIDES_NRSECTORCARRIER": 1000,
+  "smo-teiv-ext-ran:NRSECTORCARRIER_CONTAINS_COMMONBEAMFORMINGFUNCTION": 1000,
+  "o-ran-smo-teiv-ran:NRCELLDU_USES_NRSECTORCARRIER": 1000,
+  "o-ran-smo-teiv-ran:ODUFUNCTION_PROVIDES_NRCELLDU": 1000,
+  "o-ran-smo-teiv-ran:OCUCPFUNCTION_PROVIDES_NRCELLCU": 1000,
+  "smo-teiv-ext-ran:NRCELLCU_CONTAINS_NRFREQRELATION": 1000,
+  "smo-teiv-ext-ran:NRCELLCU_CONTAINS_CESMANAGEMENTFUNCTION": 1000,
+  "smo-teiv-ext-ran:NRCELLCU_CONTAINS_DESMANAGEMENTFUNCTION": 1000,
+  "smo-teiv-ext-ran:NRCELLCU_CONTAINS_DMROFUNCTION": 1000,
+  "smo-teiv-ext-ran:NRCELLCU_CONTAINS_DLBOFUNCTION": 1000,
+  "smo-teiv-ext-ran:NRCELLRELATION_ADJACENT_NRCELLCU": 8000,
+  "smo-teiv-ext-ran:NRCELLRELATION_USES_NRFREQRELATION": 8000,
+  "smo-teiv-ext-ran:NRCELLCU_NEIGHBOR_CELL_NRCELLCU": 8000,
+  "smo-teiv-ext-ran:NRCELLDU_CO_COVERAGE_OVERLAY_NRCELLDU": 1000,
+  "smo-teiv-ext-ran:NRCELLCU_CONTAINS_NRCELLRELATION": 8000
+ },
+ "gaps": {
+  "classes": {},
+  "attributes": {
+   "ManagedElement.vendorName": 334,
+   "ManagedElement.swVersion": 334,
+   "GNBDUFunction.gNBDUName": 334,
+   "GNBDUFunction.administrativeState": 334,
+   "GNBCUCPFunction.pLMNId": 334,
+   "NRSectorCarrier.bSChannelBwUL": 1000,
+   "NRSectorCarrier.txDirection": 1000,
+   "NRSectorCarrier.configuredMaxTxPower": 1000,
+   "NRCellDU.administrativeState": 1000,
+   "NRCellDU.operationalState": 1000,
+   "NRCellDU.cellState": 1000,
+   "NRCellDU.ssbFrequency": 1000,
+   "NRCellDU.pLMNInfoList": 1000
+  },
+  "relationships": {}
+ }
+}

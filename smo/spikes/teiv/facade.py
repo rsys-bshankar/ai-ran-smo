@@ -10,6 +10,10 @@ D19 lets TE&IV reuse O-RAN-SC smo-teiv but expose it only through the standards.
 - `notifications_for(event, before)`: the TS 28.532 notifications (notifyMOICreation, notifyMOIAttributeValueChanges, notifyMOIDeletion) for one
   smo-teiv ingestion CloudEvent, given what the store held before. smo-teiv emits no change event of its own, so TE&IV, as the only writer
   (D6), would raise them on its own ingestion path once the write is visible.
+- `neighbours(dn, hops)`: the neighbour read of TE&IV's extended model (plan task S3.20): the NRCellCU neighbours of a cell (hops=1, one smo-teiv
+  request on the NEIGHBOR_CELL relationship) or the cells within two hops of it (hops=2: smo-teiv's scope filter cannot follow two
+  associations in one path, so the facade asks for each first-hop neighbour's neighbours, all at once). ProvMnS has no neighbour read of its own: a TS 28.532 caller reads the cell's NRCellRelation objects
+  (`get_moi_attributes(cell, "BASE_ALL", filter={"class": "NRCellRelation"})`), which the extension also answers.
 - `R1_OPERATIONS`: how each operation of smo-teiv's API stands against the O-RAN WG10 TE&IV R1 services (the bundle's teiv.yaml lists none of
   them yet: the API is not in specs/) and against TS 28.532.
 
@@ -22,6 +26,7 @@ import importlib.util
 import itertools
 import json
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import quote
 
@@ -35,9 +40,21 @@ API = "/topology-inventory/v1"
 TEIV_ID = load.TEIV_ID
 # TS 28.541 class -> (smo-teiv entity type without its module, the relationship side name a child of it is found by)
 TYPES = {cls: teiv.split(":", 1)[1] for cls, (teiv, _) in load.CLASS_MAP.items()}
-CHILD_SCOPE = {("GNBDUFunction", "NRCellDU"): "provided-by-oduFunction", ("GNBDUFunction", "NRSectorCarrier"): "provided-by-oduFunction",
-               ("GNBCUCPFunction", "NRCellCU"): "provided-by-ocucpFunction", ("ManagedElement", "GNBDUFunction"): "managed-by-managedElement",
-               ("ManagedElement", "GNBCUCPFunction"): "managed-by-managedElement"}
+# TS 28.541 class -> the smo-teiv domain its entities are read in (its module's or-teiv-yext:domain)
+DOMAIN_OF = {cls: load.DOMAINS[teiv.split(":", 1)[0]] for cls, (teiv, _) in load.CLASS_MAP.items()}
+# (parent class, child class) -> (the association a child is found by, the domain that sees the relationship carrying it)
+CHILD_SCOPE = {("GNBDUFunction", "NRCellDU"): ("provided-by-oduFunction", "RAN"), ("GNBDUFunction", "NRSectorCarrier"): ("provided-by-oduFunction", "RAN"),
+               ("GNBCUCPFunction", "NRCellCU"): ("provided-by-ocucpFunction", "RAN"),
+               ("ManagedElement", "GNBDUFunction"): ("managed-by-managedElement", "REL_OAM_RAN"),
+               ("ManagedElement", "GNBCUCPFunction"): ("managed-by-managedElement", "REL_OAM_RAN"),
+               # the extension (S3.20)
+               ("NRCellCU", "NRCellRelation"): ("contained-by-nrCellCu", "EXT_RAN"), ("NRCellCU", "NRFreqRelation"): ("contained-by-nrCellCu", "EXT_RAN"),
+               ("NRCellCU", "CESManagementFunction"): ("contained-by-nrCellCu", "EXT_RAN"),
+               ("NRCellCU", "DESManagementFunction"): ("contained-by-nrCellCu", "EXT_RAN"),
+               ("NRCellCU", "DMROFunction"): ("contained-by-nrCellCu", "EXT_RAN"), ("NRCellCU", "DLBOFunction"): ("contained-by-nrCellCu", "EXT_RAN"),
+               ("NRSectorCarrier", "CommonBeamformingFunction"): ("contained-by-nrSectorCarrier", "EXT_RAN"),
+               ("SubNetwork", "CCOFunction"): ("contained-by-subNetwork", "EXT_OAM")}
+NEIGHBOUR_SCOPE = "neighbor-of-nrCellCu"    # NRCELLCU_NEIGHBOR_CELL_NRCELLCU, written with the neighbour as aSide (model/smo-teiv-ext-ran.yang)
 _ids = itertools.count(1)
 
 
@@ -76,38 +93,67 @@ class TeivFacade:
         """TS 28.532 getMOIAttributes. `filter` is the spike's stand-in for the ProvMnS filter: {"class": C, "attributes": {name: value}}.
 
         BASE_ONLY reads the object; BASE_ALL / BASE_NTH_LEVEL with a filter class read the objects of that class below `dn` (one level of
-        containment that smo-teiv has a relationship for, or a SubNetwork, whose members are found by the SubNetwork sourceId). A neighbour
-        read (an NRCellRelation, or a cell's relations) raises NotExpressible: smo-teiv has no neighbour relationship.
+        containment that smo-teiv has a relationship for, or a SubNetwork, whose members are found by the SubNetwork sourceId: a cell is three
+        containment hops below its SubNetwork, and smo-teiv's scope filter follows one). With the extension a cell's NRCellRelation objects are
+        such a read.
         """
         cls = _cls(dn)
         want = (filter or {}).get("class")
-        if "NRCellRelation" in (cls, want):
-            raise NotExpressible("smo-teiv 0.3.0 has no NRCellRelation and no neighbour relationship (ADR 0013, gap G2)")
         if scope == "BASE_ONLY" or not want:
             if cls not in TYPES:
                 raise NotExpressible(f"smo-teiv 0.3.0 has no class for {cls} (ADR 0013)")
-            body = self._get(f"/domains/{'OAM' if cls == 'ManagedElement' else 'RAN'}/entity-types/{TYPES[cls]}/entities/{quote(TEIV_ID + dn, safe=':=,')}")
+            body = self._get(f"/domains/{DOMAIN_OF[cls]}/entity-types/{TYPES[cls]}/entities/{quote(TEIV_ID + dn, safe=':=,')}")
             return [_moi(t, e) for t, e in _entities(body)]
         if want not in TYPES:
             raise NotExpressible(f"smo-teiv 0.3.0 has no class for {want} (ADR 0013)")
         scopes = []
-        if cls == "SubNetwork":
+        domain = DOMAIN_OF[want]
+        if (cls, want) in CHILD_SCOPE:
+            association, domain = CHILD_SCOPE[(cls, want)]
+            scopes.append(f"/{association}[@id='{TEIV_ID + dn}']")
+        elif cls == "SubNetwork":
             scopes.append(f"/sourceIds[contains(@item,'{dn}')]")
-        elif (cls, want) in CHILD_SCOPE:
-            scopes.append(f"/{CHILD_SCOPE[(cls, want)]}[@id='{TEIV_ID + dn}']")
         else:
             raise NotExpressible(f"no smo-teiv relationship from {cls} to {want} (ADR 0013)")
         for name, value in ((filter or {}).get("attributes") or {}).items():
             scopes.append(f"/attributes[@{name}={value!r}]" if isinstance(value, str) else f"/attributes[@{name}={value}]")
+        return self._paged(domain, TYPES[want], ";".join(scopes))
+
+    def _paged(self, domain: str, teiv_type: str, scope_filter: str, target_filter: str = "/attributes") -> list[dict]:
+        """Every entity of `teiv_type` in `domain` that `scope_filter` selects, page by page, as MOIs."""
         out, offset = [], 0
         while True:
-            body = self._get(f"/domains/RAN/entity-types/{TYPES[want]}/entities", targetFilter="/attributes", scopeFilter=";".join(scopes),
+            body = self._get(f"/domains/{domain}/entity-types/{teiv_type}/entities", targetFilter=target_filter, scopeFilter=scope_filter,
                              offset=offset, limit=500)
             page = [_moi(t, e) for t, e in _entities(body)]
             out += page
             offset += len(page)
             if not page or offset >= body.get("totalCount", 0):
                 return out
+
+    def neighbours(self, dn: str, hops: int = 1, fan_out: bool = True) -> list[dict]:
+        """The NRCellCU MOIs within `hops` (1 or 2) NEIGHBOR_CELL hops of the NRCellCU `dn`, without the cell itself. Not a ProvMnS operation: the
+        TE&IV query an rApp's neighbour read is (WG10 TE&IV R1 style).
+
+        One smo-teiv request gives the neighbours. smo-teiv's scope filter follows a single association, so the second hop is more requests: with
+        `fan_out` one per first-hop neighbour, sent together (each is the one-hop query, a few milliseconds); without it one request with the
+        neighbours' ids joined with `or`, which smo-teiv turns into an OR of EXISTS subqueries that Postgres evaluates row by row over the whole
+        NRCellCU table (seconds at 1,000 cells; ADR 0013 section 11)."""
+        if _cls(dn) != "NRCellCU" or hops not in (1, 2):
+            raise NotExpressible("a neighbour read is of an NRCellCU, one or two hops (spike facade)")
+        first = self._paged("EXT_RAN", "NRCellCU", f"/{NEIGHBOUR_SCOPE}[@id='{TEIV_ID + dn}']")
+        if hops == 1 or not first:
+            return first
+        if fan_out:
+            with ThreadPoolExecutor(max_workers=len(first)) as pool:
+                pages = list(pool.map(lambda m: self._paged("EXT_RAN", "NRCellCU", f"/{NEIGHBOUR_SCOPE}[@id='{TEIV_ID + m['objectInstance']}']"),
+                                      first))
+            second = [m for page in pages for m in page]
+        else:
+            ids = " or ".join(f"@id='{TEIV_ID + m['objectInstance']}'" for m in first)
+            second = self._paged("EXT_RAN", "NRCellCU", f"/{NEIGHBOUR_SCOPE}[{ids}]")
+        seen = {m["objectInstance"] for m in first} | {dn}
+        return first + [m for m in second if m["objectInstance"] not in seen and not seen.add(m["objectInstance"])]
 
 
 def notifications_for(event_type: str, entity_type: str, entity: dict, before: dict | None, system_dn: str = "SubNetwork=Spike") -> list[dict]:
