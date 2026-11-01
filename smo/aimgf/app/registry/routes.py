@@ -14,10 +14,13 @@ and a changed route shape needs `scripts/generate_openapi_specs.py` (checked by 
 artifacts, profiles and change subscriptions is a database foreign key inside the registry's tables.
 """
 
+import base64
 import json
 import uuid
 
 from fastapi import APIRouter, Depends, File, Path, Query, Request, Response, UploadFile
+from fastapi.responses import StreamingResponse
+from starlette.background import BackgroundTask
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -33,7 +36,7 @@ from smo_shared.roles import ROLE_RAPP, role_of
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from ..models import AIMLInferenceFunction, AIMLInferenceReport, MLTrainingReport, ModelLifecycle, TrainingJob
-from . import mlr
+from . import artifacts, mlr
 from .models import MODEL_DOMAINS, MLModel, MLModelCoordinationGroup, MLModelProfile, MLModelRepository, ModelArtifact
 
 router = APIRouter()
@@ -393,44 +396,56 @@ def deregister_model(request: Request, model_id: uuid.UUID, db: Session = Depend
         return
     mlr.refuse_unless_owner(request, model, "delete it")
     _check_no_live_runtime(db, model_id)
+    keys = list(db.scalars(select(ModelArtifact.object_key).where(ModelArtifact.model_id == model_id)))
     db.query(ModelArtifact).filter(ModelArtifact.model_id == model_id).delete()
     db.query(MLModelProfile).filter(MLModelProfile.model_id == model_id).delete()
     db.delete(model)
     db.commit()
+    artifacts.delete_quietly(keys)      # after the commit: a store that refuses leaves an orphan object, never a row without its bytes
 
 
 @router.post("/models/{model_id}/artifact", status_code=201)
 def upload_model_artifact(request: Request, model_id: uuid.UUID, file: UploadFile = File(...), db: Session = Depends(get_session)):
-    """UploadModel (aiml-fw-awmf-modelmgmtservice apis/mmes_apis.go) — the
-    reference looks the model up first (404 if unregistered), validates a
-    .zip suffix (415 otherwise), then stamps a fresh artifactVersion,
-    separate from modelVersion, auto-incremented per model. Real S3 storage
-    is elided (see ModelArtifact's docstring); the bytes are stored for real
-    here instead of being discarded, so upload+download round-trip.
+    """UploadModel (aiml-fw-awmf-modelmgmtservice apis/mmes_apis.go): stores the file as the model's next artifact version (max + 1 per model) in the
+    object store (S2.5), with its SHA-256 digest. Formats: SMO_AIMGF_ARTIFACT_FORMATS (`artifacts.py`); pickle is always refused. Returns `{modelId,
+    artifactId, artifactVersion, sizeBytes, format, sha256}`, plus `warnings` for a zip-legacy upload.
     """
-    # Stores an uploaded .zip as the model's next artifact version. 404 MODEL_NOT_FOUND; 415 ARTIFACT_FORMAT_INVALID when the
-    # file name does not end in .zip (only the name is checked, not the content). The version is max+1 per model, read and written
-    # without a lock, and the table has no unique constraint on (model_id, artifact_version). The whole file is read into memory.
-    # Updates the model's `artifact_location` to the new version in the same commit.
-    # SEC-15.3d: 404 first, then 403 `MODEL_ACCESS_DENIED` for a caller with role `rapp` that is not the model's owner (before the file is read; a model with no owner is open to any rApp).
+    # 404 MODEL_NOT_FOUND; SEC-15.3d: 403 MODEL_ACCESS_DENIED for a caller with role `rapp` that is not the model's owner (before the file is read; a model with no
+    # owner is open to any rApp). 415 ARTIFACT_FORMAT_INVALID with the reason for a format the gate refuses (pickle, neither ONNX nor Safetensors, an extension
+    # that is not the content's, a format the setting leaves out). The upload is spooled to a temporary file by Starlette and read from it 1 MiB at a time: once
+    # to hash and check it, once to stream it to the store. 503 ENDPOINT_UNREACHABLE when no store is configured or it does not answer, 502 UPSTREAM_FAILED when
+    # it refuses. The object is written before the row; a commit that fails removes it again. The version is max+1 per model, read and written without a lock,
+    # and the table has no unique constraint on (model_id, artifact_version). Updates the model's `artifact_location` to the new version and adds an audit row
+    # (UPLOAD_MODEL_ARTIFACT, with the format, the digest and any warning) in the same commit.
     model = db.get(MLModel, model_id)
     if model is None:
         raise framework_error(FrameworkError.MODEL_NOT_FOUND, detail="no such model")
     mlr.refuse_unless_owner(request, model, "upload an artifact for it")
-    if not file.filename or not file.filename.endswith(".zip"):
-        raise framework_error(FrameworkError.ARTIFACT_FORMAT_INVALID, detail="artifact must be a .zip file")
-
-    content = file.file.read()
-    next_version = (db.scalar(
-        select(func.max(ModelArtifact.artifact_version)).where(ModelArtifact.model_id == model_id)
-    ) or 0) + 1
-    artifact = ModelArtifact(model_id=model_id, artifact_version=next_version, filename=file.filename, content=content,
-                              size_bytes=len(content))
-    db.add(artifact)
-    model.artifact_location = f"model-artifact:{model_id}:{next_version}"
-    db.commit()
-    return {"modelId": str(model_id), "artifactId": str(artifact.artifact_id), "artifactVersion": next_version,
-            "sizeBytes": artifact.size_bytes}
+    filename = file.filename or ""
+    try:
+        size, digest, fmt = artifacts.inspect(file.file, filename)
+    except artifacts.Refused as refused:
+        raise framework_error(FrameworkError.ARTIFACT_FORMAT_INVALID, detail=str(refused)) from None
+    artifact_id = uuid.uuid4()
+    object_key = artifacts.key(model_id, artifact_id, fmt)
+    artifacts.store_call(lambda: artifacts.put(file.file, object_key, size, digest, fmt))
+    warnings = [artifacts.DEPRECATION] if fmt == "zip-legacy" else []
+    try:
+        next_version = (db.scalar(select(func.max(ModelArtifact.artifact_version)).where(ModelArtifact.model_id == model_id)) or 0) + 1
+        db.add(ModelArtifact(artifact_id=artifact_id, model_id=model_id, artifact_version=next_version, filename=filename, object_key=object_key,
+                             sha256=digest, artifact_format=fmt, size_bytes=size))
+        model.artifact_location = f"model-artifact:{model_id}:{next_version}"
+        audit.record(db, actor=acting_user(request) or invoker_id(request) or "unknown", role=role_of(request), action="UPLOAD_MODEL_ARTIFACT",
+                     target=f"/aimgf/models/{model_id}/artifact", result="201", correlation_id=get_correlation_id(),
+                     detail={"modelId": str(model_id), "artifactVersion": next_version, "format": fmt, "sha256": digest, "sizeBytes": size,
+                             **({"warnings": warnings} if warnings else {})})
+        db.commit()
+    except Exception:
+        db.rollback()
+        artifacts.delete_quietly([object_key])      # the row was not written: its object goes too
+        raise
+    return {"modelId": str(model_id), "artifactId": str(artifact_id), "artifactVersion": next_version, "sizeBytes": size, "format": fmt,
+            "sha256": digest, **({"warnings": warnings} if warnings else {})}
 
 
 @router.get("/models/{model_id}/artifact/{artifact_version}")
@@ -440,10 +455,12 @@ def download_model_artifact(request: Request, model_id: uuid.UUID, artifact_vers
     are enforced here (SA-MLMR-6): 410 `MODEL_EXPIRED` past its `duration`,
     403 `MODEL_ACCESS_DENIED` for a caller its `accessReqs` exclude.
     """
-    # Returns the bytes of one artifact version. Order: the model's storeDiscReqs are enforced first (410 MODEL_EXPIRED, 403
-    # MODEL_ACCESS_DENIED, judged on the forwarded caller id); only then is the artifact looked up (404 ARTIFACT_VERSION_NOT_FOUND).
-    # An unknown model skips the check and falls through to that 404. The file name in Content-Disposition is the name the
-    # uploader sent, inserted unescaped.
+    # Streams the bytes of one artifact version from the object store, 1 MiB at a time, with `Content-Length`, the digest as `Repr-Digest` (RFC 9530) and
+    # `ETag`, and the format's media type (application/octet-stream; application/zip for zip-legacy). Order: the model's storeDiscReqs are enforced first
+    # (410 MODEL_EXPIRED, 403 MODEL_ACCESS_DENIED, judged on the forwarded caller id); only then is the artifact looked up (404 ARTIFACT_VERSION_NOT_FOUND).
+    # An unknown model skips the check and falls through to that 404. The stored object's digest is compared with the row's before a byte is sent (502
+    # UPSTREAM_FAILED when they differ); the bytes are hashed as they pass and a mismatch at the end aborts the response, so the client sees a cut-off body,
+    # never a complete wrong one. The file name in Content-Disposition is the name the uploader sent, inserted unescaped.
     # SEC-15.3d: an rApp that is not the owner of an owned model downloads it only when the model's `storeDiscReqs.accessReqs` says so (PUBLICLY_AVAILABLE, or RESTRICTED naming the
     # caller, which `require_usable` judges); a model that sets no `accessReqs` is its owner's alone against another rApp (the rule inference follows in AIMgF). A model with no owner,
     # the console, an SMO module and a call with no role keep the old rule (open unless `accessReqs` excludes the caller).
@@ -457,9 +474,12 @@ def download_model_artifact(request: Request, model_id: uuid.UUID, artifact_vers
     )
     if artifact is None:
         raise framework_error(FrameworkError.ARTIFACT_VERSION_NOT_FOUND, detail="no such artifact version")
-    return Response(
-        content=artifact.content, media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{artifact.filename}"'},
+    download = artifacts.store_call(lambda: artifacts.open_artifact(artifact.object_key, artifact.sha256))
+    digest = base64.b64encode(bytes.fromhex(artifact.sha256)).decode()
+    return StreamingResponse(
+        download.chunks, media_type=artifacts.MEDIA_TYPES.get(artifact.artifact_format, "application/octet-stream"), background=BackgroundTask(download.close),
+        headers={"Content-Disposition": f'attachment; filename="{artifact.filename}"', "Content-Length": str(download.size),
+                 "Repr-Digest": f"sha-256=:{digest}:", "ETag": f'"{artifact.sha256}"'},
     )
 
 

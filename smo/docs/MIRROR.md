@@ -65,7 +65,7 @@ digest at the mirror.
 | `<repo>/mirror/ubuntu` | `ubuntu:22.04` (the base of the O-RAN-SC simulator image, `oran-sim/Dockerfile`, ADR 0012) | yes |
 | `<repo>/mirror/postgis` | `postgis/postgis:13-3.4-alpine` (the base of smo-teiv's database, `teiv/Dockerfile.db`, S3.23, ADR 0013) | yes |
 | `<repo>/mirror/kafka` | `apache/kafka:3.9.1` (the stack's Kafka, profile `kafka`, D9, shared with smo-teiv's ingestion in the profile `teiv`, topic `smo.teiv.ingestion.v1`, S3.23; and the TE&IV spike's) | yes |
-| `<repo>/mirror/seaweedfs` | `chrislusf/seaweedfs:4.48` (the object store, profile `objectstore`, D10) | yes |
+| `<repo>/mirror/seaweedfs` | `chrislusf/seaweedfs:4.48` (the object store, D10; in the default stack since S2.5) | yes |
 | `<repo>/mirror/minio` | `bitnamilegacy/minio:2025.7.23-debian-12-r5` (the optional MinIO store, profile `minio`, D10; Bitnami's frozen last build) | yes |
 | `<repo>/mirror/tempo` | `grafana/tempo:2.10.10` | yes |
 | `<repo>/mirror/loki` | `grafana/loki:3.7.9` | yes |

@@ -208,3 +208,107 @@ def test_an_answer_with_a_dtd_is_refused_before_it_is_parsed():
                             client=httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, content=evil))), clock=lambda: NOW)
     with pytest.raises(osx.ObjectStoreError, match="DTD"):
         store.list_keys("models")
+
+
+def test_a_streamed_put_and_read_hold_one_chunk_and_check_the_sha256():
+    """`put_stream` sends chunks whose size and SHA-256 are known beforehand (signed, stored as metadata); `open_stream` reads the object back chunk by
+    chunk, each no larger than the chunk size asked for; `get_stream` releases the connection at the end of its block."""
+    fake = FakeS3()
+    store = _store(fake)
+    data = bytes(range(256)) * 40
+    digest = hashlib.sha256(data).hexdigest()
+    assert store.put_stream("models", "m/big.onnx", (data[i:i + 1000] for i in range(0, len(data), 1000)), len(data), digest) == digest
+    assert fake.buckets["smo-models"]["m/big.onnx"] == (data, {"x-amz-meta-sha256": digest})
+    download = store.open_stream("models", "m/big.onnx", chunk_size=4096)
+    assert (download.size, download.sha256) == (len(data), digest)
+    chunks = list(download.chunks)
+    assert b"".join(chunks) == data and max(map(len, chunks)) <= 4096
+    with store.get_stream("models", "m/big.onnx") as again:
+        assert b"".join(again.chunks) == data
+
+
+def test_a_streamed_put_that_does_not_match_its_sha256_or_size_is_abandoned():
+    """Chunks that hash to another SHA-256, or add up to another size, raise IntegrityError and nothing is stored."""
+    fake = FakeS3()
+    store = _store(fake)
+    with pytest.raises(osx.IntegrityError):
+        store.put_stream("models", "m/x", [b"abc"], 3, hashlib.sha256(b"abd").hexdigest())
+    with pytest.raises(osx.IntegrityError):
+        store.put_stream("models", "m/x", [b"abc"], 4, hashlib.sha256(b"abc").hexdigest())
+    assert "m/x" not in fake.buckets.get("smo-models", {})
+
+
+def test_a_streamed_read_of_a_corrupt_object_raises_at_the_end_and_a_missing_one_at_once():
+    """Bytes that do not hash to the stored SHA-256 raise IntegrityError after the last chunk; a missing key raises ObjectStoreError (404) when opened."""
+    store = _store(FakeS3(corrupt=True))
+    store.put("models", "m/c", b"payload")
+    download = store.open_stream("models", "m/c")
+    with pytest.raises(osx.IntegrityError):
+        list(download.chunks)
+    with pytest.raises(osx.ObjectStoreError, match="404 NoSuchKey"):
+        store.open_stream("models", "m/absent")
+
+
+@pytest.fixture(params=["memory", "file"])
+def local(request, tmp_path):
+    """A LocalStore of each kind, its buckets made; the memory one starts empty."""
+    osx._MEMORY.clear()
+    store = osx.LocalStore(None if request.param == "memory" else tmp_path)
+    store.ensure_buckets()
+    yield store
+    osx._MEMORY.clear()
+
+
+def test_a_local_store_has_the_s3_clients_methods(local):
+    """put, get, head, list, delete, the streamed forms and the round trip behave as the S3 client's; a missing key is a 404 and an unknown use refused."""
+    digest = local.put("models", "m/one.onnx", b"onnx bytes")
+    assert digest == hashlib.sha256(b"onnx bytes").hexdigest() and local.get("models", "m/one.onnx") == b"onnx bytes"
+    assert local.head("models", "m/one.onnx") == {"size": 10, "sha256": digest, "etag": digest}
+    data = b"z" * 5000
+    local.put_stream("models", "m/two", (data[i:i + 1024] for i in range(0, 5000, 1024)), 5000, hashlib.sha256(data).hexdigest())
+    with local.get_stream("models", "m/two", chunk_size=1024) as download:
+        chunks = list(download.chunks)
+    assert b"".join(chunks) == data and max(map(len, chunks)) == 1024
+    assert local.list_keys("models", "m/") == ["m/one.onnx", "m/two"] and local.list_keys("models", "x") == []
+    local.delete("models", "m/one.onnx")
+    local.delete("models", "m/one.onnx")
+    assert local.head("models", "m/one.onnx") is None
+    with pytest.raises(osx.ObjectStoreError, match="404"):
+        local.get("models", "m/one.onnx")
+    with pytest.raises(ValueError):
+        local.bucket("logs")
+    with pytest.raises(ValueError):
+        local.put("models", "../escape", b"x")
+    assert [row["use"] for row in osx.roundtrip(local, size=64)] == ["models", "csars", "cold-parquet"]
+
+
+def test_a_local_store_refuses_a_put_that_does_not_match_and_a_file_changed_on_disk(local, tmp_path):
+    """A streamed put whose bytes do not match its SHA-256 stores nothing; in a directory, a file whose bytes changed after it was stored raises
+    IntegrityError when read."""
+    with pytest.raises(osx.IntegrityError):
+        local.put_stream("models", "m/bad", [b"abc"], 3, osx.EMPTY_SHA256)
+    assert local.head("models", "m/bad") is None and local.list_keys("models") == []
+    if local.root is not None:
+        local.put("models", "m/file", b"original")
+        (tmp_path / "smo-models" / "m" / "file").write_bytes(b"tampered")
+        with pytest.raises(osx.IntegrityError):
+            local.get("models", "m/file")
+
+
+def test_open_store_chooses_the_backend_from_the_settings(tmp_path):
+    """memory:// and file:///dir are LocalStores (memory shared by every instance of the process); no URL is memory only with the test opt-in; an
+    http URL is the S3 client; a relative file:// path and no URL without the opt-in are refused."""
+    osx._MEMORY.clear()
+    first, second = osx.open_store({"SMO_OBJECTSTORE_URL": "memory://"}), osx.open_store({"SMO_ALLOW_SQLITE_FALLBACK": "1"})
+    assert isinstance(first, osx.LocalStore) and first.root is None and second.root is None
+    first.put("models", "k", b"shared")
+    assert second.get("models", "k") == b"shared"
+    on_disk = osx.open_store({"SMO_OBJECTSTORE_URL": f"file://{tmp_path}", "SMO_OBJECTSTORE_BUCKET_MODELS": "mine"})
+    assert on_disk.root == tmp_path and on_disk.bucket("models") == "mine"
+    s3 = osx.open_store({"SMO_OBJECTSTORE_URL": "http://s3:1", "SMO_OBJECTSTORE_ACCESS_KEY": "a", "SMO_OBJECTSTORE_SECRET_KEY": "b"})
+    assert isinstance(s3, osx.ObjectStore) and s3.uses() == ["models", "csars", "cold-parquet"]
+    with pytest.raises(ValueError, match="absolute"):
+        osx.open_store({"SMO_OBJECTSTORE_URL": "file://relative/dir"})
+    with pytest.raises(ValueError, match="SMO_OBJECTSTORE_URL"):
+        osx.open_store({"SMO_ALLOW_SQLITE_FALLBACK": "0"})
+    osx._MEMORY.clear()

@@ -14,7 +14,7 @@ artifacts and profiles itself), and a repository delete sets `ml_model_repositor
 import datetime
 import uuid
 
-from sqlalchemy import ARRAY, CheckConstraint, ForeignKey, Integer, JSON, LargeBinary, String, UniqueConstraint, Uuid
+from sqlalchemy import ARRAY, CheckConstraint, ForeignKey, Integer, JSON, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -147,7 +147,8 @@ class MLModelProfile(Base):
 
 
 class ModelArtifact(Base):
-    """One uploaded artifact version of a model, with the bytes stored in the row (`content`); there is no object store in this build.
+    """One uploaded artifact version of a model. The bytes are in the object store's `models` bucket at `object_key` (S2.5, `artifacts.py`), never in
+    the row; `sha256` is their digest (checked on every read), `artifact_format` what the format gate found (`onnx`, `safetensors`, `zip-legacy`).
     `artifact_version` starts at 1 and is assigned by the upload route; the table does not constrain it to be unique per model.
     `size_bytes` is measured from the uploaded bytes and feeds `mlModelSize`.
     """
@@ -155,13 +156,16 @@ class ModelArtifact(Base):
     __tablename__ = "model_artifact"
     __table_args__ = (
         CheckConstraint("artifact_version >= 1", name="artifact_version_positive"),
+        CheckConstraint("artifact_format IN ('onnx', 'safetensors', 'zip-legacy')", name="artifact_format_known"),
     )
 
     artifact_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     model_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("aiml_model.model_id", ondelete="CASCADE"), nullable=False)  # NEW section 5: deregister_model's cascade, same shape as DME's dme_type FKs
     artifact_version: Mapped[int] = mapped_column(Integer, nullable=False)
     filename: Mapped[str] = mapped_column(String, nullable=False)
-    content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    object_key: Mapped[str] = mapped_column(String, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    artifact_format: Mapped[str] = mapped_column(String, nullable=False)
     uploaded_at: Mapped[datetime.datetime] = mapped_column(default=lambda: datetime.datetime.now(datetime.UTC))
     # Wave 3: TS29482_MLR_MLModelManagement.yaml's MLModel.mlModelSize
     # (HISTORY.md §7's MLMR section) — computed from the real uploaded
