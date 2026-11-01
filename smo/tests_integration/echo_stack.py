@@ -76,6 +76,7 @@ def stack(loaded_apps, echo_module, db_connection, monkeypatch):
     monkeypatch.setattr(r1_client, "_identity", r1_client._ModuleIdentity(store=False))       # this test's own invoker, through the real token flow
     monkeypatch.setenv("SMO_MNS_REGISTRATION", "on")
     r1.mns_routing.CACHE.clear()
+    echo_module.REGISTRATION.reset()                                                    # each test's Echo registers in its own database
     try:
         yield clients["r1-termination"], echo_module
     finally:

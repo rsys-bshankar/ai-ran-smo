@@ -191,14 +191,13 @@ def test_the_cache_setting(monkeypatch, raw, seconds):
 
 
 def test_the_default_source_is_sme_only_when_asked(monkeypatch):
-    """SMO_ACCESS_RULES=sme gives one SmeAccessRules per process; anything else, none. An authorizer with no source of its own asks every time."""
-    monkeypatch.setattr(access, "_SME_SOURCE", None)
+    """SMO_ACCESS_RULES=sme gives the process's one SmeAccessRules; anything else, none. An authorizer with no source of its own asks every time."""
     monkeypatch.delenv(access.SOURCE_ENV, raising=False)
     authorizer = access.AccessRuleAuthorizer()
     assert access.default_source() is None and authorizer._source() is None
     monkeypatch.setenv(access.SOURCE_ENV, " SME ")
     first = access.default_source()
-    assert isinstance(first, access.SmeAccessRules) and access.default_source() is first and authorizer._source() is first
+    assert isinstance(first, access.SmeAccessRules) and first is access.SME_SOURCE and authorizer._source() is first
     monkeypatch.setenv(access.SOURCE_ENV, "off")
     assert authorizer._source() is None
     assert access.AccessRuleAuthorizer(None)._source() is None

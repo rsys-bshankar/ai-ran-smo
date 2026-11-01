@@ -119,7 +119,7 @@ def test_s1_14_echos_routes_decide_with_the_access_rules_kept_at_sme(gateway, mo
     call, _, _ = gateway
     monkeypatch.setenv(access.SOURCE_ENV, "sme")
     monkeypatch.setenv(access.CACHE_ENV, "0")
-    monkeypatch.setattr(access, "_SME_SOURCE", None)
+    monkeypatch.setattr(access, "SME_SOURCE", access.SmeAccessRules())                     # a fresh copy for this test
     assert call("PUT", "SubNetwork=S1", json={"id": "S1"}).status_code == 201
     for person, role in (("auditor", "READ_ONLY_AUDITOR"), ("dev", "RAPP_DEVELOPER"), ("noc", "NOC_OPERATOR")):
         identity = {"id": person, "attributes": {"identityType": "USERNAME", "identityName": f"smo-gui:{person}", "roleList": [f"SubNetwork=SMO,Role={role}"]}}

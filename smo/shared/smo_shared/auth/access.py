@@ -189,17 +189,12 @@ class SmeAccessRules:
         return rules.get(name) if name is not None else None
 
 
-_SME_SOURCE: SmeAccessRules | None = None
+SME_SOURCE = SmeAccessRules()       # one per process; it reads nothing until a decision asks it to
 
 
 def default_source():
-    """The source an authorizer built without one uses: `SmeAccessRules` (one per process) when SMO_ACCESS_RULES is `sme`, else none."""
-    global _SME_SOURCE
-    if os.environ.get(SOURCE_ENV, "").strip().lower() != "sme":
-        return None
-    if _SME_SOURCE is None:
-        _SME_SOURCE = SmeAccessRules()
-    return _SME_SOURCE
+    """The source an authorizer built without one uses: `SME_SOURCE` when SMO_ACCESS_RULES is `sme`, else none."""
+    return SME_SOURCE if os.environ.get(SOURCE_ENV, "").strip().lower() == "sme" else None
 
 
 _DEFAULT = object()
