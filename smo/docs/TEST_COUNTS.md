@@ -37,8 +37,8 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `shared` | 61 | 827 | 1607 |
 | `sme` | 5 | 122 | 140 |
 | `so-smos` | 3 | 28 | 44 |
-| `tests_integration` | 99 | 775 | 956 |
-| **total** | **437** | **5626** | **8386** (Python) |
+| `tests_integration` | 99 | 776 | 957 |
+| **total** | **437** | **5627** | **8387** (Python) |
 
 ## Per test file
 
@@ -625,7 +625,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests_integration/test_gui_demo_buttons_traffic.py` | 1 | 1 |
 | `tests_integration/test_gui_e2e_routes.py` | 1 | 1 |
 | `tests_integration/test_helm_bootstrap.py` | 10 | 10 |
-| `tests_integration/test_helm_chart.py` | 47 | 51 |
+| `tests_integration/test_helm_chart.py` | 48 | 52 |
 | `tests_integration/test_helm_rapp.py` | 10 | 10 |
 | `tests_integration/test_helm_sizing.py` | 3 | 3 |
 | `tests_integration/test_http_timeouts.py` | 3 | 10 |

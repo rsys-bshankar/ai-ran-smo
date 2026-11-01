@@ -25,7 +25,7 @@
 # the code where a mutant behaved like the original).
 # PR-CONV-S1.5 and S1.3 added the router's cross-cutting checks (`mns/checks.py`), the shared MSAC decision (`msac.py`) and the dictionary (`mns/dictionary/`), and
 # PR-CONV-S1.6 the reference module Echo (`echo/app`, tested by echo/tests on SQLite; its own configuration is echo/pyproject.toml), run after the shared library.
-# Needs the dev requirements installed (requirements/dev.txt) and mutmut (requirements/mutation.txt). About four minutes.
+# Needs the dev requirements installed (requirements/dev.txt) and mutmut (requirements/mutation.txt). About an hour.
 set -euo pipefail
 cd "$(dirname "$0")/../shared"
 rm -rf mutants

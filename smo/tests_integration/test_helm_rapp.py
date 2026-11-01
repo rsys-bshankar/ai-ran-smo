@@ -6,7 +6,7 @@ fixtures and render helpers come from `test_helm_chart.py`. Run with: PYTHONPATH
 -q
 """
 
-from test_helm_chart import CHART, COMPOSE, SMO_ROOT, VALUES, _deployment, _env_of, _modules, _pod_templates, _render, helm
+from test_helm_chart import CHART, COMPOSE, SMO_ROOT, VALUES, _deployment, _env_of, _modules, _pod_templates, _rendered_modules, _render, helm
 
 # The chart's rApp modules: the four reference rApps and the workers that run their scheduled passes (call flows 22e, 23f, 24f, 25f), which are the same rApp identity.
 RAPPS = {"energy-saving-rapp", "mobility-optimization-rapp", "coverage-optimization-rapp", "traffic-steering-rapp", "energy-saving-rapp-worker",
@@ -137,5 +137,5 @@ def test_the_trust_store_configmap_is_mounted_and_named_only_when_set_and_nothin
     assert env["ONBOARDING_TRUST_STORE"] == "/run/rapp-trust" and env["ONBOARDING_REQUIRE_SIGNED_PACKAGES"] == "true"
     assert {"name": "rapp-trust", "mountPath": "/run/rapp-trust", "readOnly": True} in on["containers"][0]["volumeMounts"]
     assert next(v for v in on["volumes"] if v["name"] == "rapp-trust")["configMap"]["name"] == "rapp-publishers"
-    for name in set(_modules()) - {"onboarding"}:
+    for name in set(_rendered_modules()) - {"onboarding"}:
         assert _env_of(_deployment(docs, name)).get("ONBOARDING_TRUST_STORE") is None, name

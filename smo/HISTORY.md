@@ -5152,7 +5152,14 @@ Closed from `OPEN_ITEMS.md` (`PR-CONV-S1.6`). `echo/` (`echo/README.md`, `echo/d
   p95 19 ms; the same with a filter (15 match) p50 12 ms, p95 17 ms. No sign of the risk at this size; S8.9 measures again at scale.
 - **Not yet:** Echo is not reached through R1 by class name: SME's MnS registry (S1.7) and routing by registry lookup (S1.8) are milestone M1's last
   condition.
-- **Mutation gate.** @@MUT@@
+- **Mutation gate.** `[tool.mutmut] only_mutate` gains `mns/checks.py`, `msac.py` and the four dictionary files (30 shared files in all), and the
+  pilot runs Echo's `app/` after the shared library (`echo/pyproject.toml`). Runs on this branch: the first full run killed 5,473 of 5,539 shared
+  mutants (59 survived, 7 timed out); `shared/tests/test_mns_checks.py`'s exact cases (what the authorizer and the MSAC provider are handed for each
+  operation, the audit row's correlation id, the metric's class and duration) and simpler forms where a mutant behaved like the original
+  (`rpartition` for the module name and the metric class, `_refusal` returning an MnsError) brought the second to 5,521 of 5,530; the last 9 (header
+  names, the `Accept` default, the hierarchical answer's `Link`, a no-op cast) went with the header names as module constants, an explicit refusal in
+  the evaluator and two tests, and a run of the two files then killed 276 of 276. Echo: **74 of 74**. A paging test that followed a `Link` with no
+  bound turned a mutant into a hang; it now stops after ten pages. The job's limit went from 20 to 120 minutes (the gate takes about an hour).
 
 ### PR-CONV-S2.1, S2.2, S2.3 — AIMgF absorbs MLMR and MLLF: code, tables and tests moved, packages by TS 28.105 capability
 
