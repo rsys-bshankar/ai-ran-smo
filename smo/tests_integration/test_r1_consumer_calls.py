@@ -33,17 +33,10 @@ SOURCE_GLOBS = ["*/app/**/*.py", "samples/*/app/**/*.py", "shared/smo_shared/**/
 
 
 def gateway_routes() -> dict[str, str]:
-    """Route prefix -> producer module, read from the gateway's own routing table (`ROUTES`)."""
-    tree = ast.parse((SMO_ROOT / "r1-termination" / "app" / "main.py").read_text())
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "ROUTES" for t in node.targets):
-            routes = {}
-            for key, value in zip(node.value.keys, node.value.values):
-                # os.environ.get("X_URL", "http://<service>:8000"): the service name is the module
-                default = value.args[1].value if isinstance(value, ast.Call) and len(value.args) > 1 else value.value
-                routes[key.value] = re.match(r"https?://([^:/]+)", default).group(1)
-            return routes
-    raise AssertionError("ROUTES is not in r1-termination/app/main.py")
+    """Route prefix -> producer module, read from the gateway's own routing table (`ROUTES`, which `app/main.py` reads from `app/routes.json`)."""
+    table = json.loads((SMO_ROOT / "r1-termination" / "app" / "routes.json").read_text())
+    # the default address "http://<service>:8000": the service name is the module
+    return {prefix: re.match(r"https?://([^:/]+)", route["url"]).group(1) for prefix, route in table.items() if not prefix.startswith("_")}
 
 
 def load_specs() -> dict[str, dict]:

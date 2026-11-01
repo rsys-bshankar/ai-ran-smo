@@ -273,7 +273,7 @@ smo/
   DEMO_RUNBOOK.md           live walk-through: rApp lifecycle on the Energy Saving package (§0–§23), reference rApps (§24–§27)
   OPEN_ITEMS.md             open items only
   HISTORY.md                audit trail: closed items, spec audit, wave exit reviews (cited by code comments)
-  docker-compose.yml        deployment topology
+  docker-compose.yml        deployment topology (the module services are generated from the modules' module.yaml)
   Dockerfile                one image, parameterised by the MODULE build arg (and SMO_VERSION / SMO_BUILD_SHA / SMO_BUILT_AT, answered by GET /version)
   migrations/001_init.sql   the consolidated Postgres schema (the Alembic baseline revision 0001)
   migrations/versions/      Alembic revisions on top of it; scripts/migrate.py applies them (docs/adr/0001-schema-migrations.md)
@@ -282,6 +282,8 @@ smo/
   <module>/README.md        the module's HLD + LLD + unit-test document: design, data model, API, tests, status
   <module>/app/             one directory per SMO module (models.py, statemachine.py, main.py)
   <module>/tests/           that module's unit tests (standalone, SQLite)
+  <module>/module.yaml      what the module is to the rest of the SMO: lane, R1 route, compose and chart entries, database role and tables, unit
+                            suite and coverage floor, mutation run; scripts/modules.py --write generates the shared lists from these (history.d/MODULE-MANIFESTS.md)
   echo/                     the reference ProvMnS module (S1.6): the shared router on SubNetwork and ManagedElement, nothing else; compose profile `echo`
   mock-o1-adaptor/          NETCONF / RESTCONF O1 test double (RAN NF OAM's southbound), also an FM / PM / SW / heartbeat source
   oran-sim/                 the O-RAN-SC simulated O-DU (compose profile `oran-sim`): its Dockerfile, built from the pinned upstream source, and its NETCONF server configuration (ADR 0012)
