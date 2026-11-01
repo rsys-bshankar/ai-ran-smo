@@ -104,8 +104,8 @@ def main() -> None:
     # a module that has a schema of its own (PR-DB-2.5) keeps its tables there; the ORM names them without one, and so does this check
     schema_of: dict[str, str | None] = {}
     for schema in inspector.get_schema_names():
-        if schema.startswith("pg_") or schema == "information_schema":
-            continue
+        if schema.startswith(("pg_", "_timescaledb", "timescaledb_")) or schema == "information_schema":
+            continue                                    # the catalog, and TimescaleDB's own schemas (D8: the extension owns them, not a module)
         for name in inspector.get_table_names(schema=schema):
             schema_of[name] = None if schema == "public" else schema
     real_tables = set(schema_of)

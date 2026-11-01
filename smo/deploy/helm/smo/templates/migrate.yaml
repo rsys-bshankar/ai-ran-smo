@@ -44,6 +44,8 @@ spec:
           command: ["sh", "-c", "python /srv/scripts/migrate.py && python /srv/scripts/db_roles.py"]
           env:
             {{- include "smo.dbEnv" (dict "root" .) | nindent 12 }}
+            # D8: the bundled Postgres is the TimescaleDB image, so the extension is required; an external Postgres says in postgres.external.timescaledb
+            - { name: SMO_TIMESCALEDB, value: {{ ternary "require" .Values.postgres.external.timescaledb .Values.postgres.enabled | quote }} }
           resources:
             requests: { cpu: 50m, memory: 128Mi }
             limits: { memory: 512Mi }

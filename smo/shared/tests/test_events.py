@@ -314,3 +314,19 @@ def test_an_event_carries_the_correlation_id_of_what_published_it():
         db.commit()
         feed = events.read_after(db, 0)
     assert feed[0]["correlationid"] == "req-14" and "correlationid" not in feed[1]
+
+
+def test_the_table_check_is_kept_per_engine_object_not_per_id():
+    """`_has_table` remembers its answer for the engine itself, weakly: an engine that is gone leaves nothing behind for a new one (keyed by `id()`, a new
+    engine at the same address once got the old one's answer and wrote to a table it did not have)."""
+    import gc
+    with_table = _engine()
+    with with_table.connect() as connection:
+        assert events._has_table(connection) is True
+    assert with_table in events._tables
+    del connection, with_table
+    gc.collect()
+    assert len(events._tables) == 0
+    without = _engine(with_table=False)
+    with without.connect() as connection:
+        assert events._has_table(connection) is False

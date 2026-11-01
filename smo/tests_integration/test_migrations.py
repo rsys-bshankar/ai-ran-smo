@@ -22,8 +22,8 @@ MIGRATE = SMO_ROOT / "scripts" / "migrate.py"
 CHECK = SMO_ROOT / "scripts" / "check_migration_matches_models.py"
 ADMIN_URL = os.environ.get("SMO_TEST_POSTGRES_URL")
 needs_postgres = pytest.mark.skipif(not ADMIN_URL, reason="SMO_TEST_POSTGRES_URL not set")
-HEAD = "0063"         # raise this with every new revision: the tests below then check it is the head
-HEAD_TABLE = "sa_smos.o1_cm_enactment"   # a table the head revision changes: the lock tests hold it, so raise it with HEAD
+HEAD = "0064"         # raise this with every new revision: the tests below then check it is the head
+HEAD_TABLE = "public.smo_event"   # a table the head revision changes: the lock tests hold it, so raise it with HEAD
 
 
 def _scripts() -> ScriptDirectory:
@@ -395,6 +395,50 @@ def test_a_bad_lock_setting_is_refused_with_the_variable_named(monkeypatch, valu
     monkeypatch.setenv("SMO_MIGRATE_LOCK_TIMEOUT_MS", value)
     with pytest.raises(SystemExit, match="SMO_MIGRATE_LOCK_TIMEOUT_MS"):
         _migrate_module()._with_lock_retries(_FakeConnection(), lambda: None)
+
+
+class _ExtensionConnection(_FakeConnection):
+    """A fake Postgres connection for `ensure_timescaledb`: `available` says whether `pg_available_extensions` lists timescaledb; it records the SQL."""
+
+    def __init__(self, available: bool, dialect: str = "postgresql"):
+        super().__init__(dialect)
+        self.available = available
+
+    def exec_driver_sql(self, sql: str):
+        self.calls.append(sql)
+        row = (1,) if self.available and "pg_available_extensions" in sql else None
+        return type("Result", (), {"first": lambda _self: row})()
+
+
+@pytest.mark.parametrize("mode", ["auto", "require", None])
+def test_the_timescaledb_extension_is_created_when_the_server_has_it(monkeypatch, mode):
+    """With the extension available, `auto`, `require` and the default (unset) all create it with IF NOT EXISTS and commit, so a second run is a no-op."""
+    monkeypatch.delenv("SMO_TIMESCALEDB", raising=False)
+    connection = _ExtensionConnection(available=True)
+    assert _migrate_module().ensure_timescaledb(connection, mode) == "created"
+    assert connection.calls[-2:] == ["CREATE EXTENSION IF NOT EXISTS timescaledb", "commit"]
+
+
+def test_auto_goes_on_without_the_extension_and_require_stops_the_migration(monkeypatch):
+    """A server without timescaledb: `auto` creates nothing and says so; `require` (what compose and the bundled Postgres set) ends the process naming the variable."""
+    module = _migrate_module()
+    connection = _ExtensionConnection(available=False)
+    assert module.ensure_timescaledb(connection, "auto") == "unavailable"
+    assert not any(sql.startswith("CREATE EXTENSION") for sql in connection.calls)
+    monkeypatch.setenv("SMO_TIMESCALEDB", "require")
+    with pytest.raises(SystemExit, match="SMO_TIMESCALEDB=require"):
+        module.ensure_timescaledb(_ExtensionConnection(available=False))
+
+
+def test_off_sqlite_and_a_bad_value_for_the_timescaledb_extension():
+    """`off` and a database that is not Postgres touch nothing; a value that is not auto, require or off is refused with the variable named."""
+    module = _migrate_module()
+    off = _ExtensionConnection(available=True)
+    assert module.ensure_timescaledb(off, "off") == "skipped" and off.calls == []
+    sqlite = _ExtensionConnection(available=True, dialect="sqlite")
+    assert module.ensure_timescaledb(sqlite, "require") == "skipped" and sqlite.calls == []
+    with pytest.raises(SystemExit, match="SMO_TIMESCALEDB must be one of"):
+        module.ensure_timescaledb(off, "yes")
 
 
 def _hold_lock(url: str, table: str):

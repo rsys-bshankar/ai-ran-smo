@@ -13,6 +13,9 @@ The envelope (docs/EVENTS.md, docs/schemas/event-envelope.schema.json, MSG-3.1) 
 (a module's SQLite unit tests that do not create it) the table publisher keeps the event in memory instead, so a test of the change is not a test of the bus.
 Events are kept `SMO_EVENT_RETENTION_HOURS` (default 24) and purged by the shared worker task `event-purge`: the feed is a recent history to follow, not an archive.
 
+A second sink, Kafka, follows the table after commit (ADR 0006, `smo_shared/kafka_relay.py`, `SMO_KAFKA_RELAY`): it is not an `EventPublisher`, because a Kafka
+produce cannot be part of the caller's transaction; `smo_event` is the relay's buffer and `smo_event_relay` its position.
+
 Published today: the state changes of every state machine whose `fire` is given the entity (MSG-3.5, `on_transition`; rApp instances, onboarded packages, NF deployments and AI/ML model lifecycles) and
 alarms raised and cleared (MSG-3.6, ran-nf-oam/app/alarm_history.py).
 """
@@ -23,10 +26,11 @@ import os
 import threading
 import time
 import uuid
+import weakref
 from collections.abc import Callable
 from typing import Any, Protocol
 
-from sqlalchemy import JSON, BigInteger, DateTime, Identity, Integer, String, Uuid, delete, insert, inspect, select, text
+from sqlalchemy import JSON, BigInteger, DateTime, Identity, Integer, String, Uuid, and_, delete, func, insert, inspect, or_, select, text
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
@@ -58,6 +62,17 @@ class SmoEvent(Base):
     region: Mapped[str | None] = mapped_column(String)
     tenant: Mapped[str | None] = mapped_column(String)
     correlation_id: Mapped[str | None] = mapped_column(String)     # the request or worker task that published it (revision 0059, call flow 14c)
+
+
+class SmoEventRelay(Base):
+    """Where a relay of the feed to another bus has got to (table `smo_event_relay`, revision 0064; ADR 0006 section 3.2): one row per sink, `name`
+    (`kafka:<topic>`), `last_seq` (the highest `seq` the sink has acknowledged, contiguously) and when it moved. The relay's own position in Postgres, not a
+    Kafka consumer offset, so a database restore rewinds it (duplicates downstream, never a loss)."""
+    __tablename__ = "smo_event_relay"
+
+    name: Mapped[str] = mapped_column(String, primary_key=True)
+    last_seq: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), nullable=False, default=0)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 def event_type(what: str, change: str) -> str:
@@ -120,18 +135,19 @@ class NullPublisher:
         """Does nothing."""
 
 
-_tables: dict[int, bool] = {}
+_tables: "weakref.WeakKeyDictionary[Engine, bool]" = weakref.WeakKeyDictionary()
 
 
 def _has_table(connection: Connection) -> bool:
     """Whether the database behind `connection` has `smo_event`, asked once per engine on the caller's own connection (a new one could end the caller's
-    transaction on a single-connection test engine). Postgres always has it: revision 0042 made it."""
+    transaction on a single-connection test engine). Postgres always has it: revision 0042 made it. The answer is kept per engine object, weakly: keyed by
+    `id(engine)` it outlived the engine, and a later test engine given the same id got the earlier one's answer."""
     if connection.dialect.name == "postgresql":
         return True
-    key = id(connection.engine)
-    if key not in _tables:
-        _tables[key] = inspect(connection).has_table(SmoEvent.__tablename__)
-    return _tables[key]
+    engine = connection.engine
+    if engine not in _tables:
+        _tables[engine] = inspect(connection).has_table(SmoEvent.__tablename__)
+    return _tables[engine]
 
 
 class TablePublisher:
@@ -231,11 +247,26 @@ def _listen(engine: Engine, deadline: float, read: Callable[[], list[dict]]) -> 
     return read()
 
 
+def _relay_on() -> bool:
+    return os.environ.get("SMO_KAFKA_RELAY", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def purge(db: Session, now: datetime.datetime | None = None) -> int:
-    """Deletes the events older than `SMO_EVENT_RETENTION_HOURS` (default 24); returns how many. The caller commits."""
+    """Deletes the events older than `SMO_EVENT_RETENTION_HOURS` (default 24); returns how many. The caller commits.
+
+    While the Kafka relay is on (`SMO_KAFKA_RELAY`), an event past the retention that no relay has sent yet (its `seq` above the lowest `last_seq` in
+    `smo_event_relay`) is kept, up to `SMO_KAFKA_RELAY_MAX_HOLD_HOURS` (default 72) past its time: a broker down for longer than the retention does not
+    lose events to Kafka, but the table cannot grow without end either (ADR 0006 Q2; the relay-lag metrics show the backlog)."""
     hours = float(os.environ.get("SMO_EVENT_RETENTION_HOURS", "24") or 24)
-    cutoff = (now or datetime.datetime.now(datetime.UTC)) - datetime.timedelta(hours=hours)
-    return db.execute(delete(SmoEvent).where(SmoEvent.time < cutoff)).rowcount or 0      # type: ignore[attr-defined]
+    at = now or datetime.datetime.now(datetime.UTC)
+    cutoff = at - datetime.timedelta(hours=hours)
+    condition = SmoEvent.time < cutoff
+    if _relay_on():
+        hold = float(os.environ.get("SMO_KAFKA_RELAY_MAX_HOLD_HOURS", "72") or 72)
+        sent = db.scalar(select(func.min(SmoEventRelay.last_seq)))
+        if sent is not None:
+            condition = and_(condition, or_(SmoEvent.seq <= sent, SmoEvent.time < at - datetime.timedelta(hours=max(hold, hours))))
+    return db.execute(delete(SmoEvent).where(condition)).rowcount or 0      # type: ignore[attr-defined]
 
 
 # ---------------------------------------------------------------- state machine transitions (MSG-3.5)

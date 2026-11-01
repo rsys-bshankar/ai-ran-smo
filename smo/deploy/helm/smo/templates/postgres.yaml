@@ -59,10 +59,16 @@ spec:
         - name: postgres
           image: {{ .Values.postgres.image }}
           imagePullPolicy: {{ .Values.postgres.pullPolicy }}
-          {{- /* Renders when `postgres.tls.enabled`: the server arguments that switch TLS on and name the certificate, the key and the hba file. */}}
-          {{- if .Values.postgres.tls.enabled }}
-          # PR-SEC-2.4: TLS from the network only (the hba file below: `hostssl`, plain `host` rejected); the modules verify the certificate (sslmode=verify-full)
+          # D8 (plan task S1.10): the TimescaleDB library preloaded (a volume first made by the stock postgres image gets it too) and its telemetry off;
+          # the migrate Job creates the extension (SMO_TIMESCALEDB=require). With `postgres.tls.enabled`, the server arguments that switch TLS on and name
+          # the certificate, the key and the hba file follow.
           args:
+            - -c
+            - shared_preload_libraries=timescaledb
+            - -c
+            - timescaledb.telemetry_level=off
+          {{- if .Values.postgres.tls.enabled }}
+            # PR-SEC-2.4: TLS from the network only (the hba file below: `hostssl`, plain `host` rejected); the modules verify the certificate (sslmode=verify-full)
             - -c
             - ssl=on
             - -c
@@ -80,6 +86,8 @@ spec:
             - { name: POSTGRES_USER, value: smo }
             - { name: POSTGRES_DB, value: smo }
             - { name: POSTGRES_PASSWORD_FILE, value: /run/secrets/db_password }
+            - { name: NO_TS_TUNE, value: "true" }           # the TimescaleDB image's start-up tuning off: the resources above size the pod, not a guess from the node
+            - { name: TIMESCALEDB_TELEMETRY, value: "off" }
           readinessProbe:
             exec: { command: ["pg_isready", "-U", "smo"] }
             periodSeconds: 5

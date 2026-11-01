@@ -184,13 +184,13 @@ TLS_ON = ("--set", "postgres.tls.enabled=true", "--set", "postgres.tls.certManag
 
 @helm
 def test_chart_default_has_no_postgres_tls_and_no_url_parameter():
-    """Rendered with default values the chart has no pg_hba ConfigMap, no certificate, no Postgres arguments and no TLS parameter in any URL. Needs
-    helm.
+    """Rendered with default values the chart has no pg_hba ConfigMap, no certificate, no TLS argument to Postgres (only the TimescaleDB preload and its
+    telemetry off, D8) and no TLS parameter in any URL. Needs helm.
     """
     docs = _render()
     assert not _by(docs, "ConfigMap", "postgres-hba") and not [d for d in docs if d["kind"] == "Certificate"]
     sts = _by(docs, "StatefulSet", "postgres")[0]
-    assert "args" not in sts["spec"]["template"]["spec"]["containers"][0]
+    assert sts["spec"]["template"]["spec"]["containers"][0]["args"] == ["-c", "shared_preload_libraries=timescaledb", "-c", "timescaledb.telemetry_level=off"]
     text = yaml.safe_dump_all(docs)
     assert "sslrootcert" not in text and "pg-tls" not in text
 

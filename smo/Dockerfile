@@ -18,6 +18,12 @@ RUN pip install --no-cache-dir --require-hashes -r /srv/requirements.txt
 ARG WITH_TRACING=0
 COPY requirements/tracing.txt /srv/requirements-tracing.txt
 RUN if [ "$WITH_TRACING" = "1" ]; then pip install --no-cache-dir --require-hashes -r /srv/requirements-tracing.txt; fi
+# The Kafka client of the event-bus relay (ADR 0006 slice 1, D9) is optional the same way: installed only with --build-arg WITH_KAFKA=1 (docker compose:
+# SMO_WITH_KAFKA=1 docker compose --profile kafka up --build). Without it the images are unchanged, and a worker told to relay (SMO_KAFKA_RELAY=true)
+# refuses to start, naming this argument (smo_shared/kafka_relay.py).
+ARG WITH_KAFKA=0
+COPY requirements/kafka.txt /srv/requirements-kafka.txt
+RUN if [ "$WITH_KAFKA" = "1" ]; then pip install --no-cache-dir --require-hashes -r /srv/requirements-kafka.txt; fi
 
 COPY shared /srv/shared
 RUN pip install --no-cache-dir --no-deps -e /srv/shared

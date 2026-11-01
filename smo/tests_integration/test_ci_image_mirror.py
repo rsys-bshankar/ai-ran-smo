@@ -379,7 +379,7 @@ def test_docker_compose_accepts_the_generated_override_and_merges_it(tmp_path):
     merged = subprocess.run([*base, "-f", str(override), "--profile", "*", "config", "--format", "json"], capture_output=True, text=True, check=False)  # noqa: S603
     assert merged.returncode == 0, merged.stderr
     services = json.loads(merged.stdout)["services"]
-    assert services["postgres"]["image"] == switched[ci.upstream_ref(next(e for e in entries if e.source == "postgres:18-alpine"))]
+    assert services["postgres"]["image"] == switched[ci.upstream_ref(next(e for e in entries if e.source == "timescale/timescaledb:2.31.0-pg18"))]
     assert services["sme"]["build"]["additional_contexts"]
     empty = tmp_path / "empty.yml"
     empty.write_text(ci.compose_override({}, {}))

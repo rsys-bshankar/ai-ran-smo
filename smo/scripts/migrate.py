@@ -16,6 +16,12 @@ ones had taken on other modules' tables and stalled their reads for as long as i
 time fails, the transaction rolls back (releasing every lock it held, and changing nothing), and the upgrade is tried again after a
 pause that doubles from 1 s to 10 s, up to `SMO_MIGRATE_LOCK_ATTEMPTS` attempts (default 10); then the error ends the process.
 
+Before the upgrade it creates the TimescaleDB extension (D8, plan task S1.10) as `SMO_TIMESCALEDB` says: `auto` (the default) creates it when the
+server has it (`pg_available_extensions`) and goes on without it otherwise, `require` refuses to migrate a server without it (compose and the chart's
+bundled Postgres set this: their image is timescale/timescaledb), `off` never touches it. The `common_dme_telemetry` hypertables are S1.9's revisions,
+which can rely on the extension then. Creating it needs a role that may (the bootstrap superuser `smo` of compose and the bundled Postgres; on a managed
+Postgres, the operator's choice: `docs/CONFIGURATION.md`).
+
 A database that has the schema but no `alembic_version` table was created from `migrations/001_init.sql` directly
 (docker compose's initdb does this): it is stamped at the baseline revision first, so it is upgraded from there,
 never re-created. An empty database runs the baseline.
@@ -131,6 +137,32 @@ def _with_lock_retries(connection, run, sleep=time.sleep) -> None:
             pause = min(pause * 2, 10.0)
 
 
+TIMESCALEDB_MODES = ("auto", "require", "off")
+
+
+def ensure_timescaledb(connection, mode: str | None = None) -> str:
+    """Creates the TimescaleDB extension on `connection`'s database as `mode` (default `SMO_TIMESCALEDB`, else `auto`) says, and returns what it did:
+    `created` (now present, whether it was before or not), `unavailable` (auto, and the server has no such extension), `skipped` (off, or not Postgres).
+
+    `require` on a server without the extension raises SystemExit naming the variable, so the migration stops before any revision runs; any other mode is
+    refused the same way. The extension's own version is the image's (no `VERSION` clause): `ALTER EXTENSION timescaledb UPDATE` after an image bump is an
+    operator step, as TimescaleDB documents it.
+    """
+    mode = (mode if mode is not None else os.environ.get("SMO_TIMESCALEDB", "")).strip().lower() or "auto"
+    if mode not in TIMESCALEDB_MODES:
+        raise SystemExit(f"SMO_TIMESCALEDB must be one of {', '.join(TIMESCALEDB_MODES)}, not {mode!r}")
+    if mode == "off" or connection.dialect.name != "postgresql":
+        return "skipped"
+    available = connection.exec_driver_sql("SELECT 1 FROM pg_available_extensions WHERE name = 'timescaledb'").first() is not None
+    if not available:
+        if mode == "require":
+            raise SystemExit("SMO_TIMESCALEDB=require, but this Postgres has no timescaledb extension (use an image with it, e.g. timescale/timescaledb)")
+        return "unavailable"
+    connection.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS timescaledb")
+    connection.commit()
+    return "created"
+
+
 def schema_is_current(db_revision: str | None, image_revisions: list[str]) -> bool:
     """Whether a database at `db_revision` can serve code whose revision history is `image_revisions` (head first): it is at that head, or past it
     (a revision this image does not know is a later one: the previous release's code runs on a newer schema, by the expand/contract rule)."""
@@ -192,6 +224,8 @@ def main() -> int:
         if args.downgrade:
             print(f"downgraded to {downgrade(connection, args.downgrade) or '(none)'}")
             return 0
+        timescaledb = ensure_timescaledb(connection)
+        print(f"timescaledb: {timescaledb}", flush=True)
         legacy = is_legacy(connection)
         revision = migrate(connection, args.revision)
         if args.revision == "head" and revision not in image_revisions(connection):

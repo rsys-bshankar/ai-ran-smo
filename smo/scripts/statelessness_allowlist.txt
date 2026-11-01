@@ -10,7 +10,6 @@ shared/smo_shared/mtls.py:module-state:_lock  # guards that cache only
 shared/smo_shared/health.py:background-work:ThreadPoolExecutor  # one short-lived pool per /ready request, only to bound the readiness checks by a timeout; holds no state between requests (PR-ST-7)
 shared/smo_shared/metrics.py:global-statement:_pool_collector  # a once-per-process flag so the pool gauges register once; the gauges read the engine's own pool at scrape time and metrics are per process by design (PR-OBS-2.4)
 shared/smo_shared/metrics.py:module-state:_worker_last_success  # the last-success time of this worker process's own tasks, shown as a gauge on the worker's own /metrics; metrics are per process by design and nothing reads it as state (PR-OBS-4)
-shared/smo_shared/events.py:module-state:_tables  # whether a SQLite database has the event table, asked once per engine; Postgres is never asked (revision 0042 always made it), so in a deployment it holds nothing, and it is identical in every replica (PR-MSG-3)
 shared/smo_shared/metrics.py:module-state:_worker_lock  # guards that dict only
 shared/smo_shared/metrics.py:module-state:_retention_off_rows  # the last row estimate this worker process made for a table whose retention is off, shown as a gauge on the worker's own /metrics; per process by design, nothing reads it as state (DB-3.10)
 shared/smo_shared/retention.py:module-state:_warned  # the UTC day this process last logged the large-table warning for a table, so it logs once a day; a second worker may log again, which is only log noise (DB-3.10)

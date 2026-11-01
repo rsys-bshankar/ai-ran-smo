@@ -60,16 +60,25 @@ x-db-env: &db_env
   SMO_IDENTITY_PREVIOUS_KEY: ${SMO_IDENTITY_PREVIOUS_KEY:-}
 
 services:
+  # Postgres 18 with the TimescaleDB extension (D8, plan task S1.10): the official Postgres 18 alpine image with TimescaleDB built in, the same image the
+  # Contracts job applies the bundle's DDL to, so the stack and the contract gate run one database. Same data layout, user (uid 70) and PGDATA as the
+  # postgres:18-alpine image it replaces, so an existing volume starts unchanged. The library is preloaded here (not only by the image's first-start
+  # script) so that a volume made by the stock image gets it too; the `migrate` service creates the extension (SMO_TIMESCALEDB=require). The image's
+  # start-up tuning (timescaledb-tune) and its telemetry are off: the settings stay the ones below, and nothing is reported to Timescale.
+  # The common_dme_telemetry hypertables are S1.9's revisions, not this file's.
   postgres:
-    image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+    image: timescale/timescaledb:2.31.0-pg18@sha256:0fcff5761363809d1242f2261a3482197b5a5337407f8b97a976fb174206d579
     environment:
       POSTGRES_USER: smo
       POSTGRES_PASSWORD_FILE: /run/secrets/db_password   # the official image reads the password from this file
       POSTGRES_DB: smo
+      NO_TS_TUNE: "true"
+      TIMESCALEDB_TELEMETRY: "off"
     secrets: [db_password]
     # Slow-statement log (PR-DB-4.1): any statement running longer than POSTGRES_SLOW_QUERY_MS (default 500 ms)
     # is logged with its duration and text: `docker compose logs postgres | grep duration`. -1 turns it off, 0 logs all.
-    command: ["postgres", "-c", "log_min_duration_statement=${POSTGRES_SLOW_QUERY_MS:-500}"]
+    command: ["postgres", "-c", "log_min_duration_statement=${POSTGRES_SLOW_QUERY_MS:-500}", "-c", "shared_preload_libraries=timescaledb",
+              "-c", "timescaledb.telemetry_level=off"]
     volumes:
       # PostgreSQL 18+ images keep data in a version-named subdirectory of
       # /var/lib/postgresql, so the volume mounts there (not at .../data).
@@ -159,6 +168,7 @@ services:
     environment:
       SMO_DATABASE_URL: postgresql+psycopg://smo@postgres:5432/smo
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password
+      SMO_TIMESCALEDB: require    # D8: this Postgres has TimescaleDB; migrate creates the extension before the revisions run (scripts/migrate.py)
 
   r1-termination:
     build: { context: ., args: { <<: *build_info, MODULE: r1-termination, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
@@ -244,8 +254,12 @@ services:
       SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway (DOC-CF-3.1)
 
   # Call flow 12d: the same image, run as a worker. It purges DME data records older than SMO_RETENTION_DME_RECORDS_DAYS (dme/app/tasks.py).
+  # D9 (ADR 0006, profile `kafka`): this worker is also the Kafka relay when SMO_KAFKA_RELAY=true (smo_shared/kafka_relay.py): every event committed to smo_event
+  # goes, in order per entity, to the topic SMO_KAFKA_EVENTS_TOPIC. Off by default; the image needs the client (SMO_WITH_KAFKA=1):
+  #   SMO_WITH_KAFKA=1 SMO_KAFKA_RELAY=true docker compose --profile kafka up -d --build
+  # PLAINTEXT is the lab broker's protocol on the compose network (the relay warns at start); a real cluster: SSL or SASL_SSL (docs/EVENTS.md, "Kafka").
   dme-worker:
-    build: { context: ., args: { <<: *build_info, MODULE: dme, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., args: { <<: *build_info, MODULE: dme, WITH_TRACING: "${SMO_WITH_TRACING:-0}", WITH_KAFKA: "${SMO_WITH_KAFKA:-0}" } }
     command: ["python", "-m", "smo_shared.worker"]
     stop_grace_period: 30s
     secrets: [db_password_dme, enrollment_secret]
@@ -262,6 +276,11 @@ services:
       SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway (DOC-CF-3.1)
       SMO_RETENTION_DME_RECORDS_DAYS: ${SMO_RETENTION_DME_RECORDS_DAYS:-0}
       SMO_RETENTION_WARN_ROWS: ${SMO_RETENTION_WARN_ROWS:-1000000}
+      SMO_KAFKA_RELAY: ${SMO_KAFKA_RELAY:-false}
+      SMO_KAFKA_BOOTSTRAP_SERVERS: ${SMO_KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+      SMO_KAFKA_SECURITY_PROTOCOL: ${SMO_KAFKA_SECURITY_PROTOCOL:-PLAINTEXT}
+      SMO_KAFKA_EVENTS_TOPIC: ${SMO_KAFKA_EVENTS_TOPIC:-smo.events.v1}
+      SMO_KAFKA_RELAY_SETTLE_SECONDS: ${SMO_KAFKA_RELAY_SETTLE_SECONDS:-3}
 
   onboarding:
     build: { context: ., args: { <<: *build_info, MODULE: onboarding, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
@@ -945,6 +964,141 @@ services:
     volumes:
       - ./deploy/helm/smo/files/observability/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/smo.yaml:ro
 
+  # The object store (D10, plan task S1.10), profile `objectstore`: SeaweedFS (Apache-2.0) with its S3 API on objectstore:8333, one data volume, the access and
+  # secret key from secret files (scripts/init_secrets.sh), written into the S3 identity file in /tmp at start (never into the image or the environment).
+  # `objectstore-init` creates the three buckets (models, csars, cold-parquet) with smo_shared.objectstore, which is what the modules will use (S2.5 moves the
+  # model artifacts there; nothing does yet). The S3 port is published on this machine's loopback only.
+  #   docker compose --profile objectstore up -d objectstore objectstore-init
+  objectstore:
+    profiles: ["objectstore"]
+    image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    user: "1000:1000"                  # the image's seaweed user, which owns /data in the image and so in a new volume
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: ["/tmp"]
+    secrets: [objectstore_access_key, objectstore_secret_key]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        umask 077 &&
+        printf '{"identities":[{"name":"smo","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","List","Tagging","Write"]}]}'
+        "$$(cat /run/secrets/objectstore_access_key)" "$$(cat /run/secrets/objectstore_secret_key)" > /tmp/s3.json &&
+        exec /usr/bin/weed -logtostderr=true server -dir=/data -ip=objectstore -ip.bind=0.0.0.0 -master.volumeSizeLimitMB=1024 -volume.max=0
+        -s3 -s3.port=8333 -s3.config=/tmp/s3.json
+    volumes:
+      - smo_objectstore:/data
+    ports: ["127.0.0.1:8333:8333"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8333/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+  objectstore-init:
+    profiles: ["objectstore"]
+    build: { context: ., args: { <<: *build_info, MODULE: r1-termination } }    # any service image carries smo_shared; the migrate service's build
+    stop_grace_period: 30s
+    command: ["python", "-m", "smo_shared.objectstore", "ensure-buckets"]
+    restart: "no"
+    <<: *hardening
+    secrets: [objectstore_access_key, objectstore_secret_key]
+    depends_on: { objectstore: { condition: service_healthy } }
+    environment: &objectstore_env
+      SMO_OBJECTSTORE_URL: http://objectstore:8333
+      SMO_OBJECTSTORE_ACCESS_KEY_FILE: /run/secrets/objectstore_access_key
+      SMO_OBJECTSTORE_SECRET_KEY_FILE: /run/secrets/objectstore_secret_key
+
+  # MinIO, profile `minio`: the same S3 API on minio:9000 instead of SeaweedFS, for an operator who runs MinIO already. MinIO is AGPL-3.0 (D10 keeps it optional,
+  # README "Object store"), and MinIO publishes no community image any more: this is Bitnami's last build of 2025.7.23, frozen (bitnamilegacy, no further
+  # updates). A lab convenience, not a store to run in production; production points SMO_OBJECTSTORE_URL at a MinIO or S3 the operator runs.
+  #   docker compose --profile minio up -d minio minio-init
+  minio:
+    profiles: ["minio"]
+    image: bitnamilegacy/minio:2025.7.23-debian-12-r5@sha256:6dabb4a2088c9a79908de3bc05f4586c23ad2182c8908e7e3acbf61c1467fb20
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    secrets: [objectstore_access_key, objectstore_secret_key]
+    environment:
+      MINIO_ROOT_USER_FILE: /run/secrets/objectstore_access_key
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/objectstore_secret_key
+      MINIO_BROWSER: "off"
+    volumes:
+      - smo_minio:/bitnami/minio/data
+    ports: ["127.0.0.1:9000:9000"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/minio/health/live > /dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+  minio-init:
+    profiles: ["minio"]
+    build: { context: ., args: { <<: *build_info, MODULE: r1-termination } }
+    stop_grace_period: 30s
+    command: ["python", "-m", "smo_shared.objectstore", "ensure-buckets"]
+    restart: "no"
+    <<: *hardening
+    secrets: [objectstore_access_key, objectstore_secret_key]
+    depends_on: { minio: { condition: service_healthy } }
+    environment:
+      <<: *objectstore_env
+      SMO_OBJECTSTORE_URL: http://minio:9000
+
+  # Kafka (D9, ADR 0006 slice 3), profile `kafka`: one broker and controller (KRaft, no ZooKeeper), PLAINTEXT on the compose network only (no port on the host;
+  # ADR 0006 Q5: a lab broker). The broker S3.23 will share with smo-teiv: topics are named per owner (smo.<owner>[.<stream>].v<N>, smo_shared/kafka_settings.py),
+  # so per-owner ACLs (PR-CONV-S1.15) can be added without renaming, and smo-teiv's ingestion topic (smo.teiv....) is not created here and is no module's but
+  # TE&IV's. `kafka-init` creates the event bus's topic smo.events.v1 (6 partitions by default, one replica: one broker); the DME worker relays to it.
+  kafka:
+    profiles: ["kafka"]
+    image: apache/kafka:3.9.1@sha256:4ceccc577f03f51f6af8dbfda55194d0d892f4fa7913ffbded567ce3895622ed
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"     # a topic exists because kafka-init (or the platform team) made it, never because a client named it
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    volumes:
+      - smo_kafka:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 15s
+
+  kafka-init:
+    profiles: ["kafka"]
+    image: apache/kafka:3.9.1@sha256:4ceccc577f03f51f6af8dbfda55194d0d892f4fa7913ffbded567ce3895622ed
+    restart: "no"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on: { kafka: { condition: service_healthy } }
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic $${SMO_KAFKA_EVENTS_TOPIC}
+        --partitions $${SMO_KAFKA_PARTITIONS} --replication-factor $${SMO_KAFKA_REPLICATION}
+    environment:
+      SMO_KAFKA_EVENTS_TOPIC: ${SMO_KAFKA_EVENTS_TOPIC:-smo.events.v1}
+      SMO_KAFKA_PARTITIONS: ${SMO_KAFKA_PARTITIONS:-6}
+      SMO_KAFKA_REPLICATION: ${SMO_KAFKA_REPLICATION:-1}
+
   gui:
     build: { context: ./gui }
     <<: *hardening
@@ -952,6 +1106,10 @@ services:
     ports: ["3000:8080"]
 
 secrets:
+  objectstore_access_key:         # the object store's access key id and secret key (profiles objectstore, minio), created by scripts/init_secrets.sh
+    file: ./secrets/objectstore_access_key
+  objectstore_secret_key:
+    file: ./secrets/objectstore_secret_key
   db_password:
     file: ./secrets/db_password   # created by scripts/init_secrets.sh; git-ignored
   db_password_onboarding:         # the password of the role smo_onboarding (PR-DB-2.6), set by scripts/db_roles.py
@@ -1003,6 +1161,9 @@ networks:
   default:
 
 volumes:
+  smo_objectstore:
+  smo_minio:
+  smo_kafka:
   smo_pgdata:
   smo_backup_staging:
   smo_scratch:

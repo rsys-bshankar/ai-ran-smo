@@ -1,8 +1,14 @@
 # ADR 0006 — MSG-3.4: Kafka beside the table-backed event bus, behind an optional extra
 
-> **Status: decided October 2026, not implemented.** The design below was written against `origin/main` at 2d54a8f and re-checked against bb197a2 (details corrected
-> where the repository differs). The owner decided yes on all five questions of section 8; the answers are recorded in section 9, "Decisions". Nothing is built:
-> no code, packaging, compose profile, CI job or migration exists yet. The slices are in section 7; `OPEN_ITEMS.md` (`MSG-3.4`, `SB-7.6`, `NB-1.3`) points here.
+> **Status: decided October 2026; slices 1–3 built on 1 November 2026 (plan task S1.10, `HISTORY.md` PR-CONV-S1.10 and MSG-3.4).** The design below was
+> written against `origin/main` at 2d54a8f and re-checked against bb197a2 (details corrected where the repository differs). The owner decided yes on all five
+> questions of section 8; the answers are recorded in section 9, "Decisions". **Built:** slice 1 (the `kafka` extra, `requirements/kafka.txt` with confluent-kafka
+> 2.16.0, the `WITH_KAFKA` build argument), slice 2 (`smo_shared/kafka_settings.py`, `kafka_relay.py`, revision 0064 `smo_event_relay`, the `kafka-relay` worker task
+> with the settle delay, the `event-purge` hold, the metrics) and slice 3 (the compose profile `kafka`, `scripts/kafka_roundtrip.py`, the CI job `compose-kafka`).
+> As built, differing from the text below: the relay runs once per worker tick (default 5 s) and drains batches for up to 15 s (section 3.2's fallback), not a
+> 20 s LISTEN loop; topics follow `smo.<owner>[.<stream>].v<N>` and the relay refuses `smo.teiv.*` (the broker S3.23 shares with smo-teiv); kafka-init creates
+> `smo.events.v1` only (`smo.ves.in.v1` comes with slice 4). **Not built:** slice 4 (SB-7.6) and slice 5 (chart, alert and runbook: `OPEN_ITEMS.md` MSG-3.7).
+> `OPEN_ITEMS.md` (`MSG-3.7`, `SB-7.6`, `NB-1.3`) points here.
 
 Paths are relative to `smo/` unless they start with `.github`. Nothing was built, compiled or run; PyPI facts were fetched on 2026-10-14.
 

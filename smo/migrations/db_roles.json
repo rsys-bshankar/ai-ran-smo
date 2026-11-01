@@ -4,7 +4,8 @@
   "schema": "onboarding",
   "shared": [
    "module_identity",
-   "smo_event"
+   "smo_event",
+   "smo_event_relay"
   ]
  },
  "mlmr": {
@@ -49,7 +50,8 @@
    "notification_outbox",
    "idempotency_key",
    "periodic_run",
-   "smo_event"
+   "smo_event",
+   "smo_event_relay"
   ]
  },
  "samples/energy-saving-rapp": {
@@ -59,7 +61,8 @@
    "idempotency_key",
    "notification_outbox",
    "periodic_run",
-   "smo_event"
+   "smo_event",
+   "smo_event_relay"
   ]
  },
  "samples/mobility-optimization-rapp": {
@@ -68,7 +71,8 @@
    "module_identity",
    "notification_outbox",
    "periodic_run",
-   "smo_event"
+   "smo_event",
+   "smo_event_relay"
   ]
  },
  "samples/coverage-optimization-rapp": {
@@ -77,7 +81,8 @@
    "module_identity",
    "notification_outbox",
    "periodic_run",
-   "smo_event"
+   "smo_event",
+   "smo_event_relay"
   ]
  },
  "samples/traffic-steering-rapp": {
@@ -86,7 +91,8 @@
    "module_identity",
    "notification_outbox",
    "periodic_run",
-   "smo_event"
+   "smo_event",
+   "smo_event_relay"
   ]
  },
  "sme": {
@@ -104,7 +110,8 @@
    "notification_outbox",
    "idempotency_key",
    "periodic_run",
-   "smo_event"
+   "smo_event",
+   "smo_event_relay"
   ]
  },
  "nfo": {
@@ -112,7 +119,8 @@
   "shared": [
    "module_identity",
    "idempotency_key",
-   "smo_event"
+   "smo_event",
+   "smo_event_relay"
   ]
  },
  "rapp-mgmt": {
@@ -124,14 +132,16 @@
    "periodic_run",
    "audit_log",
    "audit_head",
-   "smo_event"
+   "smo_event",
+   "smo_event_relay"
   ]
  },
  "focom": {
   "schema": "focom",
   "shared": [
    "notification_outbox",
-   "smo_event"
+   "smo_event",
+   "smo_event_relay"
   ]
  },
  "aimgf": {
@@ -141,7 +151,8 @@
    "notification_outbox",
    "idempotency_key",
    "periodic_run",
-   "smo_event"
+   "smo_event",
+   "smo_event_relay"
   ]
  },
  "ran-nf-oam": {
@@ -153,7 +164,8 @@
    "periodic_run",
    "audit_log",
    "audit_head",
-   "smo_event"
+   "smo_event",
+   "smo_event_relay"
   ]
  },
  "r1-termination": {

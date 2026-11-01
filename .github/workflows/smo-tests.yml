@@ -851,6 +851,147 @@ jobs:
         working-directory: smo
         run: docker compose --profile tracing --profile logging down -v
 
+  # Plan task S1.10 (D8, D10): the stores the converged stack runs on. The stack's Postgres is the TimescaleDB image and `migrate` creates the extension: a
+  # hypertable takes rows and gives them back (scripts/timescaledb_roundtrip.sh). The `objectstore` profile (SeaweedFS) and the optional `minio` profile:
+  # smo_shared.objectstore creates the three buckets and puts, reads back (SHA-256 equal both ways), lists and deletes an object in each; a wrong key is refused.
+  # Not a required check (it is new; ADR 0006 Q3's rule for compose-kafka applies here too).
+  compose-stores:
+    name: Store profiles round trip (TimescaleDB, SeaweedFS, MinIO)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      COMPOSE_FILE: docker-compose.yml:.ci-mirror/docker-compose.mirror.yml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
+
+      - name: Create the secret files and .env
+        working-directory: smo
+        run: |
+          scripts/init_secrets.sh
+          cp .env.example .env
+
+      - name: Postgres with TimescaleDB, migrated
+        working-directory: smo
+        run: |
+          for profile in objectstore minio kafka; do docker compose --profile "$profile" config --quiet; done
+          docker compose up -d --build postgres migrate
+          for i in $(seq 1 60); do
+            [ "$(docker compose ps -a migrate --format json | jq -rs '.[0] | "\(.State) \(.ExitCode)"')" = "exited 0" ] && break
+            sleep 3
+          done
+          docker compose logs migrate | grep -q "timescaledb: created"
+
+      - name: A hypertable insert and select
+        working-directory: smo
+        run: scripts/timescaledb_roundtrip.sh
+
+      - name: SeaweedFS, three buckets, put and get with the SHA-256
+        working-directory: smo
+        run: |
+          docker compose --profile objectstore up -d --build objectstore objectstore-init
+          for i in $(seq 1 60); do
+            [ "$(docker compose --profile objectstore ps -a objectstore-init --format json | jq -rs '.[0] | "\(.State) \(.ExitCode)"')" = "exited 0" ] && break
+            sleep 3
+          done
+          docker compose --profile objectstore logs objectstore-init | grep -q "buckets: smo-models, smo-csars, smo-cold-parquet"
+          docker compose --profile objectstore run --rm --no-deps objectstore-init python -m smo_shared.objectstore roundtrip
+          if docker compose --profile objectstore run --rm --no-deps -e SMO_OBJECTSTORE_SECRET_KEY_FILE= -e SMO_OBJECTSTORE_SECRET_KEY=wrong \
+               objectstore-init python -m smo_shared.objectstore roundtrip > wrong-key.log 2>&1; then
+            echo "::error::the object store accepted a wrong secret key"; exit 1
+          fi
+          grep -q "403 SignatureDoesNotMatch" wrong-key.log
+
+      - name: MinIO (optional profile), the same round trip
+        working-directory: smo
+        run: |
+          docker compose --profile minio up -d minio
+          docker compose --profile minio run --rm --no-deps minio-init python -m smo_shared.objectstore roundtrip
+
+      - name: Dump logs on failure
+        if: failure()
+        working-directory: smo
+        run: |
+          docker compose --profile objectstore --profile minio ps -a
+          docker compose --profile objectstore --profile minio logs --no-color --tail=200 postgres migrate objectstore objectstore-init minio minio-init
+
+      - name: Tear down
+        if: always()
+        working-directory: smo
+        run: docker compose --profile objectstore --profile minio down -v
+
+  # ADR 0006 slice 3 (plan task S1.10, D9): the `kafka` profile (one KRaft broker) and the relay in the DME worker, built with the Kafka client (WITH_KAFKA=1).
+  # Events published to smo_event come out of smo.events.v1 in order, keyed by their entity, with the CloudEvents headers; with the broker stopped, events wait in
+  # Postgres and arrive in order once it is back (scripts/kafka_roundtrip.py). The small variant of ADR 0006 section 5: Postgres, migrate, the broker and one
+  # worker image. Not a required check until about 20 green runs (ADR 0006 Q3).
+  compose-kafka:
+    name: Kafka profile round trip
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      COMPOSE_FILE: docker-compose.yml:.ci-mirror/docker-compose.mirror.yml
+      SMO_WITH_KAFKA: "1"
+      SMO_KAFKA_RELAY: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
+
+      - name: Create the secret files and .env
+        working-directory: smo
+        run: |
+          scripts/init_secrets.sh
+          cp .env.example .env
+
+      - name: Broker, topic and the relaying DME worker
+        working-directory: smo
+        run: |
+          docker compose --profile kafka config --quiet
+          docker compose --profile kafka up -d --build postgres migrate kafka kafka-init dme-worker
+          for i in $(seq 1 60); do
+            [ "$(docker compose --profile kafka ps -a kafka-init --format json | jq -rs '.[0] | "\(.State) \(.ExitCode)"')" = "exited 0" ] && break
+            sleep 3
+          done
+          docker compose --profile kafka logs kafka-init | grep -q "smo.events.v1"
+          for i in $(seq 1 30); do docker compose logs dme-worker | grep -q '"task": "kafka-relay"' && break; sleep 2; done
+          docker compose logs dme-worker | grep -q '"task": "kafka-relay"'
+
+      - name: Published to smo_event, read back from the topic in order, across a broker outage
+        working-directory: smo
+        run: |
+          rt() { docker compose run --rm --no-deps -T -v "$PWD/scripts:/srv/rt:ro" dme-worker python /srv/rt/kafka_roundtrip.py "$@"; }
+          subject="ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          rt publish --subject "$subject" --first 0 --count 5
+          rt expect --subject "$subject" --count 5 --timeout 90
+          docker compose --profile kafka stop kafka
+          rt publish --subject "$subject" --first 5 --count 3
+          sleep 10
+          docker compose --profile kafka start kafka
+          rt expect --subject "$subject" --count 8 --timeout 180
+
+      - name: Dump logs on failure
+        if: failure()
+        working-directory: smo
+        run: |
+          docker compose --profile kafka ps -a
+          docker compose --profile kafka logs --no-color --tail=200 postgres migrate kafka kafka-init dme-worker
+
+      - name: Tear down
+        if: always()
+        working-directory: smo
+        run: docker compose --profile kafka down -v
+
   # PR-SEC-2: mutual TLS between the services (docker-compose.mtls.yml). Every service requires a client certificate from the development CA
   # (scripts/mtls_certs.py), every call between modules presents one, and the whole runbook replays over it; a client with no certificate, or with one
   # from another CA, is refused by every service, and plain http gets no answer.

@@ -33,11 +33,11 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `sdk` | 15 | 183 | 212 |
 | `sdk-go` | 9 | 66 | — |
 | `sdk-java` | 8 | 58 | — |
-| `shared` | 50 | 663 | 1118 |
+| `shared` | 53 | 692 | 1172 |
 | `sme` | 5 | 122 | 140 |
 | `so-smos` | 3 | 28 | 44 |
-| `tests_integration` | 99 | 771 | 952 |
-| **total** | **422** | **5435** | **7838** (Python) |
+| `tests_integration` | 99 | 774 | 957 |
+| **total** | **425** | **5467** | **7897** (Python) |
 
 ## Per test file
 
@@ -476,7 +476,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 
 </details>
 
-<details><summary><code>shared</code>: 50 files</summary>
+<details><summary><code>shared</code>: 53 files</summary>
 
 | file | test functions | collected tests |
 |---|---:|---:|
@@ -491,18 +491,21 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests/test_db_engine.py` | 15 | 15 |
 | `tests/test_db_url.py` | 8 | 15 |
 | `tests/test_errors_exact.py` | 10 | 21 |
-| `tests/test_events.py` | 15 | 15 |
+| `tests/test_events.py` | 16 | 16 |
 | `tests/test_fake_dme.py` | 4 | 4 |
 | `tests/test_health.py` | 13 | 14 |
 | `tests/test_idempotency.py` | 12 | 27 |
 | `tests/test_idempotency_exact.py` | 18 | 18 |
 | `tests/test_identity_secrets.py` | 25 | 30 |
 | `tests/test_integrity_handlers.py` | 2 | 6 |
+| `tests/test_kafka_relay.py` | 11 | 11 |
+| `tests/test_kafka_settings.py` | 7 | 24 |
 | `tests/test_logconfig.py` | 22 | 33 |
 | `tests/test_metrics.py` | 17 | 19 |
 | `tests/test_module_identity.py` | 14 | 25 |
 | `tests/test_mtls.py` | 18 | 33 |
 | `tests/test_mutation_survivors.py` | 9 | 11 |
+| `tests/test_objectstore.py` | 10 | 18 |
 | `tests/test_on_behalf_of.py` | 11 | 11 |
 | `tests/test_openapi_security.py` | 3 | 3 |
 | `tests/test_operator_ui.py` | 39 | 75 |
@@ -616,7 +619,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests_integration/test_load_run.py` | 8 | 8 |
 | `tests_integration/test_logging_adoption.py` | 2 | 2 |
 | `tests_integration/test_metrics_adoption.py` | 2 | 2 |
-| `tests_integration/test_migrations.py` | 22 | 28 |
+| `tests_integration/test_migrations.py` | 25 | 33 |
 | `tests_integration/test_mirror_images.py` | 31 | 35 |
 | `tests_integration/test_mobility_optimization_rapp.py` | 7 | 7 |
 | `tests_integration/test_model_ownership.py` | 7 | 7 |

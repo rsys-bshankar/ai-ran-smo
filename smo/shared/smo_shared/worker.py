@@ -27,6 +27,10 @@ lease, `outbox.LEASE_SECONDS`, runs out). It is one task for the whole database,
 Every worker also runs the **event purge** (PR-MSG-3, `event-purge`): the events of the shared feed `smo_event` older than `SMO_EVENT_RETENTION_HOURS` are deleted
 (events.py). One task for the whole database, every `SMO_EVENT_PURGE_SECONDS` (default 300); `SMO_EVENT_PURGE=false` leaves it out of a worker.
 
+A worker with `SMO_KAFKA_RELAY=true` also runs the **Kafka relay** (ADR 0006, `kafka-relay`, smo_shared/kafka_relay.py): the feed's events after commit to a
+Kafka topic, in order per entity. One task for the whole database, every `SMO_KAFKA_RELAY_INTERVAL_SECONDS` (default 1, so as often as the tick allows); the
+worker refuses to start when the relay is on and cannot run (no Kafka client in the image, a setting missing).
+
   tick(tasks, ...)   offer every task once; returns {name: "ran" | "skipped" | "failed"}. The loop's body, and what the tests call.
 """
 
@@ -160,7 +164,8 @@ def main(tasks: list[Task] | None = None, *, module: str | None = None, stop: th
     check_configuration()                      # a wrongly set identity key stops the worker at start (SEC-15.18)
     tasks = load_tasks() if tasks is None else tasks
     # The shared tasks are added to every worker unless the module already declared a task of that name.
-    for shared_task in (outbox_sweep_task(), event_purge_task()):
+    from .kafka_relay import kafka_relay_task
+    for shared_task in (outbox_sweep_task(), event_purge_task(), kafka_relay_task()):
         if shared_task is not None and all(t.name != shared_task.name for t in tasks):
             tasks = [*tasks, shared_task]
     port = os.environ.get("SMO_WORKER_METRICS_PORT", "").strip()

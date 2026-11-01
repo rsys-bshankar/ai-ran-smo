@@ -20,6 +20,11 @@ tracing = [
     "opentelemetry-sdk>=1.25",
     "opentelemetry-exporter-otlp-proto-http>=1.25",
 ]
+# The event-bus relay to Kafka (smo_shared/kafka_relay.py, ADR 0006 slice 1, D9): imported only when SMO_KAFKA_RELAY is on. Pinned and hashed in
+# requirements/kafka.txt; images get it with --build-arg WITH_KAFKA=1.
+kafka = [
+    "confluent-kafka>=2.16,<3",
+]
 
 [build-system]
 requires = ["setuptools>=68"]

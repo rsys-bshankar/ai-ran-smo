@@ -1734,6 +1734,33 @@ docker run --rm --network smo_default -e RAN_NF_OAM_VES_PASSWORD -e NETCONF_CRED
 The check registers the simulator as element `<its hostname>` (`GET /ran-nf-oam/o1-adaptor-endpoints` lists it). Stop with
 `docker compose --profile oran-sim down`.
 
+## The stores: TimescaleDB, the object store, Kafka (optional)
+
+The stack's Postgres is TimescaleDB (D8): nothing to turn on. `docker compose logs migrate` shows `timescaledb: created`, and
+`scripts/timescaledb_roundtrip.sh` makes a scratch hypertable, puts 72 rows into three chunks, reads them back and drops it.
+
+The object store (D10) is the profile `objectstore` (SeaweedFS, Apache-2.0; S3 API on `127.0.0.1:8333`) or, instead, `minio` (MinIO, AGPL-3.0, Bitnami's
+frozen last build; `127.0.0.1:9000`). Both use the keys `scripts/init_secrets.sh` writes to `secrets/objectstore_access_key` and `secrets/objectstore_secret_key`;
+the `*-init` service creates the buckets `smo-models`, `smo-csars` and `smo-cold-parquet`. Nothing writes to them yet (S2.5 moves the model artifacts there).
+
+```bash
+docker compose --profile objectstore up -d objectstore objectstore-init
+docker compose --profile objectstore run --rm --no-deps objectstore-init python -m smo_shared.objectstore roundtrip   # 1 MiB through each bucket, SHA-256 both ways
+docker compose --profile objectstore down
+```
+
+Kafka (D9, [ADR 0006](docs/adr/0006-msg-3-4-kafka-event-sink.md)) is the profile `kafka`: one broker (KRaft, PLAINTEXT on the compose network, no host port),
+the topic `smo.events.v1`, and the DME worker relaying every event of the feed to it. The worker image needs the client, so build with `SMO_WITH_KAFKA=1`:
+
+```bash
+SMO_WITH_KAFKA=1 SMO_KAFKA_RELAY=true docker compose --profile kafka up -d --build
+docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic smo.events.v1 --from-beginning \
+  --property print.key=true --property print.headers=true      # every alarm, rApp instance transition, ... as it is committed
+```
+
+`scripts/kafka_roundtrip.py` publishes events and reads them back in order (the CI job "Kafka profile round trip" also stops the broker in between). Stop with
+`docker compose --profile kafka down` (and `-v` to drop the topic's data).
+
 ## Known rough edges for a live walkthrough
 
 - `smo/docs/call-flows/01-rapp-onboarding-to-deployment.md`'s diagram

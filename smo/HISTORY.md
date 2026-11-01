@@ -4988,3 +4988,56 @@ imports it) and the CI workflow "TE&IV spike" (`.github/workflows/teiv-spike.yml
 - **Stage 3 rows:** PR-CONV-S3.1 and S3.4 amended; PR-CONV-S3.19 (ProvMnS read facade), S3.20 (model extension and neighbour queries), S3.21 (attributes
   and object version), S3.22 (notifications), S3.23 (packaging), S3.24 (WG10 TE&IV R1 API into `specs/`) added.
 - **Not done:** no module changed; smo-teiv's adapters and Helm chart not run; the build still downloads IETF and 3GPP YANG at build time, as upstream's does.
+- **Follow-up: the extension spike (#565, ADR 0013 section 11) and D19 confirmed.** TE&IV-owned YANG (`spikes/teiv/model/smo-teiv-ext-ran.yang`,
+  `smo-teiv-ext-oam.yang`: NRCellRelation, NEIGHBOR_CELL, CO_COVERAGE_OVERLAY, SubNetwork, CommonBeamformingFunction, NRFreqRelation, the CES, DES, DMRO,
+  DLBO and CCO functions) generated into smo-teiv 0.3.0's schema with its own `pgsql-schema-generator`, no change to smo-teiv's Java code. On 1,000 cells
+  with 8 NRCellRelation each (18,004 MOIs, 44,003 relationships), through the facade, CI p95: Q2 neighbours 10.4 ms, Q4 two-hop 58.4 ms (one request, then
+  one per neighbour in parallel), Q1 / Q3 / Q5 3.2 / 4.1 / 4.7 ms; load 31.8 s; about 2.5 GiB resident for smo-teiv, its Postgres and Kafka. The build
+  no longer downloads IETF or 3GPP YANG (the import modules come from smo-teiv's own committed schema). Three limits worked around, none needing a fork:
+  c1 no boolean type (TS 28.541 booleans as an enumeration), c2 a same-type relationship filter that works one way (NEIGHBOR_CELL written neighbour-first),
+  c3 no index on relationship side columns (the two-hop read fans out). **Decided on 1 November 2026:** the owner confirmed go: D19 reuses smo-teiv,
+  extended with model files only, accepting about 2.6 GiB at 1,000 cells. Rows: PR-CONV-S3.20 amended (model work only, the 3GPP face maps the three
+  workarounds back to TS 28.541 forms), S3.23 amended (a 3 GiB budget checked by a load test), S3.25 added (offer c1–c3 and the YANG upstream, optional).
+
+### PR-CONV-S1.10, MSG-3.4 — infrastructure profiles: TimescaleDB, the object store, the Kafka relay (ADR 0006 slices 1–3)
+
+Closed from `OPEN_ITEMS.md` (`PR-CONV-S1.10`, and `MSG-3.4`, whose done-when, a round trip against a Kafka container in a compose profile, is met). The stores of
+ADR 0008 section 3.5. The O1 simulator part of S1.10 was S0.15 (`oran-sim`, ADR 0012).
+
+- **TimescaleDB (D8).** The stack's Postgres is `timescale/timescaledb:2.31.0-pg18@sha256:0fcff576…` in compose and as the chart's bundled `postgres.image`:
+  the image the Contracts job already applied the bundle's DDL to, Postgres 18.6 alpine with TimescaleDB 2.31.0, the same uid (70), data layout and PGDATA as
+  `postgres:18-alpine`, so an existing volume starts unchanged. The server preloads the library (`-c shared_preload_libraries=timescaledb`, so a volume first made by
+  the stock image gets it too), with its telemetry and start-up tuning off (`NO_TS_TUNE`, `TIMESCALEDB_TELEMETRY=off`). `scripts/migrate.py` creates the extension
+  before the revisions run (`ensure_timescaledb`, `SMO_TIMESCALEDB`: `auto` by default, so a plain Postgres still migrates; `require` in compose and for the
+  bundled Postgres; `off`); an external Postgres follows `postgres.external.timescaledb`. The `common_dme_telemetry` hypertables are S1.9's. **CloudNativePG:** its
+  images have no TimescaleDB, so it is not a values change: the chart README says what the Cluster needs, and PR-CONV-S1.10a builds the image and the lane.
+  Measured locally: `migrate` says `timescaledb: created` and reaches 0064; `scripts/timescaledb_roundtrip.sh` puts 72 rows into a scratch hypertable (three
+  chunks) and reads them back with `time_bucket`.
+- **The object store (D10).** Compose profile `objectstore`: SeaweedFS `chrislusf/seaweedfs:4.48@sha256:4e61d15f…` (Apache-2.0), S3 API on `objectstore:8333`
+  (loopback on the host), running as the image's `seaweed` user with no capability and a read-only root; the keys come from the new secret files
+  `secrets/objectstore_access_key` / `objectstore_secret_key` (`scripts/init_secrets.sh`) and are written into the S3 identity file in `/tmp` at start.
+  Optional profile `minio`: `bitnamilegacy/minio:2025.7.23-debian-12-r5@sha256:6dabb4a2…`, AGPL-3.0 (README "Stores and optional profiles"); MinIO publishes no
+  community image any more, and quay.io was not reachable from where this was built, so the profile pins Bitnami's frozen last build, a lab convenience that gets no
+  updates. **The client** is `smo_shared/objectstore.py`: httpx (already in every image) and AWS Signature Version 4 implemented with the standard library, not
+  boto3, because the SMO needs six calls and boto3 with botocore would add about 90 MB to every image; the signer is tested against AWS's published example and
+  against botocore, and the cross-check found a double-encoding bug before it shipped. One bucket per use (`models`, `csars`, `cold-parquet`), every object put with
+  its SHA-256 as metadata (and as `x-amz-content-sha256`, which the server checks) and checked on read. `objectstore-init` / `minio-init` create the buckets
+  (`python -m smo_shared.objectstore ensure-buckets`, which waits for a store still starting: MinIO restarts once while it configures itself). Nothing uses it yet
+  (S2.5 moves the model artifacts). Not done on purpose: multipart upload, virtual-hosted addressing, presigned URLs.
+- **Kafka (D9, ADR 0006 slices 1–3).** Slice 1: the `kafka` extra, `requirements/kafka.txt` (confluent-kafka 2.16.0, 49 hashes, cp311 and cp314 on both
+  architectures; 2.16.1 was four days old and not taken), `ARG WITH_KAFKA` in the Dockerfile and compose's `SMO_WITH_KAFKA` (about +22 MB on the one image built
+  with it). Slice 2: `smo_shared/kafka_settings.py` (settings, producer configuration, topic rule, message mapping) and `kafka_relay.py` (the shared worker task
+  `kafka-relay`, the `ConfluentSink`, the lag gauges), revision **0064** `smo_event_relay` (granted to every role that has `smo_event`, since all of them run the
+  purge), and the `event-purge` hold of up to 72 h for unsent events (ADR 0006 Q2). Slice 3: the compose profile `kafka` (`apache/kafka:3.9.1`, the image the TE&IV
+  spike already pinned, one KRaft broker, PLAINTEXT on the compose network, no auto-created topics), `kafka-init` creating `smo.events.v1` (6 partitions), the DME
+  worker as the relay (`SMO_KAFKA_RELAY=true`), and `scripts/kafka_roundtrip.py`. **Topics per owner:** `smo.<owner>[.<stream>].v<N>`, so S1.15 can give each
+  owner's principal Write on its own prefix; the relay refuses a topic under `smo.teiv.`, the prefix of smo-teiv's ingestion when S3.23 puts it on the same broker
+  (D6: TE&IV's alone). Measured locally: five events published to `smo_event` read back from the topic in order with their keys and headers; with the broker
+  stopped, three more waited in Postgres and arrived in order after it restarted (eight in all, no gap).
+- **Mirror and CI.** `deploy/mirror/images.txt` gains `chrislusf/seaweedfs:4.48` and `bitnamilegacy/minio:2025.7.23-debian-12-r5` (the mirror packages `seaweedfs`
+  and `minio`, which the owner makes public after the mirror's first run); the TimescaleDB and Kafka rows now name the stack. Two jobs in `smo-tests.yml`, not
+  required yet: `compose-stores` ("Store profiles round trip": the hypertable, SeaweedFS and MinIO round trips with the SHA-256, a wrong key refused) and
+  `compose-kafka` ("Kafka profile round trip", across a broker outage).
+- **Not done:** CloudNativePG with TimescaleDB (PR-CONV-S1.10a); the stores in the chart and the two mirror packages made public (S1.10b); ADR 0006 slice 4
+  (SB-7.6) and slice 5 (chart, the relay-lag alert and its runbook, a SASL_SSL listener, the mutation gate on `kafka_settings.py`: MSG-3.7). Licence notes: MinIO
+  is AGPL-3.0 and optional; TimescaleDB's continuous aggregates and compression are under the Timescale License (recorded in S1.10a). The DR path was tried once by hand: `pg_dump -Fc` of the migrated database with the extension and `pg_restore` into a new one both succeed (a warning on TimescaleDB's own catalog); once S1.9 makes hypertables, `scripts/dr_*.sh` need Timescale's `timescaledb_pre_restore()` / `post_restore()` around the restore (S1.10a).
