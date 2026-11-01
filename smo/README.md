@@ -264,6 +264,7 @@ smo/
   <module>/tests/           that module's unit tests (standalone, SQLite)
   mock-o1-adaptor/          NETCONF / RESTCONF O1 test double (RAN NF OAM's southbound), also an FM / PM / SW / heartbeat source
   oran-sim/                 the O-RAN-SC simulated O-DU (compose profile `oran-sim`): its Dockerfile, built from the pinned upstream source, and its NETCONF server configuration (ADR 0012)
+  spikes/teiv/              the TE&IV spike (plan task S0.13, ADR 0013): O-RAN-SC smo-teiv run, fed and measured; no module imports it
   conformance/o1/           O1 adaptor conformance kit: `python -m conformance.o1 --adaptor URL [--oam-url URL]`, CM checks and, with RAN NF OAM, FM, PM, SW and heartbeat checks (conformance/README.md)
   conformance/rapp/         rApp conformance pack: `python -m conformance.rapp package my-rapp.csar` (Onboarding's validation, offline, signatures checked against a trust store) and `python -m conformance.rapp runtime` (onboard, register, heartbeat, R1 usage, terminate on a running stack) (conformance/rapp/README.md)
   sdk/smo_sdk/              AI Runtime SDK: data, analytics, models, lifecycle, intent, platform clients; operator_ui (writes a rApp's declared operator page)

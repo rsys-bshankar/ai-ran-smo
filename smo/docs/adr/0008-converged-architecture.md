@@ -177,6 +177,11 @@ S3.4, and the columns S3.1 names (`attributes` JSONB, `moi_version`) are what TE
 S0.13 spike runs smo-teiv on the current tree, measures load, query latency and change events, and turns every place smo-teiv's model or API differs
 from the specifications into a Stage 3 task.
 
+*Note, 1 November 2026 (S0.13 done, [ADR 0013](0013-teiv-on-smo-teiv.md)): smo-teiv 0.3.0 (Release M) was run and measured. D19 holds with
+conditions: TE&IV owns a model extension (neighbours, missing classes and attributes), the notification and write path, and the facade; D7 holds for
+the queries smo-teiv can express (p95 under 10 ms at 1,000 cells); neighbour queries are measured by S3.20. The WG10 versions smo-teiv cites are
+recorded in `docs/STANDARDS.md`; the WG10 TE&IV R1 API is imported by S3.24.*
+
 ### 3.7 Runtime, packaging, layout (D11, D12, D13)
 
 - **D11**: Python 3.12 everywhere, image and CI; one `Dockerfile` with a `BASE_IMAGE` argument for Ubuntu 24.04 or Red Hat UBI 9 (which ships

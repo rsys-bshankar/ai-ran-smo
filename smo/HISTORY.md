@@ -4953,3 +4953,35 @@ Closed from `OPEN_ITEMS.md` (`PR-CONV-S0.15`). The decision and the facts are [A
   (`scripts/check_contract_bundle.py`).
 - **Not done:** the CI job is not a required check (the owner's choice); the chart's simulator was rendered and linted, not installed on a cluster (the kind
   lane does not turn it on); the simulator's TLS endpoint is not used by RAN NF OAM.
+
+### PR-CONV-S0.13 — the TE&IV spike: O-RAN-SC smo-teiv behind 3GPP MnS, measured
+
+Closed from `OPEN_ITEMS.md` (`PR-CONV-S0.13`). The written result is [ADR 0013](docs/adr/0013-teiv-on-smo-teiv.md); the spike is `spikes/teiv/` (no module
+imports it) and the CI workflow "TE&IV spike" (`.github/workflows/teiv-spike.yml`: manual, weekly, and on a pull request that changes the spike).
+
+- **Version.** O-RAN-SC smo-teiv tag `0.3.0` (commit `ee898469d2b9`, 11 December 2025, Release M), Apache-2.0, Java 17 / Spring Boot 3.4, Postgres 13 with
+  PostGIS. Its models cite O-RAN.WG10.TE&IV-DM.0-R004-v02.00 and TE&IV-CIMI.0-R004-v02.00 (recorded in `docs/STANDARDS.md`). O-RAN-SC published container
+  images up to 0.2.0 only, so `spikes/teiv/Dockerfile` builds 0.3.0 from the tag; its bases, Postgres image and Kafka are pinned and in the GHCR mirror
+  list (`eclipse-temurin:21-jre-noble`, `postgis/postgis:13-3.4-alpine`, `apache/kafka:3.9.1`).
+- **Run.** `spikes/teiv/docker-compose.yml`: ingestion and exposure (one image), Postgres with the 0.3.0 schema, single-node Kafka. **Fed** by
+  `spikes/teiv/load.py`: a) the oran-sim O-DUs (RAN NF OAM's tree, today their roots only, and the simulators' ManagedElement read with RAN NF OAM's
+  NETCONF client); b) a synthetic SubNetwork of 1,000 NRCellDU (13,002 MOIs: gNB, GNBDUFunction, GNBCUCPFunction, NRCellDU, NRCellCU, NRSectorCarrier,
+  CommonBeamformingFunction, 8 NRCellRelation per cell), 4,002 of which smo-teiv can hold.
+- **Measured** (local run, the Claude Code cloud container, 4 CPUs / 16 GB; `spikes/teiv/results/local.md`): load b) 11.9 s; p50 / p95 ms, raw and
+  through the facade — Q1 one cell by id 3.6 / 5.3 and 3.6 / 5.6 (pass), Q3 cells under a GNBDUFunction 4.4 / 6.7 and 4.4 / 6.2 (pass), Q5 cells of a
+  SubNetwork with an attribute filter 4.2 / 7.9 and 4.4 / 9.7 (pass), Q2 neighbours and Q4 two-hop neighbours not expressible (fail: smo-teiv has no
+  neighbour relationship); a changed NRCellDU visible after 31.6 / 63.0 ms, and **smo-teiv emits no change notification**; the facade adds nothing
+  measurable. Runtime: one 541 MB image for both JVMs (616 + 473 MiB), the database image 616 MB (138 MiB), Kafka 467 MiB.
+- **Model gaps** (ADR 0013 section 6): O-RAN class names for the gNB functions (G1); no NRCellRelation / NEIGHBOR_CELL or CO_COVERAGE_OVERLAY (G2); a few
+  attributes per class, none of administrativeState, operationalState, cellState, pLMNInfoList (G3); no SubNetwork, CommonBeamformingFunction,
+  NRFreqRelation or SON classes (G4); no notifications (G5); no write API (G6); no object version (G7); its own filter grammar (G8); the WG10 TE&IV R1 API
+  not in `specs/` (G9). Its runtime schema upload takes classifiers and decorators only, so a new class means new YANG and a regenerated schema.
+- **Facade** (`spikes/teiv/facade.py`): getMOIAttributes over smo-teiv's API (BASE_ONLY, BASE_ALL / BASE_NTH_LEVEL along containment relationships or
+  a SubNetwork's sourceIds, attribute filters), refusing what cannot be expressed; smo-teiv's ingestion events mapped to notifyMOICreation,
+  notifyMOIAttributeValueChanges and notifyMOIDeletion; its operations classified against WG10 TE&IV R1 and TS 28.532.
+- **Decided:** D19 holds with conditions (TE&IV owns a model extension, the notification and write path, and the facade; if the extension needs a
+  fork of smo-teiv's code, TE&IV builds its own store instead, ADR 0013 section 9); D6: smo-teiv's tables written only by its ingestion, fed only by
+  TE&IV; D7 holds for what was measurable, and S3.20 measures the neighbour queries.
+- **Stage 3 rows:** PR-CONV-S3.1 and S3.4 amended; PR-CONV-S3.19 (ProvMnS read facade), S3.20 (model extension and neighbour queries), S3.21 (attributes
+  and object version), S3.22 (notifications), S3.23 (packaging), S3.24 (WG10 TE&IV R1 API into `specs/`) added.
+- **Not done:** no module changed; smo-teiv's adapters and Helm chart not run; the build still downloads IETF and 3GPP YANG at build time, as upstream's does.
