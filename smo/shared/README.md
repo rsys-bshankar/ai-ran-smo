@@ -1,14 +1,14 @@
 # Shared library (`shared/`)
 
-> The `smo_shared` Python package every SMO backend module imports: the database session, FSM base, ProblemDetails errors, pagination, correlation ids, the forwarded invoker id, SSRF-guarded webhooks, the R1 client, OpenAPI security declaration and test helpers behind the R1 API conventions.
+> The `smo_shared` Python package every SMO backend module imports: the database session, FSM base, ProblemDetails errors, pagination, correlation ids, the forwarded invoker id, SSRF-guarded webhooks, the R1 client, OpenAPI security declaration and test helpers behind the R1 API conventions; and `smo_shared.mns`, the generic TS 28.532 ProvMnS producer (router, class registry, scope and filter) every module mounts from Stage 1 of the converged rewrite on.
 
 | | |
 |---|---|
-| Standards basis | Internal logic (common library; implements the RFC 7807 / RFC 7662 conventions used by every R1 service) |
+| Standards basis | Internal logic (common library; implements the RFC 7807 / RFC 7662 conventions used by every R1 service); `mns/`: [N] TS 28.532 v19.2.0 ProvMnS, TS 28.541 / TS 28.623 NRM schemas (1.2) |
 | R1 route / port | None: a library, installed into every service image (`pip install -e /srv/shared` in the root `Dockerfile`) |
 | Depends on (over R1) | `R1Client` calls R1 Termination (`/bootstrap`) and SME (`/invoker-registrations`, `/oauth2/token`) for its own token; no other module |
 | Called by | Every backend module (imports); the SDK (`sdk/`) and the four sample rApps via `R1Client`. Not imported by `gui-bff` |
-| Database tables | None. Provides `Base`, the engine and sessions that modules' `models.py` use |
+| Database tables | The shared tables of 2.2, and `moi_store` (`mns/store.py`) in the schema of each module that mounts the ProvMnS router (none yet: S1.6's Echo module is the first). Provides `Base`, the engine and sessions that modules' `models.py` use |
 | Unit tests | `tests/`; the Postgres-only ones are skipped without `SMO_TEST_POSTGRES_URL` (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
 | Status | Done. No OPEN_ITEMS ids |
 
@@ -25,6 +25,9 @@ One place for the plumbing that must behave identically in every service, so a c
 | RFC 7807 ProblemDetails | `errors.py` | Error model the R1 service groups defer to (CAPIF TS 29.222 for SME, TS 29.500 for others, TS 28.532 for CM/FM) |
 | RFC 7662 token introspection (R1 gateway) | Declared in OpenAPI by `openapi_security.py`; consumed by `r1_client.py` (obtains and sends the token). Enforcement lives in R1 Termination's `_authorized()`, not here | [`../../specs/5G_APIs/`](../../specs/5G_APIs/) CAPIF specs for the invoker path |
 | RFC 6749 client-credentials grant | `r1_client.py` (`_ModuleIdentity`) | |
+| [N] TS 28.532 v19.2.0 ProvMnS (`specs/5G_APIs/TS28532_ProvMnS.yaml`): createMOI, getMOIAttributes, modifyMOIAttributes, deleteMOI, notifyMOICreation / AttributeValueChanges / Deletion, the TS 28.623 error bodies | `mns/` (2.4, "ProvMnS") | D5's one form `{apiRoot}/ProvMnS/{version}/{URI-LDN-first-part}/{className}={id}` (`specs/smo-schema-bundle/openapi/common/provmns-root.yaml`, ADR 0011) |
+| [N] TS 28.541 / TS 28.623 NRM (the `-Single` schemas of `specs/5G_APIs/TS28541_*.yaml` and `TS28623_*.yaml`) | `mns/registry.py`: attribute validation and containment | 217 classes, every one resolvable |
+| RFC 7396 merge patch, RFC 6902 JSON patch (and their TS 32.158 `3gpp-` media types); RFC 9110 `ETag` / `If-Match`; RFC 8288 `Link` | `mns/patch.py`, `mns/service.py`, `mns/router.py` | |
 | TS 29.500 `3gpp-Sbi-Correlation-Info` | Deliberately not used: that header correlates subscriber identity, not requests. `X-Correlation-ID` is this build's own name | `correlation.py` module docstring |
 
 Deliberately not here: any enforcing auth dependency on a backend service (R1 Termination is the single enforcement point), and a per-operation OpenAPI declaration of `X-Correlation-ID`.
@@ -48,6 +51,7 @@ Mapping of the "R1 API conventions" table in `docs/ARCHITECTURE.md` to code:
 | Correlation | `correlation.apply_correlation_id`, `get_correlation_id`, `correlation_scope`; `R1Client`, `webhook`, `outbox`, `events` and the worker carry it | An inbound id is accepted only as 1 to 128 printable ASCII characters (else a fresh UUID); every answer, a 500 included, echoes it, and every problem body names it (`correlationId`); outbox rows and events keep it (revision 0059), each worker task run gets `task:<name>:<uuid>` (call flow 14) |
 | Trace context | `tracing.apply_tracing` (installed by `apply_correlation_id`), `inject_headers`, `span`; `R1Client` and the gateway send `traceparent` | W3C Trace Context; spans to OTLP/HTTP only with `SMO_OTEL_ENDPOINT` and the OpenTelemetry packages (`docs/OBSERVABILITY.md`) |
 | Cross-module calls | `r1_client.R1Client` | Choosing which module to call |
+| ProvMnS (D5, plan tasks S1.1, S1.2, S1.4) | `mns.ProvMnS`, `mns.provmns_router`, `mns.ClassRegistry`, `mns.IMoiLifecycleHandler`, the `moi_store` helpers | Mounting it (each module, from S1.6); the cross-cutting checks inside it (S1.5); subscriptions and delivery (S1.13) |
 
 Also provided, outside that table: `db` (engine and session), `statemachine` (FSM base), `identity` (rAppId equivalence), `timeutil`, `testing`.
 
@@ -63,6 +67,13 @@ Also provided, outside that table: `db` (engine and session), `statemachine` (FS
 | FSM base holds only a transition table; state lives on the entity | One table per model class, reused across instances. |
 | Error codes are tuples `(title, status)` in one `FrameworkError` class | One importable name per code; routes raise `framework_error(code, detail)`. |
 | Correlation id is not declared in OpenAPI | A middleware-injected header is not a per-operation contract element. |
+| ProvMnS: one generic producer, behaviour in hooks (`mns/`) | Every module of the converged design serves its classes through TS 28.532 ProvMnS (ADR 0011). The router does the generic work once (DN, class, containment, schema, version, write, notification, commit); a module adds only `IMoiLifecycleHandler` hooks, which can veto with a TS 28.532 error. The starter code's interface shape was followed; its in-memory store was not taken |
+| ProvMnS store: one `moi_store` per module schema, on its own declarative base | D6 (one writer per table): the table lives in the mounting module's schema, created by that module's revision through `create_moi_store(op, schema)`; `MnsBase`, not `db.Base`, so `check_migration_matches_models.py` does not expect the table in modules that do not mount the router |
+| DN as primary key, binary collation, subtree as a key range | A subtree is the range [`dn`, `dn-`) (an id may hold no character that sorts below `-` except the separator `,`), so scope and keyset paging use the primary key with no `LIKE` and no escaping; `COLLATE "C"` because a locale collation ignores punctuation |
+| moiVersion is `versioning.Versioned`'s counter (column `moi_version`); the ETag | `If-Match` with another version is a 412 before anything is written; a writer that commits between this request's read and write is the `StaleDataError` 409 every versioned table has |
+| Notifications on the event bus, in the change's transaction | The TS 28.532 notification exists exactly when the change committed (K2); subscriptions and delivery to a consumer's URL come with S1.13's NtfSubscriptionControl |
+| Attribute validation also refuses unknown names | The NRM schemas do not say `additionalProperties: false`; a misspelt attribute would otherwise be stored and never read |
+| Filter: the JSONPath filter subset of Jex conditions | TS 32.161 (Jex) is not in `specs/`; the grammar taken is listed in `mns/scope.py` and 2.8 |
 
 ## 2. Low-level design (LLD)
 
@@ -103,13 +114,21 @@ Also provided, outside that table: `db` (engine and session), `statemachine` (FS
 | `smo_shared/identity_secrets.py` | `SEC-15.18`: encryption of the identity secrets at rest. `load_keys` (`SMO_IDENTITY_KEY[_FILE]`, `SMO_IDENTITY_PREVIOUS_KEY[_FILE]`, at least 32 characters, HKDF-SHA256), `seal` / `unseal` (AES-256-GCM, envelope `enc:v1:<key id>:<base64url(nonce+ciphertext)>`, the module name is the associated data), `check_configuration` (called by `install_health` and the worker, so a wrong key stops the start), `IdentityKeyError` (names the variable, never a key or a value). A plaintext row is always read (warning and `smo_identity_unencrypted_reads_total{kind}` when a key is set); an encrypted row without its key is an error; `cryptography` is imported only when needed |
 | `smo_shared/idempotency.py` | `idempotent(module, status_code)` route decorator, `run_idempotent()`, the `IdempotencyKey` model (table `idempotency_key`), `request_hash()` |
 | `smo_shared/versioning.py` | `Versioned` (adds `row_version`, enforces it on every ORM UPDATE), `install_concurrency_handler()` (a stale write becomes 409 `CONCURRENT_MODIFICATION`) |
-| `smo_shared/testing.py` | `make_test_engine()`, `concurrent_commit_on(table)` (simulates another replica committing first, for 409 tests), `FakeDmeR1` (an rApp's R1 client answering the DME producer routes with the SEC-15.10b rule, for tests that drive the real SDK) |
+| `smo_shared/mns/service.py` | `ProvMnS`: `create_moi`, `get_moi_attributes` (returns a `Page`), `modify_moi_attributes`, `delete_moi`, `serve(class, handler)`; `PROVMNS_VERSION` (`19.2.0`, D5's one constant), `etag`, `encode_cursor` / `decode_cursor` |
+| `smo_shared/mns/router.py` | `provmns_router(mns, get_session=None)`: the four routes at `/ProvMnS/{version}/{ldn:path}`, the error bodies, `ETag`, `If-Match`, the hierarchical and flat answers, the `Link` header |
+| `smo_shared/mns/registry.py` | `ClassRegistry` (`names`, `info`, `validate`, `may_contain`, `resolvable`, `register`, `index_file`), `default_registry()`, `openapi_to_jsonschema()` |
+| `smo_shared/mns/lifecycle.py` | `IMoiLifecycleHandler` (six hooks, no-ops by default), `Moi`, `MoiContext` |
+| `smo_shared/mns/scope.py` | `Scope`, `parse_scope`, `parse_filter` / `matches` (the filter grammar), `parse_list`, `select` (attribute selection), `hierarchical` |
+| `smo_shared/mns/patch.py` | `apply_merge_patch` (RFC 7396), `apply_json_patch` (RFC 6902), `merge`, `json_equal`, the four media types |
+| `smo_shared/mns/store.py` | `ManagedObject` (table `moi_store`), `MnsBase`, `create_all(engine)`, `create_moi_store(op, schema)` / `drop_moi_store(op, schema)` for a module's revision |
+| `smo_shared/mns/dn.py`, `mns/errors.py` | DN parsing and the URI form; `MnsError` and its TS 28.623 bodies (`ErrorResponseDefault`, `ErrorResponseGet`, `ErrorResponsePatch`) |
+| `smo_shared/testing.py` | `make_test_engine()`, `concurrent_commit_on(table, column="row_version")` (simulates another replica committing first, for 409 tests), `FakeDmeR1` (an rApp's R1 client answering the DME producer routes with the SEC-15.10b rule, for tests that drive the real SDK) |
 | `tests/` | See 3.2 |
 | `pyproject.toml` | Package `smo-shared` 0.1.0, Python >= 3.11; deps sqlalchemy, psycopg, fastapi, pydantic, httpx, python-multipart, jsonschema |
 
 ### 2.2 Data model
 
-`db.Base` is the declarative base all modules' `models.py` subclass. The tables this package itself declares are the shared ones: `audit_log`, `audit_head`, `idempotency_key`, `module_identity`, `notification_outbox`, `periodic_run`, `smo_event` (`events.py`, the event feed, revision `0042`) and `rate_bucket` (`ratelimit.py`, the shared limiter's buckets: `caller` PK, `tokens`, `refilled_at` epoch seconds, `last_allowed`). The schema is `../migrations/001_init.sql` plus the Alembic revisions after it (`../scripts/migrate.py`), checked against the ORM models by `../scripts/check_migration_matches_models.py`.
+`db.Base` is the declarative base all modules' `models.py` subclass. The tables this package itself declares are the shared ones: `audit_log`, `audit_head`, `idempotency_key`, `module_identity`, `notification_outbox`, `periodic_run`, `smo_event` (`events.py`, the event feed, revision `0042`) and `rate_bucket` (`ratelimit.py`, the shared limiter's buckets: `caller` PK, `tokens`, `refilled_at` epoch seconds, `last_allowed`). `mns/store.py` declares `moi_store` on its own `MnsBase` (module description of that file: `dn` TEXT COLLATE "C" PK, `object_class`, `moi_id`, `parent_dn`, `depth`, `attributes` JSONB with a GIN index, `moi_version`, `created_at`, `updated_at`); it is not a shared table but one per mounting module's schema, made by that module's revision with `create_moi_store(op, schema)` and removed by `drop_moi_store(op, schema)`. The schema is `../migrations/001_init.sql` plus the Alembic revisions after it (`../scripts/migrate.py`), checked against the ORM models by `../scripts/check_migration_matches_models.py`.
 
 ### 2.3 State machines
 
@@ -242,6 +261,24 @@ All instances in a process share one identity and token (`_identity`).
 | Checks | A function that raises when its dependency is unusable. `database_check`: `SELECT 1` on the process's engine. `sme_token_check`: `R1Client`'s token (cached, so cheap) can be obtained. Bounded by `READY_CHECK_TIMEOUT_SECONDS` (3) |
 | Use | Restart a container on `/live`; take it out of rotation on `/ready`. Adopted by every service except the GUI BFF; SME and focom skip the token check (SME is the issuer, focom calls nobody) |
 
+#### ProvMnS (`mns/`, plan tasks S1.1, S1.2, S1.4)
+
+```python
+from smo_shared.mns import ProvMnS, provmns_router
+mns = ProvMnS(source="/smo/echo", system_dn="ManagementNode=echo", classes=["SubNetwork", "ManagedElement", "GNBDUFunction", "NRCellDU"])
+mns.serve("GNBDUFunction", EchoHandler())        # an IMoiLifecycleHandler: the module's behaviour
+app.include_router(provmns_router(mns))
+```
+
+| Operation | Route | Contract |
+|---|---|---|
+| createMOI | `PUT /ProvMnS/19.2.0/{URI-LDN-first-part}/{className}={id}` | Body: one `Resource` whose `id` (and `objectClass`, `objectInstance` when present) agree with the URI; contained objects in the body are a 422. 201 with the Resource when created, 200 when it replaced the attributes of an existing instance (a modify: hooks, notification, If-Match); `ETag` the moiVersion |
+| getMOIAttributes | `GET` the same | `scope` (JSON `{"scopeType", "scopeLevel"}`: BASE_ONLY, BASE_NTH_LEVEL, BASE_SUBTREE, BASE_ALL), `filter` (the grammar of `mns/scope.py`), `attributes`, `fields`, `limit` (1-500, 100), `cursor`. Hierarchical answer by default (`application/json` or `application/vnd.3gpp.object-tree-hierarchical+json`), flat with `Accept: application/vnd.3gpp.object-tree-flat+json`; `Link: <...>; rel="next"` while more follow. A base that does not exist is 404 |
+| modifyMOIAttributes | `PATCH` the same | `Content-Type` `application/merge-patch+json` or `application/3gpp-merge-patch+json` (RFC 7396 on `attributes`), `application/json-patch+json` or `application/3gpp-json-patch+json` (RFC 6902, paths under `/attributes`); any other is 415. 200 with the Resource and the new ETag; a failed JSON-patch operation is a 422 whose `badOp` is its index |
+| deleteMOI | `DELETE` the same | 204; the instance and everything it contains, each before its container (reverse DN order), each with its hooks and notifyMOIDeletion |
+
+Every write: the class must be served and registered (422 `CLASS_NOT_SUPPORTED`); the parent must exist (422 `PARENT_NOT_FOUND`) and its class contain the child's (422 `CONTAINMENT_VIOLATION`; only SubNetwork and ManagedElement at the top); the attributes must satisfy the class's schema (422 `SCHEMA_VALIDATION_FAILED`, `badAttributes`); `If-Match` must name the current moiVersion (412 `STALE_VERSION`); a concurrent writer is 409 `CONCURRENT_MODIFICATION`. Then `before_*` hook, write, `after_*` hook, notification on the event bus (type `org.oran.smo.provmns.<notificationType>`, subject the DN, data the TS 28.532 body), commit. A hook raising `MnsError` rolls everything back. A write that changes nothing publishes nothing.
+
 **`openapi_security.apply_r1_gateway_security(app, *, public_paths=frozenset())`**
 
 Sets `app.version = R1_CONTRACT_VERSION` (`1.0.0`) and replaces `app.openapi` so the generated schema carries `components.securitySchemes.r1BearerAuth` (HTTP bearer, JWT), a global `security` requirement, and `security: []` on every operation under a path in `public_paths` (SME token/introspection, R1 Termination `/health`, `/live`, `/ready` and `/bootstrap`). Declarative only: it adds no runtime check. Applied by 17 services (every R1-facing backend plus R1 Termination); the committed `../docs/openapi/*.json` are generated from it.
@@ -306,6 +343,8 @@ No background tasks.
 | 422 | `AUTHZ_SCOPE_INVALID`, `IDEMPOTENCY_KEY_INVALID`, `IDEMPOTENCY_KEY_REUSED`, `SCHEMA_VALIDATION_FAILED`, `COORDINATION_GROUP_MISMATCH`, `COORDINATION_GROUP_TOO_SMALL`, `GOVERNANCE_DECIDER_REQUIRED`, `DIGITAL_TWIN_INFERENCE_NOT_ELIGIBLE`, `DME_ARTIFACT_NOT_FOUND`, `RMIH_CAPABILITY_MISMATCH`, `POLICY_TYPE_NOT_SUPPORTED`, `POLICY_OBJECT_SCHEMA_INVALID`, `SUBSCRIPTION_SCOPE_CONFLICT`, `NFDEPLOYMENT_DESCRIPTOR_NOT_FOUND`, `SECURITY_CONTEXT_INVALID`, `MDA_CAPABILITY_NOT_SUPPORTED`, `FEATURE_GROUP_DME_JOB_REFUSED`, `ROLLBACK_NOT_POSSIBLE` |
 | 503 | `ENDPOINT_UNREACHABLE`, `ENROLLMENT_NOT_CONFIGURED` |
 
+The ProvMnS router (`mns/errors.py`) answers with TS 28.623 bodies (`{status, type, reason, title, badAttributes | badObjects | badQueryParams | badOp}`), not ProblemDetails. Its codes (`type`): 400 `INVALID_DN`, `INVALID_BODY`, `INVALID_QUERY`; 404 `MOI_NOT_FOUND`, `UNKNOWN_VERSION`; 409 `CLASS_MISMATCH`, `CONCURRENT_MODIFICATION`, `VETOED` (a hook's, by convention); 412 `STALE_VERSION`; 415 `UNSUPPORTED_MEDIA_TYPE`; 422 `CLASS_NOT_SUPPORTED`, `SCHEMA_VALIDATION_FAILED`, `CONTAINMENT_VIOLATION`, `PARENT_NOT_FOUND`, `PATCH_FAILED`, `INVALID_BODY` (contained objects in a createMOI).
+
 Defined but never raised anywhere in the repo: `NODE_GROUP_NOT_CLEARED` (MLLF deploy now stamps node groups instead of checking them).
 
 `problem()` itself accepts any status and title, so modules also raise ad-hoc titles (see each module README, and `gui-bff`, which uses its own flat `{title, status, detail}` helper).
@@ -316,7 +355,8 @@ Defined but never raised anywhere in the repo: `NODE_GROUP_NOT_CLEARED` (MLLF de
 - Webhook guard: DNS rebinding closed by connecting to the vetted addresses (`SEC-15.16`); a proxy configured in the environment resolves the destination itself and is trusted.
 - `db.engine` is built at import from `SMO_DATABASE_URL`; modules that need a different database in tests override `get_session` or use `make_test_engine()`.
 - Stale docstrings in the package: `__init__.py` and `db.py` say "fourteen modules"; the build has more services (documentation only, no behaviour).
-- No OPEN_ITEMS ids refer to this package.
+- ProvMnS router (`mns/`), what it does not do yet: the cross-cutting checks (ADR 0005 scope claims, MSAC, `Idempotency-Key` replay, audit, `traceparent` on events, the `smo_provmns_http_duration_seconds` metric) are S1.5; NtfSubscriptionControl and HeartbeatControl, and delivery of the notifications to subscribers, are S1.13; no module mounts it until S1.6 (the Echo module), which also adds `moi_store` to `migrations/table_owners.json` and the models check, and puts `specs/5G_APIs` into the image (the registry reads the YAML at run time; it finds the nearest `specs/5G_APIs` above the package).
+- ProvMnS subsets, recorded: a patch changes only the target instance's `attributes` (a 3GPP merge patch or JSON patch that creates or deletes contained objects is a 422); createMOI creates one instance (no tree in one PUT); POST with a producer-assigned id (the second path of TS28532_ProvMnS.yaml) is not served; `dataNodeSelector` is not read; the filter is the JSONPath subset of Jex conditions in `mns/scope.py` (TS 32.161 is not in `specs/`), evaluated in Python on the scoped rows, so a selective filter over a large subtree reads the whole subtree (measured in S1.6, plan risk "JSONB ProvMnS store too slow"); paging (`limit`, `cursor`, `Link`) is an SMO extension the 3GPP OpenAPI does not define.
 
 ## 3. Unit tests
 
@@ -332,6 +372,14 @@ Counts per file: [`docs/TEST_COUNTS.md`](../docs/TEST_COUNTS.md).
 
 | Test file | Covers |
 |---|---|
+| `tests/test_mns_router.py` | ProvMnS through HTTP on SQLite and, with `SMO_TEST_POSTGRES_URL`, Postgres: create (201, ETag), replace (200, notification with old and new), unchanged replace publishes nothing, bodies for another instance (400), contained objects and bad JSON, unknown and unserved classes (422 with the OpenAPI's error body), containment (wrong parent class, missing parent, top level), schema validation, both merge-patch and both JSON-patch media types, a failed patch changes nothing (`badOp`), other media types (415), stale If-Match (412, weak tags, lists, `*`), a concurrent write (409), subtree delete, each instance before its container, hooks in order, a veto in each of the six hooks rolls back, every notification valid against the vendored NotifyMoi* schema, unknown version and bad DNs; the version constant equals the bundle's |
+| `tests/test_mns_scope.py` | Scope parsing and refusals, depth ranges, each scope type through HTTP, a sibling with a longer id not taken in; the filter (35 evaluation cases, 15 refusals, length and depth limits), attribute selection (`attributes`, `fields`, arrays, union), the hierarchical answer (skeletons in between), flat and hierarchical media types, cursors, paging through the `Link` header, paging stable while the tree changes, a full last page without a link, a page filled from several reads behind a filter (SQLite and Postgres) |
+| `tests/test_mns_properties.py` | Hypothesis, on SQLite and Postgres: random trees with prefix-sharing ids; every scope selects exactly the oracle's instances; any page size and filter, the pages put together are the unpaged answer; paging stays ordered, without repeats, and misses nothing that was there throughout while instances are added and removed between pages |
+| `tests/test_mns_patch.py` | RFC 7396 Appendix A, arguments unchanged; merge-patch refusals; every RFC 6902 operation (indices, `-`, escapes, copies independent) and 33 refusals with their `badOp` |
+| `tests/test_mns_registry.py` | 217 classes indexed and resolvable from the vendored YAML; attributes from `attributes`, `-Attr` and beside it; containment through `-ncO` across files; validation (type, enum, range, unknown names); unknown class 422; `nullable` conversion; a class registered by hand; `index_file` and a missing referenced file; DN forms and refusals |
+| `tests/test_mns_exact.py` | The mutation gate's exact cases: every refusal of the parsers, patches and operations with its full reason; what each hook is handed; the notification body field by field (`api_root`, notificationId, UTC eventTime, explicit nulls); If-Match lists; a racing create; unserved classes for modify and delete; delete order and the `-` sibling; reads in batches and the statements they cost; the cursor; the registry derived afresh (spec-directory lookup, counts per file, flat and `-Attr` attributes typed, a small hand-written specification with a reference cycle, an escaped member, a missing file) |
+| `tests/test_mns_store.py` | `create_all` on SQLite; on Postgres the Alembic helpers make the model's table (columns, nullability, C collation, JSONB, GIN index) and remove it |
+| `tests/mns_testmodule.py` | Not a test file: the test-only module that mounts the router (the stand-in for S1.6's Echo module), its `backend` fixture (SQLite, and Postgres in a schema of its own made by `create_moi_store`) and a recording, vetoing handler |
 | `tests/test_validation_error_handler.py` | A refused parameter or body answers 422 with `type`, `loc` and `msg` only (no `input`, `ctx`, `url`); the `1=1` and `1=2` payloads of QA-9.1 give byte-identical bodies; `apply_r1_gateway_security` installs the handler |
 | `tests/test_pagination.py` | `paginate`: real LIMIT/OFFSET and COUNT, total follows the filter, stable primary-key order; `?total=false`: no count statement issued (counted with a SQLAlchemy event), `limit + 1` fetch and `hasMore`, no overlap between pages; `paginate_list` in both modes; the `total` parameter through a real route and its OpenAPI declaration |
 | `tests/test_correlation.py` | Id generated when the caller sends none; caller's id propagated and echoed; `get_correlation_id()` is `None` outside a request; two requests get distinct ids; an id with a space, a non-ASCII character or over 128 characters replaced; an unhandled 500 and a route's refusal carry the id in header and body (call flow 14a) |

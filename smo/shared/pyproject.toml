@@ -32,5 +32,7 @@ include = ["smo_shared*"]
 source_paths = ["smo_shared"]
 only_mutate = ["smo_shared/pagination.py", "smo_shared/ratelimit.py", "smo_shared/timeutil.py", "smo_shared/roles.py",
                "smo_shared/webhook.py", "smo_shared/killswitch.py", "smo_shared/invoker.py", "smo_shared/bodylimit.py", "smo_shared/secretfile.py", "smo_shared/versioning.py", "smo_shared/identity.py", "smo_shared/correlation.py",
-               "smo_shared/audit.py", "smo_shared/idempotency.py", "smo_shared/security_headers.py", "smo_shared/errors.py", "smo_shared/scope.py"]
+               "smo_shared/audit.py", "smo_shared/idempotency.py", "smo_shared/security_headers.py", "smo_shared/errors.py", "smo_shared/scope.py",
+               "smo_shared/mns/dn.py", "smo_shared/mns/errors.py", "smo_shared/mns/patch.py", "smo_shared/mns/scope.py", "smo_shared/mns/registry.py",
+               "smo_shared/mns/service.py", "smo_shared/mns/router.py"]
 pytest_add_cli_args_test_selection = ["tests/", "../../r1-termination/tests/test_roles.py", "../../r1-termination/tests/test_scope.py"]

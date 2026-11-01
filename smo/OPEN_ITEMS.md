@@ -1425,14 +1425,13 @@ Done, in `HISTORY.md`: `PR-CONV-S0.1` to `PR-CONV-S0.13`, `PR-CONV-S0.15` to `PR
 
 Stage 1 ends at milestone M1 (week 5): a reference "Echo" MnS module, built only from the shared library, passes every ProvMnS operation test and is reached through R1 by class name, with no static route.
 
+Done, in `HISTORY.md`: `PR-CONV-S1.1`, `PR-CONV-S1.2`, `PR-CONV-S1.4`.
+
 | ID | Task | Stage | Needs | Done when |
 |---|---|---|---|---|
-| PR-CONV-S1.1 | `smo_shared.mns`: generic ProvMnS router on Postgres JSONB (the four MOI operations) | 1 | M0 | Echo MnS passes all four operations on SQLite and Postgres |
-| PR-CONV-S1.2 | `IMoiLifecycleHandler` hooks and the Component-B class registry | 1 | S1.1 | A class with no registered schema is refused 422 |
 | PR-CONV-S1.3 | Component-C dictionary: TS 28.111 alarms, TS 28.552 / 28.554 counters and KPIs | 1 | M0 | Used by RAN NF OAM and DME tests |
-| PR-CONV-S1.4 | Scope and filter engine (BASE_ONLY … BASE_SUBTREE, JSONPath filter, keyset paging) | 1 | S1.1 | Property tests; mutation gate covers it |
 | PR-CONV-S1.5 | Cross-cutting checks inside the router (scope, MSAC, idempotency, audit, `traceparent`, metric) | 1 | S1.1 | One test per check through the Echo module |
-| PR-CONV-S1.6 | Echo MnS reference module and its test suite | 1 | S1.4, S1.5 | Wave 0 exit gate met; added to `smo-mutation.yml` |
+| PR-CONV-S1.6 | Echo MnS reference module and its test suite. *From S1.1: the first module to mount `smo_shared.mns`; its revision calls `create_moi_store(op, schema)` / `drop_moi_store`, `moi_store` goes into `migrations/table_owners.json` and the models check, its image carries `specs/5G_APIs` (the class registry reads the YAML at run time), and the four-operation tests of `shared/tests/test_mns_router.py` run against it* | 1 | S1.4, S1.5 | Wave 0 exit gate met; added to `smo-mutation.yml` |
 | PR-CONV-S1.7 | SME: TS 28.533 MnS registry, discovery, `ServiceReady` / `NotifyServiceChange` | 1 | S1.1 | Conformance tests against the corrected SME contract |
 | PR-CONV-S1.8 | R1 Termination routes ProvMnS paths by registry lookup | 1 | S1.7 | Echo MnS reached through R1 with no entry in the static table |
 | PR-CONV-S1.9 | Common schemas `common_teiv_nrm` and `common_dme_telemetry` with writer and reader roles | 1 | M0 | `check_migration_matches_models.py` green on Postgres |
