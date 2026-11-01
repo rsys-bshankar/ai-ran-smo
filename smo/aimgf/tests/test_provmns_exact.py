@@ -463,9 +463,9 @@ def test_the_producer_is_aimgfs():
     """The producer's event source, system DN, served classes (each with its own hook), cross-cutting checks named after AIMgF, and the registry
     the projection validates with."""
     mns = service.mns
-    assert (mns.source, mns.system_dn, mns.checks.module) == ("/smo/aimgf", ROOT_DN, "aimgf")
+    assert (mns.source, mns.system_dn, mns.checks.module, mns.model) == ("/smo/aimgf", ROOT_DN, "aimgf", Instance)
     assert all(mns._handler(name) is HANDLERS[name] for name in service.CLASSES)
-    assert projection.registry() is mns.registry and isinstance(mns.registry, service.AimgfRegistry)
+    assert projection.REGISTRY is mns.registry and isinstance(mns.registry, service.AimgfRegistry)
     assert service.TS28105_FILE == "TS28105_AiMlNrm.yaml" and service.GOVERNANCE_CLASS == "MLModelGovernance"
     assert service.CLASSES == ("ManagedElement", *service.TS28105_CLASSES, "MLModelGovernance")
     assert not mns.registry.may_contain("MLTrainingFunction", "MLModelGovernance") and not mns.registry.may_contain(None, "MLModelGovernance")
@@ -845,7 +845,7 @@ def test_the_registry_and_the_openapi_from_scratch(caplog, monkeypatch, db_sessi
 def test_a_producer_built_anew_is_aimgfs():
     """`build`: the producer's event source, system DN and the checks' module name (the audit's and the metric's label)."""
     mns = service.build(("ManagedElement",))
-    assert (mns.source, mns.system_dn, mns.checks.module) == ("/smo/aimgf", ROOT_DN, "aimgf")
+    assert (mns.source, mns.system_dn, mns.checks.module, mns.model) == ("/smo/aimgf", ROOT_DN, "aimgf", Instance)
 
 
 def test_the_middleware_hands_the_hooks_the_request_and_forgets_it():
@@ -871,7 +871,7 @@ def test_a_start_up_without_a_store_logs_why(db_session_factory, monkeypatch, ca
     with caplog.at_level("WARNING", logger="app.provmns.service"):
         service.start()
     [record] = [r for r in caplog.records if r.levelname == "WARNING"]
-    assert record.getMessage() == "aimgf provmns: start-up projection not done" and record.exc_info is not None
+    assert record.getMessage() == "aimgf provmns: start-up projection not done" and record.exc_info[0] is not None
 
 
 def test_a_notification_id_is_in_ts_28623s_range_and_its_event_is_a_provmns_one(db_session_factory, monkeypatch):

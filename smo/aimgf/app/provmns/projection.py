@@ -49,6 +49,7 @@ from ..update.nrm import _update_function_view, _update_process_view_for, _updat
 from ..inference.nrm import _inference_function_view_for, _inference_report_view
 from ..loading.nrm import _loading_policy_view, _loading_process_view, _loading_request_view
 from ..emulation.nrm import _emulation_function_view
+from .classes import REGISTRY
 from .mapping import serving_state_of
 from .tree import DEFAULT_ID, ROOT_CLASS, ROOT_DN, ROOT_ID, child, container, last_id
 
@@ -363,7 +364,7 @@ def project_one(db: Session, projector: Projector, key: Any) -> str | None:
     if dn is None:
         return None
     ensure_container(db, parent_of(dn) or ROOT_DN)
-    _write(db, dn, projector.moi_class, attributes_of(db, registry(), projector, row))
+    _write(db, dn, projector.moi_class, attributes_of(db, REGISTRY, projector, row))
     return dn
 
 
@@ -380,13 +381,6 @@ def _collect(session: Session, _flush_context) -> None:
                 pending.update((t, k) for t, k in BY_TABLE[table].dependants(session, obj) if k is not None)
             elif table in TRIGGERS:
                 pending.update((t, k) for t, k in TRIGGERS[table](obj) if k is not None)
-
-
-def registry():
-    """The class registry AIMgF serves with (service.py's producer), the one the projection validates against; read when needed, so the projection
-    keeps no state of its own (`tests_integration/test_statelessness_guard.py`)."""
-    from .service import mns          # service.py imports this module, so not at the top
-    return mns.registry
 
 
 def flush_projection(session: Session) -> None:

@@ -1,4 +1,4 @@
-"""AIMgF's ProvMnS producer (plan tasks S2.7, S2.10): the class registry, the `ProvMnS` of `smo_shared.mns` with AIMgF's hooks, its router, and the
+"""AIMgF's ProvMnS producer (plan tasks S2.7, S2.10): the `ProvMnS` of `smo_shared.mns` with AIMgF's hooks, its router, and the
 middleware that hands the hooks the caller's request. `main.py` mounts it; the router answers at `/ProvMnS/{version}/...` (through R1 Termination,
 `/aimgf/ProvMnS/...`).
 
@@ -19,70 +19,24 @@ from collections.abc import Iterable
 
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from smo_shared.mns import ClassRegistry, ProvMnS, provmns_router
+from smo_shared.mns import ProvMnS, provmns_router
 
-from ..governance.statemachine import ModelLifecycleState, RuntimeLifecycleState
 from ..models import Instance
 from . import projection
 from .handlers import HANDLERS, current_request
-from .mapping import SERVING_STATES
+from .classes import CLASSES, GOVERNANCE_ATTRIBUTES, GOVERNANCE_CLASS, REGISTRY, TS28105_CLASSES, TS28105_FILE, AimgfRegistry  # noqa: F401  (named here too)
 from .tree import ROOT_DN
 
 log = logging.getLogger(__name__)
 
-TS28105_FILE = "TS28105_AiMlNrm.yaml"
-TS28105_CLASSES = (
-    "MLModel", "MLModelRepository", "MLModelCoordinationGroup",
-    "MLTrainingFunction", "MLTrainingRequest", "MLTrainingProcess", "MLTrainingReport",
-    "MLTestingFunction", "MLTestingRequest", "MLTestingReport",
-    "AIMLInferenceEmulationFunction",
-    "MLModelLoadingPolicy", "MLModelLoadingRequest", "MLModelLoadingProcess",
-    "AIMLInferenceFunction", "AIMLInferenceReport",
-    "MLUpdateFunction", "MLUpdateRequest", "MLUpdateProcess", "MLUpdateReport",
-)
-GOVERNANCE_CLASS = "MLModelGovernance"
-CLASSES = ("ManagedElement", *TS28105_CLASSES, GOVERNANCE_CLASS)
 REGISTRATION_SCOPE = (ROOT_DN,)
 CAPABILITIES = ("ML_MODEL_MANAGEMENT",)
 
-# The bundle's MLModelGovernance-Single `attributes` (aimgf.yaml, D-07), here because the image carries specs/5G_APIs only;
-# tests/test_provmns.py holds it equal to the bundle's.
-GOVERNANCE_ATTRIBUTES = {
-    "type": "object",
-    "properties": {
-        "mLModelRef": {"type": "string"},
-        "lifecycleState": {"type": "string", "enum": [state.value for state in ModelLifecycleState]},
-        "runtimeState": {"type": "string", "enum": [state.value for state in RuntimeLifecycleState]},
-        "servingState": {"type": "string", "enum": list(SERVING_STATES), "readOnly": True},
-        "owner": {"type": "string"},
-        "decisions": {"type": "array", "items": {"type": "object", "properties": {
-            "event": {"type": "string"}, "decidedBy": {"type": "string"}, "decidedAt": {"type": "string", "format": "date-time"},
-            "reason": {"type": "string"}}}},
-    },
-}
-
-
-class AimgfRegistry(ClassRegistry):
-    """The default registry plus TS 28.105, MLModelGovernance, and the one containment the YAML cannot say: MLModel contains its governance."""
-
-    EXTRA_CHILDREN: dict[str | None, frozenset[str]] = {"MLModel": frozenset({GOVERNANCE_CLASS})}
-
-    def __init__(self):
-        """Indexes the default files of the repository's specs/5G_APIs and TS28105_AiMlNrm.yaml, and registers MLModelGovernance."""
-        super().__init__()
-        self.index_file(TS28105_FILE)
-        self.register(GOVERNANCE_CLASS, GOVERNANCE_ATTRIBUTES)
-
-    def may_contain(self, parent: str | None, child: str) -> bool:
-        """The YAML's containment, and MLModel > MLModelGovernance."""
-        return child in self.EXTRA_CHILDREN.get(parent, frozenset()) or super().may_contain(parent, child)
-
 
 def build(classes: Iterable[str] = CLASSES) -> ProvMnS:
-    """AIMgF's ProvMnS: the registry above, the served classes with their hooks, the cross-cutting checks of S1.5 (claim scope, no instance placed,
-    no MSAC, audit on); the projection validates against the registry of `mns` below."""
-    registry = AimgfRegistry()
-    mns = ProvMnS(source=projection.SOURCE, system_dn=ROOT_DN, registry=registry, classes=classes, model=Instance)    # its checks: RouterChecks of module "aimgf"
+    """AIMgF's ProvMnS: `classes.REGISTRY` (the projection validates with the same one), the served classes with their hooks, the cross-cutting
+    checks of S1.5 (claim scope, no instance placed, no MSAC, audit on)."""
+    mns = ProvMnS(source=projection.SOURCE, system_dn=ROOT_DN, registry=REGISTRY, classes=classes, model=Instance)    # its checks: RouterChecks of module "aimgf"
     for name in classes:
         mns.serve(name, HANDLERS[name])
     return mns
