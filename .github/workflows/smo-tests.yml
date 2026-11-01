@@ -597,12 +597,19 @@ jobs:
       - name: /bootstrap behind the TLS edge (PR-SEC-1.6)
         working-directory: smo
         run: |
-          # nginx resolves its upstreams once at start, so the edge is recreated together with the services it fronts; ready = /bootstrap answers
+          # nginx resolves its upstreams once at start, so the edge is recreated together with the services it fronts. Ready = /bootstrap answers (R1
+          # Termination) and the edge reaches SME's token endpoint, which it forwards to SME directly: R1 can be up before SME listens, when the edge
+          # answers that path 502 (seen in CI). A malformed request is enough: SME answers it 400/422 once it is up.
           wait_for_edge() {
             for i in $(seq 1 45); do
-              curl -fsS --cacert certs/ca.crt https://localhost:8443/bootstrap > /dev/null 2>&1 && return 0
+              if curl -fsS --cacert certs/ca.crt https://localhost:8443/bootstrap > /dev/null 2>&1; then
+                code=$(curl -sS --cacert certs/ca.crt -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' \
+                  https://localhost:8443/sme/oauth2/token 2>/dev/null || true)
+                case "$code" in 400|422) return 0 ;; esac
+              fi
               sleep 2
             done
+            echo "the TLS edge did not answer /bootstrap and SME's token endpoint in 90 s" >&2
             return 1
           }
           R1_PUBLIC_BASE_URL=https://localhost:8443 docker compose --profile tls up -d --no-deps --force-recreate sme r1-termination edge-tls
