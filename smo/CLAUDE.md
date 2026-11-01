@@ -233,13 +233,15 @@ manual rebase. That holds as long as each pull request touches only:
   `CHANGELOG.md` or `HISTORY.md`;
 - **its modules' generated files**: `docs/test-counts/<module>.md`, `docs/configuration/<module>.md` and `.json`, `docs/openapi/<module>.json`,
   and its module's file in `scripts/interface_baseline/`, `scripts/contract_drift_baseline/` and `scripts/code_docs_baseline/`;
-- **its module's migration branch** (`migrations/versions/<label>_NNNN_*.py`, "Schema changes are revisions").
+- **its module's migration branch** (`migrations/versions/<label>_NNNN_*.py`, "Schema changes are revisions"), and its module's own entry in
+  `migrations/table_owners.json` and `migrations/db_roles.json` (a table it adds goes in its module's list, which no other lane edits; a new
+  module's first entry in either file is `[cross-lane]`).
 
 The shared logs are assembled at release instead (`docs/RELEASES.md`, "Cutting a release": `scripts/changelog.py --write`,
 `scripts/history_index.py --write`); the indexes of `docs/test-counts/` and `docs/configuration/` change only when a suite or a group is added.
 
 A pull request that must touch shared code — `shared/`, `r1-termination/`, the SDKs (`sdk/`, `sdk-go/`, `sdk-java/`), the GUI (`gui/`, `gui-bff/`),
-CI (`.github/`), `docker-compose.yml`, the chart, `migrations/` outside its branch, or this file — says so in its title, starting
+CI (`.github/`), `docker-compose.yml`, the chart, `migrations/` outside its branch and its module's entries, a new module, or this file — says so in its title, starting
 **`[cross-lane]`**. The owner merges it alone, with no other pull request in the queue, and the lanes then merge `main` into their branches.
 
 **The merge queue (the owner's GitHub setting).** In the repository's Settings → Rules → Rulesets (or Branches → the rule for `main`), require a
