@@ -62,17 +62,17 @@ GOVERNANCE_ATTRIBUTES = {
 class AimgfRegistry(ClassRegistry):
     """The default registry plus TS 28.105, MLModelGovernance, and the one containment the YAML cannot say: MLModel contains its governance."""
 
-    EXTRA_CHILDREN = {"MLModel": frozenset({GOVERNANCE_CLASS})}
+    EXTRA_CHILDREN: dict[str | None, frozenset[str]] = {"MLModel": frozenset({GOVERNANCE_CLASS})}
 
-    def __init__(self, spec_dir=None):
-        """Indexes the default files and TS28105_AiMlNrm.yaml, and registers MLModelGovernance."""
-        super().__init__(spec_dir)
+    def __init__(self):
+        """Indexes the default files of the repository's specs/5G_APIs and TS28105_AiMlNrm.yaml, and registers MLModelGovernance."""
+        super().__init__()
         self.index_file(TS28105_FILE)
         self.register(GOVERNANCE_CLASS, GOVERNANCE_ATTRIBUTES)
 
     def may_contain(self, parent: str | None, child: str) -> bool:
         """The YAML's containment, and MLModel > MLModelGovernance."""
-        return child in self.EXTRA_CHILDREN.get(parent or "", frozenset()) or super().may_contain(parent, child)
+        return child in self.EXTRA_CHILDREN.get(parent, frozenset()) or super().may_contain(parent, child)
 
 
 def build(classes: Iterable[str] = CLASSES) -> ProvMnS:
@@ -140,7 +140,7 @@ MNS_INFO = {
 }
 
 
-def register(mns: ProvMnS) -> dict:
+def register() -> dict:
     """STUB for Session A's S1.12 helper (registration in SME's MnS registry): logs the MnsInfo AIMgF would register and returns it; registers
     nothing. Replaced by the helper's call when it is on `main`."""
     log.info("aimgf provmns: MnS registry registration pending S1.12; would register %s", MNS_INFO)
@@ -157,7 +157,7 @@ def start() -> None:
     from smo_shared.db import SessionLocal
     from smo_shared.mns.store import ManagedObject
 
-    register(mns)
+    register()
     with SessionLocal() as db:
         try:
             if db.get(ManagedObject, ROOT_DN) is None:

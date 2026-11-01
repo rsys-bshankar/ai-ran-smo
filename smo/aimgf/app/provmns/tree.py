@@ -44,7 +44,7 @@ def container(class_name: str, row_id: uuid.UUID | None) -> str:
 
 def last_id(dn: str) -> str:
     """The id of the last RDN of `dn`."""
-    return dn.rsplit(",", 1)[-1].split("=", 1)[1]
+    return dn.split(",")[-1].partition("=")[2]
 
 
 def as_uuid(value: str) -> uuid.UUID | None:

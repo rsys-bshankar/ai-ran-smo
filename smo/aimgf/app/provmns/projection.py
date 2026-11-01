@@ -55,8 +55,6 @@ log = logging.getLogger(__name__)
 SOURCE = "/smo/aimgf"
 SYSTEM_DN = ROOT_DN
 _PENDING = "aimgf_provmns_pending"
-_BUSY = "aimgf_provmns_busy"
-_MAX_ROUNDS = 8                         # a dependant's dependant's ...; each round projects what the last one changed
 _MAX_NOTIFICATION_ID = 2**53 - 1
 
 # TrainingJob status -> TS 28.105 RequestStatus: a FAILED run is FINISHED, its outcome is in its MLTrainingReport (as the testing request does).
@@ -67,26 +65,21 @@ _TRAINING_REQUEST_STATUS = {"FAILED": "FINISHED"}
 class Projector:
     """How the rows of one table are one TS 28.105 class (see the module description).
 
-    `parent(db, row)` is the DN of the instance's container, None when it cannot be placed (its model is not in the registry); `view(db, row)` the
-    `{id, attributes}` the REST route renders; `refs` maps an attribute to the class whose instance its id (or each id of its list) names; `adjust`
-    rewrites the attributes after that (a status mapping); `dependants(db, row)` lists the (table, id) pairs whose instances read this row."""
+    `parent(db, row)` is the DN of the instance's container, None when it cannot be placed (its model is not in the registry); `view(db, row)` its
+    attributes as the REST route renders them; `refs` maps an attribute to the class whose instance its id (or each id of its list) names; `adjust`
+    rewrites the attributes after that (a status mapping; by default none); `dependants(db, row)` lists the (table, id) pairs whose instances read this row."""
 
     moi_class: str
     table: type
     parent: Callable[[Session, Any], str | None]
     view: Callable[[Session, Any], dict]
     refs: dict[str, str] = field(default_factory=dict)
-    adjust: Callable[[dict], dict] | None = None
+    adjust: Callable[[dict], dict] = lambda attributes: attributes
     dependants: Callable[[Session, Any], Iterable[tuple[type, Any]]] = lambda db, row: ()
 
     def key(self, row) -> Any:
         """The primary key of `row` (each mapped table has one column)."""
         return getattr(row, inspect(self.table).primary_key[0].key)
-
-
-def _get(db: Session, table: type, key: Any):
-    """The row `key` of `table`, or None (also for a None key)."""
-    return db.get(table, key) if key is not None else None
 
 
 # ---------------------------------------------------------------------------- where each class sits
@@ -100,47 +93,45 @@ def _model_parent(db: Session, model) -> str:
 
 
 def _governance_parent(db: Session, lifecycle) -> str | None:
-    model = _get(db, rm.MLModel, lifecycle.model_id)
-    return child(_model_parent(db, model), "MLModel", model.model_id) if model is not None else None
+    """The DN of the lifecycle's model, None when the registry has no such model (a lifecycle can outlive its model)."""
+    model = db.get(rm.MLModel, lifecycle.model_id)
+    return None if model is None else child(_model_parent(db, model), "MLModel", model.model_id)
 
 
 def _training_job_function(db: Session, job_id) -> uuid.UUID | None:
-    job = _get(db, m.TrainingJob, job_id)
-    return job.ml_training_function_id if job is not None else None
+    """The function of training run `job_id`: None when it names none."""
+    return db.scalar(select(m.TrainingJob.ml_training_function_id).where(m.TrainingJob.training_job_id == job_id))
 
 
 def _update_request_function(db: Session, request_id) -> uuid.UUID | None:
-    request = _get(db, m.MLUpdateRequest, request_id)
-    return request.ml_update_function_id if request is not None else None
+    """The function of update request `request_id`: None when it names none."""
+    return db.scalar(select(m.MLUpdateRequest.ml_update_function_id).where(m.MLUpdateRequest.ml_update_request_id == request_id))
 
 
 def _update_process_function(db: Session, process_id) -> uuid.UUID | None:
-    process = _get(db, m.MLUpdateProcess, process_id)
-    return _update_request_function(db, process.ml_update_request_id) if process is not None else None
+    """The function of update process `process_id`: its request's."""
+    return db.scalar(select(m.MLUpdateRequest.ml_update_function_id)
+                     .join(m.MLUpdateProcess, m.MLUpdateProcess.ml_update_request_id == m.MLUpdateRequest.ml_update_request_id)
+                     .where(m.MLUpdateProcess.ml_update_process_id == process_id))
 
 
 # ---------------------------------------------------------------------------- the attributes, from the REST views
 
 def _model_view(db: Session, model) -> dict:
     """The MLModel attributes `GET /ml-models/{id}` returns, as stored and as the rest of AIMgF reads them (`ml_model_nrm_refs`)."""
-    refs = ml_model_nrm_refs(db, model.model_id)
-    return {"id": str(model.model_id), "attributes": {"mLModelId": str(model.model_id), "mLModelVersion": model.version,
-                                                     **_ts28105_writable_view(model), **refs}}
+    return {"mLModelId": str(model.model_id), "mLModelVersion": model.version, **_ts28105_writable_view(model), **ml_model_nrm_refs(db, model.model_id)}
 
 
 def _governance_view(db: Session, lifecycle) -> dict:
     """The MLModelGovernance attributes [D] (bundle `aimgf.yaml`, D-07): the 14-state and runtime states, the servingState they map to (S2.6), the
-    model's owner and its governance decisions, oldest first."""
-    model = _get(db, rm.MLModel, lifecycle.model_id)
+    model's owner and its governance decisions, oldest first. Only projected when the model is in the registry (`_governance_parent`)."""
+    model = db.get_one(rm.MLModel, lifecycle.model_id)
     decisions = db.scalars(select(m.CertificationRecord).where(m.CertificationRecord.model_id == lifecycle.model_id)
                            .order_by(m.CertificationRecord.decided_at)).all()
-    return {"id": str(lifecycle.model_id), "attributes": {
-        "mLModelRef": str(lifecycle.model_id), "lifecycleState": lifecycle.model_lifecycle_state,
-        "runtimeState": lifecycle.runtime_lifecycle_state,
-        "servingState": serving_state_of(lifecycle.model_lifecycle_state, lifecycle.runtime_lifecycle_state),
-        "owner": model.owner if model is not None else None,
-        "decisions": [{"event": d.decision, "decidedBy": d.decided_by, "decidedAt": d.decided_at.isoformat(),
-                       **({"reason": d.rationale} if d.rationale else {})} for d in decisions]}}
+    return {"mLModelRef": str(lifecycle.model_id), "lifecycleState": lifecycle.model_lifecycle_state, "runtimeState": lifecycle.runtime_lifecycle_state,
+            "servingState": serving_state_of(lifecycle.model_lifecycle_state, lifecycle.runtime_lifecycle_state), "owner": model.owner,
+            "decisions": [{"event": d.decision, "decidedBy": d.decided_by, "decidedAt": d.decided_at.isoformat(),
+                           **({"reason": d.rationale} if d.rationale else {})} for d in decisions]}
 
 
 def _training_request_adjust(attributes: dict) -> dict:
@@ -165,69 +156,69 @@ def _as_uuids(values) -> list[uuid.UUID]:
 
 PROJECTORS: tuple[Projector, ...] = (
     Projector("MLModelRepository", rm.MLModelRepository, lambda db, r: ROOT_DN,
-              lambda db, r: {"id": str(r.ml_model_repository_id), "attributes": {}}),
+              lambda db, r: {}),
     Projector("MLModel", rm.MLModel, _model_parent, _model_view,
               refs={"aIMLInferenceReportRefList": "AIMLInferenceReport", "usedByFunctionRefList": "AIMLInferenceFunction",
                     "sourceTrainedMLModelRef": "MLModel"},
               dependants=lambda db, r: [(m.ModelLifecycle, r.model_id)]),
     Projector("MLModelCoordinationGroup", rm.MLModelCoordinationGroup, lambda db, g: _repository(g.ml_model_repository_id),
-              lambda db, g: _group_nrm_view(g), refs={"memberMLModelRefList": "MLModel"}),
+              lambda db, g: _group_nrm_view(g)["attributes"], refs={"memberMLModelRefList": "MLModel"}),
     Projector("MLModelGovernance", m.ModelLifecycle, _governance_parent, _governance_view, refs={"mLModelRef": "MLModel"}),
 
-    Projector("MLTrainingFunction", m.MLTrainingFunction, lambda db, f: ROOT_DN, lambda db, f: _training_function_view(f),
+    Projector("MLTrainingFunction", m.MLTrainingFunction, lambda db, f: ROOT_DN, lambda db, f: _training_function_view(f)["attributes"],
               refs={"mLModelRepositoryRef": "MLModelRepository"}),
     Projector("MLTrainingRequest", m.TrainingJob, lambda db, j: container("MLTrainingFunction", j.ml_training_function_id),
-              lambda db, j: _training_request_view(j), refs={"mLModelRef": "MLModel", "mLModelCoordinationGroupRef": "MLModelCoordinationGroup"},
+              lambda db, j: _training_request_view(j)["attributes"], refs={"mLModelRef": "MLModel", "mLModelCoordinationGroupRef": "MLModelCoordinationGroup"},
               adjust=_training_request_adjust,
               dependants=lambda db, j: [(m.MLTrainingFunction, j.ml_training_function_id),
                                         *[(m.MLTrainingProcess, p) for p in db.scalars(select(m.MLTrainingProcess.ml_training_process_id)
                                                                                        .where(m.MLTrainingProcess.training_job_id == j.training_job_id))]]),
     Projector("MLTrainingProcess", m.MLTrainingProcess, lambda db, p: container("MLTrainingFunction", _training_job_function(db, p.training_job_id)),
-              lambda db, p: _training_process_view_for(db)(p),
+              lambda db, p: _training_process_view_for(db)(p)["attributes"],
               refs={"trainingRequestRef": "MLTrainingRequest", "trainingReportRef": "MLTrainingReport", "mLModelRef": "MLModel",
                     "mLModelCoordinationGroupRef": "MLModelCoordinationGroup"},
               dependants=lambda db, p: [(m.MLTrainingReport, r) for r in db.scalars(
                   select(m.MLTrainingReport.ml_training_report_id).where(m.MLTrainingReport.training_job_id == p.training_job_id))]),
     Projector("MLTrainingReport", m.MLTrainingReport,
               lambda db, r: container("MLTrainingFunction", r.ml_training_function_id or _training_job_function(db, r.training_job_id)),
-              lambda db, r: _training_report_with_process(db, r),
+              lambda db, r: _training_report_with_process(db, r)["attributes"],
               refs={"trainingProcessRef": "MLTrainingProcess", "lastTrainingRef": "MLTrainingReport", "mLModelGeneratedRef": "MLModel",
                     "mLModelCoordinationGroupGeneratedRef": "MLModelCoordinationGroup"},
               dependants=lambda db, r: [*_models_named([r.ml_model_generated_ref]),
                                         *[(m.MLTrainingProcess, p) for p in db.scalars(select(m.MLTrainingProcess.ml_training_process_id)
                                                                                        .where(m.MLTrainingProcess.training_job_id == r.training_job_id))]]),
 
-    Projector("MLTestingFunction", m.MLTestingFunction, lambda db, f: ROOT_DN, lambda db, f: _testing_function_view_for(db)(f),
+    Projector("MLTestingFunction", m.MLTestingFunction, lambda db, f: ROOT_DN, lambda db, f: _testing_function_view_for(db)(f)["attributes"],
               refs={"mLModelRef": "MLModel"}),
     Projector("MLTestingRequest", m.ValidationJob, lambda db, j: container("MLTestingFunction", j.ml_testing_function_id),
-              lambda db, j: _testing_request_view(j), refs={"mLModelRef": "MLModel", "mLModelCoordinationGroupRef": "MLModelCoordinationGroup"},
+              lambda db, j: _testing_request_view(j)["attributes"], refs={"mLModelRef": "MLModel", "mLModelCoordinationGroupRef": "MLModelCoordinationGroup"},
               dependants=lambda db, j: [(m.MLTestingFunction, j.ml_testing_function_id)]),
     Projector("MLTestingReport", m.MLTestingReport, lambda db, r: container("MLTestingFunction", r.ml_testing_function_id),
-              lambda db, r: _testing_report_view(r), refs={"testingRequestRef": "MLTestingRequest"}),
+              lambda db, r: _testing_report_view(r)["attributes"], refs={"testingRequestRef": "MLTestingRequest"}),
 
-    Projector("MLUpdateFunction", m.MLUpdateFunction, lambda db, f: ROOT_DN, lambda db, f: _update_function_view(f), refs={"mLModelRef": "MLModel"}),
+    Projector("MLUpdateFunction", m.MLUpdateFunction, lambda db, f: ROOT_DN, lambda db, f: _update_function_view(f)["attributes"], refs={"mLModelRef": "MLModel"}),
     Projector("MLUpdateRequest", m.MLUpdateRequest, lambda db, r: container("MLUpdateFunction", r.ml_update_function_id),
-              lambda db, r: _update_request_view_for(db)(r), refs={"mLModelRefList": "MLModel", "mLUpdateProcessRef": "MLUpdateProcess"}),
+              lambda db, r: _update_request_view_for(db)(r)["attributes"], refs={"mLModelRefList": "MLModel", "mLUpdateProcessRef": "MLUpdateProcess"}),
     Projector("MLUpdateProcess", m.MLUpdateProcess, lambda db, p: container("MLUpdateFunction", _update_request_function(db, p.ml_update_request_id)),
-              lambda db, p: _update_process_view_for(db)(p),
+              lambda db, p: _update_process_view_for(db)(p)["attributes"],
               refs={"mLModelRefList": "MLModel", "mLUpdateRequestRefList": "MLUpdateRequest", "mLUpdateReportRef": "MLUpdateReport"},
               dependants=lambda db, p: [(m.MLUpdateRequest, p.ml_update_request_id)]),
     Projector("MLUpdateReport", m.MLUpdateReport, lambda db, r: container("MLUpdateFunction", _update_process_function(db, r.ml_update_process_id)),
-              lambda db, r: _update_report_view(r), refs={"mLModelRefList": "MLModel", "mLUpdateProcessRef": "MLUpdateProcess"},
+              lambda db, r: _update_report_view(r)["attributes"], refs={"mLModelRefList": "MLModel", "mLUpdateProcessRef": "MLUpdateProcess"},
               dependants=lambda db, r: [(m.MLUpdateProcess, r.ml_update_process_id)]),
 
-    Projector("AIMLInferenceFunction", m.AIMLInferenceFunction, lambda db, f: ROOT_DN, lambda db, f: _inference_function_view_for(db)(f),
+    Projector("AIMLInferenceFunction", m.AIMLInferenceFunction, lambda db, f: ROOT_DN, lambda db, f: _inference_function_view_for(db)(f)["attributes"],
               refs={"mLModelRefList": "MLModel"}, dependants=lambda db, f: _models_named(f.ml_model_refs)),
     Projector("AIMLInferenceEmulationFunction", m.AIMLInferenceEmulationFunction, lambda db, f: ROOT_DN,
-              lambda db, f: _emulation_function_view(f)),
+              lambda db, f: _emulation_function_view(f)["attributes"]),
     Projector("AIMLInferenceReport", m.AIMLInferenceReport, lambda db, r: container("AIMLInferenceFunction", r.aiml_inference_function_id),
-              lambda db, r: _inference_report_view(r), refs={"mLModelRefList": "MLModel"}, dependants=lambda db, r: _models_named(r.ml_model_refs)),
+              lambda db, r: _inference_report_view(r)["attributes"], refs={"mLModelRefList": "MLModel"}, dependants=lambda db, r: _models_named(r.ml_model_refs)),
     Projector("MLModelLoadingPolicy", m.MLModelLoadingPolicy, lambda db, p: container("AIMLInferenceFunction", p.aiml_inference_function_id),
-              lambda db, p: _loading_policy_view(p), refs={"mLModelRef": "MLModel"}),
+              lambda db, p: _loading_policy_view(p)["attributes"], refs={"mLModelRef": "MLModel"}),
     Projector("MLModelLoadingRequest", m.MLModelLoadingRequest, lambda db, r: container("AIMLInferenceFunction", r.aiml_inference_function_id),
-              lambda db, r: _loading_request_view(r), refs={"mLModelToLoadRef": "MLModel"}),
+              lambda db, r: _loading_request_view(r)["attributes"], refs={"mLModelToLoadRef": "MLModel"}),
     Projector("MLModelLoadingProcess", m.MLModelLoadingProcess, lambda db, p: container("AIMLInferenceFunction", p.aiml_inference_function_id),
-              lambda db, p: _loading_process_view(p),
+              lambda db, p: _loading_process_view(p)["attributes"],
               refs={"mLModelLoadingRequestRef": "MLModelLoadingRequest", "mLModelLoadingPolicyRef": "MLModelLoadingPolicy",
                     "loadedMLModelRef": "MLModel"}),
 )
@@ -237,9 +228,9 @@ BY_CLASS: dict[str, Projector] = {p.moi_class: p for p in PROJECTORS}
 
 # Tables whose rows are no instance of their own but are read by one: their changes re-project those (a governance decision, an inference
 # run's consumer).
-TRIGGERS: dict[type, Callable[[Session, Any], Iterable[tuple[type, Any]]]] = {
-    m.CertificationRecord: lambda db, c: [(m.ModelLifecycle, c.model_id)],
-    m.InferenceJob: lambda db, j: [(m.AIMLInferenceFunction, j.aiml_inference_function_id)],
+TRIGGERS: dict[type, Callable[[Any], Iterable[tuple[type, Any]]]] = {
+    m.CertificationRecord: lambda c: [(m.ModelLifecycle, c.model_id)],
+    m.InferenceJob: lambda j: [(m.AIMLInferenceFunction, j.aiml_inference_function_id)],
 }
 
 
@@ -287,26 +278,20 @@ def _pruned(value: Any) -> Any:
 
 def attributes_of(db: Session, registry, projector: Projector, row) -> dict:
     """The instance attributes of `row`: the view's, references as DNs, unset values out, and only what the class's schema declares and accepts."""
-    attributes = dict(projector.view(db, row)["attributes"])
+    attributes = dict(projector.view(db, row))
     for name, target in projector.refs.items():
         if name in attributes:
             attributes[name] = _ref(db, target, attributes[name])
-    if projector.adjust is not None:
-        attributes = projector.adjust(attributes)
-    declared = registry.info(projector.moi_class).attribute_names
-    attributes = {name: _pruned(value) for name, value in attributes.items() if value not in (None, []) and name in declared}   # an empty list is unset
-    for _ in range(len(attributes) + 1):          # drop what the schema refuses, a few attributes at a time, until it accepts the rest
+    attributes = {name: _pruned(value) for name, value in projector.adjust(attributes).items() if value not in (None, [])}   # [] is unset
+    while True:                       # drop what the schema refuses (an undeclared name, a value it does not accept) until it accepts the rest
         try:
             registry.validate(projector.moi_class, attributes)
             return attributes
         except MnsError as exc:
-            bad = [name for name in (exc.bad_attributes or []) if name in attributes]
-            if not bad:
-                log.warning("aimgf provmns: %s %s does not validate (%s); stored as read", projector.moi_class, projector.key(row), exc.reason)
+            bad = set(exc.bad_attributes or ()) & set(attributes)
+            if not bad:               # a refusal that names none of them (the schema as a whole): stored as read
                 return attributes
-            log.debug("aimgf provmns: %s %s: %s left out (%s)", projector.moi_class, projector.key(row), ", ".join(bad), exc.reason)
             attributes = {name: value for name, value in attributes.items() if name not in bad}
-    return attributes
 
 
 # ---------------------------------------------------------------------------- writing moi_store
@@ -345,7 +330,7 @@ def ensure_container(db: Session, dn: str) -> None:
         _write(db, ROOT_DN, ROOT_CLASS, {"userLabel": ROOT_ID})
         return
     ensure_container(db, parent_of(dn) or ROOT_DN)
-    class_name, moi_id = dn.rsplit(",", 1)[-1].split("=", 1)
+    class_name, _, moi_id = dn.split(",")[-1].partition("=")
     if moi_id == DEFAULT_ID and class_name in DEFAULT_CONTAINERS:
         _write(db, dn, class_name, {})
     elif class_name in BY_CLASS and _as_uuids([moi_id]):
@@ -371,23 +356,14 @@ def project_one(db: Session, projector: Projector, key: Any) -> str | None:
                                                       ManagedObject.moi_id == str(key))).all()
     dn = dn_of(db, projector, row) if row is not None else None
     for old in existing:
-        if old.dn != dn:                                  # gone, or moved to another container
+        if old.dn != dn:                                  # gone, or moved to another container: it and what it contains go, and are projected again
             for moved in _delete_subtree(db, old.dn):
-                if moved.dn != old.dn:
-                    _requeue(db, moved)
+                db.info.setdefault(_PENDING, set()).add((BY_CLASS[moved.object_class].table, uuid.UUID(moved.moi_id)))
     if dn is None:
         return None
     ensure_container(db, parent_of(dn) or ROOT_DN)
     _write(db, dn, projector.moi_class, attributes_of(db, registry(), projector, row))
     return dn
-
-
-def _requeue(db: Session, moved: ManagedObject) -> None:
-    """Queues the row of a contained instance that went with its container, so that it is projected again where it now belongs."""
-    projector = BY_CLASS.get(moved.object_class)
-    key = _as_uuids([moved.moi_id])
-    if projector is not None and key:
-        db.info.setdefault(_PENDING, set()).add((projector.table, key[0]))
 
 
 # ---------------------------------------------------------------------------- the session events
@@ -400,14 +376,9 @@ def _collect(session: Session, _flush_context) -> None:
             table = type(obj)
             if table in BY_TABLE:
                 pending.add((table, BY_TABLE[table].key(obj)))
-                try:
-                    pending.update((t, k) for t, k in BY_TABLE[table].dependants(session, obj) if k is not None)
-                except Exception:                             # a dependant query on a row being deleted; the row itself is still queued
-                    log.debug("aimgf provmns: dependants of %s not read", table.__name__, exc_info=True)
+                pending.update((t, k) for t, k in BY_TABLE[table].dependants(session, obj) if k is not None)
             elif table in TRIGGERS:
-                pending.update((t, k) for t, k in TRIGGERS[table](session, obj) if k is not None)
-    if not pending:
-        session.info.pop(_PENDING, None)
+                pending.update((t, k) for t, k in TRIGGERS[table](obj) if k is not None)
 
 
 def registry():
@@ -417,41 +388,22 @@ def registry():
     return mns.registry
 
 
-def _touched(session: Session) -> bool:
-    return bool(session.info.get(_PENDING)) or any(type(obj) in BY_TABLE or type(obj) in TRIGGERS
-                                                   for obj in (*session.new, *session.dirty, *session.deleted))
-
-
 def flush_projection(session: Session) -> None:
-    """Projects everything the session has written so far (before_commit; the hooks call it too). Does not commit."""
-    if session.info.get(_BUSY) or not _touched(session):
-        return
-    session.info[_BUSY] = True
-    try:
-        with session.no_autoflush:
+    """before_commit: flushes, then projects what the flushes collected, round after round (a projection queues what it moved), until nothing is
+    left. Does not commit. A session that wrote no mapped row only flushes, which its commit would do anyway."""
+    with session.no_autoflush:
+        session.flush()
+        while pending := session.info.pop(_PENDING, None):
+            for table, key in pending:
+                project_one(session, BY_TABLE[table], key)
             session.flush()
-            for _ in range(_MAX_ROUNDS):
-                pending = session.info.pop(_PENDING, None)
-                if not pending:
-                    break
-                for table, key in sorted(pending, key=lambda item: (PROJECTORS.index(BY_TABLE[item[0]]), str(item[1]))):
-                    project_one(session, BY_TABLE[table], key)
-                session.flush()
-            session.info.pop(_PENDING, None)
-    finally:
-        session.info.pop(_BUSY, None)
 
 
-def _forget(session: Session, *_args) -> None:
-    """after_rollback / after_soft_rollback: what was collected is void."""
-    session.info.pop(_PENDING, None)
-
-
-# Every Session of the process: collect after each flush, project before each commit, forget on a rollback. Listening at import (not from a
-# function) means the listeners exist exactly once, whoever imports this module.
+# Every Session of the process: collect after each flush, project before each commit. Listening at import (not from a function) means the
+# listeners exist exactly once, whoever imports this module. What a rolled-back transaction collected is projected from the rows as they are
+# at the next commit, which is the same as not projecting it.
 event.listen(Session, "after_flush", _collect)
 event.listen(Session, "before_commit", flush_projection)
-event.listen(Session, "after_soft_rollback", _forget)
 
 
 def project_all(db: Session) -> int:

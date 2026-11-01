@@ -94,7 +94,7 @@ def test_the_governance_schema_is_the_bundles():
 
 def test_registration_waits_for_s1_12_and_names_every_class():
     """The MnS registry registration is the stub that S1.12's helper replaces: it returns the MnsInfo it would register and registers nothing."""
-    info = service.register(service.mns)
+    info = service.register()
     assert info["mnsType"] == "ProvMnS" and info["mnsVersion"] == PROVMNS_VERSION and set(info["classes"]) == set(service.CLASSES)
 
 

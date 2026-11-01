@@ -25,7 +25,9 @@ service in process) is judged as a call with no role, which the owner rule trust
 
 import contextvars
 import uuid
-from typing import Any
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any, ClassVar
 
 from fastapi import HTTPException
 from sqlalchemy import inspect
@@ -36,7 +38,6 @@ from smo_shared.mns.dn import parent_of
 
 from .. import models as m
 from ..common import _check_job_owner, _check_rapp_owns_models
-from ..execution import _resolve_runtime_profile
 from ..inference.nrm import record_inference_report
 from ..loading.nrm import apply_loading_flags, start_loading
 from ..testing.jobs import _start_validation
@@ -101,7 +102,7 @@ def _refs(moi: Moi, name: str) -> list[uuid.UUID]:
     return out
 
 
-def _only(moi: Moi, allowed: set[str], what: str) -> None:
+def _only(moi: Moi, allowed: set[str] | frozenset[str], what: str) -> None:
     """VETOED naming every attribute outside `allowed` (one the class's row has no column for, or a read-only one)."""
     extra = sorted(set(moi.attributes) - allowed)
     if extra:
@@ -130,12 +131,11 @@ def _contained_delete(ctx: MoiContext, moi: Moi) -> bool:
     return True
 
 
+@dataclass(frozen=True)
 class ReadOnly(IMoiLifecycleHandler):
     """A class no consumer writes over ProvMnS (see the module description); `why` says where it is written instead. Deleted only with a container."""
 
-    def __init__(self, why: str):
-        """Keeps the reason a write is refused."""
-        self.why = why
+    why: str
 
     def before_create(self, ctx: MoiContext, moi: Moi) -> None:
         """Refuses: read only."""
@@ -151,29 +151,29 @@ class ReadOnly(IMoiLifecycleHandler):
             raise _veto(409, f"{moi.class_name} is read only over ProvMnS: {self.why}", moi.dn)
 
 
+@dataclass(frozen=True)
 class Root(ReadOnly):
     """ManagedElement=AIMgF and any other ManagedElement: AIMgF's own container; no consumer creates, changes or deletes one."""
 
-    def __init__(self):
-        """A read-only class whose reason names AIMgF."""
-        super().__init__("it is AIMgF itself")
+    why: str = "it is AIMgF itself"
 
     def before_delete(self, ctx: MoiContext, moi: Moi) -> None:
         """Always refuses."""
         raise _veto(409, f"{moi.dn} is AIMgF itself and is not deleted", moi.dn)
 
 
+@dataclass(frozen=True)
 class Function(IMoiLifecycleHandler):
     """A function class (and MLModelLoadingPolicy): its row is made, changed and deleted with the instance. `columns` maps each attribute it
     takes to its row's column (a reference attribute is a DN that names a row); `ref_columns` the attributes that are DN references to one row,
     `refs_columns` the ones that list DNs; `parent_column` is the column the container's id goes in (a policy's inference function)."""
 
-    def __init__(self, table: type, columns: dict[str, str], *, ref_columns: dict[str, str] | None = None,
-                 refs_columns: dict[str, str] | None = None, parent_column: str | None = None, defaults: dict[str, Any] | None = None):
-        """Keeps the table, the attribute-to-column maps, the container column and the defaults of a new row."""
-        self.table, self.columns = table, columns
-        self.ref_columns, self.refs_columns = ref_columns or {}, refs_columns or {}
-        self.parent_column, self.defaults = parent_column, defaults or {}
+    table: type
+    columns: dict[str, str]
+    ref_columns: dict[str, str] = field(default_factory=dict)
+    refs_columns: dict[str, str] = field(default_factory=dict)
+    parent_column: str | None = None
+    defaults: dict[str, Any] = field(default_factory=dict)
 
     def _takes(self) -> set[str]:
         return set(self.columns) | set(self.ref_columns) | set(self.refs_columns)
@@ -231,17 +231,19 @@ class Function(IMoiLifecycleHandler):
             ctx.session.flush()
 
 
+@dataclass(frozen=True)
 class Request(IMoiLifecycleHandler):
     """A request class: create starts the run through `start(ctx, moi, key, function_id)`; modify takes the two flags through
     `flags(ctx, row, cancel, suspend)` and nothing else; delete is refused (the record stays) unless its function is deleted."""
 
-    FLAGS = {"cancelRequest", "suspendRequest"}
+    FLAGS: ClassVar[frozenset[str]] = frozenset({"cancelRequest", "suspendRequest"})
 
-    def __init__(self, table: type, function_class: str, takes: set[str], start, flags, *, owner=None):
-        """Keeps the row's table, the function class it is contained by, the attributes a create takes, and the start, flags and owner-check
-        callables."""
-        self.table, self.function_class, self.takes = table, function_class, takes
-        self.start, self.flags, self.owner = start, flags, owner
+    table: type
+    function_class: str
+    takes: frozenset[str]
+    start: Callable
+    flags: Callable
+    owner: Callable
 
     def before_create(self, ctx: MoiContext, moi: Moi) -> None:
         """Starts the run (every check of the route), named by the instance's UUID."""
@@ -269,11 +271,9 @@ class Request(IMoiLifecycleHandler):
         if row is None:
             raise _veto(404, f"{old.dn} has no row in AIMgF", old.dn)
         try:
-            if self.owner is not None:
-                self.owner(ctx, row)
-            cancel = new.attributes.get("cancelRequest") if "cancelRequest" in changed else None
-            suspend = new.attributes.get("suspendRequest") if "suspendRequest" in changed else None
-            self.flags(ctx, row, cancel, suspend)
+            self.owner(ctx, row)
+            flags = {name: new.attributes.get(name) for name in changed}         # a flag that did not change does not act
+            self.flags(ctx, row, flags.get("cancelRequest"), flags.get("suspendRequest"))
             ctx.session.flush()
         except HTTPException as exc:
             raise _domain(exc, old.dn) from None
@@ -288,15 +288,13 @@ class Request(IMoiLifecycleHandler):
             raise _veto(409, f"a {moi.class_name} is kept as the record of its run; set cancelRequest to end it", moi.dn)
 
 
+@dataclass(frozen=True)
 class TrainingProcess(ReadOnly):
     """MLTrainingProcess: `priority` and `terminationConditions` are written to the process, `cancelProcess` / `suspendProcess` act on its run as
     the request's flags do (PATCH /ml-training-processes/{id})."""
 
-    TAKES = {"priority", "terminationConditions", "cancelProcess", "suspendProcess"}
-
-    def __init__(self):
-        """A process a consumer only changes."""
-        super().__init__("AIMgF makes a process when its request starts")
+    TAKES: ClassVar[frozenset[str]] = frozenset({"priority", "terminationConditions", "cancelProcess", "suspendProcess"})
+    why: str = "AIMgF makes a process when its request starts"
 
     def before_modify(self, ctx: MoiContext, old: Moi, new: Moi) -> None:
         """Writes the plain attributes, then applies the flags to the run (owner rule of call flow 02)."""
@@ -314,8 +312,8 @@ class TrainingProcess(ReadOnly):
                 process.priority = new.attributes.get("priority") or 0
             if "terminationConditions" in changed:
                 process.termination_conditions = new.attributes.get("terminationConditions")
-            _apply_training_flags(ctx.session, job, new.attributes.get("cancelProcess") if "cancelProcess" in changed else None,
-                                  new.attributes.get("suspendProcess") if "suspendProcess" in changed else None)
+            flags = {name: new.attributes.get(name) for name in changed}
+            _apply_training_flags(ctx.session, job, flags.get("cancelProcess"), flags.get("suspendProcess"))
             ctx.session.flush()
         except HTTPException as exc:
             raise _domain(exc, old.dn) from None
@@ -325,14 +323,12 @@ class TrainingProcess(ReadOnly):
         _refresh(ctx, m.MLTrainingProcess, uuid.UUID(old.moi_id))
 
 
+@dataclass(frozen=True)
 class InferenceReport(ReadOnly):
     """AIMLInferenceReport: a runtime creates one on its inference function (POST /aiml-inference-reports); it is not changed or deleted."""
 
-    TAKES = {"inferenceOutputs", "potentialImpactInfo", "mLModelRefList"}
-
-    def __init__(self):
-        """A report a consumer only creates."""
-        super().__init__("a report is not changed or deleted")
+    TAKES: ClassVar[frozenset[str]] = frozenset({"inferenceOutputs", "potentialImpactInfo", "mLModelRefList"})
+    why: str = "a report is not changed or deleted"
 
     def before_create(self, ctx: MoiContext, moi: Moi) -> None:
         """Records the report on its inference function, with the owner rule of call flow 27d."""
@@ -355,9 +351,9 @@ class InferenceReport(ReadOnly):
 
 # ---------------------------------------------------------------------------- the request starts and flags
 
-_TRAINING_TAKES = {"aIMLInferenceName", "fLRequirement", "candidateTrainingDataSource", "trainingDataQualityScore", "trainingRequestSource",
+_TRAINING_TAKES = frozenset({"aIMLInferenceName", "fLRequirement", "candidateTrainingDataSource", "trainingDataQualityScore", "trainingRequestSource",
                    "performanceRequirements", "rLRequirement", "trainingDataStatisticalProperties", "distributedTrainingExpectation",
-                   "mLKnowledgeName", "mLTrainingType", "expectedInferenceScope", "clusteringInfo", "mLModelRef", "mLModelCoordinationGroupRef"}
+                   "mLKnowledgeName", "mLTrainingType", "expectedInferenceScope", "clusteringInfo", "mLModelRef", "mLModelCoordinationGroupRef"})
 
 
 def _caller_name() -> str:
@@ -381,8 +377,8 @@ def _start_training_request(ctx: MoiContext, moi: Moi, key: uuid.UUID, function_
                     training_data_quality_score=a.get("trainingDataQualityScore"), performance_requirements=a.get("performanceRequirements"),
                     rl_requirement=a.get("rLRequirement"), training_data_statistical_properties=a.get("trainingDataStatisticalProperties"),
                     distributed_training_expectation=a.get("distributedTrainingExpectation"), ml_knowledge_name=a.get("mLKnowledgeName"),
-                    expected_inference_scope=a.get("expectedInferenceScope"), clustering_info=a.get("clusteringInfo"), dme_data_job_ids=[],
-                    runtime_profile=_resolve_runtime_profile("TRAINING", None, None), request=_request(), training_job_id=key)
+                    expected_inference_scope=a.get("expectedInferenceScope"), clustering_info=a.get("clusteringInfo"), request=_request(),
+                    training_job_id=key)
 
 
 def _training_owner(ctx: MoiContext, job) -> None:
@@ -391,8 +387,7 @@ def _training_owner(ctx: MoiContext, job) -> None:
 
 def _start_testing_request(ctx: MoiContext, moi: Moi, key: uuid.UUID, function_id: uuid.UUID | None) -> None:
     _start_validation(ctx.session, model_id=_ref(moi, "mLModelRef"), group_id=_ref(moi, "mLModelCoordinationGroupRef"),
-                      producer_id=_caller_name(), request=_request(), ml_testing_function_id=function_id, validation_job_id=key,
-                      runtime_profile=_resolve_runtime_profile("VALIDATION", None, None))
+                      producer_id=_caller_name(), request=_request(), ml_testing_function_id=function_id, validation_job_id=key)
 
 
 def _testing_owner(ctx: MoiContext, job) -> None:
@@ -461,12 +456,12 @@ HANDLERS: dict[str, IMoiLifecycleHandler] = {
                                      refs_columns={"mLModelRef": "ml_model_refs"}, parent_column="aiml_inference_function_id"),
     "MLTrainingRequest": Request(m.TrainingJob, "MLTrainingFunction", _TRAINING_TAKES, _start_training_request, _training_flags,
                                  owner=_training_owner),
-    "MLTestingRequest": Request(m.ValidationJob, "MLTestingFunction", {"mLModelRef", "mLModelCoordinationGroupRef"}, _start_testing_request,
+    "MLTestingRequest": Request(m.ValidationJob, "MLTestingFunction", frozenset({"mLModelRef", "mLModelCoordinationGroupRef"}), _start_testing_request,
                                 _testing_flags, owner=_testing_owner),
     "MLUpdateRequest": Request(m.MLUpdateRequest, "MLUpdateFunction",
-                               {"mLModelRefList", "performanceGainThreshold", "newCapabilityVersionId", "updateTimeDeadline", "mLUpdateReportingPeriod"},
+                               frozenset({"mLModelRefList", "performanceGainThreshold", "newCapabilityVersionId", "updateTimeDeadline", "mLUpdateReportingPeriod"}),
                                _start_update_request, _update_flags, owner=_update_owner),
-    "MLModelLoadingRequest": Request(m.MLModelLoadingRequest, "AIMLInferenceFunction", {"mLModelToLoadRef", "cancelRequest", "suspendRequest"},
+    "MLModelLoadingRequest": Request(m.MLModelLoadingRequest, "AIMLInferenceFunction", frozenset({"mLModelToLoadRef", "cancelRequest", "suspendRequest"}),
                                      _start_loading_request, _loading_flags, owner=_loading_owner),
     "MLTrainingProcess": TrainingProcess(),
     "MLTrainingReport": ReadOnly("AIMgF writes a report when its run ends"),
