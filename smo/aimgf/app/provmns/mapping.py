@@ -7,7 +7,7 @@ TS 28.105 class served over ProvMnS maps onto the 14 states (S2.10).
                                                 SERVING_ACTIVE, DEPRECATED; SERVING_ACTIVE when a CERTIFIED or PROMOTED model's runtime is ACTIVE
   CLASS_LIFECYCLE                               per class: the model states it moves a model into, and the states a model must be in for it to act
 
-The two tables here are the ones `aimgf/README.md` 2.6 and `docs/STANDARDS.md` publish; `tests/test_provmns_mapping.py` holds the code to them, so
+The two tables here are the ones `aimgf/README.md` 2.3 and `docs/STANDARDS.md` publish; `tests/test_provmns_mapping.py` holds the code to them, so
 the documents and the code cannot drift apart. The GUI shows both labels from Stage 6 (S6's row); nothing here is GUI code.
 """
 

@@ -30,7 +30,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import event, select
+from sqlalchemy import event, inspect, select
 from sqlalchemy.orm import Session
 
 from smo_shared import events
@@ -81,7 +81,7 @@ class Projector:
 
     def key(self, row) -> Any:
         """The primary key of `row` (each mapped table has one column)."""
-        return getattr(row, self.table.__mapper__.primary_key[0].key)
+        return getattr(row, inspect(self.table).primary_key[0].key)
 
 
 def _get(db: Session, table: type, key: Any):
@@ -145,7 +145,7 @@ def _governance_view(db: Session, lifecycle) -> dict:
 
 def _training_request_adjust(attributes: dict) -> dict:
     status = attributes.get("requestStatus")
-    return {**attributes, "requestStatus": _TRAINING_REQUEST_STATUS.get(status, status)}
+    return {**attributes, "requestStatus": _TRAINING_REQUEST_STATUS[status]} if status in _TRAINING_REQUEST_STATUS else attributes
 
 
 def _models_named(ids) -> list[tuple[type, Any]]:
@@ -462,7 +462,8 @@ def project_all(db: Session) -> int:
     returns how many instances were written. Does not commit."""
     count = 0
     for projector in PROJECTORS:
-        for key in db.scalars(select(projector.table.__mapper__.primary_key[0])).all():
+        column: Any = inspect(projector.table).primary_key[0]
+        for key in db.scalars(select(column)).all():
             count += project_one(db, _registry, projector, key) is not None
     db.flush()
     return count

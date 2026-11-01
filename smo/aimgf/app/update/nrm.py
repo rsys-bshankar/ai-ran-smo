@@ -104,7 +104,7 @@ def create_ml_update_request(body: MLUpdateRequestBody, request: Request, db: Se
     return _update_request_view_for(db)(r)
 
 
-def start_update(db: Session, request: Request | None, *, function_id: uuid.UUID | None, model_ids: list[uuid.UUID], source: str,
+def start_update(db: Session, request: Request, *, function_id: uuid.UUID | None, model_ids: list[uuid.UUID], source: str,
                  request_id: uuid.UUID | None = None, **request_fields) -> MLUpdateRequest:
     """Starts an ML update (POST /ml-update-requests and the MLUpdateRequest hook of ProvMnS): the checks of the route notes above, then the request
     (with id `request_id` when given), its process and one FINE_TUNING run per model. `request_fields` are the request's TS 28.105 columns. Flushes,

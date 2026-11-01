@@ -138,7 +138,7 @@ def create_aiml_inference_report(body: AIMLInferenceReportBody, request: Request
     return _inference_report_view(r)
 
 
-def record_inference_report(db: Session, request: Request | None, *, function_id: uuid.UUID | None, emulation_function_id: uuid.UUID | None,
+def record_inference_report(db: Session, request: Request, *, function_id: uuid.UUID | None, emulation_function_id: uuid.UUID | None,
                             model_ids: list[uuid.UUID], inference_outputs: list, potential_impact_info: dict | None,
                             report_id: uuid.UUID | None = None) -> AIMLInferenceReport:
     """Records an inference report (POST /aiml-inference-reports and the AIMLInferenceReport hook of ProvMnS), with id `report_id` when given; the
@@ -148,7 +148,7 @@ def record_inference_report(db: Session, request: Request | None, *, function_id
                                detail="exactly one of aIMLInferenceFunctionRef/aIMLInferenceEmulationFunctionRef")
     if function_id is not None:
         _get(db, AIMLInferenceFunction, function_id, "AIMLInferenceFunction")
-    else:                                                          # exactly one is set (checked above)
+    elif emulation_function_id is not None:                        # exactly one is set (checked above)
         _get(db, AIMLInferenceEmulationFunction, emulation_function_id, "AIMLInferenceEmulationFunction")
     _check_rapp_owns_models(db, request, [uuid.UUID(str(m)) for m in model_ids], "report on its inference")
     r = AIMLInferenceReport(aiml_inference_function_id=function_id, aiml_inference_emulation_function_id=emulation_function_id,

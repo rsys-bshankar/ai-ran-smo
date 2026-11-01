@@ -212,7 +212,7 @@ def create_ml_model_loading_request(request: Request, body: MLModelLoadingReques
     return _loading_request_view(r)
 
 
-def start_loading(db: Session, request: Request | None, *, function_id: uuid.UUID, model_ids: list[uuid.UUID], cancel: bool = False,
+def start_loading(db: Session, request: Request, *, function_id: uuid.UUID, model_ids: list[uuid.UUID], cancel: bool = False,
                   suspend: bool = False, request_id: uuid.UUID | None = None) -> MLModelLoadingRequest:
     """Records a loading request (POST /ml-model-loading-requests and the MLModelLoadingRequest hook of ProvMnS), with id `request_id` when given, and
     runs it unless it is cancelled or suspended; the checks of the route notes above. Flushes, does not commit."""
@@ -258,7 +258,7 @@ def modify_ml_model_loading_request(request: Request, request_id: uuid.UUID, bod
     return _loading_request_view(r)
 
 
-def apply_loading_flags(db: Session, request: Request | None, r: MLModelLoadingRequest, cancel: bool | None, suspend: bool | None) -> None:
+def apply_loading_flags(db: Session, request: Request, r: MLModelLoadingRequest, cancel: bool | None, suspend: bool | None) -> None:
     """Applies the NRM control flags to a loading request (PATCH /ml-model-loading-requests/{id} and the MLModelLoadingRequest hook of ProvMnS), as the
     route notes above say; a resume loads the models now. Does not commit."""
     if r.request_status in ("FINISHED", "CANCELLED"):

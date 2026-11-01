@@ -13,12 +13,12 @@
   "aimgf DELETE /aiml-inference-emulation-functions/{}": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS deleteMOI on `AIMLInferenceEmulationFunction` [N] TS 28.105",
-   "row": "S2.7, S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf DELETE /aiml-inference-functions/{}": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS deleteMOI on `AIMLInferenceFunction` [N] TS 28.105",
-   "row": "S2.7, S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf DELETE /feature-groups/{}": {
    "fate": "replaced",
@@ -28,7 +28,7 @@
   "aimgf DELETE /ml-model-loading-policies/{}": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS deleteMOI on `MLModelLoadingPolicy` [N] TS 28.105",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf DELETE /ml-model-repositories/{}": {
    "fate": "replaced",
@@ -39,7 +39,7 @@
   "aimgf DELETE /ml-training-requests/{}": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS deleteMOI on `MLTrainingRequest` [N] TS 28.105",
-   "row": "S2.7, S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf DELETE /mlmf/subscriptions/{}": {
    "fate": "replaced",
@@ -50,7 +50,7 @@
    "fate": "replaced",
    "movedFrom": "mlmr DELETE /models/{}",
    "replacement": "R1GAP v14 §5.6.2 / §5.6.4 model registration and discovery; TS 28.532 ProvMnS on `MLModel` [N] TS 28.105 (in AIMgF)",
-   "row": "S2.1, S2.7, S2.11"
+   "row": "S2.11"
   },
   "aimgf DELETE /storages/{}": {
    "fate": "replaced",
@@ -61,53 +61,53 @@
   "aimgf DELETE /training-jobs/{}": {
    "fate": "replaced",
    "replacement": "R1GAP v14 §5.6.8 AI/ML model training services; inside AIMgF `MLTrainingRequest` / `MLTrainingProcess` [N] TS 28.105",
-   "row": "S2.10, S2.11"
+   "row": "S2.11"
   },
   "aimgf GET /aiml-inference-emulation-functions": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS getMOIAttributes on `AIMLInferenceEmulationFunction` [N] TS 28.105",
-   "row": "S2.7, S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf GET /aiml-inference-emulation-functions/{}": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS getMOIAttributes on `AIMLInferenceEmulationFunction` [N] TS 28.105",
-   "row": "S2.7, S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf GET /aiml-inference-functions": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS getMOIAttributes on `AIMLInferenceFunction` [N] TS 28.105",
-   "row": "S2.7, S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf GET /aiml-inference-functions/{}": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS getMOIAttributes on `AIMLInferenceFunction` [N] TS 28.105",
-   "row": "S2.7, S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf GET /aiml-inference-reports": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS getMOIAttributes on `AIMLInferenceReport` [N] TS 28.105",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf GET /aiml-inference-reports/{}": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS getMOIAttributes on `AIMLInferenceReport` [N] TS 28.105",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf GET /coordination-groups": {
    "fate": "replaced",
    "movedFrom": "mlmr GET /coordination-groups",
    "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLModelCoordinationGroup` [N] TS 28.105 (in AIMgF)",
-   "row": "S2.1, S2.10"
+   "row": "S2.11"
   },
   "aimgf GET /emulation-jobs": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS on `AIMLInferenceEmulationFunction` [N] TS 28.105 (v19.5.0 has no separate emulation request class)",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf GET /emulation-jobs/{}/status": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS on `AIMLInferenceEmulationFunction` [N] TS 28.105 (v19.5.0 has no separate emulation request class)",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf GET /feature-groups": {
    "fate": "replaced",
@@ -132,22 +132,22 @@
   "aimgf GET /ml-model-loading-policies": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLModelLoadingPolicy` [N] TS 28.105",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf GET /ml-model-loading-policies/{}": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLModelLoadingPolicy` [N] TS 28.105",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf GET /ml-model-loading-requests": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLModelLoadingRequest` [N] TS 28.105",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf GET /ml-model-loading-requests/{}": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLModelLoadingRequest` [N] TS 28.105",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf GET /ml-model-repositories": {
    "fate": "replaced",
@@ -165,57 +165,57 @@
    "fate": "replaced",
    "movedFrom": "mlmr GET /ml-models/{}",
    "replacement": "R1GAP v14 §5.6.2 / §5.6.4 model registration and discovery; TS 28.532 ProvMnS on `MLModel` [N] TS 28.105 (in AIMgF)",
-   "row": "S2.1, S2.7, S2.11"
+   "row": "S2.11"
   },
   "aimgf GET /ml-testing-requests": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLTestingRequest` [N] TS 28.105",
-   "row": "S2.7, S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf GET /ml-testing-requests/{}": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLTestingRequest` [N] TS 28.105",
-   "row": "S2.7, S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf GET /ml-training-processes": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLTrainingProcess` [N] TS 28.105",
-   "row": "S2.7, S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf GET /ml-training-processes/{}": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLTrainingProcess` [N] TS 28.105",
-   "row": "S2.7, S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf GET /ml-training-requests": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLTrainingRequest` [N] TS 28.105",
-   "row": "S2.7, S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf GET /ml-training-requests/{}": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLTrainingRequest` [N] TS 28.105",
-   "row": "S2.7, S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf GET /ml-update-processes": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLUpdateProcess` [N] TS 28.105",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf GET /ml-update-processes/{}": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLUpdateProcess` [N] TS 28.105",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf GET /ml-update-requests": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLUpdateRequest` [N] TS 28.105",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf GET /ml-update-requests/{}": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLUpdateRequest` [N] TS 28.105",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf GET /mlmf/reports": {
    "fate": "replaced",
@@ -236,13 +236,13 @@
    "fate": "replaced",
    "movedFrom": "mlmr GET /models",
    "replacement": "R1GAP v14 §5.6.2 / §5.6.4 model registration and discovery; TS 28.532 ProvMnS on `MLModel` [N] TS 28.105 (in AIMgF)",
-   "row": "S2.1, S2.7, S2.11"
+   "row": "S2.11"
   },
   "aimgf GET /models/{}": {
    "fate": "replaced",
    "movedFrom": "mlmr GET /models/{}",
    "replacement": "R1GAP v14 §5.6.2 / §5.6.4 model registration and discovery; TS 28.532 ProvMnS on `MLModel` [N] TS 28.105 (in AIMgF)",
-   "row": "S2.1, S2.7, S2.11"
+   "row": "S2.11"
   },
   "aimgf GET /models/{}/artifact/{}": {
    "fate": "replaced",
@@ -265,63 +265,63 @@
   "aimgf GET /training-jobs": {
    "fate": "replaced",
    "replacement": "R1GAP v14 §5.6.8 AI/ML model training services; inside AIMgF `MLTrainingRequest` / `MLTrainingProcess` [N] TS 28.105",
-   "row": "S2.10, S2.11"
+   "row": "S2.11"
   },
   "aimgf GET /training-jobs/{}/model-metrics": {
    "fate": "replaced",
    "replacement": "R1GAP v14 §5.6.8 AI/ML model training services; inside AIMgF `MLTrainingRequest` / `MLTrainingProcess` [N] TS 28.105",
-   "row": "S2.10, S2.11"
+   "row": "S2.11"
   },
   "aimgf GET /training-jobs/{}/status": {
    "fate": "replaced",
    "replacement": "R1GAP v14 §5.6.8 AI/ML model training services; inside AIMgF `MLTrainingRequest` / `MLTrainingProcess` [N] TS 28.105",
-   "row": "S2.10, S2.11"
+   "row": "S2.11"
   },
   "aimgf GET /validation-jobs": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS on `MLTestingRequest` [N] TS 28.105",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf GET /validation-jobs/{}/status": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS on `MLTestingRequest` [N] TS 28.105",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf PATCH /aiml-inference-functions/{}": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `AIMLInferenceFunction` [N] TS 28.105",
-   "row": "S2.7, S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf PATCH /ml-model-loading-requests/{}": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `MLModelLoadingRequest` [N] TS 28.105",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf PATCH /ml-testing-requests/{}": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `MLTestingRequest` [N] TS 28.105",
-   "row": "S2.7, S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf PATCH /ml-training-processes/{}": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `MLTrainingProcess` [N] TS 28.105",
-   "row": "S2.7, S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf PATCH /ml-training-requests/{}": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `MLTrainingRequest` [N] TS 28.105",
-   "row": "S2.7, S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf PATCH /ml-update-requests/{}": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `MLUpdateRequest` [N] TS 28.105",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf PATCH /models/{}/phase-info": {
    "fate": "replaced",
    "movedFrom": "mlmr PATCH /models/{}/phase-info",
    "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `MLModel` (in AIMgF)",
-   "row": "S2.1, S2.7"
+   "row": "S2.11"
   },
   "aimgf PATCH /models/{}/runtime/node-groups": {
    "fate": "replaced",
@@ -337,33 +337,33 @@
   "aimgf POST /aiml-inference-emulation-functions": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS createMOI on `AIMLInferenceEmulationFunction` [N] TS 28.105",
-   "row": "S2.7, S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf POST /aiml-inference-functions": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS createMOI on `AIMLInferenceFunction` [N] TS 28.105",
-   "row": "S2.7, S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf POST /aiml-inference-reports": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS createMOI on `AIMLInferenceReport` [N] TS 28.105",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf POST /coordination-groups": {
    "fate": "replaced",
    "movedFrom": "mlmr POST /coordination-groups",
    "replacement": "TS 28.532 ProvMnS createMOI on `MLModelCoordinationGroup` [N] TS 28.105 (in AIMgF)",
-   "row": "S2.1, S2.10"
+   "row": "S2.11"
   },
   "aimgf POST /emulation-jobs": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS on `AIMLInferenceEmulationFunction` [N] TS 28.105 (v19.5.0 has no separate emulation request class)",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf POST /emulation-jobs/{}/complete": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS on `AIMLInferenceEmulationFunction` [N] TS 28.105 (v19.5.0 has no separate emulation request class)",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf POST /execution-timeouts/sweep": {
    "fate": "delete",
@@ -383,17 +383,17 @@
   "aimgf POST /ml-model-loading-policies": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS createMOI on `MLModelLoadingPolicy` [N] TS 28.105",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf POST /ml-model-loading-policies/{}/trigger": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS createMOI on `MLModelLoadingRequest` [N] TS 28.105 (a policy triggers itself on its conditions)",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf POST /ml-model-loading-requests": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS createMOI on `MLModelLoadingRequest` [N] TS 28.105",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf POST /ml-model-repositories": {
    "fate": "replaced",
@@ -404,22 +404,22 @@
   "aimgf POST /ml-testing-requests": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS createMOI on `MLTestingRequest` [N] TS 28.105",
-   "row": "S2.7, S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf POST /ml-training-processes/{}/progress": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `MLTrainingProcess` (`progressStatus`)",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf POST /ml-training-requests": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS createMOI on `MLTrainingRequest` [N] TS 28.105",
-   "row": "S2.7, S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf POST /ml-update-requests": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS createMOI on `MLUpdateRequest` [N] TS 28.105",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf POST /mlmf/subscriptions": {
    "fate": "replaced",
@@ -435,7 +435,7 @@
    "fate": "replaced",
    "movedFrom": "mlmr POST /models",
    "replacement": "R1GAP v14 §5.6.2 / §5.6.4 model registration and discovery; TS 28.532 ProvMnS on `MLModel` [N] TS 28.105 (in AIMgF)",
-   "row": "S2.1, S2.7, S2.11"
+   "row": "S2.11"
   },
   "aimgf POST /models/{}/artifact": {
    "fate": "replaced",
@@ -457,12 +457,12 @@
   "aimgf POST /models/{}/runtime/activate": {
    "fate": "replaced",
    "replacement": "R1GAP v14 §5.6.7 AI/ML model deployment request service; inside AIMgF a TS 28.105 `MLModelLoadingRequest`",
-   "row": "S2.10, S2.11"
+   "row": "S2.11"
   },
   "aimgf POST /models/{}/runtime/deploy": {
    "fate": "replaced",
    "replacement": "R1GAP v14 §5.6.7 AI/ML model deployment request service; inside AIMgF a TS 28.105 `MLModelLoadingRequest`",
-   "row": "S2.10, S2.11"
+   "row": "S2.11"
   },
   "aimgf POST /models/{}/runtime/scale": {
    "fate": "replaced",
@@ -472,7 +472,7 @@
   "aimgf POST /models/{}/runtime/terminate": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS deleteMOI on the loaded `MLModel` under its `AIMLInferenceFunction` (unload, AIML-UNLOAD)",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf POST /storages": {
    "fate": "replaced",
@@ -483,48 +483,48 @@
   "aimgf POST /training-jobs": {
    "fate": "replaced",
    "replacement": "R1GAP v14 §5.6.8 AI/ML model training services; inside AIMgF `MLTrainingRequest` / `MLTrainingProcess` [N] TS 28.105",
-   "row": "S2.10, S2.11"
+   "row": "S2.11"
   },
   "aimgf POST /training-jobs/{}/complete": {
    "fate": "replaced",
    "replacement": "R1GAP v14 §5.6.8 AI/ML model training services; inside AIMgF `MLTrainingRequest` / `MLTrainingProcess` [N] TS 28.105",
-   "row": "S2.10, S2.11"
+   "row": "S2.11"
   },
   "aimgf POST /training-jobs/{}/model-metrics": {
    "fate": "replaced",
    "replacement": "R1GAP v14 §5.6.8 AI/ML model training services; inside AIMgF `MLTrainingRequest` / `MLTrainingProcess` [N] TS 28.105",
-   "row": "S2.10, S2.11"
+   "row": "S2.11"
   },
   "aimgf POST /training-jobs/{}/progress": {
    "fate": "replaced",
    "replacement": "R1GAP v14 §5.6.8 AI/ML model training services; inside AIMgF `MLTrainingRequest` / `MLTrainingProcess` [N] TS 28.105",
-   "row": "S2.10, S2.11"
+   "row": "S2.11"
   },
   "aimgf POST /training-jobs/{}/resume": {
    "fate": "replaced",
    "replacement": "R1GAP v14 §5.6.8 AI/ML model training services; inside AIMgF `MLTrainingRequest` / `MLTrainingProcess` [N] TS 28.105",
-   "row": "S2.10, S2.11"
+   "row": "S2.11"
   },
   "aimgf POST /training-jobs/{}/suspend": {
    "fate": "replaced",
    "replacement": "R1GAP v14 §5.6.8 AI/ML model training services; inside AIMgF `MLTrainingRequest` / `MLTrainingProcess` [N] TS 28.105",
-   "row": "S2.10, S2.11"
+   "row": "S2.11"
   },
   "aimgf POST /validation-jobs": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS on `MLTestingRequest` [N] TS 28.105",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf POST /validation-jobs/{}/complete": {
    "fate": "replaced",
    "replacement": "TS 28.532 ProvMnS on `MLTestingRequest` [N] TS 28.105",
-   "row": "S2.10"
+   "row": "S2.11, S6.8"
   },
   "aimgf PUT /models/{}": {
    "fate": "replaced",
    "movedFrom": "mlmr PUT /models/{}",
    "replacement": "R1GAP v14 §5.6.2 / §5.6.4 model registration and discovery; TS 28.532 ProvMnS on `MLModel` [N] TS 28.105 (in AIMgF)",
-   "row": "S2.1, S2.7, S2.11"
+   "row": "S2.11"
   },
   "aimgf PUT /storages/{}": {
    "fate": "replaced",

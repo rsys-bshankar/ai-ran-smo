@@ -11,7 +11,8 @@ import yaml
 from app.governance.statemachine import ModelLifecycleState as M, RuntimeLifecycleState as R, TRAINABLE_STATES
 from app.provmns import mapping, service
 
-BUNDLE = Path(__file__).resolve().parents[3] / "specs" / "smo-schema-bundle" / "openapi" / "modules" / "aimgf.yaml"
+BUNDLE = next(parent / "specs" / "smo-schema-bundle" / "openapi" / "modules" / "aimgf.yaml"      # the repository's, also from mutmut's copy
+              for parent in Path(__file__).resolve().parents if (parent / "specs" / "smo-schema-bundle").is_dir())
 
 # ADR 0010 section 3.4, row by row: (state, stage with no runtime, servingState with no runtime).
 TABLE = [

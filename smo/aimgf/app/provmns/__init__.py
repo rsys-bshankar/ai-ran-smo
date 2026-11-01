@@ -7,5 +7,5 @@ generic router of `smo_shared.mns` from `aimgf.moi_store`.
   tree.py         where each instance sits (its DN)
   mapping.py      the lifecycle mapping: 14 states -> the HLD's 7 stages -> servingState, and each class onto the 14 states
 
-`aimgf/README.md` section 2.10 describes it; section 2.6 is the mapping.
+`aimgf/README.md` 2.4 ("TS 28.105 over ProvMnS") describes it; 2.3 ("The lifecycle mapping") is the mapping.
 """

@@ -28,7 +28,7 @@ import uuid
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import inspect, select
 
 from smo_shared.invoker import invoker_id
 from smo_shared.mns import IMoiLifecycleHandler, Moi, MoiContext, MnsError
@@ -197,7 +197,7 @@ class Function(IMoiLifecycleHandler):
             values[self.parent_column] = parent
         elif parent_of(moi.dn) != ROOT_DN:
             raise _veto(422, f"AIMgF's {moi.class_name} instances are created under {ROOT_DN}", moi.dn)
-        pk = self.table.__mapper__.primary_key[0].key
+        pk: str = inspect(self.table).primary_key[0].key
         ctx.session.add(self.table(**{pk: key}, **values))
         ctx.session.flush()
 

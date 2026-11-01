@@ -31,7 +31,8 @@ BASE = f"/ProvMnS/{PROVMNS_VERSION}/"
 ROOT = "ManagedElement=AIMgF"
 MERGE = {"content-type": "application/merge-patch+json"}
 RAPP = {"X-R1-Role": "rapp", "X-R1-Invoker-Id": "rapp-b"}
-BUNDLE = Path(__file__).resolve().parents[3] / "specs" / "smo-schema-bundle" / "openapi" / "modules" / "aimgf.yaml"
+BUNDLE = next(parent / "specs" / "smo-schema-bundle" / "openapi" / "modules" / "aimgf.yaml"      # the repository's, also from mutmut's copy
+              for parent in Path(__file__).resolve().parents if (parent / "specs" / "smo-schema-bundle").is_dir())
 
 
 def _path(dn: str) -> str:
