@@ -1,0 +1,18 @@
+# shared: what this module is to the rest of the SMO (scripts/modules.py; the schema is scripts/module.schema.json). Edit this file, then run
+# `python scripts/modules.py --write` from smo/: it regenerates the shared files that list modules, and CI runs `--check`.
+name: shared
+lane: shared
+r1: []
+database:
+  role: null
+  tables: [audit_head, audit_log, idempotency_key, module_identity, notification_outbox, periodic_run, rate_bucket, smo_event, smo_event_relay]
+openapi: false
+tests: {source: smo_shared, pythonpath: ".", floor: 95}
+mutation:
+  pythonpath: ".:../r1-termination"
+  targets: ["smo_shared/pagination.py", "smo_shared/ratelimit.py", "smo_shared/timeutil.py", "smo_shared/roles.py", "smo_shared/webhook.py", "smo_shared/killswitch.py", "smo_shared/invoker.py", "smo_shared/bodylimit.py", "smo_shared/secretfile.py", "smo_shared/versioning.py", "smo_shared/identity.py", "smo_shared/correlation.py", "smo_shared/audit.py", "smo_shared/idempotency.py", "smo_shared/security_headers.py", "smo_shared/errors.py", "smo_shared/scope.py", "smo_shared/mns/dn.py", "smo_shared/mns/errors.py", "smo_shared/mns/patch.py", "smo_shared/mns/scope.py", "smo_shared/mns/registry.py", "smo_shared/mns/service.py", "smo_shared/mns/router.py", "smo_shared/mns/checks.py", "smo_shared/msac.py", "smo_shared/mns/dictionary/__init__.py", "smo_shared/mns/dictionary/ts28111.py", "smo_shared/mns/dictionary/ts28552.py", "smo_shared/mns/dictionary/ts28554.py"]
+  watch: ["smo/shared/pyproject.toml", "smo/shared/smo_shared/*.py", "smo/shared/smo_shared/mns/*.py", "smo/shared/smo_shared/mns/dictionary/*.py", "smo/shared/tests/**"]
+code_docs: true
+config_reference: true
+compose: null
+helm: null

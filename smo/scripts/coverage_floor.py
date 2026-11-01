@@ -1,7 +1,9 @@
 """PR-V-1 / QA-7.3: per-module coverage against a floor that only goes up.
 
-    python scripts/coverage_floor.py coverage/            # reads coverage/<module>.json (`coverage json`), checks coverage_floors.json
+    python scripts/coverage_floor.py coverage/            # reads coverage/<module>.json (`coverage json`), checks each module's floor
     python scripts/coverage_floor.py coverage/ --write    # sets each floor to the measured percentage, rounded down to a whole number
+
+A module's floor is `tests.floor` in its manifest, `<module>/module.yaml` (scripts/modules.py); `--write` rewrites that line of each manifest.
 
 A module below its floor fails (a change removed tests or added untested code). A module more than `SLACK` points above its floor also fails, so the
 floor is raised in the same pull request that raised the coverage and a later drop cannot hide in the gap. A module with no floor yet fails: a new
@@ -12,8 +14,10 @@ import os
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import modules  # noqa: E402  (scripts/modules.py: the module manifests)
+
 SLACK = 3.0
-FLOORS = Path(__file__).resolve().parent.parent / "coverage_floors.json"
 
 
 def measured(directory: Path) -> dict[str, float]:
@@ -26,18 +30,24 @@ def measured(directory: Path) -> dict[str, float]:
 
 
 def main(argv: list[str]) -> int:
-    """Compares the measured coverage with `coverage_floors.json` and prints the table; with `--write` it instead sets every floor to the measured percentage rounded down.
+    """Compares the measured coverage with each module's floor (its manifest's `tests.floor`) and prints the table; with `--write` it instead sets every
+        floor to the measured percentage rounded down.
 
         Returns 1 when a module is below its floor, more than `SLACK` points above it, has no floor, or has a floor but no measurement; each is also printed as a GitHub
         `::error::` line. Appends the table to `GITHUB_STEP_SUMMARY` when that is set.
     """
     directory = Path(argv[1])
     numbers = measured(directory)
+    floors = modules.coverage_floors()
     if "--write" in argv:
-        FLOORS.write_text(json.dumps({m: int(p) for m, p in sorted(numbers.items())}, indent=2) + "\n")
-        print(f"wrote {FLOORS.name}: {len(numbers)} modules")
-        return 0
-    floors = json.loads(FLOORS.read_text())
+        unknown = sorted(set(numbers) - set(floors))
+        for module in unknown:
+            print(f"::error::{module}: measured, but no module manifest declares this suite (tests: {{..., floor: N}} in <module>/module.yaml)")
+        for module, percent in sorted(numbers.items()):
+            if module in floors:
+                modules.set_floor(module, int(percent))
+        print(f"wrote the floors of {len(numbers) - len(unknown)} modules into their module.yaml")
+        return 1 if unknown else 0
     lines, failed = ["| module | measured % | floor % | |", "|---|---|---|---|"], []
     for module in sorted(set(numbers) | set(floors)):
         got, floor = numbers.get(module), floors.get(module)
@@ -46,7 +56,7 @@ def main(argv: list[str]) -> int:
             failed.append(f"{module}: has a floor but no coverage was measured")
         elif floor is None:
             note = "no floor"
-            failed.append(f"{module}: {got:.1f}% measured and no floor in coverage_floors.json (run with --write, and keep the new line)")
+            failed.append(f"{module}: {got:.1f}% measured and no floor: its module.yaml has no `tests` (add it, with a floor)")
         elif got < floor:
             note = "BELOW"
             failed.append(f"{module}: {got:.1f}% is below the floor {floor}%")

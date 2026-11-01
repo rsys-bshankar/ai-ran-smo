@@ -1,0 +1,13 @@
+# sdk: what this module is to the rest of the SMO (scripts/modules.py; the schema is scripts/module.schema.json). Edit this file, then run
+# `python scripts/modules.py --write` from smo/: it regenerates the shared files that list modules, and CI runs `--check`.
+name: sdk
+lane: sdks
+r1: []
+database: null
+openapi: false
+tests: {source: smo_sdk, pythonpath: ".:../shared", floor: 98}
+mutation: null
+code_docs: true
+config_reference: true
+compose: null
+helm: null

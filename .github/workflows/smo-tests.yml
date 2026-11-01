@@ -325,33 +325,24 @@ jobs:
           pip install --require-hashes -r requirements/dev.txt
           pip install --no-deps -e shared
 
-      # Every unit suite runs under coverage (scripts/run_unit_suite.sh) and leaves smo/coverage/<name>.json; the floors file is checked after the suites
+      # The module manifests (<module>/module.yaml, history.d/MODULE-MANIFESTS.md) are valid, agree with their modules, and the files generated from them
+      # (docker-compose.yml's module regions, the chart's modules, migrations/db_roles.json and table_owners.json, r1-termination/app/routes.json,
+      # smo-mutation.yml's paths) are current.
+      - name: Module manifests valid and generated files current (scripts/modules.py --check)
+        working-directory: smo
+        run: python scripts/modules.py --check
+
+      # Every unit suite runs under coverage (scripts/run_unit_suite.sh) and leaves smo/coverage/<name>.json; the floors are checked after the suites.
+      # The suites are the modules whose module.yaml has `tests` (what coverage measures, the PYTHONPATH, the floor): a module adds its suite in its own folder.
       - name: Run each module's unit test suite, with coverage
         working-directory: smo
         run: |
           set -e
-          for m in onboarding rapp-mgmt ran-nf-oam aimgf so-smos \
-                   sme dme r1-termination nfo focom ran-analytics mdaf \
-                   intent-service sa-smos mock-o1-adaptor echo; do
-            scripts/run_unit_suite.sh "$m" "$m" app ".:../shared"
-          done
-          scripts/run_unit_suite.sh sdk sdk smo_sdk ".:../shared"
-
-      - name: Run the sample rApps' own tests (EnergySaving, Mobility, Coverage and Traffic Steering, model and decision engines)
-        working-directory: smo
-        run: |
-          set -e
-          for r in energy-saving-rapp mobility-optimization-rapp coverage-optimization-rapp traffic-steering-rapp; do
-            scripts/run_unit_suite.sh "$r" "samples/$r" app ".:../../shared:../../sdk"
-          done
-
-      - name: Run the shared library's tests (R1Client's OAuth2 client flow, database, worker, ...)
-        working-directory: smo
-        run: scripts/run_unit_suite.sh shared shared smo_shared "."
-
-      - name: Run the Operator GUI BFF tests
-        working-directory: smo
-        run: scripts/run_unit_suite.sh gui-bff gui-bff app ".:../shared"
+          suites="$(python scripts/modules.py list unit-suites)"
+          [ -n "$suites" ]
+          while read -r name dir source pythonpath; do
+            scripts/run_unit_suite.sh "$name" "$dir" "$source" "$pythonpath" < /dev/null
+          done <<< "$suites"
 
       - name: Coverage against the floors (PR-V-1)
         working-directory: smo

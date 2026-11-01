@@ -9,7 +9,7 @@ CI runs `--check` and fails when this file no longer matches the code.
 
 | suite | files | test functions | collected tests |
 |---|---:|---:|---:|
-| `tests_integration` | 102 | 801 | 991 |
+| `tests_integration` | 103 | 813 | 1003 |
 
 ## Per test file
 
@@ -80,6 +80,7 @@ Paths are relative to `smo/`.
 | `tests_integration/test_mobility_optimization_rapp.py` | 7 | 7 |
 | `tests_integration/test_model_ownership.py` | 7 | 7 |
 | `tests_integration/test_module_isolation.py` | 1 | 14 |
+| `tests_integration/test_module_manifests.py` | 12 | 12 |
 | `tests_integration/test_msac_credential_through_dme.py` | 3 | 3 |
 | `tests_integration/test_mtls.py` | 24 | 24 |
 | `tests_integration/test_no_old_ml_prefixes.py` | 4 | 4 |

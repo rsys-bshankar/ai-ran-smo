@@ -58,18 +58,12 @@ import smo_shared.outbox  # noqa: E402,F401  (registers notification_outbox on t
 import smo_shared.audit  # noqa: E402,F401  (registers audit_log and audit_head)
 import smo_shared.ratelimit  # noqa: E402,F401  (registers rate_bucket)
 
-# Every module that persists to Postgres via smo_shared.db.Base. mock-o1-adaptor has no
-# models and no tables in the migrations, so it is deliberately left out.
-ALL_MODULES = [
-    "r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam",
-    "nfo", "focom", "aimgf", "ran-analytics", "mdaf",
-    "intent-service", "so-smos", "sa-smos",
-    "echo",  # PR-CONV-S1.6: the reference ProvMnS module; its model is the router's moi_store (echo/app/models.py)
-    "samples/energy-saving-rapp",  # Wave 10.1: the reference rApp's own tables
-    "samples/mobility-optimization-rapp",  # Wave 10.2
-    "samples/coverage-optimization-rapp",  # Wave 10.3
-    "samples/traffic-steering-rapp",  # Wave 10.4
-]
+# Every module that persists to Postgres via smo_shared.db.Base: the modules whose module.yaml gives them a database role (scripts/modules.py).
+# mock-o1-adaptor has no models and no tables in the migrations, so it has none.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import modules  # noqa: E402  (scripts/modules.py: the module manifests)
+
+ALL_MODULES = modules.database_modules()
 
 
 def _known(scripts, revision: str) -> bool:

@@ -1,0 +1,90 @@
+# gui-bff: what this module is to the rest of the SMO (scripts/modules.py; the schema is scripts/module.schema.json). Edit this file, then run
+# `python scripts/modules.py --write` from smo/: it regenerates the shared files that list modules, and CI runs `--check`.
+name: gui-bff
+lane: gui
+r1: []
+database: null
+openapi: false
+tests: {source: app, pythonpath: ".:../shared", floor: 94}
+mutation: null
+code_docs: true
+config_reference: true
+compose:
+  services: |
+    # ---------------------------------------------------------------- operator GUI
+    # Browser -> gui (nginx, the only published GUI port) -> gui-bff -> R1
+    # Termination -> modules. gui-bff publishes nothing and authenticates to R1
+    # with its own SME-issued OAuth2 token.
+    gui-bff:
+      build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: gui-bff, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+      stop_grace_period: 30s
+      <<: *hardening
+      secrets: [enrollment_secret]
+      depends_on: [r1-termination, sme]
+      environment:
+        SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
+        SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
+        R1_URL: http://r1-termination:8000
+        SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway (DOC-CF-3.1)
+        GUI_DATABASE_URL: sqlite:////data/gui-bff.db
+        GUI_INITIAL_PASSWORD_FILE: /data/initial-admin-password
+        # Secrets come from the shell / an .env file, never from git. Unset
+        # GUI_JWT_SECRET: generated once, kept in the BFF database, and used by
+        # every instance of it. Unset GUI_ADMIN_PASSWORD: a random
+        # admin password is generated into GUI_INITIAL_PASSWORD_FILE (0600, never
+        # logged): docker compose exec gui-bff cat /data/initial-admin-password
+        GUI_JWT_SECRET: ${GUI_JWT_SECRET:-}
+        # PR-SEC-5: HS256 (default) signs the session token with GUI_JWT_SECRET. RS256 or ES256 signs with the PEM private key in GUI_JWT_PRIVATE_KEY_FILE (a file mounted by an
+        # override, like GUI_TOTP_KEY_FILE) and publishes the public keys at /.well-known/jwks.json; GUI_JWT_PREVIOUS_KEY_FILES (comma separated) are the keys of earlier rotations.
+        # Changing the algorithm ends every session. gui-bff/README.md "Signing keys".
+        GUI_JWT_ALGORITHM: ${GUI_JWT_ALGORITHM:-HS256}
+        GUI_JWT_PRIVATE_KEY_FILE: ${GUI_JWT_PRIVATE_KEY_FILE:-}
+        GUI_JWT_PREVIOUS_KEY_FILES: ${GUI_JWT_PREVIOUS_KEY_FILES:-}
+        GUI_ADMIN_PASSWORD: ${GUI_ADMIN_PASSWORD:-}
+        GUI_OPERATOR_PASSWORD: ${GUI_OPERATOR_PASSWORD:-}
+        GUI_VIEWER_PASSWORD: ${GUI_VIEWER_PASSWORD:-}
+        GUI_COOKIE_SECURE: ${GUI_COOKIE_SECURE:-true}
+        GUI_SESSION_TTL_SECONDS: ${GUI_SESSION_TTL_SECONDS:-28800}    # how long a sign-in lasts (8 h)
+        # OIDC login (PR-SEC-6), off unless GUI_OIDC_ENABLED=true: docs/CONFIGURATION.md, gui-bff/README.md "OIDC login". The client's credential
+        # is better mounted as a file (GUI_OIDC_CLIENT_SECRET_FILE) than set here.
+        GUI_OIDC_ENABLED: ${GUI_OIDC_ENABLED:-false}
+        GUI_OIDC_ISSUER: ${GUI_OIDC_ISSUER:-}
+        GUI_OIDC_CLIENT_ID: ${GUI_OIDC_CLIENT_ID:-}
+        GUI_OIDC_CLIENT_SECRET: ${GUI_OIDC_CLIENT_SECRET:-}
+        GUI_OIDC_REDIRECT_URI: ${GUI_OIDC_REDIRECT_URI:-}
+        GUI_OIDC_SCOPES: ${GUI_OIDC_SCOPES:-openid profile email}
+        GUI_OIDC_GROUPS_CLAIM: ${GUI_OIDC_GROUPS_CLAIM:-groups}
+        GUI_OIDC_GROUP_ROLE_MAP: ${GUI_OIDC_GROUP_ROLE_MAP:-}
+        GUI_OIDC_DEFAULT_ROLE: ${GUI_OIDC_DEFAULT_ROLE:-}
+        GUI_OIDC_SCOPE_CLAIM: ${GUI_OIDC_SCOPE_CLAIM:-}
+        GUI_OIDC_PROVIDER_NAME: ${GUI_OIDC_PROVIDER_NAME:-SSO}
+        GUI_OIDC_POST_LOGOUT_REDIRECT_URI: ${GUI_OIDC_POST_LOGOUT_REDIRECT_URI:-}
+        GUI_OIDC_ALLOW_HTTP: ${GUI_OIDC_ALLOW_HTTP:-false}
+        GUI_LOCAL_LOGIN_ENABLED: ${GUI_LOCAL_LOGIN_ENABLED:-true}
+        # Audit-log retention (PR-DB-3.6): the BFF has no worker; run `docker compose exec gui-bff python -m app.retention` (cron on the host). 0 keeps all.
+        GUI_AUDIT_RETENTION_DAYS: ${GUI_AUDIT_RETENTION_DAYS:-0}
+        GUI_AUDIT_EXPORT_DIR: ${GUI_AUDIT_EXPORT_DIR:-}
+        SMO_RETENTION_WARN_ROWS: ${SMO_RETENTION_WARN_ROWS:-1000000}
+        # Multi-factor sign-in (PR-SEC-7), all off or unchanged by default: GUI_LOGIN_MODE=oidc makes the identity provider the only way in (a break-glass
+        # account keeps password + one-time code), GUI_TOTP_KEY switches on one-time codes for local accounts (prefer a file: GUI_TOTP_KEY_FILE, mounted
+        # by an override), GUI_ADMIN_MFA_REQUIRED=true makes every local admin enrol one. gui-bff/README.md "One-time codes", docs/CONFIGURATION.md.
+        GUI_LOGIN_MODE: ${GUI_LOGIN_MODE:-both}
+        GUI_TOTP_KEY: ${GUI_TOTP_KEY:-}
+        GUI_TOTP_ISSUER: ${GUI_TOTP_ISSUER:-SMO Operator Console}
+        GUI_ADMIN_MFA_REQUIRED: ${GUI_ADMIN_MFA_REQUIRED:-false}
+      volumes:
+        - gui_bff_data:/data   # GUI users, audit log, the BFF's SME invoker credential
+  volumes: |
+    gui_bff_data:
+helm: |
+  # the GUI: its backend (one replica: it keeps its users in a SQLite file on a volume) and the nginx that serves the SPA
+  gui-bff:
+    image: gui-bff
+    kind: static
+    database: false
+    mtls: client
+    persistence: { mountPath: /data, size: 1Gi }
+    env:
+      R1_URL: "http://r1-termination:8000"
+      GUI_DATABASE_URL: "sqlite:////data/gui-bff.db"
+      GUI_INITIAL_PASSWORD_FILE: "/data/initial-admin-password"

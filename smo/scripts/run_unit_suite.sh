@@ -3,7 +3,7 @@
 #
 #   scripts/run_unit_suite.sh onboarding onboarding app .:../shared
 #
-#   NAME        the key in coverage_floors.json
+#   NAME        the suite (its floor is `tests.floor` in the module's module.yaml)
 #   DIR         the directory whose tests/ is run (relative to smo/)
 #   SOURCE      what coverage measures, relative to DIR (`app`, `smo_shared`, `smo_sdk`)
 #   PYTHONPATH  the PYTHONPATH of that suite

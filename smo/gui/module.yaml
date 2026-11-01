@@ -1,0 +1,21 @@
+# gui: what this module is to the rest of the SMO (scripts/modules.py; the schema is scripts/module.schema.json). Edit this file, then run
+# `python scripts/modules.py --write` from smo/: it regenerates the shared files that list modules, and CI runs `--check`.
+name: gui
+lane: gui
+r1: []
+database: null
+openapi: false
+tests: null
+mutation: null
+code_docs: true
+config_reference: false
+compose:
+  services: |
+    gui:
+      build: { context: ./gui }
+      <<: *hardening
+      depends_on: [gui-bff]
+      ports: ["3000:8080"]
+helm: |
+  # nginx runs as the image's own user (101), so the pod does not force the SMO images' uid
+  gui: { image: gui, kind: static, port: 8080, database: false, enrollment: false, mtls: "off", podSecurityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } } }

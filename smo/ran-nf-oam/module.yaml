@@ -1,0 +1,73 @@
+# ran-nf-oam: what this module is to the rest of the SMO (scripts/modules.py; the schema is scripts/module.schema.json). Edit this file, then run
+# `python scripts/modules.py --write` from smo/: it regenerates the shared files that list modules, and CI runs `--check`.
+name: ran-nf-oam
+lane: ran-nf-oam
+r1:
+  - {prefix: /ran-nf-oam, env: RAN_NF_OAM_URL, url: "http://ran-nf-oam:8000"}
+database:
+  role: {schema: ran_nf_oam, shared: [module_identity, notification_outbox, idempotency_key, periodic_run, audit_log, audit_head, smo_event, smo_event_relay]}
+  tables: [alarm, approval_subscription, cm_schema_cache, cm_snapshot, element_onboarding, file_subscription, fm_subscription, kpi_definition, kpi_schedule, lifecycle_subscription, alarm_history, alarm_comment, managed_entity, managed_object, msac_access_rule, msac_identity, msac_role, o1_adaptor_endpoint, o1_adaptor_host_key, onboarding_template, pm_file, pm_subscription, rapp_action_approval, rapp_approval_policy, rapp_decision_record, rapp_kill, rapp_limit, safeguard_refusal, safeguard_subscription, software_campaign, software_management_job, vendor_capability, write_config_job, write_config_sub_change]
+openapi: true
+tests: {source: app, pythonpath: ".:../shared", floor: 97}
+mutation: null
+code_docs: true
+config_reference: true
+compose:
+  services: |
+    ran-nf-oam:
+      build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: ran-nf-oam, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+      stop_grace_period: 30s
+      secrets: [db_password_ran-nf-oam, enrollment_secret]
+      <<: *hardening
+      healthcheck: *ready_probe
+      depends_on: *wait_for_schema
+      environment:
+        SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
+        SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
+        <<: *db_env
+        SMO_DATABASE_URL: postgresql+psycopg://smo_ran_nf_oam@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+        SMO_DB_POOLER: ${SMO_DB_POOLER:-}
+        SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_ran-nf-oam
+        R1_GATEWAY_URL: http://r1-termination:8000
+        SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
+        SAFEGUARD_REFUSAL_RETENTION_DAYS: ${SAFEGUARD_REFUSAL_RETENTION_DAYS:-0}
+        # SB-7: the VES listener (POST /ves/eventListener/v7) is on only with a password; empty (the default) it is off. The `oran-sim` profile's
+        # simulators post to it with this password (ADR 0012). On Kubernetes the chart takes it from a Secret (ranNfOam.vesPasswordSecretRef).
+        RAN_NF_OAM_VES_PASSWORD: ${RAN_NF_OAM_VES_PASSWORD:-}
+        # PR-SB-2: the NETCONF password of the endpoints registered with credentialRef `oransim`, the `oran-sim` profile's simulated O-DUs (their built-in
+        # `netconf!`); empty (the default), RAN NF OAM has no such credential
+        NETCONF_CRED_ORANSIM_PASSWORD: ${ORAN_SIM_NETCONF_PASSWORD:-}
+
+    # PR-MSG-4: the same image, run as a worker. It does RAN NF OAM's periodic work (the wave advance of staged CM jobs, KPI schedules,
+    # the refusal purge; ran-nf-oam/app/tasks.py), so no request process ever runs a timer. Run as many as you like: a task runs at most
+    # once per interval across all of them, and a worker that dies frees its tasks for another.
+    ran-nf-oam-worker:
+      build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: ran-nf-oam, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+      command: ["python", "-m", "smo_shared.worker"]
+      stop_grace_period: 30s
+      secrets: [db_password_ran-nf-oam, enrollment_secret]
+      <<: *hardening
+      healthcheck: *worker_probe
+      depends_on: *wait_for_schema
+      environment:
+        SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
+        SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: the worker is the same SMO module (one identity, ST-4)
+        <<: *db_env
+        SMO_DATABASE_URL: postgresql+psycopg://smo_ran_nf_oam@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+        SMO_DB_POOLER: ${SMO_DB_POOLER:-}
+        SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_ran-nf-oam
+        R1_GATEWAY_URL: http://r1-termination:8000
+        SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
+        SAFEGUARD_REFUSAL_RETENTION_DAYS: ${SAFEGUARD_REFUSAL_RETENTION_DAYS:-0}
+        SMO_RETENTION_ALARMS_DAYS: ${SMO_RETENTION_ALARMS_DAYS:-0}
+        SMO_RETENTION_PM_FILES_DAYS: ${SMO_RETENTION_PM_FILES_DAYS:-0}
+        SMO_RETENTION_APPROVALS_DAYS: ${SMO_RETENTION_APPROVALS_DAYS:-0}
+        SMO_RETENTION_DECISION_RECORDS_DAYS: ${SMO_RETENTION_DECISION_RECORDS_DAYS:-0}
+        SMO_RETENTION_WARN_ROWS: ${SMO_RETENTION_WARN_ROWS:-1000000}     # warn (and smo_retention_off_rows) when a table with retention off is larger; 0 = never
+  secrets: |
+    db_password_ran-nf-oam:
+      file: ./secrets/db_password_ran-nf-oam
+helm: |
+  ran-nf-oam: { image: ran-nf-oam, databaseRole: ran-nf-oam, env: { R1_GATEWAY_URL: "http://r1-termination:8000", SAFEGUARD_REFUSAL_RETENTION_DAYS: "0" } }
+  # the same image as a worker: the periodic work of RAN NF OAM (PR-MSG-4). Run more than one if you like.
+  ran-nf-oam-worker: { image: ran-nf-oam, databaseRole: ran-nf-oam, kind: worker, env: { R1_GATEWAY_URL: "http://r1-termination:8000", SAFEGUARD_REFUSAL_RETENTION_DAYS: "0", SMO_RETENTION_ALARMS_DAYS: "0", SMO_RETENTION_PM_FILES_DAYS: "0", SMO_RETENTION_APPROVALS_DAYS: "0", SMO_RETENTION_DECISION_RECORDS_DAYS: "0" } }   # retention: days to keep, 0 = forever; the periods proposed for production are in values-production.yaml (docs/RETENTION.md)
