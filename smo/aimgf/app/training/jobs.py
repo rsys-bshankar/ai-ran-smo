@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
@@ -29,6 +29,8 @@ from smo_shared.pagination import PageLimit, PageOffset, paginate
 from ..governance.statemachine import ModelLifecycleEvent, ModelLifecycleState, TRAINABLE_STATES
 from ..models import MLTrainingFunction, MLTrainingProcess, MLTrainingReport, ModelLifecycle, TRAINING_STEPS, TrainingJob
 from .. import ts28105, update  # `update`: the package object only, see `_advance_ml_update_process`
+if TYPE_CHECKING:
+    from ..update import nrm as _update_nrm  # noqa: F401  (for the type checker only: tells it `update.nrm` exists)
 from ..common import CompleteJobRequest, RuntimeSizing, _check_job_owner, _get_model, _get_model_or_none, _owned_model, _r1, _record_phase
 from ..execution import _aware, _expire_overdue_jobs, _nfo_start_execution, _nfo_terminate_execution, _notify_job_completion, _resolve_runtime_profile, timeout_for
 from ..governance.lifecycle import _fire_if_legal, _fire_model_event, _get_or_create_lifecycle

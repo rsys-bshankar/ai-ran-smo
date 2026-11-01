@@ -11,9 +11,9 @@ from smo_shared import db as smo_db
 from smo_shared import r1_client
 
 SMO_ROOT = Path(__file__).resolve().parent.parent
-# services whose readiness includes the database; the rest (the gateway, the mocks, the sample rApps, and the MLMR and MLLF placeholders, whose code
-# is AIMgF's since S2.1 / S2.2) keep no database of their own
-WITHOUT_DATABASE = {"r1-termination", "mllf", "mlmr", "mock-o1-adaptor", "energy-saving-rapp",
+# services whose readiness includes the database (the MLMR placeholder too: it keeps its role until S2.8); the rest (the gateway, the mocks, the
+# sample rApps, and the MLLF placeholder, whose code is AIMgF's since S2.2) keep no database of their own
+WITHOUT_DATABASE = {"r1-termination", "mllf", "mock-o1-adaptor", "energy-saving-rapp",
                     "mobility-optimization-rapp", "coverage-optimization-rapp", "traffic-steering-rapp"}
 
 

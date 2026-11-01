@@ -11,7 +11,7 @@ client = TestClient(app)
 
 
 def test_the_placeholder_answers_its_health_probes():
-    """`/live`, `/ready` and `/health` answer 200, so the compose and Helm health checks of the service still pass."""
+    """`/live`, `/ready` and `/health` answer 200 (`/ready` after reaching its database, here the SQLite fallback), so the compose and Helm health checks pass."""
     for path in ("/live", "/ready", "/health"):
         assert client.get(path).status_code == 200, path
 

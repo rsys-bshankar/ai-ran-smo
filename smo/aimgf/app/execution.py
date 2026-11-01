@@ -21,7 +21,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
@@ -31,6 +31,8 @@ from smo_shared.runtime_resources import container_resources
 from .governance.statemachine import INFERENCE_JOB_FSM, InferenceEvent, InferenceState, ModelLifecycleEvent
 from .models import EmulationJob, InferenceJob, MLTestingReport, MLTrainingProcess, TrainingJob, ValidationJob
 from . import training  # the package object only: `training.jobs` is read when the sweep runs (training imports this module, so naming jobs here would be a cycle)
+if TYPE_CHECKING:
+    from .training import jobs as _training_jobs  # noqa: F401  (for the type checker only: tells it `training.jobs` exists)
 from .common import RuntimeProfile, _r1
 from .governance.lifecycle import _fire_if_legal
 

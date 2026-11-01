@@ -10,11 +10,13 @@ Before editing: add nothing here. The routes this module served are listed, with
 
 from fastapi import FastAPI
 
-from smo_shared.health import install_health
+from smo_shared.health import database_check, install_health
 from smo_shared.logconfig import install_logging
 from smo_shared.metrics import install_metrics
 
 app = FastAPI(title="MLMR")
 install_logging(app)  # structured JSON logs and one access-log line per request (PR-OBS-1)
 install_metrics(app)  # /metrics and request count/latency series (PR-OBS-2)
-install_health(app)  # /live, /ready and the /health alias (PR-ST-7); no check: the placeholder depends on nothing
+# /live, /ready and the /health alias (PR-ST-7). /ready checks the database: compose and the chart still give this service the role smo_mlmr until S2.8, which owns
+# no table since revision 0064, and CI's role check expects a module with a role to connect as it (and is refused every table it was not given).
+install_health(app, checks=[database_check])
