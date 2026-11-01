@@ -22,8 +22,8 @@ MIGRATE = SMO_ROOT / "scripts" / "migrate.py"
 CHECK = SMO_ROOT / "scripts" / "check_migration_matches_models.py"
 ADMIN_URL = os.environ.get("SMO_TEST_POSTGRES_URL")
 needs_postgres = pytest.mark.skipif(not ADMIN_URL, reason="SMO_TEST_POSTGRES_URL not set")
-HEAD = "0063"         # raise this with every new revision: the tests below then check it is the head
-HEAD_TABLE = "sa_smos.o1_cm_enactment"   # a table the head revision changes: the lock tests hold it, so raise it with HEAD
+HEAD = "0064"         # raise this with every new revision: the tests below then check it is the head
+HEAD_TABLE = "mlmr.aiml_model"   # a table the head revision changes: the lock tests hold it, so raise it with HEAD
 
 
 def _scripts() -> ScriptDirectory:
@@ -302,6 +302,47 @@ def test_0062_keeps_the_oldest_enactment_of_each_intent_and_makes_intent_id_uniq
     assert index.startswith("CREATE UNIQUE INDEX") and "(intent_id)" in index
     with pytest.raises(Exception, match="ux_o1_cm_enactment_intent_id"), engine.begin() as connection:
         connection.execute(insert, {"e": uuid.uuid4(), "i": twice, "age": 0})
+    engine.dispose()
+
+
+@needs_postgres
+def test_0064_moves_mlmrs_tables_into_aimgf_with_their_rows_and_back(databases):
+    """S2.1: upgrading to 0064 moves MLMR's seven tables from `mlmr` into `aimgf` with every row (a model, its artifact bytes, a profile, a coordination group, a
+    repository, a storage and a change subscription), keeps their constraints (a second registration of the same type and version is still refused) and drops the
+    `mlmr` schema; downgrading moves the same rows back. Needs Postgres."""
+    url = databases["fresh"]
+    assert _run(MIGRATE, url, "--revision", "0063").returncode == 0
+    repo, model, group, storage, profile, artifact, sub = (uuid.uuid4() for _ in range(7))
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(text("INSERT INTO mlmr.ml_model_repository (ml_model_repository_id, created_at) VALUES (:r, now())"), {"r": repo})
+        connection.execute(text("INSERT INTO mlmr.aiml_model (model_id, registration_id, model_type, version, ml_model_repository_id, registered_at) "
+                                "VALUES (:m, 'reg-1', 'moved', '1', :r, now())"), {"m": model, "r": repo})
+        connection.execute(text("INSERT INTO mlmr.model_artifact (artifact_id, model_id, artifact_version, filename, content, size_bytes, uploaded_at) "
+                                "VALUES (:a, :m, 1, 'm.zip', :c, 3, now())"), {"a": artifact, "m": model, "c": b"zip"})
+        connection.execute(text("INSERT INTO mlmr.ml_model_coordination_group (group_id, group_type, member_model_ids, retrain_propagation) "
+                                "VALUES (:g, 'SHARED_MODEL', ARRAY[:m, :m]::uuid[], 'ANY_MEMBER_TRIGGERS')"), {"g": group, "m": model})
+        connection.execute(text("INSERT INTO mlmr.ml_models_storage (storage_id) VALUES (:s)"), {"s": storage})
+        connection.execute(text("INSERT INTO mlmr.ml_model_profile (profile_id, storage_id, model_id) VALUES (:p, :s, :m)"),
+                           {"p": profile, "s": storage, "m": model})
+        connection.execute(text("INSERT INTO mlmr.model_change_subscription (subscription_id, model_id, consumer_id) "
+                                "VALUES (:x, :m, 'rapp-a')"), {"x": sub, "m": model})
+    counts = "SELECT (SELECT count(*) FROM {s}.ml_model_repository), (SELECT count(*) FROM {s}.aiml_model), (SELECT count(*) FROM {s}.model_artifact), " \
+             "(SELECT count(*) FROM {s}.ml_model_coordination_group), (SELECT count(*) FROM {s}.ml_models_storage), (SELECT count(*) FROM {s}.ml_model_profile), " \
+             "(SELECT count(*) FROM {s}.model_change_subscription)"
+    up = _run(MIGRATE, url, "--revision", "0064")
+    assert up.returncode == 0 and "upgraded to 0064" in up.stdout, up.stderr
+    with engine.connect() as connection:
+        assert tuple(connection.execute(text(counts.format(s="aimgf"))).one()) == (1, 1, 1, 1, 1, 1, 1)
+        assert connection.execute(text("SELECT content FROM aimgf.model_artifact WHERE artifact_id = :a"), {"a": artifact}).scalar_one() == b"zip"
+        assert connection.execute(text("SELECT count(*) FROM pg_namespace WHERE nspname = 'mlmr'")).scalar_one() == 0
+    with pytest.raises(Exception, match="duplicate key"), engine.begin() as connection:
+        connection.execute(text("INSERT INTO aimgf.aiml_model (model_id, registration_id, model_type, version, registered_at) "
+                                "VALUES (:m, 'reg-2', 'moved', '1', now())"), {"m": uuid.uuid4()})
+    down = _run(MIGRATE, url, "--downgrade", "0063")
+    assert down.returncode == 0, down.stderr
+    with engine.connect() as connection:
+        assert tuple(connection.execute(text(counts.format(s="mlmr"))).one()) == (1, 1, 1, 1, 1, 1, 1)
     engine.dispose()
 
 

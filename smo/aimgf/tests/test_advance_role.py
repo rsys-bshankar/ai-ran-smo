@@ -8,7 +8,7 @@ import pytest
 
 from test_main import _set_lifecycle, client, db_session_factory, mlmr  # noqa: F401  (fixtures)
 from app.models import CertificationRecord, ModelLifecycle
-from app.statemachine import ModelLifecycleState
+from app.governance.statemachine import ModelLifecycleState
 
 RAPP = {"X-R1-Role": "rapp", "X-R1-Invoker-Id": "es-client"}
 OPERATOR = {"X-R1-Role": "internal", "X-R1-Invoker-Id": "gui-invoker"}

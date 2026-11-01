@@ -13,7 +13,7 @@ from test_runtime_model_checks import OPERATOR, OTHER, OWNER, _certified, _funct
 
 from app import tasks
 from app.models import AIMLInferenceReport, ModelLifecycle, TrainingJob
-from app.statemachine import ModelLifecycleState, RuntimeLifecycleState
+from app.governance.statemachine import ModelLifecycleState, RuntimeLifecycleState
 
 
 def test_the_worker_pins_its_one_task():

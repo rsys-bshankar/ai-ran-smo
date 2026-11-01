@@ -14,7 +14,7 @@ import pytest
 from test_main import FakeResponse, _set_lifecycle, client, db_session_factory, mlmr  # noqa: F401  (pytest fixtures)
 
 from app.models import EmulationJob, InferenceJob, TrainingJob, ValidationJob
-from app.statemachine import ModelLifecycleState, RuntimeLifecycleState
+from app.governance.statemachine import ModelLifecycleState, RuntimeLifecycleState
 
 PROFILES = {"TRAINING": {"cpu": 8, "memory": "16Gi", "gpu": 0}, "VALIDATION": {"cpu": 4, "memory": "8Gi", "gpu": 0},
             "EMULATION": {"cpu": 4, "memory": "8Gi", "gpu": 0}, "INFERENCE": {"cpu": 2, "memory": "4Gi", "gpu": 0}}

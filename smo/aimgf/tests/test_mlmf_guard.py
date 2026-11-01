@@ -12,7 +12,7 @@ import pytest
 
 from test_main import _set_lifecycle, client, db_session_factory, mlmr  # noqa: F401  (pytest fixtures)
 from app.models import MLMFSubscription, PerformanceReport
-from app.statemachine import ModelLifecycleState
+from app.governance.statemachine import ModelLifecycleState
 
 
 def _subscribe(client, model_id, floor=None, ceiling=None, dme_type_id=None, destination=None):

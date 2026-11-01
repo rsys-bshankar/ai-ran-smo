@@ -20,7 +20,7 @@ def _call_sites() -> set[tuple[str, str]]:
     walking the syntax trees of `*/app/*.py` and `samples/*/app/*.py`.
     """
     sites = set()
-    for path in sorted(list(SMO_ROOT.glob("*/app/*.py")) + list(SMO_ROOT.glob("samples/*/app/*.py"))):
+    for path in sorted(list(SMO_ROOT.glob("*/app/**/*.py")) + list(SMO_ROOT.glob("samples/*/app/**/*.py"))):
         tree = ast.parse(path.read_text())
         imports_enqueue = any(isinstance(n, ast.ImportFrom) and n.module == ENQUEUE_IMPORT and any(a.name == "enqueue" for a in n.names)
                               for n in ast.walk(tree))

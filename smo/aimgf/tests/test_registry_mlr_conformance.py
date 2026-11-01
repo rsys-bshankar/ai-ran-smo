@@ -1,8 +1,8 @@
-"""Tests of the TS 29.482 parts of MLMR (`app/mlr.py`): the MLModel attributes, usage requirements (SA-MLMR-8), phase and lineage
+"""Tests of the TS 29.482 parts of the model registry (`app/registry/mlr.py`, MLMR's until S2.1): the MLModel attributes, usage requirements (SA-MLMR-8), phase and lineage
 (SA-MLMR-7), storeDiscReqs enforcement (SA-MLMR-6), whole-object discovery (SA-MLMR-9) and storages with profiles (SA-MLMR-1).
 
-Run: `cd smo/mlmr && PYTHONPATH=.:../shared python -m pytest tests/test_mlr_conformance.py -q`. Uses the `client` and
-`db_session_factory` fixtures of `test_main.py` (SQLite, no Postgres). Caller identity is simulated with the
+Run: `cd smo/aimgf && PYTHONPATH=.:../shared python -m pytest tests/test_registry_mlr_conformance.py -q`. Uses the `client` and
+`db_session_factory` fixtures of `test_registry.py` (SQLite, no Postgres). Caller identity is simulated with the
 `X-R1-Invoker-Id` header that R1 Termination would forward.
 """
 
@@ -13,10 +13,10 @@ import uuid
 
 import pytest
 
-from test_main import client, db_session_factory  # noqa: F401  (pytest fixtures)
+from test_registry import client, db_session_factory  # noqa: F401  (pytest fixtures)
 
-from app.models import MLModel
-from app.mlr import subset_match
+from app.registry.models import MLModel
+from app.registry.mlr import subset_match
 
 HDR = "X-R1-Invoker-Id"
 

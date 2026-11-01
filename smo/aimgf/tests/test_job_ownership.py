@@ -13,7 +13,7 @@ import pytest
 
 from test_main import FakeResponse, _set_lifecycle, client, db_session_factory, mlmr  # noqa: F401  (pytest fixtures)
 from app.models import InferenceJob, MLMFSubscription, MLTrainingProcess, TrainingJob
-from app.statemachine import ModelLifecycleState
+from app.governance.statemachine import ModelLifecycleState
 
 OWNER = {"X-R1-Role": "rapp", "X-R1-Invoker-Id": "es-client"}
 OTHER = {"X-R1-Role": "rapp", "X-R1-Invoker-Id": "someone-else"}

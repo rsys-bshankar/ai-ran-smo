@@ -11,7 +11,7 @@ import pytest
 
 from test_main import FakeResponse, _set_lifecycle, client, db_session_factory, mlmr  # noqa: F401  (pytest fixtures)
 from app.models import CertificationRecord, MLMFSubscription
-from app.statemachine import ModelLifecycleState
+from app.governance.statemachine import ModelLifecycleState
 
 
 @pytest.fixture

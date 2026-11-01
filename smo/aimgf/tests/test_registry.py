@@ -1,10 +1,10 @@
-"""Tests of MLMR's own routes: model registration, update and delete, artifact upload and download, coordination groups,
-and the TS 28.105 views and repositories. The TS 29.482 routes (storages, discovery, storeDiscReqs) are in
-`test_mlr_conformance.py`.
+"""Tests of the model registry's own routes (`app/registry/routes.py`, the MLMR service until S2.1): model registration, update and delete, artifact upload
+and download, coordination groups, and the TS 28.105 views and repositories. The TS 29.482 routes (storages, discovery, storeDiscReqs) are in
+`test_registry_mlr_conformance.py`; what the other packages read through `registry/access.py` is at the end of this file.
 
-Run: `cd smo/mlmr && PYTHONPATH=.:../shared python -m pytest tests -q`. No Postgres is needed: the fixtures build the tables
-on SQLite and override `get_session`. Foreign keys are not enforced there, so the database-level cascades are not covered.
-Fixtures here (`db_session_factory`, `client`) are imported by `test_mlr_conformance.py`.
+Run: `cd smo/aimgf && PYTHONPATH=.:../shared python -m pytest tests/test_registry.py -q`. No Postgres is needed: the fixtures build every AIMgF table on SQLite
+(the registry's and the lifecycle and NRM tables it reads in process) and override `get_session`. Foreign keys are not enforced there, so the database-level
+cascades are not covered. Fixtures here (`db_session_factory`, `client`) are imported by `test_registry_mlr_conformance.py`.
 """
 
 import uuid
@@ -19,25 +19,37 @@ from smo_shared.db import Base, get_session
 from smo_shared.idempotency import IdempotencyKey
 from smo_shared.testing import make_test_engine
 
+from app import models as aimgf_models
 from app.main import app
-from app.models import MLModel, MLModelCoordinationGroup, MLModelRepository, ModelArtifact, MLModelProfile, MLModelsStorage
+from app.models import AIMLInferenceFunction, AIMLInferenceReport, MLTrainingReport, ModelLifecycle, TrainingJob
+from app.registry import access, models as registry_models
+from app.registry.models import MLModel, MLModelCoordinationGroup, MLModelRepository, ModelArtifact, MLModelProfile
 
 
 @pytest.fixture
 def db_session_factory():
-    """Builds the MLMR tables and the idempotency-key table on an in-memory SQLite engine and returns a session factory. Uses `make_test_engine()` because the
-    coordination group's array column needs its UUID-aware JSON fallback.
+    """Builds every table of AIMgF (the registry's, and the lifecycle and NRM tables the registry reads in process), the audit tables and the idempotency-key
+    table on an in-memory SQLite engine and returns a session factory. Uses `make_test_engine()` because the coordination group's array column needs its
+    UUID-aware JSON fallback.
     """
-    # make_test_engine(), not a plain create_engine("sqlite://", ...) —
-    # MLModelCoordinationGroup.member_model_ids is an ARRAY(Uuid), whose
-    # SQLite JSON fallback needs the UUID-aware serializer make_test_engine
-    # provides (see smo_shared/testing.py's own docstring).
     engine = make_test_engine()
     Base.metadata.create_all(engine, tables=[
-        MLModelRepository.__table__, MLModel.__table__, MLModelCoordinationGroup.__table__, ModelArtifact.__table__,
-        MLModelsStorage.__table__, MLModelProfile.__table__, audit.AuditEntry.__table__, audit.AuditHead.__table__, IdempotencyKey.__table__,
-    ])
+        cls.__table__ for module in (aimgf_models, registry_models) for cls in vars(module).values()
+        if isinstance(cls, type) and issubclass(cls, Base) and cls is not Base and cls.__module__ == module.__name__
+    ] + [audit.AuditEntry.__table__, audit.AuditHead.__table__, IdempotencyKey.__table__])
     return sessionmaker(bind=engine)
+
+
+@pytest.fixture
+def aimgf_runtimes(db_session_factory):
+    """Writes AIMgF's runtime state of a model: `aimgf_runtimes[model_id] = state` stores a `model_lifecycle` row with that runtime state, which the
+    registry's delete reads in process (call flow 26e)."""
+    class _Runtimes:
+        def __setitem__(self, model_id, state):
+            with db_session_factory() as session:
+                session.add(ModelLifecycle(model_id=uuid.UUID(str(model_id)), runtime_lifecycle_state=state))
+                session.commit()
+    return _Runtimes()
 
 
 @pytest.fixture
@@ -580,27 +592,9 @@ def test_health_check_answers_the_gui_bff_liveness_probe(client):
 
 # ---------------------------------------------------------------- Wave 4: TS 28.105 MLModel / MLModelRepository / MLModelCoordinationGroup
 
-def _fake_aimgf_refs(monkeypatch, payload=None, status=200):
-    """Replaces `R1Client.get` so the AIMgF `nrm-refs` call returns `payload` with `status`; returns the list of paths called."""
-    class Resp:
-        status_code = status
-
-        def json(self):
-            return payload
-
-    calls = []
-
-    def fake_get(self, path, **kw):
-        calls.append(path)
-        return Resp()
-
-    monkeypatch.setattr("app.main.R1Client.get", fake_get)
-    return calls
-
-
-def test_register_with_ts28105_attributes_and_nrm_view(client, monkeypatch):
-    """TS 28.105 attributes registered on a model come back in the `/ml-models/{id}` view together with AIMgF's read-only refs,
-    and the model appears in its repository.
+def test_register_with_ts28105_attributes_and_nrm_view(client, db_session_factory):
+    """TS 28.105 attributes registered on a model come back in the `/ml-models/{id}` view together with AIMgF's read-only refs (read in process from the
+    training report, the inference report and the inference function that name the model), and the model appears in its repository.
     """
     repo = client.post("/ml-model-repositories", json={"userLabel": "mlmr-1"}).json()
     resp = client.post("/models", json={
@@ -611,26 +605,35 @@ def test_register_with_ts28105_attributes_and_nrm_view(client, monkeypatch):
         "inferenceScope": ["NG_RAN_NETWORK_ENERGY_SAVING"], "mLModelRepositoryRef": repo["id"],
     })
     model_id = resp.json()["modelId"]
-    calls = _fake_aimgf_refs(monkeypatch, {"mLTrainingType": "INITIAL_TRAINING", "aIMLInferenceReportRefList": ["r1"],
-                                           "usedByFunctionRefList": ["f1"]})
+    with db_session_factory() as session:
+        job = TrainingJob(model_id=uuid.UUID(model_id), producer_id="p", status="FINISHED", ml_training_type="INITIAL_TRAINING")
+        session.add(job)
+        session.flush()
+        session.add(MLTrainingReport(training_job_id=job.training_job_id, ml_model_generated_ref=uuid.UUID(model_id)))
+        function = AIMLInferenceFunction(ml_model_refs=[model_id])
+        session.add(function)
+        session.flush()
+        session.add(AIMLInferenceReport(aiml_inference_function_id=function.aiml_inference_function_id, ml_model_refs=[model_id]))
+        session.commit()
+        function_id = str(function.aiml_inference_function_id)
     attrs = client.get(f"/ml-models/{model_id}").json()["attributes"]
-    assert calls == [f"/aimgf/ml-models/{model_id}/nrm-refs"]
     assert attrs["mLModelId"] == model_id and attrs["mLModelVersion"] == "1.0"
     assert attrs["aIMLInferenceName"] == "NG_RAN_NETWORK_ENERGY_SAVING"
     assert attrs["trainingContext"] == {"dataProviderRef": ["PRB_UTILIZATION"]}
     assert attrs["supportedPerformanceIndicators"][0]["isSupportedForTesting"] is False
-    assert (attrs["mLTrainingType"], attrs["usedByFunctionRefList"]) == ("INITIAL_TRAINING", ["f1"])
+    assert (attrs["mLTrainingType"], attrs["usedByFunctionRefList"]) == ("INITIAL_TRAINING", [function_id])
+    assert len(attrs["aIMLInferenceReportRefList"]) == 1
+    assert client.get(f"/ml-models/{model_id}/nrm-refs").json()["usedByFunctionRefList"] == [function_id]
     assert client.get(f"/ml-model-repositories/{repo['id']}").json()["MLModel"] == [model_id]
     # this build's own view carries the writable spec attributes too
     assert client.get(f"/models/{model_id}").json()["mLModelRepositoryRef"] == repo["id"]
 
 
-def test_nrm_view_degrades_when_aimgf_unreachable(client, monkeypatch):
-    """When AIMgF does not answer 200, the NRM view still returns, with the AIMgF-owned attributes empty."""
+def test_nrm_view_of_a_model_aimgf_has_not_trained_has_empty_refs(client):
+    """A model no training, inference report or function names has the AIMgF-owned attributes empty in its NRM view."""
     model_id = client.post("/models", json={"modelType": "m", "version": "1"}).json()["modelId"]
-    _fake_aimgf_refs(monkeypatch, None, status=503)
     attrs = client.get(f"/ml-models/{model_id}").json()["attributes"]
-    assert attrs["mLTrainingType"] is None and attrs["aIMLInferenceReportRefList"] == []
+    assert attrs["mLTrainingType"] is None and attrs["aIMLInferenceReportRefList"] == [] and attrs["usedByFunctionRefList"] == []
 
 
 def test_ts28105_attributes_are_validated(client):
@@ -766,7 +769,8 @@ def test_a_put_that_changes_the_owner_is_audited_and_one_that_keeps_it_is_not(cl
 @pytest.mark.parametrize("state,deleted", [(None, True), ("NOT_DEPLOYED", True), ("TERMINATED", True),
                                            ("DEPLOYED", False), ("ACTIVE", False), ("SCALING", False)])
 def test_a_model_with_a_live_runtime_is_not_deleted(client, aimgf_runtimes, state, deleted):
-    """A model whose serving runtime AIMgF has deployed is 409 `MODEL_IN_USE` and kept; one AIMgF does not know, never deployed or terminated is deleted."""
+    """A model whose serving runtime AIMgF has deployed is 409 `MODEL_IN_USE` and kept; one with no lifecycle row, never deployed or terminated is deleted.
+    The lifecycle row is read in process, in the same database."""
     model_id = client.post("/models", json={"modelType": "energy-saving", "version": "1.0"}).json()["modelId"]
     if state is not None:
         aimgf_runtimes[model_id] = state
@@ -777,35 +781,36 @@ def test_a_model_with_a_live_runtime_is_not_deleted(client, aimgf_runtimes, stat
         assert resp.json()["detail"]["title"] == "MODEL_IN_USE" and state in resp.json()["detail"]["detail"]
 
 
-# Each row is how AIMgF fails to answer: a transport error, or a status that is neither 200 nor 404.
-@pytest.mark.parametrize("failure", ["transport", 500])
-def test_a_model_is_not_deleted_when_aimgf_cannot_say(client, monkeypatch, failure):
-    """No answer from AIMgF, or a 5xx, is 503 `ENDPOINT_UNREACHABLE` and nothing is deleted: a delete on a guess could orphan a running workload."""
-    model_id = client.post("/models", json={"modelType": "energy-saving", "version": "1.0"}).json()["modelId"]
+# ---------------------------------------------------------------- what the other packages read and write through registry/access.py
 
-    def failing_get(self, path, **kw):
-        """AIMgF fails as the row says."""
-        if failure == "transport":
-            raise ConnectionError("down")
-        return type("A", (), {"status_code": failure, "json": lambda self: {}})()
-    monkeypatch.setattr("app.main.R1Client.get", failing_get)
+def test_the_access_layer_reads_a_model_and_the_groups_and_merges_a_phase(client, db_session_factory):
+    """`access.model_json` is the body of `GET /models/{id}` (None for an unknown id), `coordination_groups` lists every group as the list route does, and
+    `record_phase` merges a phase into the model in the caller's transaction (a rollback takes it back, a commit keeps it)."""
+    model_id = client.post("/models", json={"modelType": "acc", "version": "1", "owner": "es-client"}).json()["modelId"]
+    other = client.post("/models", json={"modelType": "acc", "version": "2"}).json()["modelId"]
+    group_id = client.post("/coordination-groups", json={"memberModelIds": [model_id, other]}).json()["groupId"]
+    served = client.get(f"/models/{model_id}").json()
+    with db_session_factory() as session:
+        assert access.model_json(session, uuid.UUID(model_id)) == served
+        assert access.model_json(session, uuid.uuid4()) is None
+        assert [g["groupId"] for g in access.coordination_groups(session)] == [group_id]
+        access.record_phase(session, uuid.UUID(model_id), {"phase": "DEPLOYED"})
+        session.rollback()                                                         # the caller's rollback takes the write with it
+    assert client.get(f"/models/{model_id}").json()["phaseInfo"] is None
+    with db_session_factory() as session:
+        access.record_phase(session, uuid.UUID(model_id), {"phase": "IN_TRAINING", "trainingInfo": {"dataSources": "s3://t"}})
+        access.record_phase(session, uuid.UUID(model_id), {"trainingInfo": {"baseModelId": model_id}})
+        access.record_phase(session, uuid.uuid4(), {"phase": "TRAINED"})          # unknown model: skipped, no error
+        session.commit()
+    assert client.get(f"/models/{model_id}").json()["phaseInfo"] == {
+        "phase": "IN_TRAINING", "trainingInfo": {"dataSources": "s3://t", "baseModelId": model_id}}
 
-    assert client.delete(f"/models/{model_id}").status_code == 503
-    assert client.get(f"/models/{model_id}").status_code == 200
 
-
-def test_the_live_runtime_read_is_made_on_mlmrs_own_account(client, monkeypatch):
-    """MLMR asks AIMgF for the runtime for nobody (no `X-R1-On-Behalf-Of`), also when an rApp deletes its model: the route judged ownership already, and AIMgF's
-    owner rule (MLLF-NODEGROUP-OWNER) must not turn the safety read into a refusal that reads as "AIMgF did not answer"."""
-    from smo_shared.invoker import get_originator
-    model_id = _register_for(client, _RAPP)
-    originators = []
-
-    def recording_get(self, path, **kw):
-        """AIMgF does not know the model (404), and the originator the call would carry is recorded."""
-        originators.append(get_originator())
-        return type("A", (), {"status_code": 404, "json": lambda self: {}})()
-    monkeypatch.setattr("app.main.R1Client.get", recording_get)
-
-    assert client.delete(f"/models/{model_id}", headers=_RAPP).status_code == 204
-    assert originators == [None]
+def test_a_first_phase_write_without_a_phase_is_skipped_by_the_access_layer(client, db_session_factory):
+    """The merge rule of the route (the first write needs a phase) holds in process too, and the refused write is skipped, not raised: a training run never
+    fails on its lineage record."""
+    model_id = client.post("/models", json={"modelType": "acc", "version": "3"}).json()["modelId"]
+    with db_session_factory() as session:
+        access.record_phase(session, uuid.UUID(model_id), {"trainingInfo": {"baseModelId": "b"}})
+        session.commit()
+    assert client.get(f"/models/{model_id}").json()["phaseInfo"] is None

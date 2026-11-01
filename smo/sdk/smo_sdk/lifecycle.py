@@ -61,7 +61,7 @@ class LifecycleClient(BaseClient):
                                  decided_by: str | None = None, rationale: str | None = None) -> dict:
         """Deprecated, and no longer sends anything: always raises `SdkError` (403, `ROLE_NOT_PERMITTED`) before a call is made.
 
-        `POST /aimgf/models/{id}/advance` carries the governance decisions (approve, certify, promote, ...) and the end-of-life events (`aimgf/app/statemachine.py`,
+        `POST /aimgf/models/{id}/advance` carries the governance decisions (approve, certify, promote, ...) and the end-of-life events (`aimgf/app/governance/statemachine.py`,
         `ADVANCEABLE_EVENTS`). Those are decisions of the operator, not of a rApp: since SEC-15.1 AIMgF refuses a caller with the rApp role and since SEC-15.1b the gateway
         refuses the call too (it is off `roles.RAPP_MAY_CHANGE`), so this method could only ever fail, after a round trip. It is kept, not deleted, so that a rApp that
         calls it gets a clear error instead of an `AttributeError` (`docs/RELEASES.md`, deprecation policy; removal waits for a release that may break the SDK's API).

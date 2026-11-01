@@ -15,7 +15,7 @@ SMO = {"X-R1-Role": "internal", "X-R1-Invoker-Id": "gui-invoker"}
 
 def _register(mesh, headers, **body) -> str:
     """Registers a model at MLMR with the given gateway headers and returns its id."""
-    resp = mesh["mlmr"].post("/models", headers=headers, json={"modelType": "own-" + uuid.uuid4().hex[:8], "version": "1", **body})
+    resp = mesh["aimgf"].post("/models", headers=headers, json={"modelType": "own-" + uuid.uuid4().hex[:8], "version": "1", **body})
     assert resp.status_code == 201, resp.text
     return resp.json()["modelId"]
 
@@ -25,7 +25,7 @@ def test_the_registering_rapp_owns_the_model_and_another_rapp_is_refused(mesh):
     terminate, and on a loading request for it (AIMgF reads the owner from MLMR over the mesh); the operator (role internal) is not refused.
     """
     model_id = _register(mesh, ES)
-    assert mesh["mlmr"].get(f"/models/{model_id}").json()["owner"] == "es-client"
+    assert mesh["aimgf"].get(f"/models/{model_id}").json()["owner"] == "es-client"
 
     patch = {"clearedNodeGroups": ["ng1"]}
     assert mesh["aimgf"].patch(f"/models/{model_id}/runtime/node-groups", headers=OTHER, json=patch).status_code == 403
@@ -45,10 +45,10 @@ def test_mllf_places_a_model_only_for_its_owner_through_the_mesh(mesh):
     `MODEL_NOT_CERTIFIED`, the model is only registered). No node groups are written for B.
     """
     model_id = _register(mesh, ES)
-    refused = mesh["mllf"].post(f"/models/{model_id}/deploy", headers=OTHER, json=["ng1"])
+    refused = mesh["aimgf"].post(f"/models/{model_id}/deploy", headers=OTHER, json=["ng1"])
     assert refused.status_code == 403 and refused.json()["detail"]["title"] == "MODEL_ACCESS_DENIED", refused.text
     for headers in (ES, SMO):
-        gated = mesh["mllf"].post(f"/models/{model_id}/deploy", headers=headers, json=["ng1"])
+        gated = mesh["aimgf"].post(f"/models/{model_id}/deploy", headers=headers, json=["ng1"])
         assert gated.status_code == 409 and gated.json()["detail"]["title"] == "MODEL_NOT_CERTIFIED", gated.text
     assert mesh["aimgf"].get(f"/models/{model_id}/lifecycle", headers=SMO).json()["clearedNodeGroups"] == []
 
@@ -56,7 +56,7 @@ def test_mllf_places_a_model_only_for_its_owner_through_the_mesh(mesh):
 def test_a_model_an_smo_module_registers_stays_open_to_any_rapp(mesh):
     """A model registered by an SMO module without an owner is unowned, and any rApp passes the ownership check on it; one registered for a named rApp is that rApp's alone."""
     open_model = _register(mesh, SMO)
-    assert mesh["mlmr"].get(f"/models/{open_model}").json()["owner"] is None
+    assert mesh["aimgf"].get(f"/models/{open_model}").json()["owner"] is None
     assert mesh["aimgf"].patch(f"/models/{open_model}/runtime/node-groups", headers=OTHER, json={"clearedNodeGroups": ["ng1"]}).status_code == 200
     named = _register(mesh, SMO, owner="es-client")
     assert mesh["aimgf"].patch(f"/models/{named}/runtime/node-groups", headers=OTHER, json={"clearedNodeGroups": ["ng1"]}).status_code == 403
@@ -101,7 +101,7 @@ def test_mlmr_put_and_post_keep_the_owner_out_of_an_rapps_hands_through_the_mesh
     """SEC-15.3c: an rApp cannot register a model for another owner, nor change, clear or claim the owner through PUT, nor update a model another rApp owns; the owner updates its own
     model's other fields, and the operator (role internal) still sets the owner.
     """
-    mlmr = mesh["mlmr"]
+    mlmr = mesh["aimgf"]
     forged = mlmr.post("/models", headers=ES, json={"modelType": "forged-" + uuid.uuid4().hex[:6], "version": "1", "owner": "other-client"})
     assert forged.status_code == 403 and "MODEL_OWNER_IMMUTABLE" in forged.text
     model_id = _register(mesh, ES, owner="es-client")
@@ -122,7 +122,7 @@ def test_mlmr_delete_upload_download_phase_and_groups_apply_the_owner_rule_throu
     the model, and nothing changes; the owner (the same client id the SDK registers with) uploads, downloads, groups and deletes; the console and AIMgF (role internal) are not asked, a model with
     no owner is open to every rApp, and a model that is PUBLICLY_AVAILABLE can be downloaded by another rApp.
     """
-    mlmr = mesh["mlmr"]
+    mlmr = mesh["aimgf"]
     zip_file = {"file": ("model.zip", b"pkzip-bytes", "application/zip")}
     model_id = _register(mesh, ES)
 

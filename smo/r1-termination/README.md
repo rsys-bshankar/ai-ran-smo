@@ -122,8 +122,8 @@ Route table (`ROUTES`, prefix → env var → default):
 | `/nfo` | `NFO_URL` | `http://nfo:8000` |
 | `/focom` | `FOCOM_URL` | `http://focom:8000` |
 | `/aimgf` | `AIMGF_URL` | `http://aimgf:8000` |
-| `/mlmr` | `MLMR_URL` | `http://mlmr:8000` |
-| `/mllf` | `MLLF_URL` | `http://mllf:8000` |
+| `/mlmr` | `MLMR_URL` | `http://aimgf:8000` (AIMgF serves the model registry since S2.1; the prefix goes in S2.4) |
+| `/mllf` | `MLLF_URL` | `http://aimgf:8000` (AIMgF serves the deploy gate since S2.2; the prefix goes in S2.4) |
 | `/ran-analytics` | `RAN_ANALYTICS_URL` | `http://ran-analytics:8000` |
 | `/mdaf` | `MDAF_URL` | `http://mdaf:8000` |
 | `/intent-service` | `INTENT_SERVICE_URL` | `http://intent-service:8000` |

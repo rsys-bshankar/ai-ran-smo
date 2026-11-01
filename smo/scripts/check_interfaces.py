@@ -22,7 +22,10 @@ module paths (`gui/src`, method not known: any method of the path). A call that 
 waiting operation must be in the baseline under `consumer` (a NEW caller of a route that is going away fails); one that resolves to nothing fails
 (unless `tests_integration/r1_consumer_waivers.json` waives it). Also: nothing outside `teiv/` names smo-teiv's own API (`/topology-inventory/`, D19).
 The baseline only shrinks: an entry whose route or call is gone is stale and fails the gate (remove it in the PR that replaced or deleted the route),
-and with `--base-ref` an entry that the base does not have fails too. Tests: `tests_integration/test_interface_gate.py`.
+and with `--base-ref` an entry that the base does not have fails too, unless it is a move: a route now served by the module R1 Termination's routing
+table sends the old prefix to (S2.1 and S2.2: `/mlmr` and `/mllf` reach AIMgF), which keeps its appendix A row and records the entry it was as
+`movedFrom`, or a call that moved to another file of the same module with the same target; each base entry can be moved once, so the count cannot grow.
+Tests: `tests_integration/test_interface_gate.py`.
 """
 
 import argparse
@@ -113,11 +116,31 @@ def contracted() -> dict[str, set[str]]:
     return out
 
 
-def classify(module: str, op: str, contract: dict[str, set[str]], rows: dict, ids: set[str]) -> str:
+def folded_modules() -> dict[str, list[str]]:
+    """{module: [old module names]} for each R1 prefix whose routing-table entry sends it to another module's process (`/mlmr` and `/mllf` to AIMgF, S2.1 and
+    S2.2): that module now serves the old module's routes, with the old module's appendix A rows."""
+    out: dict[str, list[str]] = {}
+    for prefix, module in sorted(consumers_check.gateway_routes().items()):
+        if prefix.lstrip("/") != module:
+            out.setdefault(module, []).append(prefix.lstrip("/"))
+    return out
+
+
+def row_for(module: str, op: str, rows: dict, folded: dict[str, list[str]]) -> tuple[dict | None, str | None]:
+    """The appendix A row of an operation, and the `module op` key it was filed under when that is a module folded into this one (else None)."""
+    if (module, op) in rows:
+        return rows[(module, op)], None
+    for old in folded.get(module, []):
+        if (old, op) in rows:
+            return rows[(old, op)], f"{old} {op}"
+    return None, None
+
+
+def classify(module: str, op: str, contract: dict[str, set[str]], rows: dict, ids: set[str], folded: dict[str, list[str]] | None = None) -> str:
     """`bundle`, `design` ([D] listed), `standard` (standard as served) or `waiting`, for one served operation."""
     if op in contract.get(module, set()):
         return "bundle"
-    row = rows.get((module, op))
+    row, _ = row_for(module, op, rows, folded or {})
     if row and row["verdict"] == "[D] exception":
         design = re.match(r"(D-\d+)", row["reason"])
         if design and design.group(1) in ids:
@@ -169,10 +192,11 @@ def calls() -> list[dict]:
     # Go SDK: gw("spec", "METHOD", "/tmpl") and route{spec: "...", method: "...", tmpl: "..."}
     go = GO_ROUTES.read_text()
     rel = _rel(GO_ROUTES)
+    # the spec names the R1 prefix; the module is the one the gateway's routing table sends it to
     for spec, method, tmpl in re.findall(r'gw\("([^"]+)",\s*"([A-Z]+)",\s*"([^"]+)"\)', go):
-        add("go", f"{rel} {method} /{spec}{tmpl}", method, tmpl, module=spec)
+        add("go", f"{rel} {method} /{spec}{tmpl}", method, tmpl, module=routes.get("/" + spec, spec))
     for spec, method, tmpl in re.findall(r'route\{spec:\s*"([^"]+)",\s*method:\s*"([A-Z]+)",\s*tmpl:\s*"([^"]+)"\}', go):
-        add("go", f"{rel} {method} {tmpl}", method, tmpl, module=spec)
+        add("go", f"{rel} {method} {tmpl}", method, tmpl, module=routes.get("/" + spec, spec))
     # Java SDK: Route.get("/module/..."), Route.post(...), ...
     rel = _rel(JAVA_ROUTES)
     for method, tmpl in re.findall(r'Route\.(get|post|put|patch|delete)\(\s*"([^"]+)"', JAVA_ROUTES.read_text()):
@@ -218,21 +242,24 @@ def teiv_api_leaks() -> list[str]:
 # ------------------------------------------------------------------------------------------------ the gate
 
 def evaluate(ops: dict[str, set[str]], call_list: list[dict], baseline: dict, tpl: dict, contract: dict, rows: dict, ids: set[str],
-             waivers: dict) -> dict:
-    """The gate as a function of its inputs: the classification per module, the computed baseline, and the problems (empty = pass)."""
+             waivers: dict, folded: dict[str, list[str]] | None = None) -> dict:
+    """The gate as a function of its inputs: the classification per module, the computed baseline, and the problems (empty = pass). `folded` defaults to
+    what R1 Termination's routing table says today (`folded_modules`)."""
+    folded = folded_modules() if folded is None else folded
     summary: dict[str, dict[str, int]] = {}
     producer: dict[str, dict] = {}
     status: dict[tuple[str, str], str] = {}
     for module, module_ops in sorted(ops.items()):
         counts = summary.setdefault(module, {"bundle": 0, "design": 0, "standard": 0, "waiting": 0, "consumer_waiting": 0})
         for op in sorted(module_ops):
-            kind = classify(module, op, contract, rows, ids)
+            kind = classify(module, op, contract, rows, ids, folded)
             status[(module, op)] = kind
             counts[kind] += 1
             if kind == "waiting":
-                row = rows.get((module, op), {})
+                row, moved_from = row_for(module, op, rows, folded)
+                row = row or {}
                 producer[f"{module} {op}"] = {"fate": row.get("verdict", "not in appendix A"), "row": row.get("row", "–"),
-                                              "replacement": row.get("reason", "")[:160]}
+                                              "replacement": row.get("reason", "")[:160], **({"movedFrom": moved_from} if moved_from else {})}
     consumer: dict[str, str] = {}
     unresolved: list[str] = []
     resolved_groups = {call["group"] for call in call_list if call.get("group") and resolve(call, tpl)}
@@ -267,8 +294,34 @@ def evaluate(ops: dict[str, set[str]], call_list: list[dict], baseline: dict, tp
 
 
 def grown(baseline: dict, base: dict) -> list[str]:
-    """Entries of `baseline` the base ref's baseline does not have: the baseline may only shrink."""
-    return [f"baseline grew: {half} {key}" for half in ("producer", "consumer") for key in sorted(set(baseline.get(half, {})) - set(base.get(half, {})))]
+    """Entries of `baseline` the base ref's baseline does not have: the baseline may only shrink. A move is not growth, and each base entry moves once:
+    a producer entry whose `movedFrom` names a base entry this baseline no longer has (the route is served by another module's process at the same
+    path), and a consumer entry for the same call and the same target operation as a base entry of another file of the same module that this baseline
+    no longer has (the code moved between files)."""
+    out = []
+    now_p, base_p = baseline.get("producer", {}), base.get("producer", {})
+    gone_p = set(base_p) - set(now_p)
+    for key in sorted(set(now_p) - set(base_p)):
+        moved_from = now_p[key].get("movedFrom") if isinstance(now_p[key], dict) else None
+        if moved_from in gone_p:
+            gone_p.discard(moved_from)
+            continue
+        out.append(f"baseline grew: producer {key}")
+    now_c, base_c = baseline.get("consumer", {}), base.get("consumer", {})
+    gone_c = set(base_c) - set(now_c)
+
+    def op_of(target: str) -> str:
+        return target.split(" ", 1)[1] if " " in target else target
+
+    for key in sorted(set(now_c) - set(base_c)):
+        file, _, call = key.partition(" ")
+        match = next((old for old in sorted(gone_c) if old.partition(" ")[2] == call and old.split("/", 1)[0] == file.split("/", 1)[0]
+                      and op_of(base_c[old]) == op_of(now_c[key])), None)
+        if match is not None:
+            gone_c.discard(match)
+            continue
+        out.append(f"baseline grew: consumer {key}")
+    return out
 
 
 def run(base_ref: str | None = None, write: bool = False) -> int:

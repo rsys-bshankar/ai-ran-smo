@@ -1,6 +1,6 @@
 # Call Flow 27: TS 28.105 provisioning resources — training, update and loading requests, and execution timeouts
 
-AIMgF exposes the TS 28.105 AI/ML NRM objects it owns as REST resources with the spec's attribute names (`aimgf/app/nrm.py`, `docs/STANDARDS.md`). They are
+AIMgF exposes the TS 28.105 AI/ML NRM objects it owns as REST resources with the spec's attribute names (the `nrm.py` of each capability package of `aimgf/app/`, `docs/STANDARDS.md`). They are
 not a second bookkeeping layer: an `MLTrainingRequest` *is* a training job and an `MLTestingRequest` *is* a validation job, started by the same code as
 `POST /training-jobs` and `/validation-jobs` (call flow 02). So the lifecycle gate, the approval gates, the NFO runtime and the timeout are the same whichever
 route a caller takes. Five diagrams:

@@ -1,5 +1,7 @@
 # MLLF: lifecycle
 
+> **Historical (before S2.1–S2.3).** This describes MLLF as a service of its own. Its behaviour is now AIMgF's `loading/gate.py` (S2.2): the gate is an in-process check of AIMgF's lifecycle row, with no R1 round trip and no SME identity of its own; the module's lifecycle is [`../../aimgf/docs/lifecycle.md`](../../aimgf/docs/lifecycle.md), and the AI/ML call flows are redrawn as Stage 2 completes (ADR 0010 section 2). This directory keeps only a health-probe placeholder until S2.8.
+
 MLLF, the ML Loading Function, is the deploy-request gate in front of a model's placement: it lets a model be placed only when AIMgF has it `CERTIFIED`
 or `PROMOTED`, and writes the node groups it is cleared for onto AIMgF's lifecycle row. It deploys nothing. It is reached at the R1 prefix `/mllf`
 through R1 Termination, has no table and no database schema, and has no worker. What its route does is in [`../README.md`](../README.md). Three

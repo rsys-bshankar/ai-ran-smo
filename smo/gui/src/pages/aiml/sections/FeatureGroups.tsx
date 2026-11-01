@@ -11,7 +11,7 @@ import { useT } from "../../../i18n";
 import { ServerTable } from "../../../kit/ServerTable";
 import { FEATURE_GROUPS, useDmeTypes } from "../data/queries";
 
-/** The shape AIMgF accepts for a secret reference (`TOKEN_REF` in `aimgf/app/main.py`): a name, never the secret's value. */
+/** The shape AIMgF accepts for a secret reference (`TOKEN_REF` in `aimgf/app/training/feature_groups.py`): a name, never the secret's value. */
 export const TOKEN_REF = /^[a-z][a-z0-9_-]{0,62}$/;
 
 /** The tab. */

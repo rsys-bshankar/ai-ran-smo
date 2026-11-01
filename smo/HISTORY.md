@@ -5071,3 +5071,64 @@ Closed from `OPEN_ITEMS.md` (`PR-CONV-S1.4`). `shared/smo_shared/mns/scope.py` a
   fixed: selecting a whole array and then a field through it dropped the array's non-object items; and mutmut forks each mutant from a process whose
   shared registry is already built, so the registry's own tests build fresh ones. Not mutated: `mns/store.py` (DDL, held on Postgres by
   `test_mns_store.py`) and `mns/lifecycle.py` (no-op hooks).
+
+### PR-CONV-S2.1, S2.2, S2.3 — AIMgF absorbs MLMR and MLLF: code, tables and tests moved, packages by TS 28.105 capability
+
+Closed from `OPEN_ITEMS.md` (`PR-CONV-S2.1`, `PR-CONV-S2.2`, `PR-CONV-S2.3`), with `MLLF-IDENTITY`, which S2.2 superseded. Decision D4, with ADR 0010
+section 3.1; rewrite mode (`scripts/rewrite_mode.json`): code moved, not aliased, no compatibility shim.
+
+- **S2.1, the registry.** `mlmr/app/main.py`, `mlr.py` and `models.py` are `aimgf/app/registry/routes.py`, `mlr.py` and `models.py` (`git mv`, so the
+  history follows them). The routes are an `APIRouter` included at the root of AIMgF's app. The registry's two R1 calls into AIMgF are in-process reads:
+  the delete's check that the model's serving runtime is not live (call flow 26e) reads the `model_lifecycle` row in the same session, so the 503 for
+  "AIMgF did not answer" is gone; `GET /ml-models/{id}` reads `mLTrainingType` and the report and function references in process (`ml_model_nrm_refs`),
+  so it no longer degrades to empty values. `POST /coordination-groups` keeps its idempotency under the key scope `aimgf`. **Tables:** revision `0064`
+  moves `aiml_model`, `model_artifact`, `ml_model_coordination_group`, `ml_model_repository`, `ml_models_storage`, `ml_model_profile` and
+  `model_change_subscription` from the `mlmr` schema into `aimgf` with `ALTER TABLE ... SET SCHEMA`, so rows, indexes, constraints and the foreign
+  keys inside the set move with them and nothing is copied, and drops the empty schema; `downgrade()` moves them back. Tested on Postgres with a row
+  in every table, both ways (`tests_integration/test_migrations.py::test_0064_moves_mlmrs_tables_into_aimgf_with_their_rows_and_back`; the unique
+  `(model_type, version)` still refuses a duplicate after the move). **D6:** `migrations/db_roles.json` gives the seven tables to AIMgF's role only
+  (which gains `audit_log` and `audit_head` for the owner-change audit); the `mlmr` role keeps no schema and `module_identity` only, so it is refused
+  on `aimgf` (checked against Postgres 18: `permission denied for schema aimgf`). `migrations/table_owners.json` files the tables under `aimgf`.
+  **Tests:** `mlmr/tests/test_mlr_conformance.py` and `test_main.py` are `aimgf/tests/test_registry_mlr_conformance.py` and `test_registry.py`, on
+  every AIMgF table; the three tests of the R1 lifecycle read (no answer, a 5xx, the call made on MLMR's own account) went with the read; the
+  `nrm-refs` tests read real training and inference rows; two tests cover `registry/access.py`.
+- **AIMgF's own calls to the registry** (`aimgf/app/main.py`, `nrm.py`: `GET /mlmr/models/{id}`, `GET /mlmr/coordination-groups`,
+  `PATCH /mlmr/models/{id}/phase-info`) are in-process too, through `registry/access.py` (`model_json`, `coordination_groups`, `record_phase`), in the
+  request's own session: the ownership helpers take the session (`_get_model_or_none(db, ...)` and the rest). This was done here, not in S2.4,
+  because S2.3 moves that code into the capability packages, and an R1 round trip from AIMgF into its own process has no reason to exist. The
+  phase write-back now commits or rolls back with the training request instead of independently; the group search reads every group (MLMR's list
+  answered one default page). The unit tests' `mlmr` fixture stands its double in over `app.registry.access`.
+- **S2.2, the deploy gate.** `mllf/app/main.py` is `aimgf/app/loading/gate.py`: `POST /models/{id}/deploy` applies AIMgF's owner rule
+  (`_owned_model`, so `MLLF-NODEGROUP-OWNER` holds without `X-R1-On-Behalf-Of`), reads the lifecycle row (CERTIFIED or PROMOTED, else 409
+  `MODEL_NOT_CERTIFIED`) and writes `cleared_node_groups` in one transaction, where MLLF made two R1 calls with a window between them.
+  `aimgf/tests/test_loading_gate.py` runs with no MLLF container and no R1 double. `MLLF-IDENTITY` (a new SME invoker per MLLF process) is closed:
+  nothing runs in MLLF's process that calls R1.
+- **S2.3, packages by TS 28.105 capability.** `main.py` (2,436 lines) and `nrm.py` (1,362 lines) were split by top-level definition, unchanged, into
+  `registry/`, `training/` (`jobs.py`, `nrm.py`, `feature_groups.py`), `testing/`, `emulation/`, `loading/` (`runtime.py`, `gate.py`, `nrm.py`),
+  `inference/` (`jobs.py`, `nrm.py`, `monitoring.py`), `update/` and `governance/` (`statemachine.py`, `lifecycle.py`, `routes.py`), with `common.py`
+  (the R1 client, model lookup, the owner rule, shared bodies) and `execution.py` (the NFO execution runtimes of the MLTF / MLVF / MLEF / MLIF roles,
+  timeouts) underneath; `main.py` now only builds the app. Not taken: `aimgf/app/mlmr/` and `aimgf/app/mllf/` as the plan's S2.1 and S2.2 rows word
+  it, since S2.3 folds them into the capability packages and the old names would be packages too; and no `mltf`, `mtef`, `mlvf`, `mlef` or `mlif`
+  package. The package graph is acyclic at import; the two upward calls (the timeout sweep into training, a finished run into its MLUpdateProcess)
+  go through the package object (`training.jobs`, `update.nrm`), not an import inside the function, which the integration mesh's loader would break. Every one of the 134 operations of the three old documents is served by the one app (the set compared before the
+  split), and AIMgF's 440 existing unit tests passed unchanged in substance on the split code. `timeout_for` lost its underscore so that
+  `scripts/config_reference.py` follows its call sites across files; that script now treats a bare read next to one with a default in the same
+  module (not only the same file) as its guard, and `scripts/check_code_docs.py` recognises a pydantic body whose base class is imported from a
+  sibling file.
+- **The one transitional step.** The old `/mlmr/*` and `/mllf/*` routes keep answering, served by AIMgF's process: R1 Termination's `ROUTES` send both
+  prefixes to `http://aimgf:8000` (`MLMR_URL`, `MLLF_URL`; compose sets the same), and the integration mesh mirrors it. The 24 routes and where they are
+  served are listed in `aimgf/README.md` 2.4 ("Routes served where until S2.4"), so S2.4 can move the callers and delete the two prefixes. `mlmr/` and
+  `mllf/` keep a health-probe placeholder app with no code or table of their own, so their compose services, Helm modules, CI suites and coverage
+  floors run until S2.8; their READMEs say so in one line.
+- **Interface gate.** The baseline did not grow: producers 513 → 513, consumers 402 → 397. The 23 waiting routes of MLMR and MLLF are filed under
+  `aimgf` with their appendix A rows and a `movedFrom` naming the old entry; five calls became in-process and left the baseline; seven of AIMgF's
+  calls to NFO, DME and Onboarding moved between its files. `scripts/check_interfaces.py` learned the move: it reads which module R1's routing table
+  sends a prefix to (also for the Go SDK's route table), files a folded module's routes with its appendix A rows, and with `--base-ref` counts a
+  producer entry whose `movedFrom` is gone, or the same call to the same target from another file of the same module, as a move, each base entry
+  once (`tests_integration/test_interface_gate.py`, three new tests). Contract drift is unchanged (AIMgF's contract already covered all three).
+- **Integration checks that scanned `<module>/app/*.py`** (database roles, CHECK literals, the notification inventory, the SDK POST idempotency
+  check) scan the module's whole `app/` tree.
+- **Documents.** `aimgf/README.md` (code map by package, the registry's and the gate's HLD, LLD and API, the routes served where, tests),
+  `docs/ARCHITECTURE.md` (golden rules 1, 3 and 5, the service tables; S2.9 finishes it), the top-level `README.md`, `r1-termination/README.md`,
+  `docs/CONFIGURATION.md`, the placeholders' READMEs, and a "historical" note on `mlmr/docs/lifecycle.md` and `mllf/docs/lifecycle.md`. The AI/ML call
+  flows (02, 17, 26, 27) are redrawn as Stage 2 completes (ADR 0010 section 2).
