@@ -1,6 +1,6 @@
 """Tests for teiv/model/check_extension.py (plan task S3.24): TE&IV's extension modules pass the TE&IV data model's extension rules, and a module that
 breaks each rule (an augment, the data model's namespace or domain, an entity type or a relationship without the mandatory groupings, a side that is not
-an instance-identifier, a role taken twice on one type) is reported."""
+an instance-identifier, a role taken twice on one type, an enum without a value) is reported."""
 
 import importlib.util
 import textwrap
@@ -92,6 +92,7 @@ def test_a_module_that_follows_the_rules_has_no_finding(tmp_path):
     (('leaf serving-thing { description "a"; type instance-identifier;', 'leaf serving-thing { description "a"; type string;'), "E5"),
     (("or-teiv-yext:aSide Thing;", ""), "E5"),
     (("or-teiv-yext:label 0.1.0;", "or-teiv-yext:label v1;"), "E6"),
+    (("    or-teiv-yext:domain EXT_TEST;", "    or-teiv-yext:domain EXT_TEST;\n    typedef Flag { type enumeration { enum NO; enum YES; } }"), "E8"),
 ])
 def test_each_broken_rule_is_reported(tmp_path, change, rule):
     """One change to the fixture breaks one rule, and the finding names it."""

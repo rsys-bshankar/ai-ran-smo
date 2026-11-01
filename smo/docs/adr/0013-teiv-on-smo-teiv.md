@@ -4,7 +4,8 @@
 > through the standards) stands, with the conditions of section 9. Nothing here is built into a module: the spike is `spikes/teiv/` (no module imports
 > it), and the work it found is the Stage 3 rows of section 10. **Section 11** (the extension spike, S3.20's go/no-go) recommends **go**: the missing
 > model is carried by model files and smo-teiv's own generator, with no change to smo-teiv's Java code. **The owner confirmed go on 1 November 2026**
-> (section 11.6): D19 is decided. **Built** (section 11.7): smo-teiv packaged for the stack (S3.23) and the WG10 TE&IV R1 API in `specs/` (S3.24).
+> (section 11.6): D19 is decided. **Built** (section 11.7): smo-teiv packaged for the stack (S3.23) and the WG10 TE&IV R1 API in `specs/` (S3.24);
+> (section 12) TE&IV's facade: the ProvMnS reads, the WG10 door, the TS 28.541 attributes and the object version (S3.19, S3.20, S3.21 in part).
 
 Paths are relative to `smo/`. Written against `main` at 4a237de. smo-teiv was read at its tag and run, here and on a CI runner (sections 2–5); the numbers are
 from `spikes/teiv/measure.py`. The architecture is [ADR 0008](0008-converged-architecture.md) (section 3.6, D6, D7, D19); the interfaces are
@@ -386,3 +387,94 @@ standard way to load new entity or relationship types at run time, and the exten
 schema generated at build. The DM v06 YANG itself is not yet in `specs/`: its source, gitlab.o-ran.org/wg10/teiv-dm, cannot be reached from the
 environment that wrote this, and the modules are not typed from the PDF (PR-CONV-S3.24a).
 
+
+## 12. As built: the facade (S3.19, S3.20, S3.21 in part)
+
+`teiv/app/` is TE&IV's process: the shared ProvMnS router of `smo_shared.mns` (S1.1 to S1.5) mounted on smo-teiv's exposure API, read-only until
+S3.4, and the WG10 TE&IV R1 API passed to smo-teiv (`teiv/README.md`). It ports the spike's facade (`spikes/teiv/facade.py`), not as it was: every
+answer is checked against the tree it was loaded with, the errors are the shared TS 28.532 ones with TE&IV's own reasons, and every smo-teiv call has
+a bounded timeout.
+
+### 12.1 The map (G1)
+
+A DN is smo-teiv's id `urn:3gpp:dn:<DN>`, one to one, and each object's only sourceId is that id. The 15 classes TE&IV holds (`teiv/app/model.py`) are
+smo-teiv entity types of its own model (ManagedElement, GNBDUFunction as ODUFunction, GNBCUCPFunction as OCUCPFunction, NRCellDU, NRCellCU,
+NRSectorCarrier) or of the extension (SubNetwork, NRCellRelation, NRFreqRelation, CommonBeamformingFunction, the four cell SON functions, CCOFunction);
+a native attribute is its smo-teiv column under its TS 28.541 name (`nrPci` for `nRPCI`, `gnbDuId` for `gNBDUId`, ...), a boolean of the extension
+is its enumeration `true` / `false` and read back as a boolean (11.5 a2); a column TS 28.541 does not have (`nCI`) is not shown. The three reference
+attributes come back from relationships: nRSectorCarrierRef from NRCELLDU_USES_NRSECTORCARRIER, nRFreqRelationRef from
+NRCELLRELATION_USES_NRFREQRELATION, and **adjacentNRCellRef from NEIGHBOR_CELL reversed** (S3.20, 11.5 b5): its aSide is the relation's adjacent cell,
+its bSide the cell holding the relation, its third sourceId the relation itself, which is how the reader finds the relation an edge belongs to. Two
+hops (Q4) is the caller's fan-out of Q2 (11.5 b6), the TS 28.532 form: TS 28.532 has no two-hop read. `teiv/app/ingest.py` writes exactly this map
+(entities, containment, references, the reversed side, CO_COVERAGE_OVERLAY from isESCoveredBy), so what TE&IV writes is what it reads.
+
+### 12.2 The read (G8)
+
+A getMOIAttributes of a base, a scope and a filter becomes, sent together: the base (one entity read, when the scope selects it), one list per class
+that can lie in the scope's depth range below the base's class, and, for the classes asked for, one list per reference attribute that is selected or
+filtered on. Each list has a sourceIds condition for "below the base", and smo-teiv compares it as `"CD_sourceIds"::text LIKE '%<text>%'` through its
+trigram index, where the trigrams every id shares (`urn:3gpp:dn:SubNetwork=`, `GNBCUCPFunction=1,`) make a long text slow. So the condition is at most
+two short terms ANDed (`;`): the last RDN's value alone when it is distinctive (four characters or more), else the last RDN and the longest value above it
+(`=gNB-0100,` and `NRCellCU=2,`: a cell's relations 2.5 ms in smo-teiv's database against 5.5 ms for the DN's tail). That is a superset, and the answer
+is kept exact by TE&IV: candidates are kept by DN, a reference is set only on an object of the answer (a test reads a cell next to `NRCellCU=10` and a
+namesake gNB under another SubNetwork). The **TS 28.532 filter** is evaluated by TE&IV on every candidate (`smo_shared.mns.scope.matches`), so the
+answer is exactly the filter's; before that, the top-level `&&` terms smo-teiv can evaluate go down (`@.objectClass == 'C'` narrows the classes, an
+attribute equality becomes `/attributes[@<column>=v]` or `/decorators[@smo-teiv-attrs:<a>='v']`), and anything else (`||`, `!`, ranges, paths into a
+structure) is TE&IV's alone. A read that selects only reference attributes (a neighbour read with `attributes=adjacentNRCellRef`) asks for ids only and
+skips the references not selected. **Refused rather than answered wrongly:** a class TE&IV does not hold (422 CLASS_NOT_SUPPORTED), a DN smo-teiv's
+filter grammar cannot carry exactly (`'`, `[`, `]`, `;`: the shared DN parser refuses them first, 400 INVALID_DN, and TE&IV's own 422 stands behind
+it), a scope of more than `TEIV_MAX_SCOPE_OBJECTS` candidates of one class (422 NOT_EXPRESSIBLE, naming the way out), smo-teiv not answering within
+`TEIV_READ_TIMEOUT_SECONDS` or answering 5xx (503 TEIV_UNAVAILABLE, Retry-After 5), smo-teiv refusing what TE&IV sent (502 TEIV_REFUSED: TE&IV's
+defect, logged). The caller's scope and MSAC apply as in the shared service (S1.5).
+
+### 12.3 The TS 28.541 attributes and the object version (S3.21, G3, G7)
+
+smo-teiv's columns hold the attributes its model declares; the others (administrativeState, operationalState, cellState, plmnInfoInfoList, the SON
+functions' settings, ...: 94 names) are **decorators of TE&IV's own schema** `smo-teiv-attrs`, the data model's way to add data to an entity (CIMI
+section 4.5.3), one string leaf per attribute, generated from the shared class registry (`teiv/app/smo-teiv-attrs.yang`, `python -m app.attrs --write`)
+and loaded at start-up through createUserDefinedSchema; ready waits for it. A value is written as itself when it is plain text
+(`[A-Za-z0-9 _.:/=,+-]`), else as `j:` and the base64url of its JSON (d2 below), and decoded on read; a decorator holding plain text can be filtered on
+in smo-teiv. **The version** of an object is a digest of its attributes in TS 28.541 form: smo-teiv's `lastModified` does not change when a decorator
+does (d3), the content does. A single-object read answers it as `ETag`; a modifyMOIAttributes, createMOI or deleteMOI checks the caller, the class, the
+instance and `If-Match` against it (412 STALE_VERSION with the current ETag), and then answers 501 WRITE_NOT_AVAILABLE: the write path is S3.4, which
+will write through `ingest.py`. The WG10 door refuses a change of TE&IV's schema or decorators (403 TEIV_OWNED): they are TE&IV's to write (D6).
+
+### 12.4 Measurements
+
+`teiv/loadtest/queries.py` at 1,000 cells (the tree of 11.4 in TE&IV's forms, 18,004 objects, the decorators loaded) through TE&IV's ProvMnS, every
+answer checked against the tree (0 wrong), 200 runs each, the Claude Code cloud container (Linux x86-64, 4 CPUs, 16 GB, smo-teiv, its database, Kafka,
+TE&IV with three uvicorn workers and the load client on the same host):
+
+| Query (TS 28.532 form) | p50 ms | p95 ms | p99 ms |
+|---|---:|---:|---:|
+| Q1 an NRCellDU, BASE_ONLY | 14.4 | 19.2 | 20.7 |
+| Q2 an NRCellCU, BASE_NTH_LEVEL 1, filter NRCellRelation, attributes adjacentNRCellRef | 16.7 | 25.0 | 30.5 |
+| Q3 a GNBDUFunction, BASE_NTH_LEVEL 1, filter NRCellDU | 11.0 | 16.6 | 19.9 |
+| Q4 Q2, then Q2 of each of its 8 neighbours at once (time to the last answer) | 79.0 | 107.3 | 128.9 |
+| Q5 the SubNetwork, BASE_ALL, filter NRCellDU and nRTAC equal to a value | 77.0 | 93.8 | 100.9 |
+
+What it took, measured on the way: the first port (whole-DN sourceIds conditions, every reference read, one worker) gave Q4 473 ms and Q5 965 ms
+p95. Reading references early only below a non-SubNetwork base and filling them object by object for a few objects brought Q5 under 150 ms. For Q4
+the limit was smo-teiv's database (15.5 ms of Postgres CPU per Q2): a fresh trigram index (below), the short two-term condition, skipping the
+references not selected, and three TE&IV workers brought it to 107 ms. **After a bulk load, `REINDEX SCHEMA teiv_data; ANALYZE;`**: the
+insert-then-decorate load leaves smo-teiv's GIN trigram indexes about five times their size (9.9 MB against 2.1 MB rebuilt, NRCellRelation's sourceIds)
+and a subtree read through them three times slower; `budget.py` runs it after its load, and `teiv/README.md` ("Operating") tells an operator to. The
+same reads through R1 Termination are measured by the "TE&IV load" workflow once TE&IV is a service of the stack (the wiring pull request that follows).
+The integration suite reads Q1 to Q5 through R1 by class name on a fake smo-teiv (`tests_integration/test_teiv_through_r1.py`). The contract
+(`teiv.yaml`) now names `teiv` as its code module: teiv's contract drift is 0 / 0 (it was 56 contract-only operations), 84 agreed.
+
+### 12.5 smo-teiv defects the facade found (offered with S3.25)
+
+| # | Defect in smo-teiv 0.3.0 | Seen as | TE&IV's workaround |
+|---|---|---|---|
+| d1 | A user-defined schema, or a model module, with an `enum` without an explicit `value` is refused ("enum 'NO' does not have a value") | createUserDefinedSchema 400 | every enum of the extension has its value; `check_extension.py` E8 |
+| d2 | updateDecorator writes the decorator value into its SQL text unescaped: `CD_decorators \|\| '{"k": "<value>"}'`. A `"` breaks the JSON (500), and a `'` ends the SQL literal: an **SQL injection** for any caller of updateDecorator | 500, and the query text in smo-teiv's log | TE&IV's own values are plain text or `j:` + base64url; the WG10 door refuses a decorator name or value with `'`, `"` or `\` (400 INVALID_DECORATOR_VALUE) before smo-teiv sees it |
+| d3 | `lastModified` does not change when a decorator does | an updateDecorator, then the entity | the version is a digest of the content |
+| d4 | Ingestion ignores the decorators of an entity in a CloudEvent | the entity without them | decorators are written through updateDecorator after the event |
+| d5 | updateDecorator takes at most 100 entities (consumer-data.batch-size) | 400 "exceeded the limit" | `ingest.py` batches by 100 |
+| d6 | The GIN trigram indexes bloat about five times over an insert-then-update load | subtree reads three times slower | REINDEX and ANALYZE after a bulk load (12.4) |
+
+c3 (btree indexes on relationship side columns) is not needed by this design: TE&IV reads relationships by sourceIds, not by side. A btree index on the
+containment columns (`REL_FK_*`) would make a one-level read by association a btree lookup (4.6 ms against 8.8 ms for a cell's relations), but a read by
+association would miss an object whose containment edge was never written, so TE&IV keeps the sourceIds condition, which holds for every object TE&IV
+wrote.

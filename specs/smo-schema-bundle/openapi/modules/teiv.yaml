@@ -9,7 +9,7 @@ info:
     NRM with scope and filter, TS 28.532 notifications through NtfSubscriptionControl, and the O-RAN WG10 TE&IV R1 services. RAN NF OAM and FOCOM write the NRM through
     these ProvMnS operations (S3.4, S4.5); nothing else writes. smo-teiv''s own API is not part of this contract.'
 x-smo-module: teiv
-x-smo-code-modules: []
+x-smo-code-modules: [teiv]
 x-smo-mns-root: ../common/provmns-root.yaml
 x-smo-standards:
 - '[N] TS 28.532 ProvMnS v19.2.0'
@@ -72,14 +72,28 @@ components:
       $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/GNBDUFunction-Single
     GNBCUCPFunction-Single:
       $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/GNBCUCPFunction-Single
-    GNBCUUPFunction-Single:
-      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/GNBCUUPFunction-Single
     NRCellDU-Single:
       $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/NRCellDU-Single
     NRCellCU-Single:
       $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/NRCellCU-Single
     NRCellRelation-Single:
       $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/NRCellRelation-Single
+    NRSectorCarrier-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/NRSectorCarrier-Single
+    NRFreqRelation-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/NRFreqRelation-Single
+    CommonBeamformingFunction-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/CommonBeamformingFunction-Single
+    CESManagementFunction-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/CESManagementFunction-Single
+    DESManagementFunction-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/DESManagementFunction-Single
+    DMROFunction-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/DMROFunction-Single
+    DLBOFunction-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/DLBOFunction-Single
+    CCOFunction-Single:
+      $ref: ../../../5G_APIs/TS28541_NrNrm.yaml#/components/schemas/CCOFunction-Single
     NtfSubscriptionControl-Single:
       $ref: ../../../5G_APIs/TS28623_SubscriptionControlNrm.yaml#/components/schemas/NtfSubscriptionControl-Single
 x-smo-classes:
@@ -103,10 +117,6 @@ x-smo-classes:
   standard: '[N] TS 28.541 v19.6.0'
   operations: *id001
   schema: '#/components/schemas/GNBCUCPFunction-Single'
-- class: GNBCUUPFunction
-  standard: '[N] TS 28.541 v19.6.0'
-  operations: *id001
-  schema: '#/components/schemas/GNBCUUPFunction-Single'
 - class: NRCellDU
   standard: '[N] TS 28.541 v19.6.0'
   operations: *id001
@@ -120,6 +130,38 @@ x-smo-classes:
   operations: *id001
   schema: '#/components/schemas/NRCellRelation-Single'
   note: NEIGHBOR_CELL edges are NRCellRelation objects
+- class: NRSectorCarrier
+  standard: '[N] TS 28.541 v19.6.0'
+  operations: *id001
+  schema: '#/components/schemas/NRSectorCarrier-Single'
+- class: NRFreqRelation
+  standard: '[N] TS 28.541 v19.6.0'
+  operations: *id001
+  schema: '#/components/schemas/NRFreqRelation-Single'
+- class: CommonBeamformingFunction
+  standard: '[N] TS 28.541 v19.6.0'
+  operations: *id001
+  schema: '#/components/schemas/CommonBeamformingFunction-Single'
+- class: CESManagementFunction
+  standard: '[N] TS 28.541 v19.6.0'
+  operations: *id001
+  schema: '#/components/schemas/CESManagementFunction-Single'
+- class: DESManagementFunction
+  standard: '[N] TS 28.541 v19.6.0'
+  operations: *id001
+  schema: '#/components/schemas/DESManagementFunction-Single'
+- class: DMROFunction
+  standard: '[N] TS 28.541 v19.6.0'
+  operations: *id001
+  schema: '#/components/schemas/DMROFunction-Single'
+- class: DLBOFunction
+  standard: '[N] TS 28.541 v19.6.0'
+  operations: *id001
+  schema: '#/components/schemas/DLBOFunction-Single'
+- class: CCOFunction
+  standard: '[N] TS 28.541 v19.6.0'
+  operations: *id001
+  schema: '#/components/schemas/CCOFunction-Single'
 - class: NtfSubscriptionControl
   standard: '[N] TS 28.622 subscription control (OpenAPI TS 28.623 SubscriptionControlNrm v19.4.0)'
   operations: *id001
@@ -134,8 +176,8 @@ x-smo-teiv-api:
   common-differences:
   - 'Collection answers (Domains, EntityTypes, Entities, RelationshipTypes, Relationships, Schemas): smo-teiv adds HAL-style paging links (self, first, prev,
     next, last: Href) the standard does not define, and does not declare the standard''s `required` members (domainName, entityTypes, relationshipTypes;
-    entityTypeName, entities; relationshipTypeName, relationships). A consumer of the standard ignores the extra links; S3.19 checks the required members are
-    present in what smo-teiv returns.'
+    entityTypeName, entities; relationshipTypeName, relationships). A consumer of the standard ignores the extra links; the required members are present in
+    every answer of smo-teiv 0.3.0 (checked by S3.19 at 1,000 cells: 13 domains, the RAN entity and relationship types), and TE&IV passes the answers as they are.'
   operations:
   - { operationId: getAllDomains, method: GET, path: /domains, mapping: same }
   - { operationId: getTopologyEntityTypes, method: GET, path: '/domains/{domainName}/entity-types', mapping: same }
@@ -168,5 +210,7 @@ x-smo-teiv-domains:
 - { domain: EXT_RAN, module: smo-teiv-ext-ran, x-smo-design: D-24 }
 - { domain: EXT_OAM, module: smo-teiv-ext-oam, x-smo-design: D-24 }
 x-smo-pending:
+- 'GNBCUUPFunction: smo-teiv holds it as OCUUPFunction; TE&IV maps it (teiv/app/model.py) when a writer needs it (S3.4). The 15 classes above are the ones
+  TE&IV registers in SME''s MnS registry (S3.19).'
 - 'CO_COVERAGE_OVERLAY has no standard carrier: it is a relationship of TE&IV''s extension domain EXT_RAN (D-24). HOSTED_ON_OCLOUD is carried by the data
   model''s o-ran-smo-teiv-rel-cloud-ran (TE&IV-DM v06 Annex G) once FOCOM writes the hosting edges (S4.5).'

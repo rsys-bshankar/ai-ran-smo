@@ -9,7 +9,7 @@ CI runs `--check` and fails when this file no longer matches the code.
 
 | suite | files | test functions | collected tests |
 |---|---:|---:|---:|
-| `teiv` | 4 | 17 | 30 |
+| `teiv` | 7 | 54 | 83 |
 
 ## Per test file
 
@@ -18,6 +18,9 @@ Paths are relative to `smo/teiv/`.
 | file | test functions | collected tests |
 |---|---:|---:|
 | `tests/test_budget.py` | 4 | 8 |
-| `tests/test_check_extension.py` | 4 | 13 |
+| `tests/test_check_extension.py` | 4 | 14 |
 | `tests/test_isolation.py` | 6 | 6 |
+| `tests/test_model_attrs_ingest.py` | 9 | 17 |
+| `tests/test_provmns.py` | 17 | 18 |
 | `tests/test_teiv_api_spec.py` | 3 | 3 |
+| `tests/test_wg10_and_app.py` | 11 | 17 |

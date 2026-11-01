@@ -1,0 +1,138 @@
+"""TE&IV's TS 28.541 attributes that smo-teiv's model has no column for, as decorators of TE&IV's own user-defined schema (plan task S3.21, ADR 0013 G3).
+
+The O-RAN TE&IV data model (DM R005 v06.00, Annex A and E) gives one extension point for data beside an entity's own attributes: decorators, declared
+by a module that augments `o-ran-smo-teiv-common-yang-types:decorators` and loaded with the TE&IV API's `createUserDefinedSchema`. smo-teiv 0.3.0's
+schema generator has no `augment` (so smo-teiv's own classes cannot gain attributes through model files), and editing smo-teiv's modules would change
+the standard's. So TE&IV declares one decorator per TS 28.541 attribute it holds outside smo-teiv's columns, in `teiv/app/smo-teiv-attrs.yang`
+(generated here from the shared class registry: `python -m app.attrs --write`; a test holds it current), and loads it at start-up (`ensure_schema`).
+
+Values. smo-teiv 0.3.0 writes a decorator by pasting its value into SQL text without escaping it (`ConsumerDataOperation`; a value with a `"` fails
+with a 500, and one with a `'` would end the literal): a defect to offer upstream with c1 to c3 (ADR 0013 section 11.5, S3.25). Every leaf is a YANG
+`string`, and `encode` writes only text from a safe set as itself (enumeration values such as `LOCKED`, DNs, plain names); anything else (a number,
+a boolean, a list, an object, or text with another character) becomes `j:` and the base64url of its JSON, which has no quote. `decode` reverses both.
+Decorators cannot be filtered on by smo-teiv for a value it holds encoded, so the reader filters those itself (`reader.py`).
+"""
+
+import argparse
+import base64
+import json
+import re
+import sys
+from collections.abc import Iterable
+from pathlib import Path
+
+from . import model
+
+MODULE = "smo-teiv-attrs"
+PREFIX = "teiv-attrs"
+YANG = Path(__file__).resolve().parent / f"{MODULE}.yang"          # in app/, so the image carries it
+SAFE = re.compile(r"[A-Za-z0-9 _.:/=,+-]*")
+ENCODED = "j:"
+IDENTIFIER = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
+LEAF = re.compile(r"^\s*leaf ([A-Za-z][A-Za-z0-9_]*) \{", re.M)
+
+
+def key(name: str) -> str:
+    """The decorator's name in smo-teiv's answers and writes: `smo-teiv-attrs:<attribute>`."""
+    return f"{MODULE}:{name}"
+
+
+def encode(value) -> str:
+    """A TS 28.541 attribute value as the text of its decorator (module description)."""
+    if isinstance(value, str) and SAFE.fullmatch(value) and not value.startswith(ENCODED):
+        return value
+    return ENCODED + base64.urlsafe_b64encode(json.dumps(value, separators=(",", ":")).encode()).decode().rstrip("=")
+
+
+def decode(text: str):
+    """The value an `encode`d decorator holds."""
+    if not isinstance(text, str) or not text.startswith(ENCODED):
+        return text
+    raw = text[len(ENCODED):]
+    return json.loads(base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)))
+
+
+def pushable(value) -> bool:
+    """Whether smo-teiv can compare the decorator with `value` itself: only when the value is stored as itself (a safe string)."""
+    return isinstance(value, str) and encode(value) == value
+
+
+def names(text: str | None = None) -> list[str]:
+    """The decorator names the schema declares (its leaves)."""
+    return LEAF.findall(text if text is not None else YANG.read_text())
+
+
+def decorator_attributes(registry, classes: Iterable[str] = tuple(model.CLASSES)) -> dict[str, list[str]]:
+    """Per class, the TS 28.541 attributes of the registry's schema that TE&IV holds as decorators: neither native nor a reference."""
+    out = {}
+    for name in classes:
+        held = set(model.CLASSES[name].native) | {attr for (cls, attr) in model.REFERENCES if cls == name}
+        # an attribute name is a plain identifier: a name with a `-` (`CCOOvershootCoverageParameters-Single`) is a schema the registry lists, not one
+        out[name] = sorted(a for a in set(registry.info(name).attribute_names) - held if IDENTIFIER.fullmatch(a))
+    return out
+
+
+def generate(registry) -> str:
+    """The text of smo-teiv-attrs.yang: one string leaf per attribute name any class holds as a decorator, in an Annex E decorator module."""
+    per_class = decorator_attributes(registry)
+    every = sorted({a for attrs in per_class.values() for a in attrs})
+    uses = "\n".join(f"        //   {cls}: {', '.join(attrs)}" for cls, attrs in sorted(per_class.items()) if attrs)
+    leaves = "\n".join(f"        leaf {a} {{ type string; }}" for a in every)
+    return f'''module {MODULE} {{
+    yang-version 1.1;
+    namespace "urn:smo:teiv:attrs";
+    prefix {PREFIX};
+
+    import o-ran-smo-teiv-common-yang-types {{ prefix or-teiv-types; }}
+    import o-ran-smo-teiv-common-yang-extensions {{ prefix or-teiv-yext; }}
+
+    organization "SMO TE&IV";
+    description
+        "TE&IV's TS 28.541 / TS 28.622 attributes that smo-teiv's model has no column for, as decorators (O-RAN TE&IV-DM R005 v06.00 Annex E), loaded
+        with createUserDefinedSchema at TE&IV's start (plan task S3.21). Generated by teiv/app/attrs.py from the classes' TS 28.541 schemas; do not
+        edit. Every leaf is a string: a value outside a safe set of characters is 'j:' and the base64url of its JSON (attrs.py).";
+
+    revision "2026-11-01" {{
+        description "The attributes of the classes TE&IV holds (S3.21).";
+        or-teiv-yext:label 1.0.0;
+    }}
+
+    augment /or-teiv-types:decorators {{
+        // The attributes per class:
+{uses}
+{leaves}
+    }}
+}}
+'''
+
+
+def ensure_schema(client) -> str:
+    """Loads the schema into smo-teiv unless it is there (getUserDefinedSchemaByName, then createUserDefinedSchema); returns `present` or `created`.
+    Raises the client's error when smo-teiv cannot be reached or refuses it, so TE&IV's start-up retries."""
+    if client.status(f"/user-defined-schemas/{MODULE}/content") == 200:
+        return "present"
+    client.upload_schema(f"{MODULE}.yang", YANG.read_bytes())
+    return "created"
+
+
+def main(argv: list[str] | None = None) -> int:
+    """`--write` regenerates teiv/app/smo-teiv-attrs.yang from the shared class registry; `--check` fails when the committed file differs."""
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--write", action="store_true")
+    parser.add_argument("--check", action="store_true")
+    args = parser.parse_args(argv)
+    from smo_shared.mns.registry import default_registry
+    text = generate(default_registry())
+    if args.write:
+        YANG.write_text(text)
+        print(f"{YANG.name}: {len(names(text))} decorators")
+        return 0
+    if YANG.read_text() != text:
+        print(f"{YANG.name} is stale: run python -m app.attrs --write from smo/teiv", file=sys.stderr)
+        return 1
+    print(f"{YANG.name}: current ({len(names(text))} decorators)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

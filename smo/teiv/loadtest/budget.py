@@ -7,23 +7,22 @@ of the compose profile `teiv` hold 3 GiB resident while the topology of 1,000 ce
 
 What it does, against the running profile (`docker compose`, so the compose files it uses are the ones COMPOSE_FILE names):
 
-1. Writes the extension spike's synthetic tree (`spikes/teiv/load.py --synthetic`, ADR 0013 section 11.4: 1,000 NRCellDU, 8 NRCellRelation each, 18,004
-   MOIs and 44,003 relationships, 61 CloudEvents) as smo-teiv's ingestion events.
-2. Produces them to TE&IV's topic (smo.teiv.ingestion.v1) with the broker's own console producer (`docker compose exec kafka`), and waits until every entity
-   of the tree is visible in smo-teiv's API.
+1. Writes TE&IV's 1,000-cell tree (`tree.py`: 1,000 NRCellDU, 8 NRCellRelation each, 18,004 objects and 44,003 relationships, ADR 0013 section
+   11.4's tree in TE&IV's forms) with TE&IV's own encoder (`app/ingest.py`): smo-teiv ingestion events, and the updateDecorator calls of the attributes
+   TE&IV holds as decorators (S3.21), after loading TE&IV's decorator schema (`app/attrs.py`) as TE&IV does at start-up.
+2. Produces the events to TE&IV's topic (smo.teiv.ingestion.v1) with the broker's own console producer (`docker compose exec kafka`), waits until every
+   entity of the tree is visible in smo-teiv's API, then sends the decorator calls, and runs the maintenance after a bulk load (REINDEX, ANALYZE).
 3. Reads the API for a while (one cell, a cell's neighbours, the cells of a GNBDUFunction), so the exposure process is measured serving, not idle.
 4. Samples `docker stats` of the four containers every two seconds from before the load to the end of the reads, and reports each one's peak and the peak
    of their sum against the budget (3 GiB, `--budget-mib`). Exit 1 when the sum went over it, or when the tree did not become visible.
 
 smo-teiv's API is read from inside the `teiv-exposure` container (`docker compose exec teiv-exposure curl`): it publishes no port and is on the internal
-network `teiv` only (D19: no module but TE&IV reaches it), and the test does not open one. The synthetic tree and smo-teiv's type names come from the
-spike's `load.py` and `facade.py` (loaded by path, as `spikes/teiv/measure.py` does; no module imports them), until TE&IV's own facade replaces them (S3.19).
-Standard library only, besides what `load.py` imports.
+network `teiv` only (D19: no module but TE&IV reaches it), and the test does not open one. The tree, the encoder and the type names are TE&IV's (`teiv/`
+on the path); standard library otherwise.
 """
 
 import argparse
 import datetime
-import importlib.util
 import json
 import os
 import platform
@@ -37,21 +36,14 @@ from pathlib import Path
 from urllib.parse import quote
 
 SMO = Path(__file__).resolve().parents[2]
-SPIKE = SMO / "spikes" / "teiv"
+TEIV = SMO / "teiv"
+sys.path[:0] = [str(TEIV), str(TEIV / "loadtest"), str(SMO / "shared")]
+os.environ.setdefault("SMO_DATABASE_URL", "sqlite://")      # app.* imports smo_shared, which wants one; nothing here touches a database
 TOPIC = "smo.teiv.ingestion.v1"
 API = "http://localhost:8080/topology-inventory/v1"
 SERVICES = ("teiv-ingestion", "teiv-exposure", "teiv-db", "kafka")
 BUDGET_MIB = 3072
 UNITS = {"b": 1 / 2**20, "kib": 1 / 1024, "kb": 1000 / 2**20, "mib": 1, "mb": 10**6 / 2**20, "gib": 1024, "gb": 10**9 / 2**20}
-
-
-def _spike(name: str):
-    """The spike module `name` (load or facade), loaded from spikes/teiv/ by path."""
-    sys.path.insert(0, str(SPIKE))
-    spec = importlib.util.spec_from_file_location(f"spike_{name}", SPIKE / f"{name}.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
 
 
 def mib(text: str) -> float:
@@ -122,15 +114,20 @@ def count(domain: str, teiv_type: str) -> int:
 
 
 def load(cells: int, timeout: float) -> dict:
-    """Writes the synthetic tree's events, produces them to TE&IV's topic and waits until every entity is visible; what happened, with the seconds."""
-    loader, facade = _spike("load"), _spike("facade")
-    with tempfile.TemporaryDirectory() as tmp:
-        events, gaps = Path(tmp, "events"), Path(tmp, "gaps.json")
-        loader.main(["--synthetic", str(cells), "--events", str(events), "--gaps", str(gaps)])
-        report = json.loads(gaps.read_text())
-        lines = events.read_text()
-    expect = {(facade.DOMAIN_OF[c], facade.TYPES[c]): n for c, n in report["byClass"].items() if c in facade.TYPES}
+    """Loads TE&IV's decorator schema, writes the tree's events, produces them to TE&IV's topic, waits until every entity is visible, then sends the
+    decorator calls; what happened, with the seconds."""
+    from app import attrs, ingest, model
+    import tree
+    mois = tree.synthetic(cells)
+    events, decorator_calls = ingest.encode(mois)
+    compose("exec", "-T", "teiv-exposure", "curl", "-s", "-o", "/dev/null", "-F", f"file=@-;filename={attrs.MODULE}.yang;type=application/yang",
+            "http://localhost:8080/topology-inventory/v1/user-defined-schemas", stdin=attrs.YANG.read_text())
+    expect: dict[tuple[str, str], int] = {}
+    for m in mois:
+        cls = model.CLASSES[m.cls]
+        expect[(cls.domain, cls.entity_type)] = expect.get((cls.domain, cls.entity_type), 0) + 1
     before = {k: count(*k) for k in expect}
+    lines = "\n".join(ingest.cloud_event_line(e) for e in events) + "\n"
     t0 = time.perf_counter()
     compose("exec", "-T", "kafka", "/opt/kafka/bin/kafka-console-producer.sh", "--bootstrap-server", "localhost:9092", "--topic", TOPIC,
             "--property", "parse.headers=true", "--property", "headers.key.separator=:::", "--property", "headers.delimiter=,,,",
@@ -139,24 +136,39 @@ def load(cells: int, timeout: float) -> dict:
     while time.perf_counter() - t0 < timeout:
         seen = {k: count(*k) - before[k] for k in expect}
         if all(seen[k] >= n for k, n in expect.items()):
-            return {"cells": cells, "mois": report["mois"], "entities": sum(expect.values()), "relationships": sum(report["relationships"].values()),
-                    "events": report["events"], "seconds": round(time.perf_counter() - t0, 1)}
+            break
         time.sleep(2)
-    return {"cells": cells, "mois": report["mois"], "entities": sum(expect.values()), "events": report["events"], "seconds": None,
-            "error": f"not every entity visible after {timeout:.0f} s", "seen": sum(seen.values())}
+    else:
+        return {"cells": cells, "mois": len(mois), "entities": sum(expect.values()), "events": len(events), "seconds": None,
+                "error": f"not every entity visible after {timeout:.0f} s", "seen": sum(seen.values())}
+    visible = round(time.perf_counter() - t0, 1)
+    script = ('while IFS= read -r body; do curl -s -o /dev/null -w "%{http_code}\\n" -H "Content-Type: application/json" -d "$body" '
+              '"http://localhost:8080/topology-inventory/v1/manage-decorators"; done')
+    codes = compose("exec", "-T", "teiv-exposure", "sh", "-c", script, stdin="\n".join(json.dumps(c) for c in decorator_calls) + "\n",
+                    timeout=timeout).split()
+    decorated = time.perf_counter()
+    # after a bulk load, the maintenance an operator runs (teiv/README.md, "Operating"): the trigram indexes smo-teiv reads a subtree through are
+    # rebuilt (an insert-then-decorate load leaves them several times their size, and their reads slower) and the planner's statistics refreshed
+    compose("exec", "-T", "teiv-db", "sh", "-c", 'psql -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "REINDEX SCHEMA teiv_data" -c "ANALYZE"',
+            timeout=timeout)
+    relationships = sum(len(v) for e in events for block in e["relationships"] for v in block.values())
+    return {"cells": cells, "mois": len(mois), "entities": sum(expect.values()), "relationships": relationships, "events": len(events),
+            "decoratorCalls": len(decorator_calls), "decoratorFailures": sum(1 for c in codes if not c.startswith("2")), "seconds": visible,
+            "decoratorSeconds": round(decorated - t0 - visible, 1), "maintenanceSeconds": round(time.perf_counter() - decorated, 1)}
 
 
 def read(seconds: float, cells: int) -> int:
-    """Reads smo-teiv's API for `seconds`, the spike's Q1, Q2 and Q3 on cells spread over the tree, from one shell loop in teiv-exposure; how many reads."""
+    """Reads smo-teiv's API for `seconds`: one cell, a cell's neighbours and the cells of a GNBDUFunction on cells spread over the tree, from one shell loop in teiv-exposure; how many reads."""
+    import tree
     paths = []
     for i in range(0, cells, max(1, cells // 50)):
-        me, c = f"ManagedElement=gNB-{i // 3:04d}", i % 3 + 1          # the tree's names: 3 cells to a gNB (load.synthetic), ids are DNs below the SubNetwork
-        du_cell = quote(f"urn:3gpp:dn:{me},GNBDUFunction=1,NRCellDU={c}", safe="")
-        cu_cell = f"urn:3gpp:dn:{me},GNBCUCPFunction=1,NRCellCU={c}"
+        gnb, c = i // tree.PER_GNB, i % tree.PER_GNB + 1
+        du_cell = quote("urn:3gpp:dn:" + tree.du_cell(gnb, c), safe="")
         paths += [f"/domains/RAN/entity-types/NRCellDU/entities/{du_cell}",
                   "/domains/EXT_RAN/entity-types/NRCellCU/entities?limit=500&targetFilter=/attributes&scopeFilter="
-                  + quote(f"/neighbor-of-nrCellCu[@id='{cu_cell}']", safe=""),
-                  "/domains/RAN/entity-types/NRCellDU/entities?scopeFilter=" + quote(f"/provided-by-oduFunction[@id='urn:3gpp:dn:{me},GNBDUFunction=1']", safe="")]
+                  + quote(f"/neighbor-of-nrCellCu[@id='urn:3gpp:dn:{tree.cu_cell(gnb, c)}']", safe=""),
+                  "/domains/RAN/entity-types/NRCellDU/entities?scopeFilter="
+                  + quote(f"/sourceIds[contains(@item,'urn:3gpp:dn:{tree.me_dn(gnb)},GNBDUFunction=1,')]", safe="")]
     script = ("end=$(( $(date +%s) + {s} )); n=0; while [ $(date +%s) -lt $end ]; do for p in {p}; do curl -s -o /dev/null \"{api}$p\"; "
               "n=$((n+1)); done; done; echo $n").format(s=int(seconds), p=" ".join(f"'{p}'" for p in paths), api=API)
     return int(compose("exec", "-T", "teiv-exposure", "sh", "-c", script, timeout=seconds + 120).strip().splitlines()[-1])

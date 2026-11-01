@@ -79,6 +79,7 @@ compose and the chart use the file form (`docs/SECRETS.md` lists each secret, it
 | [`scripts.md`](scripts.md) | the module `scripts` |
 | [`sdk.md`](sdk.md) | the module `sdk` |
 | [`sme.md`](sme.md) | the module `sme` |
+| [`teiv.md`](teiv.md) | the module `teiv` |
 | [`traffic-steering-rapp.md`](traffic-steering-rapp.md) | the module `traffic-steering-rapp` |
 | [`compose.md`](compose.md) | Compose only (`.env`, substituted into `docker-compose.yml`) |
 
