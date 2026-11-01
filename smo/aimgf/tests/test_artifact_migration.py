@@ -4,7 +4,7 @@ upgrade stops with nothing changed.
 
 Needs Postgres 18: set SMO_TEST_POSTGRES_URL to a server where the user may create databases (each test makes its own and drops it); skipped without
 it. The store is a directory (file://) unless SMO_TEST_OBJECTSTORE_URL names another, an S3 endpoint such as the compose profile's SeaweedFS
-(http://localhost:8333, with SMO_OBJECTSTORE_ACCESS_KEY(_FILE) and SMO_OBJECTSTORE_SECRET_KEY(_FILE) set). `scripts/migrate.py` runs as a separate process, as the
+(http://localhost:8333 with the port published by a compose override file, and SMO_OBJECTSTORE_ACCESS_KEY(_FILE) and SMO_OBJECTSTORE_SECRET_KEY(_FILE) set). `scripts/migrate.py` runs as a separate process, as the
 `migrate` service does.
 """
 

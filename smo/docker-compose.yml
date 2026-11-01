@@ -968,7 +968,8 @@ services:
   # SeaweedFS (Apache-2.0) with its S3 API on objectstore:8333, one data volume, the access and
   # secret key from secret files (scripts/init_secrets.sh), written into the S3 identity file in /tmp at start (never into the image or the environment).
   # `objectstore-init` creates the three buckets (models, csars, cold-parquet) with smo_shared.objectstore, which is what the modules use; `migrate`
-  # waits for it. The S3 port is published on this machine's loopback only. Neither has a profile any more, so `docker compose up` starts both;
+  # waits for it. The S3 port is not published (the default stack publishes only the GUI, the gateway and Postgres); a test from this machine adds
+  # `ports: ["127.0.0.1:8333:8333"]` in an override file. Neither has a profile any more, so `docker compose up` starts both;
   # `--profile objectstore` (the CI store job, the runbook's round trip) still works and adds nothing.
   objectstore:
     image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
@@ -989,7 +990,6 @@ services:
         -s3 -s3.port=8333 -s3.config=/tmp/s3.json
     volumes:
       - smo_objectstore:/data
-    ports: ["127.0.0.1:8333:8333"]
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8333/healthz"]
       interval: 5s
