@@ -176,7 +176,7 @@ def test_the_edge_is_only_in_the_tls_profile_publishes_two_ports_and_is_hardened
     # the only services outside the default stack: the TLS edge, the NETCONF lab server (PR-SB-1.4, profile netconf-lab), the pooler,
     # and the traces and logs stack (PR-OBS-3, PR-OBS-6: profiles tracing and logging)
     assert sorted(name for name, svc in compose["services"].items() if "profiles" in svc) == [
-        "db-backup", "edge-tls", "fluent-bit", "grafana", "loki", "netconf-lab", "pgbouncer", "tempo"], \
+        "db-backup", "edge-tls", "fluent-bit", "grafana", "loki", "netconf-lab", "oran-sim-du", "pgbouncer", "tempo"], \
         "the default stack must not need a certificate"
     assert compose["services"]["netconf-lab"]["profiles"] == ["netconf-lab"]
 

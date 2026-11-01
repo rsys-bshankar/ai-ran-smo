@@ -865,7 +865,6 @@ services:
     cap_drop: [ALL]
     cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID, SYS_CHROOT, AUDIT_WRITE, NET_BIND_SERVICE, NET_RAW]
     security_opt: ["no-new-privileges:true"]
-    stop_grace_period: 10s
     environment:
       VES_URL: http://ran-nf-oam:8000/ves/eventListener/v7      # plain HTTP on the compose network; the simulator does not check a certificate either way
       VES_USERNAME: ${RAN_NF_OAM_VES_USERNAME:-ves}
