@@ -174,6 +174,16 @@ def report_performance(request: Request, subscription_id: uuid.UUID, metrics: di
     return result
 
 
+def _group_step_failure(exc: Exception, group: dict | None) -> str:
+    """The `groupRetrainError.detail` the caller is shown: built from known values, never from the exception's own text, which (a database error of the
+    in-process registry read, since S2.1) can carry SQL or connection details. The full exception is in the WARNING log line beside it."""
+    if isinstance(exc, (NotImplementedError, ValueError)) and group is not None:
+        return f"the coordination group's retrainPropagation {group.get('retrainPropagation')!r} cannot be evaluated"
+    if isinstance(exc, httpx.HTTPError):
+        return "a call the group retrain made did not answer"
+    return "the group retrain failed; the AIMgF log has the cause under this request's correlation id"
+
+
 def _group_retrain_step(db: Session, model_id: uuid.UUID, result: dict) -> None:
     """Runs the group-retrain step of a breached MLMF report, after the report is committed, and writes its outcome into `result` (the route's answer). Never raises.
 
@@ -185,6 +195,7 @@ def _group_retrain_step(db: Session, model_id: uuid.UUID, result: dict) -> None:
     """
     started: list[uuid.UUID] = []
     skipped: list[dict] = []
+    group: dict | None = None
     try:
         group = _find_coordination_group_for_model(db, model_id)
         if group is None:
@@ -198,7 +209,7 @@ def _group_retrain_step(db: Session, model_id: uuid.UUID, result: dict) -> None:
         db.rollback()
         code = FrameworkError.UPSTREAM_FAILED[0] if isinstance(exc, httpx.HTTPError) else FrameworkError.INTERNAL_ERROR[0]
         logger.warning("group retrain after the MLMF report of model %s failed: %s %s: %s", model_id, code, type(exc).__name__, exc)
-        result["groupRetrainError"] = {"code": code, "detail": f"{type(exc).__name__}: {exc}"}
+        result["groupRetrainError"] = {"code": code, "detail": _group_step_failure(exc, group)}
     if result.get("groupRetrainTriggered"):
         result["retrainedModelIds"] = [str(mid) for mid in started]
         result["retrainSkipped"] = skipped

@@ -1719,6 +1719,19 @@ def test_a_failing_registry_group_read_is_an_internal_error_in_the_body(client, 
     assert _report_count(db_session_factory) == 1
 
 
+def test_a_database_error_in_the_group_step_does_not_reach_the_caller(client, mlmr, db_session_factory, monkeypatch):
+    """The text of an exception the group step raises (here a database error carrying its SQL) is logged, not answered: `groupRetrainError.detail` is a fixed
+    sentence (CodeQL py/stack-trace-exposure on the in-process registry read)."""
+    from sqlalchemy.exc import OperationalError
+    sub_id = _breaching_member_subscription(mlmr, db_session_factory)
+
+    def failing_groups(db):
+        raise OperationalError("SELECT secret_column FROM aimgf.ml_model_coordination_group", {}, Exception("password authentication failed"))
+    monkeypatch.setattr("app.registry.access.coordination_groups", failing_groups)
+    detail = client.post(f"/mlmf/subscriptions/{sub_id}/reports", json={"accuracy": 0.5}).json()["groupRetrainError"]["detail"]
+    assert "SELECT" not in detail and "password" not in detail and "OperationalError" not in detail
+
+
 def test_a_repeat_after_a_failing_group_step_is_replayed_and_stores_no_second_report(client, mlmr, db_session_factory):
     """With the 200 the key is stored: the SDK's repeat with the same Idempotency-Key gets the first answer back and no second report is stored."""
     sub_id = _breaching_member_subscription(mlmr, db_session_factory, retrain_propagation="WEIGHTED_TRIGGERS")
