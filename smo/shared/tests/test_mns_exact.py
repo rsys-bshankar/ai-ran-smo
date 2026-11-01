@@ -117,6 +117,7 @@ def test_filter_depth_boundaries():
     """`!` and parentheses nest to MAX_DEPTH and no further; side-by-side groups do not add up."""
     assert parse_filter("!" * (MAX_DEPTH - 1) + "@.a") is not None
     assert parse_filter("(" * (MAX_DEPTH - 1) + "@.a" + ")" * (MAX_DEPTH - 1)) is not None
+    assert parse_filter("$[?(" + "(" * (MAX_DEPTH - 1) + "@.a" + ")" * (MAX_DEPTH - 1) + ")]") is not None
     assert _error(lambda: parse_filter("(" * MAX_DEPTH + "@.a" + ")" * MAX_DEPTH))[2] == "filter: nested deeper than 32"
     assert parse_filter(" && ".join(["(((@.a)))"] * (MAX_DEPTH + 5))) is not None
     assert parse_filter(" || ".join(["!!!@.a"] * (MAX_DEPTH + 5))) is not None
@@ -383,6 +384,7 @@ def test_register_records_the_class_and_drops_the_cached_validator():
     registry.register("Thing", {"type": "object", "properties": {"n": {"type": "integer"}}})
     registry.validate("Thing", {"n": 1})
     assert (registry.info("Thing").name, registry.info("Thing").source) == ("Thing", "registered")
+    assert registry.missing_files == set()
     registry.register("Thing", {"type": "object", "properties": {"n": {"type": "string"}}})
     assert _error(lambda: registry.validate("Thing", {"n": 1}))[3] == ["n"]
 
@@ -395,11 +397,14 @@ SPEC = {
                                   {"$ref": "#/components/schemas/Leaf-Multiple"}, {"$ref": "#/components/schemas/Nothing"},
                                   {"$ref": "#/components/schemas/Root-Single/allOf/9"}, {"$ref": "#/components/schemas/Root-Single/allOf/8"},
                                   {"$ref": "#/components/schemas/Odd~1Name"}, {"$ref": "#/components/schemas/Odd~0Name"},
-                                  {"$ref": "#/components/schemas/Extra/allOf/0"},
+                                  {"$ref": "#/components/schemas/Extra/allOf/0"}, {"$ref": "#/components/schemas/Numbered/0"},
+                                  {"$ref": "#/components/schemas/Short/allOf/1"},
                                   {"type": "object", "properties": {"a/b~c": {"type": "integer"}, "Kid": {"$ref": "Other.yaml#/components/schemas/Kid-Single"},
                                                                      "Plain": {"type": "object"}}}]},
         "Odd/Name": {"properties": {"slashed": {"type": "integer"}}},
         "Odd~Name": {"properties": {"tilded": {"type": "integer"}}},
+        "Numbered": {"0": {"properties": {"numbered": {"type": "integer"}}}},
+        "Short": {"allOf": [{"properties": {"short": {"type": "integer"}}}]},
         "Extra": {"allOf": [{"properties": {"extra": {"type": "integer"}}}]},
         "Root-Attr": {"allOf": [{"$ref": "#/components/schemas/Loop"}], "properties": {"label": {"type": "string", "nullable": True}}},
         "Loop": {"allOf": [{"$ref": "#/components/schemas/Loop"}, {"properties": {"looped": {"type": "integer"}}}]},
@@ -446,8 +451,8 @@ def test_small_spec_derivation(small):
     assert not _in_time(lambda: small.resolvable("Fork"))
     root = _in_time(lambda: small.info("Root"))
     assert root.children == {"Note", "Leaf", "Kid"}
-    assert root.attribute_names == {"label", "looped", "a/b~c", "slashed", "tilded", "extra"}
-    assert root.flat_refs["a/b~c"] == f"{BASE_URI}Mine.yaml#/components/schemas/Root-Single/allOf/9/properties/a~1b~0c"
+    assert root.attribute_names == {"label", "looped", "a/b~c", "slashed", "tilded", "extra", "numbered"}
+    assert root.flat_refs["a/b~c"] == f"{BASE_URI}Mine.yaml#/components/schemas/Root-Single/allOf/11/properties/a~1b~0c"
     assert root.attribute_refs == []
     assert _in_time(lambda: small.resolvable("Root"))
     small.validate("Root", {"label": None, "a/b~c": 1, "looped": 2})
