@@ -85,6 +85,8 @@ jobs:
           image="ghcr.io/${repo}/smo-${{ matrix.name }}"
           args=()
           [ -n "${{ matrix.module }}" ] && args+=(--build-arg "MODULE=${{ matrix.module }}")
+          # PR-CONV-S1.6: the shared Dockerfile's `specs` stage takes the vendored 3GPP files the ProvMnS registry reads (empty for another Dockerfile)
+          grep -qiE '^FROM scratch AS specs' "${{ matrix.context }}/Dockerfile" && args+=(--build-context "specs=$GITHUB_WORKSPACE/specs/5G_APIs")
           # what GET /version answers (PR-OBS-8.1): the release, the tag's commit (the checkout above is at the tag), the build time
           args+=(--build-arg "SMO_VERSION=${{ needs.plan.outputs.version }}" --build-arg "SMO_BUILD_SHA=$(git rev-parse HEAD)")
           args+=(--build-arg "SMO_BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)")

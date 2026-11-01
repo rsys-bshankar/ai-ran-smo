@@ -95,7 +95,7 @@ services:
     security_opt: ["no-new-privileges:true"]
     read_only: true
     tmpfs: ["/tmp"]
-    secrets: [db_password, db_password_onboarding, db_password_mlmr, db_password_ran-analytics, db_password_so-smos, db_password_sa-smos, db_password_intent-service, db_password_mdaf, db_password_energy-saving-rapp, db_password_mobility-optimization-rapp, db_password_coverage-optimization-rapp, db_password_traffic-steering-rapp, db_password_aimgf, db_password_dme, db_password_focom, db_password_nfo, db_password_r1-termination, db_password_ran-nf-oam, db_password_rapp-mgmt, db_password_sme]
+    secrets: [db_password, db_password_onboarding, db_password_mlmr, db_password_ran-analytics, db_password_so-smos, db_password_sa-smos, db_password_intent-service, db_password_mdaf, db_password_echo, db_password_energy-saving-rapp, db_password_mobility-optimization-rapp, db_password_coverage-optimization-rapp, db_password_traffic-steering-rapp, db_password_aimgf, db_password_dme, db_password_focom, db_password_nfo, db_password_r1-termination, db_password_ran-nf-oam, db_password_rapp-mgmt, db_password_sme]
     environment:
       PGBOUNCER_POOL_SIZE: ${PGBOUNCER_POOL_SIZE:-20}
       PGBOUNCER_MAX_CLIENT_CONN: ${PGBOUNCER_MAX_CLIENT_CONN:-1000}
@@ -148,12 +148,12 @@ services:
   # they do not start, and `docker compose logs migrate` says why. The image is any of the service images (all carry
   # the migrations); this one is the R1 Termination build, so no extra image layer is built.
   migrate:
-    build: { context: ., args: { <<: *build_info, MODULE: r1-termination } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: r1-termination } }
     # the schema, then the per-module roles (PR-DB-2.6): one role for every module whose password file is mounted here, and none for one without
     command: ["sh", "-c", "python /srv/scripts/migrate.py && python /srv/scripts/db_roles.py"]
     restart: "no"
     stop_grace_period: 30s
-    secrets: [db_password, db_password_onboarding, db_password_mlmr, db_password_ran-analytics, db_password_so-smos, db_password_sa-smos, db_password_intent-service, db_password_mdaf, db_password_energy-saving-rapp, db_password_mobility-optimization-rapp, db_password_coverage-optimization-rapp, db_password_traffic-steering-rapp, db_password_aimgf, db_password_dme, db_password_focom, db_password_nfo, db_password_r1-termination, db_password_ran-nf-oam, db_password_rapp-mgmt, db_password_sme]
+    secrets: [db_password, db_password_onboarding, db_password_mlmr, db_password_ran-analytics, db_password_so-smos, db_password_sa-smos, db_password_intent-service, db_password_mdaf, db_password_echo, db_password_energy-saving-rapp, db_password_mobility-optimization-rapp, db_password_coverage-optimization-rapp, db_password_traffic-steering-rapp, db_password_aimgf, db_password_dme, db_password_focom, db_password_nfo, db_password_r1-termination, db_password_ran-nf-oam, db_password_rapp-mgmt, db_password_sme]
     <<: *hardening
     depends_on: { postgres: { condition: service_healthy } }
     environment:
@@ -161,7 +161,7 @@ services:
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password
 
   r1-termination:
-    build: { context: ., args: { <<: *build_info, MODULE: r1-termination, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: r1-termination, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_r1-termination]    # PR-SEC-11: the gateway adds a row to the audit chain for every authenticated change (it keeps no other state)
     <<: *hardening
@@ -210,7 +210,7 @@ services:
       SA_SMOS_URL: http://sa-smos:8000
 
   sme:
-    build: { context: ., args: { <<: *build_info, MODULE: sme, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: sme, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_sme, enrollment_secret]
     <<: *hardening
@@ -228,7 +228,7 @@ services:
       SME_TOKEN_AUDIENCE: ${R1_PUBLIC_BASE_URL:+${R1_PUBLIC_BASE_URL}/sme/oauth2/token}
 
   dme:
-    build: { context: ., args: { <<: *build_info, MODULE: dme, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: dme, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_dme, enrollment_secret]
     <<: *hardening
@@ -245,7 +245,7 @@ services:
 
   # Call flow 12d: the same image, run as a worker. It purges DME data records older than SMO_RETENTION_DME_RECORDS_DAYS (dme/app/tasks.py).
   dme-worker:
-    build: { context: ., args: { <<: *build_info, MODULE: dme, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: dme, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     command: ["python", "-m", "smo_shared.worker"]
     stop_grace_period: 30s
     secrets: [db_password_dme, enrollment_secret]
@@ -264,7 +264,7 @@ services:
       SMO_RETENTION_WARN_ROWS: ${SMO_RETENTION_WARN_ROWS:-1000000}
 
   onboarding:
-    build: { context: ., args: { <<: *build_info, MODULE: onboarding, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: onboarding, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_onboarding, enrollment_secret]    # not db_password: it connects as its own role (PR-DB-2.6), which scripts/db_roles.py makes
     <<: *hardening
@@ -286,7 +286,7 @@ services:
       - smo_packages:/srv/packages   # FileSystem-aaS, SMO Design v1.3 section 3.4
 
   rapp-mgmt:
-    build: { context: ., args: { <<: *build_info, MODULE: rapp-mgmt, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: rapp-mgmt, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_rapp-mgmt, enrollment_secret]
     <<: *hardening
@@ -305,7 +305,7 @@ services:
   # SEC-15.19: the same image, run as a worker. It rotates the secret of running rApp instances that are older than RAPP_MGMT_SECRET_ROTATION_DAYS (rapp-mgmt/app/tasks.py).
   # With the default 0 it rotates nothing. Run as many as you like: the task runs once per interval across all of them.
   rapp-mgmt-worker:
-    build: { context: ., args: { <<: *build_info, MODULE: rapp-mgmt, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: rapp-mgmt, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     command: ["python", "-m", "smo_shared.worker"]
     stop_grace_period: 30s
     secrets: [db_password_rapp-mgmt, enrollment_secret]
@@ -326,7 +326,7 @@ services:
       RAPP_MGMT_SECRET_ROTATION_SWEEP_SECONDS: ${RAPP_MGMT_SECRET_ROTATION_SWEEP_SECONDS:-900}
 
   ran-nf-oam:
-    build: { context: ., args: { <<: *build_info, MODULE: ran-nf-oam, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: ran-nf-oam, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_ran-nf-oam, enrollment_secret]
     <<: *hardening
@@ -353,7 +353,7 @@ services:
   # the refusal purge; ran-nf-oam/app/tasks.py), so no request process ever runs a timer. Run as many as you like: a task runs at most
   # once per interval across all of them, and a worker that dies frees its tasks for another.
   ran-nf-oam-worker:
-    build: { context: ., args: { <<: *build_info, MODULE: ran-nf-oam, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: ran-nf-oam, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     command: ["python", "-m", "smo_shared.worker"]
     stop_grace_period: 30s
     secrets: [db_password_ran-nf-oam, enrollment_secret]
@@ -377,7 +377,7 @@ services:
       SMO_RETENTION_WARN_ROWS: ${SMO_RETENTION_WARN_ROWS:-1000000}     # warn (and smo_retention_off_rows) when a table with retention off is larger; 0 = never
 
   mock-o1-adaptor:
-    build: { context: ., args: { <<: *build_info, MODULE: mock-o1-adaptor, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: mock-o1-adaptor, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     environment:
       SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}
       MOCK_O1_OAM_URL: http://ran-nf-oam:8000    # where POST /emit/alarm, /emit/pm-report, ... send (SB-9.8): this stub is a source of FM, PM, SW and heartbeat for RAN NF OAM
@@ -400,7 +400,7 @@ services:
   # (DEMO_RUNBOOK.md §24, Demo 00–11). It reaches every SMO service only
   # through R1 Termination, and is reached by the GUI the same way.
   energy-saving-rapp:
-    build: { context: ., args: { <<: *build_info, MODULE: samples/energy-saving-rapp, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: samples/energy-saving-rapp, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_energy-saving-rapp]
     <<: *hardening
@@ -419,7 +419,7 @@ services:
   # Call flow 22e: the same image, run as a worker. Every 15 s it runs a pass of each instance whose `evaluateEverySeconds` has passed
   # (samples/energy-saving-rapp/app/tasks.py), so the loop closes without anyone pressing "Evaluate now". Run as many as you like: one pass at a time per instance.
   energy-saving-rapp-worker:
-    build: { context: ., args: { <<: *build_info, MODULE: samples/energy-saving-rapp, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: samples/energy-saving-rapp, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     command: ["python", "-m", "smo_shared.worker"]
     stop_grace_period: 30s
     secrets: [db_password_energy-saving-rapp]
@@ -440,7 +440,7 @@ services:
   # Wave 10.2: the Mobility Optimization reference rApp
   # (samples/mobility-optimization-rapp) — R1-only, like energy-saving-rapp.
   mobility-optimization-rapp:
-    build: { context: ., args: { <<: *build_info, MODULE: samples/mobility-optimization-rapp, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: samples/mobility-optimization-rapp, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_mobility-optimization-rapp]
     <<: *hardening
@@ -459,7 +459,7 @@ services:
   # Call flow 23f: the same image, run as a worker. Every 15 s it runs a pass of each instance whose `evaluateEverySeconds` has passed
   # (samples/mobility-optimization-rapp/app/tasks.py), so a CIO change is confirmed or reverted an hour later without anyone pressing "Evaluate now".
   mobility-optimization-rapp-worker:
-    build: { context: ., args: { <<: *build_info, MODULE: samples/mobility-optimization-rapp, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: samples/mobility-optimization-rapp, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     command: ["python", "-m", "smo_shared.worker"]
     stop_grace_period: 30s
     secrets: [db_password_mobility-optimization-rapp]
@@ -480,7 +480,7 @@ services:
   # Wave 10.3: the Coverage Optimization reference rApp
   # (samples/coverage-optimization-rapp) — R1-only, like energy-saving-rapp.
   coverage-optimization-rapp:
-    build: { context: ., args: { <<: *build_info, MODULE: samples/coverage-optimization-rapp, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: samples/coverage-optimization-rapp, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_coverage-optimization-rapp]
     <<: *hardening
@@ -499,7 +499,7 @@ services:
   # Call flow 24f: the same image, run as a worker. Every 15 s it runs a pass of each instance whose `evaluateEverySeconds` has passed
   # (samples/coverage-optimization-rapp/app/tasks.py), so a change set is confirmed or reverted an hour later without anyone pressing "Evaluate now".
   coverage-optimization-rapp-worker:
-    build: { context: ., args: { <<: *build_info, MODULE: samples/coverage-optimization-rapp, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: samples/coverage-optimization-rapp, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     command: ["python", "-m", "smo_shared.worker"]
     stop_grace_period: 30s
     secrets: [db_password_coverage-optimization-rapp]
@@ -520,7 +520,7 @@ services:
   # Wave 10.4: the Traffic Steering reference rApp
   # (samples/traffic-steering-rapp) — R1-only, like energy-saving-rapp.
   traffic-steering-rapp:
-    build: { context: ., args: { <<: *build_info, MODULE: samples/traffic-steering-rapp, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: samples/traffic-steering-rapp, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_traffic-steering-rapp]
     <<: *hardening
@@ -539,7 +539,7 @@ services:
   # Call flow 25f: the same image, run as a worker. Every 15 s it runs a pass of each instance whose `evaluateEverySeconds` has passed
   # (samples/traffic-steering-rapp/app/tasks.py), so a steering step is confirmed or reverted an hour later without anyone pressing "Evaluate now".
   traffic-steering-rapp-worker:
-    build: { context: ., args: { <<: *build_info, MODULE: samples/traffic-steering-rapp, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: samples/traffic-steering-rapp, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     command: ["python", "-m", "smo_shared.worker"]
     stop_grace_period: 30s
     secrets: [db_password_traffic-steering-rapp]
@@ -558,7 +558,7 @@ services:
       TRAFFIC_STEERING_SCHEDULE_TICK_SECONDS: ${TRAFFIC_STEERING_SCHEDULE_TICK_SECONDS:-15}
 
   nfo:
-    build: { context: ., args: { <<: *build_info, MODULE: nfo, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: nfo, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_nfo, enrollment_secret]
     <<: *hardening
@@ -579,7 +579,7 @@ services:
     # or the Kubernetes API), not as this service holding the socket.
 
   focom:
-    build: { context: ., args: { <<: *build_info, MODULE: focom, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: focom, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_focom, enrollment_secret]
     <<: *hardening
@@ -594,7 +594,7 @@ services:
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_focom
 
   mlmr:
-    build: { context: ., args: { <<: *build_info, MODULE: mlmr, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: mlmr, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_mlmr, enrollment_secret]
     <<: *hardening
@@ -610,7 +610,7 @@ services:
       SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway (DOC-CF-3.1)
 
   aimgf:
-    build: { context: ., args: { <<: *build_info, MODULE: aimgf, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: aimgf, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_aimgf, enrollment_secret]
     <<: *hardening
@@ -629,7 +629,7 @@ services:
   # Call flow 27e: the same image, run as a worker. It fails every training, validation, emulation and inference run past its deadline (aimgf/app/tasks.py),
   # so a run nobody reads still times out and its NFO workload is removed. Run as many as you like: the task runs once per interval across all of them.
   aimgf-worker:
-    build: { context: ., args: { <<: *build_info, MODULE: aimgf, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: aimgf, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     command: ["python", "-m", "smo_shared.worker"]
     stop_grace_period: 30s
     secrets: [db_password_aimgf, enrollment_secret]
@@ -648,7 +648,7 @@ services:
       AIMGF_TIMEOUT_SWEEP_SECONDS: ${AIMGF_TIMEOUT_SWEEP_SECONDS:-60}
 
   mllf:
-    build: { context: ., args: { <<: *build_info, MODULE: mllf, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: mllf, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [enrollment_secret]
     <<: *hardening
@@ -660,7 +660,7 @@ services:
       SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   ran-analytics:
-    build: { context: ., args: { <<: *build_info, MODULE: ran-analytics, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: ran-analytics, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_ran-analytics, enrollment_secret]
     <<: *hardening
@@ -677,7 +677,7 @@ services:
       SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   mdaf:
-    build: { context: ., args: { <<: *build_info, MODULE: mdaf, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: mdaf, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_mdaf, enrollment_secret]
     <<: *hardening
@@ -692,9 +692,29 @@ services:
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_mdaf
       SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway (DOC-CF-3.1)
 
+  # PR-CONV-S1.6: Echo, the reference ProvMnS module (echo/README.md): the shared router on SubNetwork and ManagedElement, nothing else. Off by default
+  # (`docker compose --profile echo up`): a reference and test module with no operator function, whose write API nothing in the platform needs.
+  echo:
+    profiles: ["echo"]
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: echo, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    stop_grace_period: 30s
+    secrets: [db_password_echo, enrollment_secret]
+    <<: *hardening
+    healthcheck: *ready_probe
+    depends_on: *wait_for_schema
+    environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
+      SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
+      <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_echo@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_echo
+      ECHO_PLACEMENT: ${ECHO_PLACEMENT:-}         # where an instance is for the scope claim: {"SubNetwork=A": {"region": ..., "tenant": ..., "siteCluster": ...}}
+      ECHO_MSAC_RULES: ${ECHO_MSAC_RULES:-}       # TS 28.319 rules per caller: {"<invoker or user>": [{"dataNodeSelector", "operations", "action"}]}
+
   # PR-DB-3: the same image, run as a worker. It purges MDAF reports older than SMO_RETENTION_MDAF_REPORTS_DAYS (mdaf/app/tasks.py).
   mdaf-worker:
-    build: { context: ., args: { <<: *build_info, MODULE: mdaf, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: mdaf, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     command: ["python", "-m", "smo_shared.worker"]
     stop_grace_period: 30s
     secrets: [db_password_mdaf, enrollment_secret]
@@ -713,7 +733,7 @@ services:
       SMO_RETENTION_WARN_ROWS: ${SMO_RETENTION_WARN_ROWS:-1000000}
 
   intent-service:
-    build: { context: ., args: { <<: *build_info, MODULE: intent-service, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: intent-service, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_intent-service, enrollment_secret]
     <<: *hardening
@@ -729,7 +749,7 @@ services:
       SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway (DOC-CF-3.1)
 
   so-smos:
-    build: { context: ., args: { <<: *build_info, MODULE: so-smos, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: so-smos, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_so-smos, enrollment_secret]
     <<: *hardening
@@ -746,7 +766,7 @@ services:
       SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   sa-smos:
-    build: { context: ., args: { <<: *build_info, MODULE: sa-smos, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: sa-smos, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_sa-smos, enrollment_secret]
     <<: *hardening
@@ -767,7 +787,7 @@ services:
   # Termination -> modules. gui-bff publishes nothing and authenticates to R1
   # with its own SME-issued OAuth2 token.
   gui-bff:
-    build: { context: ., args: { <<: *build_info, MODULE: gui-bff, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: gui-bff, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     <<: *hardening
     secrets: [enrollment_secret]
@@ -968,6 +988,8 @@ secrets:
     file: ./secrets/db_password_intent-service
   db_password_mdaf:
     file: ./secrets/db_password_mdaf
+  db_password_echo:
+    file: ./secrets/db_password_echo
   db_password_energy-saving-rapp:
     file: ./secrets/db_password_energy-saving-rapp
   db_password_mobility-optimization-rapp:

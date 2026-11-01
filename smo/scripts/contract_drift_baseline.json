@@ -12,6 +12,10 @@
     "code_only": 30,
     "contract_only": 21
   },
+  "echo": {
+    "code_only": 0,
+    "contract_only": 0
+  },
   "energy-saving-rapp": {
     "code_only": 28,
     "contract_only": 0

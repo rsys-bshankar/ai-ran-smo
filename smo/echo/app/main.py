@@ -72,9 +72,9 @@ def msac_rules(caller: Caller) -> list[msac.Rule] | None:
     try:
         listed = _json_setting("ECHO_MSAC_RULES")
         if not isinstance(listed, dict):
-            raise ValueError("ECHO_MSAC_RULES is an object")
-        rules = listed.get(caller.actor)
-        return None if rules is None else [_rule(item) for item in rules]
+            return []
+        every = {actor: [_rule(item) for item in rules] for actor, rules in listed.items()}   # one bad rule anywhere refuses everyone
+        return every.get(caller.actor)
     except (ValueError, TypeError):
         return []
 

@@ -294,7 +294,7 @@ jobs:
           set -e
           for m in onboarding rapp-mgmt ran-nf-oam aimgf mlmr mllf so-smos \
                    sme dme r1-termination nfo focom ran-analytics mdaf \
-                   intent-service sa-smos mock-o1-adaptor; do
+                   intent-service sa-smos mock-o1-adaptor echo; do
             scripts/run_unit_suite.sh "$m" "$m" app ".:../shared"
           done
           scripts/run_unit_suite.sh sdk sdk smo_sdk ".:../shared"
@@ -1357,6 +1357,8 @@ jobs:
           pip install --require-hashes -r ../requirements/dev.txt
           PYTHONPATH=. python -m pytest tests/test_versioning.py tests/test_idempotency.py tests/test_module_identity.py tests/test_db_engine.py tests/test_health.py tests/test_single_runner.py tests/test_events.py -v
           PYTHONPATH=. python -m pytest tests/test_mns_router.py tests/test_mns_scope.py tests/test_mns_properties.py tests/test_mns_store.py -v
+          # PR-CONV-S1.6: Echo, the reference ProvMnS module, on the migrated database (schema echo, revision 0065): the Wave 0 exit gate on Postgres
+          (cd ../echo && PYTHONPATH=.:../shared python -m pytest tests -v)
           (cd ../gui-bff && PYTHONPATH=.:../shared python -m pytest tests/test_shared_state.py -v)
 
   # PR-OPS-5.2: the previous release's code on this commit's schema. A rolling upgrade runs both versions against one database, so a revision that

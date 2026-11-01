@@ -1,0 +1,47 @@
+# Contract of the echo module (plan task S1.6): the reference ProvMnS module, built only from smo_shared. Its classes are listed in x-smo-classes and
+# reached at the one form of ../common/provmns-root.yaml; both are [N] classes of the TS 28.623 generic NRM, $refs into specs/5G_APIs. It has no route
+# of its own beyond the probes. scripts/check_contract_drift.py compares this file with docs/openapi of x-smo-code-modules (the router's one route,
+# /ProvMnS/{version}/{ldn}, serves each class listed here: check_contract_drift.router_classes).
+openapi: 3.0.1
+info:
+  title: 'Echo: the reference TS 28.532 ProvMnS module on the TS 28.623 generic NRM'
+  version: 0.1.0
+  description: The Wave 0 exit gate of the converged rewrite (plan task S1.6). Echo mounts the generic ProvMnS router of smo_shared.mns for SubNetwork
+    and ManagedElement and nothing else; every behaviour it shows is the shared library's (the four operations, both patch formats, scope, filter and
+    paging, the cross-cutting checks of S1.5, the TS 28.532 notifications). Off by default in compose and in the chart.
+x-smo-module: echo
+x-smo-code-modules:
+- echo
+x-smo-mns-root: ../common/provmns-root.yaml
+x-smo-standards:
+- '[N] TS 28.532 ProvMnS v19.2.0'
+- '[N] TS 28.623 v19.7.0 generic NRM (SubNetwork, ManagedElement)'
+paths:
+  /health:
+    $ref: ../common/probes.yaml#/paths/~1health
+  /live:
+    $ref: ../common/probes.yaml#/paths/~1live
+  /ready:
+    $ref: ../common/probes.yaml#/paths/~1ready
+  /version:
+    $ref: ../common/probes.yaml#/paths/~1version
+components:
+  schemas:
+    SubNetwork-Single:
+      $ref: ../../../5G_APIs/TS28623_GenericNrm.yaml#/components/schemas/SubNetwork-Single
+    ManagedElement-Single:
+      $ref: ../../../5G_APIs/TS28623_GenericNrm.yaml#/components/schemas/ManagedElement-Single
+x-smo-classes:
+- class: SubNetwork
+  standard: '[N] TS 28.623 v19.7.0'
+  operations: &id001
+  - createMOI
+  - getMOIAttributes
+  - modifyMOIAttributes
+  - deleteMOI
+  schema: '#/components/schemas/SubNetwork-Single'
+- class: ManagedElement
+  standard: '[N] TS 28.623 v19.7.0'
+  operations: *id001
+  schema: '#/components/schemas/ManagedElement-Single'
+  note: contained in a SubNetwork, or at the top of the tree

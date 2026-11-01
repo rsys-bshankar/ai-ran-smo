@@ -1,0 +1,6 @@
+# Echo is not an installable package (its image copies app/ beside the shared library); this file holds only the mutation-testing configuration
+# (scripts/mutation_pilot.sh, PR-CONV-S1.6).
+[tool.mutmut]
+source_paths = ["app"]
+only_mutate = ["app/main.py", "app/models.py"]
+pytest_add_cli_args_test_selection = ["tests/"]
