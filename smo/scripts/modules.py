@@ -209,26 +209,30 @@ def _replace_region(lines: list[str], section: str, region: list[str], file: str
     if start is None:
         raise ManifestError(f"{file}: no top-level `{section}:`")
     end = next((i for i in range(start + 1, len(lines)) if lines[i] and not lines[i].startswith((" ", "#"))), len(lines))
-    begins = [i for i in range(start, end) if lines[i].strip().startswith("# >>> modules")]
-    ends = [i for i in range(start, end) if lines[i].strip() == END]
+    begins = [i for i in range(start, end) if lines[i].startswith("  # >>> modules")]          # at the section's own indent
+    ends = [i for i in range(start, end) if lines[i] == "  " + END]
     if len(begins) != 1 or len(ends) != 1 or ends[0] < begins[0]:
         raise ManifestError(f"{file}: `{section}:` needs one `# >>> modules` line and one `{END}` line after it")
     return lines[: begins[0]] + region + lines[ends[0] + 1:]
 
 
 def compose_text(modules: list[Module], current: str) -> str:
-    """docker-compose.yml with its module regions generated, and the module password secrets of `migrate` (which makes the roles) and `pgbouncer`
-    (which logs each role in)."""
+    """docker-compose.yml with its module regions generated, and the module password secrets (one line each) of `migrate` (which makes the roles) and
+    `pgbouncer` (which logs each role in)."""
     lines = current.split("\n")
     for section in ("services", "secrets", "networks", "volumes"):
         blocks = [(m.path, m.get("compose")[section]) for m in modules if m.get("compose") and section in m.get("compose")]
         lines = _replace_region(lines, section, _region(blocks, f"compose.{section}", 2), "docker-compose.yml")
-    secrets = ", ".join(["db_password"] + [f"db_password_{m.name}" for m in modules if (m.get("database") or {}).get("role")])
-    hits = [i for i, line in enumerate(lines) if line.startswith("    secrets: [db_password, db_password_")]
-    if len(hits) != 2:
-        raise ManifestError("docker-compose.yml: `migrate` and `pgbouncer` each need one `secrets: [db_password, db_password_<module>, ...]` line")
-    for i in hits:
-        lines[i] = f"    secrets: [{secrets}]"
+    secrets = [f"db_password_{m.name}" for m in modules if (m.get("database") or {}).get("role")]
+    begins = [i for i, line in enumerate(lines) if line.strip() == BEGIN.format(what="database.role")]
+    if len(begins) != 2:
+        raise ManifestError("docker-compose.yml: `migrate` and `pgbouncer` each need a `# >>> modules ... (database.role)` region in their `secrets:` list")
+    for begin in reversed(begins):
+        end = next((i for i in range(begin + 1, len(lines)) if lines[i].strip() == END), None)
+        if end is None:
+            raise ManifestError(f"docker-compose.yml: line {begin + 1}: a region with no `{END}` line")
+        pad = lines[begin][: len(lines[begin]) - len(lines[begin].lstrip())]
+        lines[begin + 1:end] = [f"{pad}- {s}" for s in secrets]
     return "\n".join(lines)
 
 
