@@ -1418,13 +1418,11 @@ Done, in `HISTORY.md`: `PR-CONV-S0.1` to `PR-CONV-S0.13`, `PR-CONV-S0.15` to `PR
 
 Stage 1 ends at milestone M1 (week 5): a reference "Echo" MnS module, built only from the shared library, passes every ProvMnS operation test and is reached through R1 by class name, with no static route.
 
-Done, in `HISTORY.md`: `PR-CONV-S1.1`, `PR-CONV-S1.2`, `PR-CONV-S1.4`.
+Done, in `HISTORY.md`: `PR-CONV-S1.1`, `PR-CONV-S1.2`, `PR-CONV-S1.3`, `PR-CONV-S1.4`, `PR-CONV-S1.5`, `PR-CONV-S1.6`.
 
 | ID | Task | Stage | Needs | Done when |
 |---|---|---|---|---|
-| PR-CONV-S1.3 | Component-C dictionary: TS 28.111 alarms, TS 28.552 / 28.554 counters and KPIs | 1 | M0 | Used by RAN NF OAM and DME tests |
-| PR-CONV-S1.5 | Cross-cutting checks inside the router (scope, MSAC, idempotency, audit, `traceparent`, metric) | 1 | S1.1 | One test per check through the Echo module |
-| PR-CONV-S1.6 | Echo MnS reference module and its test suite. *From S1.1: the first module to mount `smo_shared.mns`; its revision calls `create_moi_store(op, schema)` / `drop_moi_store`, `moi_store` goes into `migrations/table_owners.json` and the models check, its image carries `specs/5G_APIs` (the class registry reads the YAML at run time), and the four-operation tests of `shared/tests/test_mns_router.py` run against it* | 1 | S1.4, S1.5 | Wave 0 exit gate met; added to `smo-mutation.yml` |
+| PR-CONV-S1.3a | The dictionary checked against the specification text and put to use. *From S1.3: the TS 28.552 clauses and the TS 28.554 formulas were typed by hand and not checked against the text (not in `specs/`, and 3GPP's archive was not reachable when S1.3 was built); the §6.7.5 / §6.7.6 energy-efficiency KPIs are not in yet; nothing but the shared and Echo tests reads it* | 1 | S1.3 | Every counter's clause and every KPI's formula checked against TS 28.552 / 28.554 Rel-19 text, §6.7.5 and §6.7.6 added; RAN NF OAM's PM and FM and DME's tests take names and severities from it (S3.7, S3.18) |
 | PR-CONV-S1.7 | SME: TS 28.533 MnS registry, discovery, `ServiceReady` / `NotifyServiceChange` | 1 | S1.1 | Conformance tests against the corrected SME contract |
 | PR-CONV-S1.8 | R1 Termination routes ProvMnS paths by registry lookup | 1 | S1.7 | Echo MnS reached through R1 with no entry in the static table |
 | PR-CONV-S1.9 | Common schemas `common_teiv_nrm` and `common_dme_telemetry` with writer and reader roles | 1 | M0 | `check_migration_matches_models.py` green on Postgres |
@@ -1537,7 +1535,7 @@ Stage 6 ends at milestone M6 (week 21): every write an operator makes in the con
 | PR-CONV-S6.3 | Intent composer | 6 | S6.2, S5.2 | NES and MRO Level-1 intents composed without typing JSON |
 | PR-CONV-S6.4 | Intent operations view | 6 | S6.3, S5.10 | One page answers "is this intent working, and why not" |
 | PR-CONV-S6.5 | Topology on TE&IV with lock and alarm overlays | 6 | S3.1, S3.2 | Locked cells show their owning intent and expiry |
-| PR-CONV-S6.6 | Roles and scope: five Part 2 roles, SubNetwork axis | 6 | D15 | Role matrix tests per class and operation |
+| PR-CONV-S6.6 | Roles and scope: five Part 2 roles, SubNetwork axis. *From S1.5: the claim already carries `siteClusters` and `subNetworks` and the ProvMnS router honours them; RAN NF OAM's scope assignment, the other modules' list filters and the console's scope pickers do not yet (a claim restricting either axis reaches none of their rows)* | 6 | D15 | Role matrix tests per class and operation |
 | PR-CONV-S6.7 | Two-person rule for the four Part 2 §9.4 action classes | 6 | S5.10, S5.11 | Each class refused with one vote, accepted with two distinct people |
 | PR-CONV-S6.8 | Retire the module pages, one area per PR | 6 | S6.2–S6.5 | Page count down; no route left without a generic replacement |
 | PR-CONV-S6.9 | GUI tests: Playwright intent lifecycle, axe, ZAP, English and German parity | 6 | S6.4 | All four gates green in `smo-gui-e2e.yml` |

@@ -3,7 +3,7 @@
 `echo` (parametrised) gives a test Echo's app with its session dependency pointed at:
   - in-memory SQLite, every table the shared `Base` knows made by `create_all` (Echo's `moi_store` among them, echo/app/models.py);
   - real Postgres when SMO_TEST_POSTGRES_URL is set (the CI job "Consolidated migration applies to real Postgres" migrates to head first, so the schema
-    `echo` and its `moi_store` are revision 0066's), searching `echo` then `public`; Echo's rows and idempotency keys are removed before the test, and
+    `echo` and its `moi_store` are revision 0065's), searching `echo` then `public`; Echo's rows and idempotency keys are removed before the test, and
     the events and audit rows it makes are read from the sequence numbers at its start.
 Run the suite from `smo/echo` with `PYTHONPATH=.:../shared python -m pytest tests -q`.
 """
@@ -50,6 +50,7 @@ class Echo:
 
 
 def _engine(kind: str):
+    """The engine of one backend: SQLite with every table, or Postgres (skipped without SMO_TEST_POSTGRES_URL) with Echo's rows and keys removed."""
     if kind == "sqlite":
         engine = make_test_engine()
         Base.metadata.create_all(engine)

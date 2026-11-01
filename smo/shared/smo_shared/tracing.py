@@ -95,7 +95,7 @@ def get_trace_context() -> TraceContext | None:
 
 
 def current_traceparent() -> str | None:
-    """The `traceparent` of the trace this code runs in (what a row written now keeps, revision 0065), or None outside one."""
+    """The `traceparent` of the trace this code runs in (what a row written now keeps, revision 0066), or None outside one."""
     context = _current_trace.get()
     return None if context is None else format_traceparent(context)
 

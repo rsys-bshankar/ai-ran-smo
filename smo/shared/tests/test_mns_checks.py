@@ -132,6 +132,7 @@ def test_router_checks_order_and_visibility():
 # ---------------------------------------------------------------------------- through the router
 
 def _app(backend: Backend, checks: RouterChecks) -> TestClient:
+    """A client of a ProvMnS app with `checks`, on `backend`, serving four classes (GNBDUFunction with the recording handler)."""
     mns = ProvMnS(source="/smo/mns-check", system_dn="ManagementNode=mns-check", classes=("SubNetwork", "ManagedElement", "GNBDUFunction", "NRCellDU"),
                   checks=checks)
     mns.serve("GNBDUFunction", RecordingHandler())

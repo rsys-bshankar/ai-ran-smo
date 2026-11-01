@@ -21,6 +21,7 @@ not checked against the specification text, is in each file's description.
 
 import ast
 import re
+import typing
 from collections.abc import Mapping
 
 from . import ts28111, ts28552, ts28554
@@ -88,7 +89,7 @@ def _value(node: ast.expr, values: Mapping[str, float]) -> float:
     if isinstance(node, ast.UnaryOp):
         operand = _value(node.operand, values)
         return -operand if isinstance(node.op, ast.USub) else operand
-    assert isinstance(node, ast.BinOp)
+    node = typing.cast(ast.BinOp, node)               # _compile admits no other node
     return _OPERATORS[type(node.op)](_value(node.left, values), _value(node.right, values))
 
 

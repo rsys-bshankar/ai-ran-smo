@@ -73,3 +73,13 @@ def test_a_rule_may_name_every_operation():
     """All five TS 28.319 operations at once are a valid rule."""
     item = {"dataNodeSelector": "/SubNetwork=A", "operations": list(msac.OPERATIONS), "action": "DENY"}
     assert main._rule(item) == msac.Rule("/SubNetwork=A", frozenset(msac.OPERATIONS), "DENY")
+
+
+def test_the_dictionary_reads_the_specifications_echo_serves_from():
+    """S1.3's dictionary and Echo's class registry read the same vendored specifications (in the image, /srv/specs/5G_APIs): the TS 28.111 lists
+    are there, with the TS 28.552 counters and the §6.7.1 KPI over them."""
+    from smo_shared.mns import dictionary
+    from smo_shared.mns.registry import DEFAULT_SPEC_DIR
+    assert main.mns.registry.spec_dir == DEFAULT_SPEC_DIR and (DEFAULT_SPEC_DIR / dictionary.ts28111.FILE).is_file()
+    assert "CRITICAL" in dictionary.ts28111.perceived_severities() and len(dictionary.ts28111.probable_causes()) == 206
+    assert dictionary.inputs(dictionary.kpi("EE.DataVolume").formula) == ("DRB.PdcpSduVolumeDL", "DRB.PdcpSduVolumeUL", "PEE.Energy")

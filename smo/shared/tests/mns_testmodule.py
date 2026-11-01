@@ -45,6 +45,7 @@ class Backend:
 
 
 def _sqlite() -> Backend:
+    """In-memory SQLite with the store, the event table and the audit tables."""
     engine = make_test_engine()
     store.create_all(engine)
     for table in (events.SmoEvent.__table__, audit.AuditEntry.__table__, audit.AuditHead.__table__):
@@ -54,12 +55,15 @@ def _sqlite() -> Backend:
 
 @contextmanager
 def _postgres():
-    """A schema of its own on the Postgres of SMO_TEST_POSTGRES_URL with `moi_store` made by the Alembic helper; removed afterwards."""
+    """A schema of its own on the Postgres of SMO_TEST_POSTGRES_URL with `moi_store` made by the Alembic helper, and the shared event and audit
+    tables in public (made when absent); the schema is removed afterwards."""
     schema = f"mns_test_{uuid.uuid4().hex[:10]}"
     admin = create_engine(POSTGRES_URL, future=True)
     with admin.begin() as connection:
         connection.execute(text(f'CREATE SCHEMA "{schema}"'))
         create_moi_store(Operations(MigrationContext.configure(connection)), schema)
+    for table in (events.SmoEvent.__table__, audit.AuditEntry.__table__, audit.AuditHead.__table__):
+        table.create(admin, checkfirst=True)            # in public; another shared test may have dropped them (test_audit.py drops its own)
     engine = create_engine(POSTGRES_URL, future=True, connect_args={"options": f"-csearch_path={schema},public"})
     try:
         with engine.connect() as connection:

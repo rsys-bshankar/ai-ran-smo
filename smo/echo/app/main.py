@@ -4,7 +4,7 @@ Echo produces TS 28.532 ProvMnS for two classes of the TS 28.623 generic NRM, Su
 at the top), through the generic router of `smo_shared.mns`, and nothing else: no class of its own, no route of its own beyond the probes, no logic in
 a hook. Every behaviour it shows (the four operations, both patch formats, scope, filter and paging, the cross-cutting checks of S1.5, the notifications
 on the event bus) is the shared library's, which is the point: a module that mounts the router gets all of it. Its store is `echo.moi_store` (revision
-0066). Why these two classes: they are the generic ones every NRM hangs from (no RAN- or vendor-specific attribute to get in the way), ManagedElement is
+0065). Why these two classes: they are the generic ones every NRM hangs from (no RAN- or vendor-specific attribute to get in the way), ManagedElement is
 a child of SubNetwork in the NRM, so containment is exercised, and a SubNetwork in the DN is what the D15 SubNetwork axis of the scope claim reads.
 
 Configuration (read on every request, so a test or an operator can change it without a restart):

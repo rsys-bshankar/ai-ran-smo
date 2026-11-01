@@ -1358,7 +1358,7 @@ jobs:
           pip install --require-hashes -r ../requirements/dev.txt
           PYTHONPATH=. python -m pytest tests/test_versioning.py tests/test_idempotency.py tests/test_module_identity.py tests/test_db_engine.py tests/test_health.py tests/test_single_runner.py tests/test_events.py -v
           PYTHONPATH=. python -m pytest tests/test_mns_router.py tests/test_mns_scope.py tests/test_mns_properties.py tests/test_mns_store.py -v
-          # PR-CONV-S1.6: Echo, the reference ProvMnS module, on the migrated database (schema echo, revision 0065): the Wave 0 exit gate on Postgres
+          # PR-CONV-S1.6: Echo, the reference ProvMnS module, on the migrated database (schema echo, revision 0066): the Wave 0 exit gate on Postgres
           (cd ../echo && PYTHONPATH=.:../shared python -m pytest tests -v)
           (cd ../gui-bff && PYTHONPATH=.:../shared python -m pytest tests/test_shared_state.py -v)
 

@@ -174,6 +174,21 @@ Decided with the owner after the first step shipped; the same rule (`smo_shared/
 - **What it does not narrow**, as for a scoped rApp (section 9): the modules with nothing to match (rApp Management, AIMgF, MLMR, DME's types), and the GUI
   backend's own data (its audit log, users, exports list, preferences). An admin manages users and roles whatever their own claim.
 
+
+### 12. Amendment: the site-cluster and SubNetwork axes, and the ProvMnS router (`PR-CONV-S1.5`, D15)
+
+- **Two more axes.** A claim may also name `siteClusters` and `subNetworks`, with the rules of the first two (1 to 100 values, the value alphabet, no
+  duplicates; an axis it does not name is not restricted). `narrowed`, `covers`, the header and SME's `authz_scope` carry all four. ADR 0008 D15 asked for
+  the SubNetwork axis (Part 2 §9.3); the site cluster is the O-Cloud placement unit a region is made of, and is matched exactly as a region is.
+- **What a target's place is on the new axes.** A site cluster is a property of the target, like its region and tenant. A SubNetwork is not stored: it is
+  read from the target's DN, and a claim naming SubNetworks reaches a target with **any** of them on its DN (`SubNetwork=A,SubNetwork=B,ManagedElement=1` is
+  reached by `A` and by `B`), so a claim on a SubNetwork covers its subtree. A target under no SubNetwork is outside such a claim.
+- **Where it is applied.** The ProvMnS router (`smo_shared/mns/checks.py`) applies the claim to every operation, with section 5's refusals: a write outside
+  it is 403 `SCOPE_DENIED`, a read 404 as if absent, the instances a read reaches below its base are filtered, and a delete whose subtree holds an instance
+  outside is refused whole. The module says where a DN is (a `Placement`); the decision is one interface (`Authorizer`), which S1.14 backs with TS 28.319
+  AccessRules. The modules' own lists (`filter_statement`, `denied_condition`) keep no column for the new axes yet: a restricted axis with no column lets no
+  row through (fail closed), so a claim on either axis reaches nothing of theirs until they place their rows (`OPEN_ITEMS.md` PR-CONV-S6.6).
+
 ## Consequences
 
 - An upgrade changes nothing: the columns are nullable, no claim is set, and an unscoped caller is never asked. `0032` is expand-only.

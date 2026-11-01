@@ -23,6 +23,7 @@ import os
 import threading
 import time
 import uuid
+import weakref
 from collections.abc import Callable
 from typing import Any, Protocol
 
@@ -59,7 +60,7 @@ class SmoEvent(Base):
     region: Mapped[str | None] = mapped_column(String)
     tenant: Mapped[str | None] = mapped_column(String)
     correlation_id: Mapped[str | None] = mapped_column(String)     # the request or worker task that published it (revision 0059, call flow 14c)
-    traceparent: Mapped[str | None] = mapped_column(String)        # the W3C trace it was published in (revision 0065, PR-CONV-S1.5)
+    traceparent: Mapped[str | None] = mapped_column(String)        # the W3C trace it was published in (revision 0066, PR-CONV-S1.5)
 
 
 def event_type(what: str, change: str) -> str:
@@ -124,7 +125,7 @@ class NullPublisher:
         """Does nothing."""
 
 
-_tables: dict[int, bool] = {}
+_tables: weakref.WeakKeyDictionary[Engine, bool] = weakref.WeakKeyDictionary()   # by the engine itself: an id() is reused once an engine is freed
 
 
 def _has_table(connection: Connection) -> bool:
@@ -132,10 +133,10 @@ def _has_table(connection: Connection) -> bool:
     transaction on a single-connection test engine). Postgres always has it: revision 0042 made it."""
     if connection.dialect.name == "postgresql":
         return True
-    key = id(connection.engine)
-    if key not in _tables:
-        _tables[key] = inspect(connection).has_table(SmoEvent.__tablename__)
-    return _tables[key]
+    engine = connection.engine
+    if engine not in _tables:
+        _tables[engine] = inspect(connection).has_table(SmoEvent.__tablename__)
+    return _tables[engine]
 
 
 class TablePublisher:

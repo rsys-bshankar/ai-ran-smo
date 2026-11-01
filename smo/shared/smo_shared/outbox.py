@@ -91,7 +91,7 @@ class NotificationOutbox(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
     # The id of the request or worker task that enqueued it (revision 0059), sent with the notification as X-Correlation-ID (call flow 14c).
     correlation_id: Mapped[str | None] = mapped_column(String)
-    # The W3C trace of the request or task that enqueued it (revision 0065, PR-CONV-S1.5), sent with the notification as `traceparent`.
+    # The W3C trace of the request or task that enqueued it (revision 0066, PR-CONV-S1.5), sent with the notification as `traceparent`.
     traceparent: Mapped[str | None] = mapped_column(String)
 
 
@@ -156,7 +156,7 @@ def _send(destination: str, payload, method: str = "POST") -> tuple[bool, str | 
 
 def _send_row(row: NotificationOutbox) -> tuple[bool, str | None, bool]:
     """Sends one claimed row under the correlation id and the trace it was enqueued with, so the delivery carries the id and the `traceparent` of
-    what caused it, whichever process or thread sends it (call flow 14c; revisions 0059 and 0065). A row from before either has none and goes out
+    what caused it, whichever process or thread sends it (call flow 14c; revisions 0059 and 0066). A row from before either has none and goes out
     under the sender's own correlation id (and no trace)."""
     with tracing.trace_scope(tracing.parse_traceparent(row.traceparent)):
         if not row.correlation_id:

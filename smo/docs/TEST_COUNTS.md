@@ -11,6 +11,7 @@ CI runs `--check` and fails when this file no longer matches the code.
 |---|---:|---:|---:|
 | `aimgf` | 20 | 380 | 539 |
 | `dme` | 14 | 177 | 190 |
+| `echo` | 2 | 20 | 49 |
 | `focom` | 3 | 85 | 85 |
 | `gui` | 51 | 519 | — |
 | `gui-bff` | 17 | 439 | 1682 |
@@ -33,11 +34,11 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `sdk` | 15 | 183 | 212 |
 | `sdk-go` | 9 | 66 | — |
 | `sdk-java` | 8 | 58 | — |
-| `shared` | 57 | 773 | 1508 |
+| `shared` | 61 | 818 | 1595 |
 | `sme` | 5 | 122 | 140 |
 | `so-smos` | 3 | 28 | 44 |
-| `tests_integration` | 99 | 775 | 955 |
-| **total** | **431** | **5552** | **8237** (Python) |
+| `tests_integration` | 99 | 775 | 956 |
+| **total** | **437** | **5617** | **8374** (Python) |
 
 ## Per test file
 
@@ -88,6 +89,15 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests/test_scope.py` | 6 | 6 |
 | `tests/test_tasks.py` | 4 | 4 |
 | `tests/test_type_ownership.py` | 8 | 8 |
+
+</details>
+
+<details><summary><code>echo</code>: 2 files</summary>
+
+| file | test functions | collected tests |
+|---|---:|---:|
+| `tests/test_echo.py` | 13 | 30 |
+| `tests/test_settings.py` | 7 | 19 |
 
 </details>
 
@@ -478,7 +488,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 
 </details>
 
-<details><summary><code>shared</code>: 57 files</summary>
+<details><summary><code>shared</code>: 61 files</summary>
 
 | file | test functions | collected tests |
 |---|---:|---:|
@@ -502,6 +512,8 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests/test_integrity_handlers.py` | 2 | 6 |
 | `tests/test_logconfig.py` | 22 | 33 |
 | `tests/test_metrics.py` | 17 | 19 |
+| `tests/test_mns_checks.py` | 13 | 13 |
+| `tests/test_mns_dictionary.py` | 15 | 35 |
 | `tests/test_mns_exact.py` | 41 | 127 |
 | `tests/test_mns_patch.py` | 7 | 75 |
 | `tests/test_mns_properties.py` | 3 | 6 |
@@ -510,6 +522,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests/test_mns_scope.py` | 21 | 93 |
 | `tests/test_mns_store.py` | 2 | 2 |
 | `tests/test_module_identity.py` | 14 | 25 |
+| `tests/test_msac_and_axes.py` | 11 | 33 |
 | `tests/test_mtls.py` | 18 | 33 |
 | `tests/test_mutation_survivors.py` | 9 | 11 |
 | `tests/test_on_behalf_of.py` | 11 | 11 |
@@ -529,6 +542,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests/test_security_headers.py` | 2 | 2 |
 | `tests/test_single_runner.py` | 9 | 16 |
 | `tests/test_timeutil.py` | 2 | 2 |
+| `tests/test_traceparent_carry.py` | 6 | 6 |
 | `tests/test_tracing.py` | 14 | 26 |
 | `tests/test_validation_error_handler.py` | 5 | 5 |
 | `tests/test_versioning.py` | 6 | 11 |
@@ -629,7 +643,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests_integration/test_mirror_images.py` | 31 | 35 |
 | `tests_integration/test_mobility_optimization_rapp.py` | 7 | 7 |
 | `tests_integration/test_model_ownership.py` | 7 | 7 |
-| `tests_integration/test_module_isolation.py` | 1 | 13 |
+| `tests_integration/test_module_isolation.py` | 1 | 14 |
 | `tests_integration/test_msac_credential_through_dme.py` | 3 | 3 |
 | `tests_integration/test_mtls.py` | 24 | 24 |
 | `tests_integration/test_notification_inventory.py` | 2 | 2 |

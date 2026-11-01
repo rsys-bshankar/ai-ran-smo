@@ -353,7 +353,7 @@ modules:
   # the same image as a worker: purges MDAF reports older than SMO_RETENTION_MDAF_REPORTS_DAYS (PR-DB-3)
   mdaf-worker: { image: mdaf, databaseRole: mdaf, kind: worker, env: { SMO_RETENTION_MDAF_REPORTS_DAYS: "0" } }
   # PR-CONV-S1.6: Echo, the reference ProvMnS module (echo/README.md). Off by default: a reference and test module with no operator function; turn it on
-  # to try the shared router on a cluster (`--set modules.echo.enabled=true`). Its schema and role exist either way (revision 0066, db_roles.json).
+  # to try the shared router on a cluster (`--set modules.echo.enabled=true`). Its schema and role exist either way (revision 0065, db_roles.json).
   echo: { image: echo, databaseRole: echo, enabled: false, env: { ECHO_PLACEMENT: "", ECHO_MSAC_RULES: "" } }
   intent-service: { image: intent-service, databaseRole: intent-service }
   so-smos: { image: so-smos, databaseRole: so-smos, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
