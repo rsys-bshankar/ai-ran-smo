@@ -26,7 +26,7 @@ function bff(role: "viewer" | "operator" | "admin") {
     "GET /me": { username: "ana", role, csrfToken: "c", local: true, totpEnrolled: true, mfaEnrolmentRequired: false },
     "GET /permissions": { role, rules },
     "GET /summary/aiml": { page: "aiml", computedAt: "now", counts: {}, partial: [] },
-    "GET /smo/mlmr/models": page([{ modelId: M, modelType: "coverage-model", version: "1.0", owner: "es-client", targetEnvironments: [] }]),
+    "GET /smo/aimgf/models": page([{ modelId: M, modelType: "coverage-model", version: "1.0", owner: "es-client", targetEnvironments: [] }]),
     "GET /smo/aimgf/ml-training-requests": page([nrm("tr-1", { mLModelRef: M, trainingRequestSource: "es-client", mLTrainingType: "RE_TRAINING", requestStatus: "IN_PROGRESS" })]),
     "GET /smo/aimgf/ml-training-processes": page([nrm("tp-1", { trainingRequestRef: ["tr-1"], mLModelRef: M, progressStatus: { status: "RUNNING", progressPercentage: 40 } })]),
     "GET /smo/aimgf/aiml-inference-functions": page([nrm(F, { aIMLInferenceName: "coverage-fn", userLabel: "lab", activationStatus: "DEACTIVATED", mLModelRefList: [] })]),

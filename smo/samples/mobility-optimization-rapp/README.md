@@ -63,7 +63,7 @@ Decision logic is in `app/engine.py` (pure functions) and `app/model/MobilityMod
 | `app/tasks.py` | The worker's task `evaluate-due` (every `MOBILITY_SCHEDULE_TICK_SECONDS`, default 15) |
 | `tests/test_schedule_dmro_and_approvals.py` | Call flow 23: `evaluateEverySeconds` bounds, the worker's task, due / not due / manual instances acting as themselves, a failed scheduled pass recorded, the instance lock (409, BUSY), reverts and rollbacks held for approval settled on approval, rejection and expiry, the DMRO status (held, refused, unknown) holding changes and "Apply DMRO bounds", the KPI hour of an ASSIST change starting at its enactment, a relation the Traffic Steering rApp has a CIO write waiting on held and this rApp's own waiting writes published (24 tests) |
 | `app/engine.py` | Guards, KPI check, bounded step (no I/O) |
-| `app/model/MobilityModel.py` | Model, thresholds, MLMR artifact (JSON in a zip) |
+| `app/model/MobilityModel.py` | Model, thresholds, registry artifact (JSON in a zip) |
 | `app/model/{Training,Validation,Emulation,Inference}Logic.py` | The four execution modes |
 | `app/model/series.py` | Counter parsing, rate, dominant cause, hourly pairs |
 | `app/producer.py` | Digital Twin `HO_PERFORMANCE_SIM` producer and sample data |
@@ -78,7 +78,7 @@ Decision logic is in `app/engine.py` (pure functions) and `app/model/MobilityMod
 
 Package layout and field meanings are in [RAPP_PACKAGING.md](../../docs/RAPP_PACKAGING.md); the rApp's place in the platform is in [ARCHITECTURE.md](../../docs/ARCHITECTURE.md#reference-rapps).
 
-- `manifest.yaml`: all four execution modes, three autonomy modes, required services DME, AIMgF, MLMR, MLLF and RAN-NF-OAM, and a runtime profile per mode.
+- `manifest.yaml`: all four execution modes, three autonomy modes, required services DME, AIMgF and RAN-NF-OAM, and a runtime profile per mode.
 - `capabilities.yaml` consumes `data`, `models`, `lifecycle`, `intent` and `platform`, and provides the `HO_PERFORMANCE_SIM` dataset under `data`. It also lists supported actions `RAISE_CIO`, `LOWER_CIO` and `REVERT_CIO`.
 - No `analytics` namespace. The rApp derives its features from the DME datasets and calls no MDAF prediction or report.
 - Nothing else is provided: there is no SDK surface for an rApp to serve to others.

@@ -39,7 +39,7 @@ def test_the_registering_rapp_owns_the_model_and_another_rapp_is_refused(mesh):
     assert mesh["aimgf"].patch(f"/models/{model_id}/runtime/node-groups", headers=SMO, json={"clearedNodeGroups": ["ng2"]}).status_code == 200
 
 
-def test_mllf_places_a_model_only_for_its_owner_through_the_mesh(mesh):
+def test_the_deploy_gate_places_a_model_only_for_its_owner_through_the_mesh(mesh):
     """MLLF-NODEGROUP-OWNER: rApp B's deploy request at MLLF on rApp A's model is 403 `MODEL_ACCESS_DENIED` (MLLF calls AIMgF as an SMO module, `R1Client` names B in
     `X-R1-On-Behalf-Of`, AIMgF's owner rule refuses B and MLLF passes the 403 on); the owner and the console get past the owner rule, to the lifecycle gate (409
     `MODEL_NOT_CERTIFIED`, the model is only registered). No node groups are written for B.
@@ -97,62 +97,62 @@ def test_aimgf_start_and_read_routes_apply_the_owner_rule_through_the_mesh(mesh)
     assert aimgf.get(f"/models/{open_model}/lifecycle", headers=OTHER).status_code == 200
 
 
-def test_mlmr_put_and_post_keep_the_owner_out_of_an_rapps_hands_through_the_mesh(mesh):
+def test_registry_put_and_post_keep_the_owner_out_of_an_rapps_hands_through_the_mesh(mesh):
     """SEC-15.3c: an rApp cannot register a model for another owner, nor change, clear or claim the owner through PUT, nor update a model another rApp owns; the owner updates its own
     model's other fields, and the operator (role internal) still sets the owner.
     """
-    mlmr = mesh["aimgf"]
-    forged = mlmr.post("/models", headers=ES, json={"modelType": "forged-" + uuid.uuid4().hex[:6], "version": "1", "owner": "other-client"})
+    registry = mesh["aimgf"]
+    forged = registry.post("/models", headers=ES, json={"modelType": "forged-" + uuid.uuid4().hex[:6], "version": "1", "owner": "other-client"})
     assert forged.status_code == 403 and "MODEL_OWNER_IMMUTABLE" in forged.text
     model_id = _register(mesh, ES, owner="es-client")
-    stored = mlmr.get(f"/models/{model_id}").json()
+    stored = registry.get(f"/models/{model_id}").json()
     body = {"modelType": stored["modelType"], "version": stored["version"]}
-    assert mlmr.put(f"/models/{model_id}", headers=ES, json={**body, "description": "mine", "owner": "es-client"}).json()["description"] == "mine"
+    assert registry.put(f"/models/{model_id}", headers=ES, json={**body, "description": "mine", "owner": "es-client"}).json()["description"] == "mine"
     for owner in ("other-client", ""):
-        refused = mlmr.put(f"/models/{model_id}", headers=ES, json={**body, "owner": owner})
+        refused = registry.put(f"/models/{model_id}", headers=ES, json={**body, "owner": owner})
         assert refused.status_code == 403 and "MODEL_OWNER_IMMUTABLE" in refused.text
-    foreign = mlmr.put(f"/models/{model_id}", headers=OTHER, json={**body, "description": "hijacked"})
+    foreign = registry.put(f"/models/{model_id}", headers=OTHER, json={**body, "description": "hijacked"})
     assert foreign.status_code == 403 and "MODEL_ACCESS_DENIED" in foreign.text
-    assert mlmr.get(f"/models/{model_id}").json()["owner"] == "es-client"
-    assert mlmr.put(f"/models/{model_id}", headers=SMO, json={**body, "owner": "other-client"}).json()["owner"] == "other-client"
+    assert registry.get(f"/models/{model_id}").json()["owner"] == "es-client"
+    assert registry.put(f"/models/{model_id}", headers=SMO, json={**body, "owner": "other-client"}).json()["owner"] == "other-client"
 
 
-def test_mlmr_delete_upload_download_phase_and_groups_apply_the_owner_rule_through_the_mesh(mesh):
+def test_registry_delete_upload_download_phase_and_groups_apply_the_owner_rule_through_the_mesh(mesh):
     """SEC-15.3d: another rApp is 403 `MODEL_ACCESS_DENIED` on MLMR's DELETE, artifact upload, artifact download (the model sets no `accessReqs`), phase-info write and on a coordination group naming
     the model, and nothing changes; the owner (the same client id the SDK registers with) uploads, downloads, groups and deletes; the console and AIMgF (role internal) are not asked, a model with
     no owner is open to every rApp, and a model that is PUBLICLY_AVAILABLE can be downloaded by another rApp.
     """
-    mlmr = mesh["aimgf"]
+    registry = mesh["aimgf"]
     zip_file = {"file": ("model.zip", b"pkzip-bytes", "application/zip")}
     model_id = _register(mesh, ES)
 
-    assert mlmr.post(f"/models/{model_id}/artifact", headers=OTHER, files=zip_file).status_code == 403
-    assert mlmr.get(f"/models/{model_id}").json()["artifactLocation"] is None
-    assert mlmr.post(f"/models/{model_id}/artifact", headers=ES, files=zip_file).status_code == 201
-    assert mlmr.post(f"/models/{model_id}/artifact", headers=SMO, files=zip_file).status_code == 201
+    assert registry.post(f"/models/{model_id}/artifact", headers=OTHER, files=zip_file).status_code == 403
+    assert registry.get(f"/models/{model_id}").json()["artifactLocation"] is None
+    assert registry.post(f"/models/{model_id}/artifact", headers=ES, files=zip_file).status_code == 201
+    assert registry.post(f"/models/{model_id}/artifact", headers=SMO, files=zip_file).status_code == 201
 
-    denied = mlmr.get(f"/models/{model_id}/artifact/1", headers=OTHER)
+    denied = registry.get(f"/models/{model_id}/artifact/1", headers=OTHER)
     assert denied.status_code == 403 and "MODEL_ACCESS_DENIED" in denied.text
-    assert mlmr.get(f"/models/{model_id}/artifact/1", headers=ES).content == b"pkzip-bytes"
-    assert mlmr.get(f"/models/{model_id}/artifact/1", headers=SMO).content == b"pkzip-bytes"
+    assert registry.get(f"/models/{model_id}/artifact/1", headers=ES).content == b"pkzip-bytes"
+    assert registry.get(f"/models/{model_id}/artifact/1", headers=SMO).content == b"pkzip-bytes"
     shared = _register(mesh, ES, storeDiscReqs={"accessReqs": {"accessReq": "PUBLICLY_AVAILABLE"}})
-    mlmr.post(f"/models/{shared}/artifact", headers=ES, files=zip_file)
-    assert mlmr.get(f"/models/{shared}/artifact/1", headers=OTHER).status_code == 200
+    registry.post(f"/models/{shared}/artifact", headers=ES, files=zip_file)
+    assert registry.get(f"/models/{shared}/artifact/1", headers=OTHER).status_code == 200
 
     other_model = _register(mesh, OTHER)
-    assert mlmr.post("/coordination-groups", headers=ES, json={"memberModelIds": [model_id, other_model]}).status_code == 403
-    assert mlmr.post("/coordination-groups", headers=ES, json={"memberModelIds": [model_id, shared]}).status_code == 201
+    assert registry.post("/coordination-groups", headers=ES, json={"memberModelIds": [model_id, other_model]}).status_code == 403
+    assert registry.post("/coordination-groups", headers=ES, json={"memberModelIds": [model_id, shared]}).status_code == 201
     # AIMgF writes the phase as an SMO module; another rApp may not
-    assert mlmr.patch(f"/models/{model_id}/phase-info", headers=OTHER, json={"phase": "DEPLOYED"}).status_code == 403
-    assert mlmr.patch(f"/models/{model_id}/phase-info", headers=SMO, json={"phase": "TRAINED"}).status_code == 200
+    assert registry.patch(f"/models/{model_id}/phase-info", headers=OTHER, json={"phase": "DEPLOYED"}).status_code == 403
+    assert registry.patch(f"/models/{model_id}/phase-info", headers=SMO, json={"phase": "TRAINED"}).status_code == 200
 
-    assert mlmr.delete(f"/models/{model_id}", headers=OTHER).status_code == 403
-    assert mlmr.get(f"/models/{model_id}").status_code == 200
-    assert mlmr.delete(f"/models/{model_id}", headers=ES).status_code == 204
-    assert mlmr.get(f"/models/{model_id}").status_code == 404
-    assert mlmr.delete(f"/models/{shared}", headers=SMO).status_code == 204
+    assert registry.delete(f"/models/{model_id}", headers=OTHER).status_code == 403
+    assert registry.get(f"/models/{model_id}").status_code == 200
+    assert registry.delete(f"/models/{model_id}", headers=ES).status_code == 204
+    assert registry.get(f"/models/{model_id}").status_code == 404
+    assert registry.delete(f"/models/{shared}", headers=SMO).status_code == 204
     open_model = _register(mesh, SMO)
-    assert mlmr.delete(f"/models/{open_model}", headers=OTHER).status_code == 204
+    assert registry.delete(f"/models/{open_model}", headers=OTHER).status_code == 204
 
 
 def _mlmf_dme_type(mesh, name: str) -> str:

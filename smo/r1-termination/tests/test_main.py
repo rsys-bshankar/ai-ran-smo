@@ -53,10 +53,11 @@ def test_bootstrap_needs_no_authorization_header():
 
 
 def test_route_table_covers_every_module():
-    """Section 4.2's extended route table: every SMO module (call flow 12: the /dme-push and /dme-pull aliases are gone, DME had no route under them)."""
+    """Section 4.2's extended route table: every SMO module (call flow 12: the /dme-push and /dme-pull aliases are gone, DME had no route under them; S2.4: the
+    model registry and the deploy gate are reached under `/aimgf` only, the MLMR and MLLF prefixes are gone)."""
     expected_prefixes = {
         "/sme", "/dme", "/onboarding", "/rapp-mgmt",
-        "/ran-nf-oam", "/nfo", "/focom", "/aimgf", "/mlmr", "/mllf",
+        "/ran-nf-oam", "/nfo", "/focom", "/aimgf",
         "/ran-analytics", "/mdaf", "/intent-service", "/so-smos", "/sa-smos",
     }   # a rApp's own operator API is the dynamic prefix /rapps/{instanceId}/operator (test_operator_api.py), not a route of this table
     assert set(ROUTES.keys()) == expected_prefixes
@@ -319,7 +320,7 @@ def test_own_health_check_is_answered_locally_without_authorization(monkeypatch)
 
 
 def test_proxy_forwards_the_introspected_client_id_and_drops_a_spoofed_one(monkeypatch):
-    """MLMR's access control trusts X-R1-Invoker-Id: it is the token's own client id."""
+    """The registry's access control trusts X-R1-Invoker-Id: it is the token's own client id."""
     seen = {}
 
     class FakeAsyncClient:
@@ -521,13 +522,13 @@ def test_a_body_over_the_cap_is_413_and_never_reaches_the_backend(monkeypatch):
 
 
 def test_the_model_artifact_upload_route_accepts_a_larger_body_and_only_that_route(monkeypatch):
-    """Only the MLMR model-artifact upload may carry up to 50 MiB; the same size elsewhere under `/mlmr` is a 413."""
+    """Only the model-artifact upload may carry up to 50 MiB; the same size elsewhere under `/aimgf` is a 413."""
     _backend_that_accepts_any_token(monkeypatch)
     big = b"z" * (3 * 1024 * 1024)
-    assert client.post("/mlmr/models/abc/artifact", headers=AUTH_HEADERS, content=big).status_code == 200
-    assert client.post("/mlmr/models", headers=AUTH_HEADERS, content=big).status_code == 413
+    assert client.post("/aimgf/models/abc/artifact", headers=AUTH_HEADERS, content=big).status_code == 200
+    assert client.post("/aimgf/models", headers=AUTH_HEADERS, content=big).status_code == 413
     huge = b"z" * (50 * 1024 * 1024 + 1)
-    assert client.post("/mlmr/models/abc/artifact", headers=AUTH_HEADERS, content=huge).status_code == 413
+    assert client.post("/aimgf/models/abc/artifact", headers=AUTH_HEADERS, content=huge).status_code == 413
 
 
 def test_the_cap_and_its_overrides_come_from_the_environment(monkeypatch):
@@ -614,3 +615,11 @@ def test_proxy_answers_503_not_401_when_sme_itself_fails_the_introspection(monke
     resp = client.get("/sme/service-apis/v1/allServiceAPIs", headers=AUTH_HEADERS)
     assert resp.status_code == 503
     assert resp.headers["Retry-After"]
+
+
+def test_the_old_model_registry_and_deploy_gate_prefixes_are_gone():
+    """S2.4: the MLMR and MLLF prefixes are not in the route table, so a call under them is 404 `NO_ROUTE` like any unknown prefix; the routes answer under
+    `/aimgf` only."""
+    for old in ("mlmr", "mllf"):
+        assert "/" + old not in ROUTES
+        assert client.get(f"/{old}/models", headers=AUTH_HEADERS).json()["title"] == "NO_ROUTE"

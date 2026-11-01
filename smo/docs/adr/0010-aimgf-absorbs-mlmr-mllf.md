@@ -1,11 +1,11 @@
 # ADR 0010 — AIMgF absorbs MLMR and MLLF: packages by TS 28.105 capability, the R1 AI/ML workflow services, the 14-state lifecycle, artifacts in the object store
 
-> **Status: decided 31 October 2026 (decision D4 of the converged rewrite plan, with D10; answered in `HISTORY.md` PR-CONV-S0.1); S2.1–S2.3 built
+> **Status: decided 31 October 2026 (decision D4 of the converged rewrite plan, with D10; answered in `HISTORY.md` PR-CONV-S0.1); S2.1–S2.4, S2.8 and S2.9 built
 > (`HISTORY.md` PR-CONV-S2.1, S2.2, S2.3: the registry and the deploy gate are packages of AIMgF, its code is by TS 28.105 capability, the seven tables
-> are in the `aimgf` schema); S2.4–S2.12 not built.** This record is plan task S0.4 (`OPEN_ITEMS.md` §7, closed into `HISTORY.md` §11). Until S2.4, R1
-> Termination sends the old `/mlmr` and `/mllf` prefixes to AIMgF's process (`aimgf/README.md` lists the routes); `mlmr/` and `mllf/` are health-probe
-> placeholders until S2.8. There is **no route alias**: the old `/mlmr/*` and `/mllf/*` routes are deleted in the same PR series that moves
-> their callers (rewrite mode, `docs/RELEASES.md`).
+> are in the `aimgf` schema; PR-CONV-S2.4, S2.8, S2.9: every caller is on `/aimgf`, the two old prefixes are gone from R1 Termination, and the `mlmr/`
+> and `mllf/` services and their roles are removed); S2.5–S2.7 and S2.10–S2.12 not built.** This record is plan task S0.4 (`OPEN_ITEMS.md` §7, closed into `HISTORY.md` §11). From S2.1 to S2.4, R1
+> Termination sent the old `/mlmr` and `/mllf` prefixes to AIMgF's process, and `mlmr/` and `mllf/` were health-probe placeholders until S2.8. There
+> was **no route alias**: the old `/mlmr/*` and `/mllf/*` routes were deleted in the PR that moved their callers (rewrite mode, `docs/RELEASES.md`).
 
 Paths are relative to `smo/`. Written against `main` at cf95d1e. Standards text was read from `specs/5G_APIs/TS28105_AiMlNrm.yaml` (TS 28.105 OAS
 v19.5.0) and from O-RAN.WG2.TS.R1GAP-R005-v14.00 §5.6 in the plan's inputs. The architecture is [ADR 0008](0008-converged-architecture.md); the interfaces are

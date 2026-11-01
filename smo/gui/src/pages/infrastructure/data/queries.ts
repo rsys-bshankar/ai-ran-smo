@@ -98,7 +98,7 @@ export function useOrdersPage(q: Query) {
 /** What the order form prefills TRAINING / DEPLOY steps from (newest model, a not-yet-deployed descriptor); read only while the form is open. */
 export function useOrderPrefill(enabled: boolean) {
   return {
-    models: useSmo<Model[]>("/mlmr/models", undefined, { enabled }),
+    models: useSmo<Model[]>("/aimgf/models", undefined, { enabled }),
     descriptors: useSmo<NfDescriptor[]>(PATHS.descriptors, undefined, { enabled }),
     deployments: useSmo<NfDeployment[]>(PATHS.deployments, undefined, { enabled }),
   };

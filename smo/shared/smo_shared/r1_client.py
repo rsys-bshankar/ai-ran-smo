@@ -146,7 +146,7 @@ class _ModuleIdentity:
         """Returns the shared identity store, or None for a per-process identity.
 
         The database store is used when `MODULE` is set and `SMO_MODULE_IDENTITY_STORE` is not `off`; resolved once per process. A module that has no database
-        (MLLF) cannot open it and gets None, as with the store off.
+        cannot open it and gets None, as with the store off.
         """
         if not self._store_resolved:
             self._store_resolved = True
@@ -154,7 +154,7 @@ class _ModuleIdentity:
                 try:
                     from .module_identity import DbIdentityStore
                     self._store = DbIdentityStore()
-                except Exception as exc:  # noqa: BLE001  a module with no database (MLLF) has no store: per process, as with the store off (DOC-CF-2.4: this was a 500)
+                except Exception as exc:  # noqa: BLE001  a module with no database has no store: per process, as with the store off (DOC-CF-2.4: this was a 500)
                     log.warning("module identity store not available, this process registers on its own: %r", exc)
         return self._store
 

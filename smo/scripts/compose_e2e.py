@@ -25,7 +25,7 @@ import httpx
 # the two mocks — are probed for "answers HTTP at all").
 HEALTH = [
     "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam", "nfo",
-    "focom", "mlmr", "aimgf", "mllf", "ran-analytics", "mdaf", "intent-service",
+    "focom", "aimgf", "ran-analytics", "mdaf", "intent-service",
     "so-smos", "sa-smos", "energy-saving-rapp", "mobility-optimization-rapp",
     "coverage-optimization-rapp", "traffic-steering-rapp",
 ]

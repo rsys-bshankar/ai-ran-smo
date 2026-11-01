@@ -43,7 +43,7 @@ class SearchSmo(CountingSmo):
                                                       {"managedElementRef": "unrelated", "vendorName": "acme"}], "limit": 5, "offset": 0},
             "/ran-nf-oam/alarms": {"items": [{"alarmId": "a1", "managedElementRef": params.get("managed_element_ref"), "severity": "major",
                                               "ackState": "UNACKNOWLEDGED", "probableCause": "LINK_DOWN"}]},
-            "/mlmr/models": {"items": [{"modelId": MODEL_ID, "modelType": "alpha-forecaster", "version": "1.0"},
+            "/aimgf/models": {"items": [{"modelId": MODEL_ID, "modelType": "alpha-forecaster", "version": "1.0"},
                                        {"modelId": str(uuid.uuid4()), "modelType": "other", "version": "2.0"}]},
             "/rapp-mgmt/instances": {"items": [{"instanceId": INSTANCE_ID, "packageId": PACKAGE_ID, "state": "RUNNING"}], "hasMore": False},
             "/onboarding/packages": {"items": [{"packageId": PACKAGE_ID, "name": "alpha-saver", "version": "1.2.0", "vendor": "acme",
@@ -262,7 +262,7 @@ def test_search_groups_matches_by_kind_with_the_gui_route_of_each(app, smo):
     assert [m["id"] for m in groups["model"]] == [MODEL_ID] and groups["model"][0]["to"] == f"/aiml?model={MODEL_ID}#models"
     assert "decision" not in groups
     sent = {r.url.path: r for r in smo.searches}
-    assert sent["/ran-nf-oam/managed-entities"].url.params["search"] == "alpha" and sent["/mlmr/models"].url.params["limit"] == "100"
+    assert sent["/ran-nf-oam/managed-entities"].url.params["search"] == "alpha" and sent["/aimgf/models"].url.params["limit"] == "100"
 
 
 def test_a_uuid_finds_its_decision(app):
@@ -280,7 +280,7 @@ def test_text_with_spaces_does_not_ask_the_alarm_list(app, smo):
 
 def test_a_failing_source_is_partial_and_the_others_still_answer(app, smo):
     """A module that does not answer names its kind in `partial`; the other kinds still come back."""
-    smo.failing.add("/mlmr/models")
+    smo.failing.add("/aimgf/models")
     body = login(app, "viewer").get("/api/search", params={"q": "alpha"}).json()
     assert body["partial"] == ["model"] and {g["type"] for g in body["groups"]} >= {"element", "rapp"}
 

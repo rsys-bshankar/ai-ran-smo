@@ -131,7 +131,7 @@ Also provided, outside that table: `db` (engine and session), `statemachine` (FS
 
 ### 2.2 Data model
 
-`db.Base` is the declarative base all modules' `models.py` subclass. The tables this package itself declares are the shared ones: `smo_event_relay` (the Kafka relay's position, revision 0065), `audit_log`, `audit_head`, `idempotency_key`, `module_identity`, `notification_outbox`, `periodic_run`, `smo_event` (`events.py`, the event feed, revision `0042`) and `rate_bucket` (`ratelimit.py`, the shared limiter's buckets: `caller` PK, `tokens`, `refilled_at` epoch seconds, `last_allowed`). `mns/store.py` declares `moi_store` on its own `MnsBase` (module description of that file: `dn` TEXT COLLATE "C" PK, `object_class`, `moi_id`, `parent_dn`, `depth`, `attributes` JSONB with a GIN index, `moi_version`, `created_at`, `updated_at`); it is not a shared table but one per mounting module's schema, made by that module's revision with `create_moi_store(op, schema)` and removed by `drop_moi_store(op, schema)`. The schema is `../migrations/001_init.sql` plus the Alembic revisions after it (`../scripts/migrate.py`), checked against the ORM models by `../scripts/check_migration_matches_models.py`.
+`db.Base` is the declarative base all modules' `models.py` subclass. The tables this package itself declares are the shared ones: `smo_event_relay` (the Kafka relay's position, revision 0066), `audit_log`, `audit_head`, `idempotency_key`, `module_identity`, `notification_outbox`, `periodic_run`, `smo_event` (`events.py`, the event feed, revision `0042`) and `rate_bucket` (`ratelimit.py`, the shared limiter's buckets: `caller` PK, `tokens`, `refilled_at` epoch seconds, `last_allowed`). `mns/store.py` declares `moi_store` on its own `MnsBase` (module description of that file: `dn` TEXT COLLATE "C" PK, `object_class`, `moi_id`, `parent_dn`, `depth`, `attributes` JSONB with a GIN index, `moi_version`, `created_at`, `updated_at`); it is not a shared table but one per mounting module's schema, made by that module's revision with `create_moi_store(op, schema)` and removed by `drop_moi_store(op, schema)`. The schema is `../migrations/001_init.sql` plus the Alembic revisions after it (`../scripts/migrate.py`), checked against the ORM models by `../scripts/check_migration_matches_models.py`.
 
 ### 2.3 State machines
 
@@ -350,7 +350,7 @@ No background tasks.
 
 The ProvMnS router (`mns/errors.py`) answers with TS 28.623 bodies (`{status, type, reason, title, badAttributes | badObjects | badQueryParams | badOp}`), not ProblemDetails. Its codes (`type`): 400 `INVALID_DN`, `INVALID_BODY`, `INVALID_QUERY`; 404 `MOI_NOT_FOUND`, `UNKNOWN_VERSION`; 409 `CLASS_MISMATCH`, `CONCURRENT_MODIFICATION`, `VETOED` (a hook's, by convention); 412 `STALE_VERSION`; 415 `UNSUPPORTED_MEDIA_TYPE`; 422 `CLASS_NOT_SUPPORTED`, `SCHEMA_VALIDATION_FAILED`, `CONTAINMENT_VIOLATION`, `PARENT_NOT_FOUND`, `PATCH_FAILED`, `INVALID_BODY` (contained objects in a createMOI).
 
-Defined but never raised anywhere in the repo: `NODE_GROUP_NOT_CLEARED` (MLLF deploy now stamps node groups instead of checking them).
+Defined but never raised anywhere in the repo: `NODE_GROUP_NOT_CLEARED` (AIMgF's deploy gate stamps node groups instead of checking them).
 
 `problem()` itself accepts any status and title, so modules also raise ad-hoc titles (see each module README, and `gui-bff`, which uses its own flat `{title, status, detail}` helper).
 

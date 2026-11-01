@@ -91,7 +91,7 @@ A second sink beside the table: every event committed to `smo_event` also appear
   owner's principal Write on its own topics and nothing else (PR-CONV-S1.15). `smo.events.v1` is the event bus's; `smo.ves.in.v1` will be the VES input
   (SB-7.6, ADR 0006 slice 4). The broker is the one S3.23 will share with smo-teiv; smo-teiv's ingestion topic (`smo.teiv.…`) is TE&IV's alone (D6): the relay
   refuses a topic under `smo.teiv.`, and no module but TE&IV is given it.
-- **Position, duplicates, ordering.** The relay keeps its position in Postgres (`smo_event_relay`, revision 0065: `kafka:<topic>` → the highest `seq` the broker
+- **Position, duplicates, ordering.** The relay keeps its position in Postgres (`smo_event_relay`, revision 0066: `kafka:<topic>` → the highest `seq` the broker
   acknowledged without a gap), moved after the acknowledgement. A crash between the two, or a database restore (which rewinds the position), sends events
   again: **at least once**, and a consumer de-duplicates on the envelope `id`. The relay reads only events older than `SMO_KAFKA_RELAY_SETTLE_SECONDS` (3), so a
   transaction that took a lower `seq` but committed later is not skipped (the hazard of "At least once, in order" above); the cost is about 3 s of lag plus the

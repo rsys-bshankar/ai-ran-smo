@@ -6,7 +6,7 @@
 |---|---|
 | Standards basis | Internal logic (a thin client over the R1 interface, as [`../sdk/`](../sdk/README.md)); CAPIF API-invoker onboarding and OAuth2 `client_credentials` (TS 29.222, RFC 6749) for the token |
 | R1 route / port | None: a library (`io.smo:smo-sdk`). The example rApp listens on `8000` (operator API, `/live`, `/ready`) |
-| Depends on (over R1) | R1 Termination (`/bootstrap` and the proxied routes of SME, DME, MLMR, rApp Management) |
+| Depends on (over R1) | R1 Termination (`/bootstrap` and the proxied routes of SME, DME, AIMgF, rApp Management) |
 | Called by | Any Java rApp; the example `examples/hello-rapp`. No SMO module uses it |
 | Database tables | None |
 | Retries and idempotency | 4 attempts with exponential backoff on 429/502/503/504 and transport errors; every POST carries an `Idempotency-Key` its repeats reuse; the invoker registration is repeated only on 429/503; one repeat on `409 CONCURRENT_MODIFICATION` |
@@ -80,7 +80,7 @@ rApp code --> SmoSdk --> R1Client --(Bearer)--> R1 Termination --> module
 | `MsacCredential` | The credential of an MSAC Identity, for `DataClient.mediateAction` (`SEC-15.6b`); its `toString` never shows it |
 | `Route`, `Routes` | The routes called, as data (checked against `docs/openapi`) |
 | `DataClient` | `listTypes`, `listDataJobs`, `createDataJob`, `getDataJob`, `queryDataJobStatus`, `terminateDataJob`, `fetchDataRecords`, `mediateAction` (DME; the last takes an optional `MsacCredential`, see below) |
-| `ModelsClient` | `listModels`, `getModel` (MLMR) |
+| `ModelsClient` | `listModels`, `getModel` (AIMgF) |
 | `PlatformClient` | `discoverServices` (SME CAPIF discovery) |
 | `InstancesClient` | `get`, `config`, `reportPerformance`, `reportFault`, `registerOperatorApi`, `clearOperatorApi`, `bootstrapComplete`, `terminate` (rApp Management, the instance's own routes) |
 
@@ -132,7 +132,7 @@ What it does, with the platform route in brackets:
 1. Gets a token (`/bootstrap`, `POST /sme/invoker-registrations` unless pinned, `POST /sme/oauth2/token`).
 2. Registers its operator API (`PUT /rapp-mgmt/instances/{id}/operator-api`).
 3. Every `HELLO_HEARTBEAT_SECONDS` (30) reports a heartbeat (`POST /rapp-mgmt/instances/{id}/performance`; the platform has no separate heartbeat route for a rApp, and the newest performance report is what the instance shows).
-4. On "Run now" in the GUI reads a data route (`GET /dme/dme-types`) and an AI route (`GET /mlmr/models`) and records the counts.
+4. On "Run now" in the GUI reads a data route (`GET /dme/dme-types`) and an AI route (`GET /aimgf/models`) and records the counts.
 5. Serves `/live`, `/ready` and the three operator routes of its `operatorUi` (`GET /instances/{id}/status`, `GET /instances/{id}/runs`, `POST /instances/{id}/run`).
 6. On SIGTERM: last heartbeat, `DELETE .../operator-api`, deregister a self-enrolled invoker. It takes no action on the network.
 
@@ -196,7 +196,7 @@ The CSAR is the same as any other (`../docs/RAPP_PACKAGING.md`, §7.2 for the Ja
 | `SmoConfigTest` | defaults equal the Python client's, variable names, `_FILE` secrets, module vs rApp, id and secret together, `toString` hides secrets |
 | `MsacCredentialTest` | `SEC-15.6b`: `mediateAction` sends `X-MSAC-Credential` on `POST /dme/actions` only when given a credential; not in the body (unset optional fields left out); not in an `SdkException` or a `toString`; the same credential and `Idempotency-Key` on the repeat after a 503 and after `CONCURRENT_MODIFICATION`; a null value refused; the header name is declared by `docs/openapi/dme.json` |
 | `RoutesContractTest` | every route exists in `docs/openapi`, query parameters declared, required body properties sent and none invented, a missing route is caught, path expansion and encoding |
-| `HelloRappTest` (example) | start registers the operator API and heartbeats, a run reads DME and MLMR and the page sees it, other instances and wrong methods refused, platform failure is a 502, close clears the operator API and deregisters, settings |
+| `HelloRappTest` (example) | start registers the operator API and heartbeats, a run reads DME and AIMgF and the page sees it, other instances and wrong methods refused, platform failure is a 502, close clears the operator API and deregisters, settings |
 | `../sdk/tests/test_java_example_package.py` | the package builds byte-identically, its manifest and `operatorUi` pass Onboarding's check and name exactly the routes the Java server serves, `capabilities.yaml` names the two namespaces the example calls and the manifest the smallest `limits`, the sample CSARs are unchanged by the new build option |
 
 ### Not tested

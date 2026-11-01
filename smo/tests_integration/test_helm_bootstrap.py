@@ -54,7 +54,7 @@ def test_the_gateway_settings_this_change_adds_are_the_same_in_compose_and_the_c
     # every service that is an SMO module (it mounts the enrollment secret) is a caller too, but SME and FOCOM, which never ask /bootstrap
     callers = [name for name, service in _compose_services().items()
                if {"R1_GATEWAY_URL", "SMO_ENROLLMENT_SECRET_FILE"} & set(service.get("environment") or {}) and name not in ("sme", "focom", "r1-termination")]
-    assert {"dme", "dme-worker", "onboarding", "mlmr", "mdaf", "mdaf-worker", "intent-service", "gui-bff"} <= set(callers)
+    assert {"dme", "dme-worker", "onboarding", "aimgf", "mdaf", "mdaf-worker", "intent-service", "gui-bff"} <= set(callers)
     for name in callers:                                                                  # every module and rApp that calls the gateway can present the key
         assert COMPOSE["services"][name]["environment"]["SMO_BOOTSTRAP_KEY"] == "${R1_BOOTSTRAP_KEY:-}", name
 
@@ -119,7 +119,7 @@ def test_the_bootstrap_key_from_a_secret_reaches_the_gateway_and_every_caller():
     docs = _render("--set", "bootstrapKeySecretRef.name=r1-bootstrap")
     envs = _envs_of(docs)
     assert envs["r1-termination"]["R1_BOOTSTRAP_KEY"]["valueFrom"]["secretKeyRef"] == {"name": "r1-bootstrap", "key": "bootstrap-key"}
-    for name in ("dme", "dme-worker", "onboarding", "mlmr", "mdaf", "intent-service", "gui-bff"):
+    for name in ("dme", "dme-worker", "onboarding", "aimgf", "mdaf", "intent-service", "gui-bff"):
         assert envs[name]["SMO_BOOTSTRAP_KEY"]["valueFrom"]["secretKeyRef"]["name"] == "r1-bootstrap", name
     assert not any("SMO_BOOTSTRAP_KEY" in e for e in _envs_of(_render()).values())
 

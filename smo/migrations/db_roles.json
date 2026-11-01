@@ -8,12 +8,6 @@
    "smo_event_relay"
   ]
  },
- "mlmr": {
-  "schema": null,
-  "shared": [
-   "module_identity"
-  ]
- },
  "ran-analytics": {
   "schema": "ran_analytics",
   "shared": [

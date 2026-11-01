@@ -349,11 +349,9 @@ modules:
   mock-o1-adaptor: { image: mock-o1-adaptor, database: false, enrollment: false, mtls: "off", env: { MOCK_O1_OAM_URL: "http://ran-nf-oam:8000", MOCK_O1_SELF_URL: "http://mock-o1-adaptor:8000", MOCK_O1_HEARTBEAT_SECONDS: "30" } }
   nfo: { image: nfo, databaseRole: nfo, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
   focom: { image: focom, databaseRole: focom }
-  mlmr: { image: mlmr, databaseRole: mlmr }
   aimgf: { image: aimgf, databaseRole: aimgf, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
   # the same image as a worker: fails the training, validation, emulation and inference runs past their deadline, so a run nobody reads still times out (call flow 27e)
   aimgf-worker: { image: aimgf, databaseRole: aimgf, kind: worker, env: { R1_GATEWAY_URL: "http://r1-termination:8000", AIMGF_TIMEOUT_SWEEP_SECONDS: "60" } }
-  mllf: { image: mllf, database: false, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
   ran-analytics: { image: ran-analytics, databaseRole: ran-analytics, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
   mdaf: { image: mdaf, databaseRole: mdaf }
   # the same image as a worker: purges MDAF reports older than SMO_RETENTION_MDAF_REPORTS_DAYS (PR-DB-3)

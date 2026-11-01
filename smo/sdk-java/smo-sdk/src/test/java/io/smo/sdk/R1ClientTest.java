@@ -50,7 +50,7 @@ class R1ClientTest {
     @Test
     void anObjectWithoutItemsIsReturnedAsIs() throws Exception {
         try (FakePlatform fake = new FakePlatform().withSme("tok", 300)) {
-            fake.on("GET /mlmr/models/m1", 200, "{\"modelId\":\"m1\",\"items\":\"not a list\"}");
+            fake.on("GET /aimgf/models/m1", 200, "{\"modelId\":\"m1\",\"items\":\"not a list\"}");
             assertEquals("m1", new ModelsClient(client(fake)).getModel("m1").get("modelId").asText());
         }
     }
@@ -93,14 +93,14 @@ class R1ClientTest {
     @Test
     void transientStatusesAreRetriedWithBackoffAndRetryAfter() throws Exception {
         try (FakePlatform fake = new FakePlatform().withSme("tok", 300)) {
-            fake.on("GET /mlmr/models", 503, "{}")
-                    .on("GET /mlmr/models", new FakePlatform.Reply(429, "{}", Map.of("Retry-After", "2")))
-                    .on("GET /mlmr/models", 502, "{}")
-                    .on("GET /mlmr/models", 200, "{\"items\":[]}");
+            fake.on("GET /aimgf/models", 503, "{}")
+                    .on("GET /aimgf/models", new FakePlatform.Reply(429, "{}", Map.of("Retry-After", "2")))
+                    .on("GET /aimgf/models", 502, "{}")
+                    .on("GET /aimgf/models", 200, "{\"items\":[]}");
             JsonNode models = new ModelsClient(client(fake)).listModels(10);
 
             assertEquals(0, models.size());
-            assertEquals(4, fake.requests("GET", "/mlmr/models").size());
+            assertEquals(4, fake.requests("GET", "/aimgf/models").size());
             assertEquals(List.of(Duration.ofMillis(100), Duration.ofSeconds(2), Duration.ofMillis(400)), sleeps);
         }
     }
@@ -111,10 +111,10 @@ class R1ClientTest {
     @Test
     void whenTheAttemptsRunOutTheLastAnswerIsTheError() throws Exception {
         try (FakePlatform fake = new FakePlatform().withSme("tok", 300)) {
-            fake.on("GET /mlmr/models", 503, "{\"title\":\"UNAVAILABLE\"}");
+            fake.on("GET /aimgf/models", 503, "{\"title\":\"UNAVAILABLE\"}");
             SdkException e = assertThrows(SdkException.class, () -> new ModelsClient(client(fake)).listModels(10));
             assertEquals(503, e.status());
-            assertEquals(4, fake.requests("GET", "/mlmr/models").size());
+            assertEquals(4, fake.requests("GET", "/aimgf/models").size());
             assertEquals(3, sleeps.size());
         }
     }
@@ -125,12 +125,12 @@ class R1ClientTest {
     @Test
     void aClientErrorIsNotRetriedAndIsMappedWithItsBody() throws Exception {
         try (FakePlatform fake = new FakePlatform().withSme("tok", 300)) {
-            fake.on("GET /mlmr/models/nope", 404, "{\"title\":\"MODEL_NOT_FOUND\",\"status\":404}");
+            fake.on("GET /aimgf/models/nope", 404, "{\"title\":\"MODEL_NOT_FOUND\",\"status\":404}");
             SdkException e = assertThrows(SdkException.class, () -> new ModelsClient(client(fake)).getModel("nope"));
             assertEquals(404, e.status());
             assertTrue(e.isClientError());
             assertTrue(e.body().contains("MODEL_NOT_FOUND"));
-            assertEquals(1, fake.requests("GET", "/mlmr/models/nope").size());
+            assertEquals(1, fake.requests("GET", "/aimgf/models/nope").size());
             assertTrue(sleeps.isEmpty());
         }
     }
@@ -256,7 +256,7 @@ class R1ClientTest {
     @Test
     void closeOffboardsTheSelfEnrolledInvoker() throws Exception {
         try (FakePlatform fake = new FakePlatform().withSme("tok", 300)) {
-            fake.on("DELETE /sme/invoker-registrations/inv-1", 204, null).on("GET /mlmr/models", 200, "[]");
+            fake.on("DELETE /sme/invoker-registrations/inv-1", 204, null).on("GET /aimgf/models", 200, "[]");
             R1Client r1 = client(fake);
             new ModelsClient(r1).listModels(1);
             r1.close();

@@ -253,7 +253,7 @@ def test_the_role_passwords_are_a_hook_secret_of_their_own_that_the_migrate_job_
     """
     docs = _render()
     roles = {m["databaseRole"] for m in _modules().values() if m.get("databaseRole")}
-    assert roles >= {"onboarding", "mlmr"}
+    assert roles >= {"onboarding", "aimgf"}
     secret = next(d for d in docs if d["kind"] == "Secret" and d["metadata"]["name"] == "smo-role-secrets")
     annotations = secret["metadata"]["annotations"]
     assert annotations["helm.sh/hook"] == "pre-install,pre-upgrade" and annotations["helm.sh/hook-delete-policy"] == "before-hook-creation"

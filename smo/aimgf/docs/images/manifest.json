@@ -1,8 +1,10 @@
 {
   "lifecycle/a-starting-and-becoming-ready.png": "3aeb19cc03243acd703c32a154cb9031c6d63e535f21e985c193ece712c1ea2b",
-  "lifecycle/b-a-run-start-complete-cancel.png": "8f1374a9d0aff8c71273a6db75af99104fd9f2936b863a051351b19376dd5d01",
+  "lifecycle/b-a-run-start-complete-cancel.png": "797c8dd0fe6c54f25ca677f0cd839a7fba5ee1f1d9efb3f005acd443644b2ee5",
   "lifecycle/c-governance-and-the-serving-runtime.png": "f64ad7bd2a12d9ddb644a890629e80aefba437ba1a60dee255ef4fd1fcfe9087",
-  "lifecycle/d-mlmf-reports-and-group-retrain.png": "b07a5359c11de8fc84d92ac3adfeeb5b7be1d981b52798b0fa6303347cd51179",
+  "lifecycle/d-mlmf-reports-and-group-retrain.png": "f7be984249ecbb8150289a2d06dfa0338bde35ecd49dde41628ab1885ccc7de9",
   "lifecycle/e-the-worker.png": "0db4c54bab22174476e472e3690514bed574f27f7e9ef02a35cc7ed94cbfb148",
-  "lifecycle/f-stopping-crashing-and-recovering.png": "c2050d69a5575d0baf7e78285bd69fbdd2fceb5543f2951a669797dc4820435a"
+  "lifecycle/f-stopping-crashing-and-recovering.png": "c2050d69a5575d0baf7e78285bd69fbdd2fceb5543f2951a669797dc4820435a",
+  "lifecycle/g-the-registry-registering-reading-and-deleting-a-model.png": "32f987997c456f956a8c26a51be3e0d5faadde2fc49f393a6d4a3bb9f8974494",
+  "lifecycle/h-the-deploy-gate.png": "00f29a10cbc796bbf7a876fd873a2db7645d34076ba613a4fee39e1271bf6444"
 }

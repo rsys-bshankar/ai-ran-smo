@@ -6,7 +6,7 @@ has its own state machine (`RuntimeLifecycle`), independent of the model's certi
 | | Step | Who starts it | Ends with |
 |---|---|---|---|
 | 17a | Deploy | the owner rApp (SDK), Operator (GUI), SO SMOS | runtime DEPLOYED: an NFO descriptor and a RUNNING deployment |
-| 17b | Activate, and node groups | the owner rApp, Operator (GUI); MLLF | runtime ACTIVE: inference is accepted; the placement recorded |
+| 17b | Activate, and node groups | the owner rApp, Operator (GUI) | runtime ACTIVE: inference is accepted; the placement recorded |
 | 17c | Scale | the owner rApp, Operator (GUI) | runtime ACTIVE again |
 | 17d | Terminate, and deploy again | the owner rApp, Admin (GUI), RETIRE (call flow 26) | runtime TERMINATED, nothing left at NFO; deployable again |
 | 17e | Model loading, and a workload that breaks | an ML model loading request or policy; the DMS | runtime ACTIVE for loading; a broken deployment shown and not served |
@@ -23,10 +23,10 @@ with them, an `alt` block is the outcome (success first, then each failure and w
 registered the model (`sdk.lifecycle.deploy_runtime`, `activate_runtime`, `scale_runtime`, `terminate_runtime`); *Operator (GUI)* and *Admin
 (GUI)* stand for the console's path. In the console, deploy, activate and scale need the **operator** role, terminate **admin**.
 
-**Who takes part.** AIMgF owns the runtime and its state. MLMR says whether the model exists and who owns it: another rApp is refused every
+**Who takes part.** AIMgF owns the runtime and its state, and its registry says whether the model exists and who owns it: another rApp is refused every
 runtime route (403 `MODEL_ACCESS_DENIED`; the console and an SMO module on its own account are not asked, and a module acting for an rApp, with
-`X-R1-On-Behalf-Of`, is asked as that rApp). NFO holds the workload (call flow 15). MLLF decides on which node groups the model is placed; it
-calls AIMgF for the rApp that asked, so AIMgF's owner rule judges that rApp. SO SMOS deploys a runtime as a step of an order (call flow 10).
+`X-R1-On-Behalf-Of`, is asked as that rApp). NFO holds the workload (call flow 15). AIMgF's deploy gate records on which node groups the model is placed,
+after the same owner rule and a certification check, in one transaction. SO SMOS deploys a runtime as a step of an order (call flow 10).
 
 ## Runtime states
 
@@ -51,13 +51,11 @@ Each route fires both of its events in one request, so the -ING states are never
 sequenceDiagram
     participant C as Owner rApp (SDK) / Operator (GUI) / SO SMOS
     participant AIM as AIMgF
-    participant MLMR as MLMR
     participant Onb as Onboarding
     participant NFO as NFO
 
     C->>AIM: POST /aimgf/models/{id}/runtime/deploy?package_id {runtimeProfile?}
-    AIM->>MLMR: GET /mlmr/models/{id}
-    Note over AIM: 404 MODEL_NOT_FOUND · 403 MODEL_ACCESS_DENIED (another rApp's)<br/>409 if MLMR shows it NOT_TRAINED or IN_TRAINING
+    Note over AIM: the model read from the registry in process: 404 MODEL_NOT_FOUND · 403 MODEL_ACCESS_DENIED (another rApp's)<br/>409 if its phase is NOT_TRAINED or IN_TRAINING
     opt package_id and no profile in the body
         AIM->>Onb: GET /onboarding/packages/{packageId}/onboarding-status
         Onb-->>AIM: {aiCapabilities.runtimeProfiles.INFERENCE} (404 PACKAGE_NOT_FOUND)
@@ -87,7 +85,6 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant C as Owner rApp (SDK) / Operator (GUI)
-    participant MLLF as MLLF
     participant AIM as AIMgF
 
     C->>AIM: POST /aimgf/models/{id}/runtime/activate
@@ -98,22 +95,15 @@ sequenceDiagram
         AIM-->>C: 409 LIFECYCLE_ILLEGAL_TRANSITION
     end
 
-    C->>MLLF: POST /mllf/models/{id}/deploy [node group names]
-    MLLF->>AIM: GET /aimgf/models/{id}/lifecycle (X-R1-On-Behalf-Of: the calling rApp)
-    Note over AIM: owner rule on the rApp named in X-R1-On-Behalf-Of<br/>(none from the console: not asked)
-    alt another rApp's model
-        AIM-->>MLLF: 403 MODEL_ACCESS_DENIED
-        MLLF-->>C: 403 MODEL_ACCESS_DENIED, nothing written
-    else owner, or a model with no owner
-        AIM-->>MLLF: {modelLifecycleState, runtimeLifecycleState, workload}
-        alt model CERTIFIED or PROMOTED
-            MLLF->>AIM: PATCH /aimgf/models/{id}/runtime/node-groups {clearedNodeGroups} (same X-R1-On-Behalf-Of)
-            Note over AIM: owner rule again, then the list replaces the stored one, no NFO call<br/>(MLLF decides, AIMgF's row is the record)
-            AIM-->>MLLF: 200 {clearedNodeGroups}
-            MLLF-->>C: 200 {modelId, clearedNodeGroups}
-        else any other state
-            MLLF-->>C: 409 MODEL_NOT_CERTIFIED
-        end
+    C->>AIM: POST /aimgf/models/{id}/deploy [node group names] (the deploy gate)
+    Note over AIM: owner rule on the caller (a module acting for an rApp: that rApp, and the console is not asked)
+    alt unknown model / another rApp's model
+        AIM-->>C: 404 MODEL_NOT_FOUND / 403 MODEL_ACCESS_DENIED, nothing written
+    else model not CERTIFIED or PROMOTED
+        AIM-->>C: 409 MODEL_NOT_CERTIFIED, nothing written
+    else
+        Note over AIM: the list replaces the stored one on the lifecycle row, no NFO call, one transaction
+        AIM-->>C: 200 {modelId, clearedNodeGroups}
     end
 ```
 
@@ -227,13 +217,13 @@ sequenceDiagram
 - **A terminated runtime is deployed again** (DOC-CF-1.5), under the same certification check, with a fresh descriptor and deployment; a
   loading request does the same for a TERMINATED model.
 - **The owner drives its runtime** (DOC-CF-1.5): R1 Termination lets an rApp deploy, activate, scale and terminate, and AIMgF refuses another
-  rApp's model. The console's roles are the operator's and the admin's. The same holds through MLLF (MLLF-NODEGROUP-OWNER): MLLF calls AIMgF as an
-  SMO module with the rApp in `X-R1-On-Behalf-Of`, AIMgF judges that rApp, and MLLF passes the 403 on.
+  rApp's model. The console's roles are the operator's and the admin's. The same holds for the deploy gate and for an SMO module that passes an rApp's request
+  on with the rApp in `X-R1-On-Behalf-Of`: AIMgF judges that rApp (MLLF-NODEGROUP-OWNER).
 - **Inference follows the workload** (DOC-CF-1.5): a deployment NFO reports ABNORMAL or no longer has is not served; when NFO does not answer,
   inference is not stopped by that alone.
 - **Two state machines on one row.** Retraining a PROMOTED model does not take its runtime down, and a runtime can be scaled or terminated
   without touching the certification; a DEPRECATED model's ACTIVE runtime keeps serving (call flow 26), a RETIRED one is terminated.
 - **The certification check comes before NFO**, so a premature or duplicate deploy never creates anything at NFO.
-- **Activate and node groups are AIMgF's own records**: the deployment is RUNNING once deploy returns, and MLLF owns the placement decision.
+- **Activate and node groups are AIMgF's own records**: the deployment is RUNNING once deploy returns, and the deploy gate records the placement after its certification check.
 - **Runtime profiles** size every runtime: `workloadTemplate.resources` from the explicit profile or the package's manifest
   (`runtimeProfiles.INFERENCE`), mapped to Kubernetes requests and limits (`containerResources`, PR-RAPP-2.1).

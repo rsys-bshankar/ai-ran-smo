@@ -18,7 +18,7 @@ describe("requiredRole against the BFF's table", () => {
   it.each<[string, string, Role]>([
     ["GET", "/rapp-mgmt/instances", "viewer"],
     ["GET", "/ran-nf-oam/alarms", "viewer"],
-    ["GET", "/mlmr/models/abc/artifact/2", "viewer"],
+    ["GET", "/aimgf/models/abc/artifact/2", "viewer"],
     ["POST", "/onboarding/packages", "operator"],
     ["POST", "/aimgf/training-jobs", "operator"],
     ["PATCH", "/ran-nf-oam/alarms/a1/ack", "operator"],

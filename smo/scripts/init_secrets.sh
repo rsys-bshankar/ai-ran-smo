@@ -42,7 +42,6 @@ create_secret db_password
 create_secret objectstore_access_key     # the object store's S3 keys (profiles objectstore and minio, D10): smo_shared.objectstore reads them as files
 create_secret objectstore_secret_key
 create_secret db_password_onboarding
-create_secret db_password_mlmr
 create_secret db_password_ran-analytics
 create_secret db_password_so-smos
 create_secret db_password_sa-smos

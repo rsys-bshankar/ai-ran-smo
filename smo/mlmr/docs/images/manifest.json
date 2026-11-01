@@ -1,6 +1,0 @@
-{
-  "lifecycle/a-starting-and-becoming-ready.png": "7c86f861f371ea64291bd27bb08bf1f8e14c1993559bc7acacfab52984bc823c",
-  "lifecycle/b-registering-a-model-its-artifact-and-its-owner.png": "92c3b3e83c26386147c21717de58a534757861a4faab2ec805959719d50ddd1f",
-  "lifecycle/c-what-other-modules-ask-of-it.png": "ed11354e700a50e00dc9320b110c54157064abb8e81b39f84c61e6c7cd3b1314",
-  "lifecycle/d-deleting-stopping-crashing-and-recovering.png": "20687735b31866953f90bb794bb742a9e7eed30a34473f53d5f962127e32b7a7"
-}

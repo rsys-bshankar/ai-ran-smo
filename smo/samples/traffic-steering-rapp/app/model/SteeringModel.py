@@ -26,7 +26,7 @@ Planning, pairwise:
   * below RELEASE, the cell's steering is released one step at a time.
 
 The artifact is plain JSON in a .zip (`steering_model.json`) stored in
-MLMR. Like the other reference models, it is pure Python.
+AIMgF's model registry. Like the other reference models, it is pure Python.
 """
 
 import io
@@ -126,7 +126,7 @@ class SteeringModel:
     # ------------------------------------------------------------ artifact
 
     def to_artifact(self) -> bytes:
-        """Serialises the model as a .zip holding one JSON member (`steering_model.json`), the form stored in MLMR."""
+        """Serialises the model as a .zip holding one JSON member (`steering_model.json`), the form stored in AIMgF's model registry."""
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
             z.writestr(ARTIFACT_MEMBER, json.dumps(asdict(self), indent=1, sort_keys=True))

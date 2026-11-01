@@ -158,7 +158,7 @@ the admin state of exactly the intents it created).
 | **Lifecycle flows** | Nine `docs/call-flows` journeys, each a live step timeline for a chosen package / model / config job / monitor / instance / analytics type / intent / order, with the next action on the current step (`lib/flows.ts` holds the step logic). Reads everything the flows touch, including `/onboarding/packages/{id}/usage`, `/dme/offers`, `/dme/data-jobs`, `/a1-related/ei-types`, `/sme/published-apis/v1/{apf}/service-apis` |
 | **Dashboard** | BFF `GET /api/summary/dashboard` (every tile and fleet count) and `GET /api/summary/attention` ("Needs your attention": critical alarms, pending approvals, MLMF breaches, escalations, the newest three of each with their totals, in one call) · `GET /api/modules/status` (every module's `/health`, `/ready` and `/version`, in parallel; the Module health card has a table of readiness, version, commit and build time, and marks a module running a different commit than most: `moduleRows` in `lib/domain.ts`) · its `panels` carry `/ran-nf-oam/managed-entities/health` and `/worst`, `/alarms/counts?group_by=hour`, `/decision-records?limit=6` (read directly only from a BFF without panels) · on demand `/aimgf/mlmf/reports`, `/rapp-mgmt/instances/{id}/performance`. First load: 3 calls (`src/pages/dashboard/README.md`) |
 | **rApps** (call-flow 01) | `/onboarding/packages` (+ `upload` of a `.csar`, `prime`, `deprime`, `deprecate`, `cancel-delete`, `DELETE`, `artifacts`, `usage` + `release` of an orphan, admin; call flow 06c) · `/rapp-mgmt/instances` (+ `GET {id}`, `config`, `bootstrap-complete`, `upgrade`, `upgrade/resolve`, `recover`, `terminate`, `DELETE`, `performance`, `faults`) |
-| **AI/ML** (call-flow 02) | `/mlmr/models` (+ `{id}` `PUT`/`DELETE`, `artifact`, `artifact/{v}`) · `/mlmr/coordination-groups` · `/aimgf/models/{id}/(advance?event=\|inference-jobs)` · `/aimgf/training-jobs` (+ `model-metrics`) · `/aimgf/inference-jobs` (+ `resolve`) · `/aimgf/mlmf/subscriptions` (+ `reports`) · `/aimgf/feature-groups` · `/mllf/models/{id}/deploy` · `/dme/dme-types` · TS 28.105 tab (call flow 27): `/aimgf/ml-(training\|testing\|update\|model-loading)-requests` (+ `PATCH {id}`) · `/aimgf/ml-training-processes` (+ `PATCH {id}`) · `/aimgf/aiml-inference-functions` (+ `PATCH {id}`) · `/aimgf/ml-model-loading-policies` (+ `{id}/trigger`) |
+| **AI/ML** (call-flow 02) | `/aimgf/models` (+ `{id}` `PUT`/`DELETE`, `artifact`, `artifact/{v}`) · `/aimgf/coordination-groups` · `/aimgf/models/{id}/(advance?event=\|inference-jobs)` · `/aimgf/training-jobs` (+ `model-metrics`) · `/aimgf/inference-jobs` (+ `resolve`) · `/aimgf/mlmf/subscriptions` (+ `reports`) · `/aimgf/feature-groups` · `/aimgf/models/{id}/deploy` · `/dme/dme-types` · TS 28.105 tab (call flow 27): `/aimgf/ml-(training\|testing\|update\|model-loading)-requests` (+ `PATCH {id}`) · `/aimgf/ml-training-processes` (+ `PATCH {id}`) · `/aimgf/aiml-inference-functions` (+ `PATCH {id}`) · `/aimgf/ml-model-loading-policies` (+ `{id}/trigger`) |
 | **Alarms** | `/ran-nf-oam/alarms` (filters `managed_element_ref`, `severity`; `PATCH …/ack`, `…/clear`; admin `alarms/ingest`) · `/focom/alarms` |
 | **KPIs & Assurance** | `/ran-nf-oam/kpis/{name}` and `/kpis/{name}/series` (the tiles and the KPIs-over-time chart, with `region`, `site_cluster`) · BFF `/api/me/kpi-layouts` (the user's saved chart layouts) · `/rapp-mgmt/instances/{id}/performance` · `/ran-nf-oam/pm-subscriptions` · MLMF as above · `/mdaf/reports`, `subscriptions` · `/ran-analytics/producers` (and, as admin, registering and deregistering producers, and publishing reports via `/mdaf/reports`) · `/sa-smos/monitors` (+ `evaluate`, `remedial-actions`, `escalate`), `/sa-smos/remedial-actions` · `/focom/performance` |
 | **Intents** | `/intent-service/intents` (+ `admin-state`), `/intent-reports`, `/intent-handling-functions` · `/intent-service/autonomy-dispatches` (+ `resolve`, `reject`) |
@@ -178,7 +178,7 @@ the admin state of exactly the intents it created).
 | **Exports** (`/exports`, operator and admin, `GUI-9.5b`) | BFF `GET /api/exports`, `GET /api/exports/{id}/file`, `DELETE /api/exports/{id}`: the export jobs started from Decisions and the audit log, with state, rows, size, download and delete, refreshed every 2 s while one runs |
 
 Every page also reads the BFF's `GET /api/summary/{page}` for its counts, and the sidebar `GET /api/summary/nav` for its badges. The AI/ML
-page adds a **Registry** tab (`/mlmr/ml-model-repositories`, `/storages`) and a model's governance and lifecycle history
+page adds a **Registry** tab (`/aimgf/ml-model-repositories`, `/storages`) and a model's governance and lifecycle history
 (`/aimgf/models/{id}/governance-history`, `/lifecycle-history`); Intents adds **Utility formulas** (`/intent-service/intent-utility-formulas`);
 KPIs adds MDA functions, requests and report files (`/mdaf/mda-functions`, `/mda-requests`, `/mda-reports/{id}/file`). Negotiation
 feedback on an intent and requesting an MDA analysis are drawn but have no button yet: the BFF's permission table does not allow those two
@@ -345,7 +345,7 @@ Each table: the page's tabs first, then the lifecycle screens for that module.
 | [Decisions](docs/screenshots/pages/decisions.png) | Why each rApp change was made: filters, tiles and the decision records, with the chain inputs → model → config job → approval |
 | [Safeguards](docs/screenshots/pages/safeguards.png) | Stop all rApp writes, per-rApp limits, refusals and watchers |
 
-#### AI/ML (MLMR, AIMgF, MLLF, MLMF)
+#### AI/ML (AIMgF, MLMF)
 
 | Screen | What it shows |
 |---|---|
@@ -355,7 +355,7 @@ Each table: the page's tabs first, then the lifecycle screens for that module.
 | [Feature groups (tab)](docs/screenshots/pages/aiml-features.png) | The new feature group form and the registered datalake feature groups |
 | [Coordination groups (tab)](docs/screenshots/pages/aiml-groups.png) | The new group form and groups of models retrained together |
 | [Performance monitoring, MLMF (tab)](docs/screenshots/pages/aiml-mlmf.png) | The subscribe form and model-performance subscriptions with a KPI floor |
-| [Registry (tab)](docs/screenshots/pages/aiml-registry.png) | MLMR repositories, storages and artifact versions |
+| [Registry (tab)](docs/screenshots/pages/aiml-registry.png) | AIMgF's registry: repositories, storages and artifact versions |
 | [Register model](docs/screenshots/lcm/aiml-register-model-dialog.png) | Type, version, description, owner, resource type and data types; filled but not submitted |
 | [Model: TRAINING](docs/screenshots/lcm/aiml-model-training.png) | Pipeline stepper, the training job in progress, Training complete |
 | [Model: TRAINED, approval gate](docs/screenshots/lcm/aiml-model-trained-approval-gate.png) | After the training job finishes, an operator must approve before validation |
@@ -365,7 +365,7 @@ Each table: the page's tabs first, then the lifecycle screens for that module.
 | [Model: PENDING_APPROVAL](docs/screenshots/lcm/aiml-model-pending-approval.png) | Approve or Reject |
 | [Model: CERTIFIED](docs/screenshots/lcm/aiml-model-certified.png) | Promote, Retrain or Deprecate; the deploy-to-node-groups form appears |
 | [Model: PROMOTED](docs/screenshots/lcm/aiml-model-promoted-deploy-node-groups.png) | The Deploy to node groups field, filled |
-| [Deploy targets cleared](docs/screenshots/lcm/aiml-model-node-groups-cleared.png) | `clearedNodeGroups` stamped by MLLF; Deploy runtime offered |
+| [Deploy targets cleared](docs/screenshots/lcm/aiml-model-node-groups-cleared.png) | `clearedNodeGroups` stamped by AIMgF's deploy gate; Deploy runtime offered |
 | [Runtime: DEPLOYED](docs/screenshots/lcm/aiml-model-runtime-deployed.png) | AIMgF and NFO deployed the runtime; Activate or Terminate |
 | [Runtime: ACTIVE, inference requested](docs/screenshots/lcm/aiml-model-runtime-active-inference-requested.png) | An inference job RUNNING, with Completed / Failed (AIMgF fails a job left running for 5 s) |
 | [Model: PROMOTED, runtime ACTIVE](docs/screenshots/lcm/aiml-model-promoted-runtime-active.png) | Cleared node groups, governance history, runtime actions, the training job and two inference jobs (COMPLETED, FAILED) |

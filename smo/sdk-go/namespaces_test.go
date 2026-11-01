@@ -93,13 +93,13 @@ func TestDataNamespace(t *testing.T) {
 }
 
 // TestModelsNamespace
-// pins that Models().List sends the caller's query to the MLMR route.
+// pins that Models().List sends the caller's query to the registry route.
 func TestModelsNamespace(t *testing.T) {
 	s := newStack(t)
 	var got seen
 	record(s, 200, []any{map[string]any{"id": "m1"}}, &got)
 	p, err := s.client(t).Models().List(context.Background(), url.Values{"limit": {"10"}})
-	if err != nil || got.path != "/mlmr/models" || got.query != "limit=10" || len(p.Items) != 1 {
+	if err != nil || got.path != "/aimgf/models" || got.query != "limit=10" || len(p.Items) != 1 {
 		t.Fatalf("%v %+v %+v", err, got, p)
 	}
 }

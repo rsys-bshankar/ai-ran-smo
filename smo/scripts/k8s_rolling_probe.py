@@ -17,7 +17,7 @@ import time
 import httpx
 
 HOSTS = [
-    "sme", "dme", "rapp-mgmt", "ran-nf-oam", "nfo", "focom", "mlmr", "aimgf", "mllf", "ran-analytics",
+    "sme", "dme", "rapp-mgmt", "ran-nf-oam", "nfo", "focom", "aimgf", "ran-analytics",
     "mdaf", "intent-service", "so-smos", "sa-smos", "energy-saving-rapp", "mobility-optimization-rapp",
     "coverage-optimization-rapp", "traffic-steering-rapp",
 ]

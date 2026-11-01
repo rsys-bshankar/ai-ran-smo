@@ -101,8 +101,7 @@ sequenceDiagram
     actor Op as Operator (GUI)
     participant App as rApp
     participant SDK as SDK
-    participant MLMR as MLMR
-    participant AIMgF as AIMgF and MLLF
+    participant AIMgF as AIMgF (registry, lifecycle, deploy gate)
 
     Op->>App: POST /instances/{id}/lifecycle/train
     App->>SDK: models.register_model (first time), lifecycle.start_training (TRAINING data job)
@@ -112,14 +111,14 @@ sequenceDiagram
         App-->>Op: 422 TRAINING_FAILED
     else
         App->>SDK: models.store_model (artifact), complete_training(succeeded true, metrics)
-        SDK->>MLMR: model and artifact version
+        SDK->>AIMgF: model and artifact version (the registry)
     end
     Op->>App: POST .../lifecycle/validate, then .../demo/emulate or .../lifecycle/emulate
     App->>SDK: start_validation, complete_validation and start_emulation, complete_emulation (pass or fail)
     Note over Op,AIMgF: certification is the operator's in the console (AIMgF advance), never the rApp's
     Op->>App: POST /instances/{id}/lifecycle/deploy
     App->>SDK: lifecycle.deploy_model (node groups), deploy_runtime, activate_runtime
-    SDK->>AIMgF: MLLF checks CERTIFIED, the inference runtime instantiated through NFO and activated
+    SDK->>AIMgF: the deploy gate checks CERTIFIED, the inference runtime instantiated through NFO and activated
     App->>SDK: models.download_artifact
     Note over App: the serving model loaded from its artifact, kept on the instance
     opt Mobility only

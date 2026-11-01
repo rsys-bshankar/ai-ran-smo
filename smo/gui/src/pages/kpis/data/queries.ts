@@ -173,5 +173,5 @@ export function useOrders() {
 }
 /** Model coordination groups. */
 export function useCoordinationGroups() {
-  return useSmo<CoordinationGroup[]>("/mlmr/coordination-groups", { limit: 200 });
+  return useSmo<CoordinationGroup[]>("/aimgf/coordination-groups", { limit: 200 });
 }

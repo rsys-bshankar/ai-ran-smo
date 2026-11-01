@@ -28,14 +28,14 @@ def test_every_path_moves_under_the_prefix_and_nothing_else_changes():
 
 
 def test_the_modules_the_workflow_scans_are_routed_by_the_gateway_and_have_a_document():
-    """The DAST workflow scans 15 modules in three groups of five for each of two roles, and each is routed by the gateway and has an OpenAPI
+    """The DAST workflow scans 13 modules in three groups (five, three and five) for each of two roles, and each is routed by the gateway and has an OpenAPI
     document with paths.
     """
     workflow = (SMO_ROOT.parent / ".github" / "workflows" / "smo-dast.yml").read_text()
     import re
     groups = re.findall(r'modules: "([^"]+)"', workflow)
     modules = sorted({m for group in groups for m in group.split()})
-    assert len(modules) == 15 and len(groups) == 6      # five modules in each of three groups, for each of the two roles
+    assert len(modules) == 13 and len(groups) == 6      # three groups (group b lost MLMR and MLLF in S2.8), for each of the two roles
     assert len(set(groups)) == 3
     for module in modules:
         assert f"/{module}" in _gateway_prefixes(), f"the gateway has no route /{module}"

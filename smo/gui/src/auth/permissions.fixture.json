@@ -121,37 +121,37 @@
   },
   {
     "method": "POST",
-    "pattern": "^/mlmr/models$",
+    "pattern": "^/aimgf/models$",
     "role": "operator",
     "queryMatch": {}
   },
   {
     "method": "PUT",
-    "pattern": "^/mlmr/models/[^/]+$",
+    "pattern": "^/aimgf/models/[^/]+$",
     "role": "operator",
     "queryMatch": {}
   },
   {
     "method": "DELETE",
-    "pattern": "^/mlmr/models/[^/]+$",
+    "pattern": "^/aimgf/models/[^/]+$",
     "role": "admin",
     "queryMatch": {}
   },
   {
     "method": "PUT",
-    "pattern": "^/mlmr/models/[^/]+/owner$",
+    "pattern": "^/aimgf/models/[^/]+/owner$",
     "role": "admin",
     "queryMatch": {}
   },
   {
     "method": "POST",
-    "pattern": "^/mlmr/models/[^/]+/artifact$",
+    "pattern": "^/aimgf/models/[^/]+/artifact$",
     "role": "operator",
     "queryMatch": {}
   },
   {
     "method": "POST",
-    "pattern": "^/mlmr/coordination-groups$",
+    "pattern": "^/aimgf/coordination-groups$",
     "role": "operator",
     "queryMatch": {}
   },
@@ -245,7 +245,7 @@
   },
   {
     "method": "POST",
-    "pattern": "^/mllf/models/[^/]+/deploy$",
+    "pattern": "^/aimgf/models/[^/]+/deploy$",
     "role": "operator",
     "queryMatch": {}
   },
@@ -1061,7 +1061,7 @@
   },
   {
     "method": "GET",
-    "pattern": "^/(sme|dme|onboarding|rapp\\-mgmt|ran\\-nf\\-oam|nfo|focom|aimgf|mlmr|mllf|ran\\-analytics|mdaf|intent\\-service|so\\-smos|sa\\-smos)(/.*)?$",
+    "pattern": "^/(sme|dme|onboarding|rapp\\-mgmt|ran\\-nf\\-oam|nfo|focom|aimgf|ran\\-analytics|mdaf|intent\\-service|so\\-smos|sa\\-smos)(/.*)?$",
     "role": "viewer",
     "queryMatch": {}
   }

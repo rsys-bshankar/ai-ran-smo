@@ -683,19 +683,18 @@ print(r.status_code, r.json())
 "
 ```
 
-## 13. AI Platform: MLMR + AIMgF + MLLF (optional) — register, train, upload/download a real artifact, advance to ACTIVE, deploy
+## 13. AI Platform: AIMgF (optional) — register, train, upload/download a real artifact, advance to ACTIVE, deploy
 
-Three services, calling each other through R1 Termination
-(`docs/ARCHITECTURE.md`): MLMR (model repository),
-AIMgF (lifecycle orchestration, owns the MLModel FSM), MLLF
-(loading/deployment). Artifact bytes round-trip through Postgres.
+One service, AIMgF (`docs/ARCHITECTURE.md`, ADR 0010): its model registry
+(its `registry` package), its lifecycle orchestration (the MLModel FSM) and its
+deploy gate. Artifact bytes round-trip through Postgres.
 
-Register a model (MLMR):
+Register a model (the registry):
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.post('http://mlmr:8000/models', json={
+r = httpx.post('http://aimgf:8000/models', json={
     'modelType': 'energy-saving-anomaly-detector', 'version': '1.0.0',
     'description': 'Demo anomaly-detection model for the Energy Saving rApp',
     'author': 'energy-saving-rapp', 'owner': 'energy-saving-rapp',
@@ -706,7 +705,7 @@ print(r.status_code, r.json())
 ```
 
 Note the `modelId`; `state` is `REGISTERED`. Request training (AIMgF) — an
-FSM transition (`REGISTERED -> TRAINING`, `TRAIN`), written to MLMR's row
+FSM transition (`REGISTERED -> TRAINING`, `TRAIN`), written to the model's lifecycle row
 over R1:
 
 ```bash
@@ -721,23 +720,23 @@ print(r.status_code, r.json())
 "
 ```
 
-Note the `trainingJobId`. Confirm the model moved to `TRAINING` (MLMR):
+Note the `trainingJobId`. Confirm the model moved to `TRAINING`:
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.get('http://mlmr:8000/models/<modelId>')
+r = httpx.get('http://aimgf:8000/models/<modelId>')
 print(r.status_code, r.json())
 "
 ```
 
-**Upload a model artifact** (MLMR) — stored in a Postgres-backed
+**Upload a model artifact** (the registry) — stored in a Postgres-backed
 `ModelArtifact` row (S3 storage is not included):
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.post('http://mlmr:8000/models/<modelId>/artifact',
+r = httpx.post('http://aimgf:8000/models/<modelId>/artifact',
                 files={'file': ('energy-saving-model.zip', b'demo-model-weights-bytes', 'application/zip')})
 print(r.status_code, r.json())
 "
@@ -778,34 +777,34 @@ print(ok(httpx.get(f'{A}/models/{M}/lifecycle'))['modelLifecycleState'])
 
 The ending state is `PROMOTED`. A job-driven event posted to `advance`
 (for example `TRAINING_COMPLETE`) is refused with 422 and names the job
-route to use. **Deploy the model** (MLLF) — stamps
-`clearedNodeGroups` onto MLMR's row (LLD section 5):
+route to use. **Deploy the model** (the deploy gate) — stamps
+`clearedNodeGroups` onto the model's lifecycle row (LLD section 5):
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.post('http://mllf:8000/models/<modelId>/deploy', json=['edge-gpu-a', 'edge-gpu-b'])
+r = httpx.post('http://aimgf:8000/models/<modelId>/deploy', json=['edge-gpu-a', 'edge-gpu-b'])
 print(r.status_code, r.json())
 "
 ```
 
-Download the artifact (MLMR) and confirm the bytes match the upload:
+Download the artifact (the registry) and confirm the bytes match the upload:
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.get('http://mlmr:8000/models/<modelId>/artifact/1')
+r = httpx.get('http://aimgf:8000/models/<modelId>/artifact/1')
 print(r.status_code, r.content == b'demo-model-weights-bytes')
 "
 ```
 
-Deregister (MLMR). Postgres `ON DELETE CASCADE` removes the artifact row
+Deregister (the registry). Postgres `ON DELETE CASCADE` removes the artifact row
 and AIMgF's training-job/inference-job/subscription rows:
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.delete('http://mlmr:8000/models/<modelId>')
+r = httpx.delete('http://aimgf:8000/models/<modelId>')
 print(r.status_code)
 "
 ```
@@ -1228,7 +1227,7 @@ meanings of `CONFIG_CHANGE`/`SCALE`/`RECONNECT`/`ROLLBACK` and always
 dispatches a group retrain via AIMgF's `RequestTraining`, whatever
 `actionType` is requested. (§15's monitor was `targetOrderId`-scoped.)
 
-Register two models as the group's members (MLMR). A group needs at least
+Register two models as the group's members (the registry). A group needs at least
 two members; the migration's `member_model_ids` CHECK constraint
 (`array_length >= 2`) enforces this:
 
@@ -1236,7 +1235,7 @@ two members; the migration's `member_model_ids` CHECK constraint
 docker compose exec r1-termination python3 -c "
 import httpx
 for i in range(2):
-    r = httpx.post('http://mlmr:8000/models', json={
+    r = httpx.post('http://aimgf:8000/models', json={
         'modelType': f'demo-coordination-group-model-{i}', 'version': '1.0.0',
         'author': 'energy-saving-rapp', 'owner': 'energy-saving-rapp',
     })
@@ -1244,12 +1243,12 @@ for i in range(2):
 "
 ```
 
-Note both `modelId`s, then create a coordination group (MLMR):
+Note both `modelId`s, then create a coordination group (the registry):
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.post('http://mlmr:8000/coordination-groups', json={'memberModelIds': ['<modelId1>', '<modelId2>']})
+r = httpx.post('http://aimgf:8000/coordination-groups', json={'memberModelIds': ['<modelId1>', '<modelId2>']})
 print(r.status_code, r.json())
 "
 ```
@@ -1481,7 +1480,7 @@ Then run one step at a time and look at what each prints:
 | Demo 00 — prepare the RAN | `python3 /srv/scratch/energy-saving-rapp/demo.py 00` | `gnb-du-demo-01` registered behind `mock-o1-adaptor`, PRB PM subscribed, cell 103 marked EMERGENCY, the Digital Twin dataset and the O1-CM intent handler registered |
 | Demo 01 — onboard | `… demo.py 01` | package `AVAILABLE`; 4 execution modes, 3 autonomy modes; an AUTONOMOUS instance started |
 | Demo 02 — dataset | `… demo.py 02` | 288 PM measurements → DME; datasets TRAINING/INFERENCE = `PRB_UTILIZATION`, EMULATION = `PRB_UTILIZATION_SIM` |
-| Demo 03 — train | `… demo.py 03` | `TRAINING → TRAINED` on the MLTF runtime; RMSE and confidence; artifact stored in MLMR |
+| Demo 03 — train | `… demo.py 03` | `TRAINING → TRAINED` on the MLTF runtime; RMSE and confidence; artifact stored in AIMgF's registry |
 | Demo 04 — validate | `… demo.py 04` | `VALIDATING → VALIDATED`, held-out score |
 | Demo 05 — emulate | `… demo.py 05` | Digital Twin trend in, midnight recommendation `LOCKED`, estimated kWh saved |
 | Demo 06 — promote | `… demo.py 06` | `CERTIFIED → PROMOTED` (operator governance decisions) |
@@ -1545,7 +1544,7 @@ Then run one step at a time:
 | Demo 00 — prepare the RAN | `python3 /srv/scratch/mobility-optimization-rapp/demo.py 00` | `gnb-du-mro-demo-01` registered behind `mock-o1-adaptor`, HO_PERFORMANCE PM subscribed, cell 204 marked EMERGENCY, the Digital Twin dataset and the O1-CM intent handler registered |
 | Demo 01 — onboard | `… demo.py 01` | package `AVAILABLE`; an AUTONOMOUS instance over four relations started |
 | Demo 02 — dataset | `… demo.py 02` | 288 hourly per-relation counter sets → DME; datasets TRAINING/INFERENCE = `HO_PERFORMANCE`, EMULATION = `HO_PERFORMANCE_SIM` |
-| Demo 03 — train | `… demo.py 03` | `TRAINING → TRAINED`; the regression's weights and RMSE; artifact stored in MLMR |
+| Demo 03 — train | `… demo.py 03` | `TRAINING → TRAINED`; the regression's weights and RMSE; artifact stored in AIMgF's registry |
 | Demo 04 — validate | `… demo.py 04` | `VALIDATING → VALIDATED`, held-out band score |
 | Demo 05 — emulate | `… demo.py 05` | the Digital Twin injects one fault per relation; direction accuracy and false actions |
 | Demo 06 — promote | `… demo.py 06` | `CERTIFIED → PROMOTED` (operator governance decisions) |

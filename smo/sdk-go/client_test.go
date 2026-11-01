@@ -45,11 +45,11 @@ func TestGivesUpAfterMaxAttemptsWithThePlatformsError(t *testing.T) {
 	var hits atomic.Int32
 	s.api = func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
-		writeJSON(w, 503, map[string]any{"detail": map[string]any{"title": "DEPENDENCY_UNAVAILABLE", "status": 503, "detail": "mlmr is down"}})
+		writeJSON(w, 503, map[string]any{"detail": map[string]any{"title": "DEPENDENCY_UNAVAILABLE", "status": 503, "detail": "aimgf is down"}})
 	}
-	err := get(t, s.client(t), "/mlmr/models")
+	err := get(t, s.client(t), "/aimgf/models")
 	var e *Error
-	if !errors.As(err, &e) || e.StatusCode != 503 || e.Title != "DEPENDENCY_UNAVAILABLE" || e.Detail != "mlmr is down" {
+	if !errors.As(err, &e) || e.StatusCode != 503 || e.Title != "DEPENDENCY_UNAVAILABLE" || e.Detail != "aimgf is down" {
 		t.Fatalf("err = %#v", err)
 	}
 	if hits.Load() != 4 {
@@ -235,7 +235,7 @@ func TestAConcurrentModificationIsRepeatedOnceWithTheSameKey(t *testing.T) {
 		}
 		writeJSON(w, 200, map[string]any{"ok": true})
 	}
-	if err := s.client(t).Do(context.Background(), Request{Method: "POST", Path: "/mlmr/models", Body: map[string]any{}}, nil); err != nil {
+	if err := s.client(t).Do(context.Background(), Request{Method: "POST", Path: "/aimgf/models", Body: map[string]any{}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(keys) != 2 || keys[0] != keys[1] {
@@ -252,7 +252,7 @@ func TestASecondConcurrentModificationIsReturned(t *testing.T) {
 		hits.Add(1)
 		writeJSON(w, 409, map[string]any{"detail": map[string]any{"title": "CONCURRENT_MODIFICATION", "status": 409, "detail": "again"}})
 	}
-	err := s.client(t).Do(context.Background(), Request{Method: "PUT", Path: "/mlmr/models/1"}, nil)
+	err := s.client(t).Do(context.Background(), Request{Method: "PUT", Path: "/aimgf/models/1"}, nil)
 	if !IsConflict(err) || hits.Load() != 2 {
 		t.Fatalf("err=%v hits=%d", err, hits.Load())
 	}

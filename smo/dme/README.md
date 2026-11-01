@@ -68,7 +68,7 @@ Inference runs inside the rApp. O-RAN WG4 (O-RU M-plane YANG) is out of scope ap
 | Data jobs, data discovery, data lineage | O1 endpoint registry, ME/MF addressing, alarms, PM/CM/SWM jobs → RAN NF OAM |
 | Source provenance and the Digital-Twin eligibility rule | Analytics output → MDAF |
 | `DataRecord`: producer ingest `POST /data-jobs/{id}/records`, consumer fetch `GET /data-jobs/{id}/records` | Model lifecycle and orchestration → AIMgF |
-| `DmeActionRecord` + `POST /actions` (O1 action mediation) | Models, artifacts → MLMR |
+| `DmeActionRecord` + `POST /actions` (O1 action mediation) | Models, artifacts → AIMgF |
 | Its rows of the shared `idempotency_key` table (module `dme`) | The table and the decorator → `smo_shared.idempotency` (PR-ST-3) |
 
 ### 1.5 Design decisions
@@ -303,7 +303,7 @@ ProblemDetails `title` / status (see [R1 API conventions](../docs/ARCHITECTURE.m
 - `dme_delivery_schema` has a table and no route.
 - `GET /production-capabilities` and `GET /dme-types` return bare arrays, not the `{items, total, ...}` page shape the other list routes use.
 - An AIMgF feature group with `enableDme` holds a DME data job (consumer `aimgf:feature-group:<name>`), created with the group and terminated with it.
-- **What DME and MLMR still cannot scope (`SEC-10.7`).** The action list is the one DME read that names a managed element, and it is scoped (above). Everything else DME holds, and everything MLMR holds, has no element, region or tenant to match: data types, producers, offers, data jobs and their records (a record's payload may carry a `managedElementRef`, but only a producer's schema says so, and DME does not read payloads), and MLMR's models and repositories. A scoped rApp therefore still reads every data type, job and record DME holds and every model MLMR holds. Closing that is a data-model decision (a tenant on a data type or model, set by the producer or the registrant, or derived from the producer's scope), not a change to the rule. An action that names no element is not shown to a scoped caller. The cost of the action list for a scoped caller is one pass through RAN NF OAM's element list per request, and a full scan of the action table.
+- **What DME and AIMgF's registry still cannot scope (`SEC-10.7`).** The action list is the one DME read that names a managed element, and it is scoped (above). Everything else DME holds, and everything AIMgF's registry holds, has no element, region or tenant to match: data types, producers, offers, data jobs and their records (a record's payload may carry a `managedElementRef`, but only a producer's schema says so, and DME does not read payloads), and MLMR's models and repositories. A scoped rApp therefore still reads every data type, job and record DME holds and every model MLMR holds. Closing that is a data-model decision (a tenant on a data type or model, set by the producer or the registrant, or derived from the producer's scope), not a change to the rule. An action that names no element is not shown to a scoped caller. The cost of the action list for a scoped caller is one pass through RAN NF OAM's element list per request, and a full scan of the action table.
 - A `REJECTED` action cannot be retried under the same `actionId` (a replay is `IGNORED`), including one rejected because RAN NF OAM could not be reached.
 - Digital Twin and live-RAN producers are told apart only by the producer's own declaration.
 

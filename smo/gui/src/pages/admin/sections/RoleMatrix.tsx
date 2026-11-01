@@ -13,7 +13,7 @@ export interface RoleRow { what: TKey; probes?: [string, string][]; bff?: Role }
 
 /** The rows, in order of the role they need. */
 export const ROLE_ROWS: RoleRow[] = [
-  { what: "admin.roles.row.read", probes: [["GET", "/rapp-mgmt/instances"], ["GET", "/ran-nf-oam/alarms"], ["GET", "/mlmr/models"]] },
+  { what: "admin.roles.row.read", probes: [["GET", "/rapp-mgmt/instances"], ["GET", "/ran-nf-oam/alarms"], ["GET", "/aimgf/models"]] },
   { what: "admin.roles.row.lifecycle",
     probes: [["POST", "/onboarding/packages/x/prime"], ["POST", "/rapp-mgmt/instances"], ["POST", "/aimgf/training-jobs"], ["PATCH", "/ran-nf-oam/alarms/x/ack"],
       ["POST", "/ran-nf-oam/config-jobs"], ["POST", "/ran-nf-oam/pm-subscriptions"], ["POST", "/ran-nf-oam/fm-subscriptions"], ["DELETE", "/ran-nf-oam/fm-subscriptions/x"],
@@ -21,7 +21,7 @@ export const ROLE_ROWS: RoleRow[] = [
   { what: "admin.roles.row.featureGroups", probes: [["GET", "/aimgf/feature-groups"]] },
   { what: "admin.roles.row.exportDecisions", bff: "operator" },
   { what: "admin.roles.row.teardown",
-    probes: [["DELETE", "/onboarding/packages/x"], ["POST", "/rapp-mgmt/instances/x/terminate"], ["DELETE", "/rapp-mgmt/instances/x"], ["DELETE", "/mlmr/models/x"],
+    probes: [["DELETE", "/onboarding/packages/x"], ["POST", "/rapp-mgmt/instances/x/terminate"], ["DELETE", "/rapp-mgmt/instances/x"], ["DELETE", "/aimgf/models/x"],
       ["DELETE", "/intent-service/intents/x"], ["DELETE", "/nfo/deployments/x"], ["POST", "/focom/resources/provision"], ["DELETE", "/focom/resources/x"]] },
   { what: "admin.roles.row.registry",
     probes: [["POST", "/sme/provider-registrations"], ["POST", "/sme/invoker-registrations"], ["POST", "/ran-nf-oam/msac/roles"], ["PUT", "/ran-nf-oam/rapp-limits/x"], ["DELETE", "/rapp-mgmt/kill-all"]] },

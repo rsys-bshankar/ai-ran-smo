@@ -65,7 +65,7 @@ class SmoEvent(Base):
 
 
 class SmoEventRelay(Base):
-    """Where a relay of the feed to another bus has got to (table `smo_event_relay`, revision 0065; ADR 0006 section 3.2): one row per sink, `name`
+    """Where a relay of the feed to another bus has got to (table `smo_event_relay`, revision 0066; ADR 0006 section 3.2): one row per sink, `name`
     (`kafka:<topic>`), `last_seq` (the highest `seq` the sink has acknowledged, contiguously) and when it moved. The relay's own position in Postgres, not a
     Kafka consumer offset, so a database restore rewinds it (duplicates downstream, never a loss)."""
     __tablename__ = "smo_event_relay"

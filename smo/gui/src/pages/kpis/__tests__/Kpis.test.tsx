@@ -45,7 +45,7 @@ function bff(role: "viewer" | "operator" | "admin", extraRules: unknown[] = []) 
       .filter((r) => !c.query.get("report_kind") || r.attributes.reportKind === c.query.get("report_kind"))),
     "GET /smo/mdaf/reports": page([]), "GET /smo/mdaf/subscriptions": page([]), "GET /smo/ran-analytics/producers": page([]),
     "POST /smo/mdaf/mda-requests": { status: 201, body: { id: "req-1" } },
-    "GET /smo/aimgf/mlmf/subscriptions": page([]), "GET /smo/mlmr/models": page([]),
+    "GET /smo/aimgf/mlmf/subscriptions": page([]), "GET /smo/aimgf/models": page([]),
     "GET /smo/ran-nf-oam/kpi-definitions": page([{ name: "dl_ue_throughput", formula: "thp", unit: "Mbit/s", description: null, counters: [{ counter: "DRB.UEThpDl", variable: "thp", aggregation: "avg" }] }]),
     "GET /smo/ran-nf-oam/kpi-schedules": page([]),
     "GET /smo/ran-nf-oam/kpis/dl_ue_throughput/series": (c: Call) => ({ kpi: "dl_ue_throughput", unit: "Mbit/s", from: "f", to: "t", stepSeconds: Number(c.query.get("step_seconds")),

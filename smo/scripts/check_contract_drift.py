@@ -9,7 +9,7 @@
 An operation is a method and a path with every path parameter written `{}`. A contract's operations are its own paths (a `$ref`'d path item counts
 with the methods the referenced item has), every class of `x-smo-classes` at the one ProvMnS form of `openapi/common/provmns-root.yaml` with the
 methods its `operations` name, and every MnS root in `x-smo-mns-mounts` with its paths. The code side of a contract is the union of the generated
-documents of its `x-smo-code-modules` (AIMgF's contract covers aimgf, mlmr and mllf; SO SMOS's covers so-smos and intent-service; MDAF's covers mdaf
+documents of its `x-smo-code-modules` (AIMgF's contract covers aimgf, which absorbed MLMR and MLLF; SO SMOS's covers so-smos and intent-service; MDAF's covers mdaf
 and ran-analytics). A generated document with no contract (FOCOM, NFO, Onboarding, R1 Termination, the mock adaptor, the sample rApps) is reported
 with all its operations on the code side.
 

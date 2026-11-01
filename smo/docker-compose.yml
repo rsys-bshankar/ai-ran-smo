@@ -104,7 +104,7 @@ services:
     security_opt: ["no-new-privileges:true"]
     read_only: true
     tmpfs: ["/tmp"]
-    secrets: [db_password, db_password_onboarding, db_password_mlmr, db_password_ran-analytics, db_password_so-smos, db_password_sa-smos, db_password_intent-service, db_password_mdaf, db_password_energy-saving-rapp, db_password_mobility-optimization-rapp, db_password_coverage-optimization-rapp, db_password_traffic-steering-rapp, db_password_aimgf, db_password_dme, db_password_focom, db_password_nfo, db_password_r1-termination, db_password_ran-nf-oam, db_password_rapp-mgmt, db_password_sme]
+    secrets: [db_password, db_password_onboarding, db_password_ran-analytics, db_password_so-smos, db_password_sa-smos, db_password_intent-service, db_password_mdaf, db_password_energy-saving-rapp, db_password_mobility-optimization-rapp, db_password_coverage-optimization-rapp, db_password_traffic-steering-rapp, db_password_aimgf, db_password_dme, db_password_focom, db_password_nfo, db_password_r1-termination, db_password_ran-nf-oam, db_password_rapp-mgmt, db_password_sme]
     environment:
       PGBOUNCER_POOL_SIZE: ${PGBOUNCER_POOL_SIZE:-20}
       PGBOUNCER_MAX_CLIENT_CONN: ${PGBOUNCER_MAX_CLIENT_CONN:-1000}
@@ -162,7 +162,7 @@ services:
     command: ["sh", "-c", "python /srv/scripts/migrate.py && python /srv/scripts/db_roles.py"]
     restart: "no"
     stop_grace_period: 30s
-    secrets: [db_password, db_password_onboarding, db_password_mlmr, db_password_ran-analytics, db_password_so-smos, db_password_sa-smos, db_password_intent-service, db_password_mdaf, db_password_energy-saving-rapp, db_password_mobility-optimization-rapp, db_password_coverage-optimization-rapp, db_password_traffic-steering-rapp, db_password_aimgf, db_password_dme, db_password_focom, db_password_nfo, db_password_r1-termination, db_password_ran-nf-oam, db_password_rapp-mgmt, db_password_sme]
+    secrets: [db_password, db_password_onboarding, db_password_ran-analytics, db_password_so-smos, db_password_sa-smos, db_password_intent-service, db_password_mdaf, db_password_energy-saving-rapp, db_password_mobility-optimization-rapp, db_password_coverage-optimization-rapp, db_password_traffic-steering-rapp, db_password_aimgf, db_password_dme, db_password_focom, db_password_nfo, db_password_r1-termination, db_password_ran-nf-oam, db_password_rapp-mgmt, db_password_sme]
     <<: *hardening
     depends_on: { postgres: { condition: service_healthy } }
     environment:
@@ -211,8 +211,6 @@ services:
       NFO_URL: http://nfo:8000
       FOCOM_URL: http://focom:8000
       AIMGF_URL: http://aimgf:8000
-      MLMR_URL: http://aimgf:8000    # S2.1: the model registry is served by AIMgF's process until S2.4 deletes the /mlmr prefix
-      MLLF_URL: http://aimgf:8000    # S2.2: the deploy gate is served by AIMgF's process until S2.4 deletes the /mllf prefix
       RAN_ANALYTICS_URL: http://ran-analytics:8000
       MDAF_URL: http://mdaf:8000
       INTENT_SERVICE_URL: http://intent-service:8000
@@ -612,22 +610,6 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_focom
 
-  mlmr:
-    build: { context: ., args: { <<: *build_info, MODULE: mlmr, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
-    stop_grace_period: 30s
-    secrets: [db_password_mlmr, enrollment_secret]
-    <<: *hardening
-    healthcheck: *ready_probe
-    depends_on: *wait_for_schema
-    environment:
-      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
-      SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
-      <<: *db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo_mlmr@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
-      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
-      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_mlmr
-      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway (DOC-CF-3.1)
-
   aimgf:
     build: { context: ., args: { <<: *build_info, MODULE: aimgf, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
@@ -665,18 +647,6 @@ services:
       R1_GATEWAY_URL: http://r1-termination:8000
       SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}
       AIMGF_TIMEOUT_SWEEP_SECONDS: ${AIMGF_TIMEOUT_SWEEP_SECONDS:-60}
-
-  mllf:
-    build: { context: ., args: { <<: *build_info, MODULE: mllf, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
-    stop_grace_period: 30s
-    secrets: [enrollment_secret]
-    <<: *hardening
-    healthcheck: *ready_probe
-    environment:
-      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
-      SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
-      R1_GATEWAY_URL: http://r1-termination:8000
-      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   ran-analytics:
     build: { context: ., args: { <<: *build_info, MODULE: ran-analytics, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
@@ -1114,8 +1084,6 @@ secrets:
     file: ./secrets/db_password   # created by scripts/init_secrets.sh; git-ignored
   db_password_onboarding:         # the password of the role smo_onboarding (PR-DB-2.6), set by scripts/db_roles.py
     file: ./secrets/db_password_onboarding
-  db_password_mlmr:
-    file: ./secrets/db_password_mlmr
   db_password_ran-analytics:
     file: ./secrets/db_password_ran-analytics
   db_password_so-smos:

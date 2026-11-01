@@ -69,7 +69,7 @@ sequenceDiagram
     participant M as migrate (one shot)
     participant S as a module (e.g. rapp-mgmt)
     participant W as its worker (e.g. rapp-mgmt-worker)
-    participant G as gui-bff, gui, mllf, mock-o1-adaptor
+    participant G as gui-bff, gui, mock-o1-adaptor
 
     DC->>PG: start postgres:18-alpine (POSTGRES_PASSWORD_FILE, volume smo_pgdata, port 5432)
     Note over PG: healthcheck pg_isready -U smo every 5 s, 10 retries
@@ -97,7 +97,7 @@ sequenceDiagram
 `migrate` is the only writer of the schema (PR-OPS-1.5, `docs/adr/0001-schema-migrations.md`): no module creates a table, and Postgres no longer runs
 `001_init.sql` itself. Running it again is safe (`docker compose run --rm migrate` is how a rotated role password is set). The conditions are on start only:
 a module whose process exits is not restarted, because no SMO service has a `restart` policy (only `pgbouncer`, `db-backup` and the observability
-containers do). `mllf` and `mock-o1-adaptor` have no database; `gui-bff` keeps its users in SQLite on the `gui_bff_data` volume. Proven by `compose-e2e`:
+containers do). `mock-o1-adaptor` has no database; `gui-bff` keeps its users in SQLite on the `gui_bff_data` volume. Proven by `compose-e2e`:
 "The migrate service ran and the database is at the migration head" (exit 0 and `alembic_version` equals the repository's head), "Every service up, R1
 gate answers" (`scripts/compose_e2e.py`), "Every module with a role runs as it, and each role can use its schema and nothing else", then the runbook replay
 (`tests_integration/test_demo_runbook.py`, DEMO_RUNBOOK.md §2–§27; its §0 is the three commands of 28a and 28b).
@@ -134,12 +134,12 @@ sequenceDiagram
 ```
 
 Which checks a service runs: SME and FOCOM the database only; R1 Termination, the sample rApps and `mock-o1-adaptor` none (ready as soon as they answer);
-MLLF the SME token only; every other module both. So a module is `healthy` only once R1 Termination and SME answer, although its `depends_on` names only
+every other module both. So a module is `healthy` only once R1 Termination and SME answer, although its `depends_on` names only
 Postgres and `migrate`. Compose does not route by health: `/ready` is what `docker compose ps` and an operator read, and the gate the chart's readiness probe
 uses (call flow 29b).
 
 **The bootstrap key.** `R1_BOOTSTRAP_KEY` (PR-SEC-9.3) makes `GET /bootstrap` ask for `X-Bootstrap-Key`. Compose passes the same value as
-`SMO_BOOTSTRAP_KEY` to every service that discovers through `/bootstrap`: every module and its worker (`dme`, `onboarding`, `mlmr`, `mdaf` and
+`SMO_BOOTSTRAP_KEY` to every service that discovers through `/bootstrap`: every module and its worker (`dme`, `onboarding`, `aimgf`, `mdaf` and
 `intent-service` and the `dme` and `mdaf` workers included since DOC-CF-3), the four sample rApps, and `gui-bff`, whose client
 (`gui-bff/app/smo_client.py`) sends it when it discovers SME's token endpoint. SME and FOCOM do not discover through `/bootstrap` and need none. A service
 given a wrong key gets 401, no token, and its `/ready` stays 503. With the key unset (the default) the header is not asked for. **Phase 1:** no CI job

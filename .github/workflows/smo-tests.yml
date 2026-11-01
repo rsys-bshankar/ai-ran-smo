@@ -268,6 +268,10 @@ jobs:
             python scripts/check_interfaces.py
           fi
 
+      - name: No path of the removed MLMR and MLLF services (scripts/check_no_old_ml_prefixes.py, plan task S2.4)
+        working-directory: smo
+        run: python scripts/check_no_old_ml_prefixes.py
+
   unit-and-integration:
     name: Unit + integration tests (SQLite)
     runs-on: ubuntu-latest
@@ -292,7 +296,7 @@ jobs:
         working-directory: smo
         run: |
           set -e
-          for m in onboarding rapp-mgmt ran-nf-oam aimgf mlmr mllf so-smos \
+          for m in onboarding rapp-mgmt ran-nf-oam aimgf so-smos \
                    sme dme r1-termination nfo focom ran-analytics mdaf \
                    intent-service sa-smos mock-o1-adaptor; do
             scripts/run_unit_suite.sh "$m" "$m" app ".:../shared"

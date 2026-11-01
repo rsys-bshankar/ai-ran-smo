@@ -79,7 +79,7 @@ def test_the_role_of_every_module_that_publishes_events_may_write_the_event_tabl
 
 def test_the_role_of_every_module_that_writes_the_audit_trail_may_write_its_tables():
     """A module whose code records an audit entry (`audit.record`, `write_audit`) writes `audit_log` and `audit_head` in the transaction of its change; its role
-    must list both, or the change fails with "permission denied" (the registry's model owner change did when it was MLMR's, found writing `mlmr/docs/lifecycle.md`,
+    must list both, or the change fails with "permission denied" (the registry's model owner change did when it was MLMR's, found writing MLMR's lifecycle document,
     DOC-CF-2.4; it is AIMgF's since S2.1)."""
     writers = {m for m in ROLES if any("audit.record(" in f.read_text() or "write_audit(" in f.read_text() for f in (SMO_ROOT / m / "app").rglob("*.py"))}
     assert {"aimgf", "ran-nf-oam", "rapp-mgmt"} <= writers

@@ -16,7 +16,7 @@ The recommendation applies the MRO thresholds:
     HEALTHY   below 2 %
 
 The artifact is plain JSON in a .zip (`mobility_model.json`) stored in
-MLMR. Like the EnergySaving model, it is pure Python.
+AIMgF's model registry. Like the EnergySaving model, it is pure Python.
 """
 
 import io
@@ -74,7 +74,7 @@ class MobilityModel:
                 "confidence": self.confidence()}
 
     def to_artifact(self) -> bytes:
-        """Serialises the model as a .zip holding one JSON member (`mobility_model.json`), the form stored in MLMR."""
+        """Serialises the model as a .zip holding one JSON member (`mobility_model.json`), the form stored in AIMgF's model registry."""
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
             z.writestr(ARTIFACT_MEMBER, json.dumps(asdict(self), indent=1, sort_keys=True))

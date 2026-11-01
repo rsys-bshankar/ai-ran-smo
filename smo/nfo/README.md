@@ -42,7 +42,7 @@ No file under [`../../specs/`](../../specs/README.md) models O2-DMS; the O2-IMS 
  AIMgF / rApp Mgmt / SO SMOS / Onboarding / SA SMOS --R1--> NFO --R1--> FOCOM  GET /inventory
 ```
 
-- NFO calls only FOCOM. It never calls AIMgF, MLMR, MLLF or DME, and never reads another module's tables: `package_id` is a bare UUID (the database FK to Onboarding's table exists in the migration, deliberately not as an ORM `ForeignKey`, so the module runs standalone).
+- NFO calls only FOCOM. It never calls AIMgF or DME, and never reads another module's tables: `package_id` is a bare UUID (the database FK to Onboarding's table exists in the migration, deliberately not as an ORM `ForeignKey`, so the module runs standalone).
 - Runtime truth (where and how it runs) is NFO's; model lifecycle truth is AIMgF's. `RuntimeLifecycleState` is jointly AIMgF + NFO: NFO's deployment is `RUNNING` when AIMgF's runtime is activated.
 
 ### 1.4 Ownership
@@ -52,7 +52,7 @@ No file under [`../../specs/`](../../specs/README.md) models O2-DMS; the O2-IMS 
 | `NFDeploymentDescriptor`, `NFDeployment`, `NFOCloudResource`, `LCMOperation` | Model / runtime lifecycle state, whether a transition is allowed → AIMgF |
 | Deployment lifecycle and placement decision | Application package, TOSCA validation → Onboarding |
 | LCM operation history | O-Cloud inventory (resource types, pools, deployment managers) → FOCOM |
-| | Deploy-request gate and node-group targeting → MLLF |
+| | Deploy-request gate and node-group targeting → AIMgF |
 | | rApp instance lifecycle → rApp Management |
 
 ### 1.5 Design decisions

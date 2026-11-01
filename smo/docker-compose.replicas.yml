@@ -36,11 +36,7 @@ services:
     deploy: { replicas: 2 }
   focom:
     deploy: { replicas: 2 }
-  mlmr:
-    deploy: { replicas: 2 }
   aimgf:
-    deploy: { replicas: 2 }
-  mllf:
     deploy: { replicas: 2 }
   ran-analytics:
     deploy: { replicas: 2 }

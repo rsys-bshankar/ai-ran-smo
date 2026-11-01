@@ -20,8 +20,7 @@ R1_PREFIX_TO_SERVICE = {
     "/sme": "sme", "/dme": "dme",
     "/onboarding": "onboarding", "/rapp-mgmt": "rapp-mgmt", "/ran-nf-oam": "ran-nf-oam",
     "/nfo": "nfo", "/focom": "focom",
-    # S2.1 / S2.2: the model registry and the deploy gate are AIMgF's, served at the root of its app; the old prefixes reach it until S2.4 deletes them
-    "/aimgf": "aimgf", "/mlmr": "aimgf", "/mllf": "aimgf", "/ran-analytics": "ran-analytics", "/mdaf": "mdaf",
+    "/aimgf": "aimgf", "/ran-analytics": "ran-analytics", "/mdaf": "mdaf",
     "/intent-service": "intent-service", "/so-smos": "so-smos", "/sa-smos": "sa-smos",
 }
 

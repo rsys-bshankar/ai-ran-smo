@@ -65,7 +65,7 @@ apply_r1_gateway_security(app, public_paths=frozenset({"/health", "/live", "/rea
 # R1_MAX_BODY_OVERRIDES (`<path-pattern>=<bytes>,...`; setting it replaces the default overrides). Added before the correlation middleware, so it
 # runs inside it: a 413 carries the request's X-Correlation-ID like every other answer (call flow 14a).
 app.add_middleware(BodySizeLimit, settings=settings_from_env(
-    "R1", default_overrides=f"/mlmr/models/*/artifact={50 * MIB},/onboarding/packages/upload={50 * MIB}"))
+    "R1", default_overrides=f"/aimgf/models/*/artifact={50 * MIB},/onboarding/packages/upload={50 * MIB}"))
 
 # This gateway is the true origin point for external traffic: a caller
 # that never sent its own X-Correlation-ID gets one assigned here, which
@@ -137,10 +137,6 @@ ROUTES = {
     "/nfo": os.environ.get("NFO_URL", "http://nfo:8000"),
     "/focom": os.environ.get("FOCOM_URL", "http://focom:8000"),
     "/aimgf": os.environ.get("AIMGF_URL", "http://aimgf:8000"),
-    # S2.1 / S2.2 (ADR 0010): the model registry and the deploy gate are packages of AIMgF, served at the root of its app, so the two old prefixes reach AIMgF's
-    # process until S2.4 moves their last callers to /aimgf and deletes both lines (aimgf/README.md lists the routes). No alias is added for anything else.
-    "/mlmr": os.environ.get("MLMR_URL", "http://aimgf:8000"),
-    "/mllf": os.environ.get("MLLF_URL", "http://aimgf:8000"),
     "/ran-analytics": os.environ.get("RAN_ANALYTICS_URL", "http://ran-analytics:8000"),
     "/mdaf": os.environ.get("MDAF_URL", "http://mdaf:8000"),
     "/intent-service": os.environ.get("INTENT_SERVICE_URL", "http://intent-service:8000"),

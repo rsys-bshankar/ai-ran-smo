@@ -141,14 +141,14 @@ jobs:
     strategy:
       fail-fast: false
       # the modules the gateway routes to (r1-termination/app/main.py ROUTES) that have a document in smo/docs/openapi; the reference rApps are not SMO modules.
-      # Three groups of five per role, so that a job fits in its hour (a module's active scan took from 20 seconds to 17 minutes in the first run).
+      # Three groups per role (five, three and five modules), so that a job fits in its hour (a module's active scan took from 20 seconds to 17 minutes in the first run).
       matrix:
         include:
           - {role: rapp, group: a, modules: "sme dme onboarding rapp-mgmt ran-nf-oam"}
-          - {role: rapp, group: b, modules: "nfo focom aimgf mlmr mllf"}
+          - {role: rapp, group: b, modules: "nfo focom aimgf"}
           - {role: rapp, group: c, modules: "ran-analytics mdaf intent-service so-smos sa-smos"}
           - {role: internal, group: a, modules: "sme dme onboarding rapp-mgmt ran-nf-oam"}
-          - {role: internal, group: b, modules: "nfo focom aimgf mlmr mllf"}
+          - {role: internal, group: b, modules: "nfo focom aimgf"}
           - {role: internal, group: c, modules: "ran-analytics mdaf intent-service so-smos sa-smos"}
     env:
       # docker-compose.load.yml: the gateway's per-caller rate limiter is off for this throwaway stack. ZAP's active scan sends thousands of requests from one caller; with the
