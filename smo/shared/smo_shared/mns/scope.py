@@ -199,14 +199,18 @@ class _Parser:
         """expr := and { "||" and }"""
         self.check(depth)
         left = self.conjunction(depth)
-        while self.at("||"):
+        for _ in self.tokens:                          # bounded: each turn consumes a token
+            if not self.at("||"):
+                break
             left = ("or", left, self.conjunction(depth))
         return left
 
     def conjunction(self, depth: int) -> tuple:
         """and := unary { "&&" unary }"""
         left = self.unary(depth)
-        while self.at("&&"):
+        for _ in self.tokens:
+            if not self.at("&&"):
+                break
             left = ("and", left, self.unary(depth))
         return left
 
@@ -235,7 +239,7 @@ class _Parser:
         if token[1] != "@":
             raise _fail(f"expected a path starting with @ or a literal, not {token[1]!r}")
         steps: list[Any] = []
-        while True:
+        for _ in self.tokens:
             if self.at("."):
                 kind, name = self.take()
                 if kind != "name":
@@ -248,7 +252,8 @@ class _Parser:
                 self.take("]")
                 steps.append(key)
             else:
-                return ("path", steps)
+                break
+        return ("path", steps)
 
 
 def parse_filter(text: str | None) -> tuple | None:
@@ -361,11 +366,11 @@ def _merged(into: Any, part: Any) -> Any:
     """`part` merged into what was selected before (`into`, _MISSING for nothing yet): an item `part` does not reach keeps `into`; two objects
     merge member by member, two arrays of one length item by item; otherwise `part` (with its unreached items as `{}`)."""
     if part is _MISSING:
-        return {} if into is _MISSING else into
+        return into
     if isinstance(into, dict) and isinstance(part, dict):
-        return {**into, **{key: _merged(into.get(key, _MISSING), value) for key, value in part.items()}}
+        return {**into, **{key: _merged(into.get(key), value) for key, value in part.items()}}
     if isinstance(into, list) and isinstance(part, list) and len(into) == len(part):
-        return [_merged(a, b) for a, b in zip(into, part, strict=True)]
+        return [_merged(into[i], part[i]) for i in range(len(part))]
     return _filled(part)
 
 

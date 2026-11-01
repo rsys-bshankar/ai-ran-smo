@@ -48,7 +48,6 @@ from .store import ManagedObject
 PROVMNS_VERSION = "19.2.0"          # D5: the one ProvMnS version every module serves (specs/smo-schema-bundle/openapi/common/provmns-root.yaml)
 DEFAULT_LIMIT = 100
 MAX_LIMIT = 500
-_BATCH = 200                        # rows read per round trip while a page is filled behind a filter
 _MAX_NOTIFICATION_ID = 2**53 - 1    # NotificationId is an integer; this keeps it exact in every JSON reader
 
 
@@ -277,8 +276,9 @@ class ProvMnS:
         return self._replace(db, MoiContext("modifyMOIAttributes", db, dn), row, attributes), row.row_version
 
     def delete_moi(self, db: Session, dn: str, if_match: str | None = None) -> int:
-        """deleteMOI: deletes the instance at `dn` (404 when it does not exist) and every instance it contains, deepest first, each with its hooks and
-        its notifyMOIDeletion; returns how many were deleted. `If-Match` applies to the instance at `dn`."""
+        """deleteMOI: deletes the instance at `dn` (404 when it does not exist) and every instance it contains, each before the instance that contains
+        it (reverse DN order: a contained instance's DN extends its container's), each with its hooks and its notifyMOIDeletion; returns how many were
+        deleted. `If-Match` applies to the instance at `dn`."""
         return self._run(db, lambda: self._delete(db, dn, if_match))
 
     def _delete(self, db: Session, dn: str, if_match: str | None) -> int:
@@ -286,7 +286,7 @@ class ProvMnS:
         self._require_served(parse_dn(dn)[-1].class_name)
         base = self._existing(db, dn)
         _check_if_match(if_match, base, dn)
-        rows = list(db.scalars(select(ManagedObject).where(self._subtree(dn, (base.depth, None))).order_by(ManagedObject.depth.desc(), ManagedObject.dn)))
+        rows = list(db.scalars(select(ManagedObject).where(self._subtree(dn, (base.depth, None))).order_by(ManagedObject.dn.desc())))
         ctx = MoiContext("deleteMOI", db, dn)
         for row in rows:
             moi = _moi(row)
@@ -325,24 +325,18 @@ class ProvMnS:
         scope = scope or Scope()
         self._existing(db, dn)
         after = decode_cursor(cursor) if cursor else None
-        condition = self._subtree(dn, scope.depth_range(depth_of(dn)))
+        query = select(ManagedObject).where(self._subtree(dn, scope.depth_range(depth_of(dn)))).order_by(ManagedObject.dn)
+        if after is not None:
+            query = query.where(ManagedObject.dn > after)
+        if filter_tree is None:
+            query = query.limit(limit + 1)              # one more than the page tells whether a next page exists
         found: list[dict] = []
-        last_dn: str | None = None
-        while len(found) <= limit:
-            query = select(ManagedObject).where(condition)
-            position = after if last_dn is None else last_dn
-            if position is not None:
-                query = query.where(ManagedObject.dn > position)
-            rows = list(db.scalars(query.order_by(ManagedObject.dn).limit(_BATCH)))
-            for row in rows:
-                item = resource(row)
-                if matches(filter_tree, item):
-                    found.append(item)
-                    if len(found) > limit:
-                        break
-            if len(rows) < _BATCH:
-                break
-            last_dn = rows[-1].dn
+        for row in db.scalars(query):
+            item = resource(row)
+            if matches(filter_tree, item):
+                found.append(item)
+                if len(found) > limit:
+                    break
         page = found[:limit]
         next_cursor = encode_cursor(page[-1]["objectInstance"]) if len(found) > limit else None
         return Page([select_fields(item, attributes, fields) for item in page], next_cursor)

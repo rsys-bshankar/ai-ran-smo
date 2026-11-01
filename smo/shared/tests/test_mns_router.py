@@ -236,15 +236,16 @@ def test_a_concurrent_write_is_refused_409(backend):
 
 
 def test_delete_removes_the_subtree(backend):
-    """deleteMOI removes the instance and everything below it, deepest first, one notifyMOIDeletion each; the rest of the tree stays."""
+    """deleteMOI removes the instance and everything below it, each before its container (reverse DN order), one notifyMOIDeletion each; the rest of
+    the tree stays."""
     client, _ = make_app(backend)
     build_tree(client)
     before = len(notifications(backend))
     assert client.delete(BASE + "SubNetwork=A/ManagedElement=1").status_code == 204
     deleted = [(n["subject"], n["data"].get("attributeList")) for n in notifications(backend)[before:]]
-    assert [subject for subject, _ in deleted] == [DU_DN + ",NRCellDU=1", DU_DN + ",NRCellDU=2", DU_DN + ",NRCellDU=3", DU_DN,
+    assert [subject for subject, _ in deleted] == [DU_DN + ",NRCellDU=3", DU_DN + ",NRCellDU=2", DU_DN + ",NRCellDU=1", DU_DN,
                                                     "SubNetwork=A,ManagedElement=1"]
-    assert deleted[0][1] == {"cellLocalId": 1, "administrativeState": "LOCKED"}
+    assert deleted[2][1] == {"cellLocalId": 1, "administrativeState": "LOCKED"}
     assert client.get(BASE + "SubNetwork=A/ManagedElement=1").status_code == 404
     assert client.get(BASE + "SubNetwork=A/ManagedElement=2/GNBDUFunction=2/NRCellDU=4").status_code == 200
     assert client.delete(BASE + "SubNetwork=A/ManagedElement=1").json()["type"] == "MOI_NOT_FOUND"

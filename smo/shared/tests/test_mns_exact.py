@@ -201,7 +201,7 @@ def test_select_exactly():
 
 @pytest.mark.parametrize(("ops", "error"), [
     ({"op": "add"}, (400, "INVALID_BODY", "a JSON patch is an array of patch operations", None, None, None, None)),
-    ([{"op": "add", "path": "/attributes/x", "value": 1}, "add"], _patch("operation 1 is not a patch operation (op and path are required)", "1")),
+    ([{"op": "add", "path": "/attributes/x", "value": 1}, "add"], _patch("operation 1: not a patch operation (op and path are required)", "1")),
     ([{"op": "test", "path": "/attributes/a", "value": 1}, {"op": "add", "path": "/attributes/a"}], _patch("operation 1: add needs a value", "1")),
     ([{"op": "test", "path": "/attributes/a", "value": 1}, {"op": "replace", "path": "/attributes/a"}], _patch("operation 1: replace needs a value", "1")),
     ([{"op": "test", "path": "/attributes/a", "value": 1}, {"op": "test", "path": "/attributes/a"}], _patch("operation 1: test needs a value", "1")),
@@ -215,11 +215,12 @@ def test_select_exactly():
     ([{"op": "test", "path": "/attributes/a", "value": 1}, {"op": "add", "path": "/attributes/zz/y", "value": 1}],
      _patch("operation 1: 'zz' does not exist", "1")),
     ([{"op": "test", "path": "/attributes/a", "value": 1}, {"op": "add", "path": "/attributes/a/y", "value": 1}],
-     _patch("operation 1: cannot add under a value that is not an object or an array", "1")),
-    ([{"op": "test", "path": "/attributes/a", "value": 1}, {"op": "remove", "path": "/attributes/a/y"}], _patch("operation 1: 'y' does not exist", "1")),
+     _patch("operation 1: 'y' cannot be under a value that is not an object or an array", "1")),
+    ([{"op": "test", "path": "/attributes/a", "value": 1}, {"op": "remove", "path": "/attributes/a/y"}],
+     _patch("operation 1: 'y' cannot be under a value that is not an object or an array", "1")),
     ([{"op": "test", "path": "/attributes/a", "value": 1}, {"op": "remove", "path": "/attributes/o/y"}], _patch("operation 1: 'y' does not exist", "1")),
     ([{"op": "test", "path": "/attributes/a", "value": 1}, {"op": "test", "path": "/attributes/a/y", "value": 1}],
-     _patch("operation 1: 'y' does not exist", "1")),
+     _patch("operation 1: 'y' cannot be under a value that is not an object or an array", "1")),
     ([{"op": "test", "path": "/attributes/a", "value": 1}, {"op": "test", "path": "/attributes/o/y", "value": 1}],
      _patch("operation 1: 'y' does not exist", "1")),
     ([{"op": "test", "path": "/attributes/a", "value": 1}, {"op": "add", "path": "/attributes/l/3", "value": 1}],
@@ -242,6 +243,13 @@ def test_select_exactly():
     ([{"op": "test", "path": "/attributes/a", "value": 1}, {"op": "move", "from": "/attributes/a", "path": "/attributes/zz/k"}],
      _patch("operation 1: 'zz' does not exist", "1")),
     ([{"op": "test", "path": "/attributes/a", "value": 1}, {"op": "remove", "path": "/attributes"}], _patch("operation 1: attributes must stay an object", "1")),
+    ([{"op": "test", "path": "/attributes/a", "value": 1}, {"op": "remove", "path": "/attributes/zz/y"}], _patch("operation 1: 'zz' does not exist", "1")),
+    ([{"op": "test", "path": "/attributes/a", "value": 1}, {"op": "test", "path": "/attributes/zz/y", "value": 1}],
+     _patch("operation 1: 'zz' does not exist", "1")),
+    ([{"op": "test", "path": "/attributes/a", "value": 1}, {"op": "replace", "path": "/attributes/l/5", "value": 1}],
+     _patch("operation 1: index 5 is out of range", "1")),
+    ([{"op": "test", "path": "/attributes/a", "value": 1}, {"op": "move", "path": "/attributes/x"}],
+     _patch("operation 1: path None is outside /attributes; a patch may change only the target's attributes", "1")),
 ])
 def test_json_patch_refusals_exactly(ops, error):
     """Each refusal names the failing operation's index (1 here: the first operation passes) and says why."""
@@ -262,7 +270,7 @@ def test_json_patch_edges():
     out["v"]["deep"].append(2)
     out["a"]["deep"].append(3)
     out["c"]["k"].append(4)
-    assert value == {"deep": [1]} and attributes == {"a": 1, "o": {"k": [1]}, "l": [1]}
+    assert value == {"deep": [1]} and attributes == {"a": 1, "o": {"k": [1]}, "l": [1]} and out["o"] == {"k": [1]}
 
 
 @pytest.mark.parametrize(("body", "error"), [
@@ -353,6 +361,8 @@ def test_fresh_validation_messages(fresh):
     assert _error(lambda: fresh.validate("NRCellDU", {"id": "1"}))[3] == ["id"]
     assert _error(lambda: fresh.validate("NRCellDU", {"ssbFrequency": -1, "cellLocalId": "x"})) == (
         422, "SCHEMA_VALIDATION_FAILED", "class NRCellDU: 'x' is not of type 'integer'", ["cellLocalId", "ssbFrequency"], None, None, None)
+    assert _error(lambda: fresh.validate("NRCellDU", {"cellLocalId": "x", "arfcnDL": "y"}))[2:4] == (
+        "class NRCellDU: 'y' is not of type 'integer'", ["arfcnDL", "cellLocalId"])
     assert _error(lambda: fresh.validate("NROperatorCellDU", {"cellLocalId": "x"}))[3] == ["cellLocalId"]
     assert _error(lambda: fresh.validate("SubNetwork", {"userLabel": 3})) == (
         422, "SCHEMA_VALIDATION_FAILED", "class SubNetwork: 3 is not of type 'string'", ["userLabel"], None, None, None)
@@ -383,18 +393,29 @@ SPEC = {
                                                   "Note": {"$ref": "#/components/schemas/Note-Multiple"}}},
         "Root-Single": {"allOf": [{"$ref": "#/components/schemas/Top"}, {"$ref": "#/components/schemas/Root-Attr"},
                                   {"$ref": "#/components/schemas/Leaf-Multiple"}, {"$ref": "#/components/schemas/Nothing"},
-                                  {"$ref": "#/components/schemas/Root-Single/allOf/9"},
+                                  {"$ref": "#/components/schemas/Root-Single/allOf/9"}, {"$ref": "#/components/schemas/Root-Single/allOf/8"},
+                                  {"$ref": "#/components/schemas/Odd~1Name"}, {"$ref": "#/components/schemas/Odd~0Name"},
+                                  {"$ref": "#/components/schemas/Extra/allOf/0"},
                                   {"type": "object", "properties": {"a/b~c": {"type": "integer"}, "Kid": {"$ref": "Other.yaml#/components/schemas/Kid-Single"},
                                                                      "Plain": {"type": "object"}}}]},
+        "Odd/Name": {"properties": {"slashed": {"type": "integer"}}},
+        "Odd~Name": {"properties": {"tilded": {"type": "integer"}}},
+        "Extra": {"allOf": [{"properties": {"extra": {"type": "integer"}}}]},
         "Root-Attr": {"allOf": [{"$ref": "#/components/schemas/Loop"}], "properties": {"label": {"type": "string", "nullable": True}}},
         "Loop": {"allOf": [{"$ref": "#/components/schemas/Loop"}, {"properties": {"looped": {"type": "integer"}}}]},
         "Leaf-Single": {"allOf": [{"$ref": "#/components/schemas/Top"},
-                                  {"properties": {"attributes": {"allOf": [{"$ref": "#/components/schemas/LeafAttr/allOf/1"}],
+                                  {"properties": {"flat": {"type": "integer"}}},
+                                  {"properties": {"attributes": {"allOf": [{"$ref": "#/components/schemas/LeafAttr/allOf/1"},
+                                                                           {"$ref": "#/components/schemas/Loop"}],
                                                                  "anyOf": [{"properties": {"any": {"type": "integer"}}}],
                                                                  "oneOf": [{"properties": {"one": {"type": "integer"}}}],
                                                                  "properties": {"broken": {"$ref": "Missing.yaml#/x"}}}}}]},
         "LeafAttr": {"allOf": [{"properties": {"skipped": {"type": "integer"}}}, {"properties": {"kept": {"type": "integer"}}}]},
         "Note-Single": {"type": "object"},
+        "Fork-Single": {"properties": {"attributes": {"allOf": [{"$ref": "#/components/schemas/ForkX"}, {"$ref": "#/components/schemas/ForkY"}]}}},
+        "ForkX": {"allOf": [{"$ref": "#/components/schemas/ForkZ"}]},
+        "ForkY": {"allOf": [{"$ref": "Missing.yaml#/y"}]},
+        "ForkZ": {"properties": {"z": {"type": "integer"}}},
     }},
 }
 
@@ -408,7 +429,7 @@ def small(tmp_path) -> ClassRegistry:
     return ClassRegistry(tmp_path, class_files=("Mine.yaml",), roots=("Root",))
 
 
-def _in_time(call, seconds: float = 10.0):
+def _in_time(call, seconds: float = 1.0):
     """Runs `call` in a thread and fails the test if it does not finish in time (a cycle that is not stopped)."""
     result: list = []
     thread = threading.Thread(target=lambda: result.append(call()), daemon=True)
@@ -421,19 +442,20 @@ def _in_time(call, seconds: float = 10.0):
 def test_small_spec_derivation(small):
     """Classes, children (allOf class branches, members, other files; not plain members), attribute names (`-Attr` through a cycle, escaped flat
     members, `allOf` items reached by a pointer through a list, `anyOf`, `oneOf`), and validation of each."""
-    assert small.names() == ["Leaf", "Note", "Root"]
+    assert small.names() == ["Fork", "Leaf", "Note", "Root"]
+    assert not _in_time(lambda: small.resolvable("Fork"))
     root = _in_time(lambda: small.info("Root"))
     assert root.children == {"Note", "Leaf", "Kid"}
-    assert root.attribute_names == {"label", "looped", "a/b~c"}
-    assert root.flat_refs["a/b~c"] == f"{BASE_URI}Mine.yaml#/components/schemas/Root-Single/allOf/5/properties/a~1b~0c"
+    assert root.attribute_names == {"label", "looped", "a/b~c", "slashed", "tilded", "extra"}
+    assert root.flat_refs["a/b~c"] == f"{BASE_URI}Mine.yaml#/components/schemas/Root-Single/allOf/9/properties/a~1b~0c"
     assert root.attribute_refs == []
     assert _in_time(lambda: small.resolvable("Root"))
     small.validate("Root", {"label": None, "a/b~c": 1, "looped": 2})
     assert _error(lambda: small.validate("Root", {"a/b~c": "x"}))[3] == ["a/b~c"]
     assert _error(lambda: small.validate("Root", {"label": 1}))[3] == ["label"]
-    leaf = small.info("Leaf")
-    assert leaf.attribute_names == {"kept", "any", "one", "broken"}
-    assert leaf.attribute_refs == [f"{BASE_URI}Mine.yaml#/components/schemas/Leaf-Single/allOf/1/properties/attributes"]
+    leaf = _in_time(lambda: small.info("Leaf"))
+    assert leaf.attribute_names == {"kept", "any", "one", "broken", "looped", "flat"}
+    assert leaf.attribute_refs == [f"{BASE_URI}Mine.yaml#/components/schemas/Leaf-Single/allOf/2/properties/attributes"]
     assert not small.resolvable("Leaf")
     assert small.missing_files == {"Missing.yaml"}
     assert small.may_contain("Root", "Leaf") and not small.may_contain("Leaf", "Root") and small.may_contain(None, "Root")
@@ -580,7 +602,7 @@ def test_notification_body_exactly(monkeypatch):
     backend = _sqlite()
     registry = ClassRegistry(class_files=(), roots=("SubNetwork",))
     registry.register("SubNetwork", {"type": "object", "properties": {"userLabel": {"type": "string"}, "dnPrefix": {"type": "string", "nullable": True}}})
-    mns = ProvMnS(source="/smo/x", system_dn="ManagementNode=x", api_root="https://r1.example/x/", registry=registry, classes=["SubNetwork"])
+    mns = ProvMnS(source="/smo/x", system_dn="ManagementNode=x", api_root="https://r1.example/X/", registry=registry, classes=["SubNetwork"])
 
     def get_session():
         with backend.session() as db:
@@ -594,7 +616,7 @@ def test_notification_body_exactly(monkeypatch):
     client.patch(BASE + "SubNetwork=A", json=[{"op": "remove", "path": "/attributes/dnPrefix"}], headers={"content-type": "application/json-patch+json"})
     created, added, removed = (event["data"] for event in notifications(backend))
     assert {key: created[key] for key in created if key != "eventTime"} == {
-        "href": "https://r1.example/x/ProvMnS/19.2.0/SubNetwork=A", "notificationId": 2**53 - 1, "notificationType": "notifyMOICreation",
+        "href": "https://r1.example/X/ProvMnS/19.2.0/SubNetwork=A", "notificationId": 2**53 - 1, "notificationType": "notifyMOICreation",
         "systemDN": "ManagementNode=x", "sourceIndicator": "MANAGEMENT_OPERATION", "attributeList": {"userLabel": "a"}}
     at = datetime.datetime.fromisoformat(created["eventTime"])
     assert at.utcoffset() == datetime.timedelta(0) and abs((datetime.datetime.now(datetime.UTC) - at).total_seconds()) < 60
@@ -655,6 +677,7 @@ def test_a_racing_create_is_409():
 
 
 def _direct(backend, dn: str, class_name: str, attributes=None) -> None:
+    """Stores an instance straight into the table, past the router (to set up what the router would refuse)."""
     with backend.session() as db:
         parent = dn.rpartition(",")[0] or None
         db.add(ManagedObject(dn=dn, object_class=class_name, moi_id=dn.rpartition("=")[2], parent_dn=parent, depth=dn.count(",") + 1,
@@ -694,15 +717,17 @@ def test_class_mismatch_and_identity_repeated_in_a_merge_patch():
 
 
 def test_delete_order_does_not_depend_on_insertion():
-    """Deepest first, and in DN order within a depth, whatever order the rows were stored in."""
+    """Each instance before its container, in reverse DN order, whatever order the rows were stored in; an instance stored with no attributes has
+    no attributeList in its notification."""
     backend = _sqlite()
     client, _ = make_app(backend)
     for path in ("SubNetwork=A", "SubNetwork=A/ManagedElement=3", "SubNetwork=A/ManagedElement=1", "SubNetwork=A/ManagedElement=2"):
         client.put(BASE + path, json={"id": path.rsplit("=", 1)[1]})
     start = len(notifications(backend))
     client.delete(BASE + "SubNetwork=A")
-    assert [n["subject"] for n in notifications(backend)[start:]] == ["SubNetwork=A,ManagedElement=1", "SubNetwork=A,ManagedElement=2",
-                                                                       "SubNetwork=A,ManagedElement=3", "SubNetwork=A"]
+    assert all("attributeList" not in n["data"] for n in notifications(backend)[start:])
+    assert [n["subject"] for n in notifications(backend)[start:]] == ["SubNetwork=A,ManagedElement=3", "SubNetwork=A,ManagedElement=2",
+                                                                       "SubNetwork=A,ManagedElement=1", "SubNetwork=A"]
 
 
 def test_a_sibling_whose_id_extends_the_base_with_a_dash_is_not_below_it():
@@ -719,29 +744,106 @@ def test_a_sibling_whose_id_extends_the_base_with_a_dash_is_not_below_it():
     assert client.get(BASE + "SubNetwork=A/ManagedElement=1-").status_code == 200
 
 
-def test_reads_in_batches_in_dn_order(monkeypatch):
-    """With batches of two, rows stored out of order come back in DN order, each once, the page cut at the limit after as few reads as needed."""
-    monkeypatch.setattr(service, "_BATCH", 2)
+def test_reads_in_dn_order_with_one_more_than_the_page(monkeypatch):
+    """Without a filter a page is one read of `limit + 1` rows in DN order, whatever order they were stored in; the extra row only says a next page
+    exists. With a filter the rows are read in DN order until one match more than the page is found."""
     backend = _sqlite()
     client, mns = make_app(backend)
     for path in ("SubNetwork=A", "SubNetwork=A/ManagedElement=5", "SubNetwork=A/ManagedElement=3", "SubNetwork=A/ManagedElement=4",
                  "SubNetwork=A/ManagedElement=1", "SubNetwork=A/ManagedElement=2"):
         client.put(BASE + path, json={"id": path.rsplit("=", 1)[1]})
-    statements: list[str] = []
-    event.listen(backend.engine, "before_cursor_execute", lambda *args: statements.append(args[2]))
+    statements: list[tuple] = []
+    event.listen(backend.engine, "before_cursor_execute", lambda conn, cursor, statement, params, *rest: statements.append((statement, params)))
     from smo_shared.mns.scope import Scope
+    every = Scope("BASE_ALL", 0)
     with backend.session() as db:
-        page = mns.get_moi_attributes(db, "SubNetwork=A", Scope("BASE_ALL", 0), limit=3)
+        page = mns.get_moi_attributes(db, "SubNetwork=A", every, limit=3)
     assert [item["id"] for item in page.items] == ["A", "1", "2"]
     assert decode_cursor(page.next_cursor) == "SubNetwork=A,ManagedElement=2"
-    assert len([s for s in statements if "moi_store" in s]) == 3        # the base, then two batches of two
+    reads = [(statement, params) for statement, params in statements if "moi_store" in statement and "LIMIT" in statement]
+    assert len(reads) == 1 and 4 in reads[0][1]
     with backend.session() as db:
-        rest = mns.get_moi_attributes(db, "SubNetwork=A", Scope("BASE_ALL", 0), limit=3, cursor=page.next_cursor)
-    assert [item["id"] for item in rest.items] == ["3", "4", "5"] and rest.next_cursor is None
-    with backend.session() as db:
-        assert _error(lambda: mns.get_moi_attributes(db, "SubNetwork=A", limit="5"))[2] == "limit is an integer from 1 to 500"
+        rest = mns.get_moi_attributes(db, "SubNetwork=A", every, limit=3, cursor=page.next_cursor)
+        assert [item["id"] for item in rest.items] == ["3", "4", "5"] and rest.next_cursor is None
+        exact = mns.get_moi_attributes(db, "SubNetwork=A", every, limit=6)
+        assert len(exact.items) == 6 and exact.next_cursor is None
+        short = mns.get_moi_attributes(db, "SubNetwork=A", every, limit=5)
+        assert len(short.items) == 5 and decode_cursor(short.next_cursor) == "SubNetwork=A,ManagedElement=4"
+        odd = parse_filter("@.id != '2'")
+        filtered = mns.get_moi_attributes(db, "SubNetwork=A", every, odd, limit=2)
+        assert [item["id"] for item in filtered.items] == ["A", "1"] and decode_cursor(filtered.next_cursor) == "SubNetwork=A,ManagedElement=1"
+        last = mns.get_moi_attributes(db, "SubNetwork=A", every, odd, limit=2, cursor=encode_cursor("SubNetwork=A,ManagedElement=3"))
+        assert [item["id"] for item in last.items] == ["4", "5"] and last.next_cursor is None
+        assert _error(lambda: mns.get_moi_attributes(db, "SubNetwork=A", limit="5")) == _query("limit is an integer from 1 to 500", "limit")
         assert _error(lambda: mns.get_moi_attributes(db, "SubNetwork=A", limit=True))[2] == "limit is an integer from 1 to 500"
-        assert len(mns.get_moi_attributes(db, "SubNetwork=A", Scope("BASE_ALL", 0), limit=500).items) == 6
+        assert _error(lambda: mns.get_moi_attributes(db, "SubNetwork=A", limit=501))[2] == "limit is an integer from 1 to 500"
+        assert len(mns.get_moi_attributes(db, "SubNetwork=A", every, limit=500).items) == 6
+
+
+def test_the_order_comes_from_order_by_not_from_an_index():
+    """On a table with no index on `dn` (rows come back in the order they were stored unless the query orders them), the answer is still in DN
+    order, and a delete still takes each instance before its container."""
+    from sqlalchemy import text
+    from smo_shared.testing import make_test_engine
+    from smo_shared import events as events_module
+    from mns_testmodule import Backend
+    engine = make_test_engine()
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE moi_store (dn TEXT, object_class TEXT NOT NULL, moi_id TEXT NOT NULL, parent_dn TEXT, depth INTEGER NOT NULL,"
+                                " attributes JSON NOT NULL, moi_version INTEGER NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)"))
+    events_module.SmoEvent.__table__.create(engine)
+    backend = Backend("sqlite", engine)
+    for dn, class_name in (("SubNetwork=A", "SubNetwork"), ("SubNetwork=A,ManagedElement=2", "ManagedElement"),
+                           ("SubNetwork=A,ManagedElement=1", "ManagedElement"), ("SubNetwork=A,ManagedElement=1,GNBDUFunction=1", "GNBDUFunction")):
+        _direct(backend, dn, class_name)
+    client, mns = make_app(backend)
+    from smo_shared.mns.scope import Scope
+    with backend.session() as db:
+        page = mns.get_moi_attributes(db, "SubNetwork=A", Scope("BASE_ALL", 0))
+    assert [item["objectInstance"] for item in page.items] == ["SubNetwork=A", "SubNetwork=A,ManagedElement=1",
+                                                               "SubNetwork=A,ManagedElement=1,GNBDUFunction=1", "SubNetwork=A,ManagedElement=2"]
+    client.delete(BASE + "SubNetwork=A")
+    assert [n["subject"] for n in notifications(backend)] == ["SubNetwork=A,ManagedElement=2", "SubNetwork=A,ManagedElement=1,GNBDUFunction=1",
+                                                              "SubNetwork=A,ManagedElement=1", "SubNetwork=A"]
+
+
+def test_more_exact_refusals():
+    """The codes and lists of the refusals the other tests check only by reason."""
+    assert _error(lambda: decode_cursor("%%")) == _query("cursor is not a cursor of this producer", "cursor")
+    assert _error(lambda: service._check_if_match("*", None, "X=1")) == (412, "STALE_VERSION", "X=1 does not exist, and If-Match names a version", None,
+                                                                         ["X=1"], None, None)
+    backend = _sqlite()
+    client, mns = make_app(backend)
+    build_tree(client)
+    with backend.session() as db:
+        assert _error(lambda: mns.create_moi(db, "SubNetwork=A,Foo=1", {"id": "1"})) == (
+            422, "CLASS_NOT_SUPPORTED", "class 'Foo' is not served here, or has no registered schema", None, ["Foo"], None, None)
+    with backend.session() as db:
+        assert _error(lambda: mns.modify_moi_attributes(db, CELL_DN, "application/merge-patch+json", {}, '"7"'))[2:5] == (
+            f"{CELL_DN} is at moiVersion 1, not the one If-Match names", None, [CELL_DN])
+    with backend.session() as db:
+        assert _error(lambda: mns.delete_moi(db, CELL_DN, '"7"'))[2:5] == (f"{CELL_DN} is at moiVersion 1, not the one If-Match names", None, [CELL_DN])
+
+
+def test_a_delete_racing_a_write_is_409():
+    """A delete whose instance another writer changed after it was read is a 409 naming that instance, and nothing is deleted."""
+    backend = _sqlite()
+    client, _ = make_app(backend)
+    build_tree(client)
+    from sqlalchemy.orm import Session
+    done: list[bool] = []
+
+    def bump(session, flush_context, instances):
+        if not done and session.deleted:
+            done.append(True)
+            session.connection().exec_driver_sql("UPDATE moi_store SET moi_version = moi_version + 1")
+    event.listen(Session, "before_flush", bump)
+    try:
+        response = client.delete(BASE + CELL)
+    finally:
+        event.remove(Session, "before_flush", bump)
+    assert (response.status_code, response.json()["badObjects"]) == (409, [CELL_DN])
+    assert client.get(BASE + CELL).status_code == 200
 
 
 def test_cursor_exactly():

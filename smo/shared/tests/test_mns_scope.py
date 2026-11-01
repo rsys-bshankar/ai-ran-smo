@@ -297,10 +297,8 @@ def test_exactly_full_last_page_has_no_link(backend):
     assert len(response.json()) == 5 and "link" not in response.headers
 
 
-def test_paging_behind_a_selective_filter_reads_several_batches(backend, monkeypatch):
-    """With a filter that drops most rows, a page is filled from several reads of the table; the result is the same as unpaged."""
-    from smo_shared.mns import service
-    monkeypatch.setattr(service, "_BATCH", 2)
+def test_paging_behind_a_selective_filter(backend):
+    """With a filter that drops most rows, a page still holds `limit` matches and its link leads to the rest; the result is the same as unpaged."""
     client, _ = make_app(backend)
     build_tree(client)
     params = {"scope": '{"scopeType": "BASE_ALL"}', "filter": "@.attributes.cellLocalId >= 3"}

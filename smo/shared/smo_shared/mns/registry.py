@@ -201,16 +201,16 @@ class ClassRegistry:
             return False
         if info.attribute_schema is not None:
             return True
-        seen: set[str] = set()
-        pending = {*info.attribute_refs, *info.flat_refs.values()}
-        while pending:
-            uri = pending.pop()
-            seen.add(uri)
+        pending = [*info.attribute_refs, *info.flat_refs.values()]
+        seen = set(pending)
+        for uri in pending:                            # grows while it is walked; each URI once
             try:
                 resolved = self._schema_registry.resolver().lookup(uri)
             except Unresolvable:
                 return False
-            pending |= set(self._refs_in(resolved.contents, urldefrag(uri).url)) - seen
+            new = [ref for ref in self._refs_in(resolved.contents, urldefrag(uri).url) if ref not in seen]
+            seen.update(new)
+            pending.extend(new)
         return True
 
     # ------------------------------------------------------------------ deriving
@@ -298,8 +298,9 @@ class ClassRegistry:
             base, node = pending.pop()
             names |= set(node.get("properties", {}))
             pending.extend((base, branch) for keyword in ("allOf", "anyOf", "oneOf") for branch in node.get(keyword, []))
-            uri = urljoin(base, node.get("$ref", ""))
-            if "$ref" in node and uri not in followed:
+            ref = node.get("$ref")
+            uri = None if ref is None else urljoin(base, ref)
+            if uri is not None and uri not in followed:
                 followed.add(uri)
                 try:
                     pending.append((urldefrag(uri).url, self._schema_registry.resolver().lookup(uri).contents))
@@ -312,7 +313,7 @@ class ClassRegistry:
         """One schema for a YAML class's attributes: every `attributes` / `-Attr` schema, plus the attributes declared outside them."""
         parts: list[dict] = [{"$ref": uri} for uri in info.attribute_refs]
         if info.flat_refs:
-            parts.append({"type": "object", "properties": {member: {"$ref": uri} for member, uri in info.flat_refs.items()}})
+            parts.append({"properties": {member: {"$ref": uri} for member, uri in info.flat_refs.items()}})
         return {"allOf": parts}
 
     def _validator(self, name: str) -> Draft7Validator:

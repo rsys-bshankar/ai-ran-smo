@@ -4997,7 +4997,7 @@ Closed from `OPEN_ITEMS.md` (`PR-CONV-S1.1`), with S1.2 and S1.4 below in the sa
 shape only: its in-memory store, its `/ProvMnS/v18/` paths and its `moiVersion` and lock fields inside the Resource were not taken.
 
 - **Operations.** `ProvMnS` (`service.py`) and `provmns_router` (`router.py`): createMOI (`PUT`, 201 created or 200 replaced), getMOIAttributes (`GET`),
-  modifyMOIAttributes (`PATCH`) and deleteMOI (`DELETE`, the instance and its subtree, deepest first) at D5's one form
+  modifyMOIAttributes (`PATCH`) and deleteMOI (`DELETE`, the instance and its subtree, each before its container) at D5's one form
   `/ProvMnS/{version}/{URI-LDN-first-part}/{className}={id}`, the version from the one constant `PROVMNS_VERSION` (`19.2.0`; a test holds it equal to
   `x-smo-provmns.version` of `specs/smo-schema-bundle/openapi/common/provmns-root.yaml`), any other version a 404. Bodies are the vendored
   `TS28532_ProvMnS.yaml` `Resource`; errors are the TS 28.623 `ErrorResponseDefault`, `ErrorResponseGet` (`badQueryParams`) and `ErrorResponsePatch`
@@ -5053,7 +5053,7 @@ Closed from `OPEN_ITEMS.md` (`PR-CONV-S1.4`). `shared/smo_shared/mns/scope.py` a
 - **Filter.** The vendored OpenAPI types `filter` as a TS 32.161 Jex condition, and TS 32.161 is not in `specs/`: the grammar taken is the JSONPath
   filter expression (`$[?(...)]` or bare; `@` paths with `.name`, `['name']`, `[index]`; `==`, `!=`, `<`, `<=`, `>`, `>=`, `&&`, `||`, `!`, parentheses;
   string, number, boolean and null literals; a path alone tests existence). A comparison with a missing value is false; equality is JSON equality.
-  Bounded by length (2,000) and nesting (32). Evaluated in Python on the scoped rows, read in batches of 200.
+  Bounded by length (2,000) and nesting (32). Evaluated in Python on the scoped rows, read in DN order from the cursor until the page and one more match are found (without a filter, the page is one `LIMIT limit + 1` read).
 - **Selection and answer.** `attributes` and `fields` (paths, through arrays item by item); the hierarchical answer (TS 32.158: children nested by class
   name, skeletons for unselected instances in between) or the flat one by `Accept`.
 - **Keyset paging.** `limit` (1–500) and an opaque `cursor` (the last DN of the page), with an RFC 8288 `Link: rel="next"`; a page is filled behind a
