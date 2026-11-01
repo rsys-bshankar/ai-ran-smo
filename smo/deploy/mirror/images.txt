@@ -33,6 +33,9 @@ golang:1.27.2-alpine | sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924
 maven:3.9.11-eclipse-temurin-21-noble | sha256:6fdc855a6ed81d288ca7ca37ac6ff5e9308b612485c0801d70b25a858c83d237 | maven |
 eclipse-temurin:25-jre-noble | sha256:3f2223fe04b750aa5a8179e29b5c9a1ddf7665fc9bb08bfe11ad01d143bc13a5 | eclipse-temurin |
 ubuntu:22.04 | sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11 | ubuntu | the base of the O-RAN-SC simulator image, oran-sim/Dockerfile (ADR 0012); the simulator itself is built, not copied: upstream publishes no image
+eclipse-temurin:21-jre-noble | sha256:161310cd5bd41fd549d19cf9f90b614897cb4a1532555c613b43b7e0628fe5d6 | eclipse-temurin | the runtime of the smo-teiv image of the TE&IV spike, spikes/teiv/Dockerfile (S0.13, ADR 0013)
+postgis/postgis:13-3.4-alpine | sha256:3ce9b8f4d0711d33cc5fa5e6c00dcb7965fa41467f78c0f3bc7fc7bc2357d85b | postgis | smo-teiv's own database image, spikes/teiv/Dockerfile.db (S0.13, ADR 0013)
+apache/kafka:3.9.1 | sha256:4ceccc577f03f51f6af8dbfda55194d0d892f4fa7913ffbded567ce3895622ed | kafka | smo-teiv's ingestion bus in the TE&IV spike, spikes/teiv/docker-compose.yml (S0.13, ADR 0013)
 
 grafana/tempo:2.10.10 | sha256:12b0820f13ffa10ce956b6e9acc3b03f3cffded99109be6cc09d106fe56e5d38 | tempo |
 grafana/loki:3.7.9 | sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28 | loki |

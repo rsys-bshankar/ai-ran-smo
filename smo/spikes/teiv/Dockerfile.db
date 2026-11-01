@@ -1,0 +1,7 @@
+# smo-teiv's Postgres for the TE&IV spike (plan task S0.13): upstream's image (PostGIS 3.4 on Postgres 13, which smo-teiv's schema needs for the
+# geo-location queries), pinned by digest, with the schema smo-teiv 0.3.0 ships (docker-compose/sql_scripts of the named build context `teiv`:
+# the model metadata, the empty data tables, the consumer data and groups tables; no sample data) run at the first start.
+FROM postgis/postgis:13-3.4-alpine@sha256:3ce9b8f4d0711d33cc5fa5e6c00dcb7965fa41467f78c0f3bc7fc7bc2357d85b
+COPY --from=teiv docker-compose/sql_scripts/00_init-teiv-exposure-model.sql docker-compose/sql_scripts/01_init-teiv-exposure-data.sql \
+     docker-compose/sql_scripts/02_init-teiv-exposure-consumer-data.sql docker-compose/sql_scripts/03_init-teiv-exposure-groups.sql \
+     /docker-entrypoint-initdb.d/

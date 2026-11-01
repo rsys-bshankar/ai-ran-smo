@@ -49,6 +49,7 @@ EXCEPTIONS = {
     # whole workflows
     "workflow:release-images.yml": "releases are built from the upstream references, so a release stays reproducible without any GHCR package of this repository",
     "workflow:mirror-images.yml": "it fills the mirror, so it reads the sources from their own registries on purpose",
+    "workflow:teiv-spike.yml": "the TE&IV spike's own compose file (spikes/teiv/) takes the mirror through the SMO_IMAGE_* variables of ci_mirror.py setup, not the main stack's override, which would add the main stack's services to it",
     # single commands
     "docker-run:ZAP_IMAGE": "the ZAP image is already on ghcr.io (no Docker Hub limit), so the list does not mirror it and smo-dast.yml pins it itself",
     "helm:smo-upgrade-kind.yml": "the previous release's chart and this one name the database image alike only when the pins match; a different image text would restart Postgres in the middle of the upgrade being tested",

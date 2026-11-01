@@ -1,0 +1,135 @@
+name: TE&IV spike
+
+# Plan task S0.13 (smo/docs/adr/0013-teiv-on-smo-teiv.md): O-RAN-SC smo-teiv 0.3.0 run on the RAN NF OAM tree of the oran-sim O-DUs (source a) and on a
+# synthetic 1,000-cell tree (source b); load time, query latency (directly and through the TS 28.532 facade sketch), change-event latency and runtime
+# cost measured and uploaded as an artifact. Manual, weekly, and on a pull request only when it changes the spike itself (smo/spikes/teiv/ or this file),
+# never on every pull request: it builds two images from source and starts two stacks. It is not a required check.
+# The spike's code is smo/spikes/teiv/ (no module imports it). The main stack's compose commands take the GHCR mirror through the generated override
+# as everywhere; the spike's own compose file takes it through the SMO_IMAGE_* variables of scripts/ci_mirror.py setup (docs/MIRROR.md, exceptions).
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - smo/spikes/teiv/**
+      - .github/workflows/teiv-spike.yml
+  schedule:
+    - cron: "23 4 * * 2"
+
+permissions:
+  contents: read
+
+jobs:
+  teiv-spike:
+    name: TE&IV spike
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      COMPOSE_FILE: docker-compose.yml:.ci-mirror/docker-compose.mirror.yml
+      ORAN_SIM_COUNT: "2"
+      SPIKE: spikes/teiv/docker-compose.yml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: smo/requirements/*.txt
+
+      - name: Install the runtime dependencies (httpx, paramiko)
+        working-directory: smo
+        run: pip install --require-hashes -r requirements/runtime.txt
+
+      # Source a): the oran-sim O-DUs registered in RAN NF OAM, as the job "O-RAN-SC simulator" does (ADR 0012)
+      - name: Start RAN NF OAM and two simulated O-DUs, and register them
+        working-directory: smo
+        run: |
+          scripts/init_secrets.sh
+          cp .env.example .env
+          ves=$(python3 -c 'import secrets; print(secrets.token_hex(16))')
+          echo "::add-mask::$ves"
+          echo "RAN_NF_OAM_VES_PASSWORD=$ves" >> "$GITHUB_ENV"
+          echo "ORAN_SIM_NETCONF_PASSWORD=netconf!" >> "$GITHUB_ENV"
+          export RAN_NF_OAM_VES_PASSWORD="$ves" ORAN_SIM_NETCONF_PASSWORD='netconf!'
+          docker compose --profile oran-sim up -d --build oran-sim-du
+          for i in $(seq 1 "$ORAN_SIM_COUNT"); do
+            for t in $(seq 1 60); do
+              docker compose exec -T --index "$i" oran-sim-du grep -q PyNTS_FileReady /var/log/pynts.log 2>/dev/null && break
+              sleep 5
+            done
+            docker compose exec -T --index "$i" oran-sim-du cat /var/log/pynts.log > "$RUNNER_TEMP/oran-sim-$i.log"
+          done
+          logs=""
+          for i in $(seq 1 "$ORAN_SIM_COUNT"); do logs="$logs --sim-log /logs/oran-sim-$i.log"; done
+          docker run --rm --network smo_default \
+            -e RAN_NF_OAM_VES_PASSWORD -e NETCONF_CRED_ORANSIM_PASSWORD="$ORAN_SIM_NETCONF_PASSWORD" -e PYTHONPATH=/work/smo/ran-nf-oam:/work/smo/shared \
+            -v "$PWD/..:/work" -v "$RUNNER_TEMP:/logs" -w /work/smo "$SMO_IMAGE_PYTHON_3_11_SLIM" sh -c "
+              pip install -q --require-hashes -r requirements/runtime.txt &&
+              python scripts/oran_sim_check.py --oam-url http://ran-nf-oam:8000 $logs" || true
+
+      - name: Turn sources a) and b) into smo-teiv's ingestion events (spikes/teiv/load.py)
+        working-directory: smo
+        run: |
+          logs=""
+          for i in $(seq 1 "$ORAN_SIM_COUNT"); do logs="$logs --oran-sim-log /logs/oran-sim-$i.log"; done
+          docker run --rm --network smo_default \
+            -e NETCONF_CRED_ORANSIM_PASSWORD="$ORAN_SIM_NETCONF_PASSWORD" -e PYTHONPATH=/work/smo/ran-nf-oam:/work/smo/shared \
+            -v "$PWD/..:/work" -v "$RUNNER_TEMP:/logs" -w /work/smo "$SMO_IMAGE_PYTHON_3_11_SLIM" sh -c "
+              pip install -q --require-hashes -r requirements/runtime.txt &&
+              python spikes/teiv/load.py --ran-nf-oam http://ran-nf-oam:8000 $logs --events /logs/a.events --gaps /logs/a.gaps.json"
+          python spikes/teiv/load.py --synthetic 1000 --events "$RUNNER_TEMP/b.events" --gaps "$RUNNER_TEMP/b.gaps.json"
+
+      - name: Build and start smo-teiv 0.3.0 with its Postgres and Kafka
+        working-directory: smo
+        run: |
+          docker compose -f "$SPIKE" config --quiet
+          docker compose -f "$SPIKE" up -d --build
+          for i in $(seq 1 100); do
+            [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:31074/topology-inventory/v1/domains)" = 200 ] && break
+            sleep 3
+          done
+          sleep 15      # the ingestion consumer joins its group after the API answers
+
+      - name: Measure load, queries, change events and runtime (spikes/teiv/measure.py)
+        working-directory: smo
+        run: |
+          python spikes/teiv/measure.py --teiv http://127.0.0.1:31074 \
+            --produce "docker compose -f $SPIKE exec -T kafka /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic topology-inventory-ingestion --timeout 0 --property parse.headers=true --property headers.key.separator=::: --property headers.delimiter=,,, --property parse.key=false" \
+            --load "a=$RUNNER_TEMP/a.events:$RUNNER_TEMP/a.gaps.json" --load "b=$RUNNER_TEMP/b.events:$RUNNER_TEMP/b.gaps.json" \
+            --runs 100 --label "GitHub-hosted runner (ubuntu-latest)" --compose-file "$SPIKE" \
+            --out "$RUNNER_TEMP/teiv-spike-results.json" --markdown "$RUNNER_TEMP/teiv-spike-results.md"
+          cat "$RUNNER_TEMP/teiv-spike-results.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the measurements
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: teiv-spike-results
+          path: |
+            ${{ runner.temp }}/teiv-spike-results.json
+            ${{ runner.temp }}/teiv-spike-results.md
+            ${{ runner.temp }}/a.gaps.json
+            ${{ runner.temp }}/b.gaps.json
+          if-no-files-found: warn
+
+      - name: Dump logs on failure
+        if: failure()
+        working-directory: smo
+        run: |
+          docker compose -f "$SPIKE" ps -a
+          docker compose -f "$SPIKE" logs --no-color --tail=200
+          docker compose --profile oran-sim logs --no-color --tail=100 ran-nf-oam oran-sim-du
+
+      - name: Tear down
+        if: always()
+        working-directory: smo
+        run: |
+          docker compose -f "$SPIKE" down -v
+          docker compose --profile oran-sim down -v

@@ -1,0 +1,170 @@
+{
+ "label": "Claude Code cloud container (local run)",
+ "machine": {
+  "platform": "Linux-6.18.44-fc-v185-x86_64-with-glibc2.39",
+  "cpus": 4,
+  "memory": "16477352 kB",
+  "python": "3.13.18",
+  "runner": "",
+  "runnerOs": ""
+ },
+ "takenAt": "2026-11-01T02:25:27.630593+00:00",
+ "smoTeiv": "0.3.0",
+ "load": [
+  {
+   "source": "b",
+   "mois": 13002,
+   "entitiesMapped": 4002,
+   "events": 14,
+   "seconds": 11.93,
+   "byType": {
+    "ManagedElement": 334,
+    "ODUFunction": 334,
+    "OCUCPFunction": 334,
+    "NRSectorCarrier": 1000,
+    "NRCellDU": 1000,
+    "NRCellCU": 1000
+   }
+  }
+ ],
+ "queries": [
+  {
+   "query": "Q1",
+   "title": "one cell by id",
+   "raw": {
+    "n": 100,
+    "p50": 3.6,
+    "p95": 5.3,
+    "p99": 7.1
+   },
+   "facade": {
+    "n": 100,
+    "p50": 3.6,
+    "p95": 5.6,
+    "p99": 7.8
+   },
+   "facadeAddedP50": 0.0,
+   "result": "PASS"
+  },
+  {
+   "query": "Q2",
+   "title": "a cell's neighbours",
+   "raw": null,
+   "facade": null,
+   "result": "FAIL",
+   "why": "not expressible: smo-teiv 0.3.0 has no NRCellRelation and no neighbour relationship (ADR 0013, gap G2)"
+  },
+  {
+   "query": "Q3",
+   "title": "all cells under a GNBDUFunction",
+   "raw": {
+    "n": 100,
+    "p50": 4.4,
+    "p95": 6.7,
+    "p99": 8.7
+   },
+   "facade": {
+    "n": 100,
+    "p50": 4.4,
+    "p95": 6.2,
+    "p99": 7.2
+   },
+   "facadeAddedP50": 0.0,
+   "result": "PASS"
+  },
+  {
+   "query": "Q4",
+   "title": "two-hop neighbours",
+   "raw": null,
+   "facade": null,
+   "result": "FAIL",
+   "why": "not expressible: smo-teiv 0.3.0 has no NRCellRelation and no neighbour relationship (ADR 0013, gap G2)"
+  },
+  {
+   "query": "Q5",
+   "title": "all cells in a SubNetwork with an attribute filter",
+   "raw": {
+    "n": 100,
+    "p50": 4.2,
+    "p95": 7.9,
+    "p99": 10.1
+   },
+   "facade": {
+    "n": 100,
+    "p50": 4.4,
+    "p95": 9.7,
+    "p99": 10.1
+   },
+   "facadeAddedP50": 0.2,
+   "result": "PASS"
+  }
+ ],
+ "change": {
+  "runs": 10,
+  "visible": {
+   "n": 10,
+   "p50": 31.6,
+   "p95": 63.0,
+   "p99": 63.0
+  },
+  "smoTeivNotification": "none: smo-teiv 0.3.0 has no change-event producer and no subscription API",
+  "facadeNotification": {
+   "n": 10,
+   "p50": 31.6,
+   "p95": 63.1,
+   "p99": 63.1
+  }
+ },
+ "runtime": {
+  "imageBytes": {
+   "local/teiv-spike:0.3.0": 540811427,
+   "local/teiv-spike-db:0.3.0": 615547679
+  },
+  "containers": [
+   {
+    "BlockIO": "0B / 0B",
+    "CPUPerc": "0.20%",
+    "Container": "9448c2a5980547c14c2e69f02047a9a0cb388f19b2449038bdbdf2c78591424e",
+    "ID": "9448c2a59805",
+    "MemPerc": "2.94%",
+    "MemUsage": "472.6MiB / 15.71GiB",
+    "Name": "teiv-spike-teiv-exposure-1",
+    "NetIO": "2.3MB / 1.99MB",
+    "PIDs": "41"
+   },
+   {
+    "BlockIO": "0B / 0B",
+    "CPUPerc": "1.56%",
+    "Container": "6b4b111d53be87a9cf727c569bead4e24f82dd8d4386c82f88edc520e6aafbef",
+    "ID": "6b4b111d53be",
+    "MemPerc": "3.83%",
+    "MemUsage": "616.2MiB / 15.71GiB",
+    "Name": "teiv-spike-teiv-ingestion-1",
+    "NetIO": "7.03MB / 12MB",
+    "PIDs": "46"
+   },
+   {
+    "BlockIO": "0B / 0B",
+    "CPUPerc": "0.07%",
+    "Container": "210f97e04d86aa21cc1008a7b405f9240ab5564849dc377b5aeacdb1c129f273",
+    "ID": "210f97e04d86",
+    "MemPerc": "0.86%",
+    "MemUsage": "137.7MiB / 15.71GiB",
+    "Name": "teiv-spike-teiv-db-1",
+    "NetIO": "12.3MB / 5.97MB",
+    "PIDs": "37"
+   },
+   {
+    "BlockIO": "0B / 0B",
+    "CPUPerc": "209.07%",
+    "Container": "4b44fde591c2778b646fdb2903ab85dd546814d821c184433b6cdfdc38952f40",
+    "ID": "4b44fde591c2",
+    "MemPerc": "2.90%",
+    "MemUsage": "467MiB / 15.71GiB",
+    "Name": "teiv-spike-kafka-1",
+    "NetIO": "49.2kB / 2.95MB",
+    "PIDs": "124"
+   }
+  ]
+ }
+}
