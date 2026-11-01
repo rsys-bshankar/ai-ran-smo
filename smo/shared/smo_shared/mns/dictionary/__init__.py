@@ -83,7 +83,7 @@ _OPERATORS = {ast.Add: lambda a, b: a + b, ast.Sub: lambda a, b: a - b, ast.Mult
 def _value(node: ast.expr, values: Mapping[str, float]) -> float:
     """The value of a compiled formula node over the variables' values."""
     if isinstance(node, ast.Constant):
-        return float(node.value)
+        return float(typing.cast(float, node.value))       # _compile admits only int and float constants
     if isinstance(node, ast.Name):
         return float(values[node.id])
     if isinstance(node, ast.UnaryOp):

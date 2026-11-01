@@ -81,7 +81,7 @@ def _default_session_dependency() -> Callable:
 
 def _refusal(exc: HTTPException) -> MnsError:
     """A refusal of `smo_shared.idempotency` (a ProblemDetails in an HTTPException) as an MnsError, so a ProvMnS caller reads the TS 28.532 shape."""
-    detail = exc.detail if isinstance(exc.detail, dict) else {}
+    detail: dict[str, Any] = exc.detail if isinstance(exc.detail, dict) else {}
     return MnsError(exc.status_code, str(detail.get("title", "INVALID_REQUEST")), str(detail.get("detail") or ""))
 
 
