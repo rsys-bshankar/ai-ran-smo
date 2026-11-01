@@ -10,7 +10,7 @@ import uuid
 
 from test_main import _set_lifecycle, client, db_session_factory, mlmr  # noqa: F401  (pytest fixtures)
 
-from app.statemachine import ModelLifecycleState, RuntimeLifecycleState
+from app.governance.statemachine import ModelLifecycleState, RuntimeLifecycleState
 
 
 def _attrs(resp):

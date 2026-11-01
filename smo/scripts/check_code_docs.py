@@ -149,14 +149,38 @@ def _body_stmts(node: ast.AST) -> list[ast.stmt]:
     return body
 
 
-def analyze_python(text: str, path: str) -> FileReport:
+def _pydantic_models(tree: ast.Module, path: str, sources: dict[str, str] | None, seen: frozenset[str] = frozenset()) -> set[str]:
+    """The names of the pydantic models a file declares or imports: classes that derive from `BaseModel`, transitively, also through a base class imported by a
+    relative import (`from ..common import _Body`), whose file is read from `sources` or from disk. A package split across files (AIMgF's capability packages)
+    keeps its request bodies' bases in a shared file."""
+    imported: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom) and node.level and node.module and path not in seen:
+            base = Path(path).parent
+            for _ in range(node.level - 1):
+                base = base.parent
+            target = (base / Path(*node.module.split("."))).with_suffix(".py").as_posix()
+            text = (sources or {}).get(target)
+            if text is None and (Path(__file__).resolve().parent.parent / target).is_file():
+                text = (Path(__file__).resolve().parent.parent / target).read_text()
+            if text is not None:
+                there = _pydantic_models(ast.parse(text), target, sources, seen | {path})
+                imported |= {a.asname or a.name for a in node.names if a.name in there}
+    names: set[str] = set()
+    for n in ast.walk(tree):  # pydantic models, transitively within the file
+        if isinstance(n, ast.ClassDef) and any(_deco_free_name(b) in {"BaseModel"} | imported | names for b in n.bases):
+            names.add(n.name)
+    return names | imported
+
+
+def analyze_python(text: str, path: str, sources: dict[str, str] | None = None) -> FileReport:
     """Python by `ast`: module docstring, then classes and functions (module level and class level; nested only when decorated as a route)."""
     tree = ast.parse(text)
     lines = text.splitlines()
     test_file = is_test_path(path)
     has_content = bool(tree.body)
     rep = FileReport(path, _has_docstring(tree) if has_content else None)
-    model_names: set[str] = set()
+    model_names: set[str] = _pydantic_models(tree, path, sources)
     for n in ast.walk(tree):  # pydantic models, transitively within the file
         if isinstance(n, ast.ClassDef) and any(_deco_free_name(b) in {"BaseModel"} | model_names for b in n.bases):
             model_names.add(n.name)
@@ -381,7 +405,7 @@ def analyze(entries: dict[str, str]) -> dict[str, FileReport]:
         suffix = Path(path).suffix
         try:
             if suffix == ".py":
-                out[path] = analyze_python(text, path)
+                out[path] = analyze_python(text, path, entries)
             elif suffix == ".java":
                 out[path] = analyze_java(text, path)
             elif suffix == ".sh":

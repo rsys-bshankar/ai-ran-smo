@@ -9,7 +9,7 @@ import pytest
 
 from smo_shared.statemachine import IllegalTransition
 
-from app.statemachine import (
+from app.governance.statemachine import (
     GOVERNANCE_EVENTS,
     INFERENCE_JOB_FSM,
     MODEL_LIFECYCLE_FSM,
@@ -207,7 +207,7 @@ def test_advanceable_events_are_governance_plus_end_of_life_only():
     """`POST /models/{id}/advance` accepts exactly the governance events plus DEPRECATE and RETIRE; each of the nine job-driven events is excluded, so no stage can move without its job
     row (OI-2-governance-bypass).
     """
-    from app.statemachine import ADVANCEABLE_EVENTS
+    from app.governance.statemachine import ADVANCEABLE_EVENTS
     assert ADVANCEABLE_EVENTS == GOVERNANCE_EVENTS | {ModelLifecycleEvent.DEPRECATE, ModelLifecycleEvent.RETIRE}
     for job_driven in ("CREATE_TRAINING", "TRAINING_COMPLETE", "TRAINING_FAILED", "CREATE_VALIDATION",
                        "VALIDATION_COMPLETE", "VALIDATION_FAILED", "CREATE_EMULATION", "EMULATION_COMPLETE",
@@ -217,7 +217,7 @@ def test_advanceable_events_are_governance_plus_end_of_life_only():
 
 def test_trainable_states_match_the_create_training_edges():
     """`TRAINABLE_STATES` is the set of states with a CREATE_TRAINING edge plus TRAINING itself (a new request supersedes the in-flight run), so the route gate and the table cannot drift apart."""
-    from app.statemachine import TRAINABLE_STATES
+    from app.governance.statemachine import TRAINABLE_STATES
     with_edge = {s for s in ModelLifecycleState if ModelLifecycleEvent.CREATE_TRAINING in MODEL_LIFECYCLE_FSM.legal_events(s)}
     assert with_edge == {ModelLifecycleState.REGISTERED, ModelLifecycleState.CERTIFIED, ModelLifecycleState.PROMOTED,
                          ModelLifecycleState.FAILED}

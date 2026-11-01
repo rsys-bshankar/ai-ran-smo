@@ -17,6 +17,8 @@ import ast
 import re
 from pathlib import Path
 
+from test_r1_consumer_calls import gateway_routes
+
 SMO = Path(__file__).resolve().parents[1]
 PY_SDK = SMO / "sdk" / "smo_sdk"
 GO_ROUTES = SMO / "sdk-go" / "routes.go"
@@ -45,7 +47,7 @@ ALLOWED: dict[str, str] = {
     # intent-service
     "/intent-service/intent-handling-functions": "c: upsert by rmihId; a repeat writes the same row",
     # mllf
-    "/mllf/models/{}/deploy": "b: replaces clearedNodeGroups wholesale through AIMgF; MLLF has no database to store an answer in",
+    "/mllf/models/{}/deploy": "b: replaces clearedNodeGroups wholesale on AIMgF's lifecycle row (the deploy gate, AIMgF's process since S2.2)",
     # mlmr
     "/mlmr/models": "c: unique (model type, version); a repeat is 409 MODEL_ALREADY_REGISTERED",
     "/mlmr/models/{}/artifact": "a*: multipart upload; the SDK sends it without an Idempotency-Key and never repeats it",
@@ -190,14 +192,15 @@ def _status_of(call: ast.Call, positional: int | None) -> int:
     return 200
 
 
-def _server_posts(module: str) -> dict[str, dict]:
-    """Every POST handler of `<module>/app/*.py` by normalized gateway path (`/<module><prefix><path>`).
+def _server_posts(module: str, gateway_prefix: str | None = None) -> dict[str, dict]:
+    """Every POST handler of `<module>/app/**/*.py` by normalized gateway path (`/<gateway_prefix or module><prefix><path>`): `gateway_prefix` is an R1
+    prefix the gateway's routing table sends to this module's process although it names another (S2.1, S2.2: `/mlmr` and `/mllf` reach AIMgF).
 
     Each value holds the file and line, the handler name, the route's status code, and the `@idempotent` decorator's module name and status
     code (None when the handler is not decorated). An `APIRouter(prefix=...)` assigned at module level adds its prefix.
     """
     routes: dict[str, dict] = {}
-    for file in sorted((SMO / module / "app").glob("*.py")):
+    for file in sorted((SMO / module / "app").rglob("*.py")):
         tree = ast.parse(file.read_text(), filename=str(file))
         prefixes = {}
         for n in tree.body:
@@ -219,8 +222,8 @@ def _server_posts(module: str) -> dict[str, dict]:
                     name = d.args[0].value if d.args and isinstance(d.args[0], ast.Constant) else None
                     idem = (name, _status_of(d, 1))
             if route:
-                routes[_normalize(f"/{module}{route[0]}")] = {
-                    "where": f"{file.relative_to(SMO)}:{fn.lineno}", "handler": fn.name, "status": route[1], "idempotent": idem}
+                routes[_normalize(f"/{gateway_prefix or module}{route[0]}")] = {
+                    "where": f"{file.relative_to(SMO)}:{fn.lineno}", "handler": fn.name, "status": route[1], "idempotent": idem, "module": module}
     return routes
 
 
@@ -228,8 +231,10 @@ def _classified() -> tuple[dict[str, set[str]], dict[str, dict]]:
     """The SDK POST paths and, for each module they name, its POST handlers keyed the same way."""
     posts = _sdk_posts()
     handlers: dict[str, dict] = {}
-    for module in sorted({p.split("/")[1] for p in posts}):
-        handlers.update(_server_posts(module))
+    served_by = gateway_routes()
+    for prefix in sorted({p.split("/")[1] for p in posts}):
+        module = served_by.get("/" + prefix, prefix)
+        handlers.update(_server_posts(module, prefix if module != prefix else None))
     return posts, handlers
 
 
@@ -272,5 +277,5 @@ def test_a_decorated_handler_names_its_own_module_and_success_status():
     posts, handlers = _classified()
     wrong = sorted(f"{p} ({h['where']}): @idempotent{h['idempotent']}, route status {h['status']}"
                    for p, h in handlers.items()
-                   if h["idempotent"] and (h["idempotent"][0] != p.split("/")[1] or h["idempotent"][1] != h["status"]))
+                   if h["idempotent"] and (h["idempotent"][0] != h["module"] or h["idempotent"][1] != h["status"]))
     assert not wrong, "\n".join(wrong)

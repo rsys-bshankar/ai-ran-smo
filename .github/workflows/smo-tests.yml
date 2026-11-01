@@ -1489,6 +1489,7 @@ jobs:
           scripts/check_upgrade_from_previous.sh
 
       # PR-ST-2 to -8: the races on a versioned row, on one Idempotency-Key, on a module's shared invoker and on the GUI BFF's shared state, the server-side statement and idle-transaction limits, and (PR-MSG-3) the event feed's NOTIFY at commit waking a LISTEN, on the real database.
+      # PR-CONV-S1.1, S1.2, S1.4: the ProvMnS router (smo_shared.mns) for every operation, scope, filter and paging, its property tests, and its Alembic helper, each in a schema of its own.
       - name: Concurrency, idempotency and shared state under real Postgres
         working-directory: smo/shared
         env:
@@ -1496,6 +1497,7 @@ jobs:
         run: |
           pip install --require-hashes -r ../requirements/dev.txt
           PYTHONPATH=. python -m pytest tests/test_versioning.py tests/test_idempotency.py tests/test_module_identity.py tests/test_db_engine.py tests/test_health.py tests/test_single_runner.py tests/test_events.py -v
+          PYTHONPATH=. python -m pytest tests/test_mns_router.py tests/test_mns_scope.py tests/test_mns_properties.py tests/test_mns_store.py -v
           (cd ../gui-bff && PYTHONPATH=.:../shared python -m pytest tests/test_shared_state.py -v)
 
   # PR-OPS-5.2: the previous release's code on this commit's schema. A rolling upgrade runs both versions against one database, so a revision that

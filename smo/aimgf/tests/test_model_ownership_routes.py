@@ -14,7 +14,7 @@ import pytest
 
 from test_main import _set_lifecycle, client, db_session_factory, mlmr  # noqa: F401  (pytest fixtures)
 from app.models import EmulationJob, MLMFSubscription, TrainingJob, ValidationJob
-from app.statemachine import ModelLifecycleState
+from app.governance.statemachine import ModelLifecycleState
 
 OWNER = {"X-R1-Role": "rapp", "X-R1-Invoker-Id": "es-client"}
 OTHER = {"X-R1-Role": "rapp", "X-R1-Invoker-Id": "someone-else"}
@@ -165,7 +165,7 @@ def test_group_retrain_propagation_is_not_asked_about_ownership(client, db_sessi
     """The runs a breached subscription starts for a coordination group's members are the platform's own: they go through `_start_training` without a caller, so a member of another owner
     is retrained (SEC-15.3c did not change the propagation; only the report filing is the owner's).
     """
-    from app.main import _start_training
+    from app.training.jobs import _start_training
     model_id = mlmr.add_model(owner="es-client")
     with db_session_factory() as db:
         job = _start_training(db, model_id=model_id, group_id=None, producer_id="aimgf:group-retrain")

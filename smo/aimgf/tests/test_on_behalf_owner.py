@@ -14,7 +14,7 @@ import pytest
 from test_main import _set_lifecycle, client, db_session_factory, mlmr  # noqa: F401  (pytest fixtures)
 from test_model_ownership_routes import ROUTES
 from app.models import InferenceJob, ModelLifecycle
-from app.statemachine import ModelLifecycleState, RuntimeLifecycleState
+from app.governance.statemachine import ModelLifecycleState, RuntimeLifecycleState
 
 FOR_OTHER = {"X-R1-Role": "internal", "X-R1-Invoker-Id": "mllf-invoker", "X-R1-On-Behalf-Of": "someone-else"}
 FOR_OWNER = {"X-R1-Role": "internal", "X-R1-Invoker-Id": "mllf-invoker", "X-R1-On-Behalf-Of": "es-client"}

@@ -71,7 +71,7 @@ def test_the_role_of_every_module_that_publishes_events_may_write_the_event_tabl
     fires_with_entity = re.compile(r"_FSM\.fire\([^)]*\b\w+=\w")
     publishers = {m for m in ROLES if any("smo_shared import events" in f.read_text() or "smo_shared.events" in f.read_text()
                                           or fires_with_entity.search(f.read_text())
-                                          for f in (SMO_ROOT / m / "app").glob("*.py"))}
+                                          for f in (SMO_ROOT / m / "app").rglob("*.py"))}
     assert {"nfo", "dme", "ran-nf-oam", "aimgf"} <= publishers
     for module in publishers:
         assert "smo_event" in ROLES[module]["shared"], module
@@ -79,9 +79,10 @@ def test_the_role_of_every_module_that_publishes_events_may_write_the_event_tabl
 
 def test_the_role_of_every_module_that_writes_the_audit_trail_may_write_its_tables():
     """A module whose code records an audit entry (`audit.record`, `write_audit`) writes `audit_log` and `audit_head` in the transaction of its change; its role
-    must list both, or the change fails with "permission denied" (MLMR's model owner change did, found writing `mlmr/docs/lifecycle.md`, DOC-CF-2.4)."""
-    writers = {m for m in ROLES if any("audit.record(" in f.read_text() or "write_audit(" in f.read_text() for f in (SMO_ROOT / m / "app").glob("*.py"))}
-    assert {"mlmr", "ran-nf-oam", "rapp-mgmt"} <= writers
+    must list both, or the change fails with "permission denied" (the registry's model owner change did when it was MLMR's, found writing `mlmr/docs/lifecycle.md`,
+    DOC-CF-2.4; it is AIMgF's since S2.1)."""
+    writers = {m for m in ROLES if any("audit.record(" in f.read_text() or "write_audit(" in f.read_text() for f in (SMO_ROOT / m / "app").rglob("*.py"))}
+    assert {"aimgf", "ran-nf-oam", "rapp-mgmt"} <= writers
     for module in writers:
         assert {"audit_log", "audit_head"} <= set(ROLES[module]["shared"]), module
 
@@ -89,8 +90,8 @@ def test_the_role_of_every_module_that_writes_the_audit_trail_may_write_its_tabl
 def test_the_role_of_every_module_with_an_idempotent_route_may_write_the_idempotency_key_table():
     """A module with an `@idempotent` route (`smo_shared.idempotency`) reserves and stores keys in `idempotency_key` before and after the route runs; its role must
     list the table, or every request that carries an `Idempotency-Key` (every SDK POST does) fails with "permission denied" (SDK-RETRY-IDEMPOTENCY)."""
-    users = {m for m in ROLES if any("@idempotent(" in f.read_text() for f in (SMO_ROOT / m / "app").glob("*.py"))}
-    assert {"aimgf", "dme", "intent-service", "mdaf", "mlmr", "nfo", "ran-nf-oam", "rapp-mgmt", "sme"} <= users
+    users = {m for m in ROLES if any("@idempotent(" in f.read_text() for f in (SMO_ROOT / m / "app").rglob("*.py"))}
+    assert {"aimgf", "dme", "intent-service", "mdaf", "nfo", "ran-nf-oam", "rapp-mgmt", "sme"} <= users
     for module in users:
         assert "idempotency_key" in ROLES[module]["shared"], module
 

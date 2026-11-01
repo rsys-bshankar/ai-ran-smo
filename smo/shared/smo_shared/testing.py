@@ -93,10 +93,11 @@ def make_test_engine():
 
 
 @contextmanager
-def concurrent_commit_on(table: str):
+def concurrent_commit_on(table: str, column: str = "row_version"):
     """Test helper for smo_shared.versioning (PR-ST-2): inside the block, the
     next ORM flush that is about to UPDATE a row of `table` first has another
-    writer's commit land on it (`row_version` + 1), exactly what a second
+    writer's commit land on it (`column` + 1, the version column: `row_version`,
+    or `moi_version` for the ProvMnS store), exactly what a second
     replica committing between this request's load and its write looks like.
     The request's UPDATE then matches no row and the route answers 409
     CONCURRENT_MODIFICATION. Yields a list that holds one item once it fired.
@@ -108,7 +109,7 @@ def concurrent_commit_on(table: str):
             return
         for obj in session.dirty:
             if getattr(obj, "__tablename__", None) == table and session.is_modified(obj):
-                session.connection().exec_driver_sql(f"UPDATE {table} SET row_version = row_version + 1")  # noqa: S608 — the table name is a model's __tablename__
+                session.connection().exec_driver_sql(f"UPDATE {table} SET {column} = {column} + 1")  # noqa: S608 — a model's table and column names
                 fired.append(True)
                 return
 

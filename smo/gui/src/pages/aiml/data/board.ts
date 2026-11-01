@@ -1,6 +1,6 @@
 /** The stage board's pure logic: which column a model's lifecycle puts it in, which models' latest MLMF report is under the floor, and the
  * artifact versions a model has. No React and no fetching, so `__tests__/board.test.ts` pins it down directly. The columns are the five of the
- * BRIEF (§4 AI/ML); the lifecycle states are AIMgF's (aimgf/app/statemachine.py), mirrored in `lib/domain.ts` MODEL_PIPELINE. */
+ * BRIEF (§4 AI/ML); the lifecycle states are AIMgF's (aimgf/app/governance/statemachine.py), mirrored in `lib/domain.ts` MODEL_PIPELINE. */
 import type { MlmfReport, MlmfSubscription, Model, ModelLifecycle } from "../../../api/types";
 import type { TKey } from "../../../i18n";
 import type { BoardCard, BoardColumn, StageId } from "./types";
@@ -61,7 +61,7 @@ export function buildBoard(models: Model[], lifecycles: ModelLifecycle[], breach
   return { columns, off };
 }
 
-/** The location MLMR writes when an artifact is uploaded (`mlmr/app/main.py`, upload route: `model-artifact:<model id>:<version>`); MLMR serves no
+/** The location MLMR writes when an artifact is uploaded (`aimgf/app/registry/routes.py`, upload route: `model-artifact:<model id>:<version>`); MLMR serves no
  * list of versions, so this documented pattern is the only source. Anything else (an external URI registered with the model, `s3://…`,
  * `http://host:8080/…`) holds no MLMR version. */
 export const ARTIFACT_LOCATION_RE = /^model-artifact:([0-9A-Fa-f-]{1,64}):([1-9][0-9]{0,8})$/;

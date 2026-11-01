@@ -153,10 +153,11 @@ def test_each_services_openapi_declares_the_token_on_every_operation_except_its_
     for path in sorted(openapi.glob("*.json")):
         spec = json.loads(path.read_text())
         if "r1BearerAuth" not in spec.get("components", {}).get("securitySchemes", {}):
-            continue                      # the southbound mock is not R1-facing
+            continue                      # the southbound mock, and the MLMR and MLLF placeholders, are not R1-facing
         declared += 1
         assert spec["security"] == [{"r1BearerAuth": []}], path.name
         open_paths = {p for p, ops in spec["paths"].items()
                       for op in ops.values() if isinstance(op, dict) and op.get("security") == []}
         assert open_paths <= allowed_open.get(path.stem, set()), f"{path.name} declares open: {open_paths}"
-    assert declared >= 16
+    # 14 since S2.1 / S2.2: the MLMR and MLLF placeholders serve only probes and nothing at R1 reaches them (their routes are AIMgF's)
+    assert declared >= 14

@@ -174,13 +174,13 @@ compose and the chart use the file form (`docs/SECRETS.md` lists each secret, it
 
 | Variable | Default | Secret | Read in | What it does |
 |---|---|---|---|---|
-| `AIMGF_FEATURE_GROUP_TOKEN_<REF>` | *not shown* | yes | `aimgf/app/main.py` | The data-lake token of a feature group that was registered with `tokenRef: <ref>` (the reference upper-cased, `-` as `_`): the value AIMgF uses when it connects to the data lake. The database holds the name, never the value. Prefer `_FILE` (a mounted secret). A reference with neither set resolves to nothing; it never falls back to another secret. |
-| `AIMGF_FEATURE_GROUP_TOKEN_<REF>_FILE` | *not shown* | yes | `aimgf/app/main.py` | File holding the data-lake token for `tokenRef: <ref>` (the `*_FILE` form of `AIMGF_FEATURE_GROUP_TOKEN_<REF>`; set only one of the two). |
-| `AIMGF_TIMEOUT_EMULATION_SECONDS` | `1800` |  | `aimgf/app/main.py` | Seconds an emulation run may take before AIMgF fails it as `TIMEOUT` and notifies the caller. A request's own `timeoutSeconds` wins. Raise it for long emulations. |
-| `AIMGF_TIMEOUT_INFERENCE_SECONDS` | `5` |  | `aimgf/app/main.py` | Seconds an inference job may take before AIMgF fails it as `TIMEOUT`. A request's own `timeoutSeconds` wins. Real-time inference needs this short; raising it only delays the failure. |
+| `AIMGF_FEATURE_GROUP_TOKEN_<REF>` | *not shown* | yes | `aimgf/app/training/feature_groups.py` | The data-lake token of a feature group that was registered with `tokenRef: <ref>` (the reference upper-cased, `-` as `_`): the value AIMgF uses when it connects to the data lake. The database holds the name, never the value. Prefer `_FILE` (a mounted secret). A reference with neither set resolves to nothing; it never falls back to another secret. |
+| `AIMGF_FEATURE_GROUP_TOKEN_<REF>_FILE` | *not shown* | yes | `aimgf/app/training/feature_groups.py` | File holding the data-lake token for `tokenRef: <ref>` (the `*_FILE` form of `AIMGF_FEATURE_GROUP_TOKEN_<REF>`; set only one of the two). |
+| `AIMGF_TIMEOUT_EMULATION_SECONDS` | `1800` |  | `aimgf/app/emulation/jobs.py`, `aimgf/app/execution.py` | Seconds an emulation run may take before AIMgF fails it as `TIMEOUT` and notifies the caller. A request's own `timeoutSeconds` wins. Raise it for long emulations. |
+| `AIMGF_TIMEOUT_INFERENCE_SECONDS` | `5` |  | `aimgf/app/execution.py`, `aimgf/app/inference/jobs.py` | Seconds an inference job may take before AIMgF fails it as `TIMEOUT`. A request's own `timeoutSeconds` wins. Real-time inference needs this short; raising it only delays the failure. |
 | `AIMGF_TIMEOUT_SWEEP_SECONDS` | `60` |  | `aimgf/app/tasks.py`, `docker-compose.yml` | How often the AIMgF worker (`aimgf-worker`) fails the training, validation, emulation and inference runs past their deadline (default 60, at least 1), across all worker replicas (call flow 27e). Read once at the worker's start. A job read still sweeps too. Seconds, not a secret. |
-| `AIMGF_TIMEOUT_TRAINING_SECONDS` | `1800` |  | `aimgf/app/main.py` | Seconds a training run may take before AIMgF fails it as `TIMEOUT` and notifies the caller (default 30 minutes). A request's own `timeoutSeconds` wins. |
-| `AIMGF_TIMEOUT_VALIDATION_SECONDS` | `900` |  | `aimgf/app/main.py` | Seconds a validation run may take before AIMgF fails it as `TIMEOUT` (default 15 minutes). A request's own `timeoutSeconds` wins. |
+| `AIMGF_TIMEOUT_TRAINING_SECONDS` | `1800` |  | `aimgf/app/execution.py`, `aimgf/app/training/jobs.py` | Seconds a training run may take before AIMgF fails it as `TIMEOUT` and notifies the caller (default 30 minutes). A request's own `timeoutSeconds` wins. |
+| `AIMGF_TIMEOUT_VALIDATION_SECONDS` | `900` |  | `aimgf/app/execution.py`, `aimgf/app/testing/jobs.py` | Seconds a validation run may take before AIMgF fails it as `TIMEOUT` (default 15 minutes). A request's own `timeoutSeconds` wins. |
 
 ### `coverage-optimization-rapp`
 
@@ -296,8 +296,8 @@ compose and the chart use the file form (`docs/SECRETS.md` lists each secret, it
 | `FOCOM_URL` | `http://focom:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/focom/...` to (O-Cloud inventory and O2ims). |
 | `INTENT_SERVICE_URL` | `http://intent-service:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/intent-service/...` to. |
 | `MDAF_URL` | `http://mdaf:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/mdaf/...` to (analytics catalogue and reports). |
-| `MLLF_URL` | `http://mllf:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/mllf/...` to. |
-| `MLMR_URL` | `http://mlmr:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/mlmr/...` to (the model registry). |
+| `MLLF_URL` | `http://aimgf:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/mllf/...` to: AIMgF, which serves the deploy gate since S2.2, until S2.4 deletes the prefix. |
+| `MLMR_URL` | `http://aimgf:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/mlmr/...` to: AIMgF, which serves the model registry since S2.1, until S2.4 deletes the prefix. |
 | `NFO_URL` | `http://nfo:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/nfo/...` to (network function orchestration, O2dms). |
 | `ONBOARDING_URL` | `http://onboarding:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/onboarding/...` to (rApp package store). |
 | `R1_BOOTSTRAP_KEY` | *not shown* | yes | `docker-compose.yml`, `r1-termination/app/main.py` | Shared key that `GET /bootstrap` requires in the `X-Bootstrap-Key` header. Unset (the default): `/bootstrap` is open. Set the same value as `SMO_BOOTSTRAP_KEY` on every service that calls the gateway. Give the value or the `_FILE` form, not both. |

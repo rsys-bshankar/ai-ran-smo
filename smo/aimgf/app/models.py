@@ -5,18 +5,19 @@ What it is: every table AIMgF owns (the list is in `aimgf/README.md` 2.2). A job
 MLTrainingRequest, `ValidationJob` the MLTestingRequest), so there is no parallel bookkeeping table for them; the NRM functions, processes, reports, loading
 and update resources that have no job equivalent are tables of their own at the end of the file (`docs/STANDARDS.md` decision D-9, flat resources).
 
-Where it sits: read and written by `main.py` and `nrm.py` only. The schema itself is the Alembic history in `migrations/`; this file must agree with it
+Where it sits: read and written by the capability packages (`training/`, `testing/`, `emulation/`, `loading/`, `inference/`, `update/`, `governance/`) and read by
+the registry for a model's lifecycle and NRM cross-references. The registry's own tables are `registry/models.py`. The schema itself is the Alembic history in `migrations/`; this file must agree with it
 (`scripts/check_migration_matches_models.py` compares them against Postgres). The unit tests build their SQLite schema from every `Base` class defined in this
 module (`tests/test_main.py`, fixture `db_session_factory`), so a new table is picked up there without a test change.
 
-Owns: AIMgF's tables. Does not own: models, repositories and coordination groups (MLMR), deployments and descriptors (NFO), data jobs (DME), the shared
-`idempotency_key` and outbox tables (`smo_shared`). A reference to another module's row is a bare UUID column, not an ORM `ForeignKey`: that module runs in its own
-process and its tables are not in this metadata (flushing would raise NoReferencedTableError). Migration 0022 also dropped the database-level foreign keys across
-module boundaries, so nothing but the owning module's API (called through R1) checks that such an id exists.
+Owns: AIMgF's lifecycle, run and NRM tables. Does not own: deployments and descriptors (NFO), data jobs (DME), the shared
+`idempotency_key` and outbox tables (`smo_shared`). A reference to a model or a repository of the registry, or to another module's row, is a bare UUID column, not an ORM `ForeignKey`
+(migration 0022 dropped the database-level foreign keys across module boundaries, and the registry's tables, though in the same schema since 0064, keep it so: a
+model's lifecycle and runs outlive the model as history). The code checks a model id against the registry (`common._get_model`).
 
 Before editing: a column change is a schema revision, not just an edit here (`smo/CLAUDE.md`, "Schema changes are revisions"). Arrays and JSON use a SQLite
 `with_variant` so the unit tests run without Postgres. A `DateTime(timezone=True)` read back from SQLite is naive, so elapsed-time maths on `started_at` goes
-through `main._aware`.
+through `execution._aware`.
 """
 
 import datetime
@@ -30,11 +31,11 @@ from smo_shared.versioning import Versioned
 
 
 class ModelLifecycle(Versioned, Base):
-    """AIMgF's lifecycle state for one model: where it is on the certification path and in its serving runtime. One row per model, keyed by the MLMR model id.
+    """AIMgF's lifecycle state for one model: where it is on the certification path and in its serving runtime. One row per model, keyed by the registry's model id.
 
-    The row is created lazily by `main._get_or_create_lifecycle` the first time AIMgF is asked about a model (MLMR has no hook into AIMgF), at REGISTERED /
+    The row is created lazily by `governance.lifecycle._get_or_create_lifecycle` the first time AIMgF is asked about a model (registering writes none), at REGISTERED /
     NOT_DEPLOYED. `model_lifecycle_state` and `runtime_lifecycle_state` are the two independent FSMs of `statemachine.py`. `training_job_id` is the model's current
-    training run, which is how a cancel tells whether the run it ends is still the model's current one. `cleared_node_groups` is written by MLLF through
+    training run, which is how a cancel tells whether the run it ends is still the model's current one. `cleared_node_groups` is written by the deploy gate (`loading/gate.py`) and by
     `PATCH /models/{id}/runtime/node-groups`. `nf_deployment_descriptor_id` and `nf_deployment_id` are the handles onto the serving runtime NFO created, and
     `runtime_profile` is the INFERENCE profile it was sized with. `training_approved` and `validation_approved` are the operator gate flags set by the
     APPROVE_TRAINING and APPROVE_VALIDATION events and reset by every CREATE_TRAINING (HISTORY.md OI-6.1).
@@ -44,7 +45,7 @@ class ModelLifecycle(Versioned, Base):
     """
     __tablename__ = "model_lifecycle"
 
-    model_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)  # -> aiml_model (MLMR)
+    model_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)  # -> aiml_model (registry)
     model_lifecycle_state: Mapped[str] = mapped_column(String, nullable=False, default="REGISTERED")
     runtime_lifecycle_state: Mapped[str] = mapped_column(String, nullable=False, default="NOT_DEPLOYED")
     training_job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
@@ -194,7 +195,7 @@ class TrainingJob(Base):
     parallel table.
 
     Exactly one of `model_id` and `model_coordination_group_id` is set (CHECK `exactly_one_target`); a group-targeted run drives no single model's lifecycle.
-    Both are bare UUIDs into MLMR, not foreign keys (see the module description). `status` is NOT_STARTED, IN_PROGRESS, SUSPENDED, FINISHED, FAILED or CANCELLED:
+    Both are bare UUIDs into the registry, not foreign keys (see the module description). `status` is NOT_STARTED, IN_PROGRESS, SUSPENDED, FINISHED, FAILED or CANCELLED:
     TS 28.105's `requestStatus` values plus FAILED; CANCELLING is never produced because cancellation is synchronous. `current_step` is the furthest of
     `TRAINING_STEPS` the runtime has reported; each step's own status is derived from it and `status` (`main._training_steps`). `started_at` plus `timeout_seconds`
     is the deadline `_expire_overdue_jobs` enforces. `ml_update_process_id` is set when an MLUpdateProcess started the run (FINE_TUNING), so its completion advances
@@ -414,7 +415,7 @@ class FeatureGroup(Base):
     The data-lake credential is either `token_ref`, the name of a secret the service resolves from its own environment when it connects (the database holds the name, never
     the value), or the deprecated clear-text `token` that older callers still send (stored as given, never returned by a route; SEC-15.2, `aimgf/README.md` 2.8). A group has
     one of the two; `token` is nullable because a group registered with a reference has none.
-    The group is AIMgF's rather than MLMR's, MLLF's or DME's because no ownership record placed it elsewhere; the real feature storage behind the reference's
+    The group is AIMgF's training data rather than DME's because no ownership record placed it elsewhere; the real feature storage behind the reference's
     feature store is not built (HISTORY.md section 5).
     """
 
@@ -449,7 +450,7 @@ class FeatureGroup(Base):
 # Requests are backed by the real job aggregates (MLTrainingRequest =
 # TrainingJob, MLTestingRequest = ValidationJob); everything else that had
 # no equivalent is a new table here. MLModel/MLModelRepository/
-# MLModelCoordinationGroup are MLMR's (mlmr/app/models.py).
+# MLModelCoordinationGroup are the registry's (registry/models.py).
 
 def _now():
     """Returns the current UTC time; the default factory of the `created_at` columns of the NRM tables."""
@@ -460,7 +461,7 @@ class MLTrainingFunction(Base):
     """TS 28.105 MLTrainingFunction: a training capability that MLTrainingRequests can name. Created and edited directly through the NRM routes.
 
     `ml_training_type` is read-only in the spec: it holds the type of the most recent run started for this function (stamped by `_start_training`).
-    `ml_model_repository_ref` is a bare UUID into MLMR. The learning-technology, FL and knowledge attributes are stored and returned; nothing acts on them.
+    `ml_model_repository_ref` is a bare UUID into the registry. The learning-technology, FL and knowledge attributes are stored and returned; nothing acts on them.
     """
     __tablename__ = "ml_training_function"
 
@@ -472,7 +473,7 @@ class MLTrainingFunction(Base):
     # readOnly in the spec: the mLTrainingType of the most recent training
     # this function ran, stamped by request_training.
     ml_training_type: Mapped[str | None] = mapped_column(String)
-    ml_model_repository_ref: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # -> ml_model_repository (MLMR)
+    ml_model_repository_ref: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # -> ml_model_repository (registry)
     created_at: Mapped[datetime.datetime] = mapped_column(default=_now)
 
 

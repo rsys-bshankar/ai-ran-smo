@@ -73,8 +73,8 @@ def test_tc01_to_tc10_lifecycle_inference_and_verified_o1_action(mesh, loaded_ap
     model_id = inst["modelId"]
     trainings = ok(mesh["aimgf"].get("/training-jobs", params={"model_id": model_id}))["items"]
     assert trainings[0]["status"] == "FINISHED"
-    assert ok(mesh["mlmr"].get(f"/models/{model_id}"))["modelType"] == "EnergySavingPredictor"
-    artifact = mesh["mlmr"].get(f"/models/{model_id}/artifact/{inst['artifactVersion']}")
+    assert ok(mesh["aimgf"].get(f"/models/{model_id}"))["modelType"] == "EnergySavingPredictor"
+    artifact = mesh["aimgf"].get(f"/models/{model_id}/artifact/{inst['artifactVersion']}")
     assert json.loads(zipfile.ZipFile(__import__("io").BytesIO(artifact.content)).read("energy_model.json"))["profile"]
     validation = ok(mesh["aimgf"].get("/validation-jobs", params={"model_id": model_id}))["items"][0]
     assert validation["status"] == "COMPLETED"

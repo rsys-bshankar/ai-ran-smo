@@ -6,7 +6,7 @@ and the closed `Literal` enums (`RequestStatus`, `MLTrainingType`, `ActivationSt
 attribute the spec does not define into a 422 instead of letting it be stored silently. `dump()` writes a model (or list of models) as plain JSON with
 `None` fields left out, which is what the JSON columns of `models.py` hold, so what is read back is exactly what the spec describes.
 
-Where it sits: `nrm.py` uses the datatypes in its request bodies and calls `dump()` before storing; `main.py` uses `ModelPerformance`, `FLReportPerClient`,
+Where it sits: the NRM files of the capability packages (`training/nrm.py`, `inference/nrm.py`, ...) use the datatypes in their request bodies and call `dump()` before storing; the run routes use `ModelPerformance`, `FLReportPerClient`,
 `InferenceOutput` and `PotentialImpactInfo` in the completion and resolve bodies. Design record: HISTORY.md W4-04, `docs/STANDARDS.md` decision D-9.
 
 Owns: validation of the datatype shapes. Does not own: any storage, any HTTP route, or the DN containment tree. Attributes of type `Dn`, `DnRo` and `DnListRo`

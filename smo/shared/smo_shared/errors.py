@@ -221,7 +221,7 @@ class FrameworkError:
     # HISTORY.md OI-6.3 — rApp Autonomy Modes.
     AUTONOMY_DISPATCH_NOT_FOUND = ("AUTONOMY_DISPATCH_NOT_FOUND", 404)
     AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE = ("AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE", 409)
-    # Wave 4 — TS 28.105 AI/ML NRM resources (aimgf/app/nrm.py, MLMR).
+    # Wave 4 — TS 28.105 AI/ML NRM resources (the nrm.py of each AIMgF capability package, and its registry).
     NRM_OBJECT_NOT_FOUND = ("NRM_OBJECT_NOT_FOUND", 404)
     INFERENCE_FUNCTION_NOT_ACTIVATED = ("INFERENCE_FUNCTION_NOT_ACTIVATED", 409)
     MODEL_NOT_LOADED = ("MODEL_NOT_LOADED", 409)

@@ -1,5 +1,7 @@
 # MLMR: lifecycle
 
+> **Historical (before S2.1–S2.3).** This describes MLMR as a service of its own. Its behaviour is now AIMgF's `registry` package (S2.1): the registry's routes run in AIMgF's process, its tables are in the `aimgf` schema, and its reads of AIMgF's lifecycle and NRM cross-references are in process, not over R1; the module's lifecycle is [`../../aimgf/docs/lifecycle.md`](../../aimgf/docs/lifecycle.md), and the AI/ML call flows are redrawn as Stage 2 completes (ADR 0010 section 2). This directory keeps only a health-probe placeholder until S2.8.
+
 MLMR, the ML Model Repository, holds model truth: a model's identity (`modelType` + `version`), its metadata and TS 28.105 / TS 29.482 attributes, its
 owner, the artifact bytes, coordination groups, repositories and storages. It holds no lifecycle state (that is AIMgF's). It is reached at the R1 prefix
 `/mlmr` through R1 Termination, keeps its tables in the database schema `mlmr` (role `smo_mlmr`, which also uses the shared `module_identity`), and has

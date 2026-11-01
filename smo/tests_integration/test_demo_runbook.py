@@ -360,7 +360,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     # (AIMgF's own ModelLifecycle), deploy+activate its runtime (AIMgF +
     # NFO's own RuntimeLifecycle), upload/download a real artifact
     # (MLMR), deregister.
-    model = mesh["mlmr"].post("/models", json={
+    model = mesh["aimgf"].post("/models", json={
         "modelType": "energy-saving-anomaly-detector", "version": "1.0.0",
         "description": "Demo anomaly-detection model for the Energy Saving rApp",
         "author": "energy-saving-rapp", "owner": "energy-saving-rapp",
@@ -380,7 +380,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     assert lifecycle.json()["modelLifecycleState"] == "TRAINING"
 
     artifact_bytes = b"demo-model-weights-bytes"
-    artifact = mesh["mlmr"].post(f"/models/{model_id}/artifact",
+    artifact = mesh["aimgf"].post(f"/models/{model_id}/artifact",
                                   files={"file": ("energy-saving-model.zip", artifact_bytes, "application/zip")})
     assert artifact.status_code == 201
     assert artifact.json()["artifactVersion"] == 1
@@ -437,14 +437,14 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     activated = mesh["aimgf"].post(f"/models/{model_id}/runtime/activate")
     assert activated.json()["runtimeLifecycleState"] == "ACTIVE"
 
-    downloaded = mesh["mlmr"].get(f"/models/{model_id}/artifact/1")
+    downloaded = mesh["aimgf"].get(f"/models/{model_id}/artifact/1")
     assert downloaded.status_code == 200
     assert downloaded.content == artifact_bytes
 
     terminated = mesh["aimgf"].post(f"/models/{model_id}/runtime/terminate")
     assert terminated.json()["runtimeLifecycleState"] == "TERMINATED"
 
-    deregistered = mesh["mlmr"].delete(f"/models/{model_id}")
+    deregistered = mesh["aimgf"].delete(f"/models/{model_id}")
     assert deregistered.status_code == 204
 
     # step 14: RAN Analytics — register a producer (real cross-module SME
@@ -667,7 +667,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     # step 15's own monitor was targetOrderId-scoped throughout).
     group_model_ids = []
     for i in range(2):
-        group_model = mesh["mlmr"].post("/models", json={
+        group_model = mesh["aimgf"].post("/models", json={
             "modelType": f"demo-coordination-group-model-{i}", "version": "1.0.0",
             "author": "energy-saving-rapp", "owner": "energy-saving-rapp",
         })
@@ -680,11 +680,11 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     # surface as an unhandled IntegrityError (bare 500) instead; SQLite's
     # test schema (built from the ORM models, which never mirrored the
     # constraint) never caught it, only a real-Postgres run did.
-    too_small = mesh["mlmr"].post("/coordination-groups", json={"memberModelIds": [group_model_ids[0]]})
+    too_small = mesh["aimgf"].post("/coordination-groups", json={"memberModelIds": [group_model_ids[0]]})
     assert too_small.status_code == 422
     assert too_small.json()["detail"]["title"] == "COORDINATION_GROUP_TOO_SMALL"
 
-    coordination_group = mesh["mlmr"].post("/coordination-groups", json={"memberModelIds": group_model_ids})
+    coordination_group = mesh["aimgf"].post("/coordination-groups", json={"memberModelIds": group_model_ids})
     assert coordination_group.status_code == 201
     group_id = coordination_group.json()["groupId"]
 

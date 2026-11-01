@@ -9,12 +9,9 @@
   ]
  },
  "mlmr": {
-  "schema": "mlmr",
+  "schema": null,
   "shared": [
-   "module_identity",
-   "idempotency_key",
-   "audit_log",
-   "audit_head"
+   "module_identity"
   ]
  },
  "ran-analytics": {
@@ -152,7 +149,9 @@
    "idempotency_key",
    "periodic_run",
    "smo_event",
-   "smo_event_relay"
+   "smo_event_relay",
+   "audit_log",
+   "audit_head"
   ]
  },
  "ran-nf-oam": {

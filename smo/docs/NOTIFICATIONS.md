@@ -37,8 +37,8 @@ After the move, a notification is sent after the transaction that caused it comm
 | `dme/app/main.py` | `_producer_is_healthy` | `get_webhook` | C | A producer's health URL: answers the type's ENABLED/DISABLED status | stays inline |
 | `mock-o1-adaptor/app/main.py` | `_emit` | `post_webhook` | A | RAN NF OAM (the stub's configured or requested target): a test trigger of the stub; its answer is read by the caller of the stub | stays inline (exempt) |
 | `sme/app/main.py` | `_deliver` | `enqueue` | A | Event subscribers: a service API became available, changed or went away | moved (MSG-1.6) |
-| `aimgf/app/main.py` | `_notify_job_completion` | `enqueue` | A | The job's notification URI: a training or inference job finished | moved (MSG-1.7) |
-| `aimgf/app/main.py` | `report_performance` | `enqueue` | A | A model subscriber: a performance report, possibly below its floor | moved (MSG-1.7) |
+| `aimgf/app/execution.py` | `_notify_job_completion` | `enqueue` | A | The job's notification URI: a training or inference job finished | moved (MSG-1.7) |
+| `aimgf/app/inference/monitoring.py` | `report_performance` | `enqueue` | A | A model subscriber: a performance report, possibly below its floor | moved (MSG-1.7) |
 | `focom/app/main.py` | `_notify_inventory_subscribers` | `enqueue` | A | Inventory subscribers: a resource changed | moved (MSG-1.8) |
 | `focom/app/fcaps.py` | `_notify` | `enqueue` | A | Alarm subscribers: an alarm was raised, changed or cleared | moved (MSG-1.8) |
 | `focom/app/fcaps.py` | `_report` | `enqueue` | A | Performance subscribers: new measurements | moved (MSG-1.8) |

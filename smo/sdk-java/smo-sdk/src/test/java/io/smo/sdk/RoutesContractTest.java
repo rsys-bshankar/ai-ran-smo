@@ -21,6 +21,12 @@ import org.junit.jupiter.api.Test;
 class RoutesContractTest {
     private static final Path DIR = Path.of(System.getProperty("smo.openapi.dir", "../../docs/openapi"));
 
+    /**
+     * R1 prefixes that R1 Termination's routing table sends to another module's process, whose document then holds the path: since S2.1 / S2.2 the
+     * model registry and the deploy gate are AIMgF's (`/mlmr`, `/mllf`), until S2.4 moves these routes to `/aimgf`.
+     */
+    private static final java.util.Map<String, String> SERVED_BY = java.util.Map.of("mlmr", "aimgf", "mllf", "aimgf");
+
     /** "/dme/data-jobs/{}" is the module "dme" and the path "/data-jobs/{}" in docs/openapi/dme.json. */
     private static String moduleOf(Route route) {
         return route.template().split("/")[1];
@@ -39,7 +45,7 @@ class RoutesContractTest {
      */
     private static JsonNode operation(Route route) throws IOException {
         String module = moduleOf(route);
-        Path file = DIR.resolve(module + ".json");
+        Path file = DIR.resolve(SERVED_BY.getOrDefault(module, module) + ".json");
         assertTrue(Files.exists(file), "no OpenAPI document for module " + module + " at " + file.toAbsolutePath());
         JsonNode spec = Json.MAPPER.readTree(Files.readString(file));
         String wanted = route.template().substring(module.length() + 1);
@@ -51,7 +57,7 @@ class RoutesContractTest {
                 }
             }
         }
-        throw new AssertionError(route.method() + " " + route.template() + " is not in docs/openapi/" + module + ".json");
+        throw new AssertionError(route.method() + " " + route.template() + " is not in docs/openapi/" + SERVED_BY.getOrDefault(module, module) + ".json");
     }
 
     /**

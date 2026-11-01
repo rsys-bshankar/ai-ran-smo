@@ -211,8 +211,8 @@ services:
       NFO_URL: http://nfo:8000
       FOCOM_URL: http://focom:8000
       AIMGF_URL: http://aimgf:8000
-      MLMR_URL: http://mlmr:8000
-      MLLF_URL: http://mllf:8000
+      MLMR_URL: http://aimgf:8000    # S2.1: the model registry is served by AIMgF's process until S2.4 deletes the /mlmr prefix
+      MLLF_URL: http://aimgf:8000    # S2.2: the deploy gate is served by AIMgF's process until S2.4 deletes the /mllf prefix
       RAN_ANALYTICS_URL: http://ran-analytics:8000
       MDAF_URL: http://mdaf:8000
       INTENT_SERVICE_URL: http://intent-service:8000

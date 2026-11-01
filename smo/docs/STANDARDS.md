@@ -67,11 +67,12 @@ limit below is tracked in [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md) §3.
 |---|---|---|---|
 | TS 28.104 | MDAF | 48/48 rows | `STREAMING` is recorded, not streamed (SA-MDA-5, no TS 28.532 streaming transport); `recommendationFilter`, `performanceThresholdInfo`, `analysisRequirements`, `thresholdMonitorRefList` stored not enforced; `areaScope` stored not matched; backing-model refs set by the caller; flat addressing |
 | TS 28.312 | Intent Service | 91/91 rows | Flat addressing; `DateTime` / `FullTime` checked by shape; the Intent Service validates and routes, the RMIHs realise the expectations (SA SMOS: `IS_EQUAL_TO` target setting only) |
-| TS 28.105 | AIMgF, MLMR, MLLF, runtime (*one module, AIMgF, by ADR 0010, pending Stage 2*) | 125/126 attributes | `ThresholdMonitors` (TS 28.623 containment, MLMF equivalent); FL/RL stored, no training engine; runtime scale has no target size; flat addressing |
-| TS 29.482 | MLMR | `MLModel`, storages / profiles, `storeDiscReqs`, discovery at REST level | `accessReqs.location` not enforced; phase written at training start / success only; the `MLModel` `anyOf` and forward-compatible enums not honoured |
+| TS 28.105 | AIMgF (one module since S2.1–S2.3, ADR 0010: the registry and the deploy gate are its packages), runtime | 125/126 attributes | `ThresholdMonitors` (TS 28.623 containment, MLMF equivalent); FL/RL stored, no training engine; runtime scale has no target size; flat addressing |
+| TS 29.482 | AIMgF (`registry`, MLMR until S2.1) | `MLModel`, storages / profiles, `storeDiscReqs`, discovery at REST level | `accessReqs.location` not enforced; phase written at training start / success only; the `MLModel` `anyOf` and forward-compatible enums not honoured |
 | TS 28.532 / 28.111 / 28.319 | RAN NF OAM | MSAC, `accessScope`, `PerceivedSeverity`, DN refs and file reporting closed | Streaming reporting (SA-RANOAM-8); DN containment tree (SA-RANOAM-4); MSAC guards CM writes, and with `RAN_NF_OAM_MSAC_REACH` on (`MGT-2`, off by default) config reads, subscriptions, alarm changes, software jobs, file routes, and the list routes and subscription deletes (`MGT-2.6`); Jex subset for `dataNodeSelector` |
 | O2IMS | FOCOM | Inventory sites, fault, performance, artifacts / cluster / infrastructure / provisioning at REST level | `FILE` / `STREAM` performance reporting; no real cluster behind a ProvisioningRequest; flat addressing |
 | TS 28.541 + WG10/WG5 | RAN NF OAM | 3GPP descriptor plus WG10 O1 NRM and WG5 O-DU / O-CU descriptors bundled | The 3GPP common YANG modules are not in `specs/`, so the attributes they contribute are missing from the YANG descriptors; WG4 M-plane not ingested |
+| TS 28.532 ProvMnS v19.2.0 (generic producer) | `smo_shared.mns` (no module mounts it until S1.6) | createMOI, getMOIAttributes (all four scope types, filter, `attributes`, `fields`, hierarchical and flat answers), modifyMOIAttributes (all four patch media types), deleteMOI, notifyMOICreation / AttributeValueChanges / Deletion (on the event bus), TS 28.623 error bodies; attributes validated against the TS 28.541 / TS 28.623 schemas (217 classes), NRM containment | A patch changes only the target's attributes, createMOI creates one instance, POST with a producer-assigned id not served, `dataNodeSelector` not read; `filter` is the JSONPath subset of Jex conditions (TS 32.161 not in `specs/`); paging is an SMO extension; subscriptions and delivery S1.13 |
 | O-RAN WG10 TE&IV | TE&IV (*new module, pending S3.1*) | Not built. The S0.13 spike ([ADR 0013](adr/0013-teiv-on-smo-teiv.md)) ran O-RAN-SC smo-teiv **0.3.0** (Release M), whose models cite O-RAN.WG10.TE&IV-DM.0-R004-v02.00 (one module R005-v04.00) and TE&IV-CIMI.0-R004-v02.00; the WG10 TE&IV R1 API itself is not in `specs/` (S3.24) | No neighbour relationship, most TS 28.541 attributes and some classes missing in smo-teiv's model (S3.20, S3.21); no change notifications (S3.22) |
 
 RAN Analytics is not in this table (*it merges into MDAF as `MDAFunction` registration, ADR 0008, pending S7.5*): it realises no standard (it is a producer
@@ -95,7 +96,7 @@ AI/ML NRM, AIMgF and MLMR (`specs/5G_APIs/TS28105_AiMlNrm.yaml`).
 
 - **Not a parallel model.** An MLTrainingRequest *is* a `TrainingJob`, an
   MLTestingRequest *is* a `ValidationJob`; both start through the same core
-  (`_start_training` / `_start_validation` in `aimgf/app/main.py`), so the
+  (`_start_training` / `_start_validation` in `aimgf/app/training/jobs.py` and `testing/jobs.py`), so the
   lifecycle gate, the operator approvals and the NFO execution runtimes
   apply to NRM-created runs. Every training run gets an MLTrainingProcess;
   every completion writes MLTrainingReport, MLTestingReport or
@@ -114,16 +115,16 @@ AI/ML NRM, AIMgF and MLMR (`specs/5G_APIs/TS28105_AiMlNrm.yaml`).
   monitoring is AIMgF MLMF (`/aimgf/mlmf/subscriptions`, `guardKpiFloor`),
   recorded as the equivalent in HISTORY.md §7 (TS 28.105 item 7).
 
-#### MLMR ownership review (W4-02)
+#### MLMR ownership review (W4-02; MLMR is AIMgF's `registry` package since S2.1)
 
 | Concern | Owner | Finding |
 |---|---|---|
 | Model identity, version, artifacts | MLMR | `MLModel` (`mLModelId` = `model_id`, `mLModelVersion` = `version`), `ModelArtifact` |
 | TS 28.105 writable MLModel attributes | MLMR | Columns on `aiml_model`, accepted on register and update |
-| `mLTrainingType`, `aIMLInferenceReportRefList`, `usedByFunctionRefList` (read-only) | AIMgF | Joined into `GET /mlmr/ml-models/{id}` from `GET /aimgf/ml-models/{id}/nrm-refs` over R1; empty if AIMgF is unreachable |
+| `mLTrainingType`, `aIMLInferenceReportRefList`, `usedByFunctionRefList` (read-only) | AIMgF | Read in process into `GET /ml-models/{id}` (`registry/routes.py` `ml_model_nrm_refs`; over R1 until S2.1) |
 | Repository container | MLMR | `MLModelRepository`; deleting it un-contains its models and groups (`ON DELETE SET NULL`) |
 | Coordination groups | MLMR | `memberMLModelRefList` = `member_model_ids` (minItems 2) |
-| Lifecycle state | AIMgF | MLMR stores no lifecycle |
+| Lifecycle state | AIMgF | The registry stores no lifecycle |
 
 #### InferenceRuntime mapping (W4-03)
 
@@ -149,9 +150,9 @@ optionally the function (must be ACTIVATED with the model loaded).
 | MLModelLoadingRequest | AIMgF | `/aimgf/ml-model-loading-requests` |
 | MLModelLoadingPolicy | AIMgF | `/aimgf/ml-model-loading-policies` |
 | MLModelLoadingProcess | AIMgF | `/aimgf/ml-model-loading-processes` |
-| MLModel | MLMR | `/mlmr/ml-models/{id}` (+ `/mlmr/models`) |
-| MLModelRepository | MLMR | `/mlmr/ml-model-repositories` |
-| MLModelCoordinationGroup | MLMR | `/mlmr/ml-model-coordination-groups/{id}` (+ `/mlmr/coordination-groups`) |
+| MLModel | AIMgF (registry) | `/mlmr/ml-models/{id}` (+ `/mlmr/models`), served by AIMgF; `/aimgf/...` after S2.4 |
+| MLModelRepository | AIMgF (registry) | `/mlmr/ml-model-repositories`, served by AIMgF; `/aimgf/...` after S2.4 |
+| MLModelCoordinationGroup | AIMgF (registry) | `/mlmr/ml-model-coordination-groups/{id}` (+ `/mlmr/coordination-groups`), served by AIMgF; `/aimgf/...` after S2.4 |
 | MLUpdateFunction | AIMgF | `/aimgf/ml-update-functions` |
 | MLUpdateRequest | AIMgF | `/aimgf/ml-update-requests` |
 | MLUpdateProcess | AIMgF | `/aimgf/ml-update-processes` |
