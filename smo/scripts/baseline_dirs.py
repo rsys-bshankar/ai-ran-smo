@@ -54,7 +54,9 @@ def write(directory: Path, parts: dict[str, dict]) -> tuple[list[str], list[str]
 def read_at(ref: str, directory: str, legacy_file: str | None, cwd: Path) -> dict[str, dict] | None:
     """The baseline at git `ref` ({module: part}): the directory `directory` (a path from `cwd`), or, before the split, `legacy_file` read whole and
     returned as {"": its content} for the caller to split. None when neither exists at `ref`."""
-    listed = subprocess.run(["git", "ls-tree", "--name-only", f"{ref}:{directory}"], capture_output=True, text=True, cwd=cwd)
+    # --full-tree: without it `git ls-tree` run below the top (the gates run from smo/) lists only the part of the tree under the current
+    # directory, which is nothing here, so the base ref's baseline read as empty and every entry looked like growth.
+    listed = subprocess.run(["git", "ls-tree", "--full-tree", "--name-only", f"{ref}:{directory}"], capture_output=True, text=True, cwd=cwd)
     if listed.returncode == 0:
         out = {}
         for name in listed.stdout.split():
