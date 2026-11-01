@@ -14,7 +14,7 @@ import pytest
 from test_main import FakeResponse, _set_lifecycle, client, db_session_factory, mlmr  # noqa: F401  (pytest fixtures)
 
 from app.models import ModelLifecycle, TrainingJob
-from app.statemachine import ModelLifecycleState, RuntimeLifecycleState
+from app.governance.statemachine import ModelLifecycleState, RuntimeLifecycleState
 
 
 def _certified(mlmr, db_session_factory) -> uuid.UUID:

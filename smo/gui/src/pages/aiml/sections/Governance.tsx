@@ -16,7 +16,7 @@ import { aimgfModel, governanceHistoryPath, lifecycleHistoryPath, lifecycleHisto
 
 type View = "governance" | "all" | "MODEL" | "RUNTIME";
 
-/** The end-of-life events legal from a model state (aimgf/app/statemachine.py): PROMOTED rolls back to CERTIFIED or is deprecated, CERTIFIED is
+/** The end-of-life events legal from a model state (aimgf/app/governance/statemachine.py): PROMOTED rolls back to CERTIFIED or is deprecated, CERTIFIED is
  * deprecated, DEPRECATED and FAILED are retired. Each label is a catalog key. */
 export function endOfLifeEvents(state: string): { event: "ROLLBACK" | "DEPRECATE" | "RETIRE"; labelKey: TKey }[] {
   switch (state) {

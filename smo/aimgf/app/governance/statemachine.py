@@ -5,16 +5,16 @@ retirement), `RuntimeLifecycle` (8 states, the model's serving runtime, jointly 
 plus the event sets that decide which route may fire which event and `should_trigger_group_retrain`. The two lifecycle FSMs move independently on the one
 `model_lifecycle` row: retraining a PROMOTED model does not take its runtime down, and a runtime can be scaled or terminated without touching certification.
 
-Where it sits: `main.py` fires the tables through `_fire_model_event` and `_fire_runtime_event`, which turn `IllegalTransition` into 409
-`LIFECYCLE_ILLEGAL_TRANSITION` and record a `LifecycleTransition` row; `nrm.py` imports `TRAINABLE_STATES`. The engine is `smo_shared.statemachine.StateMachine`.
+Where it sits: `governance/lifecycle.py` fires the tables through `_fire_model_event` and `_fire_runtime_event`, which turn `IllegalTransition` into 409
+`LIFECYCLE_ILLEGAL_TRANSITION` and record a `LifecycleTransition` row; the training packages import `TRAINABLE_STATES`. The engine is `smo_shared.statemachine.StateMachine`.
 Design record: `aimgf/README.md` 2.3, HISTORY.md OI-6.1 (operator approval gates), OI-2-governance-bypass, OI-2-training-lifecycle-edges and
 OI-2-model-eol-serving.
 
 Owns: which (state, event) pairs are legal and the event sets. Does not own: the checks that read the row rather than the state (`training_approved` and
-`validation_approved` are tested in `main._start_validation` and `request_emulation`), or any NFO call.
+`validation_approved` are tested in `testing/jobs._start_validation` and `emulation/jobs.request_emulation`), or any NFO call.
 
 Before editing: `tests/test_statemachine.py` pins the state counts (14 and 8) and the edge sets; README 2.3 lists every edge, so change both. A new
-`ModelLifecycleEvent` that is neither in `ADVANCEABLE_EVENTS` nor in `main._JOB_ROUTE_FOR_EVENT` makes `POST /models/{id}/advance` fail with a KeyError (500)
+`ModelLifecycleEvent` that is neither in `ADVANCEABLE_EVENTS` nor in `governance/routes._JOB_ROUTE_FOR_EVENT` makes `POST /models/{id}/advance` fail with a KeyError (500)
 instead of the 422 that names the job route.
 """
 
@@ -61,7 +61,7 @@ class ModelLifecycleEvent(StrEnum):
     # bare state check. Self-loops (TRAINED->TRAINED / VALIDATED->
     # VALIDATED): the model's own ModelLifecycleState doesn't change,
     # only ModelLifecycle.training_approved/validation_approved, which
-    # CREATE_VALIDATION/CREATE_EMULATION now gate on (main.py).
+    # CREATE_VALIDATION/CREATE_EMULATION now gate on (testing/jobs.py, emulation/jobs.py).
     APPROVE_TRAINING = "APPROVE_TRAINING"                # TRAINED -> TRAINED (gates CREATE_VALIDATION)
     CREATE_VALIDATION = "CREATE_VALIDATION"              # TRAINED -> VALIDATING (MLVF)
     VALIDATION_COMPLETE = "VALIDATION_COMPLETE"            # -> VALIDATED
@@ -80,7 +80,7 @@ class ModelLifecycleEvent(StrEnum):
     RETIRE = "RETIRE"                                                              # DEPRECATED/FAILED -> RETIRED
 
 
-# Governance events a CertificationRecord is written for (main.py's
+# Governance events a CertificationRecord is written for (governance/lifecycle.py's
 # advance_model_lifecycle) — Approval/Certification/Promotion/Rollback
 # per docs/ARCHITECTURE.md's AIMgF Governance list, plus the two decisions
 # framing approval (submit/reject) so the audit trail covers the whole
@@ -102,7 +102,7 @@ ADVANCEABLE_EVENTS = GOVERNANCE_EVENTS | frozenset({ModelLifecycleEvent.DEPRECAT
 
 # States a model can (re)enter TRAINING from — the CREATE_TRAINING edges
 # below, plus TRAINING itself (a new request supersedes the in-flight run,
-# main.py `_start_training`). CERTIFIED covers a rolled-back model
+# training/jobs.py `_start_training`). CERTIFIED covers a rolled-back model
 # (PROMOTED -ROLLBACK-> CERTIFIED), which must be retrainable to recover.
 TRAINABLE_STATES = frozenset({
     ModelLifecycleState.REGISTERED, ModelLifecycleState.CERTIFIED, ModelLifecycleState.PROMOTED,
@@ -112,7 +112,7 @@ TRAINABLE_STATES = frozenset({
 # End of life: a DEPRECATED model's already-ACTIVE runtime keeps serving
 # inference (consumers get a grace period to move off it) but its runtime
 # can't be activated or scaled; a RETIRED model serves nothing and its
-# runtime is terminated on RETIRE (main.py).
+# runtime is terminated on RETIRE (governance/routes.py, through loading/runtime.py).
 END_OF_LIFE_STATES = frozenset({ModelLifecycleState.DEPRECATED, ModelLifecycleState.RETIRED})
 
 
@@ -176,7 +176,7 @@ class RuntimeLifecycleState(StrEnum):
 
 
 class RuntimeLifecycleEvent(StrEnum):
-    """The events that move a model's runtime along `RuntimeLifecycleState`; all are fired from the runtime routes in `main.py`, none from `advance`."""
+    """The events that move a model's runtime along `RuntimeLifecycleState`; all are fired from the runtime routes in `loading/runtime.py`, none from `advance`."""
     REQUEST_DEPLOYMENT = "REQUEST_DEPLOYMENT"          # NFO: request runtime creation
     DEPLOYMENT_COMPLETE = "DEPLOYMENT_COMPLETE"
     ACTIVATE = "ACTIVATE"
@@ -244,8 +244,8 @@ INFERENCE_JOB_FSM = build_inference_job_fsm()
 def should_trigger_group_retrain(retrain_propagation: str, member_count: int, breached_count: int) -> bool:
     """Returns True when a breached MLMF report should retrain the members of the model's coordination group.
 
-    `retrain_propagation` is the group's `retrainPropagation` value from MLMR (untrusted text: anything unknown raises `ValueError`). With no breach the answer is
-    always False. ANY_MEMBER_TRIGGERS: one breach is enough. MAJORITY_TRIGGERS: more than half the members must have breached; `main.report_performance` passes
+    `retrain_propagation` is the group's `retrainPropagation` value from the registry (untrusted text: anything unknown raises `ValueError`). With no breach the answer is
+    always False. ANY_MEMBER_TRIGGERS: one breach is enough. MAJORITY_TRIGGERS: more than half the members must have breached; `inference/monitoring.report_performance` passes
     `breached_count=1`, so in practice this only fires for a group of one member. WEIGHTED_TRIGGERS is reserved and raises `NotImplementedError`
     (`OI-1-weighted-triggers`); `report_performance` answers it as `groupRetrainError`, the report already stored.
     Pure function: no database, no side effects. Design: AI/ML Workflow LLD sections 4.3 and 4.4.

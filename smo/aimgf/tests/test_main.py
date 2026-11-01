@@ -28,7 +28,7 @@ from app.models import (
     CertificationRecord, EmulationJob, FeatureGroup, InferenceJob, LifecycleTransition, MLMFSubscription,
     ModelLifecycle, PerformanceReport, TrainingJob, ValidationJob,
 )
-from app.statemachine import ModelLifecycleState, RuntimeLifecycleState
+from app.governance.statemachine import ModelLifecycleState, RuntimeLifecycleState
 
 
 class FakeResponse:
@@ -42,10 +42,11 @@ class FakeResponse:
 
 
 class FakeMlmr:
-    """An in-memory double of MLMR's model-existence route (`GET /mlmr/models/{id}`, 200 with the model or a 404 problem) and coordination-group list (`GET /mlmr/coordination-groups`, one page).
+    """An in-memory double of the model registry as the other packages read it (`app.registry.access`): a model's management JSON (`model_json`, None for an
+    unknown id), the coordination groups (`coordination_groups`) and the phase write-back (`record_phase`).
 
-    `add_model` registers a model and returns its id; `groups` is the list the group route answers; `phase_writes` records the `PATCH .../phase-info` calls AIMgF makes back to MLMR.
-    AIMgF's own lifecycle state is not faked: it lives in the test database.
+    `add_model` registers a model and returns its id; `groups` is the list of groups; `phase_writes` records the `(model id, body)` of every phase write-back.
+    AIMgF's own lifecycle state is not faked: it lives in the test database. The registry's own routes are tested against its real tables in `test_registry.py`.
     """
 
     def __init__(self):
@@ -55,19 +56,22 @@ class FakeMlmr:
         self.unknown_dme_types: set[str] = set()   # DME type ids the fake DME does not know (call flow 13a)
 
     def add_model(self, model_id=None, **attributes) -> uuid.UUID:
-        """Registers a model; `attributes` are extra fields of MLMR's answer (`owner`, `phaseInfo`, `storeDiscReqs`)."""
+        """Registers a model; `attributes` are extra fields of the registry's JSON (`owner`, `phaseInfo`, `storeDiscReqs`)."""
         model_id = model_id or uuid.uuid4()
         self.models[str(model_id)] = {"modelId": str(model_id), **attributes}
         return model_id
 
-    def get(self, path, **kw):
-        if path == "/mlmr/coordination-groups":
-            return FakeResponse(200, {"items": self.groups, "total": len(self.groups), "limit": 100, "offset": 0})
-        model_id = path.rsplit("/", 1)[-1]
-        model = self.models.get(model_id)
-        return FakeResponse(200, model) if model is not None else FakeResponse(
-            404, {"detail": {"type": "about:blank", "title": "MODEL_NOT_FOUND", "status": 404, "detail": "no such model"}}
-        )
+    def model_json(self, db, model_id):
+        """`access.model_json`: the model's JSON, or None for an id the double does not hold."""
+        return self.models.get(str(model_id))
+
+    def coordination_groups(self, db):
+        """`access.coordination_groups`: every group."""
+        return list(self.groups)
+
+    def record_phase(self, db, model_id, body):
+        """`access.record_phase`: records the write (SA-MLMR-7)."""
+        self.phase_writes.append((str(model_id), body))
 
 
 class FakeNfo:
@@ -144,10 +148,11 @@ def db_session_factory():
 
 @pytest.fixture
 def mlmr(monkeypatch):
-    """Fixture: installs the MLMR and NFO doubles over `app.main.R1Client.get/post/delete/patch` and returns the `FakeMlmr` (its `.nfo` attribute is the `FakeNfo`).
+    """Fixture: installs the registry double over `app.registry.access` and the NFO and DME doubles over `app.main.R1Client.get/post/delete`, and returns the
+    `FakeMlmr` (its `.nfo` attribute is the `FakeNfo`).
 
-    `get` answers MLMR's model and group routes and DME's type read (every type is known but those in `unknown_dme_types`, call flow 13a), `post` and `delete` answer NFO, `patch` records the phase write-back in `phase_writes` and answers 200. The patch is on the class, so it also
-    serves `app/nrm.py`, which calls through the same client.
+    `get` answers NFO's deployment read and DME's type read (every type is known but those in `unknown_dme_types`, call flow 13a), `post` and `delete` answer
+    NFO. The patch is on the class, so it serves every package, which all call through `common._r1`.
     """
     fake_mlmr = FakeMlmr()
     fake_nfo = FakeNfo()
@@ -157,7 +162,7 @@ def mlmr(monkeypatch):
             return fake_nfo.get(path, **kw)
         if path.startswith("/dme/dme-types/"):
             return FakeResponse(404 if path.rsplit("/", 1)[-1] in fake_mlmr.unknown_dme_types else 200, {})
-        return fake_mlmr.get(path, **kw)
+        raise AssertionError(f"unexpected R1 GET {path}")
 
     def fake_post(self, path, json=None, **kw):
         return fake_nfo.post(path, json=json, **kw)
@@ -165,14 +170,11 @@ def mlmr(monkeypatch):
     def fake_delete(self, path, **kw):
         return fake_nfo.delete(path, **kw)
 
-    def fake_patch(self, path, json=None, **kw):
-        fake_mlmr.phase_writes.append((path, json))  # SA-MLMR-7: the phaseInfo write-back to MLMR
-        return FakeResponse(200, {})
-
     monkeypatch.setattr("app.main.R1Client.get", fake_get)
     monkeypatch.setattr("app.main.R1Client.post", fake_post)
     monkeypatch.setattr("app.main.R1Client.delete", fake_delete)
-    monkeypatch.setattr("app.main.R1Client.patch", fake_patch)
+    for name in ("model_json", "coordination_groups", "record_phase"):
+        monkeypatch.setattr(f"app.registry.access.{name}", getattr(fake_mlmr, name))
     fake_mlmr.nfo = fake_nfo
     return fake_mlmr
 
@@ -233,14 +235,14 @@ def test_training_writes_phase_and_lineage_back_to_mlmr(client, mlmr, db_session
     IN_RETRAINING with the model (or its source) as the baseModelId; success is TRAINED."""
     model_id = mlmr.add_model()
     job = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "r", "trainingDataset": "s3://t.csv"}).json()["trainingJobId"]
-    assert mlmr.phase_writes == [(f"/mlmr/models/{model_id}/phase-info", {"phase": "IN_TRAINING", "trainingInfo": {"dataSources": "s3://t.csv"}})]
+    assert mlmr.phase_writes == [(str(model_id), {"phase": "IN_TRAINING", "trainingInfo": {"dataSources": "s3://t.csv"}})]
     mlmr.phase_writes.clear()
     assert client.post(f"/training-jobs/{job}/complete", json={"succeeded": True, "metrics": {}}).status_code == 200
-    assert mlmr.phase_writes == [(f"/mlmr/models/{model_id}/phase-info", {"phase": "TRAINED"})]
+    assert mlmr.phase_writes == [(str(model_id), {"phase": "TRAINED"})]
     mlmr.phase_writes.clear()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.PROMOTED)
     client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "r"})
-    assert mlmr.phase_writes == [(f"/mlmr/models/{model_id}/phase-info", {"phase": "IN_RETRAINING", "trainingInfo": {"baseModelId": str(model_id)}})]
+    assert mlmr.phase_writes == [(str(model_id), {"phase": "IN_RETRAINING", "trainingInfo": {"baseModelId": str(model_id)}})]
 
 
 def test_a_retrain_of_a_derived_model_names_its_source_as_the_base(client, mlmr, db_session_factory):
@@ -1694,7 +1696,7 @@ def test_a_failing_group_step_answers_200_with_group_retrain_error_and_keeps_one
     """A group whose `retrainPropagation` is the reserved WEIGHTED_TRIGGERS makes the group step raise after the report is committed: the answer is 200 with
     `groupRetrainError` (INTERNAL_ERROR, the reason), one report is stored and a WARNING is logged, instead of a 500 that released the key."""
     sub_id = _breaching_member_subscription(mlmr, db_session_factory, retrain_propagation="WEIGHTED_TRIGGERS")
-    with caplog.at_level("WARNING", logger="app.main"):
+    with caplog.at_level("WARNING", logger="app.inference.monitoring"):
         resp = client.post(f"/mlmf/subscriptions/{sub_id}/reports", json={"accuracy": 0.5})
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -1704,21 +1706,16 @@ def test_a_failing_group_step_answers_200_with_group_retrain_error_and_keeps_one
     assert any("group retrain" in r.getMessage() for r in caplog.records if r.levelname == "WARNING")
 
 
-def test_mlmr_not_answering_the_group_read_is_upstream_failed_in_the_body(client, mlmr, db_session_factory, monkeypatch):
-    """A transport error on the coordination-group read at MLMR is answered as `groupRetrainError` UPSTREAM_FAILED, with the report stored."""
-    import httpx
+def test_a_failing_registry_group_read_is_an_internal_error_in_the_body(client, mlmr, db_session_factory, monkeypatch):
+    """An error reading the registry's coordination groups (in process since S2.1, so a database error, not a transport one) is answered as
+    `groupRetrainError` INTERNAL_ERROR, with the report stored."""
     sub_id = _breaching_member_subscription(mlmr, db_session_factory)
 
-    real_get = mlmr.get
-
-    def get(path, **kw):
-        # the group list does not answer; any other read is MLMR's double
-        if path == "/mlmr/coordination-groups":
-            raise httpx.ConnectError("mlmr is down")
-        return real_get(path, **kw)
-    monkeypatch.setattr(mlmr, "get", get)
+    def failing_groups(db):
+        raise RuntimeError("the registry's group table could not be read")
+    monkeypatch.setattr("app.registry.access.coordination_groups", failing_groups)
     resp = client.post(f"/mlmf/subscriptions/{sub_id}/reports", json={"accuracy": 0.5})
-    assert resp.status_code == 200 and resp.json()["groupRetrainError"]["code"] == "UPSTREAM_FAILED"
+    assert resp.status_code == 200 and resp.json()["groupRetrainError"]["code"] == "INTERNAL_ERROR"
     assert _report_count(db_session_factory) == 1
 
 

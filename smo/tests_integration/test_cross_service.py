@@ -274,7 +274,7 @@ def test_ts28105_nrm_pipeline_across_aimgf_mlmr_and_nfo(mesh):
     RuntimeLifecycle, and MLMR's own MLModel NRM view joining AIMgF's
     read-only cross-references back through R1.
     """
-    model_id = mesh["mlmr"].post("/models", json={
+    model_id = mesh["aimgf"].post("/models", json={
         "modelType": "nrm-energy", "version": "1.0", "aIMLInferenceName": "NG_RAN_NETWORK_ENERGY_SAVING",
     }).json()["modelId"]
     request = mesh["aimgf"].post("/ml-training-requests", json={"mLModelRef": model_id, "trainingRequestSource": "es-rapp"})
@@ -302,7 +302,7 @@ def test_ts28105_nrm_pipeline_across_aimgf_mlmr_and_nfo(mesh):
     lifecycle = mesh["aimgf"].get(f"/models/{model_id}/lifecycle").json()
     assert lifecycle["runtimeLifecycleState"] == "ACTIVE" and lifecycle["nfDeploymentId"]
 
-    nrm = mesh["mlmr"].get(f"/ml-models/{model_id}").json()["attributes"]
+    nrm = mesh["aimgf"].get(f"/ml-models/{model_id}").json()["attributes"]
     assert nrm["mLTrainingType"] == "INITIAL_TRAINING"
     assert nrm["usedByFunctionRefList"] == [function_id]
     assert nrm["aIMLInferenceName"] == "NG_RAN_NETWORK_ENERGY_SAVING"
@@ -321,7 +321,7 @@ def test_ts28104_drift_report_reaches_aimgf_mlmf_and_request_delivery(mesh):
         "mDAType": "PREDICTIONS_PM_DATA", "mDAOutputList": {"pmPredictions": [{"pmName": "RRU.PrbUsedDl", "pmPredictedValue": 2.8}]}}]})
     assert report.json()["attributes"]["deliveredToRequestRefList"] == [request.json()["id"]]
 
-    model_id = mesh["mlmr"].post("/models", json={"modelType": "drifty", "version": "1"}).json()["modelId"]
+    model_id = mesh["aimgf"].post("/models", json={"modelType": "drifty", "version": "1"}).json()["modelId"]
     sub = mesh["aimgf"].post("/mlmf/subscriptions", params={"model_id": model_id, "dme_type_id": _mlmf_dme_type(mesh, "ModelDrift")},
                              json={"metric_types": ["accuracy"], "guard_kpi_floor": {"accuracy": 0.8}})
     assert sub.status_code == 201, sub.text
@@ -342,7 +342,7 @@ def test_ts28105_cross_module_paths_resolve_inside_the_mesh(mesh):
     this mesh, whose loader evicts `app.*` from sys.modules per service.
     """
     def promoted_model(name):
-        model_id = mesh["mlmr"].post("/models", json={"modelType": name, "version": "1"}).json()["modelId"]
+        model_id = mesh["aimgf"].post("/models", json={"modelType": name, "version": "1"}).json()["modelId"]
         job = mesh["aimgf"].post("/training-jobs", json={"modelId": model_id, "producerId": "p"}).json()["trainingJobId"]
         mesh["aimgf"].post(f"/training-jobs/{job}/complete", json={"succeeded": True})
         return model_id
@@ -363,7 +363,7 @@ def test_ts28105_cross_module_paths_resolve_inside_the_mesh(mesh):
     assert mesh["aimgf"].get(f"/ml-update-processes/{process_id}").json()["attributes"]["progressStatus"]["status"] == "FINISHED"
 
     emu_fn = mesh["aimgf"].post("/aiml-inference-emulation-functions", json={}).json()["id"]
-    other = mesh["mlmr"].post("/models", json={"modelType": "mesh-emu", "version": "1"}).json()["modelId"]
+    other = mesh["aimgf"].post("/models", json={"modelType": "mesh-emu", "version": "1"}).json()["modelId"]
     job = mesh["aimgf"].post("/training-jobs", json={"modelId": other, "producerId": "p"}).json()["trainingJobId"]
     mesh["aimgf"].post(f"/training-jobs/{job}/complete", json={"succeeded": True})
     mesh["aimgf"].post(f"/models/{other}/advance", params={"event": "APPROVE_TRAINING", "decided_by": "op"})
@@ -409,7 +409,7 @@ def test_runtime_profile_flows_from_rapp_manifest_to_nfo_descriptor(mesh, loaded
     package_id = mesh["onboarding"].post("/packages", json={"location": "http://example/es.csar"}).json()["packageId"]
     assert mesh["onboarding"].get(f"/packages/{package_id}/onboarding-status").json()["state"] == "AVAILABLE"
 
-    model_id = mesh["mlmr"].post("/models", json={"modelType": "w7-profile", "version": "1"}).json()["modelId"]
+    model_id = mesh["aimgf"].post("/models", json={"modelType": "w7-profile", "version": "1"}).json()["modelId"]
     job = mesh["aimgf"].post("/training-jobs", json={"modelId": model_id, "producerId": "p", "packageId": package_id})
     assert job.status_code == 201, job.text
     job_id = job.json()["trainingJobId"]

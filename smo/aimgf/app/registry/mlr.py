@@ -1,7 +1,7 @@
 """TS 29.482 MLR: MLModel information, storages and profiles, discovery.
 
 `TS29482_MLR_MLModelManagement.yaml` and `TS29482_MLR_ModelInformationDiscovery.yaml`
-over MLMR's model rows.
+over the registry's model rows (the `registry` package of AIMgF, formerly MLMR).
 
 * **MLModel** (`model_info_view`): the spec's MLModel record for a registered
   model: `mlModelId` (= the model id), `mlModelSize` (the latest artifact's size),
@@ -84,7 +84,7 @@ class MLModelTrainingInfo(_Spec):
         return self
 
 
-# TS 29.482 MLModelPhaseInfo. `phase` is required here; AIMgF writes it through `PATCH /models/{id}/phase-info`.
+# TS 29.482 MLModelPhaseInfo. `phase` is required here; AIMgF's training writes it in process (`access.record_phase`), anyone else through `PATCH /models/{id}/phase-info`.
 class MLModelPhaseInfo(_Spec):
     phase: Phase
     observedPerf: MLModelPerf | None = None
@@ -304,6 +304,14 @@ def patch_phase_info(request: Request, model_id: uuid.UUID, body: PhaseInfoPatch
     if model is None:
         raise framework_error(FrameworkError.MODEL_NOT_FOUND, detail="no such model")
     refuse_unless_owner(request, model, "write its phase")
+    merge_phase_info(model, body)
+    db.commit()
+    return model_info_view(db, model)
+
+
+def merge_phase_info(model: MLModel, body: PhaseInfoPatch) -> None:
+    """Merges a phase write into `model.phase_info`: the sent attributes overwrite the stored ones, `trainingInfo` is merged key by key. The first write must carry
+    a `phase` (422 SCHEMA_VALIDATION_FAILED). Shared by the route above and AIMgF's in-process write-back (`access.record_phase`); does not commit."""
     info = dict(model.phase_info or {})
     if "phase" not in info and body.phase is None:
         raise _invalid("the first phaseInfo write needs a phase")
@@ -314,8 +322,6 @@ def patch_phase_info(request: Request, model_id: uuid.UUID, body: PhaseInfoPatch
     if training:
         info["trainingInfo"] = training
     model.phase_info = info
-    db.commit()
-    return model_info_view(db, model)
 
 
 # ---------------------------------------------------------------- storages and profiles

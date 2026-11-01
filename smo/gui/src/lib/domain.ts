@@ -3,7 +3,7 @@
  * formatting, and the form-to-request-body builders and their client-side checks (rApp limits, staged CM jobs, KPI definitions and schedules, approval policies, the
  * decision query), plus the plain-words meanings of the status codes the safeguards, approval and decision pages show. No React, no network.
  *
- * The state machines are copies of the modules' own (aimgf/app/statemachine.py, onboarding/app/statemachine.py): when a module's machine changes, the matching function
+ * The state machines are copies of the modules' own (aimgf/app/governance/statemachine.py, onboarding/app/statemachine.py): when a module's machine changes, the matching function
  * here changes with it, and `domain.test.ts` pins each state. The `...Payload` builders only save a round trip: the modules and the BFF validate again and are the authority,
  * and the bounds written here are the ones they enforce. Covered by `domain.test.ts`.
  *
@@ -19,7 +19,7 @@ import { translate, type Params, type TKey, type Translator } from "../i18n";
 export const ENGLISH: Translator = Object.assign((key: TKey, params?: Params) => translate("en", key, params), { language: "en" as const });
 
 // ---------------------------------------------------------------- AI/ML model FSMs
-// aimgf/app/statemachine.py — Wave 2 split ModelLifecycle (a model's own
+// aimgf/app/governance/statemachine.py — Wave 2 split ModelLifecycle (a model's own
 // identity/certification path) from RuntimeLifecycle (its serving
 // existence), replacing the flat single pipeline this GUI drew before.
 

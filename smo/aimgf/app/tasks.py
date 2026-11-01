@@ -1,7 +1,7 @@
 """The periodic work of AIMgF (call flow 27e, DOC-CF-1.8), run by `python -m smo_shared.worker` (compose service `aimgf-worker`), never by a request process.
 
   expire-overdue-runs   every `AIMGF_TIMEOUT_SWEEP_SECONDS` (default 60)   fails every training, validation, emulation and inference run past its deadline
-                        (`main._expire_overdue_jobs`: the run FAILED, its NFO runtime removed, the model's stage failed, the requester told TIMEOUT)
+                        (`execution._expire_overdue_jobs`: the run FAILED, its NFO runtime removed, the model's stage failed, the requester told TIMEOUT)
 
 Before this worker, the sweep ran only as a side effect of a job read: a run nobody read never timed out, and its NFO workload ran on. The reads still sweep too.
 """
@@ -26,7 +26,8 @@ def _interval(variable: str, default: float) -> float:
 
 def expire_overdue_runs() -> None:
     """Task `expire-overdue-runs`: one sweep of the runs past their deadline, in a session of its own (the worker calls it outside any request). Commits when it expired anything."""
-    from .main import _expire_overdue_jobs   # imported here: the worker imports this module before it needs the FastAPI app
+    from . import main  # noqa: F401 — imported here, not at the top: loads every package the sweep reaches; the worker imports this module before it needs them
+    from .execution import _expire_overdue_jobs
     with SessionLocal() as db:
         expired = _expire_overdue_jobs(db)
     if expired:

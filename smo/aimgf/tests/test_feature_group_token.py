@@ -78,7 +78,7 @@ def test_a_reference_that_is_not_a_secret_name_is_refused_without_echo(client, r
 
 def test_the_token_is_resolved_from_the_environment_or_a_file(client, db_session_factory, tmp_path, monkeypatch):
     """`feature_group_token` resolves a reference from `AIMGF_FEATURE_GROUP_TOKEN_<REF>` or its `_FILE`, falls back to nothing for an unset one, and returns a legacy group's stored token."""
-    from app.main import feature_group_token
+    from app.training.feature_groups import feature_group_token
     from app.models import FeatureGroup
     client.post("/feature-groups", json=_ref_body())
     client.post("/feature-groups", json=_feature_group_body("legacyGroup", token=SECRET))

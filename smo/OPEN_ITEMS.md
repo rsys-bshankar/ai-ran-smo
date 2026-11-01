@@ -62,7 +62,7 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
 ## 1. Design decisions without an answer
 
 - **OI-1-weighted-triggers** — `WEIGHTED_TRIGGERS` group-retrain propagation raises
-  `NotImplementedError` (`aimgf/app/statemachine.py`). Needs real per-model noise-floor data; a
+  `NotImplementedError` (`aimgf/app/governance/statemachine.py`). Needs real per-model noise-floor data; a
   weighting invented without it would be arbitrary. Approach: collect breach statistics from
   `MLMFSubscription` performance reports, then design the weighting (LLD §4.4 revisit trigger 3).
 - **OI-1-alarm-storm** — No alarm-storm correlation algorithm in `ran-nf-oam/`;
@@ -181,13 +181,6 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
   database error is retried rather than final.
 - **OPS-A1-DROP** — The A1 tables (`a1_ei_type` and the others) that revision 0029 leaves for 0.4.0's `a1-related` module have no revision that drops
   them, now that no supported release uses them (call flow 31). Approach: the contract revision that drops them, announced under `### Changed`.
-- **MLLF-IDENTITY** — Every MLLF process registers an SME invoker of its own: MLLF has no database (`database: false` in the chart, none in compose), so
-  `_identity_store` answers None (`shared/smo_shared/r1_client.py`) and each replica and each restart onboards a new invoker; the old ones stay
-  at SME until an admin runs `POST /sme/invoker-registrations/purge-stale` (nothing schedules it), and the replicas of one module are different
-  invokers to the gateway's per-invoker controls and audit (`mllf/docs/lifecycle.md`, a and c). `SMO_INVOKER_ID` / `SMO_INVOKER_SECRET` avoid it but
-  neither compose nor the chart sets them. Approach: give MLLF the shared `module_identity` path (a database role with only that table, as every other
-  module has) or a pre-provisioned identity from a Secret in compose and the chart.
-  Superseded by PR-CONV-S2.2.
 - **O1-ADAPTOR-ENROL** — How a production O1 adaptor is given an identity is not specified: an adaptor's ingest routes (`POST /ran-nf-oam/alarms/ingest`,
   `/pm-reports`, `/pm-files`, `/o1-adaptor-endpoints/{id}/heartbeat`) are not on the rApp allow-list (`shared/smo_shared/roles.py`, `/ran-nf-oam`
   allows only `config-jobs`), so an adaptor enrolled as an rApp is refused at the gateway; enrolled as an SMO module (the enrollment secret) it gets the
@@ -238,8 +231,8 @@ Closed in this wave: SA-FOCOM-2 (Location, OCloudSite, pool links, inline resour
 - **SA-MLMR-7 (phases)** — AIMgF writes `phaseInfo.phase` at training start (`IN_TRAINING` /
   `IN_RETRAINING`) and success (`TRAINED`) only; a deployment does not write `DEPLOYED`. TS 29.482's `MLModelPhase` has no validation
   phase (`NOT_TRAINED`, `IN_TRAINING`, `TRAINED`, `IN_RETRAINING`, `DEPLOYED`: `specs/5G_APIs/TS29482_MLR_MLModelManagement.yaml`,
-  `MLModelPhase`; MLMR's `Phase`, `mlmr/app/mlr.py`, is the same list), so validation stays AIMgF's lifecycle state (`VALIDATED`) and is not
-  written to MLMR. Approach: write `DEPLOYED` when the model's serving runtime is deployed (call flow 17), and back to `TRAINED` when it is terminated.
+  `MLModelPhase`; the registry's `Phase`, `aimgf/app/registry/mlr.py`, is the same list), so validation stays AIMgF's lifecycle state (`VALIDATED`) and is not
+  written to the registry. Approach: write `DEPLOYED` when the model's serving runtime is deployed (call flow 17), and back to `TRAINED` when it is terminated.
 - **SA-MLMR-1 (spec edges)** — the `MLModel` `anyOf` and the forward-compatible free-string enum
   values are not honoured; a model cannot be created from a profile (no type / version in
   `mlModelInfo`).
@@ -1415,7 +1408,7 @@ real detail, and sets the task's status in the live plan to Done the same day (t
 
 Stage 0 ends at milestone M0 (week 2): decisions answered, three ADRs merged, the schema bundle corrected and complete, the contract gate required in CI, and the four sample use cases realised on paper.
 
-Done, in `HISTORY.md`: `PR-CONV-S0.1` to `PR-CONV-S0.13`, `PR-CONV-S0.15` to `PR-CONV-S0.17`.
+Done, in `HISTORY.md`: `PR-CONV-S0.1` to `PR-CONV-S0.13`, `PR-CONV-S0.15` to `PR-CONV-S0.17`, `PR-CONV-S2.1` to `PR-CONV-S2.3`.
 
 | ID | Task | Stage | Needs | Done when |
 |---|---|---|---|---|
@@ -1449,9 +1442,6 @@ Stage 2 ends at milestone M2 (week 5, in parallel with Stage 1): one AI/ML servi
 
 | ID | Task | Stage | Needs | Done when |
 |---|---|---|---|---|
-| PR-CONV-S2.1 | Move MLMR into `aimgf/app/mlmr/`; its tables into the aimgf schema | 2 | D4 | AIMgF suite green, including the TS 29.482 MLR conformance tests moved from `mlmr/` |
-| PR-CONV-S2.2 | Move the MLLF deploy gate into `aimgf/app/mllf/` (in-process call) | 2 | S2.1 | Deploy-gate tests pass with no MLLF container |
-| PR-CONV-S2.3 | Organise AIMgF's code by TS 28.105 capability | 2 | S2.1 | Code map in the README matches the packages |
 | PR-CONV-S2.4 | Move every caller to `/aimgf/*`; no alias | 2 | S2.2 | A CI grep finds no caller of the old prefixes |
 | PR-CONV-S2.5 | Model artifacts out of the database into the object store; ONNX and Safetensors only | 2 | S2.1, S1.10 | Upgrade from 0.9.0 keeps every artifact readable (upgrade lane) |
 | PR-CONV-S2.6 | Publish the lifecycle mapping (14 states → 7 stages → `servingState`) | 2 | S0.5 | Mapping table merged; GUI labels follow it |

@@ -37,9 +37,9 @@ STATE_COLUMNS = {
     ("nf_deployment", "state"): ("nfo/app/statemachine.py", "DeploymentState"),
     ("application_package", "state"): ("onboarding/app/statemachine.py", "PackageState"),
     ("rapp_instance", "state"): ("rapp-mgmt/app/statemachine.py", "InstanceState"),
-    ("model_lifecycle", "model_lifecycle_state"): ("aimgf/app/statemachine.py", "ModelLifecycleState"),
-    ("model_lifecycle", "runtime_lifecycle_state"): ("aimgf/app/statemachine.py", "RuntimeLifecycleState"),
-    ("inference_job", "status"): ("aimgf/app/statemachine.py", "InferenceState"),
+    ("model_lifecycle", "model_lifecycle_state"): ("aimgf/app/governance/statemachine.py", "ModelLifecycleState"),
+    ("model_lifecycle", "runtime_lifecycle_state"): ("aimgf/app/governance/statemachine.py", "RuntimeLifecycleState"),
+    ("inference_job", "status"): ("aimgf/app/governance/statemachine.py", "InferenceState"),
 }
 
 
@@ -70,7 +70,7 @@ def _module_dir(module: str) -> Path:
 def _assigned_literals(module: str) -> list[tuple[str, str, str, int]]:
     """(file, attribute, literal, line) for every `x.attr = "LIT"` and `Call(attr="LIT")` in the module's source."""
     found = []
-    for path in sorted(_module_dir(module).glob("*.py")):
+    for path in sorted(_module_dir(module).rglob("*.py")):
         tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):

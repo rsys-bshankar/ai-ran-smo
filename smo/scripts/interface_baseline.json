@@ -21,6 +21,12 @@
    "row": "S2.10",
    "replacement": "TS 28.532 ProvMnS deleteMOI on `MLModelLoadingPolicy` [N] TS 28.105"
   },
+  "aimgf DELETE /ml-model-repositories/{}": {
+   "fate": "replaced",
+   "row": "S2.1, S2.5",
+   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store",
+   "movedFrom": "mlmr DELETE /ml-model-repositories/{}"
+  },
   "aimgf DELETE /ml-testing-functions/{}": {
    "fate": "replaced",
    "row": "S2.7, S2.10",
@@ -45,6 +51,18 @@
    "fate": "replaced",
    "row": "S1.13, S2.11",
    "replacement": "R1GAP v14 \u00a75.6.9 AI/ML model performance monitoring service (produced by the consumer rApp) + TS 28.622 `ThresholdMonitor` through the subscription manager"
+  },
+  "aimgf DELETE /models/{}": {
+   "fate": "replaced",
+   "row": "S2.1, S2.7, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.2 / \u00a75.6.4 model registration and discovery; TS 28.532 ProvMnS on `MLModel` [N] TS 28.105 (in AIMgF)",
+   "movedFrom": "mlmr DELETE /models/{}"
+  },
+  "aimgf DELETE /storages/{}": {
+   "fate": "replaced",
+   "row": "S2.1, S2.5",
+   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store",
+   "movedFrom": "mlmr DELETE /storages/{}"
   },
   "aimgf DELETE /training-jobs/{}": {
    "fate": "replaced",
@@ -81,6 +99,12 @@
    "row": "S2.10",
    "replacement": "TS 28.532 ProvMnS getMOIAttributes on `AIMLInferenceReport` [N] TS 28.105"
   },
+  "aimgf GET /coordination-groups": {
+   "fate": "replaced",
+   "row": "S2.1, S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLModelCoordinationGroup` [N] TS 28.105 (in AIMgF)",
+   "movedFrom": "mlmr GET /coordination-groups"
+  },
   "aimgf GET /emulation-jobs": {
    "fate": "replaced",
    "row": "S2.10",
@@ -111,6 +135,12 @@
    "row": "S2.11",
    "replacement": "R1GAP v14 \u00a75.6.10 AI/ML model inference service"
   },
+  "aimgf GET /ml-model-coordination-groups/{}": {
+   "fate": "replaced",
+   "row": "S2.1, S2.10",
+   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLModelCoordinationGroup` [N] TS 28.105 (in AIMgF)",
+   "movedFrom": "mlmr GET /ml-model-coordination-groups/{}"
+  },
   "aimgf GET /ml-model-loading-policies": {
    "fate": "replaced",
    "row": "S2.10",
@@ -140,6 +170,24 @@
    "fate": "replaced",
    "row": "S2.10",
    "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLModelLoadingRequest` [N] TS 28.105"
+  },
+  "aimgf GET /ml-model-repositories": {
+   "fate": "replaced",
+   "row": "S2.1, S2.5",
+   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store",
+   "movedFrom": "mlmr GET /ml-model-repositories"
+  },
+  "aimgf GET /ml-model-repositories/{}": {
+   "fate": "replaced",
+   "row": "S2.1, S2.5",
+   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store",
+   "movedFrom": "mlmr GET /ml-model-repositories/{}"
+  },
+  "aimgf GET /ml-models/{}": {
+   "fate": "replaced",
+   "row": "S2.1, S2.7, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.2 / \u00a75.6.4 model registration and discovery; TS 28.532 ProvMnS on `MLModel` [N] TS 28.105 (in AIMgF)",
+   "movedFrom": "mlmr GET /ml-models/{}"
   },
   "aimgf GET /ml-models/{}/nrm-refs": {
    "fate": "replaced",
@@ -271,6 +319,36 @@
    "row": "S1.13, S2.11",
    "replacement": "R1GAP v14 \u00a75.6.9 AI/ML model performance monitoring service (produced by the consumer rApp) + TS 28.622 `ThresholdMonitor` through the subscription manager"
   },
+  "aimgf GET /models": {
+   "fate": "replaced",
+   "row": "S2.1, S2.7, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.2 / \u00a75.6.4 model registration and discovery; TS 28.532 ProvMnS on `MLModel` [N] TS 28.105 (in AIMgF)",
+   "movedFrom": "mlmr GET /models"
+  },
+  "aimgf GET /models/{}": {
+   "fate": "replaced",
+   "row": "S2.1, S2.7, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.2 / \u00a75.6.4 model registration and discovery; TS 28.532 ProvMnS on `MLModel` [N] TS 28.105 (in AIMgF)",
+   "movedFrom": "mlmr GET /models/{}"
+  },
+  "aimgf GET /models/{}/artifact/{}": {
+   "fate": "replaced",
+   "row": "S2.5, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.3 AI/ML model storage service; the artifact lives in the object store (D10)",
+   "movedFrom": "mlmr GET /models/{}/artifact/{}"
+  },
+  "aimgf GET /storages": {
+   "fate": "replaced",
+   "row": "S2.1, S2.5",
+   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store",
+   "movedFrom": "mlmr GET /storages"
+  },
+  "aimgf GET /storages/{}": {
+   "fate": "replaced",
+   "row": "S2.1, S2.5",
+   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store",
+   "movedFrom": "mlmr GET /storages/{}"
+  },
   "aimgf GET /training-jobs": {
    "fate": "replaced",
    "row": "S2.10, S2.11",
@@ -326,10 +404,22 @@
    "row": "S2.10",
    "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `MLUpdateRequest` [N] TS 28.105"
   },
+  "aimgf PATCH /models/{}/phase-info": {
+   "fate": "replaced",
+   "row": "S2.1, S2.7",
+   "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `MLModel` (in AIMgF)",
+   "movedFrom": "mlmr PATCH /models/{}/phase-info"
+  },
   "aimgf PATCH /models/{}/runtime/node-groups": {
    "fate": "replaced",
    "row": "S4.4, S4.9",
    "replacement": "O2dms Kubernetes-native profile v7 through NFO (placement and scale are NFO's)"
+  },
+  "aimgf PATCH /storages/{}": {
+   "fate": "replaced",
+   "row": "S2.1, S2.5",
+   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store",
+   "movedFrom": "mlmr PATCH /storages/{}"
   },
   "aimgf POST /aiml-inference-emulation-functions": {
    "fate": "replaced",
@@ -345,6 +435,12 @@
    "fate": "replaced",
    "row": "S2.10",
    "replacement": "TS 28.532 ProvMnS createMOI on `AIMLInferenceReport` [N] TS 28.105"
+  },
+  "aimgf POST /coordination-groups": {
+   "fate": "replaced",
+   "row": "S2.1, S2.10",
+   "replacement": "TS 28.532 ProvMnS createMOI on `MLModelCoordinationGroup` [N] TS 28.105 (in AIMgF)",
+   "movedFrom": "mlmr POST /coordination-groups"
   },
   "aimgf POST /emulation-jobs": {
    "fate": "replaced",
@@ -385,6 +481,12 @@
    "fate": "replaced",
    "row": "S2.10",
    "replacement": "TS 28.532 ProvMnS createMOI on `MLModelLoadingRequest` [N] TS 28.105"
+  },
+  "aimgf POST /ml-model-repositories": {
+   "fate": "replaced",
+   "row": "S2.1, S2.5",
+   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store",
+   "movedFrom": "mlmr POST /ml-model-repositories"
   },
   "aimgf POST /ml-testing-functions": {
    "fate": "replaced",
@@ -431,6 +533,24 @@
    "row": "S1.13, S2.11",
    "replacement": "R1GAP v14 \u00a75.6.9 AI/ML model performance monitoring service (produced by the consumer rApp) + TS 28.622 `ThresholdMonitor` through the subscription manager"
   },
+  "aimgf POST /models": {
+   "fate": "replaced",
+   "row": "S2.1, S2.7, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.2 / \u00a75.6.4 model registration and discovery; TS 28.532 ProvMnS on `MLModel` [N] TS 28.105 (in AIMgF)",
+   "movedFrom": "mlmr POST /models"
+  },
+  "aimgf POST /models/{}/artifact": {
+   "fate": "replaced",
+   "row": "S2.5, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.3 AI/ML model storage service; the artifact lives in the object store (D10)",
+   "movedFrom": "mlmr POST /models/{}/artifact"
+  },
+  "aimgf POST /models/{}/deploy": {
+   "fate": "delete",
+   "row": "S2.2",
+   "replacement": "the deploy gate becomes an in-process call inside AIMgF; callers use R1GAP v14 \u00a75.6.7",
+   "movedFrom": "mllf POST /models/{}/deploy"
+  },
   "aimgf POST /models/{}/inference-jobs": {
    "fate": "replaced",
    "row": "S2.11",
@@ -455,6 +575,12 @@
    "fate": "replaced",
    "row": "S2.10",
    "replacement": "TS 28.532 ProvMnS deleteMOI on the loaded `MLModel` under its `AIMLInferenceFunction` (unload, AIML-UNLOAD)"
+  },
+  "aimgf POST /storages": {
+   "fate": "replaced",
+   "row": "S2.1, S2.5",
+   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store",
+   "movedFrom": "mlmr POST /storages"
   },
   "aimgf POST /training-jobs": {
    "fate": "replaced",
@@ -500,6 +626,18 @@
    "fate": "replaced",
    "row": "S2.7, S2.10",
    "replacement": "TS 28.532 ProvMnS createMOI / modifyMOIAttributes on `MLTrainingFunction` [N] TS 28.105"
+  },
+  "aimgf PUT /models/{}": {
+   "fate": "replaced",
+   "row": "S2.1, S2.7, S2.11",
+   "replacement": "R1GAP v14 \u00a75.6.2 / \u00a75.6.4 model registration and discovery; TS 28.532 ProvMnS on `MLModel` [N] TS 28.105 (in AIMgF)",
+   "movedFrom": "mlmr PUT /models/{}"
+  },
+  "aimgf PUT /storages/{}": {
+   "fate": "replaced",
+   "row": "S2.1, S2.5",
+   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store",
+   "movedFrom": "mlmr PUT /storages/{}"
   },
   "coverage-optimization-rapp DELETE /sim-producer/jobs/{}": {
    "fate": "delete",
@@ -1435,121 +1573,6 @@
    "fate": "replaced",
    "row": "S7.5",
    "replacement": "TS 28.532 ProvMnS createMOI / modifyMOIAttributes on `MDAFunction` [N] TS 28.104"
-  },
-  "mllf POST /models/{}/deploy": {
-   "fate": "delete",
-   "row": "S2.2",
-   "replacement": "the deploy gate becomes an in-process call inside AIMgF; callers use R1GAP v14 \u00a75.6.7"
-  },
-  "mlmr DELETE /ml-model-repositories/{}": {
-   "fate": "replaced",
-   "row": "S2.1, S2.5",
-   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store"
-  },
-  "mlmr DELETE /models/{}": {
-   "fate": "replaced",
-   "row": "S2.1, S2.7, S2.11",
-   "replacement": "R1GAP v14 \u00a75.6.2 / \u00a75.6.4 model registration and discovery; TS 28.532 ProvMnS on `MLModel` [N] TS 28.105 (in AIMgF)"
-  },
-  "mlmr DELETE /storages/{}": {
-   "fate": "replaced",
-   "row": "S2.1, S2.5",
-   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store"
-  },
-  "mlmr GET /coordination-groups": {
-   "fate": "replaced",
-   "row": "S2.1, S2.10",
-   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLModelCoordinationGroup` [N] TS 28.105 (in AIMgF)"
-  },
-  "mlmr GET /ml-model-coordination-groups/{}": {
-   "fate": "replaced",
-   "row": "S2.1, S2.10",
-   "replacement": "TS 28.532 ProvMnS getMOIAttributes on `MLModelCoordinationGroup` [N] TS 28.105 (in AIMgF)"
-  },
-  "mlmr GET /ml-model-repositories": {
-   "fate": "replaced",
-   "row": "S2.1, S2.5",
-   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store"
-  },
-  "mlmr GET /ml-model-repositories/{}": {
-   "fate": "replaced",
-   "row": "S2.1, S2.5",
-   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store"
-  },
-  "mlmr GET /ml-models/{}": {
-   "fate": "replaced",
-   "row": "S2.1, S2.7, S2.11",
-   "replacement": "R1GAP v14 \u00a75.6.2 / \u00a75.6.4 model registration and discovery; TS 28.532 ProvMnS on `MLModel` [N] TS 28.105 (in AIMgF)"
-  },
-  "mlmr GET /models": {
-   "fate": "replaced",
-   "row": "S2.1, S2.7, S2.11",
-   "replacement": "R1GAP v14 \u00a75.6.2 / \u00a75.6.4 model registration and discovery; TS 28.532 ProvMnS on `MLModel` [N] TS 28.105 (in AIMgF)"
-  },
-  "mlmr GET /models/{}": {
-   "fate": "replaced",
-   "row": "S2.1, S2.7, S2.11",
-   "replacement": "R1GAP v14 \u00a75.6.2 / \u00a75.6.4 model registration and discovery; TS 28.532 ProvMnS on `MLModel` [N] TS 28.105 (in AIMgF)"
-  },
-  "mlmr GET /models/{}/artifact/{}": {
-   "fate": "replaced",
-   "row": "S2.5, S2.11",
-   "replacement": "R1GAP v14 \u00a75.6.3 AI/ML model storage service; the artifact lives in the object store (D10)"
-  },
-  "mlmr GET /storages": {
-   "fate": "replaced",
-   "row": "S2.1, S2.5",
-   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store"
-  },
-  "mlmr GET /storages/{}": {
-   "fate": "replaced",
-   "row": "S2.1, S2.5",
-   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store"
-  },
-  "mlmr PATCH /models/{}/phase-info": {
-   "fate": "replaced",
-   "row": "S2.1, S2.7",
-   "replacement": "TS 28.532 ProvMnS modifyMOIAttributes on `MLModel` (in AIMgF)"
-  },
-  "mlmr PATCH /storages/{}": {
-   "fate": "replaced",
-   "row": "S2.1, S2.5",
-   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store"
-  },
-  "mlmr POST /coordination-groups": {
-   "fate": "replaced",
-   "row": "S2.1, S2.10",
-   "replacement": "TS 28.532 ProvMnS createMOI on `MLModelCoordinationGroup` [N] TS 28.105 (in AIMgF)"
-  },
-  "mlmr POST /ml-model-repositories": {
-   "fate": "replaced",
-   "row": "S2.1, S2.5",
-   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store"
-  },
-  "mlmr POST /models": {
-   "fate": "replaced",
-   "row": "S2.1, S2.7, S2.11",
-   "replacement": "R1GAP v14 \u00a75.6.2 / \u00a75.6.4 model registration and discovery; TS 28.532 ProvMnS on `MLModel` [N] TS 28.105 (in AIMgF)"
-  },
-  "mlmr POST /models/{}/artifact": {
-   "fate": "replaced",
-   "row": "S2.5, S2.11",
-   "replacement": "R1GAP v14 \u00a75.6.3 AI/ML model storage service; the artifact lives in the object store (D10)"
-  },
-  "mlmr POST /storages": {
-   "fate": "replaced",
-   "row": "S2.1, S2.5",
-   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store"
-  },
-  "mlmr PUT /models/{}": {
-   "fate": "replaced",
-   "row": "S2.1, S2.7, S2.11",
-   "replacement": "R1GAP v14 \u00a75.6.2 / \u00a75.6.4 model registration and discovery; TS 28.532 ProvMnS on `MLModel` [N] TS 28.105 (in AIMgF)"
-  },
-  "mlmr PUT /storages/{}": {
-   "fate": "replaced",
-   "row": "S2.1, S2.5",
-   "replacement": "TS 29.482 v19.1.0 MLR model management (storage profiles), served by AIMgF over the object store"
   },
   "mobility-optimization-rapp DELETE /sim-producer/jobs/{}": {
    "fate": "delete",
@@ -2568,16 +2591,13 @@
   }
  },
  "consumer": {
-  "aimgf/app/main.py DELETE /dme/data-jobs/{}": "dme DELETE /data-jobs/{}",
-  "aimgf/app/main.py DELETE /nfo/descriptors/{}": "nfo DELETE /descriptors/{}",
-  "aimgf/app/main.py GET /dme/data-jobs/{}": "dme GET /data-jobs/{}",
-  "aimgf/app/main.py GET /dme/dme-types/{}": "dme GET /dme-types/{}",
-  "aimgf/app/main.py GET /mlmr/coordination-groups": "mlmr GET /coordination-groups",
-  "aimgf/app/main.py GET /mlmr/models/{}": "mlmr GET /models/{}",
-  "aimgf/app/main.py GET /nfo/deployments/{}": "nfo GET /deployments/{}",
-  "aimgf/app/main.py GET /onboarding/packages/{}/onboarding-status": "onboarding GET /packages/{}/onboarding-status",
-  "aimgf/app/main.py PATCH /mlmr/models/{}/phase-info": "mlmr PATCH /models/{}/phase-info",
-  "aimgf/app/main.py POST /dme/data-jobs": "dme POST /data-jobs",
+  "aimgf/app/execution.py DELETE /nfo/descriptors/{}": "nfo DELETE /descriptors/{}",
+  "aimgf/app/execution.py GET /onboarding/packages/{}/onboarding-status": "onboarding GET /packages/{}/onboarding-status",
+  "aimgf/app/governance/lifecycle.py GET /nfo/deployments/{}": "nfo GET /deployments/{}",
+  "aimgf/app/inference/monitoring.py GET /dme/dme-types/{}": "dme GET /dme-types/{}",
+  "aimgf/app/training/feature_groups.py DELETE /dme/data-jobs/{}": "dme DELETE /data-jobs/{}",
+  "aimgf/app/training/feature_groups.py POST /dme/data-jobs": "dme POST /data-jobs",
+  "aimgf/app/training/jobs.py GET /dme/data-jobs/{}": "dme GET /data-jobs/{}",
   "dme/app/main.py GET /ran-nf-oam/managed-entities": "ran-nf-oam GET /managed-entities",
   "dme/app/main.py POST /ran-nf-oam/config-jobs": "ran-nf-oam POST /config-jobs",
   "gui-bff/app/exports.py GET /ran-nf-oam/alarms": "ran-nf-oam GET /alarms",
@@ -2600,7 +2620,7 @@
   "gui-bff/app/rbac.py DELETE /mdaf/mda-functions/{id}": "mdaf DELETE /mda-functions/{}",
   "gui-bff/app/rbac.py DELETE /mdaf/mda-requests/{id}": "mdaf DELETE /mda-requests/{}",
   "gui-bff/app/rbac.py DELETE /mdaf/subscriptions/{id}": "mdaf DELETE /subscriptions/{}",
-  "gui-bff/app/rbac.py DELETE /mlmr/models/{id}": "mlmr DELETE /models/{}",
+  "gui-bff/app/rbac.py DELETE /mlmr/models/{id}": "aimgf DELETE /models/{}",
   "gui-bff/app/rbac.py DELETE /nfo/deployments/{id}": "nfo DELETE /deployments/{}",
   "gui-bff/app/rbac.py DELETE /onboarding/packages/{id}": "onboarding DELETE /packages/{}",
   "gui-bff/app/rbac.py DELETE /ran-analytics/producers/{id}": "ran-analytics DELETE /producers/{}",
@@ -2675,10 +2695,10 @@
   "gui-bff/app/rbac.py POST /mdaf/mda-requests": "mdaf POST /mda-requests",
   "gui-bff/app/rbac.py POST /mdaf/reports": "mdaf POST /reports",
   "gui-bff/app/rbac.py POST /mdaf/subscriptions": "mdaf POST /subscriptions",
-  "gui-bff/app/rbac.py POST /mllf/models/{id}/deploy": "mllf POST /models/{}/deploy",
-  "gui-bff/app/rbac.py POST /mlmr/coordination-groups": "mlmr POST /coordination-groups",
-  "gui-bff/app/rbac.py POST /mlmr/models": "mlmr POST /models",
-  "gui-bff/app/rbac.py POST /mlmr/models/{id}/artifact": "mlmr POST /models/{}/artifact",
+  "gui-bff/app/rbac.py POST /mllf/models/{id}/deploy": "aimgf POST /models/{}/deploy",
+  "gui-bff/app/rbac.py POST /mlmr/coordination-groups": "aimgf POST /coordination-groups",
+  "gui-bff/app/rbac.py POST /mlmr/models": "aimgf POST /models",
+  "gui-bff/app/rbac.py POST /mlmr/models/{id}/artifact": "aimgf POST /models/{}/artifact",
   "gui-bff/app/rbac.py POST /nfo/deployments/{id}/dms-notifications": "nfo POST /deployments/{}/dms-notifications",
   "gui-bff/app/rbac.py POST /nfo/deployments/{id}/heal": "nfo POST /deployments/{}/heal",
   "gui-bff/app/rbac.py POST /nfo/deployments/{id}/scale": "nfo POST /deployments/{}/scale",
@@ -2731,7 +2751,7 @@
   "gui-bff/app/rbac.py POST /so-smos/orders/{id}/cancel": "so-smos POST /orders/{}/cancel",
   "gui-bff/app/rbac.py PUT /dme/data-jobs/{id}": "dme PUT /data-jobs/{}",
   "gui-bff/app/rbac.py PUT /mdaf/mda-functions/{id}": "mdaf PUT /mda-functions/{}",
-  "gui-bff/app/rbac.py PUT /mlmr/models/{id}": "mlmr PUT /models/{}",
+  "gui-bff/app/rbac.py PUT /mlmr/models/{id}": "aimgf PUT /models/{}",
   "gui-bff/app/rbac.py PUT /ran-nf-oam/kpi-schedules/{id}": "ran-nf-oam PUT /kpi-schedules/{}",
   "gui-bff/app/rbac.py PUT /ran-nf-oam/managed-entities/{id}/cells/{id}/guards": "ran-nf-oam PUT /managed-entities/{}/cells/{}/guards",
   "gui-bff/app/rbac.py PUT /ran-nf-oam/managed-entities/{id}/scope": "ran-nf-oam PUT /managed-entities/{}/scope",
@@ -2754,7 +2774,7 @@
   "gui/src/pages/dashboard/data/queries.ts * /rapp-mgmt/instances/${i.instanceId}/performance": "rapp-mgmt GET /instances/{}/performance",
   "gui/src/pages/flows/data/flow01.tsx * /onboarding/packages": "onboarding GET /packages",
   "gui/src/pages/flows/data/flow02.tsx * /aimgf/mlmf/subscriptions/${s.subscriptionId}/reports": "aimgf GET /mlmf/subscriptions/{}/reports",
-  "gui/src/pages/flows/data/flow02.tsx * /mlmr/models": "mlmr GET /models",
+  "gui/src/pages/flows/data/flow02.tsx * /mlmr/models": "aimgf GET /models",
   "gui/src/pages/flows/data/flow03.tsx * /ran-nf-oam/config-jobs": "ran-nf-oam GET /config-jobs",
   "gui/src/pages/flows/data/flow04.tsx * /aimgf/mlmf/reports": "aimgf GET /mlmf/reports",
   "gui/src/pages/flows/data/flow04.tsx * /mdaf/reports": "mdaf GET /reports",
@@ -2773,19 +2793,17 @@
   "gui/src/pages/flows/data/flow16.tsx * /focom/resource-pools/${p.resourcePoolId}/resources": "focom GET /resource-pools/{}/resources",
   "gui/src/pages/infrastructure/data/queries.ts * /focom/alarms": "focom GET /alarms",
   "gui/src/pages/infrastructure/data/queries.ts * /focom/topology": "focom GET /topology",
-  "gui/src/pages/infrastructure/data/queries.ts * /mlmr/models": "mlmr GET /models",
+  "gui/src/pages/infrastructure/data/queries.ts * /mlmr/models": "aimgf GET /models",
   "gui/src/pages/infrastructure/data/queries.ts * /nfo/deployments/${id}/operations": "nfo GET /deployments/{}/operations",
   "gui/src/pages/infrastructure/data/queries.ts * /nfo/deployments/${id}/resources": "nfo GET /deployments/{}/resources",
   "gui/src/pages/kpis/data/queries.ts * /dme/dme-types": "dme GET /dme-types",
-  "gui/src/pages/kpis/data/queries.ts * /mlmr/coordination-groups": "mlmr GET /coordination-groups",
+  "gui/src/pages/kpis/data/queries.ts * /mlmr/coordination-groups": "aimgf GET /coordination-groups",
   "gui/src/pages/kpis/data/queries.ts * /so-smos/orders": "so-smos GET /orders",
   "intent-service/app/main.py GET /rapp-mgmt/instances/{}": "rapp-mgmt GET /instances/{}",
   "mdaf/app/main.py GET /dme/data-jobs/{}": "dme GET /data-jobs/{}",
   "mdaf/app/main.py GET /ran-analytics/producers": "ran-analytics GET /producers",
   "mdaf/app/mda.py GET /aimgf/mlmf/subscriptions": "aimgf GET /mlmf/subscriptions",
   "mdaf/app/mda.py POST /aimgf/mlmf/subscriptions/{}/reports": "aimgf POST /mlmf/subscriptions/{}/reports",
-  "mllf/app/main.py PATCH /aimgf/models/{}/runtime/node-groups": "aimgf PATCH /models/{}/runtime/node-groups",
-  "mlmr/app/main.py GET /aimgf/ml-models/{}/nrm-refs": "aimgf GET /ml-models/{}/nrm-refs",
   "nfo/app/main.py GET /focom/inventory": "focom GET /inventory",
   "onboarding/app/main.py DELETE /nfo/descriptors/{}": "nfo DELETE /descriptors/{}",
   "onboarding/app/main.py GET /rapp-mgmt/instances/{}": "rapp-mgmt GET /instances/{}",
@@ -2837,7 +2855,7 @@
   "sdk-go/routes.go GET /dme/dme-types": "dme GET /dme-types",
   "sdk-go/routes.go GET /dme/production-capabilities": "dme GET /production-capabilities",
   "sdk-go/routes.go GET /dme/production-capabilities/{producer_id}/status": "dme GET /production-capabilities/{}/status",
-  "sdk-go/routes.go GET /mlmr/models": "mlmr GET /models",
+  "sdk-go/routes.go GET /mlmr/models": "aimgf GET /models",
   "sdk-go/routes.go GET /rapp-mgmt/instances/{instance_id}": "rapp-mgmt GET /instances/{}",
   "sdk-go/routes.go POST /dme/actions": "dme POST /actions",
   "sdk-go/routes.go POST /invoker-registrations": "sme POST /invoker-registrations",
@@ -2851,8 +2869,8 @@
   "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /dme/data-jobs/{}/records": "dme GET /data-jobs/{}/records",
   "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /dme/data-jobs/{}/status": "dme GET /data-jobs/{}/status",
   "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /dme/dme-types": "dme GET /dme-types",
-  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /mlmr/models": "mlmr GET /models",
-  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /mlmr/models/{}": "mlmr GET /models/{}",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /mlmr/models": "aimgf GET /models",
+  "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /mlmr/models/{}": "aimgf GET /models/{}",
   "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /rapp-mgmt/instances/{}": "rapp-mgmt GET /instances/{}",
   "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java GET /rapp-mgmt/instances/{}/config": "rapp-mgmt GET /instances/{}/config",
   "sdk-java/smo-sdk/src/main/java/io/smo/sdk/Routes.java POST /dme/actions": "dme POST /actions",
@@ -2947,16 +2965,16 @@
   "sdk/smo_sdk/lifecycle.py POST /aimgf/training-jobs/{}/suspend": "aimgf POST /training-jobs/{}/suspend",
   "sdk/smo_sdk/lifecycle.py POST /aimgf/validation-jobs": "aimgf POST /validation-jobs",
   "sdk/smo_sdk/lifecycle.py POST /aimgf/{}/{}/complete": "aimgf POST /emulation-jobs/{}/complete",
-  "sdk/smo_sdk/lifecycle.py POST /mllf/models/{}/deploy": "mllf POST /models/{}/deploy",
-  "sdk/smo_sdk/models.py DELETE /mlmr/models/{}": "mlmr DELETE /models/{}",
-  "sdk/smo_sdk/models.py GET /mlmr/coordination-groups": "mlmr GET /coordination-groups",
-  "sdk/smo_sdk/models.py GET /mlmr/models": "mlmr GET /models",
-  "sdk/smo_sdk/models.py GET /mlmr/models/{}": "mlmr GET /models/{}",
-  "sdk/smo_sdk/models.py GET /mlmr/models/{}/artifact/{}": "mlmr GET /models/{}/artifact/{}",
-  "sdk/smo_sdk/models.py POST /mlmr/coordination-groups": "mlmr POST /coordination-groups",
-  "sdk/smo_sdk/models.py POST /mlmr/models": "mlmr POST /models",
-  "sdk/smo_sdk/models.py POST /mlmr/models/{}/artifact": "mlmr POST /models/{}/artifact",
-  "sdk/smo_sdk/models.py PUT /mlmr/models/{}": "mlmr PUT /models/{}",
+  "sdk/smo_sdk/lifecycle.py POST /mllf/models/{}/deploy": "aimgf POST /models/{}/deploy",
+  "sdk/smo_sdk/models.py DELETE /mlmr/models/{}": "aimgf DELETE /models/{}",
+  "sdk/smo_sdk/models.py GET /mlmr/coordination-groups": "aimgf GET /coordination-groups",
+  "sdk/smo_sdk/models.py GET /mlmr/models": "aimgf GET /models",
+  "sdk/smo_sdk/models.py GET /mlmr/models/{}": "aimgf GET /models/{}",
+  "sdk/smo_sdk/models.py GET /mlmr/models/{}/artifact/{}": "aimgf GET /models/{}/artifact/{}",
+  "sdk/smo_sdk/models.py POST /mlmr/coordination-groups": "aimgf POST /coordination-groups",
+  "sdk/smo_sdk/models.py POST /mlmr/models": "aimgf POST /models",
+  "sdk/smo_sdk/models.py POST /mlmr/models/{}/artifact": "aimgf POST /models/{}/artifact",
+  "sdk/smo_sdk/models.py PUT /mlmr/models/{}": "aimgf PUT /models/{}",
   "sdk/smo_sdk/platform.py DELETE /sme/provider-registrations/{}": "sme DELETE /provider-registrations/{}",
   "sdk/smo_sdk/platform.py POST /dme/actions": "dme POST /actions",
   "sdk/smo_sdk/platform.py POST /rapp-mgmt/instances/{}/bootstrap-complete": "rapp-mgmt POST /instances/{}/bootstrap-complete",

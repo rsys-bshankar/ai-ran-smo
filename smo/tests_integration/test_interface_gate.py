@@ -87,3 +87,41 @@ def test_rbac_rule_patterns_expand_to_their_paths():
     """`(a|b)` and `(...)?` of a BFF rule expand to every path it allows, so each can be resolved to a route."""
     assert sorted(gate._expand("/ran-nf-oam/msac/(roles|identities)(/{id})?")) == [
         "/ran-nf-oam/msac/identities", "/ran-nf-oam/msac/identities/{id}", "/ran-nf-oam/msac/roles", "/ran-nf-oam/msac/roles/{id}"]
+
+
+def test_a_route_moved_to_another_modules_process_is_not_growth_and_moves_once():
+    """S2.1: a producer entry re-keyed to the module that now serves the route (`movedFrom` names the base entry, which is gone) does not grow the baseline;
+    the same base entry cannot be claimed twice, and an entry whose `movedFrom` is still present, or was never in the base, is growth."""
+    base = {"producer": {"mlmr GET /models": {"fate": "replaced"}, "mlmr POST /models": {"fate": "replaced"}}, "consumer": {}}
+    moved = {"producer": {"aimgf GET /models": {"fate": "replaced", "movedFrom": "mlmr GET /models"},
+                          "aimgf POST /models": {"fate": "replaced", "movedFrom": "mlmr POST /models"}}, "consumer": {}}
+    assert gate.grown(moved, base) == []
+    twice = {"producer": {**moved["producer"], "aimgf PUT /models": {"fate": "replaced", "movedFrom": "mlmr GET /models"}}, "consumer": {}}
+    assert gate.grown(twice, base) == ["baseline grew: producer aimgf PUT /models"]
+    kept = {"producer": {"mlmr GET /models": {}, "aimgf GET /models": {"movedFrom": "mlmr GET /models"}}, "consumer": {}}
+    assert gate.grown(kept, base) == ["baseline grew: producer aimgf GET /models"]
+    invented = {"producer": {"aimgf GET /shortcut": {"movedFrom": "mlmr GET /shortcut"}}, "consumer": {}}
+    assert gate.grown(invented, base) == ["baseline grew: producer aimgf GET /shortcut"]
+
+
+def test_a_call_moved_between_files_of_one_module_is_not_growth_but_a_new_caller_is():
+    """S2.3: a consumer entry for the same call and target in another file of the same module, whose old entry is gone, is a move; the same call from
+    another module's file, a call to a different target, or a second copy of a moved call is growth."""
+    base = {"producer": {}, "consumer": {"aimgf/app/main.py GET /dme/data-jobs/{}": "dme GET /data-jobs/{}"}}
+    moved = {"producer": {}, "consumer": {"aimgf/app/training/jobs.py GET /dme/data-jobs/{}": "dme GET /data-jobs/{}"}}
+    assert gate.grown(moved, base) == []
+    other_module = {"producer": {}, "consumer": {"nfo/app/main.py GET /dme/data-jobs/{}": "dme GET /data-jobs/{}"}}
+    assert gate.grown(other_module, base) == ["baseline grew: consumer nfo/app/main.py GET /dme/data-jobs/{}"]
+    copied = {"producer": {}, "consumer": {**moved["consumer"], "aimgf/app/execution.py GET /dme/data-jobs/{}": "dme GET /data-jobs/{}"}}
+    assert gate.grown(copied, base) == ["baseline grew: consumer aimgf/app/training/jobs.py GET /dme/data-jobs/{}"]
+
+
+def test_the_routing_table_folds_mlmr_and_mllf_into_aimgf_and_their_rows_follow():
+    """R1 Termination sends `/mlmr` and `/mllf` to AIMgF's process (S2.1, S2.2), so the gate files their routes under AIMgF with MLMR's appendix A rows, and an
+    SDK route named for the old prefix resolves to AIMgF's operation."""
+    assert gate.folded_modules() == {"aimgf": ["mllf", "mlmr"]}
+    rows = gate.appendix_a()
+    row, moved_from = gate.row_for("aimgf", "GET /models", rows, gate.folded_modules())
+    assert moved_from == "mlmr GET /models" and row == rows[("mlmr", "GET /models")]
+    go = [c for c in gate.calls() if c["kind"] == "go" and c["path"] == "/models" and c["method"] == "GET"]
+    assert go and {c["module"] for c in go} == {"aimgf"}

@@ -548,7 +548,7 @@ def load_descriptions(path: Path = DESCRIPTIONS) -> dict:
 def build(reads: list[Read], descriptions: dict | None = None) -> list[Variable]:
     """Groups the reads by variable name into sorted `Variable` rows.
 
-        Defaults: the distinct defaults seen in code, except that a bare read (`unset`) beside a read with a default in the same file is taken as that variable's guard and
+        Defaults: the distinct defaults seen in code, except that a bare read (`unset`) beside a read with a default in the same module is taken as that variable's guard and
         not listed, and compose defaults are not listed when code has one. A variable is masked (default not shown) when its name matches `SECRET_NAME`, when it is read
         through `read_secret`, or is a `*_FILE` form, unless its description entry says `"secret": false`. Its group is `shared` when `smo_shared` reads it, the module when
         exactly one does, `several`, or `compose` when only the compose file mentions it.
@@ -561,9 +561,10 @@ def build(reads: list[Read], descriptions: dict | None = None) -> list[Variable]
     for name in sorted(by_name):
         group_reads = by_name[name]
         defaults: list[str] = []
-        explicit_in = {r.path for r in group_reads if r.default != UNSET}      # a bare read next to one with a default is the same variable's guard
+        # a bare read next to one with a default in the same module (a module may span several files: AIMgF's capability packages) is the same variable's guard
+        explicit_in = {r.module for r in group_reads if r.default != UNSET}
         for read in group_reads:
-            if read.via == "compose" or (read.default == UNSET and read.path in explicit_in):
+            if read.via == "compose" or (read.default == UNSET and read.module in explicit_in):
                 continue
             if read.default not in defaults:
                 defaults.append(read.default)
