@@ -1,0 +1,646 @@
+module smo-teiv-ext-ran {
+    yang-version 1.1;
+    namespace "urn:ai-ran-smo:teiv:ext-ran";
+    prefix teiv-ext-ran;
+
+    import o-ran-smo-teiv-common-yang-types { prefix or-teiv-types; }
+
+    import o-ran-smo-teiv-common-yang-extensions { prefix or-teiv-yext; }
+
+    import o-ran-smo-teiv-ran { prefix or-teiv-ran; }
+
+    organization "AI-RAN SMO (TE&IV extension spike, plan task S3.20)";
+    contact "The AI-RAN SMO maintainers";
+    description "TE&IV extension of O-RAN-SC smo-teiv 0.3.0: the RAN classes and
+        relationships of TS 28.541 that smo-teiv's RAN logical model lacks
+        (ADR 0013 gaps G2 and G4).
+
+        Written in the style of O-RAN.WG10.TE&IV-DM (the style of smo-teiv's own
+        o-ran-smo-teiv-ran module): one YANG list per class, its TS 28.541
+        attributes in a container 'attributes', and each relationship as an
+        or-teiv-yext:biDirectionalTopologyRelationship. Class and attribute names
+        are TS 28.541's. TS 28.622 name-containment is a CONTAINS relationship;
+        a TS 28.541 reference attribute that points at another object
+        (adjacentNRCellRef, nRFreqRelationRef) is a relationship, not an attribute.
+
+        Types follow TS 28.541 where smo-teiv's schema generator
+        (pgsql-schema-generator 1.2.1) can map them. It cannot map 'boolean' or
+        'uint16' / 'uint8' (it writes a column of type null), so:
+          - a TS 28.541 boolean is an enumeration with the values 'true' and
+            'false' (the same JSON text, quoted);
+          - a TS 28.541 uint16 / uint8 is uint32 (the same values).
+        A typedef'd type resolves to its base type, so the 3GPP typedefs
+        are written out as their base types here (no 3GPP module import).
+
+        Domain EXT_RAN: it includes smo-teiv's RAN domain, so a query in EXT_RAN
+        sees NRCellCU, NRCellDU and NRSectorCarrier beside the classes below.";
+
+    revision "2026-11-01" {
+        description "Initial revision: NRCellRelation, NRFreqRelation,
+            CommonBeamformingFunction, the SON functions CESManagementFunction,
+            DESManagementFunction, DMROFunction, DLBOFunction and CCOFunction,
+            and the relationships NEIGHBOR_CELL and CO_COVERAGE_OVERLAY.";
+        or-teiv-yext:label 0.1.0;
+        reference "3GPP TS 28.541; O-RAN.WG10.TE&IV-DM.0-R004-v02.00 (style)";
+    }
+
+    or-teiv-yext:domain EXT_RAN;
+
+    typedef Boolean_Type {
+        description "A TS 28.541 boolean (pgsql-schema-generator 1.2.1 has no
+            mapping for YANG boolean).";
+        type enumeration {
+            enum true;
+            enum false;
+        }
+    }
+
+    list NRCellRelation {
+        uses or-teiv-types:Top_Grp_Type;
+        uses or-teiv-types:Origin_Entity_Mapping_Grp;
+        key id;
+
+        description "NR cell relation (TS 28.541 NRCellRelation): the relation of an
+            NRCellCU to an adjacent NR cell, name-contained by the NRCellCU. Its
+            adjacentNRCellRef is the relationship NRCELLRELATION_ADJACENT_NRCELLCU,
+            its nRFreqRelationRef the relationship NRCELLRELATION_USES_NRFREQRELATION.";
+
+        container attributes {
+            description "Container for NR cell relation attributes";
+
+            leaf nRTCI {
+                type uint64;
+                description "Target NR cell identifier";
+            }
+
+            container cellIndividualOffset {
+                description "Offsets applicable to the adjacent cell for handover";
+                leaf rsrpOffsetSsb { type int32; description "SS-RSRP offset"; }
+                leaf rsrqOffsetSsb { type int32; description "SS-RSRQ offset"; }
+                leaf sinrOffsetSsb { type int32; description "SS-SINR offset"; }
+                leaf rsrpOffsetCsiRs { type int32; description "CSI-RSRP offset"; }
+                leaf rsrqOffsetCsiRs { type int32; description "CSI-RSRQ offset"; }
+                leaf sinrOffsetCsiRs { type int32; description "CSI-SINR offset"; }
+            }
+
+            leaf isRemoveAllowed {
+                type Boolean_Type;
+                description "Whether ANR may remove this relation";
+            }
+
+            leaf isHOAllowed {
+                type Boolean_Type;
+                description "Whether handover to the adjacent cell is allowed";
+            }
+
+            leaf isESCoveredBy {
+                type enumeration {
+                    enum YES;
+                    enum NO;
+                    enum PARTIAL;
+                }
+                description "Whether the adjacent cell covers the source cell when
+                    the source cell goes to energy saving (EnergySavingCoverage)";
+            }
+
+            leaf isENDCAllowed {
+                type Boolean_Type;
+                description "Whether EN-DC with the adjacent cell is allowed";
+            }
+
+            leaf isMLBAllowed {
+                type Boolean_Type;
+                description "Whether mobility load balancing to the adjacent cell is allowed";
+            }
+        }
+    }
+
+    list NRFreqRelation {
+        uses or-teiv-types:Top_Grp_Type;
+        uses or-teiv-types:Origin_Entity_Mapping_Grp;
+        key id;
+
+        description "NR frequency relation (TS 28.541 NRFreqRelation): the cell
+            reselection and handover parameters of an NRCellCU towards one NR
+            frequency, name-contained by the NRCellCU.";
+
+        container attributes {
+            description "Container for NR frequency relation attributes";
+
+            container offsetMO {
+                description "Frequency specific offsets";
+                leaf rsrpOffsetSsb { type int32; description "SS-RSRP offset"; }
+                leaf rsrqOffsetSsb { type int32; description "SS-RSRQ offset"; }
+                leaf sinrOffsetSsb { type int32; description "SS-SINR offset"; }
+            }
+
+            leaf cellReselectionPriority {
+                type uint32;
+                description "Absolute priority of the frequency for reselection";
+            }
+
+            leaf pMax {
+                type int32;
+                description "Maximum UE transmit power on the frequency (dBm)";
+            }
+
+            leaf qOffsetFreq {
+                type int32;
+                description "Frequency specific offset for equal priority frequencies (dB)";
+            }
+
+            leaf qRxLevMin {
+                type int32;
+                description "Required minimum received RSRP level (dBm)";
+            }
+
+            leaf tReselectionNr {
+                type uint32;
+                description "Cell reselection timer (s)";
+            }
+        }
+    }
+
+    list CommonBeamformingFunction {
+        uses or-teiv-types:Top_Grp_Type;
+        uses or-teiv-types:Origin_Entity_Mapping_Grp;
+        key id;
+
+        description "Common beamforming function (TS 28.541
+            CommonBeamformingFunction): the common beams of an NRSectorCarrier,
+            name-contained by it; what coverage and capacity optimisation steers.";
+
+        container attributes {
+            description "Container for common beamforming function attributes";
+
+            leaf coverageShape {
+                type int32;
+                description "Coverage shape of the common beams (0..65535)";
+            }
+
+            leaf digitalAzimuth {
+                type int32;
+                description "Digital azimuth of the beam set (0.1 degree, -1800..1800)";
+            }
+
+            leaf digitalTilt {
+                type int32;
+                description "Digital tilt of the beam set (0.1 degree, -900..900)";
+            }
+        }
+    }
+
+    list CESManagementFunction {
+        uses or-teiv-types:Top_Grp_Type;
+        uses or-teiv-types:Origin_Entity_Mapping_Grp;
+        key id;
+
+        description "Centralized energy saving management function (TS 28.541
+            CESManagementFunction), here name-contained by an NRCellCU.";
+
+        container attributes {
+            description "Container for CES management function attributes";
+
+            leaf cesSwitch {
+                type Boolean_Type;
+                description "Whether centralized energy saving is on for the cell";
+            }
+
+            container intraRatEsActivationOriginalCellLoadParameters {
+                description "Load below which the original cell may go to energy saving";
+                leaf loadThreshold { type uint32; description "PRB usage threshold (%)"; }
+                leaf timeDuration { type uint32; description "Duration (s)"; }
+            }
+
+            leaf energySavingState {
+                type enumeration {
+                    enum isNotEnergySaving;
+                    enum isEnergySaving;
+                }
+                description "Energy saving state of the cell";
+            }
+
+            leaf energySavingControl {
+                type enumeration {
+                    enum toBeEnergySaving;
+                    enum toBeNotEnergySaving;
+                }
+                description "Energy saving activation or deactivation request";
+            }
+        }
+    }
+
+    list DESManagementFunction {
+        uses or-teiv-types:Top_Grp_Type;
+        uses or-teiv-types:Origin_Entity_Mapping_Grp;
+        key id;
+
+        description "Distributed energy saving management function (TS 28.541
+            DESManagementFunction), here name-contained by an NRCellCU.";
+
+        container attributes {
+            description "Container for DES management function attributes";
+
+            leaf desSwitch {
+                type Boolean_Type;
+                description "Whether distributed energy saving is on for the cell";
+            }
+
+            container intraRatEsActivationOriginalCellLoadParameters {
+                description "Load below which the original cell may go to energy saving";
+                leaf threshold { type uint32; description "PRB usage threshold (%)"; }
+                leaf timeDuration { type uint32; description "Duration (s)"; }
+            }
+
+            leaf energySavingState {
+                type enumeration {
+                    enum isNotEnergySaving;
+                    enum isEnergySaving;
+                }
+                description "Energy saving state of the cell";
+            }
+
+            leaf isProbingCapable {
+                type enumeration {
+                    enum yes;
+                    enum no;
+                }
+                description "Whether the cell can probe before deactivating energy saving";
+            }
+        }
+    }
+
+    list DMROFunction {
+        uses or-teiv-types:Top_Grp_Type;
+        uses or-teiv-types:Origin_Entity_Mapping_Grp;
+        key id;
+
+        description "Distributed mobility robustness optimisation function
+            (TS 28.541 DMROFunction), here name-contained by an NRCellCU.";
+
+        container attributes {
+            description "Container for DMRO function attributes";
+
+            leaf maximumDeviationHoTriggerLow {
+                type int32;
+                description "Maximum negative deviation of the handover trigger (0.5 dB)";
+            }
+
+            leaf maximumDeviationHoTriggerHigh {
+                type int32;
+                description "Maximum positive deviation of the handover trigger (0.5 dB)";
+            }
+
+            leaf minimumTimeBetweenHoTriggerChange {
+                type uint32;
+                description "Minimum time between handover trigger changes (s)";
+            }
+
+            leaf tstoreUEcntxt {
+                type uint32;
+                description "Time the UE context is kept (100 ms)";
+            }
+
+            leaf dmroControl {
+                type Boolean_Type;
+                description "Whether DMRO is on for the cell";
+            }
+        }
+    }
+
+    list DLBOFunction {
+        uses or-teiv-types:Top_Grp_Type;
+        uses or-teiv-types:Origin_Entity_Mapping_Grp;
+        key id;
+
+        description "Distributed load balancing optimisation function (TS 28.541
+            DLBOFunction), here name-contained by an NRCellCU.";
+
+        container attributes {
+            description "Container for DLBO function attributes";
+
+            leaf dlboControl {
+                type Boolean_Type;
+                description "Whether DLBO is on for the cell";
+            }
+
+            leaf maximumDeviationHoTriggerLow {
+                type int32;
+                description "Maximum negative deviation of the handover trigger (0.5 dB)";
+            }
+
+            leaf maximumDeviationHoTriggerHigh {
+                type int32;
+                description "Maximum positive deviation of the handover trigger (0.5 dB)";
+            }
+
+            leaf minimumTimeBetweenHoTriggerChange {
+                type int32;
+                description "Minimum time between handover trigger changes (s)";
+            }
+        }
+    }
+
+    list CCOFunction {
+        uses or-teiv-types:Top_Grp_Type;
+        uses or-teiv-types:Origin_Entity_Mapping_Grp;
+        key id;
+
+        description "Coverage and capacity optimisation function (TS 28.541
+            CCOFunction), name-contained by a SubNetwork (smo-teiv-ext-oam,
+            SUBNETWORK_CONTAINS_CCOFUNCTION).";
+
+        container attributes {
+            description "Container for CCO function attributes";
+
+            leaf cCOControl {
+                type Boolean_Type;
+                description "Whether CCO is on";
+            }
+        }
+    }
+
+    or-teiv-yext:biDirectionalTopologyRelationship NRCELLCU_CONTAINS_NRCELLRELATION { // 1 to 0..n
+
+        description
+            "The aSide of this relationship is an instance of the NRCellCU type.
+            The bSide of this relationship is an instance of the NRCellRelation type.
+            TS 28.541 name-contains an NRCellRelation in its NRCellCU.";
+
+        uses or-teiv-types:Top_Grp_Type;
+        uses or-teiv-types:Origin_Relationship_Mapping_Grp;
+        key id;
+
+        leaf-list contained-nrCellRelation {
+            description "NR Cell-CU contains NR Cell Relation.";
+            or-teiv-yext:aSide or-teiv-ran:NRCellCU;
+            type instance-identifier;
+        }
+
+        leaf contained-by-nrCellCu {
+            description "NR Cell Relation contained by NR Cell-CU.";
+            or-teiv-yext:bSide NRCellRelation;
+            type instance-identifier;
+            mandatory true;
+        }
+    }
+
+    or-teiv-yext:biDirectionalTopologyRelationship NRCELLRELATION_ADJACENT_NRCELLCU { // 0..n to 0..1
+
+        description
+            "The aSide of this relationship is an instance of the NRCellRelation type.
+            The bSide of this relationship is an instance of the NRCellCU type.
+            TS 28.541 NRCellRelation.adjacentNRCellRef: the adjacent cell of the relation.";
+
+        uses or-teiv-types:Top_Grp_Type;
+        uses or-teiv-types:Origin_Relationship_Mapping_Grp;
+        key id;
+
+        leaf adjacent-nrCellCu {
+            description "NR Cell Relation has the adjacent NR Cell-CU.";
+            or-teiv-yext:aSide NRCellRelation;
+            type instance-identifier;
+        }
+
+        leaf-list adjacent-of-nrCellRelation {
+            description "NR Cell-CU is adjacent in NR Cell Relations.";
+            or-teiv-yext:bSide or-teiv-ran:NRCellCU;
+            type instance-identifier;
+        }
+    }
+
+    or-teiv-yext:biDirectionalTopologyRelationship NRCELLCU_NEIGHBOR_CELL_NRCELLCU { // 0..n to 0..n
+
+        description
+            "The aSide of this relationship is an instance of the NRCellCU type.
+            The bSide of this relationship is an instance of the NRCellCU type.
+            NEIGHBOR_CELL (ADR 0008 section 3.4): the aSide is a neighbour of the
+            bSide, one instance per NRCellRelation of the bSide (its sourceIds name
+            the NRCellRelation). The direct cell-to-cell edge, so a neighbour query
+            is one hop: NRCellCU entities with scopeFilter
+            /neighbor-of-nrCellCu[@id='<cell>'] are the cell's neighbours.
+
+            The neighbour is the aSide, not the bSide, because smo-teiv 0.3.0
+            resolves a scope filter on a relationship between two entities of one
+            type only towards the aSide (ConditionFactory.checkSameEntityRelationship
+            filters on the column it joins on): /<bSide association>[@id=X] returns
+            the aSides related to the bSide X, and /<aSide association>[@id=X]
+            returns X itself.";
+
+        uses or-teiv-types:Top_Grp_Type;
+        uses or-teiv-types:Origin_Relationship_Mapping_Grp;
+        key id;
+
+        leaf-list neighbor-nrCellCu {
+            description "NR Cell-CU is the neighbour of NR Cell-CU (the cells whose relations name it).";
+            or-teiv-yext:aSide or-teiv-ran:NRCellCU;
+            type instance-identifier;
+        }
+
+        leaf-list neighbor-of-nrCellCu {
+            description "NR Cell-CU has the neighbour NR Cell-CU (the cells its relations name).";
+            or-teiv-yext:bSide or-teiv-ran:NRCellCU;
+            type instance-identifier;
+        }
+    }
+
+    or-teiv-yext:biDirectionalTopologyRelationship NRCELLDU_CO_COVERAGE_OVERLAY_NRCELLDU { // 0..n to 0..n
+
+        description
+            "The aSide of this relationship is an instance of the NRCellDU type.
+            The bSide of this relationship is an instance of the NRCellDU type.
+            CO_COVERAGE_OVERLAY (ADR 0008 section 3.4): the aSide (a coverage cell)
+            overlays the bSide (a capacity cell), so the bSide may go to energy
+            saving while the aSide covers its area (TS 28.541 isESCoveredBy).
+            NRCellDU entities with scopeFilter /overlaid-by-nrCellDu[@id='<cell>']
+            are the cells that cover the cell; the other direction (the cells one
+            coverage cell overlays) cannot be asked of smo-teiv 0.3.0, see
+            NRCELLCU_NEIGHBOR_CELL_NRCELLCU.";
+
+        uses or-teiv-types:Top_Grp_Type;
+        uses or-teiv-types:Origin_Relationship_Mapping_Grp;
+        key id;
+
+        leaf-list overlaid-nrCellDu {
+            description "NR Cell-DU overlays NR Cell-DU.";
+            or-teiv-yext:aSide or-teiv-ran:NRCellDU;
+            type instance-identifier;
+        }
+
+        leaf-list overlaid-by-nrCellDu {
+            description "NR Cell-DU is overlaid by NR Cell-DU.";
+            or-teiv-yext:bSide or-teiv-ran:NRCellDU;
+            type instance-identifier;
+        }
+    }
+
+    or-teiv-yext:biDirectionalTopologyRelationship NRCELLCU_CONTAINS_NRFREQRELATION { // 1 to 0..n
+
+        description
+            "The aSide of this relationship is an instance of the NRCellCU type.
+            The bSide of this relationship is an instance of the NRFreqRelation type.
+            TS 28.541 name-contains an NRFreqRelation in its NRCellCU.";
+
+        uses or-teiv-types:Top_Grp_Type;
+        uses or-teiv-types:Origin_Relationship_Mapping_Grp;
+        key id;
+
+        leaf-list contained-nrFreqRelation {
+            description "NR Cell-CU contains NR Frequency Relation.";
+            or-teiv-yext:aSide or-teiv-ran:NRCellCU;
+            type instance-identifier;
+        }
+
+        leaf contained-by-nrCellCu {
+            description "NR Frequency Relation contained by NR Cell-CU.";
+            or-teiv-yext:bSide NRFreqRelation;
+            type instance-identifier;
+            mandatory true;
+        }
+    }
+
+    or-teiv-yext:biDirectionalTopologyRelationship NRCELLRELATION_USES_NRFREQRELATION { // 0..n to 0..1
+
+        description
+            "The aSide of this relationship is an instance of the NRCellRelation type.
+            The bSide of this relationship is an instance of the NRFreqRelation type.
+            TS 28.541 NRCellRelation.nRFreqRelationRef.";
+
+        uses or-teiv-types:Top_Grp_Type;
+        uses or-teiv-types:Origin_Relationship_Mapping_Grp;
+        key id;
+
+        leaf used-nrFreqRelation {
+            description "NR Cell Relation uses NR Frequency Relation.";
+            or-teiv-yext:aSide NRCellRelation;
+            type instance-identifier;
+        }
+
+        leaf-list used-by-nrCellRelation {
+            description "NR Frequency Relation used by NR Cell Relations.";
+            or-teiv-yext:bSide NRFreqRelation;
+            type instance-identifier;
+        }
+    }
+
+    or-teiv-yext:biDirectionalTopologyRelationship NRSECTORCARRIER_CONTAINS_COMMONBEAMFORMINGFUNCTION { // 1 to 0..1
+
+        description
+            "The aSide of this relationship is an instance of the NRSectorCarrier type.
+            The bSide of this relationship is an instance of the CommonBeamformingFunction type.
+            TS 28.541 name-contains the CommonBeamformingFunction in its NRSectorCarrier.";
+
+        uses or-teiv-types:Top_Grp_Type;
+        uses or-teiv-types:Origin_Relationship_Mapping_Grp;
+        key id;
+
+        leaf contained-commonBeamformingFunction {
+            description "NR Sector Carrier contains Common Beamforming Function.";
+            or-teiv-yext:aSide or-teiv-ran:NRSectorCarrier;
+            type instance-identifier;
+        }
+
+        leaf contained-by-nrSectorCarrier {
+            description "Common Beamforming Function contained by NR Sector Carrier.";
+            or-teiv-yext:bSide CommonBeamformingFunction;
+            type instance-identifier;
+            mandatory true;
+        }
+    }
+
+    or-teiv-yext:biDirectionalTopologyRelationship NRCELLCU_CONTAINS_CESMANAGEMENTFUNCTION { // 1 to 0..1
+
+        description
+            "The aSide of this relationship is an instance of the NRCellCU type.
+            The bSide of this relationship is an instance of the CESManagementFunction type.";
+
+        uses or-teiv-types:Top_Grp_Type;
+        uses or-teiv-types:Origin_Relationship_Mapping_Grp;
+        key id;
+
+        leaf contained-cesManagementFunction {
+            description "NR Cell-CU contains CES Management Function.";
+            or-teiv-yext:aSide or-teiv-ran:NRCellCU;
+            type instance-identifier;
+        }
+
+        leaf contained-by-nrCellCu {
+            description "CES Management Function contained by NR Cell-CU.";
+            or-teiv-yext:bSide CESManagementFunction;
+            type instance-identifier;
+            mandatory true;
+        }
+    }
+
+    or-teiv-yext:biDirectionalTopologyRelationship NRCELLCU_CONTAINS_DESMANAGEMENTFUNCTION { // 1 to 0..1
+
+        description
+            "The aSide of this relationship is an instance of the NRCellCU type.
+            The bSide of this relationship is an instance of the DESManagementFunction type.";
+
+        uses or-teiv-types:Top_Grp_Type;
+        uses or-teiv-types:Origin_Relationship_Mapping_Grp;
+        key id;
+
+        leaf contained-desManagementFunction {
+            description "NR Cell-CU contains DES Management Function.";
+            or-teiv-yext:aSide or-teiv-ran:NRCellCU;
+            type instance-identifier;
+        }
+
+        leaf contained-by-nrCellCu {
+            description "DES Management Function contained by NR Cell-CU.";
+            or-teiv-yext:bSide DESManagementFunction;
+            type instance-identifier;
+            mandatory true;
+        }
+    }
+
+    or-teiv-yext:biDirectionalTopologyRelationship NRCELLCU_CONTAINS_DMROFUNCTION { // 1 to 0..1
+
+        description
+            "The aSide of this relationship is an instance of the NRCellCU type.
+            The bSide of this relationship is an instance of the DMROFunction type.";
+
+        uses or-teiv-types:Top_Grp_Type;
+        uses or-teiv-types:Origin_Relationship_Mapping_Grp;
+        key id;
+
+        leaf contained-dmroFunction {
+            description "NR Cell-CU contains DMRO Function.";
+            or-teiv-yext:aSide or-teiv-ran:NRCellCU;
+            type instance-identifier;
+        }
+
+        leaf contained-by-nrCellCu {
+            description "DMRO Function contained by NR Cell-CU.";
+            or-teiv-yext:bSide DMROFunction;
+            type instance-identifier;
+            mandatory true;
+        }
+    }
+
+    or-teiv-yext:biDirectionalTopologyRelationship NRCELLCU_CONTAINS_DLBOFUNCTION { // 1 to 0..1
+
+        description
+            "The aSide of this relationship is an instance of the NRCellCU type.
+            The bSide of this relationship is an instance of the DLBOFunction type.";
+
+        uses or-teiv-types:Top_Grp_Type;
+        uses or-teiv-types:Origin_Relationship_Mapping_Grp;
+        key id;
+
+        leaf contained-dlboFunction {
+            description "NR Cell-CU contains DLBO Function.";
+            or-teiv-yext:aSide or-teiv-ran:NRCellCU;
+            type instance-identifier;
+        }
+
+        leaf contained-by-nrCellCu {
+            description "DLBO Function contained by NR Cell-CU.";
+            or-teiv-yext:bSide DLBOFunction;
+            type instance-identifier;
+            mandatory true;
+        }
+    }
+}

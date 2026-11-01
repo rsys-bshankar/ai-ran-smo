@@ -1,0 +1,142 @@
+module smo-teiv-ext-oam {
+    yang-version 1.1;
+    namespace "urn:ai-ran-smo:teiv:ext-oam";
+    prefix teiv-ext-oam;
+
+    import o-ran-smo-teiv-common-yang-types { prefix or-teiv-types; }
+
+    import o-ran-smo-teiv-common-yang-extensions { prefix or-teiv-yext; }
+
+    import o-ran-smo-teiv-oam { prefix or-teiv-oam; }
+
+    import smo-teiv-ext-ran { prefix teiv-ext-ran; }
+
+    organization "AI-RAN SMO (TE&IV extension spike, plan task S3.20)";
+    contact "The AI-RAN SMO maintainers";
+    description "TE&IV extension of O-RAN-SC smo-teiv 0.3.0: the TS 28.622 SubNetwork
+        (ADR 0013 gap G4) and its containment of ManagedElements, SubNetworks and
+        the SubNetwork-level CCOFunction (TS 28.541).
+
+        Written in the style of O-RAN.WG10.TE&IV-DM, like smo-teiv-ext-ran (whose
+        description says how TS 28.541 / TS 28.622 types are mapped). Domain
+        EXT_OAM: it includes smo-teiv's OAM domain and EXT_RAN.";
+
+    revision "2026-11-01" {
+        description "Initial revision: SubNetwork and its containments.";
+        or-teiv-yext:label 0.1.0;
+        reference "3GPP TS 28.622, TS 28.541; O-RAN.WG10.TE&IV-DM.0-R004-v02.00 (style)";
+    }
+
+    or-teiv-yext:domain EXT_OAM;
+
+    list SubNetwork {
+        uses or-teiv-types:Top_Grp_Type;
+        uses or-teiv-types:Origin_Entity_Mapping_Grp;
+        key id;
+
+        description "Sub-network (TS 28.622 SubNetwork): a set of managed entities,
+            the root of the TS 28.541 tree a SubNetwork scope reads.";
+
+        container attributes {
+            description "Container for sub-network attributes";
+
+            leaf dnPrefix {
+                type string;
+                description "DN prefix of the sub-network (TS 32.300)";
+            }
+
+            leaf userLabel {
+                type string;
+                description "A user-friendly name of the sub-network";
+            }
+
+            leaf userDefinedNetworkType {
+                type string;
+                description "The network type the operator gives the sub-network";
+            }
+
+            leaf-list setOfMcc {
+                type string;
+                description "The mobile country codes of the sub-network";
+            }
+
+            leaf priorityLabel {
+                type uint32;
+                description "Priority of the sub-network for conflict resolution";
+            }
+        }
+    }
+
+    or-teiv-yext:biDirectionalTopologyRelationship SUBNETWORK_CONTAINS_SUBNETWORK { // 0..1 to 0..n
+
+        description
+            "The aSide of this relationship is an instance of the SubNetwork type.
+            The bSide of this relationship is an instance of the SubNetwork type.
+            TS 28.622 name-contains a SubNetwork in a SubNetwork.";
+
+        uses or-teiv-types:Top_Grp_Type;
+        uses or-teiv-types:Origin_Relationship_Mapping_Grp;
+        key id;
+
+        leaf-list contained-subNetwork {
+            description "Sub-network contains sub-network.";
+            or-teiv-yext:aSide SubNetwork;
+            type instance-identifier;
+        }
+
+        leaf contained-by-subNetwork {
+            description "Sub-network contained by sub-network.";
+            or-teiv-yext:bSide SubNetwork;
+            type instance-identifier;
+        }
+    }
+
+    or-teiv-yext:biDirectionalTopologyRelationship SUBNETWORK_CONTAINS_MANAGEDELEMENT { // 0..1 to 0..n
+
+        description
+            "The aSide of this relationship is an instance of the SubNetwork type.
+            The bSide of this relationship is an instance of the ManagedElement type.
+            TS 28.622 name-contains a ManagedElement in a SubNetwork.";
+
+        uses or-teiv-types:Top_Grp_Type;
+        uses or-teiv-types:Origin_Relationship_Mapping_Grp;
+        key id;
+
+        leaf-list contained-managedElement {
+            description "Sub-network contains managed element.";
+            or-teiv-yext:aSide SubNetwork;
+            type instance-identifier;
+        }
+
+        leaf contained-by-subNetwork {
+            description "Managed element contained by sub-network.";
+            or-teiv-yext:bSide or-teiv-oam:ManagedElement;
+            type instance-identifier;
+        }
+    }
+
+    or-teiv-yext:biDirectionalTopologyRelationship SUBNETWORK_CONTAINS_CCOFUNCTION { // 1 to 0..1
+
+        description
+            "The aSide of this relationship is an instance of the SubNetwork type.
+            The bSide of this relationship is an instance of the CCOFunction type.
+            TS 28.541 name-contains the CCOFunction in a SubNetwork.";
+
+        uses or-teiv-types:Top_Grp_Type;
+        uses or-teiv-types:Origin_Relationship_Mapping_Grp;
+        key id;
+
+        leaf contained-ccoFunction {
+            description "Sub-network contains CCO function.";
+            or-teiv-yext:aSide SubNetwork;
+            type instance-identifier;
+        }
+
+        leaf contained-by-subNetwork {
+            description "CCO function contained by sub-network.";
+            or-teiv-yext:bSide teiv-ext-ran:CCOFunction;
+            type instance-identifier;
+            mandatory true;
+        }
+    }
+}

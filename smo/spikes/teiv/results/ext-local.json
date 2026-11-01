@@ -1,0 +1,249 @@
+{
+ "label": "Claude Code cloud container (local run)",
+ "machine": {
+  "platform": "Linux-6.18.44-fc-v185-x86_64-with-glibc2.39",
+  "cpus": 4,
+  "memory": "16477352 kB",
+  "python": "3.13.18",
+  "runner": "",
+  "runnerOs": ""
+ },
+ "takenAt": "2026-11-01T04:58:41.070583+00:00",
+ "smoTeiv": "0.3.0",
+ "model": "smo-teiv 0.3.0 with TE&IV's extension (spikes/teiv/model/)",
+ "load": [
+  {
+   "source": "b",
+   "mois": 18004,
+   "entitiesMapped": 18004,
+   "relationships": 44003,
+   "events": 61,
+   "seconds": 47.17,
+   "entitiesSeconds": 47.06,
+   "byType": {
+    "SubNetwork": 1,
+    "CCOFunction": 1,
+    "ManagedElement": 334,
+    "ODUFunction": 334,
+    "OCUCPFunction": 334,
+    "NRSectorCarrier": 1000,
+    "CommonBeamformingFunction": 1000,
+    "NRCellDU": 1000,
+    "NRCellCU": 1000,
+    "NRFreqRelation": 1000,
+    "CESManagementFunction": 1000,
+    "DESManagementFunction": 1000,
+    "DMROFunction": 1000,
+    "DLBOFunction": 1000,
+    "NRCellRelation": 8000
+   }
+  }
+ ],
+ "queries": [
+  {
+   "query": "Q1",
+   "title": "one cell by id",
+   "raw": {
+    "n": 100,
+    "p50": 2.8,
+    "p95": 5.4,
+    "p99": 6.1
+   },
+   "facade": {
+    "n": 100,
+    "p50": 2.6,
+    "p95": 3.4,
+    "p99": 6.5
+   },
+   "facadeAddedP50": -0.2,
+   "answerSize": 1,
+   "result": "PASS"
+  },
+  {
+   "query": "Q2",
+   "title": "a cell's neighbours (NEIGHBOR_CELL)",
+   "raw": {
+    "n": 100,
+    "p50": 6.1,
+    "p95": 9.0,
+    "p99": 10.3
+   },
+   "facade": {
+    "n": 100,
+    "p50": 5.8,
+    "p95": 7.7,
+    "p99": 8.2
+   },
+   "facadeAddedP50": -0.3,
+   "answerSize": 8,
+   "result": "PASS"
+  },
+  {
+   "query": "Q2r",
+   "title": "a cell's NRCellRelation objects (TS 28.532 form)",
+   "raw": {
+    "n": 100,
+    "p50": 15.3,
+    "p95": 20.5,
+    "p99": 22.2
+   },
+   "facade": {
+    "n": 100,
+    "p50": 14.2,
+    "p95": 20.4,
+    "p99": 23.0
+   },
+   "facadeAddedP50": -1.1,
+   "answerSize": 8,
+   "result": "PASS"
+  },
+  {
+   "query": "Q3",
+   "title": "all cells under a GNBDUFunction",
+   "raw": {
+    "n": 100,
+    "p50": 3.6,
+    "p95": 4.4,
+    "p99": 4.7
+   },
+   "facade": {
+    "n": 100,
+    "p50": 3.9,
+    "p95": 4.8,
+    "p99": 5.3
+   },
+   "facadeAddedP50": 0.3,
+   "answerSize": 3,
+   "result": "PASS"
+  },
+  {
+   "query": "Q4",
+   "title": "two-hop neighbours (1 + 8 requests, the 8 together)",
+   "raw": {
+    "n": 100,
+    "p50": 28.3,
+    "p95": 35.9,
+    "p99": 40.7
+   },
+   "facade": {
+    "n": 100,
+    "p50": 29.0,
+    "p95": 48.4,
+    "p99": 69.0
+   },
+   "facadeAddedP50": 0.7,
+   "answerSize": 24,
+   "result": "PASS"
+  },
+  {
+   "query": "Q4or",
+   "title": "two-hop neighbours (2 requests, the second with 8 ids joined with or)",
+   "raw": {
+    "n": 20,
+    "p50": 2199.1,
+    "p95": 2328.4,
+    "p99": 2343.4
+   },
+   "facade": {
+    "n": 20,
+    "p50": 2124.3,
+    "p95": 2229.9,
+    "p99": 2353.9
+   },
+   "facadeAddedP50": -74.8,
+   "answerSize": 24,
+   "result": "FAIL"
+  },
+  {
+   "query": "Q5",
+   "title": "all cells in a SubNetwork with an attribute filter",
+   "raw": {
+    "n": 100,
+    "p50": 4.3,
+    "p95": 6.0,
+    "p99": 6.8
+   },
+   "facade": {
+    "n": 100,
+    "p50": 4.0,
+    "p95": 6.3,
+    "p99": 6.8
+   },
+   "facadeAddedP50": -0.3,
+   "answerSize": 18,
+   "result": "PASS"
+  }
+ ],
+ "neighbourCheck": {
+  "cellsChecked": 11,
+  "wrong": []
+ },
+ "change": {
+  "runs": 10,
+  "visible": {
+   "n": 10,
+   "p50": 27.8,
+   "p95": 43.5,
+   "p99": 43.5
+  },
+  "smoTeivNotification": "none: smo-teiv 0.3.0 has no change-event producer and no subscription API",
+  "facadeNotification": {
+   "n": 10,
+   "p50": 27.8,
+   "p95": 43.6,
+   "p99": 43.6
+  }
+ },
+ "runtime": {
+  "imageBytes": {
+   "local/teiv-spike:0.3.0-ext": 540808337,
+   "local/teiv-spike-db:0.3.0-ext": 615680323
+  },
+  "containers": [
+   {
+    "BlockIO": "0B / 0B",
+    "CPUPerc": "0.59%",
+    "Container": "a1155e8c719157956f20bb374e654ab7f725aaf90aef92d0ed53d3c75cffd9ab",
+    "ID": "a1155e8c7191",
+    "MemPerc": "6.66%",
+    "MemUsage": "1.046GiB / 15.71GiB",
+    "Name": "teiv-spike-teiv-ingestion-1",
+    "NetIO": "62.1MB / 104MB",
+    "PIDs": "45"
+   },
+   {
+    "BlockIO": "0B / 0B",
+    "CPUPerc": "0.20%",
+    "Container": "258cc810b8250180c8c2d5a2b2a836209b8c6b6bba1a2a2436d651a0a3a8b319",
+    "ID": "258cc810b825",
+    "MemPerc": "3.28%",
+    "MemUsage": "527.4MiB / 15.71GiB",
+    "Name": "teiv-spike-teiv-exposure-1",
+    "NetIO": "8.06MB / 12.3MB",
+    "PIDs": "40"
+   },
+   {
+    "BlockIO": "0B / 0B",
+    "CPUPerc": "0.04%",
+    "Container": "1afe8faf557efaf3f1e9b81466db7254ad0ae1aef58a5a969496da95788717fc",
+    "ID": "1afe8faf557e",
+    "MemPerc": "3.45%",
+    "MemUsage": "555.5MiB / 15.71GiB",
+    "Name": "teiv-spike-teiv-db-1",
+    "NetIO": "105MB / 31.9MB",
+    "PIDs": "37"
+   },
+   {
+    "BlockIO": "0B / 0B",
+    "CPUPerc": "3.00%",
+    "Container": "68621f40d337401fbe8aae4ec40596820ba3edb45d2b228463a5001b2d145fa4",
+    "ID": "68621f40d337",
+    "MemPerc": "3.07%",
+    "MemUsage": "494.1MiB / 15.71GiB",
+    "Name": "teiv-spike-kafka-1",
+    "NetIO": "234kB / 36.1MB",
+    "PIDs": "100"
+   }
+  ]
+ }
+}

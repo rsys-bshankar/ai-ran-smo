@@ -2,7 +2,9 @@ name: TE&IV spike
 
 # Plan task S0.13 (smo/docs/adr/0013-teiv-on-smo-teiv.md): O-RAN-SC smo-teiv 0.3.0 run on the RAN NF OAM tree of the oran-sim O-DUs (source a) and on a
 # synthetic 1,000-cell tree (source b); load time, query latency (directly and through the TS 28.532 facade sketch), change-event latency and runtime
-# cost measured and uploaded as an artifact. Manual, weekly, and on a pull request only when it changes the spike itself (smo/spikes/teiv/ or this file),
+# cost measured and uploaded as an artifact. Since the extension spike (plan task S3.20, ADR 0013 section 11) smo-teiv runs with TE&IV's model extension
+# (smo/spikes/teiv/model/: NRCellRelation and NEIGHBOR_CELL, CO_COVERAGE_OVERLAY, SubNetwork, CommonBeamformingFunction, NRFreqRelation, the SON
+# functions), generated into its schema with its own generator at image build, and the measurements include the neighbour and two-hop queries. Manual, weekly, and on a pull request only when it changes the spike itself (smo/spikes/teiv/ or this file),
 # never on every pull request: it builds two images from source and starts two stacks. It is not a required check.
 # The spike's code is smo/spikes/teiv/ (no module imports it). The main stack's compose commands take the GHCR mirror through the generated override
 # as everywhere; the spike's own compose file takes it through the SMO_IMAGE_* variables of scripts/ci_mirror.py setup (docs/MIRROR.md, exceptions).
@@ -86,7 +88,7 @@ jobs:
               python spikes/teiv/load.py --ran-nf-oam http://ran-nf-oam:8000 $logs --events /logs/a.events --gaps /logs/a.gaps.json"
           python spikes/teiv/load.py --synthetic 1000 --events "$RUNNER_TEMP/b.events" --gaps "$RUNNER_TEMP/b.gaps.json"
 
-      - name: Build and start smo-teiv 0.3.0 with its Postgres and Kafka
+      - name: Build and start smo-teiv 0.3.0 with TE&IV's model extension, its Postgres and Kafka
         working-directory: smo
         run: |
           docker compose -f "$SPIKE" config --quiet

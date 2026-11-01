@@ -1,7 +1,19 @@
-# smo-teiv's Postgres for the TE&IV spike (plan task S0.13): upstream's image (PostGIS 3.4 on Postgres 13, which smo-teiv's schema needs for the
-# geo-location queries), pinned by digest, with the schema smo-teiv 0.3.0 ships (docker-compose/sql_scripts of the named build context `teiv`:
-# the model metadata, the empty data tables, the consumer data and groups tables; no sample data) run at the first start.
+# smo-teiv's Postgres for the TE&IV spikes (plan tasks S0.13 and S3.20, ADR 0013): upstream's image (PostGIS 3.4 on Postgres 13, which smo-teiv's
+# schema needs for the geo-location queries), pinned by digest, with a schema generated at build time by smo-teiv's own generator
+# (pgsql-schema-generator 1.2.1, built from the 0.3.0 tag of the named build context `teiv`) from smo-teiv's YANG and TE&IV's extension
+# (model/*.yang, model/build-model.sh). Run over smo-teiv's YANG alone the generator reproduces the schema 0.3.0 ships in docker-compose/sql_scripts
+# line for line (ADR 0013 section 11), so the extension's schema is upstream's schema plus the extension's tables and columns. The four scripts
+# (model metadata, data tables, consumer data, groups; no sample data) run at the database's first start.
+FROM maven:3.9.11-eclipse-temurin-21-noble@sha256:6fdc855a6ed81d288ca7ca37ac6ff5e9308b612485c0801d70b25a858c83d237 AS schema
+WORKDIR /src
+COPY --from=teiv . .
+COPY maven-settings.xml /tmp/maven-settings.xml
+COPY model /tmp/model
+RUN sh /tmp/model/build-model.sh models /src /tmp/model \
+ && mvn -B --no-transfer-progress -s /tmp/maven-settings.xml -pl pgsql-schema-generator -am -DskipTests -Dmaven.antrun.skip=true -Djacoco.skip=true \
+        -Dspotless.check.skip=true -Dspotless.apply.skip=true package \
+ && sh /tmp/model/build-model.sh schema /src /sql
+
 FROM postgis/postgis:13-3.4-alpine@sha256:3ce9b8f4d0711d33cc5fa5e6c00dcb7965fa41467f78c0f3bc7fc7bc2357d85b
-COPY --from=teiv docker-compose/sql_scripts/00_init-teiv-exposure-model.sql docker-compose/sql_scripts/01_init-teiv-exposure-data.sql \
-     docker-compose/sql_scripts/02_init-teiv-exposure-consumer-data.sql docker-compose/sql_scripts/03_init-teiv-exposure-groups.sql \
-     /docker-entrypoint-initdb.d/
+COPY --from=schema /sql/00_init-teiv-exposure-model.sql /sql/01_init-teiv-exposure-data.sql /sql/02_init-teiv-exposure-consumer-data.sql \
+     /sql/03_init-teiv-exposure-groups.sql /docker-entrypoint-initdb.d/
