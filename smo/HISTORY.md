@@ -5062,4 +5062,12 @@ Closed from `OPEN_ITEMS.md` (`PR-CONV-S1.4`). `shared/smo_shared/mns/scope.py` a
   ...); every scope and level selects exactly the oracle's instances in DN order; for any page size and filter the pages together are the unpaged answer
   without repeats; with instances added and removed between pages, the walk stays ordered, repeats nothing and misses nothing that was there throughout.
 - **Mutation gate.** `smo_shared/mns/` dn, errors, patch, scope, registry, service and router are in `[tool.mutmut] only_mutate`, and
-  `smo-mutation.yml` runs on a change to them. MUTATION_RESULT
+  `smo-mutation.yml` runs on a change to them. Mutation score, as the gate requires: **2,491 of 2,491 mutants of
+  `mns/` killed** (the whole gate: 4,799 of 4,799 in 24 modules), reached in three runs: 2,419 of 2,979 (81%), then 2,654 of 2,712, then 2,487 of
+  2,491. `shared/tests/test_mns_exact.py` holds the cases that did it (every refusal with its full reason, what each hook is handed, the notification
+  field by field, the registry derived afresh from small hand-written specifications). Equivalent mutants were removed by simplifying the code, not
+  excused: the registry follows `$ref`s through `referencing` and `urljoin`, a JSON-patch failure is numbered in one place, the filter is evaluated
+  through tables, a page without a filter is one `LIMIT limit + 1` read, and a delete goes in reverse DN order. The runs also found two defects, both
+  fixed: selecting a whole array and then a field through it dropped the array's non-object items; and mutmut forks each mutant from a process whose
+  shared registry is already built, so the registry's own tests build fresh ones. Not mutated: `mns/store.py` (DDL, held on Postgres by
+  `test_mns_store.py`) and `mns/lifecycle.py` (no-op hooks).

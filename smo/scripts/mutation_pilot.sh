@@ -21,6 +21,8 @@
 #
 # PR-CONV-S1.4 added the ProvMnS router `mns/` (dn, errors, patch, scope, registry, service, router; tested by shared/tests/test_mns_*.py on SQLite: the Postgres runs
 # of those tests are skipped here). `mns/store.py` (DDL, held by test_mns_store.py on Postgres) and `mns/lifecycle.py` (no-op hooks) are not mutated.
+# With it: 4799 mutants in 24 modules, none surviving (2491 in mns/; the first run left 560, killed by shared/tests/test_mns_exact.py and by simplifying
+# the code where a mutant behaved like the original).
 # Needs the dev requirements installed (requirements/dev.txt) and mutmut (requirements/mutation.txt). About four minutes.
 set -euo pipefail
 cd "$(dirname "$0")/../shared"
