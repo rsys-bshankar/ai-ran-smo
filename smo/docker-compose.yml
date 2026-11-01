@@ -1111,9 +1111,11 @@ services:
         teiv: ${TEIV_SOURCE:-https://github.com/o-ran-sc/smo-teiv.git#ee898469d2b9a3de5047ac6675f097ca72e97884}
     image: local/smo-teiv-db:0.3.0-ext
     restart: unless-stopped
+    user: "70:70"                 # `postgres` of the alpine image from the start, so its entrypoint needs no capability to chown and change user; the volume takes the image's ownership
     cap_drop: [ALL]
-    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]      # the Postgres entrypoint chowns its data directory and drops to the postgres user
     security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: [/tmp, /var/run/postgresql]          # and its socket directory: the entrypoint's own initialisation connects there, wherever the server is told to put it
     networks: [teiv]
     secrets: [teiv_db_password]
     environment:
@@ -1139,7 +1141,6 @@ services:
     restart: "no"
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    stop_grace_period: 30s
     networks: [teiv]
     depends_on: { kafka: { condition: service_healthy } }
     entrypoint: ["/bin/sh", "-c"]

@@ -12,6 +12,9 @@ DOCKERFILE = (SMO_ROOT / "Dockerfile").read_text()
 # The one service built here from someone else's source: the O-RAN-SC simulator of the profile `oran-sim` (ADR 0012 section 5). Its daemons (sshd, vsftpd,
 # netopeer2) run as root, so after cap_drop ALL it gets back exactly these capabilities, and its root filesystem holds sysrepo's datastores and the PM files.
 # It drops everything else and sets no-new-privileges like every service; nothing else may have an exception.
+# smo-teiv's Postgres (profile teiv, S3.23; teiv/Dockerfile.db is upstream's PostGIS image with a generated schema): its socket directory is a second tmpfs, since
+# the image's entrypoint initialises the database through a socket there whatever the server is told (unix_socket_directories); nothing else is writable.
+EXTRA_SCRATCH = {"teiv-db": ["/var/run/postgresql"]}
 THIRD_PARTY_BUILDS = {"oran-sim-du": ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETUID", "SETGID", "SYS_CHROOT", "AUDIT_WRITE", "NET_BIND_SERVICE", "NET_RAW"]}
 
 
@@ -62,7 +65,7 @@ def test_every_service_we_build_has_a_read_only_root_filesystem_with_memory_scra
     built = {name: svc for name, svc in _compose().items() if ("build" in svc or name == "edge-tls") and name not in THIRD_PARTY_BUILDS}
     for name, svc in built.items():
         assert svc.get("read_only") is True, f"{name} can write to its root filesystem"
-        assert svc.get("tmpfs") == ["/tmp"], f"{name} has no scratch space"
+        assert svc.get("tmpfs") == ["/tmp"] + EXTRA_SCRATCH.get(name, []), f"{name} has no scratch space"
     # the runbook copies CSARs into the one volume that is meant for it, not into the tmpfs (docker cp cannot write there)
     assert "smo_scratch:/srv/scratch" in " ".join(_compose()["r1-termination"]["volumes"])
     runbook = (SMO_ROOT / "DEMO_RUNBOOK.md").read_text()

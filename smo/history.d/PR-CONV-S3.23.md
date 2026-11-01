@@ -9,7 +9,9 @@
   build; the five import modules come from smo-teiv's own committed schema, so nothing is downloaded from www.ietf.org or forge.3gpp.org.
   `.github/workflows/teiv-image.yml` builds and publishes `ghcr.io/<owner>/<repo>/smo-teiv:0.3.0-ext` and `smo-teiv-db:0.3.0-ext` on a push to main that
   changes them (or by hand), reading the source and tag from the compose profile, as `oran-sim-image.yml` does; the job summary gives the digests.
-- **Compose profile `teiv`**: `teiv-db` (password from the secret file `teiv_db_password`, `init_secrets.sh`; volume `smo_teiv_pgdata`),
+- **Compose profile `teiv`**: `teiv-db` (password from the secret file `teiv_db_password`, `init_secrets.sh`; volume `smo_teiv_pgdata`; run as `postgres`,
+  uid 70, from the start, so no capability is needed, with a read-only root and tmpfs `/tmp` and `/var/run/postgresql`, the socket directory its entrypoint
+  initialises through: `test_container_hardening.py` names that one extra scratch directory),
   `teiv-kafka-init` (creates `smo.teiv.ingestion.v1`, four partitions, one replica), `teiv-ingestion` and `teiv-exposure` (one image, Spring profiles
   `ingestion` and `exposure,groups`; read-only root, `/tmp` a tmpfs, no capability; the database password mounted as the file `SERVICE_DB_PASSWORD` and
   read through Spring's configtree, never an environment variable; health from the actuator). The broker is the profile `kafka`'s, which the profile `teiv`

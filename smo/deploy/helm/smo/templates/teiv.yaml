@@ -109,13 +109,16 @@ spec:
             {{- toYaml $t.db.resources | nindent 12 }}
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true      # as compose: the data volume, the socket directory and /tmp are the only places it writes
             capabilities: { drop: [ALL] }
           volumeMounts:
             - { name: pgdata, mountPath: /var/lib/postgresql/data }
             - { name: run, mountPath: /var/run/postgresql }
+            - { name: tmp, mountPath: /tmp }
             - { name: secret, mountPath: /run/secrets, readOnly: true }
       volumes:
         - { name: run, emptyDir: {} }
+        - { name: tmp, emptyDir: {} }
         - name: secret
           secret: { secretName: {{ $secret }}, defaultMode: 0444 }
   volumeClaimTemplates:
