@@ -28,6 +28,7 @@ over the registry's model rows (the `registry` package of AIMgF, formerly MLMR).
 """
 
 import datetime
+import functools
 import uuid
 from typing import Any, Literal
 
@@ -532,7 +533,7 @@ def discover(db: Session, criteria: MLModelInfo, caller: str | None, include_mod
         for model in page:
             artifact = db.scalar(select(ModelArtifact).where(ModelArtifact.model_id == model.model_id)
                                  .order_by(ModelArtifact.artifact_version.desc()).limit(1))
-            encoded = artifacts.store_call(lambda a=artifact: artifacts.inline(a.object_key, a.sha256, a.size_bytes)) if artifact else None
+            encoded = artifacts.store_call(functools.partial(artifacts.inline, artifact.object_key, artifact.sha256, artifact.size_bytes)) if artifact else None
             files.append({"mlModelId": str(model.model_id), **({"mlModel": encoded} if encoded is not None else {})})
         return {"mlModels": files, "indicator": True}
     profiles = []
