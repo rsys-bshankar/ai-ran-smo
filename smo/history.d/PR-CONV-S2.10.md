@@ -60,3 +60,9 @@ downgrade to 0068, upgrade.
 delivery to subscribers (S1.13: the notifications go to the event bus only). The REST routes the console, the BFF, the SDK and the integration
 suite still call are not moved (outside this lane). `scripts/mutation_pilot.sh` does not run AIMgF's `provmns/` yet (its mutmut configuration is
 `aimgf/pyproject.toml`; adding a step to the pilot is a `[cross-lane]` change).
+
+**Mutation testing.** `aimgf/app/provmns/` under mutmut 3.8 (`aimgf/pyproject.toml`, `cd smo/aimgf && PYTHONPATH=.:$PWD/../shared mutmut run`):
+1502 mutants, every one killed. The first run left 766 of 1846; `tests/test_provmns_exact.py` (exact refusals, every attribute a request passes
+to its run, the notifications, the containers) killed most, and the rest were removed by simplifying the code where a mutant behaved like the
+original: the handlers are dataclasses, the projection keeps no state and no log line, views give attributes only, a row is projected once per
+commit, and each attribute is validated on its own instead of a retry loop.
