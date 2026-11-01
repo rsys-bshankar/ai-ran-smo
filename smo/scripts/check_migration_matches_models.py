@@ -64,6 +64,7 @@ ALL_MODULES = [
     "r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam",
     "nfo", "focom", "aimgf", "mlmr", "mllf", "ran-analytics", "mdaf",
     "intent-service", "so-smos", "sa-smos",
+    "echo",  # PR-CONV-S1.6: the reference ProvMnS module; its model is the router's moi_store (echo/app/models.py)
     "samples/energy-saving-rapp",  # Wave 10.1: the reference rApp's own tables
     "samples/mobility-optimization-rapp",  # Wave 10.2
     "samples/coverage-optimization-rapp",  # Wave 10.3

@@ -9,7 +9,7 @@ Identity.roleList holds Role ids, Role.accessRulesList holds AccessRule ids.
 `credential` is write-only: only a salted scrypt hash is stored. It is checked when a caller presents it: `POST /config-jobs` for a requester that is an Identity with a
 credential must carry it in the `X-MSAC-Credential` header (`verify_identity_credential`, SEC-15.6); an Identity with no credential is not asked for one.
 
-Evaluation (`authorize`): the requester's roles come from the Identity named
+Evaluation (`authorize`, through `smo_shared.msac.decide`, which the ProvMnS router uses too): the requester's roles come from the Identity named
 by `requestedBy` plus the Role named by `msacRole`, if either exists. Every
 AccessRule of those roles whose `dataNodeSelector` matches the target and
 whose `operations` include the operation applies; DENY beats ALLOW; no
@@ -26,7 +26,6 @@ expression is refused at creation rather than stored and never matching.
 import hashlib
 import hmac
 import os
-import re
 import uuid
 from typing import Literal
 
@@ -36,6 +35,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import Select
 
+from smo_shared import msac as shared_msac
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.invoker import invoker_id
@@ -94,16 +94,10 @@ def verify_identity_credential(db: Session, requested_by: str, presented: str | 
         raise framework_error(FrameworkError.MSAC_ACCESS_DENIED, detail=f"{requested_by} has a credential: send it in the {CREDENTIAL_HEADER} header")
 
 
-_SEGMENT = re.compile(r"^[A-Za-z_*][A-Za-z0-9_*]*=[^/\[\]@'\"]+$|^\*$")
-
-
 def _check_selector(selector: str) -> None:
     """Refuses a `dataNodeSelector` that is not an absolute path of `Class=id` segments (with `*` wildcards): 422 SCHEMA_VALIDATION_FAILED. An expression this build cannot evaluate is rejected at creation rather than stored and never matched.
     """
-    segments = selector[1:].split("/") if selector.startswith("/") else None
-    if segments and segments[-1] == "":
-        segments = segments[:-1]  # a trailing slash
-    if segments is None or not all(_SEGMENT.match(seg) for seg in segments):
+    if not shared_msac.selector_supported(selector):
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
                               detail=f"dataNodeSelector {selector!r}: only absolute Jex paths of Class=id segments with '*' wildcards are supported")
 
@@ -135,18 +129,11 @@ def resolve_roles(db: Session, requested_by: str, msac_role: str | None) -> tupl
     return identity is not None or named is not None, roles
 
 
-def _selects(selector: str, target: str) -> bool:
-    pattern = re.escape(selector.rstrip("/") or "/*").replace(r"\*", ".*")
-    return re.fullmatch(pattern, target) is not None
-
-
 def authorize(db: Session, roles: list[MsacRole], target: str, operation: str) -> bool:
-    """Whether the roles allow `operation` on the DN path `target`: the rules of the roles that select the target and list the operation are collected; any DENY refuses, otherwise at least one ALLOW is needed, and no matching rule means refused.
+    """Whether the roles allow `operation` on the DN path `target`: the rules of the roles decide as `smo_shared.msac.decide` says (DENY beats ALLOW, no matching rule refuses).
     """
-    matched = [r for r in _rules_of(db, roles) if operation in r.operations and _selects(r.data_node_selector, target)]
-    if any(r.actions == "DENY" for r in matched):
-        return False
-    return any(r.actions == "ALLOW" for r in matched)
+    rules = [shared_msac.Rule(r.data_node_selector, frozenset(r.operations), r.actions) for r in _rules_of(db, roles)]
+    return shared_msac.decide(rules, target, operation)
 
 
 def reach_on() -> bool:

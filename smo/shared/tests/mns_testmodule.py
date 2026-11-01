@@ -23,7 +23,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
-from smo_shared import events
+from smo_shared import audit, events
 from smo_shared.mns import IMoiLifecycleHandler, MnsError, ProvMnS, create_moi_store, drop_moi_store, provmns_router, store
 from smo_shared.testing import make_test_engine
 
@@ -47,7 +47,8 @@ class Backend:
 def _sqlite() -> Backend:
     engine = make_test_engine()
     store.create_all(engine)
-    events.SmoEvent.__table__.create(engine)
+    for table in (events.SmoEvent.__table__, audit.AuditEntry.__table__, audit.AuditHead.__table__):
+        table.create(engine)
     return Backend("sqlite", engine)
 
 

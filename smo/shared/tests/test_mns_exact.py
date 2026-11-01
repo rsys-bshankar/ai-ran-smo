@@ -796,7 +796,9 @@ def test_the_order_comes_from_order_by_not_from_an_index():
     with engine.begin() as connection:
         connection.execute(text("CREATE TABLE moi_store (dn TEXT, object_class TEXT NOT NULL, moi_id TEXT NOT NULL, parent_dn TEXT, depth INTEGER NOT NULL,"
                                 " attributes JSON NOT NULL, moi_version INTEGER NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)"))
-    events_module.SmoEvent.__table__.create(engine)
+    from smo_shared import audit as audit_module
+    for table in (events_module.SmoEvent.__table__, audit_module.AuditEntry.__table__, audit_module.AuditHead.__table__):
+        table.create(engine)
     backend = Backend("sqlite", engine)
     for dn, class_name in (("SubNetwork=A", "SubNetwork"), ("SubNetwork=A,ManagedElement=2", "ManagedElement"),
                            ("SubNetwork=A,ManagedElement=1", "ManagedElement"), ("SubNetwork=A,ManagedElement=1,GNBDUFunction=1", "GNBDUFunction")):

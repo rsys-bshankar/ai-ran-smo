@@ -165,5 +165,15 @@
   "read": [
    "ran_nf_oam.rapp_kill"
   ]
+ },
+ "echo": {
+  "schema": "echo",
+  "shared": [
+   "module_identity",
+   "smo_event",
+   "audit_log",
+   "audit_head",
+   "idempotency_key"
+  ]
  }
 }

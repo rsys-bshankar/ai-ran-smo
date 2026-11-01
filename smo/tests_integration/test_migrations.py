@@ -22,8 +22,8 @@ MIGRATE = SMO_ROOT / "scripts" / "migrate.py"
 CHECK = SMO_ROOT / "scripts" / "check_migration_matches_models.py"
 ADMIN_URL = os.environ.get("SMO_TEST_POSTGRES_URL")
 needs_postgres = pytest.mark.skipif(not ADMIN_URL, reason="SMO_TEST_POSTGRES_URL not set")
-HEAD = "0064"         # raise this with every new revision: the tests below then check it is the head
-HEAD_TABLE = "mlmr.aiml_model"   # a table the head revision changes: the lock tests hold it, so raise it with HEAD
+HEAD = "0066"         # raise this with every new revision: the tests below then check it is the head
+HEAD_TABLE = "echo.moi_store"   # a table the head revision changes: the lock tests hold it, so raise it with HEAD
 
 
 def _scripts() -> ScriptDirectory:
