@@ -263,7 +263,26 @@ correct. Target: p95 ≤ 150 ms at 1,000 cells (PR-CONV-S3.19 / S3.20, D7).
 
 Runtime after the load: ingestion 1.05 GiB (S0.13: 616 MiB), exposure 527 MiB (473), Postgres 556 MiB (138), Kafka 494 MiB; images unchanged in size.
 
-**CI run:** see the pull request of this addendum (workflow "TE&IV spike", artifact `teiv-spike-results`); its numbers are added here once it has run.
+**CI run** (GitHub-hosted `ubuntu-latest` runner, Azure, Linux x86-64, 4 CPUs, 16 GB; workflow "TE&IV spike", run 41275571078, and the pull
+request's own run 41275567930 on the same commit, both green; `results/ext-ci.md`):
+
+| Load | MOIs | entities | relationships | events | seconds (all visible) |
+|---|---:|---:|---:|---:|---:|
+| synthetic, 1,000 cells, 8 relations per cell | 18,004 | 18,004 | 44,003 | 61 | **31.8** (S0.13's tree: 10.9) |
+| a) oran-sim O-DUs (2), now each named by its registered element | 6 | 6 | 4 | 1 | **0.47** (settled; S0.13's run did not) |
+
+| Query | raw p50 / p95 / p99 ms | through the facade p50 / p95 / p99 ms | answer | target |
+|---|---|---|---:|---|
+| Q1 one cell by id | 2.4 / 4.0 / 5.1 | 1.9 / 3.2 / 4.2 | 1 | **pass** (S0.13: 2.2) |
+| **Q2 a cell's neighbours** | 8.1 / 12.4 / 13.3 | **7.5 / 10.4 / 12.4** | 8 | **pass** |
+| Q2r a cell's NRCellRelation objects | 16.4 / 24.6 / 26.4 | 17.6 / 24.7 / 25.8 | 8 | **pass** |
+| Q3 all cells under a GNBDUFunction | 2.3 / 3.9 / 5.3 | 2.9 / 4.1 / 4.5 | 3 | **pass** (S0.13: 6.0) |
+| **Q4 two-hop neighbours** (1 request, then 8 together) | 29.3 / 40.7 / 45.1 | **31.5 / 58.4 / 69.7** | 24 | **pass** |
+| Q4or two-hop, the second hop as one request | 1,406 / 1,695 / 1,697 | 1,398 / 1,670 / 1,672 | 24 | fail (20 runs; 11.5 c3) |
+| Q5 all cells in a SubNetwork with an attribute filter | 3.2 / 5.2 / 6.1 | 2.7 / 4.7 / 5.5 | 18 | **pass** (S0.13: 9.3) |
+
+A changed NRCellDU is visible in 15.4 ms p50 / 29.1 ms p95 (S0.13: 48.5 p95). Memory: ingestion 1.07 GiB, exposure 473 MiB, Postgres 529 MiB,
+Kafka 447 MiB. Q2 and Q4 answers checked on 11 cells: all correct.
 
 Nothing regressed: Q1, Q3 and Q5 are at or below S0.13's numbers on a tree four and a half times as large. The load takes four times as long for
 four and a half times the entities and about nine times the relationships (one initial load; a change is visible in under 50 ms p95). Q4 meets the
@@ -309,7 +328,7 @@ Also not supported, and not needed: a scope filter that follows two associations
 - **Reuse holds; S3.20 is model work only.** The whole model of section 11.1 is carried by TE&IV-owned YANG and smo-teiv's own generator. smo-teiv's
   Java code is unchanged (a): its start-up, ingestion and exposure serve the new types from the generated metadata. What else was needed is build
   configuration and TE&IV's own conventions (b). Section 9's fallback is **not** taken.
-- **D7 holds.** The neighbour (Q2, p95 7.7 ms) and two-hop (Q4, p95 48.4 ms) queries are relational and well inside 150 ms at 1,000 cells with 8,000
+- **D7 holds.** The neighbour (Q2, p95 7.7 ms locally, 10.4 ms in CI) and two-hop (Q4, p95 48.4 ms locally, 58.4 ms in CI) queries are relational and well inside 150 ms at 1,000 cells with 8,000
   relations. Apache AGE is not reconsidered.
 - What S3.20 carries from here: the two modules (and S3.21's attributes in them); the generator run at image build (S3.23's mirror job builds the
   database image the same way); the NEIGHBOR_CELL direction (b5) and the fan-out two-hop read (b6) in S3.19's facade; the boolean-as-enumeration
