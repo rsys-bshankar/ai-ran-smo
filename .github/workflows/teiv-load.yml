@@ -3,7 +3,8 @@ name: TE&IV load
 # TE&IV's packaging of O-RAN-SC smo-teiv (plan task S3.23, smo/docs/adr/0013-teiv-on-smo-teiv.md section 8): the compose profile `teiv` is built from the
 # pinned 0.3.0 tag with TE&IV's model extension (smo/teiv/Dockerfile, Dockerfile.db), comes up healthy, holds its memory budget (3 GiB at 1,000 cells for
 # smo-teiv's two processes, its Postgres and the shared Kafka broker: smo/teiv/loadtest/budget.py), and keeps smo-teiv's database and API out of reach
-# of the rest of the stack (D19: they are on the internal network `teiv` only). The results are the job summary and the artifact `teiv-budget`.
+# of the rest of the stack (D19: they are on the internal network `teiv` only), and answers Q1 to Q5 through R1 Termination by class name at p95 <= 150 ms
+# (smo/teiv/loadtest/queries.py, ADR 0013 section 12.4). The results are the job summary and the artifact `teiv-budget`.
 # It builds smo-teiv with Maven (several minutes), so it runs where TE&IV's packaging can change: by hand, weekly, and on a pull request that changes
 # smo/teiv/, the compose file, the chart's teiv template or this file. Not a required check.
 on:
@@ -62,6 +63,26 @@ jobs:
           python teiv/loadtest/budget.py --out "$RUNNER_TEMP/teiv-budget.json" --markdown "$RUNNER_TEMP/teiv-budget.md"
           cat "$RUNNER_TEMP/teiv-budget.md" >> "$GITHUB_STEP_SUMMARY"
 
+      # PR-CONV-S3.19, S3.20: Q1 to Q5 at 1,000 cells (the tree the budget step loaded) through R1 Termination by class name: TE&IV, SME and R1 start,
+      # TE&IV registers its classes in SME's MnS registry, an rApp's token is taken at SME (scripts/dast_token.py), and teiv/loadtest/queries.py
+      # reads through R1's port, every answer checked against the tree; exit 1 for a p95 over 150 ms or a wrong answer.
+      - name: Q1 to Q5 through R1 Termination at 1,000 cells
+        working-directory: smo
+        run: |
+          docker compose --profile teiv up -d --build --wait --wait-timeout 600 teiv r1-termination sme
+          docker compose exec -T sme python - rapp < scripts/dast_token.py > "$RUNNER_TEMP/r1-token"
+          cell="http://localhost:8080/ProvMnS/19.2.0/SubNetwork=SMO-RAN/ManagedElement=gNB-0000/GNBDUFunction=1/NRCellDU=1"
+          for i in $(seq 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $(cat "$RUNNER_TEMP/r1-token")" "$cell")
+            [ "$code" = 200 ] && break
+            sleep 2
+          done
+          echo "first read through R1: $code"
+          [ "$code" = 200 ] || { echo "::error::TE&IV's classes are not routed through R1 (last answer $code)"; exit 1; }
+          python teiv/loadtest/queries.py --root http://localhost:8080/ProvMnS/19.2.0 --through "R1 Termination" \
+            --token-file "$RUNNER_TEMP/r1-token" --out "$RUNNER_TEMP/teiv-queries.json" --markdown "$RUNNER_TEMP/teiv-queries.md"
+          cat "$RUNNER_TEMP/teiv-queries.md" >> "$GITHUB_STEP_SUMMARY"
+
       # D19: from the stack's own network, neither smo-teiv's database nor its API has a name or an address; from the network `teiv` both answer.
       - name: smo-teiv's database and API are reachable on the network teiv only
         working-directory: smo
@@ -86,7 +107,7 @@ jobs:
         working-directory: smo
         run: |
           docker compose --profile teiv ps -a || true
-          docker compose --profile teiv logs --tail=200 teiv-ingestion teiv-exposure teiv-db teiv-kafka-init kafka || true
+          docker compose --profile teiv logs --tail=200 teiv teiv-ingestion teiv-exposure teiv-db teiv-kafka-init kafka r1-termination sme || true
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
@@ -95,6 +116,8 @@ jobs:
           path: |
             ${{ runner.temp }}/teiv-budget.json
             ${{ runner.temp }}/teiv-budget.md
+            ${{ runner.temp }}/teiv-queries.json
+            ${{ runner.temp }}/teiv-queries.md
           if-no-files-found: ignore
 
       - name: Stop

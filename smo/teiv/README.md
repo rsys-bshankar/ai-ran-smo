@@ -55,7 +55,7 @@ notifications on it (S3.22). TE&IV has no table of the SMO's database of its own
 - **The shared broker** of the compose profile `kafka` (ADR 0006): smo-teiv's ingestion reads TE&IV's topic `smo.teiv.ingestion.v1` (four partitions),
   consumer group `smo.teiv.ingestion`. The topic is TE&IV's by name: `smo_shared.kafka_settings` refuses `smo.teiv.*` to every other producer.
 - **Isolation (D19).** No module but TE&IV reaches the topic, the database or smo-teiv's API: in compose, the database and the two processes are on the
-  internal network `teiv` only, which nothing else joins but the broker (and TE&IV's own service, once it is wired into the stack), and publish no port; in the chart, NetworkPolicies admit the database
+  internal network `teiv` only, which nothing else joins but the broker and TE&IV's own service `teiv`, and publish no port; in the chart, NetworkPolicies admit the database
   from the two smo-teiv pods only and the API from TE&IV's own pods (`app.kubernetes.io/name: teiv`) only. `scripts/check_interfaces.py` fails any file
   outside `teiv/` that names smo-teiv's API. Per-principal ACLs on the broker are PR-CONV-S1.15.
 - **Memory budget:** 3 GiB at 1,000 cells for smo-teiv's two processes, its Postgres and the broker (ADR 0013 section 11.6), held by fixed heaps
@@ -86,7 +86,9 @@ notifications on it (S3.22). TE&IV has no table of the SMO's database of its own
 In the stack: `docker-compose.yml` profile `teiv` (services `teiv-db`, `teiv-kafka-init`, `teiv-ingestion`, `teiv-exposure`, and `kafka`), the chart's
 `teiv` values and `templates/teiv.yaml` (`deploy/helm/smo/README.md`), `.github/workflows/teiv-image.yml` (builds and publishes
 `ghcr.io/<owner>/<repo>/smo-teiv:0.3.0-ext` and `smo-teiv-db:0.3.0-ext`) and `.github/workflows/teiv-load.yml` ("TE&IV load": the profile built, the budget,
-the isolation). TE&IV's own service, its R1 route for the WG10 API and its database role are the wiring pull request that follows this one. Run it:
+the isolation, and Q1 to Q5 through R1 Termination at 1,000 cells). TE&IV itself is the compose service `teiv` (profile `teiv`, on the networks
+`default` and `teiv`, three workers, role `smo_teiv` on the shared audit tables) and the chart's `modules.teiv`; R1 Termination forwards
+`/teiv/topology-inventory/v1/...` to it (`TEIV_URL`) and routes its ProvMnS classes by class name. Run it:
 `DEMO_RUNBOOK.md`, "TE&IV on smo-teiv". Its lifecycle: [`docs/lifecycle.md`](docs/lifecycle.md). Its settings: [`docs/configuration/teiv.md`](../docs/configuration/teiv.md).
 
 **Operating.** After a bulk load (the first load of a network, a re-load), run `REINDEX SCHEMA teiv_data; ANALYZE;` in smo-teiv's database: an

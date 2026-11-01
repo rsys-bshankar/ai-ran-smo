@@ -395,6 +395,9 @@ modules:
   # PR-CONV-S1.6: Echo, the reference ProvMnS module (echo/README.md). Off by default: a reference and test module with no operator function; turn it on
   # to try the shared router on a cluster (`--set modules.echo.enabled=true`). Its schema and role exist either way (revision 0066, db_roles.json).
   echo: { image: echo, databaseRole: echo, enabled: false, env: { ECHO_PLACEMENT: "", ECHO_MSAC_RULES: "" } }
+  # PR-CONV-S3.19: TE&IV (teiv/README.md), the only door to smo-teiv (D19). Off by default, with `teiv` below: turn both on together
+  # (`--set teiv.enabled=true,modules.teiv.enabled=true`). Its pods carry app.kubernetes.io/name: teiv, the label templates/teiv.yaml's NetworkPolicy admits.
+  teiv: { image: teiv, databaseRole: teiv, enabled: false, env: { UVICORN_WORKERS: "3", TEIV_EXPOSURE_URL: "http://teiv-exposure:8080", TEIV_MNS_SCOPE: "SubNetwork=SMO-RAN" } }
   intent-service: { image: intent-service, databaseRole: intent-service }
   so-smos: { image: so-smos, databaseRole: so-smos, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
   sa-smos: { image: sa-smos, databaseRole: sa-smos, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }

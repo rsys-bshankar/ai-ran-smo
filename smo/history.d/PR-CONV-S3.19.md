@@ -24,8 +24,10 @@ smo-teiv down or slower than `TEIV_READ_TIMEOUT_SECONDS`, 502 TEIV_REFUSED for s
 smo-teiv with only the standard's parameters; a scoped or MSAC-managed caller is sent to ProvMnS (403 SCOPE_DENIED: smo-teiv's answers cannot be cut to a
 claim); TE&IV's own decorator schema and decorators are refused (403 TEIV_OWNED); a decorator name or value with `'`, `"` or `\` is refused (400
 INVALID_DECORATOR_VALUE), because smo-teiv 0.3.0 writes the value into its SQL text unescaped, an SQL injection found here (ADR 0013 section 12.5 d2,
-offered upstream with S3.25); the writes are audited. Routing `/teiv/...` through R1 and TE&IV's service in compose and the chart are the wiring pull
-request that follows.
+offered upstream with S3.25); the writes are audited. In the stack: the compose service `teiv` (profile `teiv`, networks `default` and `teiv`, three workers), the chart's `modules.teiv`,
+R1 Termination's route `/teiv` (`TEIV_URL`) for the WG10 API, the role `smo_teiv` (no schema: the shared audit tables and `module_identity`), and
+the CI unit loop; the compose end-to-end job runs the profile with smo-teiv's published images pulled by digest (built in the job instead when a pull
+request changes `smo/teiv/`), and "TE&IV load" measures Q1 to Q5 through R1.
 
 **The contract.** `teiv.yaml` names `teiv` as its code module and lists the 15 classes TE&IV registers (GNBCUUPFunction, which TE&IV does not map yet,
 moved to `x-smo-pending`); `docs/openapi/teiv.json` is TE&IV's live schema (checked by `tests_integration/test_teiv_through_r1.py` until

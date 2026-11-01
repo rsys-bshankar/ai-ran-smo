@@ -104,7 +104,7 @@ services:
     security_opt: ["no-new-privileges:true"]
     read_only: true
     tmpfs: ["/tmp"]
-    secrets: [db_password, db_password_onboarding, db_password_ran-analytics, db_password_so-smos, db_password_sa-smos, db_password_intent-service, db_password_mdaf, db_password_echo, db_password_energy-saving-rapp, db_password_mobility-optimization-rapp, db_password_coverage-optimization-rapp, db_password_traffic-steering-rapp, db_password_aimgf, db_password_dme, db_password_focom, db_password_nfo, db_password_r1-termination, db_password_ran-nf-oam, db_password_rapp-mgmt, db_password_sme]
+    secrets: [db_password, db_password_onboarding, db_password_ran-analytics, db_password_so-smos, db_password_sa-smos, db_password_intent-service, db_password_mdaf, db_password_echo, db_password_teiv, db_password_energy-saving-rapp, db_password_mobility-optimization-rapp, db_password_coverage-optimization-rapp, db_password_traffic-steering-rapp, db_password_aimgf, db_password_dme, db_password_focom, db_password_nfo, db_password_r1-termination, db_password_ran-nf-oam, db_password_rapp-mgmt, db_password_sme]
     environment:
       PGBOUNCER_POOL_SIZE: ${PGBOUNCER_POOL_SIZE:-20}
       PGBOUNCER_MAX_CLIENT_CONN: ${PGBOUNCER_MAX_CLIENT_CONN:-1000}
@@ -162,7 +162,7 @@ services:
     command: ["sh", "-c", "python /srv/scripts/migrate.py && python /srv/scripts/db_roles.py"]
     restart: "no"
     stop_grace_period: 30s
-    secrets: [db_password, db_password_onboarding, db_password_ran-analytics, db_password_so-smos, db_password_sa-smos, db_password_intent-service, db_password_mdaf, db_password_echo, db_password_energy-saving-rapp, db_password_mobility-optimization-rapp, db_password_coverage-optimization-rapp, db_password_traffic-steering-rapp, db_password_aimgf, db_password_dme, db_password_focom, db_password_nfo, db_password_r1-termination, db_password_ran-nf-oam, db_password_rapp-mgmt, db_password_sme]
+    secrets: [db_password, db_password_onboarding, db_password_ran-analytics, db_password_so-smos, db_password_sa-smos, db_password_intent-service, db_password_mdaf, db_password_echo, db_password_teiv, db_password_energy-saving-rapp, db_password_mobility-optimization-rapp, db_password_coverage-optimization-rapp, db_password_traffic-steering-rapp, db_password_aimgf, db_password_dme, db_password_focom, db_password_nfo, db_password_r1-termination, db_password_ran-nf-oam, db_password_rapp-mgmt, db_password_sme]
     <<: *hardening
     depends_on: { postgres: { condition: service_healthy } }
     environment:
@@ -1216,6 +1216,32 @@ services:
     depends_on:
       teiv-db: { condition: service_healthy }
 
+  # PR-CONV-S3.19: TE&IV (teiv/README.md), the SMO's only door to smo-teiv (D19): TS 28.532 ProvMnS reads of its 15 TS 28.541 classes, routed by
+  # R1 Termination by class name (it registers them in SME's MnS registry), and the WG10 TE&IV R1 API at /teiv/topology-inventory/v1. On the default
+  # network (SME, R1, Postgres) and on `teiv`, where smo-teiv's API is. Three workers: a read sends its smo-teiv requests at once (ADR 0013 12.4).
+  teiv:
+    profiles: ["teiv"]
+    build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: teiv, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    stop_grace_period: 30s
+    secrets: [db_password_teiv, enrollment_secret]
+    <<: *hardening
+    networks: [default, teiv]
+    healthcheck: *ready_probe
+    depends_on:
+      <<: *wait_for_schema
+      teiv-exposure: { condition: service_healthy }
+    environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
+      SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway (DOC-CF-3.1)
+      <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_teiv@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_teiv
+      UVICORN_WORKERS: "3"
+      TEIV_EXPOSURE_URL: http://teiv-exposure:8080
+      TEIV_MNS_SCOPE: ${TEIV_MNS_SCOPE:-SubNetwork=SMO-RAN}
+
   gui:
     build: { context: ./gui }
     <<: *hardening
@@ -1245,6 +1271,8 @@ secrets:
     file: ./secrets/db_password_mdaf
   db_password_echo:
     file: ./secrets/db_password_echo
+  db_password_teiv:
+    file: ./secrets/db_password_teiv
   db_password_energy-saving-rapp:
     file: ./secrets/db_password_energy-saving-rapp
   db_password_mobility-optimization-rapp:

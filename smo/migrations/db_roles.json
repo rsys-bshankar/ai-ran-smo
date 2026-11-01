@@ -187,5 +187,13 @@
    "idempotency_key",
    "notification_outbox"
   ]
+ },
+ "teiv": {
+  "schema": null,
+  "shared": [
+   "module_identity",
+   "audit_log",
+   "audit_head"
+  ]
  }
 }
