@@ -42,6 +42,26 @@ def normalize(method: str, path: str) -> str:
     return f"{method.upper()} {shape}"
 
 
+ROUTER = "/ProvMnS/{}/{}"      # the one route of smo_shared.mns (`/ProvMnS/{version}/{ldn:path}`), normalized
+
+
+def router_classes(op: str, contract: set[str]) -> set[str]:
+    """For an operation on smo_shared.mns's one route, the contract's ProvMnS class operations of the same method (the router serves each class the
+    contract lists at the one form, `/ProvMnS/{}/{}/{Class}={}`); empty for any other operation, or when the contract lists no class for that method."""
+    method, _, shape = op.partition(" ")
+    if shape != ROUTER:
+        return set()
+    return {c for c in contract if c.startswith(f"{method} /ProvMnS/") and c != op}
+
+
+def with_router(code: set[str], contract: set[str]) -> set[str]:
+    """`code` with each operation on the router's route replaced by the class operations it serves (`router_classes`); kept as it is when none."""
+    out: set[str] = set()
+    for op in code:
+        out |= router_classes(op, contract) or {op}
+    return out
+
+
 def resolve(base: Path, ref: str):
     """The node a `$ref` (a file and a JSON pointer) names, read relative to `base`."""
     file_part, _, pointer = ref.partition("#")
@@ -100,8 +120,9 @@ def drift() -> dict[str, dict]:
     result, covered = {}, set()
     for path in sorted(MODULES.glob("*.yaml")):
         doc = yaml.safe_load(path.read_text())
-        code = set().union(*(code_operations(m) for m in doc["x-smo-code-modules"])) if doc["x-smo-code-modules"] else set()
         contract = contract_operations(path)
+        code = set().union(*(code_operations(m) for m in doc["x-smo-code-modules"])) if doc["x-smo-code-modules"] else set()
+        code = with_router(code, contract)
         covered |= set(doc["x-smo-code-modules"])
         result[path.stem] = {"code_modules": doc["x-smo-code-modules"], "code_only": sorted(code - contract), "contract_only": sorted(contract - code),
                              "agreed": sorted(code & contract)}

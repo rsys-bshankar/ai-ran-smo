@@ -8,3 +8,6 @@ gui:
     GUI_COOKIE_SECURE: "false"          # no TLS in front of the GUI in CI
 rappCredentials:
   delivery: kubernetes                  # exercised by the "credentials reach a Secret" step
+modules:
+  echo:
+    enabled: true                       # PR-CONV-S1.6: the reference ProvMnS module is off by default; CI runs it so its image and role are proved on the cluster

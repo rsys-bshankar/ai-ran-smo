@@ -94,6 +94,23 @@ def get_trace_context() -> TraceContext | None:
     return _current_trace.get()
 
 
+def current_traceparent() -> str | None:
+    """The `traceparent` of the trace this code runs in (what a row written now keeps, revision 0067), or None outside one."""
+    context = _current_trace.get()
+    return None if context is None else format_traceparent(context)
+
+
+@contextlib.contextmanager
+def trace_scope(context: TraceContext | None) -> Iterator[None]:
+    """Makes `context` the current trace for the block (None: no trace), as a request's middleware does: the outbox sends each row under the trace it
+    was written in, so its `traceparent` header continues that trace."""
+    token = _current_trace.set(context)
+    try:
+        yield
+    finally:
+        _current_trace.reset(token)
+
+
 def get_trace_id() -> str | None:
     """The 32-hex trace id of the request being handled, or None when it belongs to no trace. Used by the log formatter and the access log."""
     context = _current_trace.get()

@@ -20,6 +20,13 @@ The semantics (one rule, no exceptions):
   - **a claim that cannot be read** (a malformed header) permits nothing (`DENY_ALL`): a restriction must never be lost because it was damaged.
 
 An empty list is not a valid claim (it would be a caller that may touch nothing: stop the rApp with the kill switch instead), and `{}` is no claim.
+
+Two more axes since PR-CONV-S1.5 (decision D15 of the converged rewrite): `siteClusters`, matched like a region against a target's site cluster, and
+`subNetworks`, matched against the ids of the SubNetworks a target's DN lies under (`SubNetwork=BLR,SubNetwork=BLR_12,ManagedElement=1` is under `BLR`
+and `BLR_12`; a claim naming either permits it): the DN is the hierarchy, so a claim on a SubNetwork covers everything below it, the one place the claim
+follows a hierarchy. A target with no site cluster, or one under no SubNetwork the claim names, is refused to a caller that restricts that axis.
+`filter_statement` and `denied_condition` take an optional site-cluster column; a module that has no column for an axis the claim restricts filters
+everything out (fail closed), and so does every SQL filter for `subNetworks`, which a module decides on DNs (`smo_shared.mns`) rather than in SQL.
 """
 
 import json
@@ -41,16 +48,18 @@ SCOPE_HEADER = "X-R1-Scope"
 ON_BEHALF_SCOPE_HEADER = "X-R1-On-Behalf-Scope"
 ACTING_USER_SCOPE_HEADER = "X-R1-Acting-User-Scope"       # GUI-5: the claim of the person the console acts for (`X-R1-Acting-User`)
 
-AXES = ("regions", "tenants")
+AXES = ("regions", "tenants", "siteClusters", "subNetworks")
 MAX_VALUES = 100                       # per axis
 VALUE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,99}$")
 
 
 @dataclass(frozen=True)
 class Scope:
-    """A caller's claim: `None` on an axis does not restrict it; a set restricts the caller to those values."""
+    """A caller's claim: `None` on an axis does not restrict it; a set restricts the caller to those values. The field names are the claim's keys."""
     regions: frozenset[str] | None = None
     tenants: frozenset[str] | None = None
+    siteClusters: frozenset[str] | None = None        # noqa: N815 (the claim's key)
+    subNetworks: frozenset[str] | None = None         # noqa: N815 (the claim's key)
 
 
 DENY_ALL = Scope(regions=frozenset(), tenants=None)       # permits nothing: not even a target without a region
@@ -67,10 +76,10 @@ def from_claim(claim: Any) -> Scope | None:
     if claim is None:
         return None
     if not isinstance(claim, Mapping):
-        raise ValueError("the scope claim must be an object with regions and/or tenants")
+        raise ValueError("the scope claim must be an object with regions, tenants, siteClusters and/or subNetworks")
     unknown = set(claim) - set(AXES)
     if unknown:
-        raise ValueError("the scope claim may only name regions and tenants")
+        raise ValueError("the scope claim may only name regions, tenants, siteClusters and subNetworks")
     axes: dict[str, frozenset[str]] = {}
     for axis in AXES:
         values = claim.get(axis)
@@ -126,7 +135,7 @@ def narrowed(first: Scope | None, second: Scope | None) -> Scope | None:
         return second
     if second is None:
         return first
-    return Scope(regions=_both(first.regions, second.regions), tenants=_both(first.tenants, second.tenants))
+    return Scope(**{axis: _both(getattr(first, axis), getattr(second, axis)) for axis in AXES})
 
 
 def _both(first: frozenset[str] | None, second: frozenset[str] | None) -> frozenset[str] | None:
@@ -155,13 +164,15 @@ def request_scope(request: Request) -> Scope | None:
     return scope_of(request.headers)
 
 
-def permits(scope: Scope | None, region: str | None, tenant: str | None) -> bool:
-    """Whether a caller with `scope` may touch a target in `region` and `tenant` (either may be `None`: not set)."""
+def permits(scope: Scope | None, region: str | None, tenant: str | None, site_cluster: str | None = None, sub_networks: tuple[str, ...] = ()) -> bool:
+    """Whether a caller with `scope` may touch a target in `region`, `tenant` and `site_cluster` (each may be `None`: not set) under the SubNetworks
+    `sub_networks` (the ids on its DN, outermost first; empty: under none)."""
     if scope is None:
         return True
-    if scope.regions is not None and (region is None or region not in scope.regions):
-        return False
-    return not (scope.tenants is not None and (tenant is None or tenant not in scope.tenants))
+    for allowed, value in ((scope.regions, region), (scope.tenants, tenant), (scope.siteClusters, site_cluster)):
+        if allowed is not None and (value is None or value not in allowed):
+            return False
+    return scope.subNetworks is None or any(name in scope.subNetworks for name in sub_networks)
 
 
 def covers(parent: Scope | None, child: Scope | None) -> bool:
@@ -179,28 +190,34 @@ def covers(parent: Scope | None, child: Scope | None) -> bool:
     return True
 
 
-def filter_statement(stmt: Select, scope: Scope | None, region_column: ColumnElement, tenant_column: ColumnElement) -> Select:
+def _columns(scope: Scope, region_column, tenant_column, site_cluster_column) -> list[tuple[frozenset[str], ColumnElement | None]]:
+    """The restricted axes of `scope` with the column each is matched against (None: the module has none, or the axis is `subNetworks`)."""
+    pairs = ((scope.regions, region_column), (scope.tenants, tenant_column), (scope.siteClusters, site_cluster_column), (scope.subNetworks, None))
+    return [(allowed, column) for allowed, column in pairs if allowed is not None]
+
+
+def filter_statement(stmt: Select, scope: Scope | None, region_column: ColumnElement, tenant_column: ColumnElement,
+                     site_cluster_column: ColumnElement | None = None) -> Select:
     """`stmt` limited to the rows `permits` would allow: nothing is added for an unscoped caller. A NULL column never matches `IN`, so a target without a
-    region or tenant drops out of the result for a caller that restricts that axis, as `permits` says."""
+    region or tenant drops out of the result for a caller that restricts that axis, as `permits` says. A restricted axis with no column (a site cluster
+    the module does not keep, any `subNetworks`) lets no row through."""
     if scope is None:
         return stmt
-    if scope.regions is not None:
-        stmt = stmt.where(region_column.in_(sorted(scope.regions)) if scope.regions else false())
-    if scope.tenants is not None:
-        stmt = stmt.where(tenant_column.in_(sorted(scope.tenants)) if scope.tenants else false())
+    for allowed, column in _columns(scope, region_column, tenant_column, site_cluster_column):
+        stmt = stmt.where(column.in_(sorted(allowed)) if allowed and column is not None else false())
     return stmt
 
 
-def denied_condition(scope: Scope | None, region_column: ColumnElement, tenant_column: ColumnElement) -> ColumnElement[bool]:
+def denied_condition(scope: Scope | None, region_column: ColumnElement, tenant_column: ColumnElement,
+                     site_cluster_column: ColumnElement | None = None) -> ColumnElement[bool]:
     """The rows `permits` would refuse, as a condition that is true or false for every row (never NULL: a NULL region or tenant is a refusal, written out
-    because `NOT (region IN (...))` is NULL for it and would let it through). For a subquery that asks "is there a target in this list that the caller may not touch"."""
+    because `NOT (region IN (...))` is NULL for it and would let it through). For a subquery that asks "is there a target in this list that the caller may not touch".
+    A restricted axis with no column refuses every row, as in `filter_statement`."""
     if scope is None:
         return false()
-    parts: list[ColumnElement[bool]] = []
-    if scope.regions is not None:
-        parts.append(region_column.is_(None) | region_column.not_in(sorted(scope.regions)) if scope.regions else true())
-    if scope.tenants is not None:
-        parts.append(tenant_column.is_(None) | tenant_column.not_in(sorted(scope.tenants)) if scope.tenants else true())
+    parts: list[ColumnElement[bool]] = [
+        column.is_(None) | column.not_in(sorted(allowed)) if allowed and column is not None else true()
+        for allowed, column in _columns(scope, region_column, tenant_column, site_cluster_column)]
     return or_(false(), *parts)
 
 

@@ -68,6 +68,7 @@ records. It has no port; run more than one if you like, a task still runs once p
 
 | Module | Standards basis | Directory | Role | Port / R1 route |
 |---|---|---|---|---|
+| [Echo](echo/README.md) | 3GPP TS 28.532 ProvMnS, TS 28.623 (SubNetwork, ManagedElement) | `echo/` | The reference ProvMnS module: the shared router (`smo_shared.mns`) and its checks, nothing else; its tests are the Wave 0 exit gate. Off by default (profile `echo`) | none yet (`echo:8000`; through R1 from S1.7 / S1.8) |
 | [Mock O1 Adaptor](mock-o1-adaptor/README.md) | Test double of an O1 adaptor (NETCONF and RESTCONF) | `mock-o1-adaptor/` | O1 test double that answers RAN NF OAM's NETCONF RPCs (`/edit-config`) and RESTCONF requests (`/restconf`), and on request emits alarms, PM, software phases and heartbeats to RAN NF OAM (`/emit/...`) | none (`mock-o1-adaptor:8000`) |
 | [AI Runtime SDK](sdk/README.md) | Internal (thin client over R1) | `sdk/smo_sdk/` | Python clients for the six rApp-facing namespaces: data, analytics, models, lifecycle, intent, platform | library |
 | [Go AI Runtime SDK](sdk-go/README.md) | Internal (thin client over R1) | `sdk-go/` | Go client for an rApp written in Go: SME token acquisition and renewal, retry with backoff, error mapping, helpers for `data`, `models`, `platform` and the rApp's own instance, plus an example rApp (`examples/hello-rapp`) | library |
@@ -255,11 +256,12 @@ smo/
   Dockerfile                one image, parameterised by the MODULE build arg (and SMO_VERSION / SMO_BUILD_SHA / SMO_BUILT_AT, answered by GET /version)
   migrations/001_init.sql   the consolidated Postgres schema (the Alembic baseline revision 0001)
   migrations/versions/      Alembic revisions on top of it; scripts/migrate.py applies them (docs/adr/0001-schema-migrations.md)
-  shared/smo_shared/        DB session, FSM base, RFC 7807 errors, R1Client, webhook helpers,
+  shared/smo_shared/        DB session, FSM base, RFC 7807 errors, R1Client, webhook helpers, mns/ (the ProvMnS router, its checks, the dictionary),
                             correlation ids, SQLite test engine (testing.py), time helpers
   <module>/README.md        the module's HLD + LLD + unit-test document: design, data model, API, tests, status
   <module>/app/             one directory per SMO module (models.py, statemachine.py, main.py)
   <module>/tests/           that module's unit tests (standalone, SQLite)
+  echo/                     the reference ProvMnS module (S1.6): the shared router on SubNetwork and ManagedElement, nothing else; compose profile `echo`
   mock-o1-adaptor/          NETCONF / RESTCONF O1 test double (RAN NF OAM's southbound), also an FM / PM / SW / heartbeat source
   oran-sim/                 the O-RAN-SC simulated O-DU (compose profile `oran-sim`): its Dockerfile, built from the pinned upstream source, and its NETCONF server configuration (ADR 0012)
   spikes/teiv/              the TE&IV spike (plan task S0.13, ADR 0013): O-RAN-SC smo-teiv run, fed and measured; no module imports it

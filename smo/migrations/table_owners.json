@@ -184,5 +184,8 @@
   "a1_policy",
   "a1_service_registration",
   "policy_status_subscription"
+ ],
+ "echo": [
+  "moi_store"
  ]
 }

@@ -2,8 +2,9 @@ name: SMO mutation testing
 
 # PR-V-2c: scripts/mutation_pilot.sh on 17 of the shared library's modules (the role policy, rate limiter, pagination and time helpers, the audit chain, idempotency,
 # error handling, the outbound-webhook guard, body-size cap, kill switch, secret reader, ...) and, since PR-CONV-S1.4, the ProvMnS router `smo_shared/mns/` (DNs,
-# errors, patch formats, scope and filter, class registry, operations, routes): a change no test notices fails the run.
-# Weekly, on demand, and on a pull request that changes the script, its configuration or those modules or their tests. About four minutes. Not a required check yet.
+# errors, patch formats, scope and filter, class registry, operations, routes), since S1.3/S1.5 its checks, MSAC and dictionary, and since S1.6 the reference module
+# Echo (`smo/echo/app`): a change no test notices fails the run.
+# Weekly, on demand, and on a pull request that changes the script, its configuration or those modules or their tests. About an hour. Not a required check yet.
 
 on:
   schedule:
@@ -16,6 +17,8 @@ on:
       - "smo/shared/pyproject.toml"
       - "smo/shared/smo_shared/*.py"
       - "smo/shared/smo_shared/mns/*.py"
+      - "smo/shared/smo_shared/mns/dictionary/*.py"
+      - "smo/echo/**"
       - "smo/shared/tests/**"
       - "smo/requirements/mutation.*"
 
@@ -28,9 +31,9 @@ concurrency:
 
 jobs:
   mutation:
-    name: Every mutant of the security-relevant shared modules is killed
+    name: Every mutant of the security-relevant shared modules and of Echo is killed
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 120          # 5,500 mutants of the shared library and Echo since S1.3 / S1.5 / S1.6 (about an hour on a 4-core runner)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 

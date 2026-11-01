@@ -2,6 +2,12 @@
 # (Python + FastAPI + SQLAlchemy), so a per-service Dockerfile would
 # just be fourteen near-identical copies. MODULE picks which service's
 # app/ directory gets copied in and run.
+# PR-CONV-S1.6: the vendored 3GPP OpenAPI files (`specs/5G_APIs`), which the ProvMnS class registry of `smo_shared.mns` reads at run time. They are outside
+# this build context (smo/), so a build passes them as the named context `specs` (`--build-context specs=../specs/5G_APIs`; docker-compose.yml's
+# `additional_contexts`, and `scripts/ci_mirror.py build-contexts` for every CI build). This empty stage is what a build without it gets: no specs, and a
+# module that mounts the router (Echo) then refuses to start, rather than serving no class.
+FROM scratch AS specs
+
 FROM python:3.14-slim@sha256:0741d101873c12ab927e6f8653feb8862b9bd58771177acb1b885b95141f91b4
 
 ARG MODULE
@@ -21,6 +27,8 @@ RUN if [ "$WITH_TRACING" = "1" ]; then pip install --no-cache-dir --require-hash
 
 COPY shared /srv/shared
 RUN pip install --no-cache-dir --no-deps -e /srv/shared
+# the registry finds the nearest specs/5G_APIs above smo_shared: /srv/specs/5G_APIs
+COPY --from=specs / /srv/specs/5G_APIs/
 
 # Image vulnerability scan (PR-SEC-12.2): take the Debian security fix for pcre2 that the pinned base predates, and
 # drop pip/setuptools/wheel, which nothing needs at run time and whose vendored copies of msgpack, urllib3 and

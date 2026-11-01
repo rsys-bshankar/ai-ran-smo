@@ -27,6 +27,11 @@ def _modules():
     return {name: {**defaults, **spec} for name, spec in VALUES["modules"].items()}
 
 
+def _rendered_modules():
+    """The modules a default install renders: those whose `enabled` is not false (Echo, the reference module, is off by default)."""
+    return {name: module for name, module in _modules().items() if module["enabled"]}
+
+
 def _compose_services():
     return {name: svc for name, svc in COMPOSE["services"].items() if name not in NOT_IN_THE_CHART}
 
@@ -119,7 +124,7 @@ def test_the_default_install_renders_a_deployment_per_module_and_no_rapp_mounts_
     """
     docs = _render()
     deployments = {d["metadata"]["name"]: d for d in docs if d["kind"] == "Deployment"}
-    assert set(deployments) == set(VALUES["modules"])
+    assert set(deployments) == set(_rendered_modules())
     for name, deployment in deployments.items():
         pod = deployment["spec"]["template"]["spec"]
         mounted = {item["path"] for source in _secret_sources(pod) for item in source.get("items", [])}
@@ -131,7 +136,7 @@ def test_the_default_install_renders_a_deployment_per_module_and_no_rapp_mounts_
         assert (f"db_password_{role}" in mounted) == bool(role), name
         container = pod["containers"][0]
         assert container["securityContext"]["readOnlyRootFilesystem"] is True and container["securityContext"]["capabilities"] == {"drop": ["ALL"]}, name
-    assert {s["metadata"]["name"] for s in docs if s["kind"] == "Service"} >= {n for n, m in _modules().items() if m["kind"] != "worker"}
+    assert {s["metadata"]["name"] for s in docs if s["kind"] == "Service"} >= {n for n, m in _rendered_modules().items() if m["kind"] != "worker"}
 
 
 @helm
@@ -251,8 +256,8 @@ def test_the_role_passwords_are_a_hook_secret_of_their_own_that_the_migrate_job_
     runs the migration and then the roles script) and the modules mount. Needs helm.
     """
     docs = _render()
-    roles = {m["databaseRole"] for m in _modules().values() if m.get("databaseRole")}
-    assert roles >= {"onboarding", "aimgf"}
+    roles = {m["databaseRole"] for m in _rendered_modules().values() if m.get("databaseRole")}   # a module that is off gets no password, so
+    assert roles >= {"onboarding", "aimgf"}                                                          # scripts/db_roles.py leaves its role alone
     secret = next(d for d in docs if d["kind"] == "Secret" and d["metadata"]["name"] == "smo-role-secrets")
     annotations = secret["metadata"]["annotations"]
     assert annotations["helm.sh/hook"] == "pre-install,pre-upgrade" and annotations["helm.sh/hook-delete-policy"] == "before-hook-creation"
@@ -686,3 +691,16 @@ def test_the_simulator_renders_as_a_hardened_stateful_set_and_ran_nf_oam_gets_it
     assert credential["valueFrom"]["secretKeyRef"] == {"name": "smo-oran-sim", "key": "netconf-password"}
     for other in (d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] != "ran-nf-oam"):
         assert "NETCONF_CRED_ORANSIM_PASSWORD" not in _pod_env(other["spec"]["template"]["spec"]), other["metadata"]["name"]
+
+
+@helm
+def test_echo_is_off_by_default_and_renders_with_its_own_role_when_switched_on():
+    """Echo (PR-CONV-S1.6) has no Deployment and no role password in a default install; switched on, it is a Deployment that connects as its own
+    role, and its password joins the role Secret. Needs helm."""
+    off = _render()
+    assert not [d for d in off if d["kind"] == "Deployment" and d["metadata"]["name"] == "echo"]
+    on = _render("--set", "modules.echo.enabled=true")
+    pod = _deployment(on, "echo")["spec"]["template"]["spec"]
+    assert "db_password_echo" in {item["path"] for source in _secret_sources(pod) for item in source.get("items", [])}
+    secret = next(d for d in on if d["kind"] == "Secret" and d["metadata"]["name"] == "smo-role-secrets")
+    assert "db-password-echo" in secret["stringData"]

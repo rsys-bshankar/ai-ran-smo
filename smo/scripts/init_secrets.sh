@@ -45,6 +45,7 @@ create_secret db_password_so-smos
 create_secret db_password_sa-smos
 create_secret db_password_intent-service
 create_secret db_password_mdaf
+create_secret db_password_echo
 create_secret db_password_energy-saving-rapp
 create_secret db_password_mobility-optimization-rapp
 create_secret db_password_coverage-optimization-rapp

@@ -167,6 +167,17 @@ def build_context_map(dockerfile: Path, switched: Mapping[str, str]) -> dict[str
     return {ref: f"docker-image://{switched[ref]}" for ref in dockerfile_refs(dockerfile.read_text()) if ref in switched}
 
 
+SPECS = Path(__file__).resolve().parents[2] / "specs" / "5G_APIs"      # the repository's vendored 3GPP OpenAPI files
+
+
+def spec_context(dockerfile: Path) -> dict[str, str]:
+    """`{"specs": <the repository's specs/5G_APIs>}` for a Dockerfile with a `specs` stage (the shared one, PR-CONV-S1.6), so the image carries the vendored
+    3GPP files the ProvMnS registry reads; empty for any other Dockerfile, or when the file is absent."""
+    if not dockerfile.is_file() or not re.search(r"(?im)^FROM\s+scratch\s+AS\s+specs\s*$", dockerfile.read_text()):
+        return {}
+    return {"specs": str(SPECS)}
+
+
 def _scalar(value: str) -> str:
     """A YAML double-quoted scalar (JSON strings are valid YAML), so a reference with `:` and `@` needs no further care."""
     return json.dumps(value)
@@ -405,7 +416,7 @@ def main(argv: Sequence[str] | None = None, run: mi.Runner | None = None, enviro
             return 0
         dockerfile = args.file or args.directory / "Dockerfile"
         # `docker build -f F dir` reads F relative to the working directory, not to dir: the caller passes the path it gives docker
-        for key, value in build_context_map(dockerfile, switched).items():
+        for key, value in {**build_context_map(dockerfile, switched), **spec_context(dockerfile)}.items():
             print(f"--build-context\n{key}={value}")
         return 0
     except ValueError as exc:
