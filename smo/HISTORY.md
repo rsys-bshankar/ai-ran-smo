@@ -4907,3 +4907,48 @@ ADR 0011 section 7 is marked built and describes what was built.
 - **Not done:** the GUI's paths built by helper functions (`aimgfModel(id)` and the like) are not literal and are not checked; the GUI's method is not
   read from the call's options, so a GUI path passes on any method of that path. "From M5 it fails" (ADR 0011 section 7) is reached when the baseline
   is empty; nothing switches it.
+
+### PR-CONV-S0.15 — the O1 simulator: O-RAN-SC sim-o1-ofhmp-interfaces
+
+Closed from `OPEN_ITEMS.md` (`PR-CONV-S0.15`). The decision and the facts are [ADR 0012](docs/adr/0012-o1-simulator-oran-sc.md).
+
+- **The simulator.** O-RAN-SC sim-o1-ofhmp-interfaces ("PyNTS"), the successor of sim-o1-interface, at the head of `m-release`
+  (`12124176a491a873eb41423200c7f7add9ea99d4`, 3 October 2025; the project has no release tag, and `master` differs only by a CI workflow), Apache-2.0. Only
+  the simulated O-DU (O1) runs; the O-RU M-plane image is not built (D20).
+- **No published image, so it is built from the pinned source** (what S0.15 asks for when the images cannot be pulled). `oran-sim/Dockerfile` is upstream's
+  two Dockerfiles in one with four changes: the base pinned (`ubuntu:22.04@sha256:076e7bf8…`, added to `deploy/mirror/images.txt` and the GHCR mirror, package
+  `mirror/ubuntu`), the source taken from the named context `pynts` at the commit, upstream's `/data` copied in, and an SSH NETCONF endpoint added
+  (`oran-sim/ietf-netconf-server-running.json`: upstream's only endpoint is TLS with a certificate made for `client.smo`, which RAN NF OAM's client, which
+  always checks the host name, cannot use). Compose builds it; `.github/workflows/oran-sim-image.yml` builds the same and publishes
+  `ghcr.io/<owner>/<repo>/oran-sim-du:m-release-1212417` for the chart (by hand and on a push to `main`, never on a pull request). It is not reproducible bit
+  for bit (apt, pip, upstream's git tags and the forge.3gpp.org YANG archive are not pinned; ADR 0012 section 3), so `images.txt` lists the base, not the
+  simulator. `scripts/release_images.py` leaves it out of the SMO's release images (`NOT_RELEASED`).
+- **Compose profile `oran-sim`:** service `oran-sim-du`, `ORAN_SIM_COUNT` replicas (default 2), `cap_drop: [ALL]`, `no-new-privileges`, and only the nine
+  capabilities its root daemons need, each named with its reason (`tests_integration/test_container_hardening.py` allows exactly that list for exactly that
+  service, `THIRD_PARTY_BUILDS`; no other service may add one); not privileged and no NET_ADMIN, which upstream asks for. `ran-nf-oam` gained two optional
+  settings, `RAN_NF_OAM_VES_PASSWORD` (the listener; empty keeps it off) and `NETCONF_CRED_ORANSIM_PASSWORD` (from `ORAN_SIM_NETCONF_PASSWORD`).
+- **Chart:** `oranSim` (off; `templates/oran-sim.yaml`): a StatefulSet and headless Service, the same capabilities, no service account token, VES password from
+  `ranNfOam.vesPasswordSecretRef` (the render fails without it), and RAN NF OAM's `oransim` credential from a Secret the chart makes (the image's public
+  password). `tests_integration/test_helm_chart.py` holds it to the compose service (count, tag, capabilities, environment) and renders it on and off.
+- **Registration:** each simulator posts a VES `pnfRegistration` (one per NETCONF endpoint) to RAN NF OAM's listener; RAN NF OAM answers it `IGNORED
+  DOMAIN_NOT_MAPPED` (S8.2). The O-DU has no NETCONF call-home to the SMO. The job registers each element as an operator does
+  (`POST /o1-adaptor-endpoints` from the registration's address, port and user, `credentialRef: oransim`, then `PUT .../host-keys`); no test-only route.
+- **CI job "O-RAN-SC simulator"** (`.github/workflows/smo-tests.yml`, 30 minutes like the other profile jobs; `scripts/oran_sim_check.py`, `docs/VALIDATION.md`
+  V-19). Steps that today's code cannot do are XFAIL ("expected to fail until PR-CONV-S3.xx") and the job stays green; one that starts to pass is XPASS and
+  fails the job. **Which of a), b) and c) pass today:**
+  - **a) NETCONF: in part.** Passing: RAN NF OAM's NETCONF client (`app.netconf_ssh`) connects over SSH with the pinned key, the simulator serves
+    `_3gpp-common-managed-element`, `_3gpp-nr-nrm-gnbdufunction` and `_3gpp-nr-nrm-nrcelldu`, and get-config returns the ManagedElement (A1, A2).
+    Expected to fail until **PR-CONV-S3.3**: getMOIAttributes and modifyMOIAttributes on the NRCellDU through RAN NF OAM's ProvMnS (no facade, no 3GPP
+    YANG profile in `yang_payload.PROFILES`) and the read-back of the new value (A3–A5).
+  - **b) VES stndDefined alarm: no.** Expected to fail until **PR-CONV-S3.15** (the listener does not map `stndDefined` 3GPP-FaultSupervision). Also found:
+    the m-release O-DU sends **no VES alarm at all** (fault management is not started, the O-DU installs no alarm model, and it would send NETCONF
+    notifications only), so S3.15 needs an alarm source as well (ADR 0012 sections 4 and 8).
+  - **c) File-ready PM: in part.** Passing: the simulator's `stndDefined` `notifyFileReady` (TS 28.532 FileDataReportingMnS, 3GPP-PerformanceAssurance)
+    reaches the listener and is accepted (answered `IGNORED PERF3GPP_FIELDS_INVALID`), and the file it names is there over SFTP with its four counters (C1,
+    C2). Expected to fail until **PR-CONV-S3.16**: RAN NF OAM fetching the file and holding the counters (C3, C4). SFTP is the transport the simulator
+    offers (its FTP listens on IPv6 only; no FTPES, no HTTPS).
+- **Kept:** the mock O1 adaptor (unit and in-process mesh tests) and netconf-lab (the SSH/TLS lab). The "ntsim" mentions left in the plan and ADR 0008
+  name the retired simulator by its project name, sim-o1-interface; the contract gate still refuses the word in the schema bundle
+  (`scripts/check_contract_bundle.py`).
+- **Not done:** the CI job is not a required check (the owner's choice); the chart's simulator was rendered and linted, not installed on a cluster (the kind
+  lane does not turn it on); the simulator's TLS endpoint is not used by RAN NF OAM.

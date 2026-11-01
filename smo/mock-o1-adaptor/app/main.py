@@ -5,8 +5,8 @@ What it is: one FastAPI app that answers, over plain HTTP, what RAN NF OAM sends
 (`/restconf/data/...`, OI-1-cm-sync-restconf, client `ran-nf-oam/app/restconf_client.py`), both over one in-memory running configuration. It also declares itself
 (`GET /capabilities`, read by RAN NF OAM's vendor onboarding), can emit alarms, PM, software-phase results and heartbeats towards RAN NF OAM on request (`/emit/*`; heartbeats also on its own, `keepalive.py`,
 PR-SB-9b, SB-9.8; the target of the conformance kit in `conformance/o1`), and can become a vendor from a profile (`profile.py`, SB-10).
-It stands in for the O-RAN-SC reference simulator (ntsim-ng), which is a YANG-validated NETCONF/SSH simulator out of proportion with this build's single-stack
-design (HISTORY.md section 2: ADOPT repositories stay pattern references); it is deliberately minimal, "give the real caller something real to call", not a protocol
+It is the fast test double of the unit and in-process mesh tests; the YANG-validated NETCONF element is the O-RAN-SC simulator (sim-o1-ofhmp-interfaces, compose
+profile `oran-sim`, ADR 0012), run in its own CI job. This double is deliberately minimal, "give the real caller something real to call", not a protocol
 implementation.
 
 What it owns: module-level dictionaries (`_applied_changes`, `_object_state`, `_faults`), so the state is per process, not thread-safe, and lost on restart or

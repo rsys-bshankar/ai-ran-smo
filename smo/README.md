@@ -130,6 +130,9 @@ The schema is created and upgraded by the `migrate` one-shot service (Alembic, `
   See [`gui/README.md`](gui/README.md) for the other GUI variables and roles.
 - A guided walk-through of every module, with copy-pasteable commands:
   [`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md).
+- Simulated O-DUs from O-RAN-SC (sim-o1-ofhmp-interfaces; NETCONF with the 3GPP NRM, VES `pnfRegistration` and file-ready PM to RAN NF OAM):
+  `docker compose --profile oran-sim up -d --build oran-sim-du`, with the two settings `DEMO_RUNBOOK.md` gives ("With the O-RAN-SC simulator";
+  [ADR 0012](docs/adr/0012-o1-simulator-oran-sc.md)). The mock O1 adaptor stays the fast test double.
 
 TLS: `scripts/make_dev_certs.sh` makes a development CA and a server certificate (`smo/certs/`, git-ignored), and
 `docker compose --profile tls up -d` adds an nginx edge (`edge/nginx.conf`) that terminates HTTPS in front of the GUI
@@ -260,6 +263,7 @@ smo/
   <module>/app/             one directory per SMO module (models.py, statemachine.py, main.py)
   <module>/tests/           that module's unit tests (standalone, SQLite)
   mock-o1-adaptor/          NETCONF / RESTCONF O1 test double (RAN NF OAM's southbound), also an FM / PM / SW / heartbeat source
+  oran-sim/                 the O-RAN-SC simulated O-DU (compose profile `oran-sim`): its Dockerfile, built from the pinned upstream source, and its NETCONF server configuration (ADR 0012)
   conformance/o1/           O1 adaptor conformance kit: `python -m conformance.o1 --adaptor URL [--oam-url URL]`, CM checks and, with RAN NF OAM, FM, PM, SW and heartbeat checks (conformance/README.md)
   conformance/rapp/         rApp conformance pack: `python -m conformance.rapp package my-rapp.csar` (Onboarding's validation, offline, signatures checked against a trust store) and `python -m conformance.rapp runtime` (onboard, register, heartbeat, R1 usage, terminate on a running stack) (conformance/rapp/README.md)
   sdk/smo_sdk/              AI Runtime SDK: data, analytics, models, lifecycle, intent, platform clients; operator_ui (writes a rApp's declared operator page)

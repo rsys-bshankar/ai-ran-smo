@@ -1135,6 +1135,89 @@ jobs:
         working-directory: smo
         run: docker compose --profile netconf-lab down -v
 
+  # S0.15 (ADR 0012): the O-RAN-SC simulator (sim-o1-ofhmp-interfaces, m-release) in the compose profile `oran-sim`, two simulated O-DUs built from the pinned
+  # source, against the real RAN NF OAM container. scripts/oran_sim_check.py takes the three paths of S0.15 (a: NETCONF, b: a VES stndDefined alarm, c: file-ready
+  # PM) and the registration; a step today's code cannot do yet is XFAIL, "expected to fail until PR-CONV-S3.xx", so the job stays green and names what is missing,
+  # and one that starts to pass (XPASS) fails the job until its marking is removed. No module code is changed to make a step pass (that is Stage 3).
+  oran-sim:
+    name: O-RAN-SC simulator
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      COMPOSE_FILE: docker-compose.yml:.ci-mirror/docker-compose.mirror.yml
+      ORAN_SIM_COUNT: "2"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
+
+      - name: Create the secret files, .env and the listener's password
+        working-directory: smo
+        run: |
+          scripts/init_secrets.sh
+          cp .env.example .env
+          ves=$(python3 -c 'import secrets; print(secrets.token_hex(16))')
+          echo "::add-mask::$ves"
+          echo "RAN_NF_OAM_VES_PASSWORD=$ves" >> "$GITHUB_ENV"
+          echo "ORAN_SIM_NETCONF_PASSWORD=netconf!" >> "$GITHUB_ENV"     # the simulator image's built-in, public password (oran-sim/Dockerfile)
+
+      # Builds RAN NF OAM (and the database and migration it needs) and the simulator image from O-RAN-SC's m-release source (oran-sim/Dockerfile: about ten
+      # minutes, libyang, sysrepo, libnetconf2 and netopeer2 are compiled), then starts two simulated O-DUs.
+      - name: docker compose --profile oran-sim up --build oran-sim-du
+        working-directory: smo
+        run: |
+          docker compose --profile oran-sim config --quiet
+          docker compose --profile oran-sim up -d --build oran-sim-du
+          docker compose --profile oran-sim ps -a
+
+      # The simulators post their pnfRegistration at start and a notifyFileReady every 60 s (a PM file per log period): wait for one fileReady from each, then copy
+      # each simulator's log (DEBUG, it holds every VES event it posted) for the check
+      - name: Wait for a PM period, and copy the simulators' logs
+        working-directory: smo
+        run: |
+          for i in $(seq 1 "$ORAN_SIM_COUNT"); do
+            for t in $(seq 1 60); do
+              docker compose exec -T --index "$i" oran-sim-du grep -q PyNTS_FileReady /var/log/pynts.log 2>/dev/null && break
+              sleep 5
+            done
+            docker compose exec -T --index "$i" oran-sim-du cat /var/log/pynts.log > "$RUNNER_TEMP/oran-sim-$i.log"
+            echo "simulator $i: $(grep -c ' ves: POST ' "$RUNNER_TEMP/oran-sim-$i.log") VES events posted"
+          done
+
+      - name: Registration, NETCONF, VES stndDefined alarm and file-ready PM (scripts/oran_sim_check.py)
+        working-directory: smo
+        run: |
+          logs=""
+          for i in $(seq 1 "$ORAN_SIM_COUNT"); do logs="$logs --sim-log /logs/oran-sim-$i.log"; done
+          docker run --rm --network smo_default \
+            -e RAN_NF_OAM_VES_PASSWORD -e NETCONF_CRED_ORANSIM_PASSWORD="$ORAN_SIM_NETCONF_PASSWORD" -e PYTHONPATH=/work/smo/ran-nf-oam:/work/smo/shared \
+            -v "$PWD/..:/work" -v "$RUNNER_TEMP:/logs" -w /work/smo "$SMO_IMAGE_PYTHON_3_11_SLIM" sh -c "
+              pip install -q --require-hashes -r requirements/runtime.txt &&
+              python scripts/oran_sim_check.py --oam-url http://ran-nf-oam:8000 $logs --summary /logs/oran-sim-summary.md"
+
+      - name: Result table in the job summary
+        if: always()
+        run: cat "$RUNNER_TEMP/oran-sim-summary.md" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+
+      - name: Dump logs on failure
+        if: failure()
+        working-directory: smo
+        run: |
+          docker compose --profile oran-sim ps -a
+          docker compose --profile oran-sim logs --no-color --tail=200 ran-nf-oam oran-sim-du
+          for f in "$RUNNER_TEMP"/oran-sim-*.log; do echo "== $f"; tail -n 80 "$f"; done
+
+      - name: Tear down
+        if: always()
+        working-directory: smo
+        run: docker compose --profile oran-sim down -v
+
   o1-conformance:
     name: O1 adaptor conformance kit passes the mock adaptor
     runs-on: ubuntu-latest

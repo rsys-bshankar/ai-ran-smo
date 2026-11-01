@@ -17,7 +17,8 @@ CHART = SMO_ROOT / "deploy" / "helm" / "smo"
 COMPOSE = yaml.safe_load((SMO_ROOT / "docker-compose.yml").read_text())
 VALUES = yaml.safe_load((CHART / "values.yaml").read_text())
 NOT_IN_THE_CHART = {"postgres", "migrate", "netconf-lab", "edge-tls", "pgbouncer", "db-backup",                   # Postgres is a template of its own, migrate a Job, the others are compose-only (a pooler on Kubernetes is the operator's)
-                    "tempo", "loki", "fluent-bit", "grafana"}                                      # the observability profiles: templates of their own, values-gated (observability.yaml)
+                    "tempo", "loki", "fluent-bit", "grafana",                                      # the observability profiles: templates of their own, values-gated (observability.yaml)
+                    "oran-sim-du"}                                                                 # the O-RAN-SC simulator (profile oran-sim): a template of its own, values-gated (oran-sim.yaml)
 helm = pytest.mark.skipif(shutil.which("helm") is None, reason="helm is not installed")
 
 
@@ -631,3 +632,57 @@ def test_the_gui_backend_counts_two_proxies_behind_the_gui_ingress(values, expec
     the ingress controller; an operator's own `gui.env` value wins, and without the Ingress nothing is set. Needs helm."""
     env = _pod_env(_deployment(_render(*values), "gui-bff")["spec"]["template"]["spec"])
     assert env.get("GUI_TRUSTED_PROXY_HOPS") == expected
+
+
+ORAN_SIM_TEMPLATE = CHART / "templates" / "oran-sim.yaml"
+
+
+def test_the_oran_simulator_is_the_same_in_compose_and_the_chart_and_off_by_default():
+    """S0.15 (ADR 0012): the chart's optional O-RAN-SC simulator and compose's profile `oran-sim` agree on the number of simulated O-DUs, the image tag, the added
+    capabilities and the environment the simulator reads; the chart has it off and compose keeps it behind its profile."""
+    service = COMPOSE["services"]["oran-sim-du"]
+    sim = VALUES["oranSim"]
+    assert service["profiles"] == ["oran-sim"] and sim["enabled"] is False
+    assert service["deploy"]["replicas"] == f"${{ORAN_SIM_COUNT:-{sim['count']}}}"
+    assert service["image"].rsplit(":", 1)[1] == sim["tag"] and service["image"].split("/")[-1].startswith(f"smo-{sim['image']}:")
+    template = ORAN_SIM_TEMPLATE.read_text()
+    added = re.search(r"add: \[([^\]]*)\]", template).group(1)
+    assert [c.strip() for c in added.split(",")] == service["cap_add"] and service["cap_drop"] == ["ALL"]
+    assert service["security_opt"] == ["no-new-privileges:true"] and "allowPrivilegeEscalation: false" in template and "drop: [ALL]" in template
+    for variable in service["environment"]:
+        assert f"name: {variable}" in template, f"compose gives the simulator {variable}, the chart does not"
+
+
+@helm
+def test_nothing_of_the_simulator_is_rendered_by_default_and_it_needs_the_ves_listener():
+    """Off by default: no simulator object and no `oransim` credential on RAN NF OAM. Switched on without `ranNfOam.vesPasswordSecretRef` the render fails, because the
+    simulators post to a listener that exists only with a password."""
+    docs = _render()
+    assert not [d for d in docs if d["metadata"]["name"].startswith("oran-sim") or d["metadata"]["name"].endswith("-oran-sim")]
+    assert "NETCONF_CRED_ORANSIM_PASSWORD" not in _pod_env(_deployment(docs, "ran-nf-oam")["spec"]["template"]["spec"])
+    result = subprocess.run(["helm", "template", "smo", str(CHART), "-n", "smo", "--kube-version", "1.30.0", "--set", "oranSim.enabled=true"], capture_output=True, text=True)
+    assert result.returncode != 0 and "oranSim.enabled needs ranNfOam.vesPasswordSecretRef" in result.stderr
+
+
+@helm
+def test_the_simulator_renders_as_a_hardened_stateful_set_and_ran_nf_oam_gets_its_credential():
+    """Switched on: a StatefulSet of `count` pods on a headless Service, the chart's registry and the pinned tag, root with every capability dropped but the listed ones and no
+    privilege escalation, no service account token; it posts with the listener's own Secret key, and only RAN NF OAM gets the NETCONF credential `oransim`."""
+    docs = _render("--set", "oranSim.enabled=true", "--set", "oranSim.count=3", "--set", "ranNfOam.vesPasswordSecretRef.name=ves-listener")
+    sts = next(d for d in docs if d["kind"] == "StatefulSet" and d["metadata"]["name"] == "oran-sim-du")
+    pod = sts["spec"]["template"]["spec"]
+    container = pod["containers"][0]
+    assert sts["spec"]["replicas"] == 3 and sts["spec"]["serviceName"] == "oran-sim-du"
+    assert next(d for d in docs if d["kind"] == "Service" and d["metadata"]["name"] == "oran-sim-du")["spec"]["clusterIP"] == "None"
+    assert container["image"] == f"{VALUES['image']['registry']}/oran-sim-du:{VALUES['oranSim']['tag']}"
+    security = container["securityContext"]
+    assert security["allowPrivilegeEscalation"] is False and security["capabilities"]["drop"] == ["ALL"]
+    assert security["capabilities"]["add"] == COMPOSE["services"]["oran-sim-du"]["cap_add"] and pod["automountServiceAccountToken"] is False
+    env = {e["name"]: e for e in container["env"]}
+    assert env["VES_URL"]["value"] == "http://ran-nf-oam:8000/ves/eventListener/v7"
+    assert env["VES_PASSWORD"]["valueFrom"]["secretKeyRef"] == {"name": "ves-listener", "key": "ves-password"}
+    oam = _deployment(docs, "ran-nf-oam")["spec"]["template"]["spec"]["containers"][0]["env"]
+    credential = next(e for e in oam if e["name"] == "NETCONF_CRED_ORANSIM_PASSWORD")
+    assert credential["valueFrom"]["secretKeyRef"] == {"name": "smo-oran-sim", "key": "netconf-password"}
+    for other in (d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] != "ran-nf-oam"):
+        assert "NETCONF_CRED_ORANSIM_PASSWORD" not in _pod_env(other["spec"]["template"]["spec"]), other["metadata"]["name"]

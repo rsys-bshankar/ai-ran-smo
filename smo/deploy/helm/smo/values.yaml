@@ -146,6 +146,23 @@ gui:
 ranNfOam:
   vesPasswordSecretRef: {}
 
+# The O-RAN-SC O1 simulator (plan task S0.15, ADR 0012), the same as docker compose's profile `oran-sim`: `count` simulated O-DUs (sim-o1-ofhmp-interfaces,
+# m-release), a StatefulSet `oran-sim-du` whose pods (oran-sim-du-0, -1, ...) serve NETCONF on 830 with the 3GPP NRM, post VES to RAN NF OAM's listener
+# (pnfRegistration at start, a stndDefined notifyFileReady per PM file) and serve the PM files over SFTP on 22. For a lab: off by default, and an install
+# with it on is not a production SMO. It needs the VES listener (ranNfOam.vesPasswordSecretRef: the simulators read the same Secret key) and fails the render
+# without it. RAN NF OAM gets the simulators' NETCONF password as the credential `oransim` (NETCONF_CRED_ORANSIM_PASSWORD) from a Secret the chart makes
+# (<release>-oran-sim): it is the image's own built-in, public password (`netconf!`, upstream's), not a secret of yours. The image is
+# <image.registry>/<image>:<tag>, which .github/workflows/oran-sim-image.yml builds from the pinned source and publishes (upstream publishes none). The pods
+# run as root with only the capabilities their daemons need (the list in docker-compose.yml) and no privilege escalation.
+oranSim:
+  enabled: false
+  count: 2
+  image: oran-sim-du
+  tag: m-release-1212417                       # the upstream commit the image is built from (12124176a491, the head of m-release)
+  resources:
+    requests: { cpu: 50m, memory: 256Mi }
+    limits: { memory: 768Mi }
+
 # PR-SEC-9.3 (DOC-CF-3.2): the shared key of the gateway's GET /bootstrap, from a Secret of your own ({name: r1-bootstrap, key: bootstrap-key}; the key defaults to
 # bootstrap-key). Set, the gateway gets it as R1_BOOTSTRAP_KEY and asks for it, and every other module and the GUI backend get it as SMO_BOOTSTRAP_KEY and send it;
 # empty (the default) changes nothing. rApps outside the chart need the same value as SMO_BOOTSTRAP_KEY.

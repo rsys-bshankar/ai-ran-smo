@@ -45,7 +45,7 @@ the digest (the other 14). The verification did its job and was not loosened; th
 
 ## The list
 
-17 packages (`<repo>` is the repository name, in lower case). The owner made all of them public (`OPS-12.2`) and checked that every digest-pinned source answers its pinned
+18 packages (`<repo>` is the repository name, in lower case). The owner made all of them public (`OPS-12.2`) and checked that every digest-pinned source answers its pinned
 digest at the mirror.
 
 | Package | Source images (tags) | Pinned by digest in the repository |
@@ -62,6 +62,7 @@ digest at the mirror.
 | `<repo>/mirror/golang` | `golang:1.27.2-alpine` | yes |
 | `<repo>/mirror/maven` | `maven:3.9.11-eclipse-temurin-21-noble` | yes |
 | `<repo>/mirror/eclipse-temurin` | `eclipse-temurin:25-jre-noble` | yes |
+| `<repo>/mirror/ubuntu` | `ubuntu:22.04` (the base of the O-RAN-SC simulator image, `oran-sim/Dockerfile`, ADR 0012) | yes |
 | `<repo>/mirror/tempo` | `grafana/tempo:2.10.10` | yes |
 | `<repo>/mirror/loki` | `grafana/loki:3.7.9` | yes |
 | `<repo>/mirror/fluent-bit` | `fluent/fluent-bit:5.1.5` | yes |

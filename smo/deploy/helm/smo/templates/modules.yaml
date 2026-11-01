@@ -180,6 +180,11 @@ spec:
             - { name: RAN_NF_OAM_VES_PASSWORD_FILE, value: /run/ves/password }
             {{- end }}
             {{- end }}
+            {{- if $.Values.oranSim.enabled }}
+            # S0.15 (ADR 0012): the NETCONF password of the simulated O-DUs, the credential `oransim` their endpoints are registered with (templates/oran-sim.yaml)
+            - name: NETCONF_CRED_ORANSIM_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ printf "%s-oran-sim" $.Release.Name | quote }}, key: netconf-password } }
+            {{- end }}
             {{- end }}
             {{- if eq $name "onboarding" }}
             {{- if $.Values.rappSigning.trustStoreConfigMap }}

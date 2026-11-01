@@ -70,7 +70,7 @@ Nineteen issues in the design inputs would break conformance, safety or the upgr
 | R13 | Example DNs disagree | The NES Level-1 example names `SubNetwork=Bangalore_Urban_12`, its Level-2 child `SubNetwork=BLR_12` | S0.5 |
 | R14 | A1 and Near-RT RIC are dropped | Matches the Phase 1 scope; recorded so the design's A1 conflict text (PlcCnfMtgt) is parked, not lost | Parked as H3 (see Traceability) |
 | R15 | MTEF is a retired name | The direction document still bundles training, validation and execution as MTEF; the project retired that bundling, and MLTF, MLVF, MLEF and MLIF are runtime roles that NFO places | D4, S2.3 |
-| R16 | The named simulator is being retired | O-RAN-SC deprecates ntsim-ng in its N release; the replacement is sim-o1-ofhmp-interfaces | S0.15 |
+| R16 | The named simulator is being retired | O-RAN-SC deprecates its previous O1 simulator, sim-o1-interface, in its N release; the replacement is sim-o1-ofhmp-interfaces | S0.15 |
 | R17 | Fault management cites the wrong spec | Fault supervision moved out of TS 28.532 into TS 28.111 | S3.15 |
 | R18 | NES bypasses the energy-saving functions | Writing administrativeState and ssbPowerOffset skips the TS 28.541 CES and DES functions, the TS 28.310 procedure and the gNB's own energySavingState | S3.14, S7.2 |
 | R19 | Assurance loops are slice-bound | TS 28.536 assurance loops target slices and services, while NES and MRO act on cells. Decided: SA SMOS stays on TS 28.535/28.536 and scopes cell loops through the RAN subnetwork's slice profile; TS 28.567 is the fallback if that scope cannot be expressed | S5.8 |
@@ -133,7 +133,7 @@ Of 27 components, 2 are new, 1 is rewritten, 4 merge into another module, 2 role
 | SDKs | Level-2 intent with lease renewal, TE&IV, AIMgF, CAPIF | Python, Go and Java v1 | Change: v2 | S7 |
 | Sample rApps | NES and MRO flagships | Energy saving, mobility, coverage, traffic steering on autonomy dispatch | Change | S7 |
 | Infrastructure | TimescaleDB, Kafka, object store, Valkey, VictoriaMetrics, Grafana, OpenTelemetry | Postgres, CloudNativePG, PgBouncer, table event bus, OpenTelemetry, Prometheus rules | Add per D7–D10 | S1 |
-| Simulators | ntsim-ng O-DU/O-CU and a kind cluster | netopeer2 NETCONF lab, mock O1 adaptor, kind CI lanes | Keep; add the O-RAN-SC simulator (S0.15) | S3 |
+| Simulators | sim-o1-interface O-DU/O-CU and a kind cluster | netopeer2 NETCONF lab, mock O1 adaptor, kind CI lanes | Keep; add the O-RAN-SC simulator (S0.15) | S3 |
 | Packaging and migrations | Helm umbrella, Flyway or Alembic, pre-upgrade hook | One chart, Alembic (63 revisions), migrate hook, DR drills | Keep; split the infrastructure chart | S8 |
 
 ## Keep from ai-ran-smo
@@ -191,7 +191,7 @@ Tags: \[N\] normative, \[O\] pre-normative, \[D\] project design. Versions check
 | G20 | Digital twin before actuation | \[N\] TS 28.561 (Rel-19 19.3.0, Rel-20 20.2.0): `NDTFunction`, `NDTJob`, `NDTReport` | Shadow mode only | What-if job gates NES and MRO actuation; twin-generated training data | S7.11, D18 |
 | G21 | Standard analytics types | \[N\] TS 28.104 `MDAType` values for energy saving, mobility, coverage, PM prediction; file, stream and notification reporting; recommendations | Three invented types | Standard types and all three reporting methods | S7.10 |
 | G22 | Autonomy levels and agents | \[N\] TS 28.100 levels; agents only in \[O\] TR 32.801-01 (draft) | Not covered | Self-assessed level per workflow; any agent layer stays \[O\] behind intents | S5.16, S8.13 |
-| G23 | SMOS names and simulators | \[N\] O-RAN OAD v14 SMOS list (RAN Analytics, AIMLWF, Service and Subnet Slice Orchestration and Assurance, PMI); O-RAN-SC deprecates ntsim-ng in its N release | Custom names; ntsim-ng | Align names in ADR 0008; test on `sim-o1-ofhmp-interfaces` | S0.12, S0.15 |
+| G23 | SMOS names and simulators | \[N\] O-RAN OAD v14 SMOS list (RAN Analytics, AIMLWF, Service and Subnet Slice Orchestration and Assurance, PMI); O-RAN-SC deprecates sim-o1-interface in its N release | Custom names; sim-o1-interface | Align names in ADR 0008; test on `sim-o1-ofhmp-interfaces` | S0.12, S0.15 |
 | G24 | Conformance | \[N\] O-RAN R1TS v5.00, WG6 O-Cloud conformance v4.04, WG11 security tests v13, TIFG E2E v10 | Own test tiers only | Suites mapped to the standard test IDs | S8.12 |
 
 Also noted, no task yet: NES cannot pre-offload traffic before switch-off without A1 or xApps (S7.12 records the workaround); slice-aware intents (TS 28.531, TS 28.541 §6) wait until a use case needs them; the WG10 Application Packaging and Onboarding v1.00 texts are members-only, so S4.1 stays provisional until they are obtained (S0.14).
@@ -252,7 +252,7 @@ Stage 0 ends at milestone M0 (week 2): decisions answered, three ADRs merged, th
 | S0.12 | ADR 0008 addendum: align module names with the O-RAN OAD v14 SMOS list (RAN Analytics, AIMLWF, Service and Subnet Slice Orchestration and Assurance, PMI) and the 3GPP MnS names (G23) | docs/adr/ | S0.2 | Every module maps to one OAD SMOS or is marked \[D\] | Not started |
 | S0.13 | Integration spike for D19: run O-RAN-SC smo-teiv on the RAN NF OAM managed-object tree and put a 3GPP MnS face on it (TS 28.532 ProvMnS reads, TS 28.532 notifications) plus the WG10 TE&IV R1 services; list every place smo-teiv's model or API differs from the spec | spikes/teiv/ | S0.1 | Written result: load, query latency and change events measured; the gap list turned into Stage 3 tasks | Not started |
 | S0.14 | Obtain the WG10 Application Packaging and Onboarding v1.00 texts (members-only) and check S4.1's package layout against them | docs/RAPP\_PACKAGING.md | – | Texts on file; S4.1 marked normative or kept provisional with the differences listed | Not started |
-| S0.15 | Choose the O1 simulator: O-RAN-SC sim-o1-ofhmp-interfaces in place of ntsim-ng, which the direction document names and O-RAN-SC deprecates in its N release; mock-o1-adaptor stays for unit and mesh tests | docker-compose.yml, deploy/helm/, DEMO\_RUNBOOK.md | S0.8 | Simulator runs in compose and the chart; NETCONF, VES stndDefined and file-ready PM reach the SMO | Not started |
+| S0.15 | Choose the O1 simulator: O-RAN-SC sim-o1-ofhmp-interfaces in place of sim-o1-interface, which the direction document names and O-RAN-SC deprecates in its N release; mock-o1-adaptor stays for unit and mesh tests | docker-compose.yml, deploy/helm/, DEMO\_RUNBOOK.md | S0.8 | Simulator runs in compose and the chart; NETCONF, VES stndDefined and file-ready PM reach the SMO | Not started |
 | S0.16 | ADR 0011, standard interfaces only: the interface rules table becomes binding; the \[D\] exceptions are listed by name with a reason and an owner | docs/adr/, docs/ARCHITECTURE.md | S0.2 | Merged; the table is in ARCHITECTURE.md | Not started |
 | S0.17 | Interface gate in CI: every route in docs/openapi/\*.json maps to a standard operation, or is in the ADR 0011 \[D\] list | scripts/, .github/workflows/smo-tests.yml | S0.16 | Required check; it fails on a private route added in a test PR | Not started |
 

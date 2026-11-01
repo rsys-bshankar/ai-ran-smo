@@ -98,7 +98,7 @@ Every module answers `GET /version` (`{module, version, buildSha, builtAt}`, PR-
 
 ## What is not in the chart
 
-`netconf-lab` (a throwaway lab server) and `edge-tls` (the compose TLS terminator: use `ingress` with a TLS secret instead).
+`netconf-lab` (a throwaway lab server) and `edge-tls` (the compose TLS terminator: use `ingress` with a TLS secret instead). The O-RAN-SC simulator is, but off: see [The O-RAN-SC simulator](#the-o-ran-sc-simulator-s015).
 
 ## Values
 
@@ -158,6 +158,21 @@ Every retention setting defaults to `0`: nothing is deleted. `values-production.
 ## Traces and logs
 
 Off by default (`docs/OBSERVABILITY.md` has the queries and the ids). `tracing.endpoint` sets `SMO_OTEL_ENDPOINT` on every module (the OTLP/HTTP base URL of a Tempo or collector; `tracing.sampleRatio` sets `SMO_OTEL_SAMPLE_RATIO`); spans need images built with `--build-arg WITH_TRACING=1`, which the published images are not, and without them the modules propagate a `traceparent` and log the trace id only. `observability.tempo`, `.loki`, `.fluentBit` and `.grafana` (each `enabled: false`) add a lab stack: Tempo and Loki as single Deployments on an emptyDir, Grafana with both data sources provisioned and linked on the trace id, and Fluent Bit as a DaemonSet that ships this release's pod logs (JSON, labelled `service` and `level`) to Loki. With `observability.tempo.enabled` and no `tracing.endpoint` the modules send to `http://tempo:4318`. The four images are pinned by digest (`name:tag@sha256:...`, same versions as `docker-compose.yml`; `test_helm_chart.py` holds the two together), so a tag moved at Docker Hub cannot change what a release pulls; override `observability.<name>.image` with your own pin if you mirror them. Their configuration is `files/observability/`, the files `docker-compose.yml` mounts for its `tracing` and `logging` profiles. The GUI's nginx and backend are not given the endpoint.
+
+## The O-RAN-SC simulator (S0.15)
+
+Off by default, for a lab: `oranSim.enabled: true` adds `oranSim.count` (default 2) simulated O-DUs of the O-RAN-SC O1 simulator (sim-o1-ofhmp-interfaces, m-release;
+`docs/adr/0012-o1-simulator-oran-sc.md`), the same as compose's profile `oran-sim`: a StatefulSet `oran-sim-du` on a headless Service, each pod serving NETCONF
+(830 SSH, 6513 TLS) with the 3GPP NRM, posting VES to RAN NF OAM's listener (`pnfRegistration` at start, a `stndDefined` `notifyFileReady` every 60 s) and
+serving its PM files over SFTP (22). It **needs the VES listener**: set `ranNfOam.vesPasswordSecretRef` (the simulators read the same Secret key), or the render
+fails. RAN NF OAM gets the simulators' NETCONF password as the credential `oransim` from a Secret the chart makes, `<release>-oran-sim`: it is the image's own
+public password (`netconf!`), not a secret of yours. The image is `<image.registry>/oran-sim-du:<oranSim.tag>`; O-RAN-SC publishes none, so
+`.github/workflows/oran-sim-image.yml` builds it from the pinned source and publishes it there (run it once, then make the package public or add a pull
+secret). The pods run as root with every capability dropped except the ones their daemons need (the list is the one in `docker-compose.yml`) and no
+privilege escalation; the root filesystem is writable. RAN NF OAM does not act on a `pnfRegistration` yet (S8.2), so register each simulator as an operator
+does (`POST /ran-nf-oam/o1-adaptor-endpoints` with `adaptorUri: ssh://netconf@oran-sim-du-<n>.oran-sim-du:830` and `credentialRef: oransim`, then pin its host
+key). With `mtls.enabled` RAN NF OAM serves HTTPS with a client certificate the simulators do not have, so their VES posts are refused. Tested by
+`tests_integration/test_helm_chart.py` (the parity with compose without `helm`, the render with it).
 
 ## GitOps
 
