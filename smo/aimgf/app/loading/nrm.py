@@ -206,21 +206,30 @@ def create_ml_model_loading_request(request: Request, body: MLModelLoadingReques
     # Route notes: 404 for an unknown function; `_check_loadable` runs before the flags are looked at, so even a cancelled or suspended request is refused for
     # an uncertified model (409 `MODEL_NOT_CERTIFIED`). The row is flushed first so it has an id. Then: cancel records CANCELLED, suspend records SUSPENDED,
     # otherwise `_run_loading` runs inside this request and the answer is the FINISHED request. One commit at the end.
-    function = _get(db, AIMLInferenceFunction, body.aIMLInferenceFunctionRef, "AIMLInferenceFunction")
-    _check_loadable(request, db, body.mLModelToLoadRef)
-    r = MLModelLoadingRequest(aiml_inference_function_id=function.aiml_inference_function_id,
-                              ml_model_to_load_refs=[str(m) for m in body.mLModelToLoadRef],
-                              cancel_request=body.cancelRequest, suspend_request=body.suspendRequest)
-    db.add(r)
-    db.flush()
-    if body.cancelRequest:
-        r.request_status = "CANCELLED"
-    elif body.suspendRequest:
-        r.request_status = "SUSPENDED"
-    else:
-        _run_loading(db, function, body.mLModelToLoadRef, request=r)
+    r = start_loading(db, request, function_id=body.aIMLInferenceFunctionRef, model_ids=body.mLModelToLoadRef, cancel=body.cancelRequest,
+                      suspend=body.suspendRequest)
     db.commit()
     return _loading_request_view(r)
+
+
+def start_loading(db: Session, request: Request, *, function_id: uuid.UUID, model_ids: list[uuid.UUID], cancel: bool = False,
+                  suspend: bool = False, request_id: uuid.UUID | None = None) -> MLModelLoadingRequest:
+    """Records a loading request (POST /ml-model-loading-requests and the MLModelLoadingRequest hook of ProvMnS), with id `request_id` when given, and
+    runs it unless it is cancelled or suspended; the checks of the route notes above. Flushes, does not commit."""
+    function = _get(db, AIMLInferenceFunction, function_id, "AIMLInferenceFunction")
+    _check_loadable(request, db, model_ids)
+    r = MLModelLoadingRequest(aiml_inference_function_id=function.aiml_inference_function_id, ml_model_to_load_refs=[str(m) for m in model_ids],
+                              cancel_request=cancel, suspend_request=suspend,
+                              **({"ml_model_loading_request_id": request_id} if request_id is not None else {}))
+    db.add(r)
+    db.flush()
+    if cancel:
+        r.request_status = "CANCELLED"
+    elif suspend:
+        r.request_status = "SUSPENDED"
+    else:
+        _run_loading(db, function, model_ids, request=r)
+    return r
 
 
 @router.get("/ml-model-loading-requests")
@@ -244,30 +253,26 @@ def modify_ml_model_loading_request(request: Request, request_id: uuid.UUID, bod
     # a model the registry no longer knows passes); the resume also re-checks through `_check_loadable`.
     r = _get(db, MLModelLoadingRequest, request_id, "MLModelLoadingRequest")
     _check_rapp_owns_models(db, request, [uuid.UUID(m) for m in r.ml_model_to_load_refs or []], "cancel or suspend its loading")
+    apply_loading_flags(db, request, r, body.cancelRequest, body.suspendRequest)
+    db.commit()
+    return _loading_request_view(r)
+
+
+def apply_loading_flags(db: Session, request: Request, r: MLModelLoadingRequest, cancel: bool | None, suspend: bool | None) -> None:
+    """Applies the NRM control flags to a loading request (PATCH /ml-model-loading-requests/{id} and the MLModelLoadingRequest hook of ProvMnS), as the
+    route notes above say; a resume loads the models now. Does not commit."""
     if r.request_status in ("FINISHED", "CANCELLED"):
         raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
                                detail=f"loading request already {r.request_status}")
-    if body.cancelRequest:
+    if cancel:
         r.cancel_request, r.request_status = True, "CANCELLED"
-    elif body.suspendRequest is False and r.request_status == "SUSPENDED":
+    elif suspend is False and r.request_status == "SUSPENDED":
         r.suspend_request = False
         function = _get(db, AIMLInferenceFunction, r.aiml_inference_function_id, "AIMLInferenceFunction")
         model_ids = [uuid.UUID(m) for m in r.ml_model_to_load_refs]
         _check_loadable(request, db, model_ids)
         _run_loading(db, function, model_ids, request=r)
-    elif body.suspendRequest is True:
+    elif suspend is True:
         r.suspend_request, r.request_status = True, "SUSPENDED"
-    db.commit()
-    return _loading_request_view(r)
 
 
-@router.get("/ml-model-loading-processes")
-def list_ml_model_loading_processes(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
-    # Route notes: paginated; no timeout sweep.
-    return _page(db, select(MLModelLoadingProcess), limit, offset, _loading_process_view)
-
-
-@router.get("/ml-model-loading-processes/{process_id}")
-def get_ml_model_loading_process(process_id: uuid.UUID, db: Session = Depends(get_session)):
-    # Route notes: 404 `NRM_OBJECT_NOT_FOUND` for an unknown id.
-    return _loading_process_view(_get(db, MLModelLoadingProcess, process_id, "MLModelLoadingProcess"))

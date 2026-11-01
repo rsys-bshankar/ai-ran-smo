@@ -706,3 +706,14 @@ class MLUpdateReport(Base):
     updated_ml_capability: Mapped[dict | None] = mapped_column(JSON)  # AvailMLCapabilityReport
     ml_model_refs: Mapped[list] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(default=_now)
+
+
+# The ProvMnS store of `smo_shared.mns` (plan tasks S2.7, S2.10): its columns under AIMgF's own table name `aimgf_moi_store` (revision aimgf_0001;
+# `store_model`, as SME's `mns_registry`), since `migrations/table_owners.json` names each table once and Echo's store is `moi_store`. `Instance` is
+# the mapped class the router and the projection write; a copy of its table is on the shared `Base`, so that
+# `scripts/check_migration_matches_models.py` checks it and a unit test's `create_all` makes it.
+from smo_shared.mns.store import store_model  # noqa: E402  (beside the table it maps)
+
+STORE_TABLE = "aimgf_moi_store"
+Instance = store_model(STORE_TABLE)
+MOI_STORE = Instance.__table__.to_metadata(Base.metadata)

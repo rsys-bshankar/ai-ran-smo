@@ -13,7 +13,10 @@ import pytest
 
 from test_main import FakeResponse, _set_lifecycle, client, db_session_factory, mlmr  # noqa: F401  (pytest fixtures)
 
-from app.models import EmulationJob, InferenceJob, TrainingJob, ValidationJob
+from sqlalchemy import select
+
+from provmns_reads import find
+from app.models import EmulationJob, InferenceJob, MLTestingReport, TrainingJob, ValidationJob
 from app.governance.statemachine import ModelLifecycleState, RuntimeLifecycleState
 
 PROFILES = {"TRAINING": {"cpu": 8, "memory": "16Gi", "gpu": 0}, "VALIDATION": {"cpu": 4, "memory": "8Gi", "gpu": 0},
@@ -185,7 +188,9 @@ def test_validation_and_emulation_timeouts(client, mlmr, db_session_factory):
     status = client.get(f"/validation-jobs/{v_id}/status").json()
     assert (status["status"], status["metrics"]) == ("FAILED", {"failureReason": "TIMEOUT"})
     assert client.get(f"/models/{model_id}/lifecycle").json()["modelLifecycleState"] == ModelLifecycleState.FAILED
-    assert client.get("/ml-testing-reports").json()["items"][0]["attributes"]["mLTestingResult"] == "FAILED"
+    with db_session_factory() as db:                                         # a testing report is a ProvMnS class since S2.10
+        report_id = db.scalar(select(MLTestingReport.ml_testing_report_id))
+    assert find(client, "MLTestingReport", report_id)["mLTestingResult"] == "FAILED"
 
     other = mlmr.add_model()
     _set_lifecycle(db_session_factory, other, model_lifecycle_state=ModelLifecycleState.VALIDATED, validation_approved=True)

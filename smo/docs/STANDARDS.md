@@ -67,7 +67,7 @@ limit below is tracked in [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md) §3.
 |---|---|---|---|
 | TS 28.104 | MDAF | 48/48 rows | `STREAMING` is recorded, not streamed (SA-MDA-5, no TS 28.532 streaming transport); `recommendationFilter`, `performanceThresholdInfo`, `analysisRequirements`, `thresholdMonitorRefList` stored not enforced; `areaScope` stored not matched; backing-model refs set by the caller; flat addressing |
 | TS 28.312 | Intent Service | 91/91 rows | Flat addressing; `DateTime` / `FullTime` checked by shape; the Intent Service validates and routes, the RMIHs realise the expectations (SA SMOS: `IS_EQUAL_TO` target setting only) |
-| TS 28.105 | AIMgF (one module since S2.1–S2.3, ADR 0010: the registry and the deploy gate are its packages), runtime | 125/126 attributes | `ThresholdMonitors` (TS 28.623 containment, MLMF equivalent); FL/RL stored, no training engine; runtime scale has no target size; flat addressing |
+| TS 28.105 | AIMgF (one module since S2.1–S2.3, ADR 0010: the registry and the deploy gate are its packages), runtime | 125/126 attributes | `ThresholdMonitors` (TS 28.623 containment, MLMF equivalent); FL/RL stored, no training engine; runtime scale has no target size; the REST resources that remain until S2.11 / S6 are flat (ProvMnS has the DN tree since S2.7 / S2.10) |
 | TS 29.482 | AIMgF (`registry`) | `MLModel`, storages / profiles, `storeDiscReqs`, discovery at REST level | `accessReqs.location` not enforced; phase written at training start / success only; the `MLModel` `anyOf` and forward-compatible enums not honoured |
 | TS 28.532 / 28.111 / 28.319 | RAN NF OAM | MSAC, `accessScope`, `PerceivedSeverity`, DN refs and file reporting closed | Streaming reporting (SA-RANOAM-8); DN containment tree (SA-RANOAM-4); MSAC guards CM writes, and with `RAN_NF_OAM_MSAC_REACH` on (`MGT-2`, off by default) config reads, subscriptions, alarm changes, software jobs, file routes, and the list routes and subscription deletes (`MGT-2.6`); Jex subset for `dataNodeSelector` |
 | O2IMS | FOCOM | Inventory sites, fault, performance, artifacts / cluster / infrastructure / provisioning at REST level | `FILE` / `STREAM` performance reporting; no real cluster behind a ProvisioningRequest; flat addressing |
@@ -86,11 +86,11 @@ Intent Service (1), O1 vendor models (1). What each left open is in the table ab
 
 ### TS 28.105
 
-AI/ML NRM, AIMgF and MLMR (`specs/5G_APIs/TS28105_AiMlNrm.yaml`).
+AI/ML NRM, AIMgF (`specs/5G_APIs/TS28105_AiMlNrm.yaml`).
 
 | | Count |
 |---|---|
-| IOCs | 20, all REST resources |
+| IOCs | 20, all over TS 28.532 ProvMnS (S2.7, S2.10); 13 also still as REST resources until S2.11 / S6 |
 | Attributes / children | 126 |
 | Compliant | 125 |
 | Deviation | 1: `MLTrainingFunction.ThresholdMonitors` |
@@ -111,6 +111,31 @@ AI/ML NRM, AIMgF and MLMR (`specs/5G_APIs/TS28105_AiMlNrm.yaml`).
   `SupportedLearningTechnology`, `FLReportPerClient` are validated against
   the spec enums and stored; there is no distributed-training engine to
   consume them.
+- **Over ProvMnS (S2.7, S2.10).** AIMgF mounts `smo_shared.mns` and serves all twenty IOCs in TS 28.105's
+  containment under `ManagedElement=AIMgF` (`/aimgf/ProvMnS/v19.2.0/...`), with DN references; each instance is the projection of AIMgF's
+  row, written in the transaction that changes it, and a consumer's write runs through the REST route's own code (`aimgf/README.md` 2.4).
+  `ManagedActivationScope` is the datatype of AIMLInferenceFunction's `managedActivationScope`. The bundle's [D] MLModelGovernance carries the
+  14-state lifecycle and its `servingState` (read only until S2.11).
+- **The lifecycle mapping (S2.6, ADR 0010 section 3.4).** The 14 states stay, mapped onto the HLD's seven stages and the bundle's
+  `servingState` (`aimgf/app/provmns/mapping.py`, held to this table by `aimgf/tests/test_provmns_mapping.py`; the console shows both labels
+  from Stage 6):
+
+  | AIMgF state (14) | HLD stage (7) | Bundle `servingState` |
+  |---|---|---|
+  | REGISTERED | REGISTERED | REGISTERED |
+  | TRAINING | TRAINING | REGISTERED |
+  | TRAINED | TRAINING (complete; `APPROVE_TRAINING` gate) | REGISTERED |
+  | VALIDATING | TESTED (in progress) | REGISTERED |
+  | VALIDATED | TESTED (`APPROVE_VALIDATION` gate) | VALIDATED |
+  | EMULATING | EMULATED (in progress) | VALIDATED |
+  | EMULATED | EMULATED | VALIDATED |
+  | PENDING_APPROVAL | EMULATED (submitted) | VALIDATED |
+  | APPROVED | EMULATED (approved) | VALIDATED |
+  | CERTIFIED | CERTIFIED; LOADED (runtime DEPLOYED, ACTIVATING, SCALING); ACTIVE (runtime ACTIVE) | VALIDATED; SERVING_ACTIVE (runtime ACTIVE) |
+  | PROMOTED | CERTIFIED; LOADED / ACTIVE from the runtime | VALIDATED; SERVING_ACTIVE (runtime ACTIVE) |
+  | DEPRECATED | none (end of life) | DEPRECATED |
+  | RETIRED | none (end of life) | DEPRECATED |
+  | FAILED | none (a retrain re-enters at TRAINING) | REGISTERED |
 - **The deviation.** `ThresholdMonitors` is a containment of TS 28.623's
   `ThresholdMonitor`, not a TS 28.105 IOC. Model-performance threshold
   monitoring is AIMgF MLMF (`/aimgf/mlmf/subscriptions`, `guardKpiFloor`),
@@ -141,26 +166,26 @@ optionally the function (must be ACTIVATED with the model loaded).
 
 | IOC | Owner | Resource |
 |---|---|---|
-| MLTrainingFunction | AIMgF | `/aimgf/ml-training-functions` |
-| MLTrainingRequest | AIMgF | `/aimgf/ml-training-requests` (= TrainingJob) |
-| MLTrainingProcess | AIMgF | `/aimgf/ml-training-processes` |
-| MLTrainingReport | AIMgF | `/aimgf/ml-training-reports` |
-| MLTestingFunction | AIMgF | `/aimgf/ml-testing-functions` |
-| MLTestingRequest | AIMgF | `/aimgf/ml-testing-requests` (= ValidationJob) |
-| MLTestingReport | AIMgF | `/aimgf/ml-testing-reports` |
-| MLModelLoadingRequest | AIMgF | `/aimgf/ml-model-loading-requests` |
-| MLModelLoadingPolicy | AIMgF | `/aimgf/ml-model-loading-policies` |
-| MLModelLoadingProcess | AIMgF | `/aimgf/ml-model-loading-processes` |
-| MLModel | AIMgF (registry) | `/aimgf/ml-models/{id}` (+ `/aimgf/models`), served by AIMgF; `/aimgf/...` after S2.4 |
-| MLModelRepository | AIMgF (registry) | `/aimgf/ml-model-repositories`, served by AIMgF; `/aimgf/...` after S2.4 |
-| MLModelCoordinationGroup | AIMgF (registry) | `/aimgf/ml-model-coordination-groups/{id}` (+ `/aimgf/coordination-groups`), served by AIMgF; `/aimgf/...` after S2.4 |
-| MLUpdateFunction | AIMgF | `/aimgf/ml-update-functions` |
-| MLUpdateRequest | AIMgF | `/aimgf/ml-update-requests` |
-| MLUpdateProcess | AIMgF | `/aimgf/ml-update-processes` |
-| MLUpdateReport | AIMgF | `/aimgf/ml-update-reports` |
-| AIMLInferenceFunction | AIMgF | `/aimgf/aiml-inference-functions` |
-| AIMLInferenceReport | AIMgF | `/aimgf/aiml-inference-reports` |
-| AIMLInferenceEmulationFunction | AIMgF | `/aimgf/aiml-inference-emulation-functions` |
+| MLTrainingFunction | AIMgF | ProvMnS `…/MLTrainingFunction={id}` (REST deleted in S2.7) |
+| MLTrainingRequest | AIMgF | ProvMnS `…/MLTrainingFunction={f}/MLTrainingRequest={id}`; `/aimgf/ml-training-requests` (= TrainingJob) until S6.8 |
+| MLTrainingProcess | AIMgF | ProvMnS, in its function; `/aimgf/ml-training-processes` until S6.8 / S2.11 |
+| MLTrainingReport | AIMgF | ProvMnS, in its function (REST deleted in S2.10) |
+| MLTestingFunction | AIMgF | ProvMnS (REST deleted in S2.7) |
+| MLTestingRequest | AIMgF | ProvMnS, in its function; `/aimgf/ml-testing-requests` (= ValidationJob) until S6.8 |
+| MLTestingReport | AIMgF | ProvMnS, in its function (REST deleted in S2.10) |
+| MLModelLoadingRequest | AIMgF | ProvMnS, in its inference function; `/aimgf/ml-model-loading-requests` until S6.8 |
+| MLModelLoadingPolicy | AIMgF | ProvMnS, in its inference function; `/aimgf/ml-model-loading-policies` until S6.8 / S2.11 |
+| MLModelLoadingProcess | AIMgF | ProvMnS, in its inference function (REST deleted in S2.10) |
+| MLModel | AIMgF (registry) | ProvMnS `…/MLModelRepository={r}/MLModel={id}` (read only); `/aimgf/models` and `/aimgf/ml-models/{id}` until S2.11 |
+| MLModelRepository | AIMgF (registry) | ProvMnS (read only); `/aimgf/ml-model-repositories` until S2.11 |
+| MLModelCoordinationGroup | AIMgF (registry) | ProvMnS, in its repository (read only); `/aimgf/coordination-groups` until S2.11 |
+| MLUpdateFunction | AIMgF | ProvMnS (REST deleted in S2.10) |
+| MLUpdateRequest | AIMgF | ProvMnS, in its function; `/aimgf/ml-update-requests` until S6.8 |
+| MLUpdateProcess | AIMgF | ProvMnS, in its function (read only); `/aimgf/ml-update-processes` until S6.8 |
+| MLUpdateReport | AIMgF | ProvMnS, in its function (REST deleted in S2.10) |
+| AIMLInferenceFunction | AIMgF | ProvMnS; `/aimgf/aiml-inference-functions` until S6.8 |
+| AIMLInferenceReport | AIMgF | ProvMnS, in its inference function; `/aimgf/aiml-inference-reports` until S2.11 (SDK) |
+| AIMLInferenceEmulationFunction | AIMgF | ProvMnS; `/aimgf/aiml-inference-emulation-functions` until S6.8 |
 
 | IOC | Attribute / child | Status | Note |
 |---|---|---|---|

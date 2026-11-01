@@ -103,6 +103,7 @@
   "resource_type"
  ],
  "aimgf": [
+  "aimgf_moi_store",
   "aiml_inference_emulation_function",
   "aiml_inference_function",
   "aiml_inference_report",

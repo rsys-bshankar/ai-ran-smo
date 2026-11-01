@@ -1,0 +1,6 @@
+# AIMgF is not an installable package (its image copies app/ beside the shared library); this file holds only the mutation-testing configuration of the
+# code plan tasks S2.6, S2.7 and S2.10 added (the ProvMnS face, app/provmns/), tested by tests/test_provmns*.py and the suites that read through it.
+[tool.mutmut]
+source_paths = ["app"]
+only_mutate = ["app/provmns/mapping.py", "app/provmns/tree.py", "app/provmns/projection.py", "app/provmns/handlers.py", "app/provmns/service.py"]
+pytest_add_cli_args_test_selection = ["tests/"]

@@ -8,9 +8,21 @@ SQLite, nothing is sent over the network. Run with `cd smo/aimgf && PYTHONPATH=.
 
 import uuid
 
+from sqlalchemy import select
+
+from smo_shared.mns import PROVMNS_VERSION
+
 from test_main import _set_lifecycle, client, db_session_factory, mlmr  # noqa: F401  (pytest fixtures)
+from provmns_reads import create, find, ids, register
 
 from app.governance.statemachine import ModelLifecycleState, RuntimeLifecycleState
+from app.models import MLModelLoadingProcess, MLTestingReport
+
+
+def _process_of(client, request_id: str) -> str:
+    """The id of the MLTrainingProcess of the training request `request_id` (from the process list)."""
+    return next(p["id"] for p in client.get("/ml-training-processes", params={"limit": 500}).json()["items"]
+                if p["attributes"]["trainingRequestRef"] == [request_id])
 
 
 def _attrs(resp):
@@ -21,17 +33,17 @@ def _attrs(resp):
 
 # ---------------------------------------------------------------- MLTrainingFunction / Request / Process / Report
 
-def test_training_request_is_a_real_training_job_with_spec_attributes(client, mlmr):
+def test_training_request_is_a_real_training_job_with_spec_attributes(client, mlmr, db_session_factory):
     """An MLTrainingRequest starts a real training job: the spec attributes round-trip, the same row answers `/training-jobs/{id}/status`, the model enters TRAINING, the function records the
     training type, and a process exists for it.
     """
     model_id = mlmr.add_model()
-    function = client.post("/ml-training-functions", json={
+    function = {"id": create(client, db_session_factory, "MLTrainingFunction", {   # a function is a ProvMnS class since S2.7
         "userLabel": "mltf-1",
         "supportedLearningTechnology": {"learningTechnologyName": ["DL", "FL"], "supportedFLRole": ["FL_SERVER"]},
         "fLParticipationInfo": {"fLRole": "FL_SERVER", "isAvailableForFLTraining": True},
         "mLKnowledge": {"mLKnowledgeName": "prb-trend", "knowledgeType": "REGRESSION"},
-    }).json()
+    })}
     resp = client.post("/ml-training-requests", json={
         "mLModelRef": str(model_id), "mLTrainingFunctionRef": function["id"], "trainingRequestSource": "es-rapp",
         "aIMLInferenceName": "NG_RAN_NETWORK_ENERGY_SAVING", "candidateTrainingDataSource": ["PRB_UTILIZATION"],
@@ -51,7 +63,7 @@ def test_training_request_is_a_real_training_job_with_spec_attributes(client, ml
     assert client.get(f"/training-jobs/{request_id}/status").json()["status"] == "IN_PROGRESS"
     assert client.get(f"/models/{model_id}/lifecycle").json()["modelLifecycleState"] == ModelLifecycleState.TRAINING
     # the function reflects the training type it ran
-    assert _attrs(client.get(f"/ml-training-functions/{function['id']}"))["mLTrainingType"] == "INITIAL_TRAINING"
+    assert find(client, "MLTrainingFunction", function["id"])["mLTrainingType"] == "INITIAL_TRAINING"
     # a process exists for it
     processes = client.get("/ml-training-processes").json()["items"]
     assert [p["attributes"]["trainingRequestRef"] for p in processes] == [[request_id]]
@@ -108,6 +120,7 @@ def test_progress_then_completion_writes_a_chained_training_report(client, mlmr,
     previous one through `lastTrainingRef`; and progress on a finished process is 409.
     """
     model_id = mlmr.add_model()
+    register(db_session_factory, model_id)
     request_id = client.post("/ml-training-requests", json={"mLModelRef": str(model_id), "trainingRequestSource": "x"}).json()["id"]
     process_id = client.get("/ml-training-processes").json()["items"][0]["id"]
     progress = _attrs(client.post(f"/ml-training-processes/{process_id}/progress",
@@ -122,20 +135,19 @@ def test_progress_then_completion_writes_a_chained_training_report(client, mlmr,
     assert resp.status_code == 200
     process = _attrs(client.get(f"/ml-training-processes/{process_id}"))
     assert process["progressStatus"]["status"] == "FINISHED" and process["progressStatus"]["progressPercentage"] == 100
-    report = client.get(f"/ml-training-reports/{process['trainingReportRef']}").json()["attributes"]
-    assert report["mLModelGeneratedRef"] == str(model_id)
+    report = find(client, "MLTrainingReport", process["trainingReportRef"])        # a report is a ProvMnS class since S2.10
+    assert ids(report["mLModelGeneratedRef"]) == str(model_id)
     assert report["modelConfidenceIndication"] == 87
-    assert report["trainingProcessRef"] == process_id
-    assert report["lastTrainingRef"] is None
+    assert ids(report["trainingProcessRef"]) == process_id
+    assert "lastTrainingRef" not in report
     assert client.post(f"/ml-training-processes/{process_id}/progress", json={"progressPercentage": 10}).status_code == 409
 
     # a retrain chains to the previous report
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.PROMOTED)
     second = client.post("/ml-training-requests", json={"mLModelRef": str(model_id), "trainingRequestSource": "x"}).json()["id"]
     client.post(f"/training-jobs/{second}/complete", json={"succeeded": True})
-    reports = client.get("/ml-training-reports", params={"model_id": str(model_id)}).json()["items"]
-    assert len(reports) == 2
-    assert reports[0]["attributes"]["lastTrainingRef"] == reports[1]["id"]
+    second_report = find(client, "MLTrainingReport", _attrs(client.get(f"/ml-training-processes/{_process_of(client, second)}"))["trainingReportRef"])
+    assert ids(second_report["lastTrainingRef"]) == process["trainingReportRef"]
 
 
 def test_legacy_training_route_also_gets_a_process(client, mlmr):
@@ -151,8 +163,9 @@ def test_legacy_training_route_also_gets_a_process(client, mlmr):
 def test_testing_request_drives_validation_and_writes_testing_report(client, mlmr, db_session_factory):
     """An MLTestingRequest starts a real validation (the model enters VALIDATING); completing it writes a PASSED MLTestingReport and the function lists the model."""
     model_id = mlmr.add_model()
+    register(db_session_factory, model_id)
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED, training_approved=True)
-    function_id = client.post("/ml-testing-functions", json={"userLabel": "mlvf"}).json()["id"]
+    function_id = create(client, db_session_factory, "MLTestingFunction", {"userLabel": "mlvf"})
     resp = client.post("/ml-testing-requests", json={"mLModelRef": str(model_id), "mLTestingFunctionRef": function_id})
     attrs = _attrs(resp)
     assert attrs["requestStatus"] == "IN_PROGRESS"
@@ -162,10 +175,12 @@ def test_testing_request_drives_validation_and_writes_testing_report(client, mlm
     client.post(f"/validation-jobs/{request_id}/complete", json={
         "succeeded": True, "modelPerformanceTesting": [{"performanceMetric": "MAE", "performanceScore": 2.0}]})
     assert _attrs(client.get(f"/ml-testing-requests/{request_id}"))["requestStatus"] == "FINISHED"
-    reports = client.get("/ml-testing-reports", params={"testing_request_id": request_id}).json()["items"]
-    assert reports[0]["attributes"]["mLTestingResult"] == "PASSED"
-    assert reports[0]["attributes"]["modelPerformanceTesting"][0]["performanceScore"] == 2.0
-    assert _attrs(client.get(f"/ml-testing-functions/{function_id}"))["mLModelRef"] == [str(model_id)]
+    with db_session_factory() as db:
+        report_id = db.scalar(select(MLTestingReport.ml_testing_report_id).where(MLTestingReport.validation_job_id == uuid.UUID(request_id)))
+    report = find(client, "MLTestingReport", report_id)
+    assert report["mLTestingResult"] == "PASSED" and ids(report["testingRequestRef"]) == request_id
+    assert report["modelPerformanceTesting"][0]["performanceScore"] == 2.0
+    assert ids(find(client, "MLTestingFunction", function_id)["mLModelRef"]) == [str(model_id)]
 
 
 def test_testing_request_still_honours_the_operator_gate(client, mlmr, db_session_factory):
@@ -201,6 +216,7 @@ def test_cancelled_testing_request_fails_the_model_and_suspend_resumes(client, m
 def _certified_model(mlmr, db_session_factory):
     """Registers a model in the MLMR double and puts its lifecycle row at CERTIFIED, the state loading and deploying require."""
     model_id = mlmr.add_model()
+    register(db_session_factory, model_id)
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.CERTIFIED)
     return model_id
 
@@ -218,9 +234,11 @@ def test_loading_request_brings_runtime_up_and_gates_inference(client, mlmr, db_
     assert _attrs(request)["requestStatus"] == "FINISHED"
     lifecycle = client.get(f"/models/{model_id}/lifecycle").json()
     assert lifecycle["runtimeLifecycleState"] == RuntimeLifecycleState.ACTIVE
-    process = client.get("/ml-model-loading-processes").json()["items"][0]["attributes"]
-    assert process["loadedMLModelRef"] == [str(model_id)]
-    assert process["mLModelLoadingRequestRef"] == [request.json()["id"]]
+    with db_session_factory() as db:
+        process_id = db.scalar(select(MLModelLoadingProcess.ml_model_loading_process_id))
+    process = find(client, "MLModelLoadingProcess", process_id)                  # a loading process is a ProvMnS class since S2.10
+    assert ids(process["loadedMLModelRef"]) == [str(model_id)]
+    assert ids(process["mLModelLoadingRequestRef"]) == [request.json()["id"]]
     assert _attrs(client.get(f"/aiml-inference-functions/{function_id}"))["mLModelRefList"] == [str(model_id)]
 
     # DEACTIVATED (the default) refuses inference on the function
@@ -238,9 +256,9 @@ def test_loading_request_brings_runtime_up_and_gates_inference(client, mlmr, db_
     assert report["inferenceOutputs"][0]["outputResult"] == {"recommendedState": "LOCKED"}
     assert report["aIMLInferenceFunctionRef"] == function_id
     assert _attrs(client.get(f"/aiml-inference-functions/{function_id}"))["usedByFunctionRefList"] == ["es-rapp"]
-    refs = client.get(f"/ml-models/{model_id}/nrm-refs").json()
-    assert refs["usedByFunctionRefList"] == [function_id]
-    assert refs["aIMLInferenceReportRefList"] == [resolved["aIMLInferenceReportId"]]
+    refs = find(client, "MLModel", model_id)                                       # nrm-refs is the MLModel instance since S2.7
+    assert ids(refs["usedByFunctionRefList"]) == [function_id]
+    assert ids(refs["aIMLInferenceReportRefList"]) == [resolved["aIMLInferenceReportId"]]
 
 
 def test_inference_on_a_function_without_the_model_loaded(client, mlmr, db_session_factory):
@@ -310,12 +328,13 @@ def test_direct_inference_report_needs_exactly_one_function(client, mlmr):
 
 def _promoted_models(mlmr, db_session_factory, n=2):
     """Registers `n` models in the MLMR double and puts each at PROMOTED, the state an update request can fine-tune from; returns their ids."""
-    ids = []
+    made = []
     for _ in range(n):
         model_id = mlmr.add_model()
+        register(db_session_factory, model_id)
         _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.PROMOTED)
-        ids.append(model_id)
-    return ids
+        made.append(model_id)
+    return made
 
 
 def test_update_request_fine_tunes_every_model_and_reports_when_all_done(client, mlmr, db_session_factory):
@@ -323,7 +342,7 @@ def test_update_request_fine_tunes_every_model_and_reports_when_all_done(client,
     and request are then FINISHED and the update function takes on the capability version.
     """
     models = _promoted_models(mlmr, db_session_factory)
-    function_id = client.post("/ml-update-functions", json={"userLabel": "mluf"}).json()["id"]
+    function_id = create(client, db_session_factory, "MLUpdateFunction", {"userLabel": "mluf"})
     request = client.post("/ml-update-requests", json={
         "mLUpdateFunctionRef": function_id, "mLModelRefList": [str(m) for m in models],
         "newCapabilityVersionId": ["v2"]}).json()
@@ -341,11 +360,11 @@ def test_update_request_fine_tunes_every_model_and_reports_when_all_done(client,
     client.post(f"/training-jobs/{jobs[1]}/complete", json={"succeeded": True, "metrics": {"MAE": 1.7}})
     process = _attrs(client.get(f"/ml-update-processes/{process_id}"))
     assert process["progressStatus"]["status"] == "FINISHED"
-    report = _attrs(client.get(f"/ml-update-reports/{process['mLUpdateReportRef']}"))
-    assert report["updatedMLCapability"]["mLCapabilityVersionId"] == "v2"
-    assert sorted(report["mLModelRefList"]) == sorted(str(m) for m in models)
+    report = find(client, "MLUpdateReport", process["mLUpdateReportRef"])            # an update report is a ProvMnS class since S2.10
+    assert report["updatedMLCapability"]["mLCapabilityVersionId"] == ["v2"]
+    assert sorted(ids(report["mLModelRefList"])) == sorted(str(m) for m in models)
     assert _attrs(client.get(f"/ml-update-requests/{request['id']}"))["requestStatus"] == "FINISHED"
-    assert _attrs(client.get(f"/ml-update-functions/{function_id}"))["availMLCapabilityReport"]["mLCapabilityVersionId"] == "v2"
+    assert find(client, "MLUpdateFunction", function_id)["availMLCapabilityReport"]["mLCapabilityVersionId"] == ["v2"]
 
 
 def test_update_request_rejects_untrainable_model_and_cancel_stops_runs(client, mlmr, db_session_factory):
@@ -376,15 +395,17 @@ def test_update_request_accepts_a_certified_model(client, mlmr, db_session_facto
 
 
 def test_unknown_nrm_object_is_a_clean_404(client):
-    """GET by an unknown id on each of the 17 NRM collections answers 404 `NRM_OBJECT_NOT_FOUND`, never a 500."""
-    for path in ("ml-training-functions", "ml-training-requests", "ml-training-processes", "ml-training-reports",
-                 "ml-testing-functions", "ml-testing-requests", "ml-testing-reports", "aiml-inference-functions",
+    """GET by an unknown id on each of the 10 NRM collections that still have a REST route answers 404 `NRM_OBJECT_NOT_FOUND`, never a 500; an
+    unknown instance of a class read over ProvMnS only (S2.7, S2.10) is the router's 404 MOI_NOT_FOUND."""
+    for path in ("ml-training-requests", "ml-training-processes", "ml-testing-requests", "aiml-inference-functions",
                  "aiml-inference-emulation-functions", "aiml-inference-reports", "ml-model-loading-policies",
-                 "ml-model-loading-requests", "ml-model-loading-processes", "ml-update-functions",
-                 "ml-update-requests", "ml-update-processes", "ml-update-reports"):
+                 "ml-model-loading-requests", "ml-update-requests", "ml-update-processes"):
         resp = client.get(f"/{path}/{uuid.uuid4()}")
         assert resp.status_code == 404, path
         assert resp.json()["detail"]["title"] == "NRM_OBJECT_NOT_FOUND"
+    for dn in ("MLTrainingFunction=default/MLTrainingReport", "MLTestingFunction", "MLUpdateFunction", "AIMLInferenceFunction=default/MLModelLoadingProcess"):
+        resp = client.get(f"/ProvMnS/{PROVMNS_VERSION}/ManagedElement=AIMgF/{dn}={uuid.uuid4()}")
+        assert (resp.status_code, resp.json()["type"]) == (404, "MOI_NOT_FOUND"), dn
 
 
 def test_nrm_cancel_of_a_training_request_releases_the_model(client, mlmr):
