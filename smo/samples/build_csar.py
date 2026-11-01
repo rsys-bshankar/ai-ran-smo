@@ -38,7 +38,7 @@ DEMO_KEY = SAMPLES_DIR / "demo-signing" / "demo-publisher.seed"       # DEMO MAT
 SAMPLES = ["energy-saving-rapp", "mobility-optimization-rapp", "coverage-optimization-rapp",
            "traffic-steering-rapp"]
 EXCLUDED_PARTS = {"__pycache__", "tests", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
-EXCLUDED_FILES = {"README.md"}  # sample documentation, not package content
+EXCLUDED_FILES = {"README.md", "module.yaml"}  # sample documentation, and the module manifest (how the SMO repository wires the sample: scripts/modules.py), not package content
 FIXED_TIME = (2026, 1, 1, 0, 0, 0)
 
 

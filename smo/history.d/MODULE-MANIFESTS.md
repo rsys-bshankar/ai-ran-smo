@@ -51,6 +51,8 @@ fails when one differs. `list unit-suites | openapi | mutation | database` print
   - the mutation pilot (a loop over `list mutation`, the shared library first);
   - `CLAUDE.md`'s unit loop.
 - **`smo-mutation.yml`:** its `pull_request` paths have a generated region from the modules' `mutation.watch`.
+- **The sample rApps' packages:** `samples/build_csar.py` leaves `module.yaml` out of a CSAR (it is how this repository wires the sample, not package
+  content), so the committed packages are unchanged.
 
 **Proof that nothing changed.** Against `main` (94e2adb):
 - `docker compose config --format json` is equal, both by default and with every profile: 32 and 52 services. The only difference is the order of
