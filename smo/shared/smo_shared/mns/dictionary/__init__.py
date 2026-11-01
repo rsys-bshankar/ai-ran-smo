@@ -21,7 +21,6 @@ not checked against the specification text, is in each file's description.
 
 import ast
 import re
-import typing
 from collections.abc import Mapping
 
 from . import ts28111, ts28552, ts28554
@@ -82,15 +81,16 @@ _OPERATORS = {ast.Add: lambda a, b: a + b, ast.Sub: lambda a, b: a - b, ast.Mult
 
 def _value(node: ast.expr, values: Mapping[str, float]) -> float:
     """The value of a compiled formula node over the variables' values."""
-    if isinstance(node, ast.Constant):
-        return float(typing.cast(float, node.value))       # _compile admits only int and float constants
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        return float(node.value)
     if isinstance(node, ast.Name):
         return float(values[node.id])
     if isinstance(node, ast.UnaryOp):
         operand = _value(node.operand, values)
         return -operand if isinstance(node.op, ast.USub) else operand
-    node = typing.cast(ast.BinOp, node)               # _compile admits no other node
-    return _OPERATORS[type(node.op)](_value(node.left, values), _value(node.right, values))
+    if isinstance(node, ast.BinOp):
+        return _OPERATORS[type(node.op)](_value(node.left, values), _value(node.right, values))
+    raise ValueError(f"{type(node).__name__} is not a node of a compiled formula")
 
 
 def evaluate(formula_or_kpi: str, counter_values: Mapping[str, float]) -> float:

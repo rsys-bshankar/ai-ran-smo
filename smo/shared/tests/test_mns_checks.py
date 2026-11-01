@@ -365,3 +365,19 @@ def test_the_audit_row_keeps_the_correlation_id():
         _current_correlation_id.reset(token)
     with backend.session() as db:
         assert db.scalars(select(audit.AuditEntry.correlation_id)).one() == "corr-7"
+
+
+def test_the_hierarchical_answer_pages_and_a_request_without_accept_gets_it():
+    """The hierarchical answer carries the Link to the next page as the flat one does; a request with no Accept header at all gets the hierarchical
+    answer as application/json."""
+    backend = _sqlite()
+    client = _app(backend, RouterChecks(module="mns-check"))
+    build_tree(client)
+    page = client.get(BASE + "SubNetwork=A", params={"scope": '{"scopeType": "BASE_ALL"}', "limit": "2"},
+                      headers={"accept": "application/vnd.3gpp.object-tree-hierarchical+json"})
+    assert page.headers["content-type"] == "application/vnd.3gpp.object-tree-hierarchical+json"
+    assert page.headers["link"].endswith('; rel="next"') and "cursor=" in page.headers["link"]
+    del client.headers["accept"]
+    bare = client.get(BASE + "SubNetwork=A", params={"scope": '{"scopeType": "BASE_ALL"}', "limit": "2"})
+    assert (bare.status_code, bare.headers["content-type"], "link" in bare.headers) == (200, "application/json", True)
+    assert bare.json()["objectInstance"] == "SubNetwork=A"          # the hierarchical form, not the flat list

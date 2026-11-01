@@ -192,3 +192,14 @@ def test_every_kpi_is_inside_the_grammar():
     """No KPI formula is refused by the grammar."""
     for item in dictionary.KPIS:
         dictionary._compile(item.formula)
+
+
+def test_a_node_outside_a_compiled_formula_is_refused():
+    """The evaluator refuses a node `_compile` never produces (a list, a constant that is not a number) instead of guessing at a value."""
+    import ast
+    with pytest.raises(ValueError) as listed:
+        dictionary._value(ast.List(elts=[], ctx=ast.Load()), {})
+    assert str(listed.value) == "List is not a node of a compiled formula"
+    with pytest.raises(ValueError) as text:
+        dictionary._value(ast.Constant("x"), {})
+    assert str(text.value) == "Constant is not a node of a compiled formula"

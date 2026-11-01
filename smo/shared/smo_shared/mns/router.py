@@ -44,6 +44,9 @@ from .service import DEFAULT_LIMIT, PROVMNS_VERSION, ProvMnS, etag
 FLAT = "application/vnd.3gpp.object-tree-flat+json"
 HIERARCHICAL = "application/vnd.3gpp.object-tree-hierarchical+json"
 PATH = "/ProvMnS/{version}/{ldn:path}"
+LINK = "Link"                 # the response header that names the next page (RFC 8288)
+ACCEPT = "accept"             # the request header that chooses the answer's form
+ANY_FORM = ""                 # what a request without Accept asks for: the hierarchical answer as application/json
 
 
 def _error(exc: MnsError, operation: str) -> JSONResponse:
@@ -179,8 +182,8 @@ def _read(mns: ProvMnS, version: str, ldn: str, request: Request, db: Session, c
     headers = {}
     if page.next_cursor is not None:
         following = {**dict(query), "cursor": page.next_cursor}
-        headers["Link"] = f'<{request.url.path}?{urlencode(following)}>; rel="next"'
-    accept = request.headers.get("accept", "")
+        headers[LINK] = f'<{request.url.path}?{urlencode(following)}>; rel="next"'
+    accept = request.headers.get(ACCEPT, ANY_FORM)
     if FLAT in accept:
         return JSONResponse(content=page.items, headers=headers, media_type=FLAT)
     media_type = HIERARCHICAL if HIERARCHICAL in accept else "application/json"
