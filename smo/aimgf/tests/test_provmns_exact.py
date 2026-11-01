@@ -2,8 +2,8 @@
 code, reason and the attributes and objects it names; every attribute a request's createMOI passes to the run it starts; the flags and the owner
 rule of each request class; the registry, producer and start-up `service.py` builds; the projection's containers, moves and dependants.
 
-Most tests call a hook directly (`HANDLERS[class]`) with a `MoiContext` on the test database, which also reaches attributes the class's schema
-check would refuse before the hook (TS 28.105 v19.5.0's `oneOf` defects, `aimgf/README.md` 1.2). Fixtures come from `test_main.py`.
+Most tests call a hook directly (`HANDLERS[class]`) with a `MoiContext` on the test database, so each refusal is read as the MnsError itself.
+Fixtures come from `test_main.py`.
 """
 
 import uuid
@@ -18,7 +18,7 @@ from test_main import _set_lifecycle, client, db_session_factory, mlmr  # noqa: 
 from provmns_reads import BASE, register, root
 
 from smo_shared.mns import Moi, MoiContext, MnsError
-from smo_shared.mns.store import ManagedObject
+from app.models import Instance
 
 from app import models as m
 from app.governance.statemachine import ModelLifecycleState
@@ -478,46 +478,23 @@ def test_a_restricted_build_serves_only_its_classes():
     assert mns.served("MLModel") and not mns.served("MLTrainingFunction") and mns._handler("MLModel") is HANDLERS["MLModel"]
 
 
-def test_the_registration_record_and_the_stub(caplog):
-    """MNS_INFO names ProvMnS at /aimgf/ProvMnS, its scope and version; `register` logs it and returns it."""
-    assert service.MNS_INFO == {"mnsLabel": "AIMgF ProvMnS", "mnsType": "ProvMnS", "mnsVersion": "19.2.0", "mnsAddress": "/aimgf/ProvMnS",
-                                "mnsScope": [ROOT_DN], "classes": list(service.CLASSES)}
-    with caplog.at_level("INFO", logger="app.provmns.service"):
-        assert service.register() is service.MNS_INFO
-    assert "pending S1.12" in caplog.text
-
-
 def test_start_up_projects_once_and_survives_a_missing_store(db_session_factory, monkeypatch, caplog):
     """`start`: with ROOT present it projects nothing; with no store (the database not migrated yet) it logs and rolls back, raising nothing."""
     with db_session_factory() as db:
         projection.ensure_container(db, ROOT_DN)
         db.add(m.MLTestingFunction(user_label="x"))
         db.commit()
-        db.execute(ManagedObject.__table__.delete().where(ManagedObject.dn != ROOT_DN))
+        db.execute(Instance.__table__.delete().where(Instance.dn != ROOT_DN))
         db.commit()
     monkeypatch.setattr("smo_shared.db.SessionLocal", db_session_factory)
     service.start()
     with db_session_factory() as db:
-        assert db.scalars(select(ManagedObject.dn)).all() == [ROOT_DN]
-        ManagedObject.__table__.drop(db.connection())
+        assert db.scalars(select(Instance.dn)).all() == [ROOT_DN]
+        Instance.__table__.drop(db.connection())
         db.commit()
     with caplog.at_level("WARNING", logger="app.provmns.service"):
         service.start()
     assert "start-up projection not done" in caplog.text
-
-
-def test_the_openapi_says_what_the_router_answers():
-    """`document`: each ProvMnS operation declares the TS 28.623 error body for the router's statuses; another route keeps the SMO's envelope."""
-    from app.main import app
-    schema = app.openapi()
-    assert schema["components"]["schemas"][service.PROVMNS_ERROR] == service.PROVMNS_ERROR_SCHEMA
-    for method in ("get", "put", "patch", "delete"):
-        responses = schema["paths"]["/ProvMnS/{version}/{ldn}"][method]["responses"]
-        for status in ("400", "403", "404", "409", "412", "415", "422"):
-            assert responses[status]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/ProvMnSErrorResponse"}
-        assert responses["401"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/ErrorEnvelope"}
-    assert schema["paths"]["/models"]["post"]["responses"]["404"]["content"]["application/json"]["schema"] == {
-        "$ref": "#/components/schemas/ErrorEnvelope"}
 
 
 # ---------------------------------------------------------------------------- projection.py
@@ -531,14 +508,14 @@ def test_a_moved_row_takes_what_it_contains_and_a_deleted_row_its_instance(db_se
         db.add(job)
         db.commit()
         old = f"{ROOT_DN},MLTrainingFunction={a.ml_training_function_id},MLTrainingRequest={job.training_job_id}"
-        assert db.get(ManagedObject, old) is not None
+        assert db.get(Instance, old) is not None
         job.ml_training_function_id = b.ml_training_function_id
         db.commit()
-        assert db.get(ManagedObject, old) is None
-        assert db.get(ManagedObject, f"{ROOT_DN},MLTrainingFunction={b.ml_training_function_id},MLTrainingRequest={job.training_job_id}") is not None
+        assert db.get(Instance, old) is None
+        assert db.get(Instance, f"{ROOT_DN},MLTrainingFunction={b.ml_training_function_id},MLTrainingRequest={job.training_job_id}") is not None
         db.delete(db.get(m.MLTrainingFunction, b.ml_training_function_id))
         db.commit()
-        assert db.get(ManagedObject, f"{ROOT_DN},MLTrainingFunction={b.ml_training_function_id}") is None
+        assert db.get(Instance, f"{ROOT_DN},MLTrainingFunction={b.ml_training_function_id}") is None
 
 
 def test_dependants_follow_the_row_they_read(db_session_factory, mlmr):
@@ -560,8 +537,8 @@ def test_dependants_follow_the_row_they_read(db_session_factory, mlmr):
         db.add(m.CertificationRecord(model_id=model, decision="APPROVE", decided_by="alice", rationale="ok"))
         db.commit()
         function_dn = f"{ROOT_DN},AIMLInferenceFunction={function.aiml_inference_function_id}"
-        assert db.get(ManagedObject, function_dn).attributes["usedByFunctionRefList"] == ["es"]
-        governance = db.get(ManagedObject, f"{ROOT_DN},MLModelRepository=default,MLModel={model},MLModelGovernance={model}").attributes
+        assert db.get(Instance, function_dn).attributes["usedByFunctionRefList"] == ["es"]
+        governance = db.get(Instance, f"{ROOT_DN},MLModelRepository=default,MLModel={model},MLModelGovernance={model}").attributes
         assert governance["decisions"][0]["event"] == "APPROVE" and governance["decisions"][0]["reason"] == "ok" and governance["owner"] == "o"
         request = m.MLUpdateRequest(request_status="IN_PROGRESS", ml_model_refs=[])
         db.add(request)
@@ -570,15 +547,15 @@ def test_dependants_follow_the_row_they_read(db_session_factory, mlmr):
         db.add(update)
         db.commit()
         request_dn = f"{ROOT_DN},MLUpdateFunction=default,MLUpdateRequest={request.ml_update_request_id}"
-        assert db.get(ManagedObject, request_dn).attributes["mLUpdateProcessRef"].endswith(f"MLUpdateProcess={update.ml_update_process_id}")
+        assert db.get(Instance, request_dn).attributes["mLUpdateProcessRef"].endswith(f"MLUpdateProcess={update.ml_update_process_id}")
         db.add(m.MLUpdateReport(ml_update_process_id=update.ml_update_process_id, ml_model_refs=[]))
         db.commit()
         process_dn = f"{ROOT_DN},MLUpdateFunction=default,MLUpdateProcess={update.ml_update_process_id}"
-        assert "MLUpdateReport=" in db.get(ManagedObject, process_dn).attributes["mLUpdateReportRef"]
+        assert "MLUpdateReport=" in db.get(Instance, process_dn).attributes["mLUpdateReportRef"]
         job.status = "FINISHED"
         db.commit()
         process_dn = f"{ROOT_DN},MLTrainingFunction=default,MLTrainingProcess={process.ml_training_process_id}"
-        assert db.get(ManagedObject, process_dn).attributes["mLModelRef"] == f"{ROOT_DN},MLModelRepository=default,MLModel={model}"
+        assert db.get(Instance, process_dn).attributes["mLModelRef"] == f"{ROOT_DN},MLModelRepository=default,MLModel={model}"
 
 
 def test_the_training_request_status_maps_failed_to_finished():
@@ -661,20 +638,20 @@ def test_an_added_and_a_removed_attribute_are_changes_with_null_on_the_other_sid
         projection._write(db, dn, "MLTestingFunction", {"mLModelRef": ["x"]})
         db.flush()
         assert _events(db, dn)[-1]["attributeListValueChanges"] == [{"mLModelRef": ["x"], "userLabel": None}, {"mLModelRef": None, "userLabel": "a"}]
-        assert db.get(ManagedObject, dn).attributes == {"mLModelRef": ["x"]}
+        assert db.get(Instance, dn).attributes == {"mLModelRef": ["x"]}
         projection._write(db, dn, "MLTestingFunction", {"mLModelRef": ["x"]})            # the same attributes: no change, no notification
         db.flush()
         assert len(_events(db, dn)) == 2
 
 
 def test_an_instance_knows_its_container_and_depth(db_session_factory):
-    """`moi_store` rows carry their parent DN and depth (the router's scope reads them)."""
+    """Store rows carry their parent DN and depth (the router's scope reads them)."""
     with db_session_factory() as db:
         f = _function(db, m.MLTestingFunction)
         db.commit()
-        row = db.get(ManagedObject, f"{ROOT_DN},MLTestingFunction={f.ml_testing_function_id}")
+        row = db.get(Instance, f"{ROOT_DN},MLTestingFunction={f.ml_testing_function_id}")
         assert (row.parent_dn, row.depth, row.moi_id, row.object_class) == (ROOT_DN, 2, str(f.ml_testing_function_id), "MLTestingFunction")
-        assert (db.get(ManagedObject, ROOT_DN).parent_dn, db.get(ManagedObject, ROOT_DN).depth) == (None, 1)
+        assert (db.get(Instance, ROOT_DN).parent_dn, db.get(Instance, ROOT_DN).depth) == (None, 1)
 
 
 def test_a_container_three_levels_down_is_made_from_its_row(db_session_factory, mlmr):
@@ -686,15 +663,15 @@ def test_a_container_three_levels_down_is_made_from_its_row(db_session_factory, 
     _set_lifecycle(db_session_factory, model, model_lifecycle_state=ModelLifecycleState.TRAINING)
     model_dn = f"{ROOT_DN},MLModelRepository={repository},MLModel={model}"
     with db_session_factory() as db:
-        db.execute(ManagedObject.__table__.delete())
+        db.execute(Instance.__table__.delete())
         db.commit()
         projection.project_one(db, projection.BY_CLASS["MLModelGovernance"], model)
         db.commit()
-        assert db.get(ManagedObject, f"{model_dn},MLModelGovernance={model}").attributes["lifecycleState"] == "TRAINING"
-        assert db.get(ManagedObject, model_dn).attributes["mLModelId"] == str(model)
-        assert db.get(ManagedObject, f"{ROOT_DN},MLModelRepository={repository}").attributes == {}
+        assert db.get(Instance, f"{model_dn},MLModelGovernance={model}").attributes["lifecycleState"] == "TRAINING"
+        assert db.get(Instance, model_dn).attributes["mLModelId"] == str(model)
+        assert db.get(Instance, f"{ROOT_DN},MLModelRepository={repository}").attributes == {}
         projection.ensure_container(db, f"{ROOT_DN},MLUpdateFunction=default")
-        assert db.get(ManagedObject, f"{ROOT_DN},MLUpdateFunction=default").attributes == {}
+        assert db.get(Instance, f"{ROOT_DN},MLUpdateFunction=default").attributes == {}
 
 
 def registry_models_repository(db_session_factory) -> uuid.UUID:
@@ -720,9 +697,9 @@ def test_a_model_is_placed_in_its_repository_with_its_identity(db_session_factor
         db.add(m.CertificationRecord(model_id=model, decision="APPROVE", decided_by="alice", rationale="good", decided_at=datetime.datetime(2026, 1, 1)))
         db.commit()
         model_dn = f"{ROOT_DN},MLModelRepository={repository},MLModel={model}"
-        attributes = db.get(ManagedObject, model_dn).attributes
+        attributes = db.get(Instance, model_dn).attributes
         assert (attributes["mLModelId"], attributes["mLModelVersion"]) == (str(model), "1")
-        governance = db.get(ManagedObject, f"{model_dn},MLModelGovernance={model}").attributes
+        governance = db.get(Instance, f"{model_dn},MLModelGovernance={model}").attributes
     assert governance == {"mLModelRef": model_dn, "lifecycleState": "CERTIFIED", "runtimeState": "NOT_DEPLOYED", "servingState": "VALIDATED",
                           "owner": "rapp-o", "decisions": [
                               {"event": "APPROVE", "decidedBy": "alice", "decidedAt": "2026-01-01T00:00:00", "reason": "good"},
@@ -745,8 +722,8 @@ def test_update_instances_sit_in_their_function_and_a_count_of_the_start_up_proj
         base = f"{ROOT_DN},MLUpdateFunction={function.ml_update_function_id}"
         for dn in (f"{base},MLUpdateRequest={request.ml_update_request_id}", f"{base},MLUpdateProcess={process.ml_update_process_id}",
                    f"{base},MLUpdateReport={report.ml_update_report_id}"):
-            assert db.get(ManagedObject, dn) is not None, dn
-        db.execute(ManagedObject.__table__.delete())
+            assert db.get(Instance, dn) is not None, dn
+        db.execute(Instance.__table__.delete())
         assert projection.project_all(db) == 4
 
 
@@ -763,9 +740,9 @@ def test_a_row_deleted_through_the_orm_takes_its_contained_instances_and_they_co
         function_dn = f"{ROOT_DN},MLTrainingFunction={f.ml_training_function_id}"
         db.delete(db.get(m.MLTrainingFunction, f.ml_training_function_id))
         db.commit()
-        assert db.get(ManagedObject, function_dn) is None
-        assert db.get(ManagedObject, f"{function_dn},MLTrainingRequest={job.training_job_id}") is None
-        assert db.get(ManagedObject, f"{ROOT_DN},MLTrainingFunction=default,MLTrainingRequest={job.training_job_id}") is not None
+        assert db.get(Instance, function_dn) is None
+        assert db.get(Instance, f"{function_dn},MLTrainingRequest={job.training_job_id}") is None
+        assert db.get(Instance, f"{ROOT_DN},MLTrainingFunction=default,MLTrainingRequest={job.training_job_id}") is not None
         deletions = [row.subject for row in db.scalars(select(events.SmoEvent).order_by(events.SmoEvent.seq))
                      if row.data["notificationType"] == "notifyMOIDeletion"]
         assert deletions == [f"{function_dn},MLTrainingRequest={job.training_job_id}", function_dn]
@@ -852,27 +829,15 @@ def test_the_answer_shows_what_aimgf_made_of_a_function(client, db_session_facto
 
 
 def test_the_registry_and_the_openapi_from_scratch(caplog, monkeypatch, db_session_factory):
-    """A registry built anew has the TS 28.105 classes and MLModelGovernance under MLModel; `document` on a fresh app declares the router's error
-    body; `start` logs how many instances it projected."""
-    from fastapi import FastAPI
+    """A registry built anew has the TS 28.105 classes and MLModelGovernance under MLModel; `start` logs how many instances it projected."""
     registry = service.AimgfRegistry()
     assert "MLTrainingRequest" in registry and registry.info("MLModelGovernance").attribute_names == frozenset(service.GOVERNANCE_ATTRIBUTES["properties"])
     assert registry.may_contain("MLModel", "MLModelGovernance") and not registry.may_contain(None, "MLModelGovernance")
-    app = FastAPI()
-    app.get("/ProvMnS/{version}/{ldn}")(lambda version, ldn: {})
-    app.get("/other")(lambda: {})
-    service.document(app)
-    schema = app.openapi()
-    assert schema["components"]["schemas"]["ProvMnSErrorResponse"]["required"] == ["status", "type", "reason", "title"]
-    assert schema["paths"]["/ProvMnS/{version}/{ldn}"]["get"]["responses"]["412"]["description"] == "TS 28.623 error"
-    assert "412" not in schema["paths"]["/other"]["get"]["responses"]
     monkeypatch.setattr("smo_shared.db.SessionLocal", db_session_factory)
     with caplog.at_level("INFO", logger="app.provmns.service"):
         service.start()
     projected = [r for r in caplog.records if r.msg.startswith("aimgf provmns: projected")]
     assert [(r.getMessage(), r.levelname) for r in projected] == [("aimgf provmns: projected 0 instances into an empty store", "INFO")]
-    registered = [r for r in caplog.records if "pending S1.12" in r.msg]
-    assert registered[0].getMessage() == f"aimgf provmns: MnS registry registration pending S1.12; would register {service.MNS_INFO}"
 
 
 # ---------------------------------------------------------------------------- third pass
@@ -897,26 +862,10 @@ def test_the_middleware_hands_the_hooks_the_request_and_forgets_it():
     assert seen == [(request, request)] and current_request.get() is None
 
 
-def test_document_declares_the_error_body_on_an_app_with_nothing_else():
-    """On an app whose schema has no components yet, `document` adds the error schema and puts exactly the TS 28.623 body on each status of a
-    ProvMnS path; another path is left as it is."""
-    from fastapi import FastAPI
-    app = FastAPI()
-    app.get("/ProvMnS/x")(lambda: {})
-    app.get("/other")(lambda: {})
-    service.document(app)
-    schema = app.openapi()
-    assert schema["components"] == {"schemas": {"ProvMnSErrorResponse": service.PROVMNS_ERROR_SCHEMA}}
-    responses = schema["paths"]["/ProvMnS/x"]["get"]["responses"]
-    body = {"description": "TS 28.623 error", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ProvMnSErrorResponse"}}}}
-    assert {status: responses[status] for status in service.PROVMNS_ERROR_STATUSES} == {status: body for status in service.PROVMNS_ERROR_STATUSES}
-    assert set(schema["paths"]["/other"]["get"]["responses"]) == {"200"}
-
-
 def test_a_start_up_without_a_store_logs_why(db_session_factory, monkeypatch, caplog):
     """The warning of a start-up that could not project: its words and the exception with it."""
     with db_session_factory() as db:
-        ManagedObject.__table__.drop(db.connection())
+        Instance.__table__.drop(db.connection())
         db.commit()
     monkeypatch.setattr("smo_shared.db.SessionLocal", db_session_factory)
     with caplog.at_level("WARNING", logger="app.provmns.service"):
@@ -954,17 +903,17 @@ def test_a_container_already_there_is_left_and_one_missing_is_made_from_its_row(
     projection."""
     with db_session_factory() as db:
         projection.ensure_container(db, f"{ROOT_DN},MLTrainingFunction=default")
-        db.get(ManagedObject, f"{ROOT_DN},MLTrainingFunction=default").attributes = {"userLabel": "kept"}
+        db.get(Instance, f"{ROOT_DN},MLTrainingFunction=default").attributes = {"userLabel": "kept"}
         db.flush()
         projection.ensure_container(db, f"{ROOT_DN},MLTrainingFunction=default")
-        assert db.get(ManagedObject, f"{ROOT_DN},MLTrainingFunction=default").attributes == {"userLabel": "kept"}
+        assert db.get(Instance, f"{ROOT_DN},MLTrainingFunction=default").attributes == {"userLabel": "kept"}
         f = m.MLTestingFunction(user_label="from its row")
         db.add(f)
         db.flush()
         db.info.pop(projection._PENDING, None)
         dn = f"{ROOT_DN},MLTestingFunction={f.ml_testing_function_id}"
         projection.ensure_container(db, dn)
-        assert db.get(ManagedObject, dn).attributes == {"userLabel": "from its row"}
+        assert db.get(Instance, dn).attributes == {"userLabel": "from its row"}
 
 
 def test_a_process_change_and_a_report_answer_with_what_aimgf_made_of_them(client, mlmr, db_session_factory):
@@ -998,5 +947,5 @@ def test_a_model_and_its_governance_instance_share_an_id_and_both_stay(db_sessio
         db.get(m.ModelLifecycle, model).model_lifecycle_state = "TRAINING"
         db.commit()
         model_dn = f"{ROOT_DN},MLModelRepository=default,MLModel={model}"
-        assert db.get(ManagedObject, model_dn) is not None
-        assert db.get(ManagedObject, f"{model_dn},MLModelGovernance={model}").attributes["lifecycleState"] == "TRAINING"
+        assert db.get(Instance, model_dn) is not None
+        assert db.get(Instance, f"{model_dn},MLModelGovernance={model}").attributes["lifecycleState"] == "TRAINING"

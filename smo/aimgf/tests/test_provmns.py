@@ -1,5 +1,5 @@
 """AIMgF over TS 28.532 ProvMnS (plan tasks S2.7, S2.10; `app/provmns/`): the twenty TS 28.105 classes and MLModelGovernance served from
-`aimgf.moi_store`, kept in line with AIMgF's tables by the projection, and written through the lifecycle hooks into the same code the REST routes run.
+`aimgf.aimgf_moi_store`, kept in line with AIMgF's tables by the projection, and written through the lifecycle hooks into the same code the REST routes run.
 
 Covered: every class served and resolvable; the tree (ROOT, `default` containers, references as DNs); a REST write projected with its notification;
 each writable class written over ProvMnS (functions, the four requests, the training process, the inference report) and what it does to AIMgF; the
@@ -19,7 +19,7 @@ from test_main import _set_lifecycle, client, db_session_factory, mlmr  # noqa: 
 
 from smo_shared import events
 from smo_shared.mns import PROVMNS_VERSION
-from smo_shared.mns.store import ManagedObject
+from app.models import Instance
 
 from app import models as m
 from app.governance.statemachine import ModelLifecycleState, RuntimeLifecycleState
@@ -92,10 +92,15 @@ def test_the_governance_schema_is_the_bundles():
     assert strip(bundle) == service.GOVERNANCE_ATTRIBUTES
 
 
-def test_registration_waits_for_s1_12_and_names_every_class():
-    """The MnS registry registration is the stub that S1.12's helper replaces: it returns the MnsInfo it would register and registers nothing."""
-    info = service.register()
-    assert info["mnsType"] == "ProvMnS" and info["mnsVersion"] == PROVMNS_VERSION and set(info["classes"]) == set(service.CLASSES)
+def test_aimgf_registers_its_classes_under_its_root():
+    """At start-up AIMgF registers in SME's MnS registry (S1.12) as the ProvMnS producer of its classes, scoped to ManagedElement=AIMgF (so R1 routes
+    those DNs here, not to Echo's unscoped ManagedElement) and with ML_MODEL_MANAGEMENT; what it sends is the shared helper's registration."""
+    from app.main import REGISTRATION
+    from smo_shared.mns.mns_registry import registration
+    assert (REGISTRATION.module, REGISTRATION.classes) == ("aimgf", service.CLASSES)
+    assert REGISTRATION.options == {"scope": ("ManagedElement=AIMgF",), "capabilities": ("ML_MODEL_MANAGEMENT",)}
+    info = registration("aimgf", service.CLASSES, "http://aimgf:8000/ProvMnS/19.2.0", **REGISTRATION.options)[1][1]["attributes"]
+    assert (info["mnsScope"], info["mnsCapability"], info["mnsType"]) == ([["ManagedElement=AIMgF"]], ["ML_MODEL_MANAGEMENT"], "PROV_MNS")
 
 
 # ---------------------------------------------------------------------------- the projection
@@ -123,12 +128,12 @@ def test_the_start_up_projection_fills_an_empty_store(client, mlmr, db_session_f
     """Rows that existed before the store (the first start after revision aimgf_0001) are projected by `start`, ROOT first."""
     model_id = _model(db_session_factory, mlmr)
     with db_session_factory() as db:
-        db.execute(ManagedObject.__table__.delete())
+        db.execute(Instance.__table__.delete())
         db.commit()
     monkeypatch.setattr("smo_shared.db.SessionLocal", db_session_factory)
     service.start()
     with db_session_factory() as db:
-        assert db.get(ManagedObject, ROOT_DN) is not None and db.get(ManagedObject, _model_dn(model_id)) is not None
+        assert db.get(Instance, ROOT_DN) is not None and db.get(Instance, _model_dn(model_id)) is not None
 
 
 def test_an_attribute_the_class_does_not_declare_or_accept_is_left_out(client, mlmr, db_session_factory):
@@ -139,7 +144,7 @@ def test_an_attribute_the_class_does_not_declare_or_accept_is_left_out(client, m
     attributes = _get(client, f"{ROOT},MLTrainingFunction=default,MLTrainingRequest={job_id}")["attributes"]
     assert "mLTrainingFunctionRef" not in attributes and "createdAt" not in attributes
     with db_session_factory() as db:
-        process = db.scalar(select(ManagedObject).where(ManagedObject.object_class == "MLTrainingProcess"))
+        process = db.scalar(select(Instance).where(Instance.object_class == "MLTrainingProcess"))
     assert None not in process.attributes["progressStatus"].values()
 
 

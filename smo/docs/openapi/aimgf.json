@@ -2537,51 +2537,6 @@
         "title": "ProfileBody",
         "type": "object"
       },
-      "ProvMnSErrorResponse": {
-        "properties": {
-          "badAttributes": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "badObjects": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "badOp": {
-            "type": "string"
-          },
-          "badQueryParams": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "status",
-          "type",
-          "reason",
-          "title"
-        ],
-        "title": "ProvMnSErrorResponse",
-        "type": "object"
-      },
       "RLRequirement": {
         "additionalProperties": false,
         "properties": {
@@ -4099,11 +4054,51 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "401": {
             "content": {
@@ -4119,41 +4114,201 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "404": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "409": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "412": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "413": {
             "content": {
@@ -4169,21 +4324,101 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "429": {
             "content": {
@@ -4219,7 +4454,8 @@
         "summary": "Delete Moi",
         "tags": [
           "ProvMnS (TS 28.532)"
-        ]
+        ],
+        "x-smo-error-body": "TS 28.532"
       },
       "get": {
         "description": "getMOIAttributes (TS 28.532): the scoped, filtered instances, hierarchical or flat, one page at a time.",
@@ -4257,11 +4493,51 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "401": {
             "content": {
@@ -4277,41 +4553,201 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "404": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "409": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "412": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "413": {
             "content": {
@@ -4327,21 +4763,101 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "429": {
             "content": {
@@ -4377,7 +4893,8 @@
         "summary": "Get Moi Attributes",
         "tags": [
           "ProvMnS (TS 28.532)"
-        ]
+        ],
+        "x-smo-error-body": "TS 28.532"
       },
       "patch": {
         "description": "modifyMOIAttributes (TS 28.532): a merge patch or a JSON patch, by Content-Type.",
@@ -4415,11 +4932,51 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "401": {
             "content": {
@@ -4435,41 +4992,201 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "404": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "409": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "412": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "413": {
             "content": {
@@ -4485,21 +5202,101 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "429": {
             "content": {
@@ -4535,7 +5332,8 @@
         "summary": "Modify Moi Attributes",
         "tags": [
           "ProvMnS (TS 28.532)"
-        ]
+        ],
+        "x-smo-error-body": "TS 28.532"
       },
       "put": {
         "description": "createMOI (TS 28.532): creates the instance the URI names, or replaces its attributes; an `Idempotency-Key` replays the first answer.",
@@ -4573,11 +5371,51 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "401": {
             "content": {
@@ -4593,41 +5431,201 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "404": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "409": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "412": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "413": {
             "content": {
@@ -4643,21 +5641,101 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvMnSErrorResponse"
+                  "properties": {
+                    "badAttributes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badObjects": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "badOp": {
+                      "type": "string"
+                    },
+                    "badQueryParams": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "type"
+                  ],
+                  "title": "TS 28.532 error",
+                  "type": "object"
                 }
               }
             },
-            "description": "TS 28.623 error"
+            "description": "TS 28.532 error"
           },
           "429": {
             "content": {
@@ -4693,7 +5771,8 @@
         "summary": "Create Moi",
         "tags": [
           "ProvMnS (TS 28.532)"
-        ]
+        ],
+        "x-smo-error-body": "TS 28.532"
       }
     },
     "/aiml-inference-emulation-functions": {

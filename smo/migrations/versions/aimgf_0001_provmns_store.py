@@ -1,6 +1,8 @@
 """AIMgF's ProvMnS store, the first revision of the `aimgf` branch (plan tasks S2.7, S2.10).
 
-Creates `aimgf.moi_store` through the router's own helper (`smo_shared.mns.store.create_moi_store`), as Echo's revision 0066 did for `echo`:
+Creates `aimgf.aimgf_moi_store` through the router's own helper (`smo_shared.mns.store.create_moi_store`), as Echo's revision 0066 did for `echo`, under
+AIMgF's own table name, since `migrations/table_owners.json` names each table once and Echo's store is `moi_store` (SME's `mns_registry`, revision
+sme_0001, is the same pattern):
 
   dn TEXT COLLATE "C" PRIMARY KEY, object_class, moi_id, parent_dn (COLLATE "C"), depth, attributes JSONB DEFAULT '{}', moi_version DEFAULT 1,
   created_at, updated_at; indexes on parent_dn and object_class, and GIN on attributes.
@@ -25,13 +27,14 @@ branch_labels = ("aimgf",)
 depends_on = None
 
 SCHEMA = "aimgf"
+TABLE = "aimgf_moi_store"
 
 
 def upgrade() -> None:
-    """The router's table in AIMgF's schema."""
-    create_moi_store(op, SCHEMA)
+    """The router's table, under AIMgF's name, in AIMgF's schema."""
+    create_moi_store(op, SCHEMA, TABLE)
 
 
 def downgrade() -> None:
     """The table and its indexes."""
-    drop_moi_store(op, SCHEMA)
+    drop_moi_store(op, SCHEMA, TABLE)

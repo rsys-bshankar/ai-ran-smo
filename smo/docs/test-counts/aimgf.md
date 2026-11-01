@@ -9,7 +9,7 @@ CI runs `--check` and fails when this file no longer matches the code.
 
 | suite | files | test functions | collected tests |
 |---|---:|---:|---:|
-| `aimgf` | 23 | 456 | 639 |
+| `aimgf` | 23 | 453 | 636 |
 
 ## Per test file
 
@@ -30,7 +30,7 @@ Paths are relative to `smo/aimgf/`.
 | `tests/test_on_behalf_owner.py` | 4 | 14 |
 | `tests/test_provisioning_guards.py` | 7 | 7 |
 | `tests/test_provmns.py` | 19 | 19 |
-| `tests/test_provmns_exact.py` | 50 | 58 |
+| `tests/test_provmns_exact.py` | 47 | 55 |
 | `tests/test_provmns_mapping.py` | 7 | 23 |
 | `tests/test_registry.py` | 61 | 66 |
 | `tests/test_registry_mlr_conformance.py` | 20 | 20 |

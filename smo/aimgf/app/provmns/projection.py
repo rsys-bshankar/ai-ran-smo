@@ -1,8 +1,8 @@
-"""AIMgF's rows as TS 28.105 managed object instances (plan tasks S2.7, S2.10): every change to a row of a mapped table is written into `aimgf.moi_store`
+"""AIMgF's rows as TS 28.105 managed object instances (plan tasks S2.7, S2.10): every change to a row of a mapped table is written into `aimgf.aimgf_moi_store`
 in the same transaction, so a ProvMnS read sees what the jobs, the REST routes and the hooks did, and its notifications go out with it.
 
 AIMgF's tables stay the truth its jobs run on (a training run is a `training_job` row, its progress the `ml_training_process` row the runtime writes
-back, ...); `moi_store` is the ProvMnS face of them, written only here and by the router. One `Projector` per mapped table says which class its rows
+back, ...); `aimgf_moi_store` is the ProvMnS face of them, written only here and by the router. One `Projector` per mapped table says which class its rows
 are, where they sit (tree.py), and how their attributes are read: the attributes the REST route already renders (the spec's names),
 with each reference turned into the DN of the instance it names (TS 28.623 `Dn`), unset values left out, and every attribute that the class's schema
 does not declare or does not accept dropped (the views carry a few of this build's own, `createdAt` and the like). A projector may also name
@@ -38,7 +38,7 @@ from sqlalchemy.orm import Session
 from smo_shared import events
 from smo_shared.mns import MnsError, PROVMNS_VERSION
 from smo_shared.mns.dn import depth_of, parent_of, path_of
-from smo_shared.mns.store import ManagedObject
+from ..models import Instance
 
 from .. import models as m
 from ..registry import models as rm
@@ -295,7 +295,7 @@ def _accepted(registry, class_name: str, name: str, value: Any) -> bool:
     return True
 
 
-# ---------------------------------------------------------------------------- writing moi_store
+# ---------------------------------------------------------------------------- writing aimgf_moi_store
 
 def _notify(db: Session, notification_type: str, dn: str, extra: dict) -> None:
     """One TS 28.532 notification on the event bus for a change AIMgF made itself (sourceIndicator RESOURCE_OPERATION)."""
@@ -305,11 +305,11 @@ def _notify(db: Session, notification_type: str, dn: str, extra: dict) -> None:
     events.publish(db, "provmns", notification_type, SOURCE, subject=dn, data=body)
 
 
-def _write(db: Session, dn: str, class_name: str, attributes: dict) -> ManagedObject:
+def _write(db: Session, dn: str, class_name: str, attributes: dict) -> Instance:
     """Creates the instance at `dn` with `attributes`, or changes its attributes; notifies when anything changed."""
-    row = db.get(ManagedObject, dn)
+    row = db.get(Instance, dn)
     if row is None:
-        row = ManagedObject(dn=dn, object_class=class_name, moi_id=last_id(dn), parent_dn=parent_of(dn), depth=depth_of(dn), attributes=attributes)
+        row = Instance(dn=dn, object_class=class_name, moi_id=last_id(dn), parent_dn=parent_of(dn), depth=depth_of(dn), attributes=attributes)
         db.add(row)
         db.flush()                                        # a pending row is not in the identity map: flushed, the next `get` finds it
         _notify(db, "notifyMOICreation", dn, {"attributeList": attributes} if attributes else {})
@@ -325,7 +325,7 @@ def _write(db: Session, dn: str, class_name: str, attributes: dict) -> ManagedOb
 def ensure_container(db: Session, dn: str) -> None:
     """Makes the instance at `dn` exist when it is a container something is about to be placed in: ROOT, a `default` container, or a UUID-named
     instance whose row has not been projected yet (projected now, with its own containers first)."""
-    if db.get(ManagedObject, dn) is not None:
+    if db.get(Instance, dn) is not None:
         return
     if dn == ROOT_DN:
         _write(db, ROOT_DN, ROOT_CLASS, {"userLabel": ROOT_ID})
@@ -338,10 +338,10 @@ def ensure_container(db: Session, dn: str) -> None:
         project_one(db, BY_CLASS[class_name], uuid.UUID(moi_id))
 
 
-def _delete_subtree(db: Session, dn: str) -> list[ManagedObject]:
+def _delete_subtree(db: Session, dn: str) -> list[Instance]:
     """Deletes the instance at `dn` and everything it contains (each notified); returns the deleted rows, contained ones first."""
-    rows = list(db.scalars(select(ManagedObject).where((ManagedObject.dn == dn) | ManagedObject.dn.startswith(dn + ","))
-                           .order_by(ManagedObject.dn.desc())))
+    rows = list(db.scalars(select(Instance).where((Instance.dn == dn) | Instance.dn.startswith(dn + ","))
+                           .order_by(Instance.dn.desc())))
     for row in rows:
         attributes = dict(row.attributes or {})
         db.delete(row)
@@ -353,8 +353,8 @@ def project_one(db: Session, projector: Projector, key: Any) -> str | None:
     """Brings the instance of row `key` in line with the row: written (and moved when its container changed), or deleted with what it contains
     when the row is gone. Returns its DN, None when there is none."""
     row = db.get(projector.table, key)
-    existing = db.scalars(select(ManagedObject).where(ManagedObject.object_class == projector.moi_class,
-                                                      ManagedObject.moi_id == str(key))).all()
+    existing = db.scalars(select(Instance).where(Instance.object_class == projector.moi_class,
+                                                      Instance.moi_id == str(key))).all()
     dn = dn_of(db, projector, row) if row is not None else None
     for old in existing:
         if old.dn != dn:                                  # gone, or moved to another container: it and what it contains go, and are projected again

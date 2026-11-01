@@ -708,9 +708,12 @@ class MLUpdateReport(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(default=_now)
 
 
-# The ProvMnS store of `smo_shared.mns` (plan task S2.7, revision aimgf_0001: `aimgf.moi_store`), put on the shared `Base` as Echo does, so that
-# `scripts/check_migration_matches_models.py` checks it and a unit test's `create_all` makes it. The integration mesh imports Echo and AIMgF into one
-# process, whose `Base` then already holds the table; it is not copied twice.
-from smo_shared.mns.store import ManagedObject  # noqa: E402  (beside the table it copies)
+# The ProvMnS store of `smo_shared.mns` (plan tasks S2.7, S2.10): its columns under AIMgF's own table name `aimgf_moi_store` (revision aimgf_0001;
+# `store_model`, as SME's `mns_registry`), since `migrations/table_owners.json` names each table once and Echo's store is `moi_store`. `Instance` is
+# the mapped class the router and the projection write; a copy of its table is on the shared `Base`, so that
+# `scripts/check_migration_matches_models.py` checks it and a unit test's `create_all` makes it.
+from smo_shared.mns.store import store_model  # noqa: E402  (beside the table it maps)
 
-MOI_STORE = Base.metadata.tables["moi_store"] if "moi_store" in Base.metadata.tables else ManagedObject.__table__.to_metadata(Base.metadata)
+STORE_TABLE = "aimgf_moi_store"
+Instance = store_model(STORE_TABLE)
+MOI_STORE = Instance.__table__.to_metadata(Base.metadata)

@@ -8,7 +8,7 @@ section: Added
   notify every change on the event bus. Creating an MLTrainingRequest, MLTestingRequest, MLUpdateRequest or MLModelLoadingRequest starts the run as
   the REST routes do, with the same lifecycle gates and owner rule; the registry's classes and the governance instance are read only until S2.11.
   The lifecycle mapping (14 states, the HLD's 7 stages, `servingState`) is published in `aimgf/README.md` and `docs/STANDARDS.md`.
-  **Schema:** revision `aimgf_0001`, the first of the `aimgf` branch, adds `aimgf.moi_store`; AIMgF fills it from its existing rows at its first
+  **Schema:** revision `aimgf_0001`, the first of the `aimgf` branch, adds `aimgf.aimgf_moi_store`; AIMgF fills it from its existing rows at its first
   start. **Removed REST routes** (now ProvMnS reads and writes of their class): `/aimgf/ml-training-functions`, `/aimgf/ml-testing-functions`,
   `/aimgf/ml-update-functions`, `/aimgf/ml-training-reports`, `/aimgf/ml-testing-reports`, `/aimgf/ml-update-reports`,
   `/aimgf/ml-model-loading-processes`, `GET /aimgf/ml-model-coordination-groups/{id}` and `GET /aimgf/ml-models/{id}/nrm-refs`. **Changed:**

@@ -13,7 +13,7 @@ Closed with `PR-CONV-S2.6` and `PR-CONV-S2.7`. AIMgF mounts `smo_shared.mns` (`a
   `provmns/service.py` because the image carries `specs/5G_APIs` only; a test holds the copy equal to the bundle) and contained by its MLModel
   (`AimgfRegistry.may_contain` adds the one containment the YAML cannot say).
 
-**The design: AIMgF's tables stay the truth, `moi_store` is their ProvMnS face.** The router's store is generic (`smo_shared.mns.store`), and the
+**The design: AIMgF's tables stay the truth, the store is their ProvMnS face.** The router's store is generic (`smo_shared.mns.store`), and the
 runs need AIMgF's own tables (a training run is a `training_job` row the runtime writes its progress to). So:
 
 - **Projection** (`provmns/projection.py`): one `Projector` per mapped table (class, container, the REST view's attributes, reference attributes,
@@ -50,15 +50,13 @@ Python SDK, S2.11), the two action routes with no ProvMnS equivalent (`.../progr
 only 92 to 6; the 6 left are TS 29.482's `/mlr-mlmm/v1/storages`).
 
 **Found on the way.** `AvailMLCapabilityReport.mLCapabilityVersionId` and `.mLModelRef` were single strings; TS 28.105 makes both arrays. The
-projection's schema check refused the attribute, so the model (`ts28105.py`) and the update report writer now use arrays. Two `oneOf` attributes of
-v19.5.0 cannot validate under JSON Schema (`trainingRequestSource`: string or `Dn`, both strings; `aIMLInferenceName`: an enum value that is also a
-`VSExtensionType` string): a ProvMnS write naming them is refused, and the projection leaves them out; recorded in `aimgf/README.md` 1.2.
+projection's schema check refused the attribute, so the model (`ts28105.py`) and the update report writer now use arrays.
 
-**Schema.** Revision `aimgf_0001` (`down_revision` `0068`, `branch_labels` `("aimgf",)`): `aimgf.moi_store` through `create_moi_store`, a real
-downgrade (`drop_moi_store`); `moi_store` added to aimgf's entry of `migrations/table_owners.json`. Checked on Postgres 18: upgrade, model check,
+**Schema.** Revision `aimgf_0001` (`down_revision` `0068`, `branch_labels` `("aimgf",)`): `aimgf.aimgf_moi_store` through `create_moi_store`, a real
+downgrade (`drop_moi_store`); `aimgf_moi_store` added to aimgf's entry of `migrations/table_owners.json`. The store has AIMgF's own table name (`smo_shared.mns.store.store_model`, as SME's `mns_registry`): the owner map names each table once, and Echo's store is `moi_store`, so no shared test changes. Checked on Postgres 18: upgrade, model check,
 downgrade to 0068, upgrade.
 
-**Not done here, deliberately.** No R1 routing by class name (S1.8) and no real MnS registry entry (S1.12; the stub above). No notification
+**Not done here, deliberately.** No notification
 delivery to subscribers (S1.13: the notifications go to the event bus only). The REST routes the console, the BFF, the SDK and the integration
 suite still call are not moved (outside this lane). `scripts/mutation_pilot.sh` does not run AIMgF's `provmns/` yet (its mutmut configuration is
 `aimgf/pyproject.toml`; adding a step to the pilot is a `[cross-lane]` change).

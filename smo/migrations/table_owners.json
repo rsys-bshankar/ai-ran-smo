@@ -103,6 +103,7 @@
   "resource_type"
  ],
  "aimgf": [
+  "aimgf_moi_store",
   "aiml_inference_emulation_function",
   "aiml_inference_function",
   "aiml_inference_report",
@@ -132,7 +133,6 @@
   "model_artifact",
   "model_change_subscription",
   "model_lifecycle",
-  "moi_store",
   "performance_report",
   "training_job",
   "validation_job"

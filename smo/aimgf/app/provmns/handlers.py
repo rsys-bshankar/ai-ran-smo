@@ -1,7 +1,7 @@
 """The lifecycle hooks of AIMgF's TS 28.105 classes (plan tasks S2.7, S2.10; `smo_shared.mns.IMoiLifecycleHandler`): what a createMOI,
 modifyMOIAttributes or deleteMOI does to AIMgF, through the same code its REST routes run.
 
-A consumer's write lands twice in one transaction: the router writes `moi_store`, and the hook writes AIMgF's own row the way the route does (an
+A consumer's write lands twice in one transaction: the router writes `aimgf_moi_store`, and the hook writes AIMgF's own row the way the route does (an
 MLTrainingRequest starts a real training run, `_start_training`, with every lifecycle gate, the owner rule and the NFO runtime). The hook then
 projects that row (projection.py), so the answer already shows what AIMgF made of the request (`requestStatus`, `mLTrainingType`, ...). A domain
 refusal is a TS 28.532 error: the route's ProblemDetails status, `type` VETOED, and the route's code and text in `reason`, and nothing is written.
