@@ -367,7 +367,7 @@ def test_0065_drops_the_mlmr_role_with_its_grants_and_the_downgrade_recreates_it
         if not exists:
             connection.execute(text("CREATE ROLE smo_mlmr LOGIN"))
         connection.execute(text("GRANT SELECT ON public.alembic_version TO smo_mlmr"))
-    up = _run(MIGRATE, url)
+    up = _run(MIGRATE, url, "--revision", "0065")                               # to 0065 itself: later revisions are not this test's
     assert up.returncode == 0 and "upgraded to 0065" in up.stdout, up.stderr
     with engine.connect() as connection:
         assert connection.execute(text("SELECT count(*) FROM pg_roles WHERE rolname IN ('smo_mlmr', 'smo_mllf')")).scalar_one() == 0
