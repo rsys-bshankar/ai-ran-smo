@@ -146,3 +146,34 @@ def test_the_subnetwork_axis_of_a_claim_is_applied_as_access_rules(sme):
     give(client, "admin", "PLATFORM_ADMIN")
     assert client.get(f"{BASE}/Role=PLATFORM_ADMIN", headers=as_user("admin", {"subNetworks": ["X"]})).status_code == 404
     assert client.get(f"{BASE}/Role=PLATFORM_ADMIN", headers=as_user("admin", {"subNetworks": ["SMO"]})).status_code == 200
+
+
+def test_an_access_rule_without_an_action_and_a_change_to_a_bad_selector_are_refused(sme):
+    """A rule with no `actions` is 422 VETOED naming it (TS 28.319's schema allows leaving it out); a change to a selector outside the subset too."""
+    client, _ = sme
+    missing = {"id": "r", "attributes": {"ruleName": "r", "dataNodeSelector": "/*", "operations": ["read"]}}
+    answer = client.put(f"{BASE}/AccessRule=r", json=missing)
+    assert answer.status_code == 422 and answer.json()["type"] == "VETOED" and answer.json()["badAttributes"] == ["actions"]
+    assert client.put(f"{BASE}/AccessRule=r", json=rule("r")).status_code == 201
+    changed = client.patch(f"{BASE}/AccessRule=r", content=json.dumps({"attributes": {"dataNodeSelector": "SubNetwork=A"}}), headers=MERGE)
+    assert changed.status_code == 422 and changed.json()["badAttributes"] == ["dataNodeSelector"]
+
+
+def test_outside_an_operation_nobody_is_managed():
+    """SME's rule source reads the operation's session; with none (a decision made outside an operation) it reads nothing, so no caller has rules."""
+    from app.mns_registry import RegistryObject
+    from app.msac_store import local_rules
+    from smo_shared.mns.checks import Caller
+
+    assert local_rules(RegistryObject).rules_for(Caller(acting_user="smo-gui:admin")) is None
+
+
+def test_the_mns_registry_refuses_a_change_of_its_attributes():
+    """MnsRegistry declares no attribute of its own, so a change of it never reaches SME's hook over ProvMnS; the hook refuses one all the same."""
+    from app.mns_registry import ReadOnlyRegistry
+    from smo_shared.mns import MnsError, Moi
+
+    registry = Moi("SubNetwork=SMO,MnsRegistry=1", "MnsRegistry", "1", {}, 1)
+    with pytest.raises(MnsError) as refused:
+        ReadOnlyRegistry().before_modify(None, registry, registry)
+    assert refused.value.type == "VETOED" and refused.value.bad_objects == ["SubNetwork=SMO,MnsRegistry=1"]
