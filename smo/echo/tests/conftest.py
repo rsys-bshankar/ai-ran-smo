@@ -23,9 +23,11 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from smo_shared import audit, events  # noqa: E402
 from smo_shared.db import Base, get_session  # noqa: E402
+from smo_shared.idempotency import IdempotencyKey  # noqa: E402
 from smo_shared.testing import make_test_engine  # noqa: E402
 
 POSTGRES_URL = os.environ.get("SMO_TEST_POSTGRES_URL")
+SHARED_TABLES = (events.SmoEvent.__table__, audit.AuditEntry.__table__, audit.AuditHead.__table__, IdempotencyKey.__table__)   # the shared tables Echo writes
 
 
 @dataclass
@@ -50,13 +52,18 @@ class Echo:
 
 
 def _engine(kind: str):
-    """The engine of one backend: SQLite with every table, or Postgres (skipped without SMO_TEST_POSTGRES_URL) with Echo's rows and keys removed."""
+    """The engine of one backend: SQLite with every table, or Postgres (skipped without SMO_TEST_POSTGRES_URL) with the shared tables Echo writes
+    made when absent and Echo's rows and keys removed."""
     if kind == "sqlite":
         engine = make_test_engine()
         Base.metadata.create_all(engine)
         return engine
     if not POSTGRES_URL:
         pytest.skip("SMO_TEST_POSTGRES_URL not set")
+    public = create_engine(POSTGRES_URL, future=True)
+    for table in SHARED_TABLES:
+        table.create(public, checkfirst=True)        # in public: a suite that ran before this one on the same database may have dropped it
+    public.dispose()
     engine = create_engine(POSTGRES_URL, future=True, connect_args={"options": "-csearch_path=echo,public"})
     with engine.begin() as connection:
         connection.execute(text("DELETE FROM echo.moi_store"))
