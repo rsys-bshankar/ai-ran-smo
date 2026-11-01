@@ -27,7 +27,6 @@ over the registry's model rows (the `registry` package of AIMgF, formerly MLMR).
   model's MLModel record: scalars equal, lists contained, objects recursively.
 """
 
-import base64
 import datetime
 import uuid
 from typing import Any, Literal
@@ -43,6 +42,7 @@ from smo_shared.invoker import invoker_id
 from smo_shared.roles import ROLE_RAPP, role_of
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 
+from . import artifacts
 from .models import MODEL_DOMAINS, MLModel, MLModelProfile, MLModelsStorage, ModelArtifact
 
 router = APIRouter()
@@ -513,7 +513,8 @@ def discover(db: Session, criteria: MLModelInfo, caller: str | None, include_mod
     A model is a candidate only if it is not expired and the caller may access it; it matches when `criteria` is a subset of
     its MLModel record. Pagination is applied to the matches, so `offset`/`limit` count matches, not rows. 404 MODEL_NOT_FOUND
     when the requested page is empty. With `include_models` the answer carries the latest artifact of each page entry,
-    base64 encoded (`indicator` true); otherwise the stored profile of each model (or a bare record when it has none).
+    read from the object store and base64 encoded (`indicator` true), when it is at most `artifacts.INLINE_LIMIT` (16 MiB); a larger one is listed
+    by `mlModelId` alone (`mlModel` is optional in TS 29.482 and has no by-reference form); otherwise the stored profile of each model (or a bare record when it has none).
     Loads all models and evaluates them in Python, so cost grows with the number of models.
     """
     wanted = _dump(criteria) or {}
@@ -531,8 +532,8 @@ def discover(db: Session, criteria: MLModelInfo, caller: str | None, include_mod
         for model in page:
             artifact = db.scalar(select(ModelArtifact).where(ModelArtifact.model_id == model.model_id)
                                  .order_by(ModelArtifact.artifact_version.desc()).limit(1))
-            files.append({"mlModelId": str(model.model_id),
-                          **({"mlModel": base64.b64encode(artifact.content).decode()} if artifact else {})})
+            encoded = artifacts.store_call(lambda a=artifact: artifacts.inline(a.object_key, a.sha256, a.size_bytes)) if artifact else None
+            files.append({"mlModelId": str(model.model_id), **({"mlModel": encoded} if encoded is not None else {})})
         return {"mlModels": files, "indicator": True}
     profiles = []
     for model in page:

@@ -47,7 +47,7 @@ from .governance import routes as governance_routes
 from .provmns import service as provmns
 from .inference import jobs as inference_jobs, monitoring as inference_monitoring, nrm as inference_nrm
 from .loading import gate as loading_gate, nrm as loading_nrm, runtime as loading_runtime
-from .registry import mlr as registry_mlr, routes as registry_routes
+from .registry import artifacts as registry_artifacts, mlr as registry_mlr, routes as registry_routes
 from .testing import jobs as testing_jobs, nrm as testing_nrm
 from .training import feature_groups as training_feature_groups, jobs as training_jobs, nrm as training_nrm
 from .update import nrm as update_nrm
@@ -56,7 +56,9 @@ from .update import nrm as update_nrm
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
-    """Start-up: the first projection (provmns/service.py `start`); the MnS registry registration wraps this (install_self_registration)."""
+    """Start-up: SMO_AIMGF_ARTIFACT_FORMATS is checked (a value it does not know, pickle among them, stops the start: registry/artifacts.py), then the
+    first projection (provmns/service.py `start`); the MnS registry registration wraps this (install_self_registration)."""
+    registry_artifacts.accepted_formats()
     provmns.start()
     yield
 

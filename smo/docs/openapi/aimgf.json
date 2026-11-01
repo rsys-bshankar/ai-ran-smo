@@ -16329,7 +16329,7 @@
     },
     "/models/{model_id}/artifact": {
       "post": {
-        "description": "UploadModel (aiml-fw-awmf-modelmgmtservice apis/mmes_apis.go) \u2014 the\nreference looks the model up first (404 if unregistered), validates a\n.zip suffix (415 otherwise), then stamps a fresh artifactVersion,\nseparate from modelVersion, auto-incremented per model. Real S3 storage\nis elided (see ModelArtifact's docstring); the bytes are stored for real\nhere instead of being discarded, so upload+download round-trip.",
+        "description": "UploadModel (aiml-fw-awmf-modelmgmtservice apis/mmes_apis.go): stores the file as the model's next artifact version (max + 1 per model) in the\nobject store (S2.5), with its SHA-256 digest. Formats: SMO_AIMGF_ARTIFACT_FORMATS (`artifacts.py`); pickle is always refused. Returns `{modelId,\nartifactId, artifactVersion, sizeBytes, format, sha256}`, plus `warnings` for a zip-legacy upload.",
         "operationId": "upload_model_artifact_models__model_id__artifact_post",
         "parameters": [
           {

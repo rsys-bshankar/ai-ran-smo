@@ -9,7 +9,7 @@ CI runs `--check` and fails when this file no longer matches the code.
 
 | suite | files | test functions | collected tests |
 |---|---:|---:|---:|
-| `aimgf` | 23 | 453 | 636 |
+| `aimgf` | 25 | 477 | 693 |
 
 ## Per test file
 
@@ -18,6 +18,8 @@ Paths are relative to `smo/aimgf/`.
 | file | test functions | collected tests |
 |---|---:|---:|
 | `tests/test_advance_role.py` | 3 | 8 |
+| `tests/test_artifact_migration.py` | 3 | 3 |
+| `tests/test_artifacts.py` | 21 | 54 |
 | `tests/test_feature_group_exact.py` | 10 | 20 |
 | `tests/test_feature_group_token.py` | 7 | 13 |
 | `tests/test_governance_end_of_life.py` | 6 | 6 |
