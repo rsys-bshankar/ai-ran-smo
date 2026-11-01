@@ -38,7 +38,7 @@ def json_equal(left: Any, right: Any) -> bool:
     if isinstance(left, dict) and isinstance(right, dict):
         return left.keys() == right.keys() and all(json_equal(value, right[key]) for key, value in left.items())
     if isinstance(left, list) and isinstance(right, list):
-        return len(left) == len(right) and all(json_equal(a, b) for a, b in zip(left, right, strict=True))
+        return len(left) == len(right) and all(json_equal(left[i], right[i]) for i in range(len(left)))
     return type(left) is type(right) and left == right
 
 
@@ -93,14 +93,12 @@ def _pointer(path: Any, index: int) -> list[str]:
     return [_unescape(token) for token in path.split("/")[2:]]
 
 
-def _array_index(token: str, size: int, index: int, allow_end: bool) -> int:
-    """An RFC 6901 array index (`-` is the end, for `add` only); a malformed or out-of-range one is a 422."""
-    if allow_end and token == END_OF_ARRAY:
-        return size
+def _array_index(token: str, limit: int, index: int) -> int:
+    """An RFC 6901 array index below `limit` (an array's length to read an item; one more to insert); a malformed or out-of-range one is a 422."""
     if not token.isdigit() or (len(token) > 1 and token[0] == "0"):
         raise MnsError(422, "PATCH_FAILED", f"operation {index}: {token!r} is not an array index", bad_op=str(index))
     position = int(token)
-    if position > size or (position == size and not allow_end):
+    if position >= limit:
         raise MnsError(422, "PATCH_FAILED", f"operation {index}: index {position} is out of range", bad_op=str(index))
     return position
 
@@ -112,7 +110,7 @@ def _parent(doc: Any, tokens: list[str], index: int) -> Any:
         if isinstance(node, dict) and token in node:
             node = node[token]
         elif isinstance(node, list):
-            node = node[_array_index(token, len(node), index, allow_end=False)]
+            node = node[_array_index(token, len(node), index)]
         else:
             raise MnsError(422, "PATCH_FAILED", f"operation {index}: {token!r} does not exist", bad_op=str(index))
     return node
@@ -129,7 +127,7 @@ def _get(doc: Any, tokens: list[str], index: int) -> Any:
             raise MnsError(422, "PATCH_FAILED", f"operation {index}: {last!r} does not exist", bad_op=str(index))
         return parent[last]
     if isinstance(parent, list):
-        return parent[_array_index(last, len(parent), index, allow_end=False)]
+        return parent[_array_index(last, len(parent), index)]
     raise MnsError(422, "PATCH_FAILED", f"operation {index}: {last!r} does not exist", bad_op=str(index))
 
 
@@ -142,7 +140,7 @@ def _remove(doc: Any, tokens: list[str], index: int) -> Any:
             raise MnsError(422, "PATCH_FAILED", f"operation {index}: {last!r} does not exist", bad_op=str(index))
         return parent.pop(last)
     if isinstance(parent, list):
-        return parent.pop(_array_index(last, len(parent), index, allow_end=False))
+        return parent.pop(_array_index(last, len(parent), index))
     raise MnsError(422, "PATCH_FAILED", f"operation {index}: {last!r} does not exist", bad_op=str(index))
 
 
@@ -155,7 +153,7 @@ def _add(doc: Any, tokens: list[str], value: Any, index: int) -> Any:
     if isinstance(parent, dict):
         parent[last] = value
     elif isinstance(parent, list):
-        parent.insert(_array_index(last, len(parent), index, allow_end=True), value)
+        parent.insert(len(parent) if last == END_OF_ARRAY else _array_index(last, len(parent) + 1, index), value)
     else:
         raise MnsError(422, "PATCH_FAILED", f"operation {index}: cannot add under a value that is not an object or an array", bad_op=str(index))
     return doc
@@ -184,8 +182,7 @@ def apply_json_patch(attributes: dict[str, Any], body: Any) -> dict[str, Any]:
         elif op == "remove":
             _remove(doc, tokens, index)
         elif op == "replace":
-            _get(doc, tokens, index)                                   # RFC 6902 4.3: the target must exist
-            _remove(doc, tokens, index)
+            _remove(doc, tokens, index)                                # RFC 6902 4.3: the target must exist (_remove refuses one that does not)
             doc = _add(doc, tokens, copy.deepcopy(value), index)
         elif op == "test":
             if not json_equal(_get(doc, tokens, index), value):

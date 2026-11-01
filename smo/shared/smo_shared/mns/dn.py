@@ -7,7 +7,8 @@ the `URI-LDN-first-part` and the last one the `{className}={id}` of the TS 28.53
 What a DN may hold is narrower here than in TS 32.300, on purpose: a class name is a letter followed by letters, digits and underscores (every class of
 the vendored NRM fits); an id is one or more of the RFC 3986 unreserved characters plus `:` and `@` (no `,`, `=`, `/`, `%` or space). That keeps a DN
 usable unescaped in a URI path and keeps the store's subtree range query exact: every descendant of `X=1` starts with `X=1,`, and `,` sorts below every
-character an id may hold, so the descendants are exactly the DNs in [`X=1,`, `X=1-`) under binary (C) collation.
+character an id may hold, so `X=1` and its descendants are exactly the DNs in [`X=1`, `X=1-`) under binary (C) collation (a DN that starts with
+`X=1` and is neither, such as `X=1-b` or `X=10`, sorts at or after `X=1-`).
 """
 
 import re
@@ -17,8 +18,9 @@ from .errors import MnsError
 
 CLASS_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
 MOI_ID = re.compile(r"[A-Za-z0-9._~:@-]+")
+RDN = re.compile(rf"(?P<class_name>{CLASS_NAME.pattern})=(?P<moi_id>{MOI_ID.pattern})")
 SUBTREE_SEPARATOR = ","
-SUBTREE_UPPER = "-"          # the character after "," in ASCII: [dn + ",", dn + "-") is every descendant of dn (see the module description)
+SUBTREE_UPPER = "-"          # the character after "," in ASCII: [dn, dn + "-") is dn and every descendant of it (see the module description)
 
 
 @dataclass(frozen=True)
@@ -34,16 +36,14 @@ class Rdn:
 
 def parse_rdn(text: str) -> Rdn:
     """`ClassName=id` as an `Rdn`; a malformed one is a 400 naming it."""
-    class_name, sep, moi_id = text.partition("=")
-    if not sep or not CLASS_NAME.fullmatch(class_name) or not MOI_ID.fullmatch(moi_id):
+    match = RDN.fullmatch(text)
+    if match is None:
         raise MnsError(400, "INVALID_DN", f"{text!r} is not a relative DN of the form ClassName=id", bad_objects=[text])
-    return Rdn(class_name, moi_id)
+    return Rdn(match["class_name"], match["moi_id"])
 
 
 def parse_dn(dn: str) -> tuple[Rdn, ...]:
-    """The RDNs of a comma-separated DN, outermost first; an empty or malformed DN is a 400."""
-    if not dn:
-        raise MnsError(400, "INVALID_DN", "the DN is empty", bad_objects=[dn])
+    """The RDNs of a comma-separated DN, outermost first; an empty or malformed DN is a 400 (an empty RDN is malformed)."""
     return tuple(parse_rdn(part) for part in dn.split(SUBTREE_SEPARATOR))
 
 

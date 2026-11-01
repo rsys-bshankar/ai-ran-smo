@@ -24,13 +24,14 @@ Nothing here talks to a database or the network; the YAML is read once per regis
 `specs/5G_APIs`, found relative to this file).
 """
 
-import copy
 import functools
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from urllib.parse import urldefrag, urljoin
 
 import yaml
 from jsonschema import Draft7Validator
@@ -45,12 +46,12 @@ BASE_URI = "https://smo.invalid/specs/5G_APIs/"
 
 def _find_spec_dir(start: Path) -> Path:
     """The nearest `specs/5G_APIs` above `start` (the repository's, wherever the package was copied to: an editable install, mutmut's `mutants/`);
-    the repository layout's place when there is none, which then reads as missing files."""
+    `specs/5G_APIs` under the working directory when there is none (which then reads as missing files)."""
     for parent in start.parents:
         candidate = parent / "specs" / "5G_APIs"
         if candidate.is_dir():
             return candidate
-    return start.parents[min(4, len(start.parents) - 1)] / "specs" / "5G_APIs"
+    return Path("specs", "5G_APIs")
 
 
 DEFAULT_SPEC_DIR = _find_spec_dir(Path(__file__).resolve())
@@ -68,10 +69,10 @@ def openapi_to_jsonschema(node: Any) -> Any:
         return [openapi_to_jsonschema(item) for item in node]
     if not isinstance(node, dict):
         return node
-    out = {key: openapi_to_jsonschema(value) for key, value in node.items()}
-    if out.pop("nullable", False) is not True:
+    out = {key: openapi_to_jsonschema(value) for key, value in node.items() if key != "nullable"}
+    if node.get("nullable") is not True:
         return out
-    if "$ref" in out or "type" not in out:
+    if "type" not in out:                   # a $ref (whose siblings OpenAPI 3.0 ignores), or a schema with no type of its own
         return {"anyOf": [out, {"type": "null"}]}
     types = out["type"] if isinstance(out["type"], list) else [out["type"]]
     out["type"] = [*types, "null"]
@@ -118,8 +119,7 @@ class ClassRegistry:
         if file_name not in self._documents:
             path = self.spec_dir / file_name
             if path.is_file():
-                with path.open(encoding="utf-8") as handle:
-                    self._documents[file_name] = openapi_to_jsonschema(yaml.safe_load(handle) or {})
+                self._documents[file_name] = openapi_to_jsonschema(yaml.safe_load(path.read_bytes()) or {})
             else:
                 self.missing_files.add(file_name)
                 self._documents[file_name] = {}
@@ -151,9 +151,8 @@ class ClassRegistry:
         """Registers class `name` with its own JSON Schema for `attributes` (OpenAPI `nullable` is converted) and the classes it may contain. It replaces
         a YAML class of the same name."""
         schema = openapi_to_jsonschema(attributes_schema)
-        self._registered[name] = ClassInfo(name, "registered", attribute_schema=schema, attribute_names=frozenset(self._declared_names(schema, None)),
+        self._registered[name] = ClassInfo(name, "registered", attribute_schema=schema, attribute_names=frozenset(self._declared_names(schema)),
                                            children=frozenset(children))
-        self._classes.pop(name, None)
         self._validators.pop(name, None)
 
     # ------------------------------------------------------------------ reading
@@ -203,18 +202,15 @@ class ClassRegistry:
         if info.attribute_schema is not None:
             return True
         seen: set[str] = set()
-        pending = [*info.attribute_refs, *info.flat_refs.values()]
+        pending = {*info.attribute_refs, *info.flat_refs.values()}
         while pending:
             uri = pending.pop()
-            if uri in seen:
-                continue
             seen.add(uri)
             try:
                 resolved = self._schema_registry.resolver().lookup(uri)
             except Unresolvable:
                 return False
-            base = uri.split("#", 1)[0]
-            pending.extend(self._refs_in(resolved.contents, base))
+            pending |= set(self._refs_in(resolved.contents, urldefrag(uri).url)) - seen
         return True
 
     # ------------------------------------------------------------------ deriving
@@ -227,9 +223,8 @@ class ClassRegistry:
         while stack:
             current = stack.pop()
             if isinstance(current, dict):
-                ref = current.get("$ref")
-                if isinstance(ref, str):
-                    found.append(ref if ref.startswith(BASE_URI) else (base + ref if ref.startswith("#") else BASE_URI + ref))
+                if "$ref" in current:
+                    found.append(urljoin(base, current["$ref"]))
                 stack.extend(current.values())
             elif isinstance(current, list):
                 stack.extend(current)
@@ -259,27 +254,19 @@ class ClassRegistry:
         children: set[str] = set()
         seen: set[tuple[str, str]] = set()
 
-        def child_of(ref: str) -> str | None:
-            match = _CLASS_REF.match(ref)
-            return match["name"] if match else None
-
         def walk(file: str, pointer: str, node: Any) -> None:
             if not isinstance(node, dict) or (file, pointer) in seen:
                 return
             seen.add((file, pointer))
             ref = node.get("$ref")
             if isinstance(ref, str):
-                child = child_of(ref)
-                if child is not None and pointer != f"/components/schemas/{name}-Single":
-                    children.add(child)               # an allOf branch that is itself a contained class (SubNetwork-Single lists two)
+                child = _CLASS_REF.match(ref)
+                if child is not None:
+                    children.add(child["name"])        # an allOf branch that is itself a contained class (SubNetwork-Single lists two)
                     return
                 target = self._lookup(file, ref)
-                if target is None:
-                    return
-                if target[1].endswith("-Attr"):
-                    attribute_refs.append(f"{BASE_URI}{target[0]}#{target[1]}")   # `<Class>-Attr` is the attribute set itself (SubNetwork, ManagedElement)
-                    return
-                walk(*target)
+                if target is not None:
+                    walk(*target)                      # Top, `<Class>-Attr` (SubNetwork's attributes, written flat), `-ncO` schemas
                 return
             for index, branch in enumerate(node.get("allOf", [])):
                 walk(file, f"{pointer}/allOf/{index}", branch)
@@ -288,43 +275,36 @@ class ClassRegistry:
                     attribute_refs.append(f"{BASE_URI}{file}#{pointer}/properties/attributes")
                 elif member in _IDENTITY_MEMBERS:
                     continue
-                elif isinstance(value, dict) and isinstance(value.get("$ref"), str) and child_of(value["$ref"]) is not None:
-                    children.add(str(child_of(value["$ref"])))
-                elif isinstance(value, dict) and not member[0].isupper():
+                elif (child := _CLASS_REF.match(str(value.get("$ref")))) is not None:
+                    children.add(child["name"])
+                elif not member[0].isupper():
                     # an attribute written next to `attributes` instead of in it, as some -Single schemas do (NROperatorCellDU, BWPSet)
                     flat_refs[member] = f"{BASE_URI}{file}#{pointer}/properties/{member.replace('~', '~0').replace('/', '~1')}"
 
         walk(file_name, f"/components/schemas/{name}-Single", self.document(file_name)["components"]["schemas"][f"{name}-Single"])
         names: set[str] = set(flat_refs)
         for uri in attribute_refs:
-            names |= self._declared_names({"$ref": uri}, None)
+            names |= self._declared_names({"$ref": uri})
         return ClassInfo(name, file_name, attribute_refs=attribute_refs, flat_refs=flat_refs, attribute_names=frozenset(names),
                          children=frozenset(children))
 
-    def _declared_names(self, schema: Any, file: str | None) -> set[str]:
-        """The property names a schema declares at its top level, through `allOf`, `anyOf`, `oneOf` and `$ref` (not into the properties' values)."""
+    def _declared_names(self, schema: dict, base: str = BASE_URI) -> set[str]:
+        """The property names a schema declares at its top level, through `allOf`, `anyOf`, `oneOf` and `$ref` (not into the properties' values);
+        a `$ref` that does not resolve contributes nothing, and each is followed once (a cycle ends)."""
         names: set[str] = set()
-        stack: list[tuple[str | None, Any]] = [(file, schema)]
-        seen: set[int] = set()
-        while stack:
-            current_file, node = stack.pop()
-            if not isinstance(node, dict) or id(node) in seen:
-                continue
-            seen.add(id(node))
+        pending: list[tuple[str, dict]] = [(base, schema)]
+        followed: set[str] = set()
+        while pending:
+            base, node = pending.pop()
             names |= set(node.get("properties", {}))
-            for keyword in ("allOf", "anyOf", "oneOf"):
-                stack.extend((current_file, branch) for branch in node.get(keyword, []))
-            ref = node.get("$ref")
-            if isinstance(ref, str):
-                if ref.startswith(BASE_URI):
-                    target_file, _, fragment = ref[len(BASE_URI):].partition("#")
-                    target = self._lookup(target_file, "#" + fragment)
-                elif current_file is not None:
-                    target = self._lookup(current_file, ref)
-                else:
-                    target = None
-                if target is not None:
-                    stack.append((target[0], target[2]))
+            pending.extend((base, branch) for keyword in ("allOf", "anyOf", "oneOf") for branch in node.get(keyword, []))
+            uri = urljoin(base, node.get("$ref", ""))
+            if "$ref" in node and uri not in followed:
+                followed.add(uri)
+                try:
+                    pending.append((urldefrag(uri).url, self._schema_registry.resolver().lookup(uri).contents))
+                except Unresolvable:
+                    pass
         return names
 
     @staticmethod
@@ -340,7 +320,7 @@ class ClassRegistry:
         if name not in self._validators:
             info = self.info(name)
             schema = info.attribute_schema if info.attribute_schema is not None else self._combined(info)
-            self._validators[name] = Draft7Validator(copy.deepcopy(schema), registry=self._schema_registry)
+            self._validators[name] = Draft7Validator(schema, registry=self._schema_registry)
         return self._validators[name]
 
 

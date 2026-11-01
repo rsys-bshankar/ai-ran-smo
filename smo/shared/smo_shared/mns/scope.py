@@ -43,7 +43,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from .dn import parse_dn
+from .dn import parse_dn, parse_rdn
 from .errors import MnsError
 from .patch import json_equal
 
@@ -98,11 +98,17 @@ def parse_scope(raw: str | None) -> Scope:
 
 _MISSING = object()
 _TOKEN = re.compile(r"""\s*(?:
-      (?P<number>-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)
+      (?P<number>-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)
     | (?P<string>'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")
     | (?P<op>==|!=|<=|>=|&&|\|\||\[\?\(|\)\]|[<>!()\[\].@$])
     | (?P<name>[A-Za-z_][A-Za-z0-9_\-]*)
     )""", re.VERBOSE)
+_KEYWORDS = {"true": True, "false": False, "null": None}
+
+
+def _fail(what: str) -> MnsError:
+    """The 400 a filter outside the grammar is answered with."""
+    return MnsError(400, "INVALID_QUERY", f"filter: {what}", bad_query_params=["filter"])
 
 
 def _string(raw: str) -> str:
@@ -112,146 +118,137 @@ def _string(raw: str) -> str:
     try:
         return json.loads(raw)
     except ValueError:
-        raise MnsError(400, "INVALID_QUERY", f"filter: {raw} is not a valid string", bad_query_params=["filter"]) from None
+        raise _fail(f"{raw} is not a valid string") from None
 
 
 def _tokens(text: str) -> list[tuple[str, Any]]:
-    """The filter's tokens as (kind, value); an unexpected character is a 400."""
+    """The filter's tokens as (kind, value), kind one of `literal`, `op`, `name`; a character no token starts with is a 400 naming its position."""
     out: list[tuple[str, Any]] = []
     position = 0
-    while position < len(text):
-        if text[position:].strip() == "":
+    for match in _TOKEN.finditer(text):
+        if match.start() != position:
             break
-        match = _TOKEN.match(text, position)
-        if match is None:
-            raise MnsError(400, "INVALID_QUERY", f"filter: unexpected character at {position}", bad_query_params=["filter"])
-        kind = str(match.lastgroup)
-        raw = match.group(kind)
+        kind, raw = str(match.lastgroup), match.group(str(match.lastgroup))
         if kind == "number":
-            out.append(("literal", float(raw) if any(c in raw for c in ".eE") else int(raw)))
+            out.append(("literal", json.loads(raw)))
         elif kind == "string":
             out.append(("literal", _string(raw)))
-        elif kind == "name" and raw in ("true", "false", "null"):
-            out.append(("literal", {"true": True, "false": False, "null": None}[raw]))
+        elif kind == "name" and raw in _KEYWORDS:
+            out.append(("literal", _KEYWORDS[raw]))
         else:
             out.append((kind, raw))
         position = match.end()
+    if text[position:].strip():
+        raise _fail(f"unexpected character at {position}")
     return out
 
 
 class _Parser:
     """Recursive descent over the filter's tokens, building a tree of tuples: ("or", a, b), ("and", a, b), ("not", a), ("cmp", op, l, r),
-    ("exists", path), ("path", [steps]), ("literal", value)."""
+    ("exists", path), ("path", [steps]), ("literal", value). `depth` counts the nesting of `expr` and `!`; past MAX_DEPTH it is a 400."""
 
     def __init__(self, tokens: list[tuple[str, Any]]):
         self.tokens = tokens
         self.position = 0
-        self.depth = 0
-
-    def fail(self, what: str) -> MnsError:
-        return MnsError(400, "INVALID_QUERY", f"filter: {what}", bad_query_params=["filter"])
 
     def peek(self) -> tuple[str, Any] | None:
+        """The next token, or None at the end."""
         return self.tokens[self.position] if self.position < len(self.tokens) else None
 
     def take(self, value: Any = None) -> tuple[str, Any]:
         """Consumes the next token (which must have the value `value`, when given) and returns it; a 400 at the end or on another value."""
         token = self.peek()
-        if token is None or (value is not None and token[1] != value):
-            raise self.fail(f"expected {value!r}" if value is not None else "unexpected end")
+        if token is None:
+            raise _fail(f"expected {value!r} at the end" if value is not None else "unexpected end")
+        if value is not None and token[1] != value:
+            raise _fail(f"expected {value!r}, not {token[1]!r}")
         self.position += 1
         return token
 
     def at(self, value: str) -> bool:
-        """Whether the next token is the operator `value`."""
+        """Whether the next token is the operator `value` (and, if so, consumes it)."""
         token = self.peek()
-        return token is not None and token[0] == "op" and token[1] == value
+        if token is not None and token[0] == "op" and token[1] == value:
+            self.position += 1
+            return True
+        return False
 
     def parse(self) -> tuple:
         """The whole filter: an optional `$[?( ... )]` wrapper around one expression, and nothing after it."""
-        if self.at("$"):
-            self.take("$")
-            if not self.at("[?("):
-                raise self.fail("expected [?( after $")
+        wrapped = self.at("$")
         if self.at("[?("):
-            self.take("[?(")
-            tree = self.expr()
+            tree = self.expr(1)
             self.take(")]")
+        elif wrapped:
+            raise _fail("expected [?( after $")
         else:
-            tree = self.expr()
-        if self.peek() is not None:
-            raise self.fail(f"unexpected {self.peek()[1]!r}")      # type: ignore[index]
+            tree = self.expr(1)
+        token = self.peek()
+        if token is not None:
+            raise _fail(f"unexpected {token[1]!r}")
         return tree
 
-    def nested(self):
-        """Counts one more level of nesting; deeper than MAX_DEPTH is a 400 (no recursion bomb reaches the evaluator)."""
-        self.depth += 1
-        if self.depth > MAX_DEPTH:
-            raise self.fail("nested too deeply")
+    @staticmethod
+    def check(depth: int) -> int:
+        """`depth`, after refusing one past MAX_DEPTH (no recursion bomb reaches the evaluator)."""
+        if depth > MAX_DEPTH:
+            raise _fail(f"nested deeper than {MAX_DEPTH}")
+        return depth
 
-    def expr(self) -> tuple:
+    def expr(self, depth: int) -> tuple:
         """expr := and { "||" and }"""
-        self.nested()
-        left = self.conjunction()
+        self.check(depth)
+        left = self.conjunction(depth)
         while self.at("||"):
-            self.take("||")
-            left = ("or", left, self.conjunction())
-        self.depth -= 1
+            left = ("or", left, self.conjunction(depth))
         return left
 
-    def conjunction(self) -> tuple:
+    def conjunction(self, depth: int) -> tuple:
         """and := unary { "&&" unary }"""
-        left = self.unary()
+        left = self.unary(depth)
         while self.at("&&"):
-            self.take("&&")
-            left = ("and", left, self.unary())
+            left = ("and", left, self.unary(depth))
         return left
 
-    def unary(self) -> tuple:
+    def unary(self, depth: int) -> tuple:
         """unary := "!" unary | "(" expr ")" | comparison (a path alone is an existence test; a literal alone is refused)."""
         if self.at("!"):
-            self.take("!")
-            self.nested()
-            inner = self.unary()
-            self.depth -= 1
-            return ("not", inner)
+            return ("not", self.unary(self.check(depth + 1)))
         if self.at("("):
-            self.take("(")
-            inner = self.expr()
+            inner = self.expr(depth + 1)
             self.take(")")
             return inner
         left = self.operand()
         token = self.peek()
-        if token is not None and token[0] == "op" and token[1] in ("==", "!=", "<", "<=", ">", ">="):
-            self.take()
+        if token is not None and token[0] == "op" and token[1] in _COMPARISONS:
+            self.position += 1
             return ("cmp", token[1], left, self.operand())
-        if left[0] != "path":
-            raise self.fail("a literal alone is not a condition")
+        if left[0] == "literal":
+            raise _fail("a literal alone is not a condition")
         return ("exists", left)
 
     def operand(self) -> tuple:
         """operand := literal | "@" { "." name | "[" (string | integer) "]" }"""
-        token = self.peek()
-        if token is not None and token[0] == "literal":
-            self.take()
+        token = self.take()
+        if token[0] == "literal":
             return ("literal", token[1])
-        self.take("@")
+        if token[1] != "@":
+            raise _fail(f"expected a path starting with @ or a literal, not {token[1]!r}")
         steps: list[Any] = []
-        while self.at(".") or self.at("["):
+        while True:
             if self.at("."):
-                self.take(".")
                 kind, name = self.take()
                 if kind != "name":
-                    raise self.fail("expected a member name after '.'")
+                    raise _fail(f"expected a member name after '.', not {name!r}")
                 steps.append(name)
-            else:
-                self.take("[")
+            elif self.at("["):
                 kind, key = self.take()
                 if kind != "literal" or isinstance(key, bool) or not isinstance(key, (str, int)):
-                    raise self.fail("expected a quoted member name or an integer index in [ ]")
+                    raise _fail(f"expected a quoted member name or an integer index in [ ], not {key!r}")
                 self.take("]")
                 steps.append(key)
-        return ("path", steps)
+            else:
+                return ("path", steps)
 
 
 def parse_filter(text: str | None) -> tuple | None:
@@ -259,12 +256,12 @@ def parse_filter(text: str | None) -> tuple | None:
     if text is None or text.strip() == "":
         return None
     if len(text) > MAX_FILTER_LENGTH:
-        raise MnsError(400, "INVALID_QUERY", f"filter is longer than {MAX_FILTER_LENGTH} characters", bad_query_params=["filter"])
+        raise _fail(f"longer than {MAX_FILTER_LENGTH} characters")
     return _Parser(_tokens(text)).parse()
 
 
 def _resolve(resource: Any, steps: list[Any]) -> Any:
-    """The value at `steps` in `resource`, or _MISSING."""
+    """The value at `steps` in `resource`, or _MISSING (a negative index counts from the end)."""
     node = resource
     for step in steps:
         if isinstance(step, str) and isinstance(node, dict) and step in node:
@@ -280,44 +277,50 @@ def _is_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
-def _compare(op: str, left: Any, right: Any) -> bool:
-    """One comparison (see the module description): false with a missing value; equality is JSON equality; ordering only between two numbers or two strings."""
-    if left is _MISSING or right is _MISSING:
-        return False
-    if op == "==":
-        return json_equal(left, right)
-    if op == "!=":
-        return not json_equal(left, right)
-    if not ((_is_number(left) and _is_number(right)) or (isinstance(left, str) and isinstance(right, str))):
-        return False
-    if op == "<":
-        return left < right
-    if op == "<=":
-        return left <= right
-    if op == ">":
-        return left > right
-    return left >= right
+def _ordered(left: Any, right: Any) -> bool:
+    """Whether `<` and its kin apply: two numbers, or two strings."""
+    return (_is_number(left) and _is_number(right)) or (isinstance(left, str) and isinstance(right, str))
+
+
+_COMPARISONS = {
+    "==": json_equal,
+    "!=": lambda left, right: not json_equal(left, right),
+    "<": lambda left, right: _ordered(left, right) and left < right,
+    "<=": lambda left, right: _ordered(left, right) and left <= right,
+    ">": lambda left, right: _ordered(left, right) and left > right,
+    ">=": lambda left, right: _ordered(left, right) and left >= right,
+}
 
 
 def _value(node: tuple, resource: dict) -> Any:
+    """An operand's value: a literal's, or what its path reaches (_MISSING when nothing)."""
     return node[1] if node[0] == "literal" else _resolve(resource, node[1])
+
+
+def _compare(tree: tuple, resource: dict) -> bool:
+    """One comparison (see the module description): false with a missing value; equality is JSON equality; ordering only between two numbers or
+    two strings."""
+    left, right = _value(tree[2], resource), _value(tree[3], resource)
+    return left is not _MISSING and right is not _MISSING and _COMPARISONS[tree[1]](left, right)
+
+
+def _exists(tree: tuple, resource: dict) -> bool:
+    """A path alone: the value exists and is not null."""
+    return _value(tree[1], resource) not in (_MISSING, None)
+
+
+_EVALUATE = {
+    "or": lambda tree, resource: matches(tree[1], resource) or matches(tree[2], resource),
+    "and": lambda tree, resource: matches(tree[1], resource) and matches(tree[2], resource),
+    "not": lambda tree, resource: not matches(tree[1], resource),
+    "exists": _exists,
+    "cmp": _compare,
+}
 
 
 def matches(tree: tuple | None, resource: dict) -> bool:
     """Whether `resource` satisfies the filter `tree` (no filter: always)."""
-    if tree is None:
-        return True
-    kind = tree[0]
-    if kind == "or":
-        return matches(tree[1], resource) or matches(tree[2], resource)
-    if kind == "and":
-        return matches(tree[1], resource) and matches(tree[2], resource)
-    if kind == "not":
-        return not matches(tree[1], resource)
-    if kind == "exists":
-        value = _value(tree[1], resource)
-        return value is not _MISSING and value is not None
-    return _compare(tree[1], _value(tree[2], resource), _value(tree[3], resource))
+    return tree is None or _EVALUATE[tree[0]](tree, resource)
 
 
 # ---------------------------------------------------------------------------- attribute selection
@@ -327,55 +330,57 @@ def parse_list(raw: str | None, name: str) -> list[str] | None:
     if raw is None:
         return None
     items = [item.strip() for item in raw.split(",")]
-    if any(item == "" for item in items):
+    if "" in items:
         raise MnsError(400, "INVALID_QUERY", f"{name} has an empty item", bad_query_params=[name])
     return items
 
 
 def _pick(node: Any, steps: list[str]) -> Any:
-    """The part of `node` that `steps` names (through arrays, item by item), or _MISSING."""
+    """The part of `node` that `steps` names, or _MISSING. Through an array it applies to every item and keeps the array's length (an item without
+    the part is _MISSING in its place), so two selections from one array line up item by item."""
     if not steps:
         return node
     if isinstance(node, list):
-        picked = [_pick(item, steps) for item in node]
-        return [item for item in picked if item is not _MISSING]
+        return [_pick(item, steps) for item in node]
     if isinstance(node, dict) and steps[0] in node:
         inner = _pick(node[steps[0]], steps[1:])
         return _MISSING if inner is _MISSING else {steps[0]: inner}
     return _MISSING
 
 
-def _deep_merge(into: dict, part: dict) -> None:
-    """Merges a selected part into what was selected so far: objects member by member, arrays of the same length item by item."""
-    for key, value in part.items():
-        if isinstance(value, dict) and isinstance(into.get(key), dict):
-            _deep_merge(into[key], value)
-        elif isinstance(value, list) and isinstance(into.get(key), list) and len(value) == len(into[key]):
-            for index, item in enumerate(value):
-                if isinstance(item, dict) and isinstance(into[key][index], dict):
-                    _deep_merge(into[key][index], item)
-        else:
-            into[key] = value
+def _filled(part: Any) -> Any:
+    """A selected part with every item an array selection did not reach (_MISSING) shown as `{}`."""
+    if isinstance(part, list):
+        return [{} if item is _MISSING else _filled(item) for item in part]
+    if isinstance(part, dict):
+        return {key: _filled(value) for key, value in part.items()}
+    return part
+
+
+def _merged(into: Any, part: Any) -> Any:
+    """`part` merged into what was selected before (`into`, _MISSING for nothing yet): an item `part` does not reach keeps `into`; two objects
+    merge member by member, two arrays of one length item by item; otherwise `part` (with its unreached items as `{}`)."""
+    if part is _MISSING:
+        return {} if into is _MISSING else into
+    if isinstance(into, dict) and isinstance(part, dict):
+        return {**into, **{key: _merged(into.get(key, _MISSING), value) for key, value in part.items()}}
+    if isinstance(into, list) and isinstance(part, list) and len(into) == len(part):
+        return [_merged(a, b) for a, b in zip(into, part, strict=True)]
+    return _filled(part)
 
 
 def select(resource: dict, attributes: list[str] | None, fields: list[str] | None) -> dict:
     """`resource` with only what `attributes` and `fields` name (see the module description); both None returns it unchanged."""
     if attributes is None and fields is None:
         return resource
-    out: dict[str, Any] = {key: resource[key] for key in IDENTITY if key in resource}
-    chosen: dict[str, Any] = {}
-    source = resource.get("attributes", {})
-    for name in attributes or []:
-        if name in source:
-            _deep_merge(chosen, {name: source[name]})
+    source = resource["attributes"]
+    chosen: dict[str, Any] = {name: source[name] for name in attributes or [] if name in source}
     for path in fields or []:
-        steps = [step for step in path.strip("/").split("/") if step]
-        if steps[:1] == ["attributes"]:
-            picked = _pick(source, steps[1:])       # an object (source is one), or _MISSING
-            if isinstance(picked, dict):
-                _deep_merge(chosen, picked)
-    out["attributes"] = chosen
-    return out
+        steps = [step for step in path.split("/") if step]
+        picked = _pick(source, steps[1:]) if steps[:1] == ["attributes"] else _MISSING
+        if picked is not _MISSING:
+            chosen = _merged(chosen, picked)
+    return {**{key: resource[key] for key in IDENTITY}, "attributes": chosen}
 
 
 # ---------------------------------------------------------------------------- the hierarchical answer
@@ -394,10 +399,10 @@ def hierarchical(base_dn: str, selected: Iterable[dict]) -> dict:
         for index, rdn_text in enumerate(below):
             current = parent_dn + "," + rdn_text
             if current not in nodes:
-                class_name, _, moi_id = rdn_text.partition("=")
-                node = resource if index == len(below) - 1 else {"id": moi_id, "objectClass": class_name, "objectInstance": current}
+                rdn = parse_rdn(rdn_text)
+                node = resource if index == len(below) - 1 else {"id": rdn.moi_id, "objectClass": rdn.class_name, "objectInstance": current}
                 nodes[current] = dict(node)
-                nodes[parent_dn].setdefault(class_name, []).append(nodes[current])
+                nodes[parent_dn].setdefault(rdn.class_name, []).append(nodes[current])
             elif index == len(below) - 1:
                 nodes[current].update(resource)
             parent_dn = current

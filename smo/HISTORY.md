@@ -5048,7 +5048,7 @@ Closed from `OPEN_ITEMS.md` (`PR-CONV-S1.2`). `shared/smo_shared/mns/registry.py
 Closed from `OPEN_ITEMS.md` (`PR-CONV-S1.4`). `shared/smo_shared/mns/scope.py` and `service.get_moi_attributes`.
 
 - **Scope.** BASE_ONLY, BASE_NTH_LEVEL, BASE_SUBTREE and BASE_ALL with `scopeLevel`, from the `scope` parameter's JSON object; a subtree is the DN range
-  [`dn,`, `dn-`) on the primary key (an id may hold no character that sorts between `,` and `-`), with the depth column for the level, so
+  [`dn`, `dn-`) on the primary key (an id may hold no character that sorts below `-` except the separator `,`), with the depth column for the level, so
   ManagedElement=1's subtree never takes in ManagedElement=10 or ManagedElement=1-b.
 - **Filter.** The vendored OpenAPI types `filter` as a TS 32.161 Jex condition, and TS 32.161 is not in `specs/`: the grammar taken is the JSONPath
   filter expression (`$[?(...)]` or bare; `@` paths with `.name`, `['name']`, `[index]`; `==`, `!=`, `<`, `<=`, `>`, `>=`, `&&`, `||`, `!`, parentheses;

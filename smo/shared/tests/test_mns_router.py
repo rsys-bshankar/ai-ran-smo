@@ -342,7 +342,7 @@ def test_mns_error_bodies():
                                  "badQueryParams": ["q"]}
     assert error.body("patch") == {"status": "422", "type": "PATCH_FAILED", "reason": "why", "title": "A patch operation could not be applied",
                                    "badOp": "2"}
-    assert error.body() == {"status": "422", "type": "PATCH_FAILED", "reason": "why", "title": "A patch operation could not be applied",
+    assert error.body("default") == {"status": "422", "type": "PATCH_FAILED", "reason": "why", "title": "A patch operation could not be applied",
                             "badAttributes": ["a"], "badObjects": ["o"]}
     assert MnsError(400, "OWN_CODE", "x").body("patch") == {"status": "400", "type": "OWN_CODE", "reason": "x", "title": "OWN_CODE"}
     assert MnsError(400, "INVALID_QUERY", "x").body("get") == {"status": "400", "type": "INVALID_QUERY", "reason": "x",

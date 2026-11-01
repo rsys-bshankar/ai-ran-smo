@@ -200,7 +200,7 @@ def test_select():
 
 def test_select_merges_overlapping_array_fields():
     """Two fields through one array merge item by item."""
-    resource = {"id": "1", "attributes": {"list": [{"a": 1, "b": 2, "c": 3}, {"a": 4, "b": 5, "c": 6}]}}
+    resource = {"id": "1", "objectClass": "X", "objectInstance": "X=1", "attributes": {"list": [{"a": 1, "b": 2, "c": 3}, {"a": 4, "b": 5, "c": 6}]}}
     assert select(resource, None, ["attributes/list/a", "attributes/list/b"])["attributes"] == {"list": [{"a": 1, "b": 2}, {"a": 4, "b": 5}]}
 
 

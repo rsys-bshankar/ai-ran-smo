@@ -12,7 +12,7 @@
       updated_at    TIMESTAMPTZ NOT NULL
       indexes       parent_dn; object_class; GIN on attributes (Postgres)
 
-The DN is the key and the order: keyset paging walks `dn`, and a subtree is the range [`dn,`, `dn-`) (`smo_shared/mns/dn.py` says why that is exact),
+The DN is the key and the order: keyset paging walks `dn`, and a subtree is the range [`dn`, `dn-`) (`smo_shared/mns/dn.py` says why that is exact),
 which needs binary ordering, hence `COLLATE "C"` (a Postgres locale collation ignores punctuation). `moi_version` is `Versioned`'s column under this
 name, so every ORM write is `UPDATE ... WHERE dn = :dn AND moi_version = :loaded` and a concurrent write is a `StaleDataError`.
 

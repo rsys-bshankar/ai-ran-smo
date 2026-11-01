@@ -51,7 +51,7 @@ class MnsError(Exception):
         self.bad_op = bad_op
         self.headers = headers
 
-    def body(self, operation: str = "default") -> dict[str, Any]:
+    def body(self, operation: str) -> dict[str, Any]:
         """The error body for `operation`: `get` (ErrorResponseGet), `patch` (ErrorResponsePatch when `bad_op` is set, else the default shape) or
         anything else (ErrorResponseDefault). Lists that are not set are left out, as the schemas allow."""
         out: dict[str, Any] = {"status": str(self.status), "type": self.type, "reason": self.reason, "title": TITLES.get(self.type, self.type)}

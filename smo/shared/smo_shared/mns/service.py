@@ -31,13 +31,13 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import StaleDataError
 
 from .. import events
-from .dn import SUBTREE_SEPARATOR, SUBTREE_UPPER, depth_of, parent_of, parse_dn, path_of
+from .dn import SUBTREE_UPPER, depth_of, parent_of, parse_dn, path_of
 from .errors import MnsError
 from .lifecycle import DEFAULT_HANDLER, IMoiLifecycleHandler, Moi, MoiContext
 from .patch import JSON_PATCH_TYPES, MERGE_PATCH_TYPES, apply_json_patch, apply_merge_patch
@@ -62,13 +62,13 @@ class Page:
 
 def encode_cursor(dn: str) -> str:
     """The opaque cursor of the page after the instance `dn` (base64url of the DN)."""
-    return base64.urlsafe_b64encode(dn.encode()).decode().rstrip("=")
+    return base64.urlsafe_b64encode(dn.encode()).decode().replace("=", "")
 
 
 def decode_cursor(cursor: str) -> str:
     """The DN a cursor stands for; one that is not a cursor this router issued is a 400 naming `cursor`."""
     try:
-        dn = base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)).decode()
+        dn = base64.urlsafe_b64decode(cursor + "==").decode()       # surplus padding is ignored
         parse_dn(dn)
     except (binascii.Error, UnicodeDecodeError, ValueError, MnsError):
         raise MnsError(400, "INVALID_QUERY", "cursor is not a cursor of this producer", bad_query_params=["cursor"]) from None
@@ -105,7 +105,7 @@ def _check_if_match(if_match: str | None, row: ManagedObject | None, dn: str) ->
 
 def _changes(old: dict, new: dict) -> tuple[dict, dict]:
     """The [new values, old values] of the attributes that differ; a missing value is null."""
-    names = sorted(name for name in set(old) | set(new) if old.get(name, None) != new.get(name, None) or (name in old) != (name in new))
+    names = sorted(name for name in set(old) | set(new) if old.get(name) != new.get(name) or (name in old) != (name in new))
     return {name: new.get(name) for name in names}, {name: old.get(name) for name in names}
 
 
@@ -286,7 +286,7 @@ class ProvMnS:
         self._require_served(parse_dn(dn)[-1].class_name)
         base = self._existing(db, dn)
         _check_if_match(if_match, base, dn)
-        rows = list(db.scalars(select(ManagedObject).where(self._subtree(dn, None)).order_by(ManagedObject.depth.desc(), ManagedObject.dn)))
+        rows = list(db.scalars(select(ManagedObject).where(self._subtree(dn, (base.depth, None))).order_by(ManagedObject.depth.desc(), ManagedObject.dn)))
         ctx = MoiContext("deleteMOI", db, dn)
         for row in rows:
             moi = _moi(row)
@@ -308,14 +308,11 @@ class ProvMnS:
     # ------------------------------------------------------------------ the read
 
     @staticmethod
-    def _subtree(base_dn: str, depths: tuple[int, int | None] | None):
-        """The SQL condition for the base and its descendants (within `depths`, when given): DN range, so the primary key serves it."""
-        condition = or_(ManagedObject.dn == base_dn,
-                        and_(ManagedObject.dn >= base_dn + SUBTREE_SEPARATOR, ManagedObject.dn < base_dn + SUBTREE_UPPER))
-        if depths is None:
-            return condition
+    def _subtree(base_dn: str, depths: tuple[int, int | None]):
+        """The SQL condition for the base and its descendants within `depths` (lowest, highest or None): the DN range [base, base + "-"), which holds
+        exactly the base and the DNs that start with `base,` (dn.py), so the primary key serves it."""
         lowest, highest = depths
-        condition = and_(condition, ManagedObject.depth >= lowest)
+        condition = and_(ManagedObject.dn >= base_dn, ManagedObject.dn < base_dn + SUBTREE_UPPER, ManagedObject.depth >= lowest)
         return condition if highest is None else and_(condition, ManagedObject.depth <= highest)
 
     def get_moi_attributes(self, db: Session, dn: str, scope: Scope | None = None, filter_tree: tuple | None = None,
