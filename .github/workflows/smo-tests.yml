@@ -250,6 +250,21 @@ jobs:
         working-directory: smo
         run: python scripts/check_contract_drift.py
 
+      # Plan task S3.24: TE&IV's model extension (smo/teiv/model/) against the TE&IV data model's extension rules and pyang --strict, with smo-teiv 0.3.0's own
+      # modules (the pinned tag commit, and the import modules from its committed schema, as the image build takes them) on the search path; then TE&IV's
+      # tests (the WG10 TE&IV API file and its mapping in teiv.yaml, the extension checker, the packaging's isolation, the load test's arithmetic).
+      - name: TE&IV extension model (rules, pyang --strict) and TE&IV's tests
+        working-directory: smo
+        run: |
+          src="$RUNNER_TEMP/smo-teiv"
+          git init -q "$src" && git -C "$src" fetch -q --depth 1 https://github.com/o-ran-sc/smo-teiv.git ee898469d2b9a3de5047ac6675f097ca72e97884
+          git -C "$src" checkout -q FETCH_HEAD
+          sh teiv/model/build-model.sh models "$src" teiv/model > /dev/null
+          models="$src/teiv/src/main/resources/models"
+          (cd "$models" && pyang --strict -p .:import smo-teiv-ext-ran.yang smo-teiv-ext-oam.yang)
+          python teiv/model/check_extension.py --models "$models"
+          (cd teiv && PYTHONPATH=.:../shared python -m pytest tests -q)
+
   # Plan task S0.17, ADR 0011 section 7: every served route and every call of the SMO's own code is a bundle operation, a listed [D] exception, or
   # waiting in smo/scripts/interface_baseline/ (one file per module) for the PR-CONV row that replaces or deletes it. Fails on a new private route or call, on a stale
   # baseline entry, and (on a pull request) on a baseline that grew against the base branch. Required check (the owner sets it in branch protection).

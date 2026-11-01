@@ -30,12 +30,12 @@ projectdiscovery/nuclei:v3.9.0 | sha256:66b5f88c9b98ad29c03343dd34e5e85bde0ad104
 node:26-alpine | sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797 | node |
 alpine:3.22 | sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8 | alpine |
 golang:1.27.2-alpine | sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d | golang |
-maven:3.9.11-eclipse-temurin-21-noble | sha256:6fdc855a6ed81d288ca7ca37ac6ff5e9308b612485c0801d70b25a858c83d237 | maven |
+maven:3.9.11-eclipse-temurin-21-noble | sha256:6fdc855a6ed81d288ca7ca37ac6ff5e9308b612485c0801d70b25a858c83d237 | maven | the build stage of smo-teiv's two images, teiv/Dockerfile and teiv/Dockerfile.db (S3.23), and of the Java SDK
 eclipse-temurin:25-jre-noble | sha256:3f2223fe04b750aa5a8179e29b5c9a1ddf7665fc9bb08bfe11ad01d143bc13a5 | eclipse-temurin |
 ubuntu:22.04 | sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11 | ubuntu | the base of the O-RAN-SC simulator image, oran-sim/Dockerfile (ADR 0012); the simulator itself is built, not copied: upstream publishes no image
-eclipse-temurin:21-jre-noble | sha256:161310cd5bd41fd549d19cf9f90b614897cb4a1532555c613b43b7e0628fe5d6 | eclipse-temurin | the runtime of the smo-teiv image of the TE&IV spike, spikes/teiv/Dockerfile (S0.13, ADR 0013)
-postgis/postgis:13-3.4-alpine | sha256:3ce9b8f4d0711d33cc5fa5e6c00dcb7965fa41467f78c0f3bc7fc7bc2357d85b | postgis | smo-teiv's own database image, spikes/teiv/Dockerfile.db (S0.13, ADR 0013)
-apache/kafka:3.9.1 | sha256:4ceccc577f03f51f6af8dbfda55194d0d892f4fa7913ffbded567ce3895622ed | kafka | the stack's Kafka (docker-compose.yml profile kafka, D9, ADR 0006 slice 3) and smo-teiv's ingestion bus in the TE&IV spike (spikes/teiv/docker-compose.yml, ADR 0013); one broker for both from S3.23
+eclipse-temurin:21-jre-noble | sha256:161310cd5bd41fd549d19cf9f90b614897cb4a1532555c613b43b7e0628fe5d6 | eclipse-temurin | the runtime of the smo-teiv image, teiv/Dockerfile (compose profile teiv and the chart's teiv, S3.23, ADR 0013); smo-teiv itself is built from its 0.3.0 tag, not copied: O-RAN-SC publishes no 0.3.0 image (.github/workflows/teiv-image.yml publishes ours)
+postgis/postgis:13-3.4-alpine | sha256:3ce9b8f4d0711d33cc5fa5e6c00dcb7965fa41467f78c0f3bc7fc7bc2357d85b | postgis | the base of smo-teiv's own database image, teiv/Dockerfile.db (compose profile teiv and the chart's teiv, S3.23, ADR 0013)
+apache/kafka:3.9.1 | sha256:4ceccc577f03f51f6af8dbfda55194d0d892f4fa7913ffbded567ce3895622ed | kafka | the stack's Kafka (docker-compose.yml profile kafka, D9, ADR 0006 slice 3) shared by smo-teiv's ingestion (profile teiv, topic smo.teiv.ingestion.v1 made by teiv-kafka-init, S3.23) and the TE&IV spike (spikes/teiv/docker-compose.yml)
 chrislusf/seaweedfs:4.48 | sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d | seaweedfs | the object store (D10, docker-compose.yml profile objectstore): SeaweedFS, Apache-2.0
 bitnamilegacy/minio:2025.7.23-debian-12-r5 | sha256:6dabb4a2088c9a79908de3bc05f4586c23ad2182c8908e7e3acbf61c1467fb20 | minio | the optional MinIO store (profile minio, D10; AGPL-3.0): MinIO publishes no community image any more, this is Bitnami's frozen last build (no updates)
 

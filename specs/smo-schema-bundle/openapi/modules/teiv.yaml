@@ -15,7 +15,8 @@ x-smo-standards:
 - '[N] TS 28.532 ProvMnS v19.2.0'
 - '[N] TS 28.541 v19.6.0'
 - '[N] TS 28.622'
-- '[N] O-RAN WG10 TE&IV (API pending)'
+- '[N] O-RAN.WG10.TS.TE&IV-API.0-R005-v04.00 (OpenAPI 1.2.1, specs/oran/teiv/TEIV_API_R005_v04.yaml)'
+- '[N] O-RAN.WG10.TS.TE&IV-CIMI.0-R005-v07.00 (Stage 2) and O-RAN.WG10.TS.TE&IV-DM.0-R005-v06.00 (Stage 3 data model)'
 paths:
   /health:
     $ref: ../common/probes.yaml#/paths/~1health
@@ -29,6 +30,38 @@ paths:
     $ref: ../common/provmns-root.yaml#/paths/~1{className}={id}
   /{URI-LDN-first-part}:
     $ref: ../common/provmns-root.yaml#/paths/~1{URI-LDN-first-part}
+  # The O-RAN WG10 TE&IV R1 API (plan task S3.24): every path of O-RAN.WG10.TS.TE&IV-API.0-R005-v04.00 Annex A, under its own base /topology-inventory/v1
+  # of TE&IV's R1 root. TE&IV serves it by passing each operation to smo-teiv 0.3.0, which implements the same operations (x-smo-teiv-api below).
+  /topology-inventory/v1/domains:
+    $ref: ../../../oran/teiv/TEIV_API_R005_v04.yaml#/paths/~1domains
+  /topology-inventory/v1/domains/{domainName}/entity-types:
+    $ref: ../../../oran/teiv/TEIV_API_R005_v04.yaml#/paths/~1domains~1{domainName}~1entity-types
+  /topology-inventory/v1/domains/{domainName}/entity-types/{entityTypeName}/entities:
+    $ref: ../../../oran/teiv/TEIV_API_R005_v04.yaml#/paths/~1domains~1{domainName}~1entity-types~1{entityTypeName}~1entities
+  /topology-inventory/v1/domains/{domainName}/entity-types/{entityTypeName}/entities/{entityId}:
+    $ref: ../../../oran/teiv/TEIV_API_R005_v04.yaml#/paths/~1domains~1{domainName}~1entity-types~1{entityTypeName}~1entities~1{entityId}
+  /topology-inventory/v1/domains/{domainName}/entity-types/{entityTypeName}/entities/{entityId}/relationships:
+    $ref: ../../../oran/teiv/TEIV_API_R005_v04.yaml#/paths/~1domains~1{domainName}~1entity-types~1{entityTypeName}~1entities~1{entityId}~1relationships
+  /topology-inventory/v1/domains/{domainName}/relationship-types:
+    $ref: ../../../oran/teiv/TEIV_API_R005_v04.yaml#/paths/~1domains~1{domainName}~1relationship-types
+  /topology-inventory/v1/domains/{domainName}/relationship-types/{relationshipTypeName}/relationships:
+    $ref: ../../../oran/teiv/TEIV_API_R005_v04.yaml#/paths/~1domains~1{domainName}~1relationship-types~1{relationshipTypeName}~1relationships
+  /topology-inventory/v1/domains/{domainName}/relationship-types/{relationshipTypeName}/relationships/{relationshipId}:
+    $ref: ../../../oran/teiv/TEIV_API_R005_v04.yaml#/paths/~1domains~1{domainName}~1relationship-types~1{relationshipTypeName}~1relationships~1{relationshipId}
+  /topology-inventory/v1/schemas:
+    $ref: ../../../oran/teiv/TEIV_API_R005_v04.yaml#/paths/~1schemas
+  /topology-inventory/v1/schemas/{schemaName}/content:
+    $ref: ../../../oran/teiv/TEIV_API_R005_v04.yaml#/paths/~1schemas~1{schemaName}~1content
+  /topology-inventory/v1/user-defined-schemas:
+    $ref: ../../../oran/teiv/TEIV_API_R005_v04.yaml#/paths/~1user-defined-schemas
+  /topology-inventory/v1/user-defined-schemas/{schemaName}/content:
+    $ref: ../../../oran/teiv/TEIV_API_R005_v04.yaml#/paths/~1user-defined-schemas~1{schemaName}~1content
+  /topology-inventory/v1/user-defined-schemas/{schemaName}:
+    $ref: ../../../oran/teiv/TEIV_API_R005_v04.yaml#/paths/~1user-defined-schemas~1{schemaName}
+  /topology-inventory/v1/manage-classifiers:
+    $ref: ../../../oran/teiv/TEIV_API_R005_v04.yaml#/paths/~1manage-classifiers
+  /topology-inventory/v1/manage-decorators:
+    $ref: ../../../oran/teiv/TEIV_API_R005_v04.yaml#/paths/~1manage-decorators
 components:
   schemas:
     SubNetwork-Single:
@@ -91,6 +124,49 @@ x-smo-classes:
   standard: '[N] TS 28.622 subscription control (OpenAPI TS 28.623 SubscriptionControlNrm v19.4.0)'
   operations: *id001
   schema: '#/components/schemas/NtfSubscriptionControl-Single'
+# Each WG10 TE&IV R1 operation (O-RAN.WG10.TS.TE&IV-API.0-R005-v04.00, OpenAPI 1.2.1) against smo-teiv 0.3.0's own API ("Topology Exposure and Inventory API"
+# 1.2.0, docs/offeredapis of the 0.3.0 tag), which TE&IV passes each one to (ADR 0013 section 7; the spike's R1_OPERATIONS). Compared by method, path,
+# operationId, parameters, request body and response codes (S3.24): every operation exists in smo-teiv under the same method, path and operationId, with
+# the same parameters and request body. `same`: no difference. `differs`: what differs, and what TE&IV does about it.
+x-smo-teiv-api:
+  standard: O-RAN.WG10.TS.TE&IV-API.0-R005-v04.00 (info.version 1.2.1)
+  implementation: O-RAN-SC smo-teiv 0.3.0 (info.version 1.2.0)
+  common-differences:
+  - 'Collection answers (Domains, EntityTypes, Entities, RelationshipTypes, Relationships, Schemas): smo-teiv adds HAL-style paging links (self, first, prev,
+    next, last: Href) the standard does not define, and does not declare the standard''s `required` members (domainName, entityTypes, relationshipTypes;
+    entityTypeName, entities; relationshipTypeName, relationships). A consumer of the standard ignores the extra links; S3.19 checks the required members are
+    present in what smo-teiv returns.'
+  operations:
+  - { operationId: getAllDomains, method: GET, path: /domains, mapping: same }
+  - { operationId: getTopologyEntityTypes, method: GET, path: '/domains/{domainName}/entity-types', mapping: same }
+  - { operationId: getTopologyByEntityTypeName, method: GET, path: '/domains/{domainName}/entity-types/{entityTypeName}/entities', mapping: same }
+  - { operationId: getTopologyById, method: GET, path: '/domains/{domainName}/entity-types/{entityTypeName}/entities/{entityId}', mapping: same }
+  - { operationId: getAllRelationshipsForEntityId, method: GET, path: '/domains/{domainName}/entity-types/{entityTypeName}/entities/{entityId}/relationships',
+      mapping: same }
+  - { operationId: getTopologyRelationshipTypes, method: GET, path: '/domains/{domainName}/relationship-types', mapping: same }
+  - { operationId: getRelationshipsByType, method: GET, path: '/domains/{domainName}/relationship-types/{relationshipTypeName}/relationships', mapping: same }
+  - { operationId: getRelationshipById, method: GET, path: '/domains/{domainName}/relationship-types/{relationshipTypeName}/relationships/{relationshipId}',
+      mapping: same }
+  - { operationId: getSchemas, method: GET, path: /schemas, mapping: same }
+  - { operationId: getSchemaByName, method: GET, path: '/schemas/{schemaName}/content', mapping: same }
+  - { operationId: createUserDefinedSchema, method: POST, path: /user-defined-schemas, mapping: same,
+      note: 'classifiers and decorators only (TE&IV-CIMI R005 v07 section 4.5): it cannot add entity or relationship types, in the standard or in smo-teiv' }
+  - { operationId: getUserDefinedSchemas, method: GET, path: /user-defined-schemas, mapping: same }
+  - { operationId: getUserDefinedSchemaByName, method: GET, path: '/user-defined-schemas/{schemaName}/content', mapping: same }
+  - { operationId: deleteUserDefinedSchema, method: DELETE, path: '/user-defined-schemas/{schemaName}', mapping: same }
+  - { operationId: updateClassifier, method: POST, path: /manage-classifiers, mapping: differs,
+      note: 'smo-teiv may answer 409 Conflict, a code the standard does not list for this operation; TE&IV passes it on (a 4xx the consumer must handle anyway)' }
+  - { operationId: updateDecorator, method: POST, path: /manage-decorators, mapping: differs,
+      note: 'smo-teiv may answer 409 Conflict, a code the standard does not list for this operation; TE&IV passes it on' }
+  internal-only:
+  - 'smo-teiv''s operations the standard does not have stay internal, none of them in this contract: groups (/groups...), createSchema and deleteSchema
+    (POST /schemas, DELETE /schemas/{schemaName}), getEntitiesByDomain (GET /domains/{domainName}/entities) and the deprecated /classifiers and /decorators.'
+# The TE&IV data model (O-RAN.WG10.TS.TE&IV-DM.0-R005-v06.00) has no NRCellRelation and no neighbour relationship, no SubNetwork, CommonBeamformingFunction,
+# NRFreqRelation or SON class; TE&IV carries them as its own domain modules (teiv/model/smo-teiv-ext-ran.yang, smo-teiv-ext-oam.yang), extended only by new
+# modules, as the data model allows (teiv/model/check_extension.py). In the WG10 API they are the domains below.
+x-smo-teiv-domains:
+- { domain: EXT_RAN, module: smo-teiv-ext-ran, x-smo-design: D-24 }
+- { domain: EXT_OAM, module: smo-teiv-ext-oam, x-smo-design: D-24 }
 x-smo-pending:
-- 'The O-RAN WG10 TE&IV topology and inventory R1 services: neither the API nor the WG10 TE&IV models are in specs/ (S0.13 imports them). Until then the CO_COVERAGE_OVERLAY
-  and HOSTED_ON_OCLOUD relationships have no standard carrier in this contract.'
+- 'CO_COVERAGE_OVERLAY has no standard carrier: it is a relationship of TE&IV''s extension domain EXT_RAN (D-24). HOSTED_ON_OCLOUD is carried by the data
+  model''s o-ran-smo-teiv-rel-cloud-ran (TE&IV-DM v06 Annex G) once FOCOM writes the hosting edges (S4.5).'

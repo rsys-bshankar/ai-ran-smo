@@ -1,0 +1,103 @@
+name: TE&IV load
+
+# TE&IV's packaging of O-RAN-SC smo-teiv (plan task S3.23, smo/docs/adr/0013-teiv-on-smo-teiv.md section 8): the compose profile `teiv` is built from the
+# pinned 0.3.0 tag with TE&IV's model extension (smo/teiv/Dockerfile, Dockerfile.db), comes up healthy, holds its memory budget (3 GiB at 1,000 cells for
+# smo-teiv's two processes, its Postgres and the shared Kafka broker: smo/teiv/loadtest/budget.py), and keeps smo-teiv's database and API out of reach
+# of the rest of the stack (D19: they are on the internal network `teiv` only). The results are the job summary and the artifact `teiv-budget`.
+# It builds smo-teiv with Maven (several minutes), so it runs where TE&IV's packaging can change: by hand, weekly, and on a pull request that changes
+# smo/teiv/, the compose file, the chart's teiv template or this file. Not a required check.
+on:
+  pull_request:
+    paths:
+      - smo/teiv/**
+      - smo/docker-compose.yml
+      - smo/deploy/helm/smo/templates/teiv.yaml
+      - .github/workflows/teiv-load.yml
+  schedule:
+    - cron: "41 5 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: teiv-load-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  budget:
+    name: smo-teiv packaged, memory budget at 1,000 cells, isolated
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      COMPOSE_FILE: docker-compose.yml:.ci-mirror/docker-compose.mirror.yml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
+
+      - name: Install what the load test reads the spike's tree generator with
+        working-directory: smo
+        run: pip install --require-hashes -r requirements/dev.txt
+
+      - name: Build smo-teiv from its tag and start the profile
+        working-directory: smo
+        run: |
+          scripts/init_secrets.sh
+          docker compose --profile teiv config --quiet
+          docker compose --profile teiv build teiv-db teiv-ingestion
+          docker compose --profile teiv up -d --wait --wait-timeout 600 teiv-ingestion teiv-exposure
+          docker compose --profile teiv ps
+
+      - name: Memory budget at 1,000 cells
+        working-directory: smo
+        run: |
+          python teiv/loadtest/budget.py --out "$RUNNER_TEMP/teiv-budget.json" --markdown "$RUNNER_TEMP/teiv-budget.md"
+          cat "$RUNNER_TEMP/teiv-budget.md" >> "$GITHUB_STEP_SUMMARY"
+
+      # D19: from the stack's own network, neither smo-teiv's database nor its API has a name or an address; from the network `teiv` both answer.
+      - name: smo-teiv's database and API are reachable on the network teiv only
+        working-directory: smo
+        run: |
+          probe='import socket, sys
+          for host, port in (("teiv-db", 5432), ("teiv-exposure", 8080)):
+              try:
+                  socket.create_connection((host, port), timeout=5).close()
+                  print(f"{host}:{port} reachable")
+              except OSError as exc:
+                  print(f"{host}:{port} not reachable: {exc}")
+                  sys.exit(1)'
+          project=$(docker compose --profile teiv config --format json | jq -r .name)
+          docker run --rm --network "${project}_teiv" "$SMO_IMAGE_PYTHON_3_11_SLIM" python -c "$probe"
+          if docker run --rm --network "${project}_default" "$SMO_IMAGE_PYTHON_3_11_SLIM" python -c "$probe"; then
+            echo "::error::smo-teiv's database or API is reachable from the stack's default network"; exit 1
+          fi
+          echo "| Isolation | from network ${project}_default: teiv-db and teiv-exposure not reachable; from ${project}_teiv: reachable |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Logs and state on failure
+        if: failure()
+        working-directory: smo
+        run: |
+          docker compose --profile teiv ps -a || true
+          docker compose --profile teiv logs --tail=200 teiv-ingestion teiv-exposure teiv-db teiv-kafka-init kafka || true
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: teiv-budget
+          path: |
+            ${{ runner.temp }}/teiv-budget.json
+            ${{ runner.temp }}/teiv-budget.md
+          if-no-files-found: ignore
+
+      - name: Stop
+        if: always()
+        working-directory: smo
+        run: docker compose --profile teiv down -v

@@ -60,11 +60,11 @@ digest at the mirror.
 | `<repo>/mirror/node` | `node:26-alpine` | yes |
 | `<repo>/mirror/alpine` | `alpine:3.22` | yes |
 | `<repo>/mirror/golang` | `golang:1.27.2-alpine` | yes |
-| `<repo>/mirror/maven` | `maven:3.9.11-eclipse-temurin-21-noble` | yes |
-| `<repo>/mirror/eclipse-temurin` | `eclipse-temurin:25-jre-noble`, `eclipse-temurin:21-jre-noble` (the runtime of smo-teiv in the TE&IV spike, `spikes/teiv/Dockerfile`) | yes |
+| `<repo>/mirror/maven` | `maven:3.9.11-eclipse-temurin-21-noble` (the build of smo-teiv's two images, S3.23, and of the Java SDK) | yes |
+| `<repo>/mirror/eclipse-temurin` | `eclipse-temurin:25-jre-noble`, `eclipse-temurin:21-jre-noble` (the runtime of smo-teiv, `teiv/Dockerfile`, profile `teiv` and the chart, S3.23) | yes |
 | `<repo>/mirror/ubuntu` | `ubuntu:22.04` (the base of the O-RAN-SC simulator image, `oran-sim/Dockerfile`, ADR 0012) | yes |
-| `<repo>/mirror/postgis` | `postgis/postgis:13-3.4-alpine` (smo-teiv's database in the TE&IV spike, `spikes/teiv/Dockerfile.db`, ADR 0013) | yes |
-| `<repo>/mirror/kafka` | `apache/kafka:3.9.1` (the stack's Kafka, profile `kafka`, D9; and smo-teiv's ingestion bus in the TE&IV spike, `spikes/teiv/docker-compose.yml`) | yes |
+| `<repo>/mirror/postgis` | `postgis/postgis:13-3.4-alpine` (the base of smo-teiv's database, `teiv/Dockerfile.db`, S3.23, ADR 0013) | yes |
+| `<repo>/mirror/kafka` | `apache/kafka:3.9.1` (the stack's Kafka, profile `kafka`, D9, shared with smo-teiv's ingestion in the profile `teiv`, topic `smo.teiv.ingestion.v1`, S3.23; and the TE&IV spike's) | yes |
 | `<repo>/mirror/seaweedfs` | `chrislusf/seaweedfs:4.48` (the object store, profile `objectstore`, D10) | yes |
 | `<repo>/mirror/minio` | `bitnamilegacy/minio:2025.7.23-debian-12-r5` (the optional MinIO store, profile `minio`, D10; Bitnami's frozen last build) | yes |
 | `<repo>/mirror/tempo` | `grafana/tempo:2.10.10` | yes |

@@ -188,6 +188,22 @@ does (`POST /ran-nf-oam/o1-adaptor-endpoints` with `adaptorUri: ssh://netconf@or
 key). With `mtls.enabled` RAN NF OAM serves HTTPS with a client certificate the simulators do not have, so their VES posts are refused. Tested by
 `tests_integration/test_helm_chart.py` (the parity with compose without `helm`, the render with it).
 
+## TE&IV on O-RAN-SC smo-teiv (S3.23)
+
+Off by default: `teiv.enabled: true` runs TE&IV's store, O-RAN-SC smo-teiv 0.3.0 with TE&IV's model extension (ADR 0013), as docker compose's profile
+`teiv` does: the StatefulSet `teiv-db` (PostGIS 3.4 on Postgres 13 with smo-teiv's generated schema; `teiv.db.storage`, default 5Gi), the Deployments
+`teiv-ingestion` (consumes TE&IV's topic, the only writer of the database) and `teiv-exposure` (smo-teiv's REST API, Service `teiv-exposure:8080`). The
+images are `<image.registry>/smo-teiv:<teiv.tag>` and `smo-teiv-db:<teiv.tag>` (`0.3.0-ext`), which `.github/workflows/teiv-image.yml` builds from the
+pinned tag and publishes; O-RAN-SC publishes no 0.3.0 image. **It needs a Kafka broker**: `teiv.kafka.bootstrapServers` (`host:port`; smo-teiv 0.3.0
+takes one address), and the render fails without it, since the chart brings no broker yet (PR-CONV-S1.10b). smo-teiv creates `teiv.kafka.topic`
+(`smo.teiv.ingestion.v1`) with `teiv.kafka.partitions` (4) and `teiv.kafka.replicas` (3) if the broker does not have it. The database password is a Secret
+the chart makes once (`<release>-teiv-db`, kept on upgrade) and the processes read as a file. **Isolation (D19):** NetworkPolicies admit the database's
+port from the two smo-teiv pods only, smo-teiv's API from TE&IV's own pods (`app.kubernetes.io/name: teiv`, plan task S3.19) and
+`teiv.exposure.allowedSources` only, and nothing to the ingestion pod; they need a CNI that enforces NetworkPolicy. The topic's isolation is the broker's
+(per-principal ACLs, PR-CONV-S1.15). Memory: fixed heaps and limits (`teiv.ingestion`, `teiv.exposure`, `teiv.db`), about 2 GiB measured at 1,000 cells
+with the broker (budget 3 GiB, `teiv/loadtest/budget.py`). The pods run as their images' users with no capability, the processes on a read-only root.
+Tested by `teiv/tests/test_isolation.py` (compose and the chart in step) and `tests_integration/test_helm_chart.py` (the render).
+
 ## GitOps
 
 `deploy/gitops/` has Kustomize overlays (lab, staging, prod) over this chart and Argo CD Applications for them (`deploy/gitops/README.md`).

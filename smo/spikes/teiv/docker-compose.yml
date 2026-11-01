@@ -5,12 +5,12 @@
 # writer of the store (D6), `teiv-exposure` serves smo-teiv's own REST API on 127.0.0.1:31074 (spikes/teiv/load.py, measure.py and facade.py call it;
 # no module may, ADR 0011 / D19). Images: every one is pinned by digest and listed in deploy/mirror/images.txt; in CI the SMO_IMAGE_* variables
 # of scripts/ci_mirror.py setup point them at the GHCR mirror, and without them the upstream pins below are used. smo-teiv itself is built from
-# the 0.3.0 tag's commit (spikes/teiv/Dockerfile; TEIV_SOURCE points elsewhere, a local clone for example), with TE&IV's model extension
-# (spikes/teiv/model/, plan task S3.20) in its models and in the schema Dockerfile.db generates with smo-teiv's own generator.
+# the 0.3.0 tag's commit with TE&IV's model extension, by the stack's own Dockerfiles (teiv/Dockerfile and teiv/Dockerfile.db, plan task S3.23, which took
+# them and teiv/model/ from this spike; TEIV_SOURCE points elsewhere, a local clone for example). The stack runs the same images in its profile `teiv`.
 name: teiv-spike
 
 x-teiv-build: &teiv_build
-  context: .
+  context: ../../teiv
   dockerfile: Dockerfile
   additional_contexts:
     teiv: ${TEIV_SOURCE:-https://github.com/o-ran-sc/smo-teiv.git#ee898469d2b9a3de5047ac6675f097ca72e97884}
@@ -30,7 +30,7 @@ x-teiv-env: &teiv_env
 services:
   teiv-db:
     build:
-      context: .
+      context: ../../teiv
       dockerfile: Dockerfile.db
       additional_contexts:
         teiv: ${TEIV_SOURCE:-https://github.com/o-ran-sc/smo-teiv.git#ee898469d2b9a3de5047ac6675f097ca72e97884}

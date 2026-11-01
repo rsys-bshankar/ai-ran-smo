@@ -7,7 +7,8 @@
 An image is `<registry>/<owner>/<repo>/smo-<name>:<version>`. The list comes from the compose file so a new module is
 published without anyone editing the release workflow; `migrate` and `r1-termination` are one build and one image. The simulated O-DU of the
 profile `oran-sim` (ADR 0012) is a build in the compose file too, but not an SMO image: it is built from O-RAN-SC's source by its own workflow
-(.github/workflows/oran-sim-image.yml), so it is left out here (NOT_RELEASED).
+(.github/workflows/oran-sim-image.yml), so it is left out here (NOT_RELEASED). So are smo-teiv's two images of the profile `teiv` (plan task S3.23, ADR 0013): built
+from O-RAN-SC smo-teiv's pinned tag with the named build context `teiv` by .github/workflows/teiv-image.yml, which publishes them as smo-teiv and smo-teiv-db.
 """
 
 import json
@@ -17,7 +18,8 @@ from pathlib import Path
 import yaml
 
 SMO_ROOT = Path(__file__).resolve().parent.parent
-NOT_RELEASED = {"oran-sim-du"}          # compose services with a build that the release does not publish: the O-RAN-SC simulator (ADR 0012)
+# compose services with a build that the release does not publish: the O-RAN-SC simulator (ADR 0012) and smo-teiv (S3.23), each built from upstream's source by a workflow of its own
+NOT_RELEASED = {"oran-sim-du", "teiv-db", "teiv-ingestion", "teiv-exposure"}
 
 
 def images(compose: Path = SMO_ROOT / "docker-compose.yml") -> list[dict]:

@@ -32,4 +32,5 @@ suite's tests regenerates that suite's file only (`smo/CLAUDE.md`, "Working in p
 | `shared` | [shared.md](shared.md) |
 | `sme` | [sme.md](sme.md) |
 | `so-smos` | [so-smos.md](so-smos.md) |
+| `teiv` | [teiv.md](teiv.md) |
 | `tests_integration` | [tests_integration.md](tests_integration.md) |

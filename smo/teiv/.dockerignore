@@ -1,0 +1,5 @@
+# The two image builds (Dockerfile, Dockerfile.db) need only model/ and maven-settings.xml from this folder; smo-teiv itself is the named context `teiv`.
+tests/
+loadtest/
+**/__pycache__/
+README.md

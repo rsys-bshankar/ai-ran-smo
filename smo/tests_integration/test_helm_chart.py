@@ -19,7 +19,8 @@ VALUES = yaml.safe_load((CHART / "values.yaml").read_text())
 NOT_IN_THE_CHART = {"postgres", "migrate", "netconf-lab", "edge-tls", "pgbouncer", "db-backup",                   # Postgres is a template of its own, migrate a Job, the others are compose-only (a pooler on Kubernetes is the operator's)
                     "tempo", "loki", "fluent-bit", "grafana",                                      # the observability profiles: templates of their own, values-gated (observability.yaml)
                     "oran-sim-du",                                                                 # the O-RAN-SC simulator (profile oran-sim): a template of its own, values-gated (oran-sim.yaml)
-                    "objectstore", "objectstore-init", "minio", "minio-init", "kafka", "kafka-init"}  # S1.10's store profiles: compose-only until the chart's values (ADR 0006 slice 5, PR-CONV-S1.10 follow-ups)
+                    "objectstore", "objectstore-init", "minio", "minio-init", "kafka", "kafka-init",
+                    "teiv-db", "teiv-kafka-init", "teiv-ingestion", "teiv-exposure"}  # teiv: a template of its own, values-gated (teiv.yaml, S3.23); S1.10's store profiles: compose-only until the chart's values (ADR 0006 slice 5, PR-CONV-S1.10 follow-ups)
 helm = pytest.mark.skipif(shutil.which("helm") is None, reason="helm is not installed")
 
 

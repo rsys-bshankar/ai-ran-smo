@@ -1,0 +1,1105 @@
+openapi: 3.0.3
+info:
+  title: 'Topology & Inventory API'
+  version: 1.2.1
+  description: |
+    API for Topology and Inventory API.
+
+    Topology and Inventory data is the information that represents entities
+    in a telecommunications network and the relationships between them that
+    provide insight into a particular aspect of the network of importance to
+    specific use cases. Topology and Inventory data can be derived from
+    inventory, configuration, or other data.
+
+    Topology and Inventory supports several topology domains. A domain is a
+    grouping of topology and inventory entities that handles topology and
+    inventory data.
+
+    Entities are enabling the modelling and storage of complex network
+    infrastructure and relationships.
+
+    A relationship is a bi-directional connection between two entities, one
+    of which is the originating side (A-side) and the other is the
+    terminating side (B-side). The order of the sides matters since it
+    defines the relationship itself which must be unique.
+
+    Classifier (also known as tag or label) permits the association of a
+    well defined user specified string with an entity or relationship.
+
+    Decorators are user-defined attributes (key-value pairs) which can
+    be applied to topology entities and relationships.
+
+    Topology and Inventory API provides the capabilities to fetch topology
+    data. Using the filtering options, it is possible to define more specific
+    query requests.
+
+    Copyright 2026 O-RAN ALLIANCE e.V.
+
+    Licensed under the Standards Collaboration
+    Copyright License Version 1.0 (the "License");
+    You may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+    https://www.o-ran.org/sccl
+
+tags:
+  - name: Entities and relationships
+    description: Provides the capability to retrieve topology and inventory entities and relationships.
+  - name: Schemas
+    description: Schemas are defined in YANG modeling language. A group of Yang schemas makes the topology & inventory model, which represents topology & inventory entities, their attributes, and their relationships.
+  - name: User Defined Schemas
+    description: User defined schemas are defined in YANG modeling language.
+  - name: Classifiers
+    description: Provides the capability to update or remove user-defined keywords or tags on entities and relationships.
+  - name: Decorators
+    description: Provides the capability to update or remove user-defined values on entities and relationships.
+
+externalDocs:
+  description: 'O-RAN.WG10.TS.TE&IV-API.0-R005-v04.00'
+  url: 'https://www.o-ran.org/specifications'
+
+servers:
+  - url: '{apiRoot}/topology-inventory/v1'
+    variables:
+      apiRoot:
+        description: apiRoot as defined in clause 5.3 in O-RAN.WG10.TS.TE&IV-API.0
+        default: 'https://example.com'
+
+paths:
+  /domains:
+    get:
+      description: Get all the available topology domains.
+      tags:
+        - Entities and relationships
+      summary: Get all the available topology domains.
+      operationId: getAllDomains
+      parameters:
+        - $ref: '#/components/parameters/acceptJsonInHeader'
+        - $ref: '#/components/parameters/offsetParam'
+        - $ref: '#/components/parameters/limitParam'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Domains'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '406':
+          $ref: '#/components/responses/406'
+        '414':
+          $ref: '#/components/responses/414'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '502':
+          $ref: '#/components/responses/502'
+        '503':
+          $ref: '#/components/responses/503'
+  /domains/{domainName}/entity-types:
+    get:
+      description: Get all the available topology entity types within a domain.
+      tags:
+        - Entities and relationships
+      summary: Get all the available topology entity types within a domain.
+      operationId: getTopologyEntityTypes
+      parameters:
+        - $ref: '#/components/parameters/acceptJsonInHeader'
+        - $ref: '#/components/parameters/domainNameInPath'
+        - $ref: '#/components/parameters/offsetParam'
+        - $ref: '#/components/parameters/limitParam'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityTypes'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '406':
+          $ref: '#/components/responses/406'
+        '414':
+          $ref: '#/components/responses/414'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '502':
+          $ref: '#/components/responses/502'
+        '503':
+          $ref: '#/components/responses/503'
+
+  /domains/{domainName}/entity-types/{entityTypeName}/entities:
+    get:
+      description: Get all Topology Entity instances of a specific Topology Entity type.
+      tags:
+        - Entities and relationships
+      summary: Get all Topology Entity instances of a specific Topology Entity type.
+      operationId: getTopologyByEntityTypeName
+      parameters:
+        - $ref: '#/components/parameters/acceptJsonInHeader'
+        - $ref: '#/components/parameters/domainNameInPath'
+        - $ref: '#/components/parameters/entityTypeNameInPath'
+        - $ref: '#/components/parameters/targetFilterOptionalInQuery'
+        - $ref: '#/components/parameters/scopeFilterOptionalInQuery'
+        - $ref: '#/components/parameters/offsetParam'
+        - $ref: '#/components/parameters/limitParam'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Entities'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '406':
+          $ref: '#/components/responses/406'
+        '414':
+          $ref: '#/components/responses/414'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '502':
+          $ref: '#/components/responses/502'
+        '503':
+          $ref: '#/components/responses/503'
+
+  /domains/{domainName}/entity-types/{entityTypeName}/entities/{entityId}:
+    get:
+      description: Get a specific Topology Entity instance of a Topology Entity type
+      tags:
+        - Entities and relationships
+      summary: Get a specific Topology Entity instance of a Topology Entity type
+      operationId: getTopologyById
+      parameters:
+        - $ref: '#/components/parameters/acceptYangJsonInHeader'
+        - $ref: '#/components/parameters/domainNameInPath'
+        - $ref: '#/components/parameters/entityTypeNameInPath'
+        - $ref: '#/components/parameters/entityIdInPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/yang.data+json:
+              schema:
+                type: object
+                description: Encapsulated object reference to the data model for schema definition of Topology Entity
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '406':
+          $ref: '#/components/responses/406'
+        '414':
+          $ref: '#/components/responses/414'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '502':
+          $ref: '#/components/responses/502'
+        '503':
+          $ref: '#/components/responses/503'
+  /domains/{domainName}/entity-types/{entityTypeName}/entities/{entityId}/relationships:
+    get:
+      description: Get all relationships for a specific Topology Entity instance of a Topology Entity type
+      tags:
+        - Entities and relationships
+      summary: Get all relationships for a specific Topology Entity instance of a Topology Entity type
+      operationId: getAllRelationshipsForEntityId
+      parameters:
+        - $ref: '#/components/parameters/acceptYangJsonInHeader'
+        - $ref: '#/components/parameters/domainNameInPath'
+        - $ref: '#/components/parameters/entityTypeNameInPath'
+        - $ref: '#/components/parameters/entityIdInPath'
+        - $ref: '#/components/parameters/targetFilterOptionalInQuery'
+        - $ref: '#/components/parameters/scopeFilterOptionalInQuery'
+        - $ref: '#/components/parameters/offsetParam'
+        - $ref: '#/components/parameters/limitParam'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/yang.data+json:
+              schema:
+                $ref: '#/components/schemas/Relationships'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '406':
+          $ref: '#/components/responses/406'
+        '414':
+          $ref: '#/components/responses/414'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '502':
+          $ref: '#/components/responses/502'
+        '503':
+          $ref: '#/components/responses/503'
+
+  /domains/{domainName}/relationship-types:
+    get:
+      description: Get all the available Topology Relationship types.
+      tags:
+        - Entities and relationships
+      summary: Get all the available topology relationship types.
+      operationId: getTopologyRelationshipTypes
+      parameters:
+        - $ref: '#/components/parameters/acceptJsonInHeader'
+        - $ref: '#/components/parameters/domainNameInPath'
+        - $ref: '#/components/parameters/offsetParam'
+        - $ref: '#/components/parameters/limitParam'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelationshipTypes'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '406':
+          $ref: '#/components/responses/406'
+        '414':
+          $ref: '#/components/responses/414'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '502':
+          $ref: '#/components/responses/502'
+        '503':
+          $ref: '#/components/responses/503'
+
+  /domains/{domainName}/relationship-types/{relationshipTypeName}/relationships:
+    get:
+      description: Get all the available Topology Relationships of a specific relationship type name
+      tags:
+        - Entities and relationships
+      summary: Get all the available Topology Relationships of a specific relationship type name.
+      operationId: getRelationshipsByType
+      parameters:
+        - $ref: '#/components/parameters/acceptYangJsonInHeader'
+        - $ref: '#/components/parameters/domainNameInPath'
+        - $ref: '#/components/parameters/relationshipTypeNameInPath'
+        - $ref: '#/components/parameters/targetFilterOptionalInQuery'
+        - $ref: '#/components/parameters/scopeFilterOptionalInQuery'
+        - $ref: '#/components/parameters/offsetParam'
+        - $ref: '#/components/parameters/limitParam'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Relationships'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '406':
+          $ref: '#/components/responses/406'
+        '414':
+          $ref: '#/components/responses/414'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '502':
+          $ref: '#/components/responses/502'
+        '503':
+          $ref: '#/components/responses/503'
+
+  /domains/{domainName}/relationship-types/{relationshipTypeName}/relationships/{relationshipId}:
+    get:
+      description: Get a specific Topology Relationship instance of a Topology Relationship type.
+      tags:
+        - Entities and relationships
+      summary: Get a specific Topology Relationship instance of a Topology Relationship type.
+      operationId: getRelationshipById
+      parameters:
+        - $ref: '#/components/parameters/acceptYangJsonInHeader'
+        - $ref: '#/components/parameters/domainNameInPath'
+        - $ref: '#/components/parameters/relationshipTypeNameInPath'
+        - $ref: '#/components/parameters/relationshipIdInPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/yang.data+json:
+              schema:
+                type: object
+                description: Encapsulated object reference to the data model for schema definition of Topology Relationship
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '406':
+          $ref: '#/components/responses/406'
+        '414':
+          $ref: '#/components/responses/414'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '502':
+          $ref: '#/components/responses/502'
+        '503':
+          $ref: '#/components/responses/503'
+  /schemas:
+    get:
+      description: Get a list of all topology model schemas.
+      tags:
+        - Schemas
+      summary: Get a list of all user defined schemas.
+      operationId: getSchemas
+      parameters:
+        - $ref: '#/components/parameters/acceptJsonInHeader'
+        - $ref: '#/components/parameters/domainOptionalInQuery'
+        - $ref: '#/components/parameters/offsetParam'
+        - $ref: '#/components/parameters/limitParam'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Schemas'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '406':
+          $ref: '#/components/responses/406'
+        '414':
+          $ref: '#/components/responses/414'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '502':
+          $ref: '#/components/responses/502'
+        '503':
+          $ref: '#/components/responses/503'
+  /schemas/{schemaName}/content:
+    get:
+      description: Get the model schema by name.
+      tags:
+        - Schemas
+      summary: Get the model schema.
+      operationId: getSchemaByName
+      parameters:
+        - $ref: '#/components/parameters/acceptPlainTextInHeader'
+        - $ref: '#/components/parameters/schemaNameInPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            text/plain:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '406':
+          $ref: '#/components/responses/406'
+        '414':
+          $ref: '#/components/responses/414'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '502':
+          $ref: '#/components/responses/502'
+        '503':
+          $ref: '#/components/responses/503'
+  /user-defined-schemas:
+    post:
+      description: Create a new user defined schema. The request body contains the schema in YANG format.
+      tags:
+        - User Defined Schemas
+      summary: Create a new user defined schema.
+      operationId: createUserDefinedSchema
+      parameters:
+        - $ref: '#/components/parameters/acceptJsonInHeader'
+        - $ref: '#/components/parameters/contentTypeMultipartFileInHeader'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/MultipartFile'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDefinedSchema'
+          headers:
+           Location:
+             description: Contains the URI of the newly created resource
+             required: true
+             schema:
+              type: string
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '409':
+          $ref: '#/components/responses/409'
+        '411':
+          $ref: '#/components/responses/411'
+        '413':
+          $ref: '#/components/responses/413'
+        '415':
+          $ref: '#/components/responses/415'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '502':
+          $ref: '#/components/responses/502'
+        '503':
+          $ref: '#/components/responses/503'
+    get:
+      description: Get a list of all user defined schemas.
+      tags:
+        - User Defined Schemas
+      summary: Get a list of all user defined schemas.
+      operationId: getUserDefinedSchemas
+      parameters:
+        - $ref: '#/components/parameters/acceptJsonInHeader'
+        - $ref: '#/components/parameters/offsetParam'
+        - $ref: '#/components/parameters/limitParam'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDefinedSchemas'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '406':
+          $ref: '#/components/responses/406'
+        '414':
+          $ref: '#/components/responses/414'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '502':
+          $ref: '#/components/responses/502'
+        '503':
+          $ref: '#/components/responses/503'
+  /user-defined-schemas/{schemaName}/content:
+    get:
+      description: Get the user defined schema by name.
+      tags:
+        - User Defined Schemas
+      summary: Get the user defined schema.
+      operationId: getUserDefinedSchemaByName
+      parameters:
+        - $ref: '#/components/parameters/acceptPlainTextInHeader'
+        - $ref: '#/components/parameters/schemaNameInPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            text/plain:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '406':
+          $ref: '#/components/responses/406'
+        '414':
+          $ref: '#/components/responses/414'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '502':
+          $ref: '#/components/responses/502'
+        '503':
+          $ref: '#/components/responses/503'
+  /user-defined-schemas/{schemaName}:
+    delete:
+      description: Delete a user defined schema.
+      tags:
+        - User Defined Schemas
+      summary: Delete a user defined schema.
+      operationId: deleteUserDefinedSchema
+      parameters:
+        - $ref: '#/components/parameters/acceptJsonInHeader'
+        - $ref: '#/components/parameters/schemaNameInPath'
+      responses:
+        '204':
+          $ref: '#/components/responses/204'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '502':
+          $ref: '#/components/responses/502'
+        '503':
+          $ref: '#/components/responses/503'
+
+  /manage-classifiers:
+    post:
+      description: Update entities and/or relationships with classifier(s).
+      tags:
+        - Classifiers
+      summary: Update entities and/or relationships with classifier(s).
+      operationId: updateClassifier
+      parameters:
+        - $ref: '#/components/parameters/acceptJsonInHeader'
+        - $ref: '#/components/parameters/contentTypeJsonInHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Classifier'
+      responses:
+        '204':
+          $ref: '#/components/responses/204'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+
+        '411':
+          $ref: '#/components/responses/411'
+        '413':
+          $ref: '#/components/responses/413'
+        '415':
+          $ref: '#/components/responses/415'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '502':
+          $ref: '#/components/responses/502'
+        '503':
+          $ref: '#/components/responses/503'
+
+  /manage-decorators:
+    post:
+      description: Update entities and/or relationships with decorator(s).
+      tags:
+        - Decorators
+      summary: Update entities and/or relationships with decorator(s).
+      operationId: updateDecorator
+      parameters:
+        - $ref: '#/components/parameters/acceptJsonInHeader'
+        - $ref: '#/components/parameters/contentTypeJsonInHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Decorator'
+      responses:
+        '204':
+          $ref: '#/components/responses/204'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+
+        '411':
+          $ref: '#/components/responses/411'
+        '413':
+          $ref: '#/components/responses/413'
+        '415':
+          $ref: '#/components/responses/415'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '502':
+          $ref: '#/components/responses/502'
+        '503':
+          $ref: '#/components/responses/503'
+
+components:
+  schemas:
+    Classifier:
+      type: object
+      title: Classifier
+      properties:
+        operation:
+          type: string
+          enum:
+            - merge
+            - delete
+        classifiers:
+          type: array
+          items:
+            type: string
+        entityIds:
+          type: array
+          items:
+            type: string
+        relationshipIds:
+          type: array
+          items:
+            type: string
+    Decorator:
+      type: object
+      title: Decorator
+      properties:
+        operation:
+          type: string
+          enum:
+            - merge
+            - delete
+        decorators:
+          type: object
+          additionalProperties: true
+          description: Decorators must be defined in schema before use. Data type of a decorator is restricted as defined by its schema.
+        entityIds:
+          type: array
+          items:
+            type: string
+        relationshipIds:
+          type: array
+          items:
+            type: string
+    Domains:
+      type: object
+      title: Domains
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              domainName:
+                type: string
+              entityTypes:
+                $ref: '#/components/schemas/Href'
+              relationshipTypes:
+                $ref: '#/components/schemas/Href'
+            required: ['domainName', 'entityTypes', 'relationshipTypes']
+      required: ['items']
+    EntityTypes:
+      type: object
+      title: EntityTypes
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              entityTypeName:
+                type: string
+              entities:
+                $ref: '#/components/schemas/Href'
+            required: ['entityTypeName', 'entities']
+      required: ['items']
+    Entities:
+      type: object
+      title: Entities
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            description: Encapsulated object reference to the data model for schema definition of Topology Entity
+      required: ['items']
+    RelationshipTypes:
+      type: object
+      title: RelationshipTypes
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              relationshipTypeName:
+                type: string
+              relationships:
+                $ref: '#/components/schemas/Href'
+            required: ['relationshipTypeName', 'relationships']
+      required: ['items']
+    Relationships:
+      type: object
+      title: Relationships
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            description: Encapsulated object reference to the data model for schema definition of Topology Relationships
+      required: ['items']
+    ProblemDetails:
+      description: A problem detail to carry details in an HTTP response according to RFC 7807
+      type: object
+      properties:
+        type:
+          description: a URI reference according to IETF RFC 3986 that identifies the problem type
+          type: string
+        title:
+          description: human-readable summary of the problem type
+          type: string
+        status:
+          description: the HTTP status code
+          type: number
+        detail:
+          description: human-readable explanation
+          type: string
+        instance:
+          description: URI reference that identifies the specific occurrence of the problem
+          type: string
+    Href:
+      type: object
+      title: Href
+      properties:
+        href:
+          type: string
+          format: uri-template
+    MultipartFile:
+      type: object
+      required:
+        - file
+      properties:
+        file:
+          type: string
+          description: multipartFile
+          format: binary
+    Schema:
+      type: object
+      title: Schema
+      properties:
+        name:
+          type: string
+        domain:
+          type: string
+        revision:
+          type: string
+        content:
+          $ref: '#/components/schemas/Href'
+    Schemas:
+      type: object
+      title: Schemas
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Schema'
+    UserDefinedSchema:
+      type: object
+      title: UserDefinedSchema
+      properties:
+        name:
+          type: string
+        domain:
+          type: string
+        revision:
+          type: string
+        content:
+          $ref: '#/components/schemas/Href'
+    UserDefinedSchemas:
+      type: object
+      title: UserDefinedSchemas
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserDefinedSchema'
+  responses:
+    '204':
+      description: No Content
+      content: {}
+    '400':
+      description: Bad Request
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    '401':
+      description: Unauthorized
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    '403':
+      description: Forbidden
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    '404':
+      description: Not Found
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    '406':
+      description: Not Acceptable
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    '409':
+      description: Conflict
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    '411':
+      description: Length Required
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    '413':
+      description: Payload Too Large
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    '414':
+      description: URI Too Large
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    '415':
+      description: Unsupported Media Type
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    '429':
+      description: Too Many Requests
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    '500':
+      description: Internal Server Error
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    '502':
+      description: Bad Gateway
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    '503':
+      description: Service Unavailable
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+  parameters:
+    acceptPlainTextInHeader:
+      name: Accept
+      in: header
+      required: true
+      schema:
+        type: string
+        default: text/plain
+    contentTypeMultipartFileInHeader:
+      name: Content-Type
+      in: header
+      required: true
+      schema:
+        type: string
+        default: multipart/form-data
+    domainOptionalInQuery:
+      name: domain
+      in: query
+      required: false
+      schema:
+        type: string
+    schemaNameInPath:
+      name: schemaName
+      in: path
+      required: true
+      schema:
+        type: string
+    contentTypeJsonInHeader:
+      name: Content-Type
+      in: header
+      required: true
+      schema:
+        type: string
+        default: application/json
+    acceptJsonInHeader:
+      name: Accept
+      in: header
+      required: true
+      schema:
+        type: string
+        default: application/json
+    acceptYangJsonInHeader:
+      name: Accept
+      in: header
+      required: true
+      schema:
+        type: string
+        default: application/yang.data+json
+    offsetParam:
+      name: offset
+      in: query
+      description: This query parameter allows you to omit a specified number of entries before the beginning of the result set for pagination.
+      required: false
+      schema:
+        type: integer
+        default: 0
+        minimum: 0
+    limitParam:
+      name: limit
+      in: query
+      description: The query parameter provides to limit the number of entries returned for a request for pagination.
+      required: false
+      schema:
+        type: integer
+        default: 500
+        minimum: 1
+        maximum: 500
+    domainNameInPath:
+      name: domainName
+      in: path
+      description: domain name
+      required: true
+      schema:
+        type: string
+    entityIdInPath:
+      name: entityId
+      in: path
+      required: true
+      schema:
+        type: string
+    relationshipIdInPath:
+      name: relationshipId
+      in: path
+      required: true
+      schema:
+        type: string
+    entityTypeNameInPath:
+      name: entityTypeName
+      in: path
+      required: true
+      schema:
+        type: string
+    relationshipTypeNameInPath:
+      name: relationshipTypeName
+      in: path
+      required: true
+      schema:
+        type: string
+    targetFilterOptionalInQuery:
+      name: targetFilter
+      description: Use *targetFilter* to specify the entity type and
+        attributes to be returned in the REST response. The value for
+        *targetFilter* can also be a list of entity types and attributes.
+      in: query
+      required: false
+      schema:
+        type: string
+    scopeFilterOptionalInQuery:
+      name: scopeFilter
+      description: Use *scopeFilter* to specify the attributes to match on.
+        The value for *scopeFilter* can also be a list of entity types and
+        attributes. scopeFilter returns a boolean.
+      in: query
+      required: false
+      schema:
+        type: string

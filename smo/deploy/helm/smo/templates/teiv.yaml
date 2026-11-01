@@ -1,0 +1,280 @@
+{{- /* TE&IV on O-RAN-SC smo-teiv (plan task S3.23, ADR 0013 section 8, D19), in step with docker-compose.yml's profile `teiv`: values.yaml `teiv`. Off by default.
+       smo-teiv's own Postgres (StatefulSet teiv-db, its password in the Secret <release>-teiv-db, made once and kept), its ingestion (the only writer of that
+       database, D6, consuming TE&IV's topic on the broker `teiv.kafka.bootstrapServers`) and its exposure (smo-teiv's REST API, Service teiv-exposure). No
+       module but TE&IV reaches the database or the API: the NetworkPolicies below admit the database's port from the two smo-teiv pods only, and the API's
+       from pods labelled app.kubernetes.io/name=teiv only (TE&IV's facade, S3.19; none yet), with no ingress at all to the ingestion pod. They need a CNI that
+       enforces NetworkPolicy. The topic's isolation is the broker's (per-principal ACLs, PR-CONV-S1.15): the chart brings no broker (PR-CONV-S1.10b). */}}
+{{- if .Values.teiv.enabled }}
+{{- $t := .Values.teiv }}
+{{- if not $t.kafka.bootstrapServers }}
+{{- fail "teiv.enabled needs teiv.kafka.bootstrapServers (host:port): smo-teiv's ingestion consumes TE&IV's topic there, and the chart brings no broker" }}
+{{- end }}
+{{- $kafka := splitList ":" (first (splitList "," $t.kafka.bootstrapServers)) }}
+{{- if ne (len $kafka) 2 }}
+{{- fail "teiv.kafka.bootstrapServers must start with host:port (smo-teiv 0.3.0 takes one broker address)" }}
+{{- end }}
+{{- $labels := include "smo.labels" (dict "root" .) }}
+{{- $secret := printf "%s-teiv-db" .Release.Name }}
+{{- $existing := lookup "v1" "Secret" .Release.Namespace $secret }}
+{{- $password := randAlphaNum 32 }}
+{{- if $existing }}
+{{- $password = index $existing.data "password" | b64dec }}
+{{- end }}
+{{- $image := printf "%s/%s:%s" .Values.image.registry $t.image $t.tag }}
+---
+# smo-teiv's database password: random on the first install, read back on every upgrade (the database keeps the password it was initialised with)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $secret }}
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/name: teiv-db
+type: Opaque
+stringData:
+  password: {{ $password | quote }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: teiv-db
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/name: teiv-db
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/name: teiv-db
+  ports:
+    - { name: postgres, port: 5432, targetPort: postgres }
+---
+# smo-teiv's Postgres (PostGIS 3.4 on Postgres 13) with the schema smo-teiv's generator wrote for its model and TE&IV's extension (teiv/Dockerfile.db)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: teiv-db
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/name: teiv-db
+spec:
+  serviceName: teiv-db
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/name: teiv-db
+  template:
+    metadata:
+      labels:
+        {{- include "smo.podLabels" (dict "root" $) | nindent 8 }}
+        app.kubernetes.io/name: teiv-db
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70           # `postgres` in the alpine image
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile: { type: RuntimeDefault }
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: postgres
+          image: {{ printf "%s/%s:%s" .Values.image.registry $t.dbImage $t.tag | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - { name: postgres, containerPort: 5432 }
+          env:
+            - { name: POSTGRES_DB, value: topology_exposure_db }
+            - { name: POSTGRES_USER, value: topology_exposure_user }
+            - { name: POSTGRES_PASSWORD_FILE, value: /run/secrets/password }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "topology_exposure_user", "-d", "topology_exposure_db"] }
+            periodSeconds: 5
+            failureThreshold: 10
+          livenessProbe:
+            exec: { command: ["pg_isready", "-U", "topology_exposure_user", "-d", "topology_exposure_db"] }
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml $t.db.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true      # as compose: the data volume, the socket directory and /tmp are the only places it writes
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: pgdata, mountPath: /var/lib/postgresql/data }
+            - { name: run, mountPath: /var/run/postgresql }
+            - { name: tmp, mountPath: /tmp }
+            - { name: secret, mountPath: /run/secrets, readOnly: true }
+      volumes:
+        - { name: run, emptyDir: {} }
+        - { name: tmp, emptyDir: {} }
+        - name: secret
+          secret: { secretName: {{ $secret }}, defaultMode: 0444 }
+  volumeClaimTemplates:
+    - metadata:
+        name: pgdata
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with $t.db.storageClassName }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $t.db.storage }}
+{{- range $process := list "ingestion" "exposure" }}
+{{- $p := index $t $process }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: teiv-{{ $process }}
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/name: teiv-{{ $process }}
+spec:
+  replicas: 1                   # ingestion: one consumer group member per partition at most; exposure: smo-teiv's API, read by TE&IV's facade only
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+      app.kubernetes.io/name: teiv-{{ $process }}
+  template:
+    metadata:
+      labels:
+        {{- include "smo.podLabels" (dict "root" $) | nindent 8 }}
+        app.kubernetes.io/name: teiv-{{ $process }}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 40514        # the image's user (teiv/Dockerfile, as upstream's)
+        runAsGroup: 0
+        seccompProfile: { type: RuntimeDefault }
+      {{- with $.Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: teiv-{{ $process }}
+          image: {{ $image | quote }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          env:
+            - { name: SPRING_PROFILES_ACTIVE, value: {{ ternary "ingestion" "exposure,groups" (eq $process "ingestion") | quote }} }
+            # the password is a file Spring reads as the property SERVICE_DB_PASSWORD (configtree), never an environment variable
+            - { name: SPRING_CONFIG_IMPORT, value: "optional:configtree:/run/secrets/" }
+            - { name: SERVICE_DB_URL, value: "jdbc:postgresql://teiv-db:5432/topology_exposure_db" }
+            - { name: SERVICE_DB_REPLICA_URL, value: "jdbc:postgresql://teiv-db:5432/topology_exposure_db" }
+            - { name: SERVICE_DB_USER, value: topology_exposure_user }
+            - name: SPRING_APPLICATION_JSON
+              value: {{ dict "kafka" (dict "server" (dict "bootstrap-server-host" (first $kafka) "bootstrap-server-port" (atoi (last $kafka)))
+                                           "topology-ingestion" (dict "topic" (dict "name" $t.kafka.topic "partitions" $t.kafka.partitions "replicas" $t.kafka.replicas)
+                                                                      "consumer" (dict "group-id" $t.kafka.consumerGroup))) | toJson | quote }}
+            - { name: JAVA_TOOL_OPTIONS, value: {{ $p.javaOptions | quote }} }
+          ports:
+            - { name: http, containerPort: 8080 }
+          readinessProbe:
+            httpGet: { path: {{ ternary "/actuator/health/liveness" "/actuator/health/readiness" (eq $process "ingestion") }}, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            {{- toYaml $p.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: secret, mountPath: /run/secrets/SERVICE_DB_PASSWORD, subPath: password, readOnly: true }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        - name: secret
+          secret: { secretName: {{ $secret }}, defaultMode: 0444 }
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: teiv-exposure
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/name: teiv-exposure
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/name: teiv-exposure
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+---
+# D19 / D6: smo-teiv's database answers its two processes only
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: teiv-db
+  labels:
+    {{- $labels | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/name: teiv-db
+  policyTypes: [Ingress]
+  ingress:
+    - ports: [{ protocol: TCP, port: 5432 }]
+      from:
+        - podSelector: { matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/name: teiv-ingestion } }
+        - podSelector: { matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/name: teiv-exposure } }
+---
+# D19 / ADR 0011: smo-teiv's API answers TE&IV only (its facade's pods, plan task S3.19), and whatever `teiv.exposure.allowedSources` adds (a scraper)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: teiv-exposure
+  labels:
+    {{- $labels | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/name: teiv-exposure
+  policyTypes: [Ingress]
+  ingress:
+    - ports: [{ protocol: TCP, port: 8080 }]
+      from:
+        - podSelector: { matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/name: teiv } }
+        {{- with $t.exposure.allowedSources }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+---
+# smo-teiv's ingestion serves nothing: no ingress at all (it only reads its topic and writes its database)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: teiv-ingestion
+  labels:
+    {{- $labels | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/name: teiv-ingestion
+  policyTypes: [Ingress]
+{{- end }}

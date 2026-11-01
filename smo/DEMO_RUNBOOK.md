@@ -1761,6 +1761,21 @@ docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-s
 `scripts/kafka_roundtrip.py` publishes events and reads them back in order (the CI job "Kafka profile round trip" also stops the broker in between). Stop with
 `docker compose --profile kafka down` (and `-v` to drop the topic's data).
 
+## TE&IV on smo-teiv (optional, plan task S3.23)
+
+TE&IV's store, O-RAN-SC smo-teiv 0.3.0 with TE&IV's model extension (ADR 0013), in the profile `teiv`: its database, its ingestion and its exposure, on the
+`kafka` profile's broker (started with it). The first build compiles smo-teiv from its tag with Maven (several minutes). TE&IV's own facade, which every
+other module will use, is not built yet (S3.19): until then smo-teiv is reachable from nothing in the stack, by design, and the commands below go in
+through its own containers.
+
+```bash
+./scripts/init_secrets.sh                                          # makes secrets/teiv_db_password among the others
+docker compose --profile teiv up -d --build --wait teiv-ingestion teiv-exposure
+python teiv/loadtest/budget.py --out /tmp/teiv-budget.json --markdown /tmp/teiv-budget.md   # 1,000 cells loaded, memory against 3 GiB
+docker compose exec teiv-exposure curl -s http://localhost:8080/topology-inventory/v1/domains | head -c 400   # smo-teiv's own API, from inside
+docker compose --profile teiv down -v
+```
+
 ## Known rough edges for a live walkthrough
 
 - `smo/docs/call-flows/01-rapp-onboarding-to-deployment.md`'s diagram

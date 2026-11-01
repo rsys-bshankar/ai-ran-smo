@@ -9,10 +9,7 @@ here is part of the stack, the chart or a release.
 
 | File | What it is |
 |---|---|
-| `model/smo-teiv-ext-ran.yang`, `model/smo-teiv-ext-oam.yang` | TE&IV's model extension in the O-RAN TE&IV-DM style, TS 28.541 / TS 28.622 names: the RAN classes and relationships (domain `EXT_RAN`) and SubNetwork with its containments (domain `EXT_OAM`); their descriptions say how types are mapped and why NEIGHBOR_CELL is written with the neighbour as aSide |
-| `model/build-model.sh` | The model step of the image builds: the extension YANG beside smo-teiv's, the import modules taken from smo-teiv's own committed schema (no download), and smo-teiv's generator run over them |
-| `Dockerfile` | smo-teiv 0.3.0 built from the tag's commit (O-RAN-SC publishes container images only up to 0.2.0), with the extension YANG among its models; one image for its two processes |
-| `Dockerfile.db` | smo-teiv's Postgres (PostGIS 3.4 on Postgres 13) with the schema smo-teiv's own generator (pgsql-schema-generator 1.2.1, built from the tag) writes for smo-teiv's YANG and the extension |
+| `../../teiv/` | The extension model (`teiv/model/smo-teiv-ext-*.yang`, `build-model.sh`) and the two Dockerfiles (smo-teiv 0.3.0 from the tag with the extension; its Postgres with the generated schema) were this spike's; plan task S3.23 moved them into the TE&IV module, where the stack's profile `teiv` and the chart use them, and this spike now builds from there |
 | `docker-compose.yml` | smo-teiv's ingestion and exposure, its Postgres, a single-node Kafka; every image pinned by digest (`deploy/mirror/images.txt`) |
 | `load.py` | A TS 28.541 tree (RAN NF OAM's, the oran-sim simulators', or a synthetic one of 1,000 cells with 8 NRCellRelation each) to smo-teiv's ingestion CloudEvents, with the model-gap report |
 | `facade.py` | The sketch of TE&IV's standards face: getMOIAttributes over smo-teiv's API, the neighbour and two-hop read, its change events as TS 28.532 notifications, the R1 operation table |

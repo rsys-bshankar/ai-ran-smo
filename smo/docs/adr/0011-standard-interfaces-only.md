@@ -177,6 +177,7 @@ Counts are of today's operations in appendix A; a zero means the exception is de
 | D-21 | R1 conflict query and subscribe | R1ServCnfMtgt v01.00 is a TR: [O] until O-RAN defines the API | SO SMOS | 0 (S5.14) |
 | D-22 | ADR 0005 scope attributes (region, tenant, site cluster, SubNetwork) on `ManagedElement` and on invokers | A [D] attribute on a standard class, set and read through standard operations, enforced through TS 28.319 AccessRules | TE&IV (attributes), SME (invoker claims) | 0 |
 | D-23 | The cell-lock read model: the `CellLock` class (cell, lock state, owning intent, lease expiry) served by SO SMOS over ProvMnS | No standard class for a lease lock on a cell; added by plan task S0.5, whose DDL keeps the lock table in SO SMOS's own schema (one writer, D6) so TE&IV, SA SMOS and rApps read it from SO SMOS rather than by SQL | SO SMOS | 0 (S3.2) |
+| D-24 | TE&IV's extension domains `EXT_RAN` and `EXT_OAM` in the O-RAN WG10 TE&IV R1 API: NRCellRelation and NEIGHBOR_CELL, CO_COVERAGE_OVERLAY, SubNetwork, CommonBeamformingFunction, NRFreqRelation and the TS 28.541 SON classes as TE&IV-DM entity and relationship types (`teiv/model/`, ADR 0013 section 11) | TE&IV-DM R005 v06.00 has none of them (no neighbour relationship at all); the data model is extended by new modules, as here, and its user-defined schemas carry classifiers and decorators only | TE&IV | 0 (read through the standard TE&IV R1 operations) |
 
 ## 7. The S0.17 interface gate (built 1 November 2026)
 

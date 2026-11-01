@@ -169,6 +169,42 @@ oranSim:
     requests: { cpu: 50m, memory: 256Mi }
     limits: { memory: 768Mi }
 
+# TE&IV on O-RAN-SC smo-teiv (plan task S3.23, ADR 0013 section 8), the same as docker compose's profile `teiv`: smo-teiv 0.3.0 with TE&IV's model extension
+# (teiv/model/), its own Postgres (StatefulSet teiv-db) and its two processes (Deployments teiv-ingestion and teiv-exposure). Off by default. The images are
+# <image.registry>/<image>:<tag> and <image.registry>/<dbImage>:<tag>, which .github/workflows/teiv-image.yml builds from the pinned tag and publishes (O-RAN-SC
+# publishes no 0.3.0 image). It needs a Kafka broker (`kafka.bootstrapServers`, host:port; the chart brings none yet, PR-CONV-S1.10b) and fails the render
+# without one; the ingestion consumes TE&IV's topic there (`kafka.topic`; smo-teiv makes it with `partitions` and `replicas` when it is missing). D19: no
+# module but TE&IV reaches the database or smo-teiv's API (the chart's NetworkPolicies, templates/teiv.yaml); the topic is reserved by name, and per-principal
+# ACLs on the broker are PR-CONV-S1.15. Memory: 3 GiB at 1,000 cells with the broker (teiv/loadtest/budget.py); the heaps and limits below are compose's.
+teiv:
+  enabled: false
+  image: smo-teiv
+  dbImage: smo-teiv-db
+  tag: 0.3.0-ext                               # smo-teiv's tag 0.3.0 (ee898469d2b9) with TE&IV's extension model
+  kafka:
+    bootstrapServers: ""                       # host:port of the broker (smo-teiv 0.3.0 takes one address)
+    topic: smo.teiv.ingestion.v1
+    partitions: 4
+    replicas: 3                                # compose's one-broker lab uses 1
+    consumerGroup: smo.teiv.ingestion
+  db:
+    storage: 5Gi
+    storageClassName: ""
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { memory: 768Mi }
+  ingestion:
+    javaOptions: -Xms256m -Xmx768m -XX:MaxMetaspaceSize=192m -XX:+ExitOnOutOfMemoryError
+    resources:
+      requests: { cpu: 200m, memory: 768Mi }
+      limits: { memory: 1152Mi }
+  exposure:
+    javaOptions: -Xms128m -Xmx384m -XX:MaxMetaspaceSize=192m -XX:+ExitOnOutOfMemoryError
+    resources:
+      requests: { cpu: 100m, memory: 384Mi }
+      limits: { memory: 640Mi }
+    allowedSources: []                         # NetworkPolicy peers besides TE&IV's own pods that may read smo-teiv's API (a metrics scraper, say)
+
 # PR-SEC-9.3 (DOC-CF-3.2): the shared key of the gateway's GET /bootstrap, from a Secret of your own ({name: r1-bootstrap, key: bootstrap-key}; the key defaults to
 # bootstrap-key). Set, the gateway gets it as R1_BOOTSTRAP_KEY and asks for it, and every other module and the GUI backend get it as SMO_BOOTSTRAP_KEY and send it;
 # empty (the default) changes nothing. rApps outside the chart need the same value as SMO_BOOTSTRAP_KEY.
