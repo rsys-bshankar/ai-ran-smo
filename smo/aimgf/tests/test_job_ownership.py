@@ -12,6 +12,7 @@ import uuid
 import pytest
 
 from test_main import FakeResponse, _set_lifecycle, client, db_session_factory, mlmr  # noqa: F401  (pytest fixtures)
+from provmns_reads import create
 from app.models import InferenceJob, MLMFSubscription, MLTrainingProcess, TrainingJob
 from app.governance.statemachine import ModelLifecycleState
 
@@ -124,7 +125,7 @@ def test_another_rapp_may_not_suspend_a_testing_or_update_request(client, mlmr, 
 
     promoted = mlmr.add_model(owner="es-client")
     _set_lifecycle(db_session_factory, promoted, model_lifecycle_state=ModelLifecycleState.PROMOTED)
-    function_id = client.post("/ml-update-functions", json={"userLabel": "mluf"}).json()["id"]
+    function_id = create(client, db_session_factory, "MLUpdateFunction", {"userLabel": "mluf"})   # a ProvMnS class since S2.10
     update = client.post("/ml-update-requests", json={"mLUpdateFunctionRef": function_id, "mLModelRefList": [str(promoted)], "newCapabilityVersionId": ["v2"]})
     assert update.status_code == 201, update.text
     update_id = update.json()["id"]

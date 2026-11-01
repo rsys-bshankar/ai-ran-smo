@@ -131,22 +131,32 @@ def create_aiml_inference_report(body: AIMLInferenceReportBody, request: Request
     # reference is given; 404 `NRM_OBJECT_NOT_FOUND` if that function does not exist. Call flow 27d: an rApp may report only on models it owns (403
     # `MODEL_ACCESS_DENIED`, `_check_rapp_owns_models`; a model the registry no longer knows passes), as on inference resolve (call flow 02); the console and SMO modules are
     # not asked, and for them the model ids are stored as strings without a lookup. One commit.
-    if (body.aIMLInferenceFunctionRef is None) == (body.aIMLInferenceEmulationFunctionRef is None):
-        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
-                               detail="exactly one of aIMLInferenceFunctionRef/aIMLInferenceEmulationFunctionRef")
-    if body.aIMLInferenceFunctionRef is not None:
-        _get(db, AIMLInferenceFunction, body.aIMLInferenceFunctionRef, "AIMLInferenceFunction")
-    elif body.aIMLInferenceEmulationFunctionRef is not None:       # exactly one is set (checked above)
-        _get(db, AIMLInferenceEmulationFunction, body.aIMLInferenceEmulationFunctionRef, "AIMLInferenceEmulationFunction")
-    _check_rapp_owns_models(db, request, [uuid.UUID(str(m)) for m in body.mLModelRefList], "report on its inference")
-    r = AIMLInferenceReport(aiml_inference_function_id=body.aIMLInferenceFunctionRef,
-                            aiml_inference_emulation_function_id=body.aIMLInferenceEmulationFunctionRef,
-                            inference_outputs=ts28105.dump(body.inferenceOutputs) or [],
-                            potential_impact_info=ts28105.dump(body.potentialImpactInfo),
-                            ml_model_refs=[str(m) for m in body.mLModelRefList])
-    db.add(r)
+    r = record_inference_report(db, request, function_id=body.aIMLInferenceFunctionRef, emulation_function_id=body.aIMLInferenceEmulationFunctionRef,
+                                model_ids=body.mLModelRefList, inference_outputs=ts28105.dump(body.inferenceOutputs) or [],
+                                potential_impact_info=ts28105.dump(body.potentialImpactInfo))
     db.commit()
     return _inference_report_view(r)
+
+
+def record_inference_report(db: Session, request: Request | None, *, function_id: uuid.UUID | None, emulation_function_id: uuid.UUID | None,
+                            model_ids: list[uuid.UUID], inference_outputs: list, potential_impact_info: dict | None,
+                            report_id: uuid.UUID | None = None) -> AIMLInferenceReport:
+    """Records an inference report (POST /aiml-inference-reports and the AIMLInferenceReport hook of ProvMnS), with id `report_id` when given; the
+    checks of the route notes above. Flushes, does not commit."""
+    if (function_id is None) == (emulation_function_id is None):
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
+                               detail="exactly one of aIMLInferenceFunctionRef/aIMLInferenceEmulationFunctionRef")
+    if function_id is not None:
+        _get(db, AIMLInferenceFunction, function_id, "AIMLInferenceFunction")
+    else:                                                          # exactly one is set (checked above)
+        _get(db, AIMLInferenceEmulationFunction, emulation_function_id, "AIMLInferenceEmulationFunction")
+    _check_rapp_owns_models(db, request, [uuid.UUID(str(m)) for m in model_ids], "report on its inference")
+    r = AIMLInferenceReport(aiml_inference_function_id=function_id, aiml_inference_emulation_function_id=emulation_function_id,
+                            inference_outputs=inference_outputs, potential_impact_info=potential_impact_info,
+                            ml_model_refs=[str(m) for m in model_ids], **({"aiml_inference_report_id": report_id} if report_id else {}))
+    db.add(r)
+    db.flush()
+    return r
 
 
 @router.get("/aiml-inference-reports")

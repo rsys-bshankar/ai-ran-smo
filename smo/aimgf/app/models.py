@@ -706,3 +706,11 @@ class MLUpdateReport(Base):
     updated_ml_capability: Mapped[dict | None] = mapped_column(JSON)  # AvailMLCapabilityReport
     ml_model_refs: Mapped[list] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(default=_now)
+
+
+# The ProvMnS store of `smo_shared.mns` (plan task S2.7, revision aimgf_0001: `aimgf.moi_store`), put on the shared `Base` as Echo does, so that
+# `scripts/check_migration_matches_models.py` checks it and a unit test's `create_all` makes it. The integration mesh imports Echo and AIMgF into one
+# process, whose `Base` then already holds the table; it is not copied twice.
+from smo_shared.mns.store import ManagedObject  # noqa: E402  (beside the table it copies)
+
+MOI_STORE = Base.metadata.tables["moi_store"] if "moi_store" in Base.metadata.tables else ManagedObject.__table__.to_metadata(Base.metadata)

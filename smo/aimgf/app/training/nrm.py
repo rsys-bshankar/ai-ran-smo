@@ -27,71 +27,12 @@ from ..training.jobs import ACTIVE_TRAINING_STATUSES, _cancel_training_job, _res
 router = APIRouter()
 
 
-# Body of POST and PUT /ml-training-functions: the writable attributes of the function. `mLTrainingType` is read-only in the spec and is not accepted.
-class MLTrainingFunctionBody(_Body):
-    userLabel: str | None = None
-    supportedLearningTechnology: ts28105.SupportedLearningTechnology | None = None
-    fLParticipationInfo: ts28105.FLParticipationInfo | None = None
-    mLKnowledge: ts28105.MLKnowledge | None = None
-    mLModelRepositoryRef: uuid.UUID | None = None
-
-
 def _training_function_view(f: MLTrainingFunction) -> dict:
     """Returns the MLTrainingFunction as `{id, attributes}`; `mLTrainingType` is the type of the latest run started for it, or None."""
     return {"id": str(f.ml_training_function_id), "attributes": {
         "userLabel": f.user_label, "supportedLearningTechnology": f.supported_learning_technology,
         "fLParticipationInfo": f.fl_participation_info, "mLKnowledge": f.ml_knowledge,
         "mLTrainingType": f.ml_training_type, "mLModelRepositoryRef": _s(f.ml_model_repository_ref)}}
-
-
-def _apply_training_function(f: MLTrainingFunction, body: MLTrainingFunctionBody) -> None:
-    """Copies every writable attribute of `body` onto `f`, so an attribute left out of the body becomes None (what PUT relies on). Does not touch `ml_training_type` or commit."""
-    f.user_label = body.userLabel
-    f.supported_learning_technology = ts28105.dump(body.supportedLearningTechnology)
-    f.fl_participation_info = ts28105.dump(body.fLParticipationInfo)
-    f.ml_knowledge = ts28105.dump(body.mLKnowledge)
-    f.ml_model_repository_ref = body.mLModelRepositoryRef
-
-
-@router.post("/ml-training-functions", status_code=201)
-def create_ml_training_function(body: MLTrainingFunctionBody, db: Session = Depends(get_session)):
-    # Route notes: 201 with the new function. No uniqueness rule; commits once.
-    f = MLTrainingFunction()
-    _apply_training_function(f, body)
-    db.add(f)
-    db.commit()
-    return _training_function_view(f)
-
-
-@router.get("/ml-training-functions")
-def list_ml_training_functions(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
-    # Route notes: paginated; does not run the timeout sweep (functions have no deadline).
-    return _page(db, select(MLTrainingFunction), limit, offset, _training_function_view)
-
-
-@router.get("/ml-training-functions/{function_id}")
-def get_ml_training_function(function_id: uuid.UUID, db: Session = Depends(get_session)):
-    # Route notes: 404 `NRM_OBJECT_NOT_FOUND` for an unknown id.
-    return _training_function_view(_get(db, MLTrainingFunction, function_id, "MLTrainingFunction"))
-
-
-@router.put("/ml-training-functions/{function_id}")
-def replace_ml_training_function(function_id: uuid.UUID, body: MLTrainingFunctionBody, db: Session = Depends(get_session)):
-    # Route notes: full replace through `_apply_training_function`: attributes omitted from the body are cleared, not kept. 404 for an unknown id. The type of
-    # the latest run is preserved.
-    f = _get(db, MLTrainingFunction, function_id, "MLTrainingFunction")
-    _apply_training_function(f, body)
-    db.commit()
-    return _training_function_view(f)
-
-
-@router.delete("/ml-training-functions/{function_id}", status_code=204)
-def delete_ml_training_function(function_id: uuid.UUID, db: Session = Depends(get_session)):
-    # Route notes: 204 whether or not it existed. Training requests that named the function keep their rows (the database sets their reference to NULL).
-    f = db.get(MLTrainingFunction, function_id)
-    if f is not None:
-        db.delete(f)
-        db.commit()
 
 
 # Body of POST /ml-training-requests. Exactly one of `mLModelRef` and `mLModelCoordinationGroupRef` is required (checked in the route, 422
@@ -342,29 +283,3 @@ def _training_report_view(r: MLTrainingReport) -> dict:
         "mLTrainingFunctionRef": _s(r.ml_training_function_id), "createdAt": r.created_at.isoformat()}}
 
 
-def _training_report_view_for(db: Session):
-    """Returns a function that renders an MLTrainingReport with `trainingProcessRef` filled in from the job's process (one extra query per report)."""
-    def view(r: MLTrainingReport) -> dict:
-        out = _training_report_view(r)
-        process = db.scalar(select(MLTrainingProcess).where(MLTrainingProcess.training_job_id == r.training_job_id))
-        out["attributes"]["trainingProcessRef"] = _s(process.ml_training_process_id) if process else None
-        return out
-    return view
-
-
-@router.get("/ml-training-reports")
-def list_ml_training_reports(model_id: uuid.UUID | None = None, limit: int = PageLimit, offset: int = PageOffset,
-                             db: Session = Depends(get_session)):
-    # Route notes: the read first runs `_expire_overdue_jobs`, which fails every overdue run (and commits) before the view is built. Newest first. The
-    # `model_id` filter matches `ml_model_generated_ref`, which is set only for a successful run, so reports of failed runs are not found by it.
-    _expire_overdue_jobs(db)
-    stmt = select(MLTrainingReport)
-    if model_id:
-        stmt = stmt.where(MLTrainingReport.ml_model_generated_ref == model_id)
-    return _page(db, stmt.order_by(MLTrainingReport.created_at.desc()), limit, offset, _training_report_view_for(db))
-
-
-@router.get("/ml-training-reports/{report_id}")
-def get_ml_training_report(report_id: uuid.UUID, db: Session = Depends(get_session)):
-    # Route notes: 404 `NRM_OBJECT_NOT_FOUND` for an unknown id. No timeout sweep (a report is written on completion; it does not age).
-    return _training_report_view_for(db)(_get(db, MLTrainingReport, report_id, "MLTrainingReport"))

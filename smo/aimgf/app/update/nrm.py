@@ -28,13 +28,6 @@ from ..training.nrm import _apply_training_flags
 router = APIRouter()
 
 
-# Body of POST /ml-update-functions: label, optional capability report and the models the function covers.
-class MLUpdateFunctionBody(_Body):
-    userLabel: str | None = None
-    availMLCapabilityReport: ts28105.AvailMLCapabilityReport | None = None
-    mLModelRef: list[uuid.UUID] = []
-
-
 # Body of POST /ml-update-requests. `mLModelRefList` must not be empty (checked in the route). `requestSource` (default `nrm`) is stored as the producer of each
 # training run; it is not a TS 28.105 attribute.
 class MLUpdateRequestBody(_Body):
@@ -90,37 +83,6 @@ def _update_report_view(r: MLUpdateReport) -> dict:
         "mLUpdateProcessRef": str(r.ml_update_process_id), "createdAt": r.created_at.isoformat()}}
 
 
-@router.post("/ml-update-functions", status_code=201)
-def create_ml_update_function(body: MLUpdateFunctionBody, db: Session = Depends(get_session)):
-    # Route notes: 201; the model references are stored as strings and not looked up.
-    f = MLUpdateFunction(user_label=body.userLabel, avail_ml_capability_report=ts28105.dump(body.availMLCapabilityReport),
-                         ml_model_refs=[str(m) for m in body.mLModelRef])
-    db.add(f)
-    db.commit()
-    return _update_function_view(f)
-
-
-@router.get("/ml-update-functions")
-def list_ml_update_functions(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
-    # Route notes: paginated; no timeout sweep.
-    return _page(db, select(MLUpdateFunction), limit, offset, _update_function_view)
-
-
-@router.get("/ml-update-functions/{function_id}")
-def get_ml_update_function(function_id: uuid.UUID, db: Session = Depends(get_session)):
-    # Route notes: 404 `NRM_OBJECT_NOT_FOUND` for an unknown id.
-    return _update_function_view(_get(db, MLUpdateFunction, function_id, "MLUpdateFunction"))
-
-
-@router.delete("/ml-update-functions/{function_id}", status_code=204)
-def delete_ml_update_function(function_id: uuid.UUID, db: Session = Depends(get_session)):
-    # Route notes: 204 whether or not it existed. Requests that named the function keep their rows (the database sets the reference to NULL).
-    f = db.get(MLUpdateFunction, function_id)
-    if f is not None:
-        db.delete(f)
-        db.commit()
-
-
 @router.post("/ml-update-requests", status_code=201)
 def create_ml_update_request(body: MLUpdateRequestBody, request: Request, db: Session = Depends(get_session)):
     """An ML update is realised as FINE_TUNING training of every named
@@ -135,32 +97,39 @@ def create_ml_update_request(body: MLUpdateRequestBody, request: Request, db: Se
     # process and one FINE_TUNING run per model created, all in this transaction. The states are read before any run starts, so a model listed twice passes both
     # times; its second run then finds the model TRAINING and supersedes the first (`_start_training`), leaving the first run CANCELLED inside the same update.
     # A failure (for example NFO) after some runs started rolls back the AIMgF rows but not the NFO runtimes already created. No timeout sweep first.
-    if not body.mLModelRefList:
+    r = start_update(db, request, function_id=body.mLUpdateFunctionRef, model_ids=body.mLModelRefList,
+                     performance_gain_threshold=ts28105.dump(body.performanceGainThreshold), new_capability_version_ids=body.newCapabilityVersionId,
+                     update_time_deadline=body.updateTimeDeadline, ml_update_reporting_period=body.mLUpdateReportingPeriod, source=body.requestSource)
+    db.commit()
+    return _update_request_view_for(db)(r)
+
+
+def start_update(db: Session, request: Request | None, *, function_id: uuid.UUID | None, model_ids: list[uuid.UUID], source: str,
+                 request_id: uuid.UUID | None = None, **request_fields) -> MLUpdateRequest:
+    """Starts an ML update (POST /ml-update-requests and the MLUpdateRequest hook of ProvMnS): the checks of the route notes above, then the request
+    (with id `request_id` when given), its process and one FINE_TUNING run per model. `request_fields` are the request's TS 28.105 columns. Flushes,
+    does not commit."""
+    if not model_ids:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="mLModelRefList must not be empty")
-    if body.mLUpdateFunctionRef is not None:
-        _get(db, MLUpdateFunction, body.mLUpdateFunctionRef, "MLUpdateFunction")
-    for model_id in body.mLModelRefList:
+    if function_id is not None:
+        _get(db, MLUpdateFunction, function_id, "MLUpdateFunction")
+    for model_id in model_ids:
         _owned_model(db, request, model_id, "update")
         state = _get_or_create_lifecycle(db, model_id).model_lifecycle_state
         if state not in TRAINABLE_STATES or state == ModelLifecycleState.TRAINING:
             raise framework_error(FrameworkError.LIFECYCLE_ILLEGAL_TRANSITION, detail=f"cannot update model {model_id} in state {state}")
-    r = MLUpdateRequest(ml_update_function_id=body.mLUpdateFunctionRef,
-                        performance_gain_threshold=ts28105.dump(body.performanceGainThreshold),
-                        new_capability_version_ids=body.newCapabilityVersionId, update_time_deadline=body.updateTimeDeadline,
-                        ml_update_reporting_period=body.mLUpdateReportingPeriod, request_status="IN_PROGRESS",
-                        ml_model_refs=[str(m) for m in body.mLModelRefList])
+    r = MLUpdateRequest(ml_update_function_id=function_id, request_status="IN_PROGRESS", ml_model_refs=[str(m) for m in model_ids],
+                        **({"ml_update_request_id": request_id} if request_id is not None else {}), **request_fields)
     db.add(r)
     db.flush()
-    p = MLUpdateProcess(ml_update_request_id=r.ml_update_request_id, status="RUNNING",
-                        ml_model_refs=[str(m) for m in body.mLModelRefList])
+    p = MLUpdateProcess(ml_update_request_id=r.ml_update_request_id, status="RUNNING", ml_model_refs=[str(m) for m in model_ids])
     db.add(p)
     db.flush()
-    for model_id in body.mLModelRefList:
-        _start_training(db, model_id=model_id, group_id=None, producer_id=body.requestSource,
-                        ml_training_type="FINE_TUNING", training_request_source=body.requestSource,
+    for model_id in model_ids:
+        _start_training(db, model_id=model_id, group_id=None, producer_id=source,
+                        ml_training_type="FINE_TUNING", training_request_source=source,
                         ml_update_process_id=p.ml_update_process_id)
-    db.commit()
-    return _update_request_view_for(db)(r)
+    return r
 
 
 @router.get("/ml-update-requests")
@@ -190,25 +159,31 @@ def modify_ml_update_request(request_id: uuid.UUID, body: RequestFlagsBody, requ
     _expire_overdue_jobs(db)
     r = _get(db, MLUpdateRequest, request_id, "MLUpdateRequest")
     _check_rapp_owns_models(db, request, [uuid.UUID(str(m)) for m in r.ml_model_refs or []], "cancel or suspend its update")   # call flow 02: 403 for another rApp's models
+    apply_update_flags(db, r, body.cancelRequest, body.suspendRequest)
+    db.commit()
+    return _update_request_view_for(db)(r)
+
+
+def apply_update_flags(db: Session, r: MLUpdateRequest, cancel: bool | None, suspend: bool | None) -> None:
+    """Applies the NRM control flags to an update (PATCH /ml-update-requests/{id} and the MLUpdateRequest hook of ProvMnS), as the route notes above
+    say. Does not commit."""
     if r.request_status in ("FINISHED", "CANCELLED"):
         raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION, detail=f"update request already {r.request_status}")
     p = db.scalars(select(MLUpdateProcess).where(MLUpdateProcess.ml_update_request_id == r.ml_update_request_id)).one()
     jobs = db.scalars(select(TrainingJob).where(TrainingJob.ml_update_process_id == p.ml_update_process_id)).all()
-    if body.cancelRequest:
+    if cancel:
         r.cancel_request, r.request_status = True, "CANCELLED"
         p.cancel_process, p.status = True, "CANCELLED"
         for job in jobs:
             if job.status in ACTIVE_TRAINING_STATUSES:
                 # the process's own terminal state is set above — don't re-enter advance_ml_update_process
                 _cancel_training_job(db, job, advance_update=False)
-    elif body.suspendRequest is not None:
+    elif suspend is not None:
         for job in jobs:
-            _apply_training_flags(db, job, None, body.suspendRequest)
-        r.suspend_request = p.suspend_process = body.suspendRequest
-        r.request_status = "SUSPENDED" if body.suspendRequest else "IN_PROGRESS"
-        p.status = "SUSPENDED" if body.suspendRequest else "RUNNING"
-    db.commit()
-    return _update_request_view_for(db)(r)
+            _apply_training_flags(db, job, None, suspend)
+        r.suspend_request = p.suspend_process = suspend
+        r.request_status = "SUSPENDED" if suspend else "IN_PROGRESS"
+        p.status = "SUSPENDED" if suspend else "RUNNING"
 
 
 def advance_ml_update_process(db: Session, process_id: uuid.UUID) -> None:
@@ -246,7 +221,7 @@ def advance_ml_update_process(db: Session, process_id: uuid.UUID) -> None:
     db.add(report)
     db.flush()
     capability = {"availMLCapabilityReportID": str(report.ml_update_report_id),
-                  "mLCapabilityVersionId": (r.new_capability_version_ids or [None])[0],
+                  "mLCapabilityVersionId": list(r.new_capability_version_ids or []) or None,     # TS 28.105: an array (a single string until S2.10)
                   "expectedPerformanceGains": gains}
     report.updated_ml_capability = {k: v for k, v in capability.items() if v is not None}
     if r.ml_update_function_id is not None:
@@ -271,13 +246,3 @@ def get_ml_update_process(process_id: uuid.UUID, db: Session = Depends(get_sessi
     return _update_process_view_for(db)(_get(db, MLUpdateProcess, process_id, "MLUpdateProcess"))
 
 
-@router.get("/ml-update-reports")
-def list_ml_update_reports(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
-    # Route notes: paginated, newest first; no timeout sweep (a report is written once the update has ended).
-    return _page(db, select(MLUpdateReport).order_by(MLUpdateReport.created_at.desc()), limit, offset, _update_report_view)
-
-
-@router.get("/ml-update-reports/{report_id}")
-def get_ml_update_report(report_id: uuid.UUID, db: Session = Depends(get_session)):
-    # Route notes: 404 `NRM_OBJECT_NOT_FOUND` for an unknown id.
-    return _update_report_view(_get(db, MLUpdateReport, report_id, "MLUpdateReport"))

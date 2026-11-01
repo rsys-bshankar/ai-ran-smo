@@ -18,12 +18,14 @@ from sqlalchemy.orm import sessionmaker
 from smo_shared.db import Base, get_session
 from smo_shared.idempotency import IdempotencyKey
 from smo_shared import outbox
+from smo_shared import audit, events
 from smo_shared.outbox import NotificationOutbox
 from smo_shared.testing import make_test_engine
 from smo_shared.testing import concurrent_commit_on
 
 from app.main import app
 from app import models as aimgf_models
+from app.registry import models as registry_models
 from app.models import (
     CertificationRecord, EmulationJob, FeatureGroup, InferenceJob, LifecycleTransition, MLMFSubscription,
     ModelLifecycle, PerformanceReport, TrainingJob, ValidationJob,
@@ -138,9 +140,10 @@ def db_session_factory():
     # Every table AIMgF's own models declare (Wave 4 added the TS 28.105
     # NRM tables, which the job tables now reference).
     Base.metadata.create_all(engine, tables=[
-        cls.__table__ for cls in vars(aimgf_models).values()
-        if isinstance(cls, type) and issubclass(cls, Base) and cls is not Base and cls.__module__ == aimgf_models.__name__
-    ])
+        cls.__table__ for module in (aimgf_models, registry_models) for cls in vars(module).values()
+        if isinstance(cls, type) and issubclass(cls, Base) and cls is not Base and cls.__module__ == module.__name__
+    ] + [aimgf_models.MOI_STORE, audit.AuditEntry.__table__, audit.AuditHead.__table__, events.SmoEvent.__table__])
+    # the registry's tables, the ProvMnS store (every commit projects into it, app/provmns/projection.py) and the shared tables its router writes
     IdempotencyKey.__table__.create(engine)
     NotificationOutbox.__table__.create(engine)
     return sessionmaker(bind=engine)

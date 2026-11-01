@@ -171,9 +171,9 @@ class AIMLManagementPolicy(_Spec):
 # TS 28.105 AvailMLCapabilityReport of an MLUpdateFunction (capability version and expected gains); an MLUpdateReport carries the updated one.
 class AvailMLCapabilityReport(_Spec):
     availMLCapabilityReportID: str | None = None
-    mLCapabilityVersionId: str | None = None
+    mLCapabilityVersionId: list[str] | None = None        # an array in TS 28.105 (a single string until S2.10)
     expectedPerformanceGains: list[ModelPerformance] | None = None
-    mLModelRef: str | None = None
+    mLModelRef: list[str] | None = None                   # DnListRo
 
 
 # TS 28.105 InferenceOutput of an AIMLInferenceReport. `outputResult` is an open name-to-value map; `aIMLInferenceName` is a free string because the spec's type

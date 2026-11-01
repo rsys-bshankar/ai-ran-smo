@@ -17,7 +17,7 @@ artifacts, profiles and change subscriptions is a database foreign key inside th
 import json
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, Path, Query, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Path, Query, Request, Response, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -561,16 +561,6 @@ def ml_model_nrm_refs(db: Session, model_id: uuid.UUID) -> dict:
             "usedByFunctionRefList": [str(f.aiml_inference_function_id) for f in functions]}
 
 
-@router.get("/ml-models/{model_id}/nrm-refs")
-def get_ml_model_nrm_refs(model_id: uuid.UUID, db: Session = Depends(get_session)):
-    """The read-only MLModel attributes whose truth is AIMgF's lifecycle
-    and NRM: mLTrainingType (of the latest training), aIMLInferenceReportRefList
-    and usedByFunctionRefList (the AIMLInferenceFunctions it is loaded on)."""
-    # Route notes: always 200, including for a model id that does not exist (the lists are then empty and the type None). `GET /ml-models/{id}` reads the
-    # same values in process.
-    return ml_model_nrm_refs(db, model_id)
-
-
 @router.get("/ml-models/{model_id}")
 def get_ml_model_nrm(model_id: uuid.UUID, db: Session = Depends(get_session)):
     """TS 28.105 MLModel IOC view: the spec's own attribute names over
@@ -591,16 +581,6 @@ def _group_nrm_view(g: MLModelCoordinationGroup) -> dict:
     return {"id": str(g.group_id), "attributes": {
         "memberMLModelRefList": [str(x) for x in g.member_model_ids],
         "mLModelRepositoryRef": str(g.ml_model_repository_id) if g.ml_model_repository_id else None}}
-
-
-@router.get("/ml-model-coordination-groups/{group_id}")
-def get_ml_model_coordination_group_nrm(group_id: uuid.UUID, db: Session = Depends(get_session)):
-    """TS 28.105 MLModelCoordinationGroup IOC view (memberMLModelRefList,
-    minItems 2 — enforced at creation)."""
-    g = db.get(MLModelCoordinationGroup, group_id)
-    if g is None:
-        raise framework_error(FrameworkError.NRM_OBJECT_NOT_FOUND, detail=f"no such MLModelCoordinationGroup {group_id}")
-    return _group_nrm_view(g)
 
 
 # Body of `POST /ml-model-repositories`; `userLabel` is a free label.
