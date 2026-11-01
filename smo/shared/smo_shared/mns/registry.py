@@ -107,7 +107,7 @@ class ClassRegistry:
         self._classes: dict[str, ClassInfo] = {}
         self._registered: dict[str, ClassInfo] = {}
         self._validators: dict[str, Draft7Validator] = {}
-        self._schema_registry: Registry = Registry(retrieve=self._retrieve)
+        self._schema_registry: Registry = Registry(retrieve=self._retrieve)  # type: ignore[call-arg]  # attrs field alias mypy does not see
         for pattern in class_files:
             for path in sorted(self.spec_dir.glob(pattern)):
                 self.index_file(path.name)
@@ -128,11 +128,11 @@ class ClassRegistry:
     def _retrieve(self, uri: str) -> Resource:
         """`referencing` retrieval: a URI under BASE_URI is that YAML file; anything else (or a file that is not there) is unresolvable."""
         if not uri.startswith(BASE_URI):
-            raise NoSuchResource(ref=uri)
+            raise NoSuchResource(ref=uri)  # type: ignore[call-arg]
         name = uri[len(BASE_URI):]
         contents = self.document(name)
         if not contents:
-            raise NoSuchResource(ref=uri)
+            raise NoSuchResource(ref=uri)  # type: ignore[call-arg]
         return DRAFT7.create_resource(contents)
 
     def index_file(self, file_name: str) -> int:
