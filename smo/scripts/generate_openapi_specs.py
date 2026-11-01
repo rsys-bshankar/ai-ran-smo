@@ -24,13 +24,10 @@ sys.path.insert(0, str(SMO_ROOT / "tests_integration"))
 
 from loader import load_app_module  # noqa: E402
 
-ALL_MODULES = [
-    "r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam",
-    "nfo", "focom", "aimgf", "ran-analytics", "mdaf",
-    "intent-service", "so-smos", "sa-smos", "mock-o1-adaptor", "echo",
-    "samples/energy-saving-rapp", "samples/mobility-optimization-rapp", "samples/coverage-optimization-rapp",
-    "samples/traffic-steering-rapp",
-]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import modules  # noqa: E402  (scripts/modules.py: the module manifests)
+
+ALL_MODULES = modules.openapi_modules()   # the modules whose module.yaml says `openapi: true`
 sys.path.insert(0, str(SMO_ROOT / "shared"))
 sys.path.insert(0, str(SMO_ROOT / "sdk"))
 

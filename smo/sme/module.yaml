@@ -1,0 +1,38 @@
+# sme: what this module is to the rest of the SMO (scripts/modules.py; the schema is scripts/module.schema.json). Edit this file, then run
+# `python scripts/modules.py --write` from smo/: it regenerates the shared files that list modules, and CI runs `--check`.
+name: sme
+lane: sme
+r1:
+  - {prefix: /sme, env: SME_URL, url: "http://sme:8000"}
+database:
+  role: {schema: sme, shared: [module_identity, notification_outbox, idempotency_key, smo_event, smo_event_relay, audit_log, audit_head]}
+  tables: [invoker_registration, issued_access_token, mns_registry, provider_registration, service_authz_policy, service_event_subscription, service_profile, trusted_invoker, used_client_assertion]
+openapi: true
+tests: {source: app, pythonpath: ".:../shared", floor: 99}
+mutation: null
+code_docs: true
+config_reference: true
+compose:
+  services: |
+    sme:
+      build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: sme, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+      stop_grace_period: 30s
+      secrets: [db_password_sme, enrollment_secret]
+      <<: *hardening
+      healthcheck: *ready_probe
+      depends_on: *wait_for_schema
+      environment:
+        SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
+        SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
+        <<: *db_env
+        SMO_DATABASE_URL: postgresql+psycopg://smo_sme@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+        SMO_DB_POOLER: ${SMO_DB_POOLER:-}
+        SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_sme
+        # PR-SEC-1.6: a client assertion's `aud` is the token endpoint /bootstrap advertised; behind the HTTPS door that is
+        # <R1_PUBLIC_BASE_URL>/sme/oauth2/token. Unset (empty), SME uses its own address on the compose network.
+        SME_TOKEN_AUDIENCE: ${R1_PUBLIC_BASE_URL:+${R1_PUBLIC_BASE_URL}/sme/oauth2/token}
+  secrets: |
+    db_password_sme:
+      file: ./secrets/db_password_sme
+helm: |
+  sme: { image: sme, databaseRole: sme, resources: { requests: { cpu: 50m, memory: 480Mi }, limits: { memory: 768Mi } } }   # the largest module: 361 MiB at its peak (docs/SIZING.md); values-sized.yaml asks for 250m

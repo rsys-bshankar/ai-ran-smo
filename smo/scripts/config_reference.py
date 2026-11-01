@@ -24,6 +24,8 @@ The source is walked with `ast`, never imported, so no module needs its database
     run-time part in angle brackets. A read whose name this walk cannot work out at all must carry a comment
     `# config-ref: NAME, OTHER_NAME` on its line or the line above; without one it is reported as unresolved and the CI check fails.
     A `config-ref` comment replaces what the walk finds on that statement;
+  * a read whose names come from a JSON table beside the file carries `# config-ref-table: FILE` instead (R1 Termination's `ROUTES`, read from
+    `app/routes.json`, which scripts/modules.py generates): each entry's `env` is a variable, its `url` the default;
   * the `${NAME:-default}` substitutions of `docker-compose.yml` (what `.env` sets), as the module `compose`.
 
 Walked: `<module>/app`, `samples/*/app`, `shared/smo_shared`, `sdk/smo_sdk`, `gui-bff/app`, and the scripts that run inside the images
@@ -54,6 +56,7 @@ BEGIN, END = "<!-- BEGIN GENERATED: scripts/config_reference.py --write -->", "<
 SECRET_NAME = re.compile(r"PASSWORD|SECRET|KEY|TOKEN")
 ENVIRON_NAMES = {"environ"}
 ANNOTATION = re.compile(r"#\s*config-ref:\s*(?P<names>[A-Za-z0-9_<>,\s]+)")
+TABLE_ANNOTATION = re.compile(r"#\s*config-ref-table:\s*(?P<file>[A-Za-z0-9_./-]+)")
 COMPOSE_SUBSTITUTION = re.compile(r"\$\{(?P<name>[A-Z][A-Z0-9_]*)(?P<op>:?[-+?])?(?P<rest>[^}]*)\}")
 UNSET, REQUIRED, COMPUTED = "unset", "required", "computed in code"
 
@@ -289,6 +292,18 @@ def _annotation(lines: list[str], line: int) -> list[str] | None:
     return None
 
 
+def _table_annotation(f: "_File", line: int) -> list[tuple[str, str]] | None:
+    """The (name, default) pairs of the JSON table a `# config-ref-table: FILE` comment on `line` or the line above names (FILE is beside the source
+    file), or None when there is no such comment. The table maps keys to `{"env": NAME, "url": DEFAULT}`; keys starting with `_` are notes."""
+    for number in (line, line - 1):
+        if 1 <= number <= len(f.lines):
+            match = TABLE_ANNOTATION.search(f.lines[number - 1])
+            if match:
+                table = json.loads((SMO_ROOT / Path(f.path).parent / match.group("file")).read_text(encoding="utf-8"))
+                return [(entry["env"], entry["url"]) for key, entry in table.items() if not key.startswith("_")]
+    return None
+
+
 # ---------------------------------------------------------------- the walk
 
 
@@ -420,6 +435,12 @@ def extract_files(files: list[_File]) -> tuple[list[Read], list[str]]:
             reads.append(Read(name + "_FILE", show_default(None), f.module, f.path, line, True, "secret-file"))
 
     def annotated(f: _File, line: int, seen: set[int]) -> bool:
+        table = _table_annotation(f, line)
+        if table is not None:
+            if line not in seen:
+                seen.add(line)
+                reads.extend(Read(name, show_default(default), f.module, f.path, line, False, "annotation") for name, default in table)
+            return True
         names = _annotation(f.lines, line)
         if names is None:
             return False

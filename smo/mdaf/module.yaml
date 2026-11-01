@@ -1,0 +1,58 @@
+# mdaf: what this module is to the rest of the SMO (scripts/modules.py; the schema is scripts/module.schema.json). Edit this file, then run
+# `python scripts/modules.py --write` from smo/: it regenerates the shared files that list modules, and CI runs `--check`.
+name: mdaf
+lane: mdaf
+r1:
+  - {prefix: /mdaf, env: MDAF_URL, url: "http://mdaf:8000"}
+database:
+  role: {schema: mdaf, shared: [module_identity, notification_outbox, idempotency_key, periodic_run, smo_event, smo_event_relay]}
+  tables: [mda_function, mda_report_delivery, mda_request, mda_subscription, mdaf_report]
+openapi: true
+tests: {source: app, pythonpath: ".:../shared", floor: 95}
+mutation: null
+code_docs: true
+config_reference: true
+compose:
+  services: |
+    mdaf:
+      build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: mdaf, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+      stop_grace_period: 30s
+      secrets: [db_password_mdaf, enrollment_secret]
+      <<: *hardening
+      healthcheck: *ready_probe
+      depends_on: *wait_for_schema
+      environment:
+        SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
+        SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
+        <<: *db_env
+        SMO_DATABASE_URL: postgresql+psycopg://smo_mdaf@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+        SMO_DB_POOLER: ${SMO_DB_POOLER:-}
+        SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_mdaf
+        SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway (DOC-CF-3.1)
+
+    # PR-DB-3: the same image, run as a worker. It purges MDAF reports older than SMO_RETENTION_MDAF_REPORTS_DAYS (mdaf/app/tasks.py).
+    mdaf-worker:
+      build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: mdaf, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+      command: ["python", "-m", "smo_shared.worker"]
+      stop_grace_period: 30s
+      secrets: [db_password_mdaf, enrollment_secret]
+      <<: *hardening
+      healthcheck: *worker_probe
+      depends_on: *wait_for_schema
+      environment:
+        SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}
+        SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret
+        <<: *db_env
+        SMO_DATABASE_URL: postgresql+psycopg://smo_mdaf@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+        SMO_DB_POOLER: ${SMO_DB_POOLER:-}
+        SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_mdaf
+        SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway (DOC-CF-3.1)
+        SMO_RETENTION_MDAF_REPORTS_DAYS: ${SMO_RETENTION_MDAF_REPORTS_DAYS:-0}
+        SMO_RETENTION_WARN_ROWS: ${SMO_RETENTION_WARN_ROWS:-1000000}
+  secrets: |
+    db_password_mdaf:
+      file: ./secrets/db_password_mdaf
+helm: |
+  mdaf: { image: mdaf, databaseRole: mdaf }
+  # the same image as a worker: purges MDAF reports older than SMO_RETENTION_MDAF_REPORTS_DAYS (PR-DB-3)
+  mdaf-worker: { image: mdaf, databaseRole: mdaf, kind: worker, env: { SMO_RETENTION_MDAF_REPORTS_DAYS: "0" } }

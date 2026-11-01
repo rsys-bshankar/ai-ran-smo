@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/rsys-bshankar/ai-ran-smo/smo/scripts/module.schema.json",
+  "title": "SMO module manifest (<module>/module.yaml)",
+  "description": "What one module is to the rest of the SMO. scripts/modules.py validates every manifest against this schema, checks it against the module's own files, and generates from all of them the shared files that list modules (docker-compose.yml's module regions, the chart's modules, migrations/db_roles.json and table_owners.json, R1 Termination's routes.json, smo-mutation.yml's paths). Every key is required: a module that has no part in something says so (null, [], false).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "lane", "r1", "database", "openapi", "tests", "mutation", "code_docs", "config_reference", "compose", "helm"],
+  "properties": {
+    "name": {
+      "description": "The module's directory name (the last part of its path), which is also its suite, its coverage and its generated files' name.",
+      "type": "string", "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "lane": {
+      "description": "The lane that owns the module (CLAUDE.md, Working in parallel).",
+      "type": "string", "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "r1": {
+      "description": "R1 Termination's static routes to this module: a path prefix, the environment variable that overrides its address, and the default address. ProvMnS is not listed: it is routed by the MnS registry (r1-termination/app/mns_routing.py).",
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["prefix", "env", "url"],
+        "properties": {
+          "prefix": {"type": "string", "pattern": "^/[a-z][a-z0-9-]*$"},
+          "env": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*_URL$"},
+          "url": {"type": "string", "pattern": "^http://[a-z][a-z0-9-]*:[0-9]+$"}
+        }
+      }
+    },
+    "database": {
+      "description": "null: the module has no database. role: its login role smo_<name> (scripts/db_roles.py: its schema and the shared tables it may use), or null when it has none. tables: the tables it owns.",
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object", "additionalProperties": false, "required": ["role", "tables"],
+          "properties": {
+            "role": {
+              "oneOf": [
+                {"type": "null"},
+                {
+                  "type": "object", "additionalProperties": false, "required": ["schema", "shared"],
+                  "properties": {
+                    "schema": {"description": "its own schema, or null for a role that uses only shared tables (R1 Termination: the audit chain and the rate buckets)", "type": ["string", "null"], "pattern": "^[a-z][a-z0-9_]*$"},
+                    "shared": {"type": "array", "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}, "uniqueItems": true},
+                    "read": {"description": "other modules' tables it may read, as schema.table (R1 Termination: the kill switch)", "type": "array", "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"}, "uniqueItems": true}
+                  }
+                }
+              ]
+            },
+            "tables": {"type": "array", "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}, "uniqueItems": true}
+          }
+        }
+      ]
+    },
+    "openapi": {"description": "Whether scripts/generate_openapi_specs.py writes docs/openapi/<name>.json from the module's app.", "type": "boolean"},
+    "tests": {
+      "description": "The module's unit suite (scripts/run_unit_suite.sh): what coverage measures, the PYTHONPATH it runs with (relative to the module), and its coverage floor (scripts/coverage_floor.py). null: no Python unit suite.",
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object", "additionalProperties": false, "required": ["source", "pythonpath", "floor"],
+          "properties": {
+            "source": {"type": "string", "pattern": "^[a-z_]+$"},
+            "pythonpath": {"type": "string", "pattern": "^[A-Za-z0-9_./:-]+$"},
+            "floor": {"type": "number", "minimum": 0, "maximum": 100}
+          }
+        }
+      ]
+    },
+    "mutation": {
+      "description": "The module's run in scripts/mutation_pilot.sh: its PYTHONPATH ($SMO is the absolute smo/ path), its targets (equal to its pyproject.toml's [tool.mutmut] only_mutate), and the paths (from the repository root) whose change runs smo-mutation.yml on a pull request. null: not mutation tested.",
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object", "additionalProperties": false, "required": ["pythonpath", "targets", "watch"],
+          "properties": {
+            "pythonpath": {"type": "string", "pattern": "^[A-Za-z0-9_./:$-]+$"},
+            "targets": {"type": "array", "items": {"type": "string"}, "minItems": 1, "uniqueItems": true},
+            "watch": {"type": "array", "items": {"type": "string", "pattern": "^smo/"}, "minItems": 1, "uniqueItems": true}
+          }
+        }
+      ]
+    },
+    "code_docs": {"description": "Whether scripts/check_code_docs.py holds the module to a baseline file of its own (scripts/code_docs_baseline/<path with / written -->.json).", "type": "boolean"},
+    "config_reference": {"description": "Whether the module reads environment variables, documented in docs/configuration/<name>.md and .json (scripts/config_reference.py).", "type": "boolean"},
+    "compose": {
+      "description": "The module's part of docker-compose.yml, as the YAML text of each top-level section (keys at column 0; it may use the file's anchors: *hardening, *ready_probe, *worker_probe, *build_info, *db_env, *wait_for_schema). null: not in compose.",
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object", "additionalProperties": false, "required": ["services"],
+          "properties": {
+            "services": {"type": "string", "minLength": 1},
+            "secrets": {"type": "string", "minLength": 1},
+            "volumes": {"type": "string", "minLength": 1},
+            "networks": {"type": "string", "minLength": 1}
+          }
+        }
+      ]
+    },
+    "helm": {
+      "description": "The module's entries under `modules:` in deploy/helm/smo/values.yaml, as YAML text (keys at column 0). null: not in the chart.",
+      "oneOf": [{"type": "null"}, {"type": "string", "minLength": 1}]
+    }
+  }
+}

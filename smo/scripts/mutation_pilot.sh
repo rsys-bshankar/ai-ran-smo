@@ -26,28 +26,26 @@
 # PR-CONV-S1.5 and S1.3 added the router's cross-cutting checks (`mns/checks.py`), the shared MSAC decision (`msac.py`) and the dictionary (`mns/dictionary/`), and
 # PR-CONV-S1.6 the reference module Echo (`echo/app`, tested by echo/tests on SQLite; its own configuration is echo/pyproject.toml), run after the shared library.
 # Needs the dev requirements installed (requirements/dev.txt) and mutmut (requirements/mutation.txt). About an hour.
+#
+# Which modules run, with which PYTHONPATH, is `mutation` in each module's module.yaml (scripts/modules.py; its `targets` must equal the module's own
+# [tool.mutmut] only_mutate, which `scripts/modules.py --check` holds): the shared library first, then the others in path order. `$SMO` in a PYTHONPATH is the
+# absolute smo/ path (mutmut runs a module's tests from its mutants/ directory, so another module is named by its absolute path).
 set -euo pipefail
-cd "$(dirname "$0")/../shared"
-rm -rf mutants
-export PYTHONPATH=".:../r1-termination"
-mutmut run > /tmp/mutmut-run.txt 2>&1 || { tr '\r' '\n' < /tmp/mutmut-run.txt | tail -20; echo "mutmut did not finish" >&2; exit 1; }
-tr '\r' '\n' < /tmp/mutmut-run.txt | grep -E "^[^ ]* *[0-9]+/[0-9]+ " | tail -1 || true
-not_killed="$(mutmut results 2>&1 | tr '\r' '\n' | sed 's/\x1b\[[0-9;]*m//g' | grep -E ': (survived|no tests|timeout|suspicious|segfault|check was interrupted by user)$' || true)"
-if [ -n "$not_killed" ]; then
-  echo "$not_killed"
-  echo "FAIL: the mutants above were not killed (inspect one with: cd smo/shared && PYTHONPATH=.:../r1-termination mutmut show <name>)" >&2
-  exit 1
-fi
-
-# Echo (PR-CONV-S1.6): mutmut runs its tests from echo/mutants, so the shared library is named by its absolute path.
-cd ../echo
-rm -rf mutants
-PYTHONPATH=".:$(cd ../shared && pwd)" mutmut run > /tmp/mutmut-echo.txt 2>&1 || { tr '\r' '\n' < /tmp/mutmut-echo.txt | tail -20; echo "mutmut did not finish on echo" >&2; exit 1; }
-tr '\r' '\n' < /tmp/mutmut-echo.txt | grep -E "^[^ ]* *[0-9]+/[0-9]+ " | tail -1 || true
-not_killed="$(mutmut results 2>&1 | tr '\r' '\n' | sed 's/\x1b\[[0-9;]*m//g' | grep -E ': (survived|no tests|timeout|suspicious|segfault|check was interrupted by user)$' || true)"
-if [ -n "$not_killed" ]; then
-  echo "$not_killed"
-  echo "FAIL: the Echo mutants above were not killed (inspect one with: cd smo/echo && PYTHONPATH=.:\$PWD/../shared mutmut show <name>)" >&2
-  exit 1
-fi
+smo="$(cd "$(dirname "$0")/.." && pwd)"
+runs="$(cd "$smo" && python scripts/modules.py list mutation)"
+[ -n "$runs" ] || { echo "no module manifest declares a mutation run" >&2; exit 1; }
+while read -r dir pythonpath; do
+  name="$(basename "$dir")"
+  echo "== $dir"
+  cd "$smo/$dir"
+  rm -rf mutants
+  PYTHONPATH="${pythonpath//\$SMO/$smo}" mutmut run < /dev/null > "/tmp/mutmut-$name.txt" 2>&1 || { tr '\r' '\n' < "/tmp/mutmut-$name.txt" | tail -20; echo "mutmut did not finish on $dir" >&2; exit 1; }
+  tr '\r' '\n' < "/tmp/mutmut-$name.txt" | grep -E "^[^ ]* *[0-9]+/[0-9]+ " | tail -1 || true
+  not_killed="$(mutmut results < /dev/null 2>&1 | tr '\r' '\n' | sed 's/\x1b\[[0-9;]*m//g' | grep -E ': (survived|no tests|timeout|suspicious|segfault|check was interrupted by user)$' || true)"
+  if [ -n "$not_killed" ]; then
+    echo "$not_killed"
+    echo "FAIL: the $dir mutants above were not killed (inspect one with: cd smo/$dir && PYTHONPATH=${pythonpath//\$SMO/\$PWD/..} mutmut show <name>)" >&2
+    exit 1
+  fi
+done <<< "$runs"
 echo "OK: every mutant was killed"

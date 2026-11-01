@@ -259,7 +259,7 @@ SA-MLMR-8 (`usageReqs`), SA-MLMR-9 (whole-object `filt-criteria` discovery).
 ## 4. Test coverage
 
 **OI-4** (uneven coverage) is closed: `HISTORY.md` §4, OI-4 (every module has a coverage floor in
-`coverage_floors.json`, enforced in CI by `scripts/coverage_floor.py`; a test count is not the measure).
+each module's `module.yaml` (`tests.floor`), enforced in CI by `scripts/coverage_floor.py`; a test count is not the measure).
 
 - **DB-ROLE-RUNTIME** — No test fails when a module's database role lacks a grant on a path the tests do not happen to take (how 0.8.0 shipped
   `mdaf-worker` failing every tick on `periodic_run`). What is covered: `tests_integration/test_db_roles.py` derives three grants from the code

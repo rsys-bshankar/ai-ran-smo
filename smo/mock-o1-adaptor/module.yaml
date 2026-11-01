@@ -1,0 +1,33 @@
+# mock-o1-adaptor: what this module is to the rest of the SMO (scripts/modules.py; the schema is scripts/module.schema.json). Edit this file, then run
+# `python scripts/modules.py --write` from smo/: it regenerates the shared files that list modules, and CI runs `--check`.
+name: mock-o1-adaptor
+lane: mock-o1-adaptor
+r1: []
+database: null
+openapi: true
+tests: {source: app, pythonpath: ".:../shared", floor: 98}
+mutation: null
+code_docs: true
+config_reference: true
+compose:
+  services: |
+    mock-o1-adaptor:
+      build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: mock-o1-adaptor, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+      environment:
+        SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}
+        MOCK_O1_OAM_URL: http://ran-nf-oam:8000    # where POST /emit/alarm, /emit/pm-report, ... send (SB-9.8): this stub is a source of FM, PM, SW and heartbeat for RAN NF OAM
+        # the gNB's own heartbeat (mock-o1-adaptor/app/keepalive.py): every 30 s for the endpoints registered with this adaptor's URL that had a first
+        # heartbeat, so they stay ACTIVE past RAN NF OAM's 90 s threshold during a demo; 0 switches it off
+        MOCK_O1_HEARTBEAT_SECONDS: ${MOCK_O1_HEARTBEAT_SECONDS:-30}
+        MOCK_O1_SELF_URL: http://mock-o1-adaptor:8000
+      stop_grace_period: 30s
+      <<: *hardening
+      healthcheck: *ready_probe
+      # No isolated network segment: nothing in this build's own design
+      # documents an O1-adaptor isolation requirement. A real
+      # ManagedElement's own adaptor_uri (o1_adaptor_endpoint.adaptor_uri)
+      # points at http://mock-o1-adaptor:8000/edit-config for a NETCONF ME,
+      # or at the RESTCONF root http://mock-o1-adaptor:8000/restconf for a
+      # RESTCONF ME (HISTORY.md OI-1-cm-sync-restconf).
+helm: |
+  mock-o1-adaptor: { image: mock-o1-adaptor, database: false, enrollment: false, mtls: "off", env: { MOCK_O1_OAM_URL: "http://ran-nf-oam:8000", MOCK_O1_SELF_URL: "http://mock-o1-adaptor:8000", MOCK_O1_HEARTBEAT_SECONDS: "30" } }

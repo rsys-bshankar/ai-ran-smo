@@ -1,0 +1,68 @@
+# r1-termination: what this module is to the rest of the SMO (scripts/modules.py; the schema is scripts/module.schema.json). Edit this file, then run
+# `python scripts/modules.py --write` from smo/: it regenerates the shared files that list modules, and CI runs `--check`.
+name: r1-termination
+lane: r1-termination
+r1: []
+database:
+  role: {schema: null, shared: [audit_log, audit_head, rate_bucket], read: [ran_nf_oam.rapp_kill]}
+  tables: []
+openapi: true
+tests: {source: app, pythonpath: ".:../shared", floor: 91}
+mutation: null
+code_docs: true
+config_reference: true
+compose:
+  services: |
+    r1-termination:
+      build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: r1-termination, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+      stop_grace_period: 30s
+      secrets: [db_password_r1-termination]    # PR-SEC-11: the gateway adds a row to the audit chain for every authenticated change (it keeps no other state)
+      <<: *hardening
+      healthcheck: *ready_probe
+      depends_on: *wait_for_schema
+      ports: ["8080:8000"]
+      volumes:
+        - smo_scratch:/srv/scratch   # where the runbook copies the rApp CSARs it serves (`docker compose cp ... r1-termination:/srv/scratch/`)
+      environment:
+        SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
+        <<: *db_env
+        SMO_DATABASE_URL: postgresql+psycopg://smo_r1_termination@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+        SMO_DB_POOLER: ${SMO_DB_POOLER:-}
+        SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_r1-termination
+        R1_KILL_SWITCH_SCHEMA: ran_nf_oam    # the gateway reads RAN NF OAM's rapp_kill, read-only (migrations/db_roles.json)
+        R1_AUDIT: ${R1_AUDIT:-on}    # off: no audit rows (the gateway then needs no database)
+        # on: an rApp may POST /ran-nf-oam/pm-reports, which the sample rApps' Demo / simulation buttons need to play the network (docs/GUI_DEMO_GUIDE.md); off by default
+        R1_DEMO_RAPP_PM_REPORTS: ${R1_DEMO_RAPP_PM_REPORTS:-off}
+        # PR-SEC-1.6: unset, /bootstrap names SME on the compose network; set to the HTTPS door (https://localhost:8443 with the tls
+        # profile) and it names that address instead, so a consumer that only reaches the edge can complete the flow.
+        R1_PUBLIC_BASE_URL: ${R1_PUBLIC_BASE_URL:-}
+        # PR-SEC-8.5: `memory` (default): each gateway replica counts for itself; `postgres`: the per-caller buckets live in the shared
+        # `rate_bucket` table so all replicas share one budget (fails open to the in-process bucket if the database errs).
+        R1_RATE_STORE: ${R1_RATE_STORE:-memory}
+        # PR-SEC-9.3: set, GET /bootstrap needs the header X-Bootstrap-Key with this value; unset (default), /bootstrap stays open.
+        # Clients (the SDK, the sample rApps, the modules) send it when SMO_BOOTSTRAP_KEY is set. A file form, R1_BOOTSTRAP_KEY_FILE, also works.
+        R1_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}
+        # PR-SEC-5.4: seconds the gateway reuses SME's answer about a token (0 = off: every request asks SME, as before). A token revoked at SME is honoured for at most
+        # this long (at once on the replica the revocation went through); r1-termination/README.md "Introspection cache".
+        R1_INTROSPECTION_CACHE_SECONDS: ${R1_INTROSPECTION_CACHE_SECONDS:-30}
+        R1_INTROSPECTION_CACHE_MAX_ENTRIES: ${R1_INTROSPECTION_CACHE_MAX_ENTRIES:-10000}
+        SME_URL: http://sme:8000
+        DME_URL: http://dme:8000
+        ONBOARDING_URL: http://onboarding:8000
+        RAPP_MGMT_URL: http://rapp-mgmt:8000
+        RAN_NF_OAM_URL: http://ran-nf-oam:8000
+        NFO_URL: http://nfo:8000
+        FOCOM_URL: http://focom:8000
+        AIMGF_URL: http://aimgf:8000
+        RAN_ANALYTICS_URL: http://ran-analytics:8000
+        MDAF_URL: http://mdaf:8000
+        INTENT_SERVICE_URL: http://intent-service:8000
+        SO_SMOS_URL: http://so-smos:8000
+        SA_SMOS_URL: http://sa-smos:8000
+  secrets: |
+    db_password_r1-termination:
+      file: ./secrets/db_password_r1-termination
+  volumes: |
+    smo_scratch:
+helm: |
+  r1-termination: { image: r1-termination, databaseRole: r1-termination, enrollment: false, scratch: /srv/scratch, env: { R1_KILL_SWITCH_SCHEMA: ran_nf_oam, R1_RATE_STORE: memory, R1_INTROSPECTION_CACHE_SECONDS: "30", R1_INTROSPECTION_CACHE_MAX_ENTRIES: "10000" }, resources: { requests: { cpu: 50m, memory: 192Mi }, limits: { memory: 512Mi } } }   # CPU-bound at about one core per 39 requests/s: values-sized.yaml asks for 500m, scale by replicas (docs/SIZING.md)

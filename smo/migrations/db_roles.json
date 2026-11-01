@@ -1,29 +1,47 @@
 {
  "_comment": "Per-module database roles (PR-DB-2.6). `scripts/db_roles.py` makes, for each module listed here whose password file is present, a login role smo_<module> that can use its own schema, the shared tables named in `shared`, and nothing else. A module is added here in the same change that moves its tables into a schema of its own and gives it a password secret.",
- "onboarding": {
-  "schema": "onboarding",
+ "aimgf": {
+  "schema": "aimgf",
   "shared": [
    "module_identity",
+   "notification_outbox",
+   "idempotency_key",
+   "periodic_run",
+   "smo_event",
+   "smo_event_relay",
+   "audit_log",
+   "audit_head"
+  ]
+ },
+ "dme": {
+  "schema": "dme",
+  "shared": [
+   "module_identity",
+   "notification_outbox",
+   "idempotency_key",
+   "periodic_run",
    "smo_event",
    "smo_event_relay"
   ]
  },
- "ran-analytics": {
-  "schema": "ran_analytics",
+ "echo": {
+  "schema": "echo",
   "shared": [
-   "module_identity"
+   "module_identity",
+   "smo_event",
+   "smo_event_relay",
+   "audit_log",
+   "audit_head",
+   "idempotency_key",
+   "notification_outbox"
   ]
  },
- "so-smos": {
-  "schema": "so_smos",
+ "focom": {
+  "schema": "focom",
   "shared": [
-   "module_identity"
-  ]
- },
- "sa-smos": {
-  "schema": "sa_smos",
-  "shared": [
-   "module_identity"
+   "notification_outbox",
+   "smo_event",
+   "smo_event_relay"
   ]
  },
  "intent-service": {
@@ -45,6 +63,82 @@
    "smo_event_relay"
   ]
  },
+ "nfo": {
+  "schema": "nfo",
+  "shared": [
+   "module_identity",
+   "idempotency_key",
+   "smo_event",
+   "smo_event_relay"
+  ]
+ },
+ "onboarding": {
+  "schema": "onboarding",
+  "shared": [
+   "module_identity",
+   "smo_event",
+   "smo_event_relay"
+  ]
+ },
+ "r1-termination": {
+  "schema": null,
+  "shared": [
+   "audit_log",
+   "audit_head",
+   "rate_bucket"
+  ],
+  "read": [
+   "ran_nf_oam.rapp_kill"
+  ]
+ },
+ "ran-analytics": {
+  "schema": "ran_analytics",
+  "shared": [
+   "module_identity"
+  ]
+ },
+ "ran-nf-oam": {
+  "schema": "ran_nf_oam",
+  "shared": [
+   "module_identity",
+   "notification_outbox",
+   "idempotency_key",
+   "periodic_run",
+   "audit_log",
+   "audit_head",
+   "smo_event",
+   "smo_event_relay"
+  ]
+ },
+ "rapp-mgmt": {
+  "schema": "rapp_mgmt",
+  "shared": [
+   "module_identity",
+   "notification_outbox",
+   "idempotency_key",
+   "periodic_run",
+   "audit_log",
+   "audit_head",
+   "smo_event",
+   "smo_event_relay"
+  ]
+ },
+ "sa-smos": {
+  "schema": "sa_smos",
+  "shared": [
+   "module_identity"
+  ]
+ },
+ "samples/coverage-optimization-rapp": {
+  "schema": "coverage_optimization_rapp",
+  "shared": [
+   "module_identity",
+   "notification_outbox",
+   "periodic_run",
+   "smo_event",
+   "smo_event_relay"
+  ]
+ },
  "samples/energy-saving-rapp": {
   "schema": "energy_saving_rapp",
   "shared": [
@@ -58,16 +152,6 @@
  },
  "samples/mobility-optimization-rapp": {
   "schema": "mobility_optimization_rapp",
-  "shared": [
-   "module_identity",
-   "notification_outbox",
-   "periodic_run",
-   "smo_event",
-   "smo_event_relay"
-  ]
- },
- "samples/coverage-optimization-rapp": {
-  "schema": "coverage_optimization_rapp",
   "shared": [
    "module_identity",
    "notification_outbox",
@@ -98,94 +182,10 @@
    "audit_head"
   ]
  },
- "dme": {
-  "schema": "dme",
+ "so-smos": {
+  "schema": "so_smos",
   "shared": [
-   "module_identity",
-   "notification_outbox",
-   "idempotency_key",
-   "periodic_run",
-   "smo_event",
-   "smo_event_relay"
-  ]
- },
- "nfo": {
-  "schema": "nfo",
-  "shared": [
-   "module_identity",
-   "idempotency_key",
-   "smo_event",
-   "smo_event_relay"
-  ]
- },
- "rapp-mgmt": {
-  "schema": "rapp_mgmt",
-  "shared": [
-   "module_identity",
-   "notification_outbox",
-   "idempotency_key",
-   "periodic_run",
-   "audit_log",
-   "audit_head",
-   "smo_event",
-   "smo_event_relay"
-  ]
- },
- "focom": {
-  "schema": "focom",
-  "shared": [
-   "notification_outbox",
-   "smo_event",
-   "smo_event_relay"
-  ]
- },
- "aimgf": {
-  "schema": "aimgf",
-  "shared": [
-   "module_identity",
-   "notification_outbox",
-   "idempotency_key",
-   "periodic_run",
-   "smo_event",
-   "smo_event_relay",
-   "audit_log",
-   "audit_head"
-  ]
- },
- "ran-nf-oam": {
-  "schema": "ran_nf_oam",
-  "shared": [
-   "module_identity",
-   "notification_outbox",
-   "idempotency_key",
-   "periodic_run",
-   "audit_log",
-   "audit_head",
-   "smo_event",
-   "smo_event_relay"
-  ]
- },
- "r1-termination": {
-  "schema": null,
-  "shared": [
-   "audit_log",
-   "audit_head",
-   "rate_bucket"
-  ],
-  "read": [
-   "ran_nf_oam.rapp_kill"
-  ]
- },
- "echo": {
-  "schema": "echo",
-  "shared": [
-   "module_identity",
-   "smo_event",
-   "smo_event_relay",
-   "audit_log",
-   "audit_head",
-   "idempotency_key",
-   "notification_outbox"
+   "module_identity"
   ]
  }
 }

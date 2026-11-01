@@ -11,10 +11,9 @@ _spec.loader.exec_module(dast)
 
 
 def _gateway_prefixes() -> set[str]:
-    import re
-    text = (SMO_ROOT / "r1-termination" / "app" / "main.py").read_text()
-    block = text[text.index("ROUTES = {"):text.index("# PR-SEC-2: with SMO_MTLS")]
-    return set(re.findall(r'^\s+"(/[a-z0-9-]+)": os\.environ', block, re.M))
+    """The gateway's static prefixes (`ROUTES`, read by r1-termination/app/main.py from app/routes.json)."""
+    table = json.loads((SMO_ROOT / "r1-termination" / "app" / "routes.json").read_text())
+    return {prefix for prefix in table if not prefix.startswith("_")}
 
 
 def test_every_path_moves_under_the_prefix_and_nothing_else_changes():

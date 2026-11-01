@@ -1,0 +1,35 @@
+# focom: what this module is to the rest of the SMO (scripts/modules.py; the schema is scripts/module.schema.json). Edit this file, then run
+# `python scripts/modules.py --write` from smo/: it regenerates the shared files that list modules, and CI runs `--check`.
+name: focom
+lane: focom
+r1:
+  - {prefix: /focom, env: FOCOM_URL, url: "http://focom:8000"}
+database:
+  role: {schema: focom, shared: [notification_outbox, smo_event, smo_event_relay]}
+  tables: [deployment_manager, inventory_subscription, o2ims_object, ocloud_alarm, ocloud_alarm_subscription, ocloud_location, ocloud_performance_job, ocloud_performance_metric, ocloud_performance_subscription, ocloud_site, resource, resource_pool, resource_type]
+openapi: true
+tests: {source: app, pythonpath: ".:../shared", floor: 97}
+mutation: null
+code_docs: true
+config_reference: true
+compose:
+  services: |
+    focom:
+      build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: focom, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+      stop_grace_period: 30s
+      secrets: [db_password_focom, enrollment_secret]
+      <<: *hardening
+      healthcheck: *ready_probe
+      depends_on: *wait_for_schema
+      environment:
+        SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
+        SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
+        <<: *db_env
+        SMO_DATABASE_URL: postgresql+psycopg://smo_focom@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+        SMO_DB_POOLER: ${SMO_DB_POOLER:-}
+        SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_focom
+  secrets: |
+    db_password_focom:
+      file: ./secrets/db_password_focom
+helm: |
+  focom: { image: focom, databaseRole: focom }

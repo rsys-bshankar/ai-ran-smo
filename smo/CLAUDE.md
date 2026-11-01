@@ -49,22 +49,17 @@ cd smo && pip install --require-hashes -r requirements/dev.txt && pip install --
 
 **1. Every module's own unit suite** (each module's `tests/` runs
 standalone against SQLite, `PYTHONPATH` pointed at both itself and
-`shared/`):
+`shared/`; the suites, and what each measures, are `tests` in the modules' `module.yaml`):
 
 ```bash
 cd smo
-for m in onboarding rapp-mgmt ran-nf-oam aimgf so-smos \
-         sme dme r1-termination nfo focom ran-analytics mdaf \
-         intent-service sa-smos mock-o1-adaptor sdk; do
-  (cd "$m" && PYTHONPATH=.:../shared python -m pytest tests/ -q) || break
+python scripts/modules.py list unit-suites | while read -r name dir source pythonpath; do
+  (cd "$dir" && PYTHONPATH="$pythonpath" python -m pytest tests/ -q < /dev/null) || break
 done
-(cd shared && PYTHONPATH=. python -m pytest tests/ -q)
-(cd gui-bff && PYTHONPATH=.:../shared python -m pytest tests/ -q)
-(cd samples/energy-saving-rapp && PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q)
-(cd samples/mobility-optimization-rapp && PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q)
-(cd samples/coverage-optimization-rapp && PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q)
-(cd samples/traffic-steering-rapp && PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q)
 ```
+
+CI runs the same list under coverage (`scripts/run_unit_suite.sh`) and holds each suite to its floor, `tests.floor` in its `module.yaml`
+(`scripts/coverage_floor.py`; `--write` raises the floors in the manifests).
 
 After adding or removing tests, run `python scripts/count_tests.py --write` (or `--write --suite <module>`) and commit what changed in `docs/test-counts/`:
 only the touched suites' files change (CI runs `--check`). Likewise `python scripts/config_reference.py --write` for a new or changed environment variable.
@@ -90,8 +85,8 @@ before this check: `python scripts/generate_openapi_specs.py`.
 cd smo && docker compose config --quiet
 ```
 
-A service added to (or changed in) `docker-compose.yml` is also a module of the Helm chart
-(`deploy/helm/smo/values.yaml`): `tests_integration/test_helm_chart.py` fails when the two disagree about a
+A module's compose services and its chart entries are in its `module.yaml` (`compose`, `helm`), which `python scripts/modules.py --write` writes into
+`docker-compose.yml` and `deploy/helm/smo/values.yaml`. A service added to (or changed in) compose is also a module of the Helm chart: `tests_integration/test_helm_chart.py` fails when the two disagree about a
 service's image, secrets, worker command or environment. With `helm` installed, `helm lint deploy/helm/smo
 --kube-version 1.30.0` and that test file also render the chart.
 
@@ -231,16 +226,30 @@ manual rebase. That holds as long as each pull request touches only:
   `CHANGELOG.md` or `HISTORY.md`;
 - **its modules' generated files**: `docs/test-counts/<module>.md`, `docs/configuration/<module>.md` and `.json`, `docs/openapi/<module>.json`,
   and its module's file in `scripts/interface_baseline/`, `scripts/contract_drift_baseline/` and `scripts/code_docs_baseline/`;
-- **its module's migration branch** (`migrations/versions/<label>_NNNN_*.py`, "Schema changes are revisions"), and its module's own entry in
-  `migrations/table_owners.json` and `migrations/db_roles.json` (a table it adds goes in its module's list, which no other lane edits; a new
-  module's first entry in either file is `[cross-lane]`).
+- **its module's migration branch** (`migrations/versions/<label>_NNNN_*.py`, "Schema changes are revisions");
+- **its module's manifest**, `<module>/module.yaml` (schema: `scripts/module.schema.json`), and what `python scripts/modules.py --write` regenerates
+  from it. A new module, or a change to a module's wiring, edits only that file: its lane, its R1 route, its compose service(s), secrets and volumes,
+  its chart entry, its database role and the tables it owns, whether it has an OpenAPI spec, its unit suite and coverage floor, its mutation run, its
+  code-documentation and configuration-reference files. The generated files are `docker-compose.yml`'s module regions (and the module password
+  secrets of `migrate` and `pgbouncer`), the chart's `modules:` region in `deploy/helm/smo/values.yaml`, `migrations/db_roles.json` and
+  `migrations/table_owners.json`, `r1-termination/app/routes.json` and the paths of `.github/workflows/smo-mutation.yml`; each module's text sits
+  under a header line of its own, in path order, so two lanes' regenerated files merge without a conflict. The CI unit loop, the coverage floors,
+  `scripts/generate_openapi_specs.py`, `scripts/mutation_pilot.sh` and `scripts/check_migration_matches_models.py` read the manifests when they run
+  (`python scripts/modules.py list ...`). CI fails on an invalid manifest, one that disagrees with its module, and a generated file that is not current
+  (`history.d/MODULE-MANIFESTS.md`).
 
 The shared logs are assembled at release instead (`docs/RELEASES.md`, "Cutting a release": `scripts/changelog.py --write`,
 `scripts/history_index.py --write`); the indexes of `docs/test-counts/` and `docs/configuration/` change only when a suite or a group is added.
 
-A pull request that must touch shared code — `shared/`, `r1-termination/`, the SDKs (`sdk/`, `sdk-go/`, `sdk-java/`), the GUI (`gui/`, `gui-bff/`),
-CI (`.github/`), `docker-compose.yml`, the chart, `migrations/` outside its branch and its module's entries, a new module, or this file — says so in its title, starting
-**`[cross-lane]`**. The owner merges it alone, with no other pull request merging at the same time, and the lanes then merge `main` into their branches.
+A pull request that must touch genuinely shared code — `shared/`, `r1-termination/`'s code, the SDKs (`sdk/`, `sdk-go/`, `sdk-java/`), the GUI (`gui/`,
+`gui-bff/`), CI (`.github/`, beyond what `scripts/modules.py --write` regenerates), the parts of `docker-compose.yml` and of the chart outside the generated
+regions (the infrastructure services, the anchors, the templates, the overlays), `migrations/` outside its branch, `scripts/`, or this file — says so in
+its title, starting **`[cross-lane]`**. The owner merges it alone, with no other pull request merging at the same time, and the lanes then merge `main`
+into their branches. Adding a module, or changing how one is wired, is not cross-lane: it is that module's `module.yaml`. What still lists modules
+outside the manifests, so that a module needing it still edits it (`[cross-lane]`): the in-process mesh of the integration suite
+(`tests_integration/conftest.py`), the overlays `docker-compose.{mtls,pgtls,replicas}.yml` and `values-sized.yaml` / `values-production.yaml`, the
+mTLS certificate lists (`scripts/mtls_certs.py`, `scripts/compose_mtls_check.py`), `scripts/init_secrets.sh`, `scripts/run_mypy.sh`,
+`deploy/external-secrets/`, and the DAST and kind-lane module lists in `.github/workflows/` (history.d/MODULE-MANIFESTS.md says why each is left).
 
 **Merging (the owner's GitHub setting).** The repository is owned by a personal account, where GitHub offers no merge queue. Required
 checks green → `gh pr merge --squash --auto`; "Require branches to be up to date" stays off in the rule for `main`, which is what lets lane PRs

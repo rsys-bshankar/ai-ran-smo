@@ -1,0 +1,61 @@
+# coverage-optimization-rapp: what this module is to the rest of the SMO (scripts/modules.py; the schema is scripts/module.schema.json). Edit this file, then run
+# `python scripts/modules.py --write` from smo/: it regenerates the shared files that list modules, and CI runs `--check`.
+name: coverage-optimization-rapp
+lane: samples
+r1: []
+database:
+  role: {schema: coverage_optimization_rapp, shared: [module_identity, notification_outbox, periodic_run, smo_event, smo_event_relay]}
+  tables: [coverage_cell, coverage_decision, coverage_instance]
+openapi: true
+tests: {source: app, pythonpath: ".:../../shared:../../sdk", floor: 98}
+mutation: null
+code_docs: true
+config_reference: true
+compose:
+  services: |
+    # Wave 10.3: the Coverage Optimization reference rApp
+    # (samples/coverage-optimization-rapp) — R1-only, like energy-saving-rapp.
+    coverage-optimization-rapp:
+      build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: samples/coverage-optimization-rapp, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+      stop_grace_period: 30s
+      secrets: [db_password_coverage-optimization-rapp]
+      <<: *hardening
+      healthcheck: *ready_probe
+      depends_on: *wait_for_schema
+      environment:
+        SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
+        SMO_IDENTITY_KIND: rapp        # PR-SEC-14: an rApp: no enrollment secret, so SME records it as one and R1 applies the rApp role
+        <<: *db_env
+        SMO_DATABASE_URL: postgresql+psycopg://smo_coverage_optimization_rapp@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+        SMO_DB_POOLER: ${SMO_DB_POOLER:-}
+        SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_coverage-optimization-rapp
+        R1_GATEWAY_URL: http://r1-termination:8000
+        SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
+
+    # Call flow 24f: the same image, run as a worker. Every 15 s it runs a pass of each instance whose `evaluateEverySeconds` has passed
+    # (samples/coverage-optimization-rapp/app/tasks.py), so a change set is confirmed or reverted an hour later without anyone pressing "Evaluate now".
+    coverage-optimization-rapp-worker:
+      build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: samples/coverage-optimization-rapp, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+      command: ["python", "-m", "smo_shared.worker"]
+      stop_grace_period: 30s
+      secrets: [db_password_coverage-optimization-rapp]
+      <<: *hardening
+      healthcheck: *worker_probe
+      depends_on: *wait_for_schema
+      environment:
+        SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}
+        SMO_IDENTITY_KIND: rapp        # the same rApp as coverage-optimization-rapp: each pass acts as its instance
+        <<: *db_env
+        SMO_DATABASE_URL: postgresql+psycopg://smo_coverage_optimization_rapp@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+        SMO_DB_POOLER: ${SMO_DB_POOLER:-}
+        SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_coverage-optimization-rapp
+        R1_GATEWAY_URL: http://r1-termination:8000
+        SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}
+        COVERAGE_SCHEDULE_TICK_SECONDS: ${COVERAGE_SCHEDULE_TICK_SECONDS:-15}
+  secrets: |
+    db_password_coverage-optimization-rapp:
+      file: ./secrets/db_password_coverage-optimization-rapp
+helm: |
+  coverage-optimization-rapp: { image: coverage-optimization-rapp, databaseRole: coverage-optimization-rapp, enrollment: false, env: { SMO_IDENTITY_KIND: rapp, R1_GATEWAY_URL: "http://r1-termination:8000" } }
+  # the same image as a worker: a pass of each instance whose evaluateEverySeconds has passed, so a change set is confirmed or reverted on time (call flow 24f)
+  coverage-optimization-rapp-worker: { image: coverage-optimization-rapp, databaseRole: coverage-optimization-rapp, enrollment: false, kind: worker, env: { SMO_IDENTITY_KIND: rapp, R1_GATEWAY_URL: "http://r1-termination:8000", COVERAGE_SCHEDULE_TICK_SECONDS: "15" }, resources: { requests: { cpu: 10m, memory: 128Mi }, limits: { memory: 512Mi } } }

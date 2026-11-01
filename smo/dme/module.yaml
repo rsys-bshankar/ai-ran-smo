@@ -1,0 +1,68 @@
+# dme: what this module is to the rest of the SMO (scripts/modules.py; the schema is scripts/module.schema.json). Edit this file, then run
+# `python scripts/modules.py --write` from smo/: it regenerates the shared files that list modules, and CI runs `--check`.
+name: dme
+lane: dme
+r1:
+  - {prefix: /dme, env: DME_URL, url: "http://dme:8000"}    # call flow 12: no /dme-push and /dme-pull aliases (DME had no routes under them, every call was a 404)
+database:
+  role: {schema: dme, shared: [module_identity, notification_outbox, idempotency_key, periodic_run, smo_event, smo_event_relay]}
+  tables: [data_job, data_offer, data_record, dme_action_record, dme_delivery_schema, dme_producer, dme_producer_type, dme_type, dme_type_subscription]
+openapi: true
+tests: {source: app, pythonpath: ".:../shared", floor: 98}
+mutation: null
+code_docs: true
+config_reference: true
+compose:
+  services: |
+    dme:
+      build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: dme, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+      stop_grace_period: 30s
+      secrets: [db_password_dme, enrollment_secret]
+      <<: *hardening
+      healthcheck: *ready_probe
+      depends_on: *wait_for_schema
+      environment:
+        SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
+        SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
+        <<: *db_env
+        SMO_DATABASE_URL: postgresql+psycopg://smo_dme@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+        SMO_DB_POOLER: ${SMO_DB_POOLER:-}
+        SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_dme
+        SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway (DOC-CF-3.1)
+
+    # Call flow 12d: the same image, run as a worker. It purges DME data records older than SMO_RETENTION_DME_RECORDS_DAYS (dme/app/tasks.py).
+    # D9 (ADR 0006, profile `kafka`): this worker is also the Kafka relay when SMO_KAFKA_RELAY=true (smo_shared/kafka_relay.py): every event committed to smo_event
+    # goes, in order per entity, to the topic SMO_KAFKA_EVENTS_TOPIC. Off by default; the image needs the client (SMO_WITH_KAFKA=1):
+    #   SMO_WITH_KAFKA=1 SMO_KAFKA_RELAY=true docker compose --profile kafka up -d --build
+    # PLAINTEXT is the lab broker's protocol on the compose network (the relay warns at start); a real cluster: SSL or SASL_SSL (docs/EVENTS.md, "Kafka").
+    dme-worker:
+      build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: dme, WITH_TRACING: "${SMO_WITH_TRACING:-0}", WITH_KAFKA: "${SMO_WITH_KAFKA:-0}" } }
+      command: ["python", "-m", "smo_shared.worker"]
+      stop_grace_period: 30s
+      secrets: [db_password_dme, enrollment_secret]
+      <<: *hardening
+      healthcheck: *worker_probe
+      depends_on: *wait_for_schema
+      environment:
+        SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}
+        SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret
+        <<: *db_env
+        SMO_DATABASE_URL: postgresql+psycopg://smo_dme@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+        SMO_DB_POOLER: ${SMO_DB_POOLER:-}
+        SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_dme
+        SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway (DOC-CF-3.1)
+        SMO_RETENTION_DME_RECORDS_DAYS: ${SMO_RETENTION_DME_RECORDS_DAYS:-0}
+        SMO_RETENTION_WARN_ROWS: ${SMO_RETENTION_WARN_ROWS:-1000000}
+        SMO_KAFKA_RELAY: ${SMO_KAFKA_RELAY:-false}
+        SMO_KAFKA_BOOTSTRAP_SERVERS: ${SMO_KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+        SMO_KAFKA_SECURITY_PROTOCOL: ${SMO_KAFKA_SECURITY_PROTOCOL:-PLAINTEXT}
+        SMO_KAFKA_EVENTS_TOPIC: ${SMO_KAFKA_EVENTS_TOPIC:-smo.events.v1}
+        SMO_KAFKA_RELAY_SETTLE_SECONDS: ${SMO_KAFKA_RELAY_SETTLE_SECONDS:-3}
+  secrets: |
+    db_password_dme:
+      file: ./secrets/db_password_dme
+helm: |
+  dme: { image: dme, databaseRole: dme }
+  # the same image as a worker: purges DME data records older than SMO_RETENTION_DME_RECORDS_DAYS (call flow 12d)
+  # it sleeps between hourly purges, so it asks for 10m of CPU, as the rApps' workers do, and the defaults still fit a two-core lab node (test_helm_sizing)
+  dme-worker: { image: dme, databaseRole: dme, kind: worker, env: { SMO_RETENTION_DME_RECORDS_DAYS: "0" }, resources: { requests: { cpu: 10m, memory: 128Mi }, limits: { memory: 512Mi } } }
