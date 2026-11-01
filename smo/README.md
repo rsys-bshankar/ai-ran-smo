@@ -250,7 +250,7 @@ The converged stack's stores, decided in ADR 0008 (section 3.5):
 | Store | Decision | In compose | In the chart |
 |---|---|---|---|
 | Postgres 18 with **TimescaleDB** (`timescale/timescaledb:2.31.0-pg18`) | D8 | the `postgres` service, always; `migrate` creates the extension | the bundled Postgres; an external one per `postgres.external.timescaledb` (chart README, "TimescaleDB") |
-| **SeaweedFS** object store, S3 API (Apache-2.0) | D10 | profile `objectstore` | later (S2.5) |
+| **SeaweedFS** object store, S3 API (Apache-2.0) | D10 | default stack since S2.5 (`objectstore`, `objectstore-init`): AIMgF's model artifacts | later: the chart has no object store yet, so AIMgF there needs `SMO_OBJECTSTORE_URL` and keys for one you run |
 | **MinIO**, the same S3 API (**AGPL-3.0**) | D10, optional | profile `minio` | no |
 | **Kafka**, the event-bus relay (ADR 0006 slices 1–3) | D9 | profile `kafka`, built with `SMO_WITH_KAFKA=1` | later (ADR 0006 slice 5) |
 | **smo-teiv 0.3.0**, TE&IV's topology store, with TE&IV's model extension (ADR 0013) | D19 | profile `teiv` (its Postgres, ingestion and exposure, on the `kafka` broker; reachable by nothing else) | `teiv.enabled`, with a broker of yours |

@@ -576,7 +576,7 @@ The complete list, with defaults and descriptions, is `../docs/CONFIGURATION.md`
 | `AIMGF_TIMEOUT_INFERENCE_SECONDS` | `5` | default inference timeout |
 | `AIMGF_TIMEOUT_SWEEP_SECONDS` | `60` | how often the worker (`aimgf-worker`) fails the overdue runs; read once at its start |
 | `SMO_AIMGF_ARTIFACT_FORMATS` | `onnx,safetensors,zip-legacy` | the artifact formats an upload may have (2.4, Model artifacts); `pickle` or an unknown name stops AIMgF at start-up |
-| `SMO_OBJECTSTORE_URL`, `SMO_OBJECTSTORE_ACCESS_KEY(_FILE)`, `SMO_OBJECTSTORE_SECRET_KEY(_FILE)`, `SMO_OBJECTSTORE_BUCKET_MODELS` (default `smo-models`), ... | none; required for artifacts | the object store (`smo_shared.objectstore`): an S3 endpoint, or `memory://` / `file:///dir` for tests; without it an upload or download is 503. The `migrate` service needs the same settings for revision `aimgf_0002` when `model_artifact` has rows |
+| `SMO_OBJECTSTORE_URL`, `SMO_OBJECTSTORE_ACCESS_KEY(_FILE)`, `SMO_OBJECTSTORE_SECRET_KEY(_FILE)`, `SMO_OBJECTSTORE_BUCKET_MODELS` (default `smo-models`), ... | none; required for artifacts | the object store (`smo_shared.objectstore`): an S3 endpoint, or `memory://` / `file:///dir` for tests; without it an upload or download is 503. Compose sets them (`http://objectstore:8333`, the default stack's SeaweedFS); the chart has no store yet. The `migrate` service needs the same settings for revision `aimgf_0002` when `model_artifact` has rows |
 
 A per-request `timeoutSeconds` (`timeout_seconds` on inference) overrides the default.
 

@@ -27,7 +27,9 @@ certs = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(certs)
 
 helm = pytest.mark.skipif(shutil.which("helm") is None, reason="helm is not installed")
-EXEMPT_FROM_MTLS = {"mock-o1-adaptor", "gui", "migrate", "postgres", "pgbouncer", "netconf-lab", "edge-tls"}
+# objectstore-init: a one-shot that creates the object store's buckets over its S3 API (SeaweedFS speaks plain HTTP on the compose network, like
+# migrate to Postgres); it calls no SMO module, so it holds no certificate (S2.5 moved the object store into the default stack)
+EXEMPT_FROM_MTLS = {"mock-o1-adaptor", "gui", "migrate", "postgres", "pgbouncer", "netconf-lab", "edge-tls", "objectstore-init"}
 
 
 @pytest.fixture(scope="module")

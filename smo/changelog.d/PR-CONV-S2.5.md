@@ -7,7 +7,8 @@ section: Changed
   still accepted as the deprecated `zip-legacy`, with a `warnings` entry in the answer and the audit row; **a pickle is refused** (415
   `ARTIFACT_FORMAT_INVALID`) whatever the configuration. The new setting `SMO_AIMGF_ARTIFACT_FORMATS` (default `onnx,safetensors,zip-legacy`) chooses
   the formats. The upload answer adds `format` and `sha256`. TS 29.482 discovery with `include-models` carries an artifact inline up to 16 MiB.
-  **Operators:** AIMgF and the `migrate` service now need the object-store settings (`SMO_OBJECTSTORE_URL`, `SMO_OBJECTSTORE_ACCESS_KEY_FILE`,
-  `SMO_OBJECTSTORE_SECRET_KEY_FILE`); revision `aimgf_0002` copies every stored artifact to the store, checks each against its digest and drops
+  **Operators:** the compose stack now starts the object store (SeaweedFS, `objectstore` and `objectstore-init`) by default, no longer only in the
+  `objectstore` profile. AIMgF and the `migrate` service need the object-store settings (`SMO_OBJECTSTORE_URL`, `SMO_OBJECTSTORE_ACCESS_KEY_FILE`,
+  `SMO_OBJECTSTORE_SECRET_KEY_FILE`), which compose sets; with the Helm chart, point them at a store you run; revision `aimgf_0002` copies every stored artifact to the store, checks each against its digest and drops
   `model_artifact.content` (its downgrade reads them back). Without a store, artifact upload and download answer 503 and the upgrade of a database
   that holds artifacts stops before changing anything.

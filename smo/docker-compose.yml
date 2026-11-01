@@ -162,12 +162,17 @@ services:
     command: ["sh", "-c", "python /srv/scripts/migrate.py && python /srv/scripts/db_roles.py"]
     restart: "no"
     stop_grace_period: 30s
-    secrets: [db_password, db_password_onboarding, db_password_ran-analytics, db_password_so-smos, db_password_sa-smos, db_password_intent-service, db_password_mdaf, db_password_echo, db_password_energy-saving-rapp, db_password_mobility-optimization-rapp, db_password_coverage-optimization-rapp, db_password_traffic-steering-rapp, db_password_aimgf, db_password_dme, db_password_focom, db_password_nfo, db_password_r1-termination, db_password_ran-nf-oam, db_password_rapp-mgmt, db_password_sme]
+    secrets: [db_password, db_password_onboarding, db_password_ran-analytics, db_password_so-smos, db_password_sa-smos, db_password_intent-service, db_password_mdaf, db_password_echo, db_password_energy-saving-rapp, db_password_mobility-optimization-rapp, db_password_coverage-optimization-rapp, db_password_traffic-steering-rapp, db_password_aimgf, db_password_dme, db_password_focom, db_password_nfo, db_password_r1-termination, db_password_ran-nf-oam, db_password_rapp-mgmt, db_password_sme, objectstore_access_key, objectstore_secret_key]
     <<: *hardening
-    depends_on: { postgres: { condition: service_healthy } }
+    depends_on:
+      postgres: { condition: service_healthy }
+      objectstore-init: { condition: service_completed_successfully }   # revision aimgf_0002 copies stored model artifacts to the object store (S2.5)
     environment:
       SMO_DATABASE_URL: postgresql+psycopg://smo@postgres:5432/smo
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password
+      SMO_OBJECTSTORE_URL: http://objectstore:8333    # S2.5: aimgf_0002 moves model_artifact bytes into the models bucket (none needed for an empty table)
+      SMO_OBJECTSTORE_ACCESS_KEY_FILE: /run/secrets/objectstore_access_key
+      SMO_OBJECTSTORE_SECRET_KEY_FILE: /run/secrets/objectstore_secret_key
       SMO_TIMESCALEDB: require    # D8: this Postgres has TimescaleDB; migrate creates the extension before the revisions run (scripts/migrate.py)
 
   r1-termination:
@@ -613,7 +618,7 @@ services:
   aimgf:
     build: { context: ., additional_contexts: { specs: ../specs/5G_APIs }, args: { <<: *build_info, MODULE: aimgf, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
-    secrets: [db_password_aimgf, enrollment_secret]
+    secrets: [db_password_aimgf, enrollment_secret, objectstore_access_key, objectstore_secret_key]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
@@ -626,6 +631,10 @@ services:
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_aimgf
       R1_GATEWAY_URL: http://r1-termination:8000
       SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
+      # S2.5: model artifacts live in the object store's models bucket (aimgf/README.md 2.4, "Model artifacts in the object store")
+      SMO_OBJECTSTORE_URL: http://objectstore:8333
+      SMO_OBJECTSTORE_ACCESS_KEY_FILE: /run/secrets/objectstore_access_key
+      SMO_OBJECTSTORE_SECRET_KEY_FILE: /run/secrets/objectstore_secret_key
 
   # Call flow 27e: the same image, run as a worker. It fails every training, validation, emulation and inference run past its deadline (aimgf/app/tasks.py),
   # so a run nobody reads still times out and its NFO workload is removed. Run as many as you like: the task runs once per interval across all of them.
@@ -955,13 +964,13 @@ services:
     volumes:
       - ./deploy/helm/smo/files/observability/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/smo.yaml:ro
 
-  # The object store (D10, plan task S1.10), profile `objectstore`: SeaweedFS (Apache-2.0) with its S3 API on objectstore:8333, one data volume, the access and
+  # The object store (D10, plan task S1.10), in the default stack since S2.5 (AIMgF keeps model artifacts in it, and `migrate` copies them there):
+  # SeaweedFS (Apache-2.0) with its S3 API on objectstore:8333, one data volume, the access and
   # secret key from secret files (scripts/init_secrets.sh), written into the S3 identity file in /tmp at start (never into the image or the environment).
-  # `objectstore-init` creates the three buckets (models, csars, cold-parquet) with smo_shared.objectstore, which is what the modules will use (S2.5 moves the
-  # model artifacts there; nothing does yet). The S3 port is published on this machine's loopback only.
-  #   docker compose --profile objectstore up -d objectstore objectstore-init
+  # `objectstore-init` creates the three buckets (models, csars, cold-parquet) with smo_shared.objectstore, which is what the modules use; `migrate`
+  # waits for it. The S3 port is published on this machine's loopback only. Neither has a profile any more, so `docker compose up` starts both;
+  # `--profile objectstore` (the CI store job, the runbook's round trip) still works and adds nothing.
   objectstore:
-    profiles: ["objectstore"]
     image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
     user: "1000:1000"                  # the image's seaweed user, which owns /data in the image and so in a new volume
     restart: unless-stopped
@@ -989,7 +998,6 @@ services:
       start_period: 10s
 
   objectstore-init:
-    profiles: ["objectstore"]
     build: { context: ., args: { <<: *build_info, MODULE: r1-termination } }    # any service image carries smo_shared; the migrate service's build
     stop_grace_period: 30s
     command: ["python", "-m", "smo_shared.objectstore", "ensure-buckets"]

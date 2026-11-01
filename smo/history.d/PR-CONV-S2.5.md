@@ -53,8 +53,10 @@ by `SMO_OBJECTSTORE_URL` through `open_store()`; with no URL and the tests' `SMO
 the integration mesh get the in-memory store with the in-memory database and need no change. This is the one change outside `aimgf/` (the helper
 and its test).
 
-**Wiring the module manifest must carry** (Session A's module manifests; not edited here): AIMgF and the `migrate` service get
-`SMO_OBJECTSTORE_URL=http://objectstore:8333`, `SMO_OBJECTSTORE_ACCESS_KEY_FILE` and `SMO_OBJECTSTORE_SECRET_KEY_FILE` with the secrets
-`objectstore_access_key` and `objectstore_secret_key`, and depend on `objectstore-init` having completed; the object store leaves the optional
-`objectstore` profile for any stack that runs AIMgF (or AIMgF's artifact routes answer 503); the chart gets the same for its `aimgf` and migration
-job. `SMO_AIMGF_ARTIFACT_FORMATS` needs no wiring while its default holds.
+**Wiring.** The compose stack carries it (`docker-compose.yml`, in this pull request so that the live-stack jobs replay the runbook, whose sample
+rApps train and upload a model): the object store (`objectstore`, `objectstore-init`) left the `objectstore` profile and is in the default stack;
+`migrate` waits for `objectstore-init` and, like AIMgF, gets `SMO_OBJECTSTORE_URL=http://objectstore:8333`, `SMO_OBJECTSTORE_ACCESS_KEY_FILE` and
+`SMO_OBJECTSTORE_SECRET_KEY_FILE` with the secrets `objectstore_access_key` and `objectstore_secret_key`; `objectstore-init` is exempt from mTLS like
+`migrate` (a one-shot that talks only to the store). When Session A's module manifests land, these lines move into aimgf's `module.yaml`. The Helm
+chart has no object store yet: AIMgF there needs `SMO_OBJECTSTORE_URL` and keys for a store the operator runs (a chart SeaweedFS is a later change).
+`SMO_AIMGF_ARTIFACT_FORMATS` needs no wiring while its default holds.
