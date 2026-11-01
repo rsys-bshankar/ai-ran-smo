@@ -301,3 +301,28 @@ def test_owner_round_trip_and_a_broken_record_reaches_nothing():
     assert subs.caller_of(subs.owner_of(who)) == who
     broken = subs.caller_of("x")
     assert broken.scope is not None and not claims.permits(broken.scope, "r", "t")
+
+
+def test_every_operation_exposes_its_session_to_the_checks_while_it_runs(mns_db):
+    """`checks.SESSION` is the operation's own session during each of the four operations (a decision that reads the producer's store, SME's
+    AccessRules, reads it there), and None again after each, refused or not."""
+    from smo_shared.mns.checks import SESSION, RouterChecks, ScopeStep
+
+    mns, db = mns_db
+    seen = []
+
+    class Recording:
+        def permits(self, caller, operation, target):
+            seen.append((operation, SESSION.get()))
+            return target.dn != "SubNetwork=Z"
+
+    mns.checks = RouterChecks(module="test", scope=ScopeStep(authorizer=Recording()))
+    mns.create_moi(db, "SubNetwork=A", {"id": "A"})
+    mns.get_moi_attributes(db, "SubNetwork=A")
+    mns.modify_moi_attributes(db, "SubNetwork=A", MERGE, {"attributes": {"userLabel": "a"}})
+    mns.delete_moi(db, "SubNetwork=A")
+    with pytest.raises(MnsError):
+        mns.get_moi_attributes(db, "SubNetwork=Z")
+    assert [op for op, _ in seen][:4] == ["createMOI", "getMOIAttributes", "modifyMOIAttributes", "deleteMOI"]
+    assert all(session is db for _, session in seen)
+    assert SESSION.get() is None
