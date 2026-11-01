@@ -621,7 +621,7 @@
     },
     "/instances/{instance_id}/lifecycle/deploy": {
       "post": {
-        "description": "MLIF deployment once the model is certified. The gNB's DMRO bounds\nare applied and verified (D10.2-1), and the serving model is loaded\nfrom MLMR.",
+        "description": "MLIF deployment once the model is certified. The gNB's DMRO bounds\nare applied and verified (D10.2-1), and the serving model is loaded\nfrom AIMgF's model registry.",
         "operationId": "deploy_instances__instance_id__lifecycle_deploy_post",
         "parameters": [
           {
@@ -699,7 +699,7 @@
     },
     "/instances/{instance_id}/lifecycle/train": {
       "post": {
-        "description": "TRAINING on MLTF: registered in MLMR, trained on handover history, stored as an artifact.",
+        "description": "TRAINING on MLTF: registered in AIMgF's model registry, trained on handover history, stored as an artifact.",
         "operationId": "train_instances__instance_id__lifecycle_train_post",
         "parameters": [
           {

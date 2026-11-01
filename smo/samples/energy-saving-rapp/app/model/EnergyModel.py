@@ -23,7 +23,7 @@ The recommendation applies the Wave 10 thresholds:
     NO_CHANGE otherwise — the 5–15 % hysteresis zone
 
 The serialized artifact is plain JSON (EnergyModel.to_artifact), stored in
-MLMR inside a .zip as `energy_model.json`. The model is pure Python on
+AIMgF's model registry inside a .zip as `energy_model.json`. The model is pure Python on
 purpose: a three-weight regression needs no numpy or ONNX runtime.
 """
 
@@ -95,7 +95,7 @@ class EnergyModel:
 
     # ------------------------------------------------------------ artifact
     def to_artifact(self) -> bytes:
-        """Serialises the model as a .zip holding one JSON member (`energy_model.json`), the form stored in MLMR."""
+        """Serialises the model as a .zip holding one JSON member (`energy_model.json`), the form stored in AIMgF's model registry."""
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
             z.writestr(ARTIFACT_MEMBER, json.dumps(asdict(self), indent=1, sort_keys=True))

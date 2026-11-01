@@ -17,7 +17,7 @@ import type { FlowBoardData } from "./types";
 /** The board of flow 02 for model `subjectId`. */
 export function useFlow02(subjectId: string | null): FlowBoardData {
   const t = useT();
-  const models = useSmo<Model[]>("/mlmr/models", { limit: SUBJECT_LIMIT });
+  const models = useSmo<Model[]>("/aimgf/models", { limit: SUBJECT_LIMIT });
   const model = choose(models.data, subjectId, (m) => m.modelId);
   const modelId = model?.modelId ?? null;
   const lifecycle = useSmo<ModelLifecycle>(modelId ? `/aimgf/models/${modelId}/lifecycle` : null);

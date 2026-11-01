@@ -9,7 +9,7 @@ cell individual offset.
 | | |
 |---|---|
 | Use case | Traffic Steering / mobility load balancing |
-| Model | `CongestionSteeringModel` (REGRESSION), pure Python, artifact `steering_model.json` in MLMR |
+| Model | `CongestionSteeringModel` (REGRESSION), pure Python, artifact `steering_model.json` in AIMgF's model registry |
 | O1 targets | `NRFreqRelation.cellReselectionPriority` (idle), `NRCellRelation.cellIndividualOffset` (connected) |
 | Datasets | `LOAD_PERFORMANCE` (live, training), `LOAD_PERFORMANCE_SIM` (Digital Twin, emulation; published by this rApp) |
 | Autonomy modes | SHADOW, ASSIST, AUTONOMOUS |
@@ -122,7 +122,7 @@ This package declares:
 
 - `manifest.yaml`: `TrafficSteering_rApp` 1.0.0, deployment model NonRT-RIC,
   modes TRAINING, VALIDATION, EMULATION, INFERENCE, autonomy SHADOW, ASSIST,
-  AUTONOMOUS, required services DME, AIMgF, MLMR, MLLF, RAN-NF-OAM, and a
+  AUTONOMOUS, required services DME, AIMgF, RAN-NF-OAM, and a
   runtime profile per mode.
 - `capabilities.yaml` consumes `data`, `models`, `lifecycle`, `intent`,
   `platform`, and provides `data` (the SIM dataset). It also lists the

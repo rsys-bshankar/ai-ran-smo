@@ -62,7 +62,7 @@ import smo_shared.ratelimit  # noqa: E402,F401  (registers rate_bucket)
 # models and no tables in the migrations, so it is deliberately left out.
 ALL_MODULES = [
     "r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam",
-    "nfo", "focom", "aimgf", "mlmr", "mllf", "ran-analytics", "mdaf",
+    "nfo", "focom", "aimgf", "ran-analytics", "mdaf",
     "intent-service", "so-smos", "sa-smos",
     "echo",  # PR-CONV-S1.6: the reference ProvMnS module; its model is the router's moi_store (echo/app/models.py)
     "samples/energy-saving-rapp",  # Wave 10.1: the reference rApp's own tables

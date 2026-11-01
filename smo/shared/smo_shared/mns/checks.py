@@ -9,7 +9,7 @@
                         them; a caller the provider does not manage (None) passes.
   3. idempotency        createMOI with an `Idempotency-Key` replays the first answer (`smo_shared.idempotency.run_idempotent`; in router.py).
   4. audit              every committed write adds a row to the hash-chained audit trail in its own transaction (`smo_shared.audit.record`).
-  5. traceparent        the notifications the write publishes keep the request's W3C trace (`smo_event.traceparent`, revision 0066; router.py sets the
+  5. traceparent        the notifications the write publishes keep the request's W3C trace (`smo_event.traceparent`, revision 0067; router.py sets the
                         trace from the request's header when no middleware did).
   6. metric             `smo_provmns_http_duration_seconds{module, class, operation, outcome}` around the whole operation (router.py).
 

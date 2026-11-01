@@ -40,7 +40,6 @@ create_secret() {
 }
 create_secret db_password
 create_secret db_password_onboarding
-create_secret db_password_mlmr
 create_secret db_password_ran-analytics
 create_secret db_password_so-smos
 create_secret db_password_sa-smos

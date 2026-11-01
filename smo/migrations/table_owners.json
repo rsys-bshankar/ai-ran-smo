@@ -134,8 +134,6 @@
   "training_job",
   "validation_job"
  ],
- "mlmr": [],
- "mllf": [],
  "ran-analytics": [
   "mdaf_producer"
  ],

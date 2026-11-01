@@ -22,8 +22,11 @@ MIGRATE = SMO_ROOT / "scripts" / "migrate.py"
 CHECK = SMO_ROOT / "scripts" / "check_migration_matches_models.py"
 ADMIN_URL = os.environ.get("SMO_TEST_POSTGRES_URL")
 needs_postgres = pytest.mark.skipif(not ADMIN_URL, reason="SMO_TEST_POSTGRES_URL not set")
-HEAD = "0066"         # raise this with every new revision: the tests below then check it is the head
-HEAD_TABLE = "smo_event"   # a table the head revision changes: the lock tests hold it, so raise it with HEAD
+HEAD = "0067"         # raise this with every new revision: the tests below then check it is the head
+# The newest revision that alters a table, and that table: the lock tests hold it while migrating to that revision. Raise both with a revision that alters a
+# table (0065 only drops roles and 0066 only makes Echo's new schema, so neither can be blocked by a table lock).
+LOCK_REVISION = "0067"
+LOCK_TABLE = "smo_event"
 
 
 def _scripts() -> ScriptDirectory:
@@ -187,7 +190,13 @@ def test_the_revision_after_the_baseline_applies_to_a_baseline_database_and_roll
     previous = _scripts().get_revision(HEAD).down_revision                                   # one step down, whatever the head is
     one = _run(MIGRATE, databases["fresh"], "--downgrade", "-1")
     assert one.returncode == 0 and f"downgraded to {previous}" in one.stdout, one.stderr
-    assert _schema(databases["fresh"]) != at_head                                             # the head's change is undone
+    if HEAD == LOCK_REVISION:
+        assert _schema(databases["fresh"]) != at_head                                         # the head's change to a table is undone
+    else:                                                                                     # a head that alters no table (0065 drops roles): its downgrade recreates the role
+        engine = create_engine(databases["fresh"])
+        with engine.connect() as connection:
+            assert connection.execute(text("SELECT count(*) FROM pg_roles WHERE rolname = 'smo_mlmr'")).scalar_one() == 1
+        engine.dispose()
     down = _run(MIGRATE, databases["fresh"], "--downgrade", "0001")
     assert down.returncode == 0 and "downgraded to 0001" in down.stdout, down.stderr
     assert _schema(databases["fresh"]) == at_baseline
@@ -346,6 +355,30 @@ def test_0064_moves_mlmrs_tables_into_aimgf_with_their_rows_and_back(databases):
     engine.dispose()
 
 
+@needs_postgres
+def test_0065_drops_the_mlmr_role_with_its_grants_and_the_downgrade_recreates_it(databases):
+    """S2.8: at 0064 a role `smo_mlmr` with privileges on a table (as `scripts/db_roles.py` made it) is dropped by 0065, with what it was granted; a database
+    without the roles migrates too; downgrading recreates `smo_mlmr` with no login for the previous release's role script to complete. Needs Postgres."""
+    url = databases["fresh"]
+    assert _run(MIGRATE, url, "--revision", "0064").returncode == 0
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        exists = connection.execute(text("SELECT count(*) FROM pg_roles WHERE rolname = 'smo_mlmr'")).scalar_one()
+        if not exists:
+            connection.execute(text("CREATE ROLE smo_mlmr LOGIN"))
+        connection.execute(text("GRANT SELECT ON public.alembic_version TO smo_mlmr"))
+    up = _run(MIGRATE, url)
+    assert up.returncode == 0 and "upgraded to 0065" in up.stdout, up.stderr
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT count(*) FROM pg_roles WHERE rolname IN ('smo_mlmr', 'smo_mllf')")).scalar_one() == 0
+    down = _run(MIGRATE, url, "--downgrade", "0064")
+    assert down.returncode == 0, down.stderr
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT rolcanlogin FROM pg_roles WHERE rolname = 'smo_mlmr'")).scalar_one() is False
+    assert _run(MIGRATE, url).returncode == 0                                          # and up again, the role now without grants
+    engine.dispose()
+
+
 # --- MIGRATE-LOCK-HOLD: a revision that cannot take its lock gives up its locks and is tried again -----------------------------------------
 
 class _LockTimeout(Exception):
@@ -451,12 +484,12 @@ def test_a_held_lock_makes_the_migration_give_up_and_change_nothing(databases):
     """With a table the pending revision alters locked by another session, the migration fails after its tries, each short, and the database stays
     at the previous revision. Needs Postgres.
     """
-    url, previous = databases["fresh"], _scripts().get_revision(HEAD).down_revision
+    url, previous = databases["fresh"], _scripts().get_revision(LOCK_REVISION).down_revision
     assert _run(MIGRATE, url, "--revision", previous).returncode == 0
-    holder, engine = _hold_lock(url, HEAD_TABLE)
+    holder, engine = _hold_lock(url, LOCK_TABLE)
     try:
         env = {"SMO_MIGRATE_LOCK_TIMEOUT_MS": "200", "SMO_MIGRATE_LOCK_ATTEMPTS": "2"}
-        blocked = subprocess.run([sys.executable, str(MIGRATE)], env={**os.environ, "SMO_DATABASE_URL": url, **env},
+        blocked = subprocess.run([sys.executable, str(MIGRATE), "--revision", LOCK_REVISION], env={**os.environ, "SMO_DATABASE_URL": url, **env},
                                  capture_output=True, text=True, timeout=60)
     finally:
         holder.rollback()
@@ -470,11 +503,11 @@ def test_a_held_lock_makes_the_migration_give_up_and_change_nothing(databases):
 @needs_postgres
 def test_a_lock_released_while_the_migration_waits_lets_a_later_try_succeed(databases):
     """The lock is let go while the migration pauses between tries: a later try takes it and the database reaches the head. Needs Postgres."""
-    url, previous = databases["fresh"], _scripts().get_revision(HEAD).down_revision
+    url, previous = databases["fresh"], _scripts().get_revision(LOCK_REVISION).down_revision
     assert _run(MIGRATE, url, "--revision", previous).returncode == 0
-    holder, engine = _hold_lock(url, HEAD_TABLE)
+    holder, engine = _hold_lock(url, LOCK_TABLE)
     env = {**os.environ, "SMO_DATABASE_URL": url, "SMO_MIGRATE_LOCK_TIMEOUT_MS": "200", "SMO_MIGRATE_LOCK_ATTEMPTS": "5"}
-    process = subprocess.Popen([sys.executable, str(MIGRATE)], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    process = subprocess.Popen([sys.executable, str(MIGRATE), "--revision", LOCK_REVISION], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
         time.sleep(1.5)                                       # the first try has timed out; the migration is pausing
     finally:
@@ -483,4 +516,4 @@ def test_a_lock_released_while_the_migration_waits_lets_a_later_try_succeed(data
         engine.dispose()
     stdout, stderr = process.communicate(timeout=60)
     assert process.returncode == 0, stderr
-    assert "attempt 1 of 5" in stdout and f"upgraded to {HEAD}" in stdout
+    assert "attempt 1 of 5" in stdout and f"upgraded to {LOCK_REVISION}" in stdout

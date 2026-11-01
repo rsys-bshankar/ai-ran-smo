@@ -10,15 +10,15 @@ chain, idempotency keys, its module identity); nothing else (D6: Echo is the one
 
 Downgrade: drops the table with its indexes (`drop_moi_store`) and the schema (what it held is lost; nothing else reads it).
 
-Revision ID: 0065
-Revises: 0064
+Revision ID: 0066
+Revises: 0065
 """
 from alembic import op
 
 from smo_shared.mns.store import create_moi_store, drop_moi_store
 
-revision = "0065"
-down_revision = "0064"
+revision = "0066"
+down_revision = "0065"
 branch_labels = None
 depends_on = None
 

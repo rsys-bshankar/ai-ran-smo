@@ -9,9 +9,9 @@ capabilities:
         inference; LOAD_PERFORMANCE_SIM (Digital Twin, injected hotspots) for
         emulation; cell guards, alarms and O1 config read-back from RAN NF OAM.
     - namespace: models
-      description: Registers CongestionSteeringModel in MLMR and stores its artifact, via sdk.models.
+      description: Registers CongestionSteeringModel in AIMgF's model registry and stores its artifact, via sdk.models.
     - namespace: lifecycle
-      description: AIMgF training/validation/emulation jobs, MLLF + MLIF runtime deployment, inference jobs.
+      description: AIMgF training/validation/emulation jobs, AIMgF's deploy gate + MLIF runtime deployment, inference jobs.
     - namespace: intent
       description: AutonomyDispatch of steering and release steps (SHADOW / ASSIST / AUTONOMOUS), via sdk.intent.
     - namespace: platform

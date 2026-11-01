@@ -42,7 +42,7 @@ Conventions every R1-facing service applies (authentication scheme `r1BearerAuth
    +--------------------+
       | strip "/<prefix>", forward verbatim
       v
-   sme  dme  onboarding  rapp-mgmt  ran-nf-oam  nfo  focom  aimgf  mlmr  mllf
+   sme  dme  onboarding  rapp-mgmt  ran-nf-oam  nfo  focom  aimgf
    ran-analytics  mdaf  intent-service  so-smos  sa-smos  <four reference rApps>
 ```
 
@@ -81,7 +81,7 @@ Failure behaviour: a backend that does not answer within `R1_UPSTREAM_TIMEOUT_SE
 | `app/main.py` | `ROUTES`, the probes, `/bootstrap`, the catch-all `proxy`, `_authorized` (introspection call) and `_forward_operator_api`, the forward of the `/rapps/{instanceId}/operator/...` prefix. |
 | `app/operator_api.py` | The dynamic prefix (GUI-8.3): `split` (the shape of the path), `resolve` (the instance's registered `operatorApiBase` from rApp Management, cached for `R1_OPERATOR_API_CACHE_SECONDS`, an answer under a minute old kept when rApp Management cannot answer), `Unresolvable`. |
 | `../shared/smo_shared/openapi_security.py` | `apply_r1_gateway_security(app, public_paths={"/health", "/live", "/ready", "/version", "/bootstrap"})`: adds the `r1BearerAuth` scheme to the OpenAPI document and marks those paths as unauthenticated. |
-| `../shared/smo_shared/invoker.py` | `INVOKER_ID_HEADER`, `ON_BEHALF_OF_HEADER` and `invoker_id(request)`: the caller id a backend reads (MLMR's `storeDiscReqs`, and the per-rApp safeguards at RAN NF OAM, which apply to the rApp an SMO module is acting for). R1 Termination forwards `X-R1-On-Behalf-Of` only from an `internal` caller and drops an rApp's own value. Beside them `ACTING_USER_HEADER` (`X-R1-Acting-User`) and `acting_user(request)`: the person the operator's console says it acts for (`smo-gui:<username>`), forwarded the same way (from an `internal` caller only, any other caller's value dropped) and read by RAN NF OAM to name who decided an approval (`SEC-15.8`). |
+| `../shared/smo_shared/invoker.py` | `INVOKER_ID_HEADER`, `ON_BEHALF_OF_HEADER` and `invoker_id(request)`: the caller id a backend reads (AIMgF's registry `storeDiscReqs`, and the per-rApp safeguards at RAN NF OAM, which apply to the rApp an SMO module is acting for). R1 Termination forwards `X-R1-On-Behalf-Of` only from an `internal` caller and drops an rApp's own value. Beside them `ACTING_USER_HEADER` (`X-R1-Acting-User`) and `acting_user(request)`: the person the operator's console says it acts for (`smo-gui:<username>`), forwarded the same way (from an `internal` caller only, any other caller's value dropped) and read by RAN NF OAM to name who decided an approval (`SEC-15.8`). |
 | `../shared/smo_shared/scope.py` | `SCOPE_HEADER` (`X-R1-Scope`), `ON_BEHALF_SCOPE_HEADER`, `encode`, `from_introspection` (a claim that is not valid permits nothing): what the gateway stamps; `permits`, `filter_statement`, `scope_of`: what a module does with it. |
 | `../shared/smo_shared/correlation.py` | `apply_correlation_id(app)`: middleware assigning `X-Correlation-ID` when absent; `get_correlation_id()`. |
 
@@ -122,8 +122,6 @@ Route table (`ROUTES`, prefix → env var → default):
 | `/nfo` | `NFO_URL` | `http://nfo:8000` |
 | `/focom` | `FOCOM_URL` | `http://focom:8000` |
 | `/aimgf` | `AIMGF_URL` | `http://aimgf:8000` |
-| `/mlmr` | `MLMR_URL` | `http://aimgf:8000` (AIMgF serves the model registry since S2.1; the prefix goes in S2.4) |
-| `/mllf` | `MLLF_URL` | `http://aimgf:8000` (AIMgF serves the deploy gate since S2.2; the prefix goes in S2.4) |
 | `/ran-analytics` | `RAN_ANALYTICS_URL` | `http://ran-analytics:8000` |
 | `/mdaf` | `MDAF_URL` | `http://mdaf:8000` |
 | `/intent-service` | `INTENT_SERVICE_URL` | `http://intent-service:8000` |
@@ -150,7 +148,7 @@ Request-time order: route lookup (404) → bearer header present and non-empty (
 | `R1_PUBLIC_BASE_URL` | unset | The origin consumers outside the compose network reach the gateway by (`https://localhost:8443` behind the TLS edge): `/bootstrap` advertises it instead of SME's compose address (PR-SEC-1.6). Validated at start |
 | `SMO_MTLS` (and `SMO_MTLS_CERT_FILE`, `_KEY_FILE`, `_CA_FILE`) | off | PR-SEC-2: with `on` the gateway serves HTTPS and refuses a client without a certificate from the CA (so a rApp outside the stack needs one: `scripts/mtls_certs.py client NAME`, or an edge that holds one), and its proxying to every backend and its token introspection at SME present its own certificate; the routes above become `https://`. The token check is unchanged. `docs/ARCHITECTURE.md`, "Mutual TLS between services" |
 | `R1_MAX_BODY_BYTES` | `1048576` | Largest request body any route accepts (413 over it) |
-| `R1_MAX_BODY_OVERRIDES` | `/mlmr/models/*/artifact=52428800,/onboarding/packages/upload=52428800` | `<path-pattern>=<bytes>,...` caps that replace the default for matching paths (`*` matches anything); the defaults are the model artifact upload and the rApp package upload (call flow 01a), 50 MiB each like the GUI's nginx. Setting it replaces these defaults |
+| `R1_MAX_BODY_OVERRIDES` | `/aimgf/models/*/artifact=52428800,/onboarding/packages/upload=52428800` | `<path-pattern>=<bytes>,...` caps that replace the default for matching paths (`*` matches anything); the defaults are the model artifact upload and the rApp package upload (call flow 01a), 50 MiB each like the GUI's nginx. Setting it replaces these defaults |
 | `R1_RATE_PER_SECOND` | `100` | Requests a second each caller (invoker id) may sustain; `0` turns the limiter off |
 | `R1_RATE_BURST` | `200` | Requests a caller may make at once before it is held to the rate |
 | `R1_RATE_STORE` | `memory` | Where the limiter's buckets live (PR-SEC-8.5, read once at start; anything else stops the service). `memory`: in each replica, so N replicas give a caller N x the budget. `postgres`: in the shared `rate_bucket` table, one budget for all replicas; see "The shared limiter" below. Compose passes `${R1_RATE_STORE:-memory}`; in the chart set `modules.r1-termination.env.R1_RATE_STORE` |
@@ -179,7 +177,7 @@ The gateway answers with `JSONResponse` bodies of the form `{"title": ..., "stat
 | `UNAUTHORIZED` | 401 | No `Authorization` header, not `Bearer`, empty token, or token not active; on `GET /bootstrap`, a missing or wrong `X-Bootstrap-Key` when `R1_BOOTSTRAP_KEY` is set |
 | `PAYLOAD_TOO_LARGE` | 413 | The request body is larger than the cap for that path (`Content-Length`, or counted while streaming); the backend is not called |
 | `RATE_LIMITED` | 429 | The caller has used its request budget (per replica, or across replicas with `R1_RATE_STORE=postgres`); `Retry-After` is the whole seconds to wait. Counted after authentication, so a refused unauthenticated request spends nobody's budget |
-| `ROLE_NOT_PERMITTED` | 403 | The caller's role is `rapp` and the route is one only SMO modules and operators may call (`smo_shared/roles.py` `INTERNAL_ONLY`: setting or removing a per-rApp limit, defining or removing a KPI, purging CM history, and the approval queue: deciding a request, setting an approval policy, the subscriptions, and the lists of requests and decision records, `AI-11`/`AI-13`, and giving a model an owner, `PUT /mlmr/models/{id}/owner`, `SEC-15.3c`); the backend is not called |
+| `ROLE_NOT_PERMITTED` | 403 | The caller's role is `rapp` and the route is one only SMO modules and operators may call (`smo_shared/roles.py` `INTERNAL_ONLY`: setting or removing a per-rApp limit, defining or removing a KPI, purging CM history, and the approval queue: deciding a request, setting an approval policy, the subscriptions, and the lists of requests and decision records, `AI-11`/`AI-13`, and giving a model an owner, `PUT /aimgf/models/{id}/owner`, `SEC-15.3c`); the backend is not called |
 | `UPSTREAM_TIMEOUT` | 504 | The backend did not answer within `R1_UPSTREAM_TIMEOUT_SECONDS` (`detail` names the route prefix) |
 | `UPSTREAM_UNAVAILABLE` | 502 | The backend could not be reached (connection refused, DNS failure, reset) |
 

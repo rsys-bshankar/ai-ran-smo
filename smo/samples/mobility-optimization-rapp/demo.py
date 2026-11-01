@@ -200,7 +200,7 @@ def demo_06(state: dict) -> None:
 
 
 def demo_07(state: dict) -> None:
-    """Deploy the runtime and the DMRO bounds. MLLF checks the model, AIMgF and
+    """Deploy the runtime and the DMRO bounds. AIMgF's deploy gate checks the model, AIMgF and
     NFO deploy MLIF, and the gNB's DMROFunction is set to ±6 dB and read
     back."""
     deployed = call("post", "mobility-optimization-rapp", f"/instances/{state['instanceId']}/lifecycle/deploy")

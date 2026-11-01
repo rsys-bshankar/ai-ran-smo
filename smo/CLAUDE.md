@@ -48,7 +48,7 @@ standalone against SQLite, `PYTHONPATH` pointed at both itself and
 
 ```bash
 cd smo
-for m in onboarding rapp-mgmt ran-nf-oam aimgf mlmr mllf so-smos \
+for m in onboarding rapp-mgmt ran-nf-oam aimgf so-smos \
          sme dme r1-termination nfo focom ran-analytics mdaf \
          intent-service sa-smos mock-o1-adaptor sdk; do
   (cd "$m" && PYTHONPATH=.:../shared python -m pytest tests/ -q) || break
@@ -200,9 +200,11 @@ Docker compose runs the migrations itself (the `migrate` service); services star
 - **The interface baseline only shrinks.** A PR that replaces or deletes a route, or moves a caller off one, also removes its entry from
   `scripts/interface_baseline.json` (`python scripts/check_interfaces.py --write-baseline`); the gate fails on a stale entry, and on a pull request it
   fails when an entry is added against the base branch. A new route is a bundle operation or a listed ADR 0011 [D] exception from the day it is added.
-- Don't merge your own PR on the assumption that's always wanted —
-  that's a per-task call the person running the session makes explicitly
-  each time, not a standing default this file grants.
+- **Merge when green (standing instruction from the repository owner).** After opening a PR, watch it: fix CI failures and
+  review comments, and once every required check passes on the current head and the PR is mergeable, squash-merge it (title
+  ending in `(#<number>)`). Not required: the `github-advanced-security` check (Copilot AI findings), which fails when the
+  monthly Copilot quota is spent. Don't merge on red CI, on an unresolved blocking review, or when the person running the
+  session says to hold the PR.
 
 ## A couple of cross-cutting conventions worth knowing before you add code
 

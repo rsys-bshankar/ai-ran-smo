@@ -190,7 +190,7 @@ def demo_06(state: dict) -> None:
 
 
 def demo_07(state: dict) -> None:
-    """Deploy the runtime. MLLF checks CERTIFIED/PROMOTED, then AIMgF and NFO
+    """Deploy the runtime. AIMgF's deploy gate checks CERTIFIED/PROMOTED, then AIMgF and NFO
     deploy MLIF; RuntimeLifecycle becomes ACTIVE."""
     deployed = call("post", "energy-saving-rapp", f"/instances/{state['instanceId']}/lifecycle/deploy")
     show("runtime lifecycle", deployed["lifecycle"]["runtimeLifecycleState"])

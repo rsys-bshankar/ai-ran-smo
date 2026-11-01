@@ -7,7 +7,7 @@ A Non-RT RIC rApp that predicts sustained low PRB utilisation from O1 PM data, p
 | | |
 |---|---|
 | Use case | Energy Saving (cell sleep / wake) |
-| Model | `EnergySavingPredictor`: threshold rule over a linear regression of next-hour PRB (`REGRESSION`), plain-Python, stored in MLMR as `energy_model.zip` |
+| Model | `EnergySavingPredictor`: threshold rule over a linear regression of next-hour PRB (`REGRESSION`), plain-Python, stored in AIMgF's model registry as `energy_model.zip` |
 | O1 targets | `NRCellDU` and `CESManagementFunction` |
 | O1 actuators (per instance) | `NRCellDU.administrativeState` (`LOCKED` / `UNLOCKED`, default) or `CESManagementFunction.energySavingControl` (`TO_BE_ENERGY_SAVING` / `TO_BE_NOT_ENERGY_SAVING`) |
 | Datasets | `PRB_UTILIZATION` (training, validation, inference); `PRB_UTILIZATION_SIM` (emulation, Digital Twin) |
@@ -81,7 +81,7 @@ Decision logic (`app/engine.py`, pure functions). Cell states are internal: SERV
 
 Layout and field semantics: [RAPP_PACKAGING.md](../../docs/RAPP_PACKAGING.md).
 
-- Manifest: `EnergySaving_rApp` 1.0.0, vendor Radisys, deployment model NonRT-RIC; execution modes TRAINING, VALIDATION, EMULATION, INFERENCE; autonomy modes SHADOW, ASSIST, AUTONOMOUS; required services DME, AIMgF, MLMR, MLLF, RAN-NF-OAM; runtime profiles (cpu / memory / gpu) of 8 / 16Gi / 0 for TRAINING, 4 / 8Gi / 0 for VALIDATION and EMULATION, 2 / 4Gi / 0 for INFERENCE.
+- Manifest: `EnergySaving_rApp` 1.0.0, vendor Radisys, deployment model NonRT-RIC; execution modes TRAINING, VALIDATION, EMULATION, INFERENCE; autonomy modes SHADOW, ASSIST, AUTONOMOUS; required services DME, AIMgF, RAN-NF-OAM; runtime profiles (cpu / memory / gpu) of 8 / 16Gi / 0 for TRAINING, 4 / 8Gi / 0 for VALIDATION and EMULATION, 2 / 4Gi / 0 for INFERENCE.
 - Capabilities: consumes `data`, `analytics`, `models`, `lifecycle`, `intent`, `platform`; provides `data` (`PRB_UTILIZATION_SIM`). Produced model `EnergySavingPredictor`; supported actions `LOCK_CELL`, `UNLOCK_CELL`; vendor modes `O1_NETCONF`, `O1_RESTCONF`; supported analytics `TRAFFIC_FORECAST`.
 - Deliberately absent: no deployment item (Helm chart) in the ASD, because the service runs as a compose service reached through R1 Termination; no `Files/Sme`, `Files/Dme` or `Files/Acm`, because the rApp registers its DME type from code (`app/producer.py`).
 - `build_csar.py` leaves out `tests/` and this README. Rebuild only after editing the package files.
@@ -109,7 +109,7 @@ Served on port 8000. R1 Termination reaches it at `/rapps/<instance>/operator/..
 | `POST /instances/{id}/start` | Bind to the rapp-mgmt instance; discover one data job per mode; then reports the instance up **as the instance** (`smo_sdk.instances.bootstrap` → `bootstrap-complete`, call flow 01d): the answer's `bootstrap` is `{state: RUNNING}`, or `{state: null, reason}` (`NO_CREDENTIALS` when rApp Management has not pushed the instance's credentials) |
 | `POST /instances/{id}/credentials` | Where rApp Management pushes the instance's credentials (`smo_sdk.instances`, call flow 01c): accepted with the internal role only; kept in the shared identity table (every replica, and after a restart). Every request under `/instances/{id}/` then acts as that instance |
 | `GET /instances`, `GET /instances/{id}` | List or read instances |
-| `POST /instances/{id}/lifecycle/train` | Register the model in MLMR, train, store the artifact |
+| `POST /instances/{id}/lifecycle/train` | Register the model in AIMgF's model registry, train, store the artifact |
 | `POST /instances/{id}/lifecycle/validate` | Validation job (held-out score) |
 | `POST /instances/{id}/lifecycle/emulate` | Emulation job on the Digital Twin dataset |
 | `POST /instances/{id}/lifecycle/deploy` | Deploy and activate the MLIF runtime (needs a certified model) |

@@ -35,7 +35,7 @@ groups:
   - name: smo.availability
     rules:
       - alert: SmoModuleDown
-        expr: up{job=~"r1-termination|sme|dme|onboarding|rapp-mgmt|ran-nf-oam|mock-o1-adaptor|nfo|focom|mlmr|aimgf|mllf|ran-analytics|mdaf|echo|intent-service|so-smos|sa-smos|energy-saving-rapp|mobility-optimization-rapp|coverage-optimization-rapp|traffic-steering-rapp"} == 0
+        expr: up{job=~"r1-termination|sme|dme|onboarding|rapp-mgmt|ran-nf-oam|mock-o1-adaptor|nfo|focom|aimgf|ran-analytics|mdaf|echo|intent-service|so-smos|sa-smos|energy-saving-rapp|mobility-optimization-rapp|coverage-optimization-rapp|traffic-steering-rapp"} == 0
         for: 2m
         labels: {severity: critical}
         annotations:

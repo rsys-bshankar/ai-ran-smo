@@ -1,5 +1,5 @@
 /** Section `aiml.groups` (Coordination tab): MLMR model coordination groups as a server-paged table with a role-gated "Retrain group", and the
- * role-gated form that creates one from two or more models (`POST /mlmr/coordination-groups`). A guard-KPI breach on any PROMOTED member
+ * role-gated form that creates one from two or more models (`POST /aimgf/coordination-groups`). A guard-KPI breach on any PROMOTED member
  * retrains every PROMOTED member. */
 import { useState } from "react";
 

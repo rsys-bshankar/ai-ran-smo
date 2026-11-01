@@ -8,7 +8,7 @@
 | R1 route / port | none yet: not in R1 Termination's routing table until S1.7 / S1.8 (see 1.3); container :8000, `/ProvMnS/19.2.0/...` |
 | Depends on (over R1) | nothing: Echo calls no other module |
 | Called by | its tests; later every MnS consumer through R1 |
-| Database tables | `echo.moi_store` (revision 0065, `create_moi_store(op, "echo")`); shared: `smo_event`, `audit_log`, `audit_head`, `idempotency_key`, `module_identity` |
+| Database tables | `echo.moi_store` (revision 0066, `create_moi_store(op, "echo")`); shared: `smo_event`, `audit_log`, `audit_head`, `idempotency_key`, `module_identity` |
 | Unit tests | `tests/`, on SQLite and, with `SMO_TEST_POSTGRES_URL`, on Postgres (counts: [docs/TEST_COUNTS.md](../docs/TEST_COUNTS.md)) |
 | Status | Done (S1.6). Off by default in compose and in the chart (1.5) |
 
@@ -75,7 +75,7 @@ module the registry names, waits for them.** Until then Echo's routes are reache
 |---|---|
 | `app/main.py` | `CLASSES`, `SYSTEM_DN`, `placement(dn)` (ECHO_PLACEMENT through `PrefixPlacement`), `msac_rules(caller)` and `_rule(item)` (ECHO_MSAC_RULES), `CHECKS`, `mns`, the FastAPI app with logging, metrics, gateway security, correlation id, health and the router |
 | `app/models.py` | `MOI_STORE`: the shared `ManagedObject` table placed on the shared `Base`, so `create_all` makes it in the SQLite tests and the models check knows it |
-| `../migrations/versions/0065_echo_schema.py` | schema `echo` and its `moi_store` (`create_moi_store(op, "echo")`); downgrade drops both |
+| `../migrations/versions/0066_echo_schema.py` | schema `echo` and its `moi_store` (`create_moi_store(op, "echo")`); downgrade drops both |
 
 ### 2.2 Data model
 

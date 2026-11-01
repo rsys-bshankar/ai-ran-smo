@@ -116,12 +116,27 @@ def test_a_call_moved_between_files_of_one_module_is_not_growth_but_a_new_caller
     assert gate.grown(copied, base) == ["baseline grew: consumer aimgf/app/training/jobs.py GET /dme/data-jobs/{}"]
 
 
-def test_the_routing_table_folds_mlmr_and_mllf_into_aimgf_and_their_rows_follow():
-    """R1 Termination sends `/mlmr` and `/mllf` to AIMgF's process (S2.1, S2.2), so the gate files their routes under AIMgF with MLMR's appendix A rows, and an
-    SDK route named for the old prefix resolves to AIMgF's operation."""
+def test_the_modules_aimgf_absorbed_keep_their_appendix_a_rows_and_no_prefix_is_folded_since_s2_4():
+    """MLMR's and MLLF's appendix A rows (a snapshot of the routes at cf95d1e) apply to the routes AIMgF serves for them (ADR 0010, `ABSORBED`); since S2.4
+    no R1 prefix sends to another module's process, so that is the only folding, and an SDK route resolves to the module named in its own path."""
     assert gate.folded_modules() == {"aimgf": ["mllf", "mlmr"]}
+    assert all(prefix.lstrip("/") == module for prefix, module in gate.consumers_check.gateway_routes().items())
     rows = gate.appendix_a()
     row, moved_from = gate.row_for("aimgf", "GET /models", rows, gate.folded_modules())
     assert moved_from == "mlmr GET /models" and row == rows[("mlmr", "GET /models")]
     go = [c for c in gate.calls() if c["kind"] == "go" and c["path"] == "/models" and c["method"] == "GET"]
     assert go and {c["module"] for c in go} == {"aimgf"}
+
+
+def test_a_caller_moved_to_the_prefix_its_operation_is_served_at_is_not_growth():
+    """S2.4: a call in the same file, with the same method and the same target operation, whose path moved from an old prefix to the serving module's one
+    is a move; a second call to that operation from the file, another method, or another target is growth."""
+    base = {"producer": {}, "consumer": {"sdk/smo_sdk/models.py GET /old-prefix/models": "aimgf GET /models"}}
+    moved = {"producer": {}, "consumer": {"sdk/smo_sdk/models.py GET /aimgf/models": "aimgf GET /models"}}
+    assert gate.grown(moved, base) == []
+    other_method = {"producer": {}, "consumer": {"sdk/smo_sdk/models.py POST /aimgf/models": "aimgf POST /models"}}
+    assert gate.grown(other_method, base) == ["baseline grew: consumer sdk/smo_sdk/models.py POST /aimgf/models"]
+    other_target = {"producer": {}, "consumer": {"sdk/smo_sdk/models.py GET /aimgf/storages": "aimgf GET /storages"}}
+    assert gate.grown(other_target, base) == ["baseline grew: consumer sdk/smo_sdk/models.py GET /aimgf/storages"]
+    kept = {"producer": {}, "consumer": {**base["consumer"], **moved["consumer"]}}
+    assert gate.grown(kept, base) == ["baseline grew: consumer sdk/smo_sdk/models.py GET /aimgf/models"]

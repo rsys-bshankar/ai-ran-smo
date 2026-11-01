@@ -28,7 +28,7 @@ Peak memory and CPU while loaded (a core is 100 %), from 33 samples each:
 | ran-nf-oam | 102 | 17 | 26 | 150m / 128Mi | 512Mi |
 | postgres | 150 | 15 | 36 | 250m / 256Mi | 1Gi |
 | rapp-mgmt, onboarding, dme | 90 to 93 | 2 to 3 | 16 to 18 | 50m / 128Mi (the chart's default) | 512Mi (default) |
-| the other modules (AIMGF, FOCOM, MDAF, MLLF, MLMR, NFO, SA-SMOS, SO-SMOS, intent service, RAN analytics, the workers, the four sample rApps) | 75 to 98 | 0 to 0.1 | 7 to 15 | 50m / 128Mi (the chart's default; the DME worker and the rApps' workers 10m) | 512Mi (default) |
+| the other modules (AIMGF, FOCOM, MDAF, NFO, SA-SMOS, SO-SMOS, intent service, RAN analytics, the workers, the four sample rApps) | 75 to 98 | 0 to 0.1 | 7 to 15 | 50m / 128Mi (the chart's default; the DME worker and the rApps' workers 10m) | 512Mi (default) |
 | gui-bff | 86 | 0.1 | 0.1 | 50m / 128Mi (the chart's default) | 512Mi (default) |
 | mock-o1-adaptor | 47 | 0.1 | 12 | 50m / 128Mi (the chart's default) | 512Mi (default) |
 | gui (nginx) | 4.5 | 0 | 0 | 50m / 128Mi (the chart's default) | 512Mi (default) |
@@ -40,7 +40,7 @@ How the profile's values were chosen: a memory **request** is the peak times 1.2
 - **Gateway replicas**: one replica serves about 39 requests/s of this mix at one core. Take 30 requests/s per replica to keep headroom (`ceil(peak requests/s / 30)`), use the profile's 500m request and give it room to burst to a core. With more than one replica set `R1_RATE_STORE=postgres` so the per-caller budget is shared (`SEC-8.5`), and see the HPA and PodDisruptionBudget values in the chart README.
 - **SME**: every gateway request that carries a token asks SME to introspect it, so SME's load follows the gateway's. At 39 requests/s it used about 0.36 of a core (median), so one SME replica has room for about three gateway replicas' traffic. Its memory (361 MiB) is the largest of the modules.
 - **Postgres**: 150 MiB and about a third of a core at the peak of this load, with 10 000 managed elements. The volume matters more than the request rate: see `docs/PERFORMANCE.md` (the list routes at a million alarms) and size the volume and `shared_buffers` from your data, not from this table. For production use a managed or HA Postgres (`docs/DISASTER_RECOVERY.md`).
-- **The rest**: a module is a few tens of milliseconds of CPU per call it handles and about 100 MiB resident; a node with room for the requests above has room for the stack. Add up the requests (the profile: about 2.4 cores and 4.7 GiB for one replica of each of the 32 modules and the bundled Postgres) for the smallest node pool that holds it.
+- **The rest**: a module is a few tens of milliseconds of CPU per call it handles and about 100 MiB resident; a node with room for the requests above has room for the stack. Add up the requests (the profile: about 2.3 cores and 4.4 GiB for one replica of each of the 30 modules and the bundled Postgres) for the smallest node pool that holds it.
 
 ## What this does not tell you
 

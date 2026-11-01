@@ -205,7 +205,7 @@ The mode is snapshotted onto the dispatch at request time and never rewritten by
 |---|---|
 | `dispatch_id` | UUID PK |
 | `instance_id` | Bare UUID, rApp Management instance |
-| `model_id` | Bare UUID, MLMR model of the triggering inference, optional |
+| `model_id` | Bare UUID, AIMgF registry model of the triggering inference, optional |
 | `autonomy_mode` | Snapshot at request time |
 | `expectations`, `priority`, `intent_mgmt_purpose`, `intent_handling_scope` | As dispatched |
 | `rmih_id` | FK `intent_handling_function`, `ON DELETE CASCADE` |

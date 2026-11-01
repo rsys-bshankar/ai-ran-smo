@@ -689,7 +689,7 @@ def test_an_operator_gives_an_owner_less_model_an_owner_and_it_is_audited(client
     assert resp.json() == {"modelId": model_id, "owner": "es-client", "previousOwner": None, "changed": True}
     assert client.get(f"/models/{model_id}").json()["owner"] == "es-client"
     (row,) = _audit_rows(db_session_factory)
-    assert (row.actor, row.actor_role, row.action, row.target) == ("alice", "internal", "SET_MODEL_OWNER", f"/mlmr/models/{model_id}/owner")
+    assert (row.actor, row.actor_role, row.action, row.target) == ("alice", "internal", "SET_MODEL_OWNER", f"/aimgf/models/{model_id}/owner")
     assert row.detail == {"modelId": model_id, "previousOwner": None, "newOwner": "es-client"}
     with db_session_factory() as db:
         assert audit.verify(db) is None

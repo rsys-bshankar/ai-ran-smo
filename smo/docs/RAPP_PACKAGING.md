@@ -96,7 +96,7 @@ and tools, and nothing branches on it.
 | `rappManifest.aiRuntimeSdkVersion` | `sdk/` contract version the rApp was built against | Stored in `aiCapabilities.aiRuntimeSdkVersion` | `"1.0"` | `"1.0"` | `"1.0"` | `"1.0"` |
 | `executionModes` | Which of `TRAINING`, `VALIDATION`, `EMULATION`, `INFERENCE` the package supports | Stored; every `runtimeProfiles` key must be one of them | all four | all four | all four | all four |
 | `autonomyModes` | Which of `SHADOW`, `ASSIST`, `AUTONOMOUS` the rApp supports | Stored and exposed only. The mode in force is the rApp *instance's* `autonomyMode`; nothing checks it against this list. | all three | all three | all three | all three |
-| `requiredServices` | Platform services the rApp needs | Stored and exposed only; no deploy-time check | DME, AIMgF, MLMR, MLLF, RAN-NF-OAM | same | same | same |
+| `requiredServices` | Platform services the rApp needs | Stored and exposed only; no deploy-time check | DME, AIMgF, RAN-NF-OAM | same | same | same |
 | `runtimeProfiles.<MODE>.cpu` | CPU cores for that execution runtime | **Consumed by AIMgF**: sizes the transient NFO runtime for a Training / Validation / Emulation request that names the package (`packageId`); an explicit `runtimeProfile` in the request wins. It reaches the NFO descriptor twice: as written (`workloadTemplate.resources`) and as Kubernetes requests and limits (`workloadTemplate.containerResources`, §3.2) | 8 / 4 / 4 / 2 | 4 / 2 / 2 / 1 | 4 / 2 / 2 / 1 | 4 / 2 / 2 / 1 |
 | `runtimeProfiles.<MODE>.memory` | Memory (string, e.g. `16Gi`) | as `cpu` | 16Gi / 8Gi / 8Gi / 4Gi | 8Gi / 4Gi / 4Gi / 2Gi | same as MO | same as MO |
 | `runtimeProfiles.<MODE>.gpu` | GPUs | as `cpu` | 0 in every mode | 0 | 0 | 0 |
@@ -245,8 +245,8 @@ rApp really calls it. Everything else in the file is descriptive.
 |---|---|---|---|---|---|
 | `data` (consumes) | `sdk.data`: DME datasets, cell guards, O1 config read-back | PRB_UTILIZATION, PRB_UTILIZATION_SIM | HO_PERFORMANCE, HO_PERFORMANCE_SIM | COVERAGE_PERFORMANCE, COVERAGE_PERFORMANCE_SIM | LOAD_PERFORMANCE, LOAD_PERFORMANCE_SIM |
 | `analytics` (consumes) | `sdk.analytics`: MDAF predictions and reports | MDAF PRB predictions (`get_prediction`) | not used (d) | not used (d) | not used (d) |
-| `models` (consumes) | `sdk.models`: register the model, store its artifact in MLMR | EnergySavingPredictor | MobilityRobustnessPredictor | CoverageSensitivityModel | CongestionSteeringModel |
-| `lifecycle` (consumes) | `sdk.lifecycle`: AIMgF jobs, MLLF deploy, inference | yes | yes | yes | yes |
+| `models` (consumes) | `sdk.models`: register the model, store its artifact in AIMgF's registry | EnergySavingPredictor | MobilityRobustnessPredictor | CoverageSensitivityModel | CongestionSteeringModel |
+| `lifecycle` (consumes) | `sdk.lifecycle`: AIMgF jobs, deploy, inference | yes | yes | yes | yes |
 | `intent` (consumes) | `sdk.intent`: `AutonomyDispatch` of the decision | LOCK recommendations | CIO changes | tilt / power change sets | steering and release steps |
 | `platform` (consumes) | `sdk.platform`: SME registration, direct DME O1 actions | wake, rollback, operator override | KPI reverts, rollbacks, DMRO bounds | KPI reverts, rollbacks | KPI reverts, rollbacks |
 | `data` (provides) | A dataset the rApp publishes for others | `PRB_UTILIZATION_SIM` (Digital Twin sample producer) | `HO_PERFORMANCE_SIM` | `COVERAGE_PERFORMANCE_SIM` | `LOAD_PERFORMANCE_SIM` |

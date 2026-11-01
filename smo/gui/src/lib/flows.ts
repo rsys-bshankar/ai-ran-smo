@@ -49,7 +49,7 @@ export interface FlowDef {
 
 export const FLOWS: FlowDef[] = [
   { id: "01", number: "01", title: "flows.lib.title.01", doc: "01-rapp-onboarding-to-deployment.md", subject: "flows.lib.subject.package", modules: ["onboarding", "rapp-mgmt", "nfo", "focom", "sme", "dme"] },
-  { id: "02", number: "02", title: "flows.lib.title.02", doc: "02-aiml-model-train-to-inference.md", subject: "flows.lib.subject.model", modules: ["mlmr", "aimgf", "mllf", "dme"] },
+  { id: "02", number: "02", title: "flows.lib.title.02", doc: "02-aiml-model-train-to-inference.md", subject: "flows.lib.subject.model", modules: ["aimgf", "dme"] },
   { id: "03", number: "03", title: "flows.lib.title.03", doc: "03-config-write-with-schema-check.md", subject: "flows.lib.subject.configJob", modules: ["ran-nf-oam"] },
   { id: "04", number: "04", title: "flows.lib.title.04", doc: "04-closed-loop-assurance.md", subject: "flows.lib.subject.monitor", modules: ["so-smos", "sa-smos", "mdaf", "ran-nf-oam", "nfo"] },
   { id: "06", number: "06", title: "flows.lib.title.06", doc: "06-package-lifecycle.md", subject: "flows.lib.subject.package", modules: ["onboarding", "rapp-mgmt"] },

@@ -80,7 +80,7 @@ INTERNAL_ONLY_CALLS = [("PUT", "/ran-nf-oam/rapp-limits/x"), ("DELETE", "/ran-nf
                        # MSG-3.2: the SMO's event feed names every module's entities
                        ("GET", "/dme/smo-events"),
                        # SEC-15.3c part 3: who owns a model is set by the operator, never by an rApp
-                       ("PUT", "/mlmr/models/m/owner"),
+                       ("PUT", "/aimgf/models/m/owner"),
                        # call flow 18c: the trust contexts hold every invoker's authentication and authorization info
                        ("GET", "/sme/trusted-invokers"), ("GET", "/sme/trusted-invokers/x")]
 
@@ -106,7 +106,7 @@ def test_an_smo_module_is_not_refused_there(gateway, method, path):
                                           ("POST", "/ran-nf-oam/config-jobs"), ("POST", "/ran-nf-oam/config-jobs/j/rollback"), ("POST", "/dme/actions"), ("POST", "/aimgf/training-jobs"),
                                           # the rApp container reports that it is up and how it performs (rApp Management checks that the instance is its own)
                                           ("POST", "/rapp-mgmt/instances/i/bootstrap-complete"), ("POST", "/rapp-mgmt/instances/i/performance"),
-                                          ("PUT", "/mlmr/models/m"), ("DELETE", "/sme/provider-registrations/a"), ("GET", "/onboarding/packages"), ("GET", "/rapp-mgmt/instances"), ("GET", "/sme/invoker-registrations")])
+                                          ("PUT", "/aimgf/models/m"), ("DELETE", "/sme/provider-registrations/a"), ("GET", "/onboarding/packages"), ("GET", "/rapp-mgmt/instances"), ("GET", "/sme/invoker-registrations")])
 def test_other_routes_are_open_to_an_rapp_as_before(gateway, method, path):
     """Routes that look similar to internal-only ones but are not (reads of one's own record, a different method or path) stay open to an rApp."""
     assert client.request(method, path, headers=AUTH).status_code == 200
@@ -189,7 +189,7 @@ def test_a_module_that_names_nobody_forwards_nothing(gateway):
     ("POST", "/aimgf/models/m/advance"), ("POST", "/aimgf/models/m/advance/x"), ("PUT", "/aimgf/models/m/advance"), ("POST", "/aimgf/models/advance"),
     ("POST", "/aimgf/models/m/inference-jobs/x"), ("POST", "/aimgf/models/m/runtime/deploy/x"), ("DELETE", "/aimgf/models/m/runtime/activate"),
     ("POST", "/aimgf/models/m/runtime/terminate/x"), ("PATCH", "/aimgf/models/m/runtime/node-groups"),
-    ("POST", "/mlmr/storages"), ("POST", "/mdaf/mda-functions"), ("PUT", "/ran-nf-oam/rapp-limits/x"),
+    ("POST", "/aimgf/storages"), ("POST", "/mdaf/mda-functions"), ("PUT", "/ran-nf-oam/rapp-limits/x"),
     ("POST", "/ran-nf-oam/config-jobs/j/abort"), ("PUT", "/ran-nf-oam/kpi-schedules/s"), ("POST", "/ran-nf-oam/managed-elements"),
     # GUI-8.3: an rApp registers (and forgets) the operator API of an instance, with those two methods and that one path
     ("POST", "/rapp-mgmt/instances/i/operator-api"), ("PATCH", "/rapp-mgmt/instances/i/operator-api"), ("PUT", "/rapp-mgmt/instances/i/operator-api/x"),
@@ -213,9 +213,9 @@ def test_an_rapp_may_not_change_what_it_does_not_use(gateway, method, path):
     ("POST", "/aimgf/models/m/inference-jobs"), ("POST", "/aimgf/models/m/runtime/deploy"), ("POST", "/aimgf/models/m/runtime/activate"),
     ("POST", "/aimgf/models/m/runtime/scale"), ("POST", "/aimgf/models/m/runtime/terminate"),
     ("POST", "/aimgf/ml-training-requests"), ("PATCH", "/intent-service/intents/i/admin-state"), ("POST", "/sme/oauth2/token"),
-    ("POST", "/mlmr/models/m/artifact"), ("DELETE", "/mdaf/subscriptions/s"), ("PUT", "/rapp-mgmt/instances/i/operator-api"), ("DELETE", "/rapp-mgmt/instances/i/operator-api"),
-    # the deploy request and the MDA requests are open to an rApp at the gateway; the owner is judged behind it (AIMgF on MLLF's call, MLLF-NODEGROUP-OWNER; MDAF, MDA-REQ-OWNER)
-    ("POST", "/mllf/models/m/deploy"), ("POST", "/mdaf/mda-requests"), ("DELETE", "/mdaf/mda-requests/r"),
+    ("POST", "/aimgf/models/m/artifact"), ("DELETE", "/mdaf/subscriptions/s"), ("PUT", "/rapp-mgmt/instances/i/operator-api"), ("DELETE", "/rapp-mgmt/instances/i/operator-api"),
+    # the deploy request and the MDA requests are open to an rApp at the gateway; the owner is judged behind it (AIMgF's deploy gate, MLLF-NODEGROUP-OWNER; MDAF, MDA-REQ-OWNER)
+    ("POST", "/aimgf/models/m/deploy"), ("POST", "/mdaf/mda-requests"), ("DELETE", "/mdaf/mda-requests/r"),
     ("POST", "/rapp-mgmt/instances/i/bootstrap-complete"), ("POST", "/rapp-mgmt/instances/i/performance"),
 ])
 def test_an_rapp_may_change_what_it_uses(gateway, method, path):

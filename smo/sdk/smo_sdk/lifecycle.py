@@ -1,7 +1,7 @@
-"""sdk.lifecycle: a thin client over AIMgF (`aimgf/`) and MLLF (`mllf/`): training, validation and emulation jobs, certification, inference, MLMF monitoring and deployment.
+"""sdk.lifecycle: a thin client over AIMgF (`aimgf/`): training, validation and emulation jobs, certification, inference, MLMF monitoring and deployment.
 
-One namespace for both services because an rApp author thinks of "advance a model through its lifecycle to deployment" as one journey, although AIMgF and MLLF are separate services
-(`docs/ARCHITECTURE.md`). The query-versus-body shape of each method was checked against the routes' OpenAPI schemas; where a route takes one body parameter the body is that value itself,
+One namespace because an rApp author thinks of "advance a model through its lifecycle to deployment" as one journey; since S2.4 every call goes to
+`/aimgf` (the deploy gate is AIMgF's, ADR 0010). The query-versus-body shape of each method was checked against the routes' OpenAPI schemas; where a route takes one body parameter the body is that value itself,
 unwrapped, and where it takes two FastAPI embeds them under their names. Part of the SDK (`sdk/README.md`); the `start_*`, `complete_*` and runtime methods are the Wave 10 execution-mode
 lifecycle (`HISTORY.md` W10-03, D-4).
 """
@@ -15,7 +15,7 @@ from ._common import BaseClient, SdkError, ensure_ok
 class LifecycleClient(BaseClient):
     # ---------------------------------------------------------------- AIMgF: training
 
-    """The `sdk.lifecycle` namespace: AIMgF training, validation, emulation and inference jobs, the model lifecycle, MLMF performance monitoring and feature groups; MLLF deployment."""
+    """The `sdk.lifecycle` namespace: AIMgF training, validation, emulation and inference jobs, the model lifecycle, MLMF performance monitoring and feature groups; the deploy gate."""
     def request_training(self, producer_id: str, model_id: uuid.UUID | str | None = None,
                           model_coordination_group_id: uuid.UUID | str | None = None, required_data: dict | None = None,
                           validation_criteria: dict | None = None, notification_uri: str | None = None,
@@ -166,12 +166,12 @@ class LifecycleClient(BaseClient):
         """Delete the feature group and terminate its DME data job, if it has one."""
         return ensure_ok(self._r1.delete(f"/aimgf/feature-groups/{feature_group_name}"))
 
-    # ---------------------------------------------------------------- MLLF: deploy
+    # ---------------------------------------------------------------- the deploy gate (AIMgF's loading package)
 
     def deploy_model(self, model_id: uuid.UUID | str, node_groups: list[str]) -> dict:
         # node_groups is the route's only body parameter (a plain list) —
         # unwrapped, not {"node_groups": [...]}.
-        return ensure_ok(self._r1.post(f"/mllf/models/{model_id}/deploy", json=node_groups))
+        return ensure_ok(self._r1.post(f"/aimgf/models/{model_id}/deploy", json=node_groups))
 
     # ---------------------------------------------------------------- Wave 10.1: the full execution-mode lifecycle
     # HISTORY.md W10-03 (decision D-4): convenience calls

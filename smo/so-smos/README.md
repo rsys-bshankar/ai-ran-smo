@@ -33,7 +33,7 @@ not register as an RMIH with Intent Service and does not use it (see 2.8).
  SA SMOS ──GET /orders/{id}──► SO SMOS
 ```
 
-It never calls DME, MDAF, Intent Service or MLMR, and never reads another module's tables.
+It never calls DME, MDAF, Intent Service or AIMgF, and never reads another module's tables.
 
 ### 1.4 Ownership
 

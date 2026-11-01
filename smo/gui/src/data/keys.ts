@@ -25,10 +25,7 @@ export const KEYS = {
 export const CROSS_MODULE: Record<string, string[]> = {
   "rapp-mgmt": ["onboarding", "nfo", "sme", "dme"],
   onboarding: ["rapp-mgmt"],
-  aimgf: ["mlmr", "mllf"],
-  mlmr: ["aimgf"],
-  mllf: ["aimgf"],
-  "so-smos": ["nfo", "focom", "aimgf", "mllf", "mlmr"],
+  "so-smos": ["nfo", "focom", "aimgf"],
   nfo: ["focom"],
   "ran-nf-oam": ["sa-smos"],
   "intent-service": ["sa-smos"],

@@ -124,4 +124,4 @@ and the ORM refuses to edit an audit row.
 | Access logging for reads of personal data | `STD-4.4` with `SEC-11.2` |
 | Back up and restore the GUI database | `DB-6.5` |
 | No local passwords at all: OIDC is built (the user is created on first sign-in with no password, `SEC-6`, 0.5.0); what remains is `GUI_LOCAL_LOGIN_ENABLED=false` in a deployment that wants no break-glass password, and reading an e-mail or display name from the provider is deliberately not done | `SEC-6` (done), operator choice |
-| Per-tenant and per-region read scoping for the console's users, and for DME's and MLMR's data other than the action list (RAN NF OAM's reads by rApps are scoped, `PR-SEC-10`) | `GUI-5.1`, `SEC-10.7` |
+| Per-tenant and per-region read scoping for the console's users, and for DME's data and AIMgF's registry other than the action list (RAN NF OAM's reads by rApps are scoped, `PR-SEC-10`) | `GUI-5.1`, `SEC-10.7` |

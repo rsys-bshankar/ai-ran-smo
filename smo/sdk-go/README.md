@@ -6,7 +6,7 @@
 |---|---|
 | Standards basis | Internal logic (AI Runtime SDK: a thin client over the R1 interface). OAuth2 `client_credentials` (RFC 6749) against SME's token endpoint; CAPIF API-invoker onboarding (TS 29.222) |
 | R1 route / port | None: a library (`github.com/rsys-bshankar/ai-ran-ref/smo/sdk-go`, package `smosdk`). The example rApp serves its operator API on `:8000` |
-| Depends on (over R1) | R1 Termination `/bootstrap` (token endpoint), SME (`/invoker-registrations`, `/oauth2/token`), and through the gateway DME, MLMR, SME discovery and provider registration, rApp Management (the instance's own routes) |
+| Depends on (over R1) | R1 Termination `/bootstrap` (token endpoint), SME (`/invoker-registrations`, `/oauth2/token`), and through the gateway DME, AIMgF's model registry, SME discovery and provider registration, rApp Management (the instance's own routes) |
 | Called by | Any rApp written in Go; the example `examples/hello-rapp`. No SMO module imports it |
 | Database tables | None |
 | Retries and idempotency | 4 attempts, 200 ms base doubling to a 5 s cap, equal jitter, `Retry-After` honoured, context-aware; every POST carries a generated `Idempotency-Key` reused by every repeat; a `409 CONCURRENT_MODIFICATION` is repeated once (as `../sdk/smo_sdk/_common.py` does) |
@@ -172,7 +172,7 @@ types, err := c.Data().DiscoverTypes(ctx, "") // token enrolled, cached and rene
 for _, t := range types.Items { _ = t["typeName"] }
 
 var out smosdk.Object                         // any route, with the same auth, retry and error mapping
-err = c.Do(ctx, smosdk.Request{Method: "POST", Path: "/mlmr/models", Body: myModel}, &out)
+err = c.Do(ctx, smosdk.Request{Method: "POST", Path: "/aimgf/models", Body: myModel}, &out)
 if smosdk.IsConflict(err) { ... }
 
 // an O1 configuration action through DME; the credential of the MSAC Identity named by RequestedBy, only if it has one

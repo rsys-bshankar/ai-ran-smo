@@ -84,16 +84,16 @@ of the running code until that stage lands.
 
 *Replaced by ADR 0008 section 3.2, pending Stages 2, 3, 5 and 7:* the Platform Services layer becomes the layers of ADR 0008 (R1 exposure;
 intent and assurance; data, analytics and AI/ML; rApp and cloud lifecycle; network model and southbound), MLMR and MLLF are in AIMgF
-(code and tables since S2.1–S2.3; their placeholder services go with S2.8), Intent Service into SO SMOS, RAN Analytics into MDAF, and TE&IV is a new module.
+(done: S2.1–S2.9, the two services removed), Intent Service into SO SMOS, RAN Analytics into MDAF, and TE&IV is a new module.
 
 ## Golden rules
 
 1. **Platform Services are permanent services.** SME, DME, MDAF, AIMgF,
    Intent Service, RAN NF OAM, Onboarding and rApp Management
    are long-lived, independently deployed services, not modules of
-   convenience. MLMR and MLLF are packages of AIMgF (ADR 0010, S2.1–S2.3); their health-probe placeholder services stay in compose and
-   Helm until S2.8. *The list is replaced by ADR 0008 section 3.1 (fourteen services: Intent Service in SO SMOS, RAN Analytics in MDAF,
-   TE&IV new), pending Stages 3, 5 and 7; S2.9 finishes this rule for AI/ML.*
+   convenience. AIMgF is the one AI/ML management service: there is no model registry or deploy-gate service beside it (ADR 0010).
+   *The list is replaced by ADR 0008 section 3.1 (fourteen services: Intent Service in SO SMOS, RAN Analytics in MDAF,
+   TE&IV new), pending Stages 3, 5 and 7.*
 2. **rApps are business logic.** The reference rApps under `samples/` are
    consumers of the platform, never platform internals.
 3. **MLTF/MLVF/MLEF/MLIF are runtime roles, not services.** They are
@@ -104,9 +104,9 @@ intent and assurance; data, analytics and AI/ML; rApp and cloud lifecycle; netwo
 4. **NFO owns execution placement.** Where and how a runtime executes is
    NFO's decision, never AIMgF's.
 5. **AIMgF owns lifecycle and keeps the models.** AIMgF decides what state a model or runtime is
-   in and whether a transition is allowed, and it keeps the model catalogue and the artifacts (its `registry` package, the
-   MLMR service until S2.1; ADR 0010). It trains, validates, emulates and infers nothing itself. The artifacts are bytes in its
-   `model_artifact` table until S2.5 moves them to the object store; S2.9 finishes this rule (ADR 0008's service map and the merged README).
+   in and whether a transition is allowed, and it keeps the model catalogue and the artifacts (its `registry` package,
+   ADR 0010), served at `/aimgf` and nowhere else. Its deploy gate (`loading/gate.py`) places only a certified or promoted model. It trains,
+   validates, emulates and infers nothing itself. The artifacts are bytes in its `model_artifact` table until S2.5 moves them to the object store.
 6. **R1 owns service exposure.** Every platform service is reached through
    R1 Termination's gateway (`r1-termination/`). Nothing bypasses it; the AI
    Runtime SDKs (`sdk/smo_sdk/` in Python, `sdk-go/` in Go, `sdk-java/` in Java) are thin clients over that same path, not a
@@ -210,7 +210,7 @@ others named above).
 
 | Group | Modules |
 |---|---|
-| AI platform services | `aimgf/`, `mlmr/`, `mllf/`, `mdaf/`, `intent-service/`, `dme/` |
+| AI platform services | `aimgf/`, `mdaf/`, `intent-service/`, `dme/` |
 | Other platform services | `sme/`, `nfo/`, `focom/`, `ran-nf-oam/`, `onboarding/`, `rapp-mgmt/`, `sa-smos/`, `so-smos/`, `ran-analytics/` |
 | Exposure | `r1-termination/` (R1 gateway), `sdk/`, `sdk-go/` and `sdk-java/` (AI Runtime SDKs: Python, Go and Java), `gui/` + `gui-bff/` |
 | Southbound simulators | `mock-o1-adaptor/` |
@@ -266,7 +266,7 @@ Every R1-facing service applies the same conventions, implemented once in
 | Metrics | Every service answers `GET /metrics` (Prometheus text, `smo_shared/metrics.py`): `smo_http_requests_total` and `smo_http_request_duration_seconds` by method, route template and status, `smo_fsm_transitions_total` / `smo_fsm_illegal_transitions_total` for every lifecycle state change, and `smo_db_pool_connections{state}` / `smo_db_pool_capacity` for the pool. Business series (`PR-OBS-4`, labels are states, statuses, modules and fixed classes only): `smo_refusals_total{module,reason}` (4xx by class), `smo_outbox_rows{module,status}` and `smo_outbox_oldest_pending_age_seconds{module}` (the outbox backlog and delivery lag), `smo_rapp_packages{state}`, `smo_rapp_instances{state}`, `smo_intents{admin_state}` (read from the database at scrape time, cached 15 s; replicas report the same value, aggregate with `max`), the worker task counters (`SMO_WORKER_METRICS_PORT`), and `smo_retention_off_rows{table}` (estimated rows of a table whose retention is `0`, set by the worker's purge tasks; `docs/RETENTION.md`). Alerts, SLOs and runbooks (`PR-OBS-5`, `PR-OBS-7`): `deploy/helm/smo/files/smo-alerts.rules.yaml`, [`SLOS.md`](SLOS.md) (targets proposed), [`runbooks/`](runbooks/README.md). For the scraper on the container network only: R1 Termination refuses `/<module>/metrics`, the TLS edge does not forward `/metrics`. Per process, so one worker per container. |
 | Logs | Every service writes one JSON object per line to stdout (`smo_shared/logconfig.py`): `timestamp`, `level`, `logger`, `service`, `correlationId`, `traceId` (when the request is in a trace) and any extra fields, plus one access line per request with the route template, status and duration (`LOG_LEVEL`, default INFO; probes at DEBUG). Tokens, passwords, `Authorization` values and URL passwords are scrubbed before a line is written. The GUI BFF is not on `smo_shared` and keeps its own plain logging. |
 | TLS | Services speak HTTP on the compose network. The optional `tls` compose profile adds an nginx edge (`edge/nginx.conf`, HTTPS on :3443 for the GUI and :8443 for R1 Termination, TLS 1.2 and 1.3 only, HSTS) whose certificate and key are Compose secrets; `scripts/make_dev_certs.sh` makes development ones. A deployment brings its own certificate and ingress. With `R1_PUBLIC_BASE_URL` set `/bootstrap` advertises the public address (`SEC-1.6`). Service-to-service mutual TLS is opt in and off by default: see "Mutual TLS between services" below. |
-| Limits | R1 Termination caps request bodies at 1 MiB (`R1_MAX_BODY_BYTES`; the model artifact upload `/mlmr/models/*/artifact` 50 MiB, `R1_MAX_BODY_OVERRIDES`) with `413 PAYLOAD_TOO_LARGE`, and gives each invoker a token bucket (`R1_RATE_PER_SECOND` 100, `R1_RATE_BURST` 200) with `429 RATE_LIMITED` and `Retry-After`; both before the backend is called. The buckets are per replica unless `R1_RATE_STORE=postgres` keeps them in the database (one budget for all replicas; fails open on a database error). |
+| Limits | R1 Termination caps request bodies at 1 MiB (`R1_MAX_BODY_BYTES`; the model artifact upload `/aimgf/models/*/artifact` 50 MiB, `R1_MAX_BODY_OVERRIDES`) with `413 PAYLOAD_TOO_LARGE`, and gives each invoker a token bucket (`R1_RATE_PER_SECOND` 100, `R1_RATE_BURST` 200) with `429 RATE_LIMITED` and `Retry-After`; both before the backend is called. The buckets are per replica unless `R1_RATE_STORE=postgres` keeps them in the database (one budget for all replicas; fails open on a database error). |
 | Configuration | Every setting is an environment variable, read at call time where a test or a restart must be able to change it; a secret has a `*_FILE` form (`secretfile.py`). `docs/CONFIGURATION.md` lists every variable with its default, whether it is a secret, which files read it and what it does: generated from the source by `scripts/config_reference.py` (an AST walk, so a read built from a wrapper such as `_seconds(name, default)` or an f-string is followed to its call sites; a name built at run time carries a `# config-ref:` comment) and merged with `docs/config_descriptions.json`. `tests_integration/test_config_reference.py` fails on a variable read in code and not in the table, on a row no code reads, on a drifted default and on a missing description. |
 | Probes | Every service answers `/live` (process up; never depends on anything), `/ready` (200, or 503 naming the failing check: the database and, for callers of R1, an SME token; `smo_shared/health.py`) and `/health` (alias of `/live`, which DME supervision and the GUI grid call), and `/version` (`{module, version, buildSha, builtAt}` from the `SMO_VERSION`, `SMO_BUILD_SHA` and `SMO_BUILT_AT` build arguments of the shared Dockerfile, `unknown` when not given; unauthenticated like the probes; the GUI backend reads it for the module table). Compose probes `/ready` on every service built from the shared Dockerfile. Restart on `/live`, take out of rotation on `/ready`. |
 | Pagination | Every DB-backed list returns `{items, total, limit, offset}` from a SQL `LIMIT`/`OFFSET` plus `COUNT(*)` (`pagination.py`). `?total=false` on any list route skips the count: the envelope then has no `total` and carries `hasMore` (one extra row is fetched to know), for callers that only page forward. Exceptions: spec-fixed shapes (CAPIF `GetApfIdServiceApis` / `DiscoverServices` in SME). The GUI's `useSmo()` and the SDK's `ensure_ok()` unwrap `items`. |

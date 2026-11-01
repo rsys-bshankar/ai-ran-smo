@@ -27,7 +27,7 @@ WORSEN_TOLERANCE. Because neighbours' terms are in the model, pollution in
 one cell can be cured by downtilting the neighbour that overshoots into it.
 
 The artifact is plain JSON in a .zip (`coverage_model.json`) stored in
-MLMR. Like the other reference models, it is pure Python.
+AIMgF's model registry. Like the other reference models, it is pure Python.
 """
 
 import io
@@ -153,7 +153,7 @@ class CoverageModel:
     # ------------------------------------------------------------ artifact
 
     def to_artifact(self) -> bytes:
-        """Serialises the model as a .zip holding one JSON member (`coverage_model.json`), the form stored in MLMR."""
+        """Serialises the model as a .zip holding one JSON member (`coverage_model.json`), the form stored in AIMgF's model registry."""
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
             z.writestr(ARTIFACT_MEMBER, json.dumps(asdict(self), indent=1, sort_keys=True))

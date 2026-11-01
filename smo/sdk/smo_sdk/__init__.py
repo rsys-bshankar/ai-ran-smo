@@ -1,7 +1,7 @@
 """The AI Runtime SDK: the package an rApp author imports (`from smo_sdk import AiRuntimeSdk`).
 
 `AiRuntimeSdk` is six namespace clients (`data`, `analytics`, `models`, `lifecycle`, `intent`, `platform`) over one shared `smo_shared.r1_client.R1Client`, so an rApp calls
-`sdk.models.register_model(...)` instead of hand-building an HTTP request against `/mlmr/models`. Golden rule 6 of `docs/ARCHITECTURE.md`: the SDK is a thin client over the same R1
+`sdk.models.register_model(...)` instead of hand-building an HTTP request against `/aimgf/models`. Golden rule 6 of `docs/ARCHITECTURE.md`: the SDK is a thin client over the same R1
 path every other cross-module call uses, not a second one. It adds no business logic and no client-side validation; the platform's answer, when it is an error, is raised as `SdkError`.
 
 Nothing in the SMO modules imports it (they call `R1Client` directly); the sample rApps under `samples/` and rApp authors do. `operator_ui.py` is authoring support and is imported

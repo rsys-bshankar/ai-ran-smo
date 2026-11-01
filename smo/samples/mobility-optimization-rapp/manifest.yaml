@@ -29,8 +29,6 @@ autonomyModes:
 requiredServices:
   - DME
   - AIMgF
-  - MLMR
-  - MLLF
   - RAN-NF-OAM
 
 runtimeProfiles:

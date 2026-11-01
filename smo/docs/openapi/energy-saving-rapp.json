@@ -775,7 +775,7 @@
     },
     "/instances/{instance_id}/lifecycle/deploy": {
       "post": {
-        "description": "MLIF deployment once an operator has certified the model (TC07):\nMLLF clears the node groups (it checks CERTIFIED), AIMgF instantiates\nthe inference runtime through NFO and activates it, and the serving\nmodel is loaded from its MLMR artifact.",
+        "description": "MLIF deployment once an operator has certified the model (TC07):\nAIMgF's deploy gate clears the node groups (it checks CERTIFIED), AIMgF instantiates\nthe inference runtime through NFO and activates it, and the serving\nmodel is loaded from its registry artifact.",
         "operationId": "deploy_instances__instance_id__lifecycle_deploy_post",
         "parameters": [
           {
@@ -853,7 +853,7 @@
     },
     "/instances/{instance_id}/lifecycle/train": {
       "post": {
-        "description": "TRAINING on the package's MLTF runtime profile: the model is\nregistered in MLMR, trained on PRB history and stored there as an\nartifact (TC03).",
+        "description": "TRAINING on the package's MLTF runtime profile: the model is\nregistered in AIMgF's model registry, trained on PRB history and stored there as an\nartifact (TC03).",
         "operationId": "train_instances__instance_id__lifecycle_train_post",
         "parameters": [
           {

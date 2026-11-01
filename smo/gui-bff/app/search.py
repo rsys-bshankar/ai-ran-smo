@@ -105,7 +105,7 @@ def install(app: FastAPI, *, current_session: Callable, problem: Callable[..., J
                 for a in items_of(body)[:limit]]
 
     async def models(q: str, limit: int) -> list[dict]:
-        body = await get_json("/mlmr/models", {"limit": MODEL_SCAN})
+        body = await get_json("/aimgf/models", {"limit": MODEL_SCAN})
         needle = q.lower()
         out = []
         for m in items_of(body):
@@ -159,7 +159,7 @@ def install(app: FastAPI, *, current_session: Callable, problem: Callable[..., J
             ("element", elements, "/ran-nf-oam/managed-entities"), ("rapp", rapps, "/rapp-mgmt/instances")]
         if ELEMENT_REF_RE.match(q):
             plan.append(("alarm", alarms, "/ran-nf-oam/alarms"))
-        plan.append(("model", models, "/mlmr/models"))
+        plan.append(("model", models, "/aimgf/models"))
         if is_uuid:
             plan.append(("decision", decision, "/ran-nf-oam/decision-records/x"))
         plan = [p for p in plan if decide("GET", p[2], {}, session.user.role).allowed]

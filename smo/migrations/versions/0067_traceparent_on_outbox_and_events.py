@@ -9,13 +9,13 @@ Expand only: both columns are nullable with no default; a row from before this r
 
 Downgrade: drops both columns (the trace positions they held are lost; nothing else reads them).
 
-Revision ID: 0066
-Revises: 0065
+Revision ID: 0067
+Revises: 0066
 """
 from alembic import op
 
-revision = "0066"
-down_revision = "0065"
+revision = "0067"
+down_revision = "0066"
 branch_labels = None
 depends_on = None
 

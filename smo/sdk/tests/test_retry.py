@@ -101,14 +101,14 @@ def test_a_transport_error_on_a_get_is_repeated(waits):
 def test_a_safe_call_answered_502_503_or_504_is_repeated(waits, method, status):
     """GET, PUT and DELETE are safe to repeat (the Go and Java SDKs repeat them too): the gateway's 5xx is followed by a second send."""
     r1, script = wrapped(status, 200)
-    assert getattr(r1, method)("/mlmr/models/m-1").status_code == 200
+    assert getattr(r1, method)("/aimgf/models/m-1").status_code == 200
     assert len(script.requests) == 2
 
 
 def test_a_4xx_is_final(waits):
     """A 404 (any 4xx but 429) is the answer: sent once, nothing waited."""
     r1, script = wrapped(404, 200)
-    assert r1.get("/mlmr/models/missing").status_code == 404
+    assert r1.get("/aimgf/models/missing").status_code == 404
     assert len(script.requests) == 1 and waits == []
 
 
@@ -128,7 +128,7 @@ def test_a_post_without_an_idempotency_key_is_not_repeated_after_a_lost_answer(w
 def test_a_post_that_uploads_files_is_sent_once_even_on_503(waits):
     """A POST with `files` has no key and its stream is consumed: no repeat of any kind, as before the policy."""
     r1, script = wrapped(503, 200)
-    assert r1.post("/mlmr/models/m-1/artifacts", files={"f": b"x"}).status_code == 503
+    assert r1.post("/aimgf/models/m-1/artifacts", files={"f": b"x"}).status_code == 503
     assert len(script.requests) == 1
 
 

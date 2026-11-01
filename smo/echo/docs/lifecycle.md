@@ -1,7 +1,7 @@
 # Echo: lifecycle
 
 Echo is the reference ProvMnS module (plan task S1.6): the shared router of `smo_shared.mns` on SubNetwork and ManagedElement, and nothing else. It
-keeps its instances in `echo.moi_store` (revision 0065), publishes a notification for every change on the event bus, and has no worker. It is not in
+keeps its instances in `echo.moi_store` (revision 0066), publishes a notification for every change on the event bus, and has no worker. It is not in
 R1 Termination's routing table until S1.7 and S1.8, and is off by default (compose profile `echo`, `modules.echo.enabled: false`). What its route
 does is in [`../README.md`](../README.md). Three diagrams:
 
@@ -35,7 +35,7 @@ sequenceDiagram
     end
 ```
 
-Echo calls no other module, so readiness is the database only. The migrate job made schema `echo` and its `moi_store` (revision 0065) before any
+Echo calls no other module, so readiness is the database only. The migrate job made schema `echo` and its `moi_store` (revision 0066) before any
 replica starts.
 
 ## b — A write

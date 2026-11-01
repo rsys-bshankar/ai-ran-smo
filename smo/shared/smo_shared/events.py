@@ -60,7 +60,7 @@ class SmoEvent(Base):
     region: Mapped[str | None] = mapped_column(String)
     tenant: Mapped[str | None] = mapped_column(String)
     correlation_id: Mapped[str | None] = mapped_column(String)     # the request or worker task that published it (revision 0059, call flow 14c)
-    traceparent: Mapped[str | None] = mapped_column(String)        # the W3C trace it was published in (revision 0066, PR-CONV-S1.5)
+    traceparent: Mapped[str | None] = mapped_column(String)        # the W3C trace it was published in (revision 0067, PR-CONV-S1.5)
 
 
 def event_type(what: str, change: str) -> str:

@@ -2,7 +2,7 @@ tosca_definitions_version: tosca_simple_yaml_1_3
 
 description: >
   HelloJava_rApp, the example rApp of the Java SDK (smo/sdk-java). It enrols at SME, registers its operator
-  API, reports a heartbeat, reads a data route (DME types) and an AI route (MLMR models), and deregisters when it stops.
+  API, reports a heartbeat, reads a data route (DME types) and an AI route (AIMgF's registry models), and deregisters when it stops.
   It takes no action on the network.
 
 topology_template:

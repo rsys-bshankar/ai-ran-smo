@@ -20,7 +20,7 @@ def test_a_request_to_any_service_logs_one_json_access_line_with_a_route_templat
     the query string.
     """
     caplog.set_level(logging.DEBUG, logger="smo.access")
-    for name in ("r1-termination", "sme", "nfo", "mllf", "mock-o1-adaptor"):
+    for name in ("r1-termination", "sme", "nfo", "aimgf", "mock-o1-adaptor"):
         caplog.clear()
         TestClient(loaded_apps[name].app).get("/live?token=do-not-log-me")
         records = [r for r in caplog.records if r.name == "smo.access"]

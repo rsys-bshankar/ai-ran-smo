@@ -13,7 +13,7 @@ from smo_shared import r1_client
 SMO_ROOT = Path(__file__).resolve().parent.parent
 # services whose readiness includes the database (the MLMR placeholder too: it keeps its role until S2.8); the rest (the gateway, the mocks, the
 # sample rApps, and the MLLF placeholder, whose code is AIMgF's since S2.2) keep no database of their own
-WITHOUT_DATABASE = {"r1-termination", "mllf", "mock-o1-adaptor", "energy-saving-rapp",
+WITHOUT_DATABASE = {"r1-termination", "mock-o1-adaptor", "energy-saving-rapp",
                     "mobility-optimization-rapp", "coverage-optimization-rapp", "traffic-steering-rapp"}
 
 
@@ -59,8 +59,7 @@ def test_a_module_that_cannot_get_a_token_from_sme_is_not_ready(loaded_apps, hea
     not_ready = {name for name, main in loaded_apps.items() if TestClient(main.app).get("/ready").status_code == 503}
     # callers of R1 are not ready without a token; SME itself (the issuer), the gateway and focom never ask for one
     assert {"nfo", "aimgf", "rapp-mgmt"} <= not_ready
-    # the MLMR and MLLF placeholders call nothing (their code is AIMgF's since S2.1 / S2.2), so they never ask for a token either
-    assert not_ready.isdisjoint({"sme", "focom", "r1-termination", "mock-o1-adaptor", "mlmr", "mllf"})
+    assert not_ready.isdisjoint({"sme", "focom", "r1-termination", "mock-o1-adaptor"})
 
 
 def test_every_service_answers_version_without_a_database_or_token(loaded_apps, monkeypatch):

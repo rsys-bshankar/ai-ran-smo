@@ -69,7 +69,7 @@ INTERNAL_ONLY: tuple[tuple[str, frozenset[str], re.Pattern], ...] = tuple(
         ("/sme", ("GET",), r"^/trusted-invokers(/[^/]+)?$"),
         ("/ran-nf-oam", ("PUT",), r"^/managed-entities/[^/]+/scope$"),
         # SEC-15.3c part 3: who owns a model is set by the operator or an SMO module, never by an rApp (`PUT /models/{id}` is on the allow-list and does not match this path)
-        ("/mlmr", ("PUT",), r"^/models/[^/]+/owner$"),
+        ("/aimgf", ("PUT",), r"^/models/[^/]+/owner$"),
         # MSG-3.2: the SMO's event feed names every module's entities; the platform and its console follow it, an rApp subscribes through DME's data jobs
         ("/dme", ("GET",), r"^/smo-events$"),
     ))
@@ -113,14 +113,14 @@ RAPP_MAY_CHANGE: dict[str, tuple[tuple[frozenset[str], re.Pattern], ...] | None]
             # call flow 17: the owner rApp drives its model's serving runtime (deploy, activate, scale, terminate); AIMgF refuses another rApp's model
             (("POST",), r"^/models/[^/]+/(inference-jobs|runtime/deploy|runtime/activate|runtime/scale|runtime/terminate)$"),
             (("POST",), r"^/inference-jobs/[^/]+/resolve$"),
-        ),
-        "/mlmr": (
+            # the model registry (MLMR's until S2.1): an rApp registers, updates, deletes and uploads for its own models, groups them, writes their phase
             (("POST",), r"^/(models|coordination-groups)$"),
             (("PUT", "DELETE"), r"^/models/[^/]+$"),
             (("POST",), r"^/models/[^/]+/artifact$"),
             (("PATCH",), r"^/models/[^/]+/phase-info$"),
+            # the deploy gate (MLLF's until S2.2)
+            (("POST",), r"^/models/[^/]+/deploy$"),
         ),
-        "/mllf": ((("POST",), r"^/models/[^/]+/deploy$"),),
         # GUI-8.3: a rApp registers (or withdraws) the operator API of its own instance; rApp Management checks that the instance is the caller's
         "/rapp-mgmt": (
             (("PUT", "DELETE"), r"^/instances/[^/]+/operator-api$"),

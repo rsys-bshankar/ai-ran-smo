@@ -41,7 +41,7 @@ says which, `ModelLifecycleState` or `RuntimeLifecycleState`; `docs/EVENTS.md`),
 
 ## What each model state allows
 
-| Model state | Start training | Deploy (AIMgF, MLLF, model loading) | Activate, scale | Inference on an ACTIVE runtime | MLMF subscribe, report |
+| Model state | Start training | Deploy (the runtime, the deploy gate, model loading) | Activate, scale | Inference on an ACTIVE runtime | MLMF subscribe, report |
 |---|---|---|---|---|---|
 | `REGISTERED`, `FAILED` | yes | 409 `MODEL_NOT_CERTIFIED` | yes | yes | yes |
 | `TRAINING` | yes (supersedes the run) | 409 `MODEL_NOT_CERTIFIED` | yes | yes | yes |
@@ -160,7 +160,6 @@ sequenceDiagram
     actor Ad as Admin (GUI)
     participant R as Owner rApp (SDK) / Consumer rApp
     participant AIM as AIMgF
-    participant MLLF as MLLF
 
     Ad->>AIM: advance?event=DEPRECATE
     alt model CERTIFIED or PROMOTED
@@ -176,8 +175,8 @@ sequenceDiagram
     AIM-->>R: 409 LIFECYCLE_ILLEGAL_TRANSITION (no new serving capacity)
     R->>AIM: POST /aimgf/models/{id}/runtime/deploy, or a model-loading request
     AIM-->>R: 409 MODEL_NOT_CERTIFIED
-    R->>MLLF: POST /mllf/models/{id}/deploy
-    MLLF-->>R: 409 MODEL_NOT_CERTIFIED
+    R->>AIM: POST /aimgf/models/{id}/deploy (the deploy gate)
+    AIM-->>R: 409 MODEL_NOT_CERTIFIED
     R->>AIM: POST /aimgf/training-jobs {modelId}
     AIM-->>R: 409 LIFECYCLE_ILLEGAL_TRANSITION (a deprecated model is not retrained)
 ```
@@ -192,14 +191,12 @@ un-deprecated: it is retired, and a replacement is registered.
 sequenceDiagram
     actor Ad as Admin (GUI)
     participant R as Owner rApp (SDK)
-    participant MLMR as MLMR
     participant AIM as AIMgF
     participant NFO as NFO
 
-    R->>MLMR: DELETE /mlmr/models/{id}
-    MLMR->>AIM: GET /aimgf/models/{id}/lifecycle
-    AIM-->>MLMR: {runtimeLifecycleState ACTIVE}
-    MLMR-->>R: 409 MODEL_IN_USE (retire it, or terminate its runtime, first)
+    R->>AIM: DELETE /aimgf/models/{id} (the registry)
+    Note over AIM: the lifecycle row read in process: runtime ACTIVE
+    AIM-->>R: 409 MODEL_IN_USE (retire it, or terminate its runtime, first)
 
     Ad->>AIM: advance?event=RETIRE
     alt model DEPRECATED or FAILED
@@ -220,19 +217,16 @@ sequenceDiagram
 
     Note over AIM: RETIRED has no way out. Refused from now on: inference (409 INFERENCE_MODEL_NOT_ACTIVE),<br/>training, deploy, activate, scale, and a new MLMF subscription or report (409)
 
-    R->>MLMR: DELETE /mlmr/models/{id}
-    MLMR->>AIM: GET /aimgf/models/{id}/lifecycle
-    alt runtime NOT_DEPLOYED or TERMINATED, or AIMgF does not know the model (404)
-        Note over MLMR: the model, its artifacts and profiles deleted
-        MLMR-->>R: 204
-    else AIMgF does not answer
-        MLMR-->>R: 503 ENDPOINT_UNREACHABLE (nothing deleted on a guess)
+    R->>AIM: DELETE /aimgf/models/{id} (the registry)
+    alt runtime NOT_DEPLOYED or TERMINATED, or no lifecycle row (read in process)
+        Note over AIM: the model, its artifacts and profiles deleted, one commit
+        AIM-->>R: 204
     end
 ```
 
 What a retired or deleted model leaves: AIMgF keeps the model's lifecycle row, its jobs, reports, certification records and MLMF subscriptions as
-history (MLMR no longer deletes them: the cross-module foreign keys were dropped). An inference function or a loading policy that lists the
-model keeps it in its list. Deleting a model is not a lifecycle event: MLMR publishes nothing for it.
+history (no foreign key reaches them from the registry's model, revision 0022). An inference function or a loading policy that lists the
+model keeps it in its list. Deleting a model is not a lifecycle event: nothing is published for it.
 
 ## Decisions this flow depends on
 
@@ -241,7 +235,7 @@ model keeps it in its list. Deleting a model is not a lifecycle event: MLMR publ
 - People decide, not rApps (SEC-15.1). The console records the signed-in user as the decider (DOC-CF-1.7); a call from an SMO module names its own.
 - `ModelLifecycle` and `RuntimeLifecycle` are independent: `ROLLBACK`, `DEPRECATE` and a retrain leave the runtime alone. `RETIRE` is the one decision
   that stops serving, through the same teardown as `runtime/terminate` (call flow 17d).
-- The deploy gate is CERTIFIED or PROMOTED, in AIMgF, MLLF and model loading alike, so a rolled-back model stays deployable.
+- The deploy gate is CERTIFIED or PROMOTED, for the runtime, the deploy gate route and model loading alike, so a rolled-back model stays deployable.
 - A retrain re-enters at TRAINING from REGISTERED, CERTIFIED, PROMOTED or FAILED and clears both training gates (call flow 02).
 - Every change of either state machine is published on the event bus (DOC-CF-1.7).
-- A model whose runtime is deployed cannot be deleted from MLMR: deleting it would leave an NFO workload nobody could terminate (DOC-CF-1.7).
+- A model whose runtime is deployed cannot be deleted from the registry: deleting it would leave an NFO workload nobody could terminate (DOC-CF-1.7).
