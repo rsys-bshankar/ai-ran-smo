@@ -76,6 +76,7 @@ services:
   aimgf: *pgtls_client
   ran-analytics: *pgtls_client
   mdaf: *pgtls_client
+  echo: *pgtls_client
   mdaf-worker: *pgtls_client
   dme-worker: *pgtls_client
   intent-service: *pgtls_client

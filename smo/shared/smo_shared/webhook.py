@@ -57,7 +57,7 @@ from urllib.parse import urlsplit
 import httpcore
 import httpx
 
-from . import metrics, mtls
+from . import metrics, mtls, tracing
 from .correlation import HEADER_NAME as CORRELATION_ID_HEADER
 from .correlation import get_correlation_id
 
@@ -330,8 +330,11 @@ def _send(method: str, destination: str | None, **kwargs) -> httpx.Response | No
         metrics.record_outbound("webhook", "callback", method, "blocked")
         return None
     correlation_id = get_correlation_id()
+    headers = tracing.inject_headers()                  # the trace the callback belongs to (PR-CONV-S1.5: an outbox row is sent under the trace it was written in)
     if correlation_id:                                  # the request or task that caused the callback, so the receiver can quote it (call flow 14c)
-        kwargs["headers"] = {CORRELATION_ID_HEADER: correlation_id}     # no caller passes headers of its own
+        headers[CORRELATION_ID_HEADER] = correlation_id
+    if headers:
+        kwargs["headers"] = headers                     # no caller passes headers of its own
     started = time.perf_counter()
     try:
         with _pinned_to(destination, vetting):          # SEC-15.16: the connect goes to the addresses vetted above

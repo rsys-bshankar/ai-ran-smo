@@ -5,13 +5,13 @@ own position in Postgres, not a Kafka consumer offset, so a database restore and
 position: duplicates downstream, never a loss). `event-purge` reads it to keep unsent events while the relay is on (events.purge). A new table, so the previous
 release's code is untouched (expand only); the module roles that publish or purge `smo_event` get it in `migrations/db_roles.json`.
 
-Revision ID: 0066
-Revises: 0065
+Revision ID: 0068
+Revises: 0067
 """
 from alembic import op
 
-revision = "0066"
-down_revision = "0065"
+revision = "0068"
+down_revision = "0067"
 branch_labels = None
 depends_on = None
 

@@ -144,8 +144,8 @@ def row_for(module: str, op: str, rows: dict, folded: dict[str, list[str]]) -> t
 
 def classify(module: str, op: str, contract: dict[str, set[str]], rows: dict, ids: set[str], folded: dict[str, list[str]] | None = None) -> str:
     """`bundle`, `design` ([D] listed), `standard` (standard as served) or `waiting`, for one served operation."""
-    if op in contract.get(module, set()):
-        return "bundle"
+    if op in contract.get(module, set()) or drift.router_classes(op, contract.get(module, set())):
+        return "bundle"                                # (the router's one route serves the contract's ProvMnS classes: check_contract_drift.router_classes)
     row, _ = row_for(module, op, rows, folded or {})
     if row and row["verdict"] == "[D] exception":
         design = re.match(r"(D-\d+)", row["reason"])

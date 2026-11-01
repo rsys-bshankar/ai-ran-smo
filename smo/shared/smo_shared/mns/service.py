@@ -39,6 +39,7 @@ from sqlalchemy.orm.exc import StaleDataError
 from .. import events
 from .dn import SUBTREE_UPPER, depth_of, parent_of, parse_dn, path_of
 from .errors import MnsError
+from .checks import INTERNAL, Caller, RouterChecks
 from .lifecycle import DEFAULT_HANDLER, IMoiLifecycleHandler, Moi, MoiContext
 from .patch import JSON_PATCH_TYPES, MERGE_PATCH_TYPES, apply_json_patch, apply_merge_patch
 from .registry import ClassRegistry, default_registry
@@ -113,9 +114,11 @@ class ProvMnS:
     `api_root` prefixes the `href` of notifications."""
 
     def __init__(self, *, source: str, system_dn: str, registry: ClassRegistry | None = None, classes: Iterable[str] | None = None,
-                 api_root: str = ""):
-        """Keeps the event `source` (`/smo/<module>`), the `systemDN` of the notifications, the registry (the shared default when not given) and the served classes."""
+                 api_root: str = "", checks: RouterChecks | None = None):
+        """Keeps the event `source` (`/smo/<module>`), the `systemDN` of the notifications, the registry (the shared default when not given), the served
+        classes and the cross-cutting checks (checks.py; by default: claim scope with no placement, no MSAC, audit on, the module named after `source`)."""
         self.source = source
+        self.checks = checks if checks is not None else RouterChecks(module=source.rpartition("/")[2])
         self.system_dn = system_dn
         self.registry = registry if registry is not None else default_registry()
         self.api_root = api_root.rstrip("/")
@@ -177,14 +180,19 @@ class ProvMnS:
             db.rollback()
             raise
 
-    def create_moi(self, db: Session, dn: str, body: Any, if_match: str | None = None) -> tuple[dict, bool, int]:
+    def create_moi(self, db: Session, dn: str, body: Any, if_match: str | None = None, caller: Caller = INTERNAL) -> tuple[dict, bool, int]:
         """createMOI: (resource, created, moiVersion). Creates the instance at `dn` from the Resource `body`, or, when it exists, replaces its
-        attributes (a modify, with its hooks and notification). See the module description for the checks."""
-        return self._run(db, lambda: self._create(db, dn, body, if_match))
+        attributes (a modify, with its hooks and notification). See the module description for the checks; `caller` is who asks (checks.py)."""
+        def work():
+            created, is_new, version = self._create(db, dn, body, if_match, caller)
+            self.checks.record(db, caller, "createMOI", dn, 201 if is_new else 200, {"moiVersion": version})
+            return created, is_new, version
+        return self._run(db, work)
 
-    def _create(self, db: Session, dn: str, body: Any, if_match: str | None) -> tuple[dict, bool, int]:
+    def _create(self, db: Session, dn: str, body: Any, if_match: str | None, caller: Caller) -> tuple[dict, bool, int]:
         """createMOI's work inside the transaction (create_moi commits or rolls back around it)."""
         rdns = parse_dn(dn)
+        self.checks.authorize(caller, "createMOI", dn)
         class_name, moi_id = rdns[-1].class_name, rdns[-1].moi_id
         self._require_served(class_name)
         attributes = self._resource_attributes(body, dn, class_name, moi_id)
@@ -251,14 +259,20 @@ class ProvMnS:
         self._notify(db, "notifyMOIAttributeValueChanges", row.dn, {"attributeListValueChanges": [new_values, old_values]})
         return resource(row)
 
-    def modify_moi_attributes(self, db: Session, dn: str, media_type: str, body: Any, if_match: str | None = None) -> tuple[dict, int]:
+    def modify_moi_attributes(self, db: Session, dn: str, media_type: str, body: Any, if_match: str | None = None,
+                              caller: Caller = INTERNAL) -> tuple[dict, int]:
         """modifyMOIAttributes: (resource, moiVersion) after applying the patch `body` of `media_type` (one of the four TS 28.532 patch media types,
         415 otherwise) to the instance at `dn` (404 when it does not exist)."""
-        return self._run(db, lambda: self._modify(db, dn, media_type, body, if_match))
+        def work():
+            changed, version = self._modify(db, dn, media_type, body, if_match, caller)
+            self.checks.record(db, caller, "modifyMOIAttributes", dn, 200, {"moiVersion": version})
+            return changed, version
+        return self._run(db, work)
 
-    def _modify(self, db: Session, dn: str, media_type: str, body: Any, if_match: str | None) -> tuple[dict, int]:
+    def _modify(self, db: Session, dn: str, media_type: str, body: Any, if_match: str | None, caller: Caller) -> tuple[dict, int]:
         """modifyMOIAttributes' work inside the transaction."""
         rdns = parse_dn(dn)
+        self.checks.authorize(caller, "modifyMOIAttributes", dn)
         self._require_served(rdns[-1].class_name)
         if media_type not in MERGE_PATCH_TYPES + JSON_PATCH_TYPES:
             raise MnsError(415, "UNSUPPORTED_MEDIA_TYPE", f"{media_type or 'no media type'}: a patch is one of {', '.join(MERGE_PATCH_TYPES + JSON_PATCH_TYPES)}")
@@ -275,18 +289,26 @@ class ProvMnS:
         self.registry.validate(row.object_class, attributes)
         return self._replace(db, MoiContext("modifyMOIAttributes", db, dn), row, attributes), row.row_version
 
-    def delete_moi(self, db: Session, dn: str, if_match: str | None = None) -> int:
+    def delete_moi(self, db: Session, dn: str, if_match: str | None = None, caller: Caller = INTERNAL) -> int:
         """deleteMOI: deletes the instance at `dn` (404 when it does not exist) and every instance it contains, each before the instance that contains
         it (reverse DN order: a contained instance's DN extends its container's), each with its hooks and its notifyMOIDeletion; returns how many were
-        deleted. `If-Match` applies to the instance at `dn`."""
-        return self._run(db, lambda: self._delete(db, dn, if_match))
+        deleted. `If-Match` applies to the instance at `dn`. A subtree with an instance the caller may not delete (checks.py) is refused whole, naming
+        only the base."""
+        def work():
+            count = self._delete(db, dn, if_match, caller)
+            self.checks.record(db, caller, "deleteMOI", dn, 204, {"deleted": count})
+            return count
+        return self._run(db, work)
 
-    def _delete(self, db: Session, dn: str, if_match: str | None) -> int:
+    def _delete(self, db: Session, dn: str, if_match: str | None, caller: Caller) -> int:
         """deleteMOI's work inside the transaction."""
+        self.checks.authorize(caller, "deleteMOI", dn)
         self._require_served(parse_dn(dn)[-1].class_name)
         base = self._existing(db, dn)
         _check_if_match(if_match, base, dn)
         rows = list(db.scalars(select(ManagedObject).where(self._subtree(dn, (base.depth, None))).order_by(ManagedObject.dn.desc())))
+        if not all(self._allowed(caller, "deleteMOI", row.dn) for row in rows):
+            raise MnsError(403, "SCOPE_DENIED", f"{dn} contains instances outside the caller's reach", bad_objects=[dn])
         ctx = MoiContext("deleteMOI", db, dn)
         for row in rows:
             moi = _moi(row)
@@ -297,6 +319,14 @@ class ProvMnS:
             handler.after_delete(ctx, moi)
             self._notify(db, "notifyMOIDeletion", row.dn, {"attributeList": moi.attributes} if moi.attributes else {})
         return len(rows)
+
+    def _allowed(self, caller: Caller, operation: str, dn: str) -> bool:
+        """Whether steps 1 and 2 of checks.py let `caller` do `operation` on `dn` (without raising)."""
+        try:
+            self.checks.authorize(caller, operation, dn)
+        except MnsError:
+            return False
+        return True
 
     @staticmethod
     def _existing(db: Session, dn: str) -> ManagedObject:
@@ -317,23 +347,26 @@ class ProvMnS:
 
     def get_moi_attributes(self, db: Session, dn: str, scope: Scope | None = None, filter_tree: tuple | None = None,
                            attributes: list[str] | None = None, fields: list[str] | None = None, limit: int = DEFAULT_LIMIT,
-                           cursor: str | None = None) -> Page:
-        """getMOIAttributes: the instances the scope selects from the base at `dn` (404 when the base does not exist) that pass the filter, in DN
-        order, with the attribute selection applied, at most `limit` (1 to MAX_LIMIT, else a 400) after the `cursor`. Reads only; nothing is written."""
+                           cursor: str | None = None, caller: Caller = INTERNAL) -> Page:
+        """getMOIAttributes: the instances the scope selects from the base at `dn` (404 when the base does not exist, or is outside the caller's
+        reach) that pass the filter and that the caller may read (checks.py), in DN order, with the attribute selection applied, at most `limit` (1 to
+        MAX_LIMIT, else a 400) after the `cursor`. Reads only; nothing is written."""
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= MAX_LIMIT:
             raise MnsError(400, "INVALID_QUERY", f"limit is an integer from 1 to {MAX_LIMIT}", bad_query_params=["limit"])
+        self.checks.authorize(caller, "getMOIAttributes", dn)
         scope = scope or Scope()
         self._existing(db, dn)
         after = decode_cursor(cursor) if cursor else None
         query = select(ManagedObject).where(self._subtree(dn, scope.depth_range(depth_of(dn)))).order_by(ManagedObject.dn)
         if after is not None:
             query = query.where(ManagedObject.dn > after)
-        if filter_tree is None:
+        unrestricted = caller.scope is None and self.checks.msac.provider(caller) is None
+        if filter_tree is None and unrestricted:
             query = query.limit(limit + 1)              # one more than the page tells whether a next page exists
         found: list[dict] = []
         for row in db.scalars(query):
             item = resource(row)
-            if matches(filter_tree, item):
+            if matches(filter_tree, item) and (unrestricted or self.checks.visible(caller, row.dn)):
                 found.append(item)
                 if len(found) > limit:
                     break

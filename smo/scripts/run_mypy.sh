@@ -6,7 +6,7 @@
 # importlib `spec.loader` idiom and untyped test doubles; the sample rApps' and modules' tests are not checked either, only their `app`).
 set -euo pipefail
 cd "$(dirname "$0")/.."
-MODULES=(onboarding rapp-mgmt so-smos sme dme r1-termination nfo ran-analytics mdaf sa-smos mock-o1-adaptor focom gui-bff aimgf intent-service ran-nf-oam sdk
+MODULES=(onboarding rapp-mgmt so-smos sme dme r1-termination nfo ran-analytics mdaf sa-smos mock-o1-adaptor focom gui-bff aimgf intent-service ran-nf-oam sdk echo
          samples/energy-saving-rapp samples/mobility-optimization-rapp samples/coverage-optimization-rapp samples/traffic-steering-rapp)
 [ "$#" -gt 0 ] && MODULES=("$@")
 status=0

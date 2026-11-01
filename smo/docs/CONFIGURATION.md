@@ -195,6 +195,13 @@ compose and the chart use the file form (`docs/SECRETS.md` lists each secret, it
 | `DME_PRODUCER_HEALTH_CACHE_SECONDS` | `30` |  | `dme/app/main.py` | DME: how long, in seconds, a producer's health answer is remembered when a type's status is computed (call flow 11c). Default 30; 0 asks the producer at every read. |
 | `SMO_RETENTION_DME_RECORDS_DAYS` | `0` |  | `dme/app/tasks.py`, `docker-compose.yml` | Days to keep a DME data record (by `produced_at`) before `dme-worker` purges it (task `purge-records`, hourly; call flow 12d). Default 0 keeps every record; `docs/RETENTION.md` proposes 30. |
 
+### `echo`
+
+| Variable | Default | Secret | Read in | What it does |
+|---|---|---|---|---|
+| `ECHO_MSAC_RULES` | `"" (empty)` |  | `docker-compose.yml`, `echo/app/main.py` | Echo: the TS 28.319 MSAC rules per caller, as JSON from the caller (invoker id, or the console user) to a list of {dataNodeSelector, operations, action}. A caller not listed is not managed by MSAC; a setting that is not valid, or a rule that is not one, refuses every caller (fail closed). Read on every request. |
+| `ECHO_PLACEMENT` | `"" (empty)` |  | `docker-compose.yml`, `echo/app/main.py` | Echo (the reference ProvMnS module): where its instances are for the ADR 0005 scope claim, as JSON from a DN prefix to {region, tenant, siteCluster} (the longest prefix that is the DN or one of its ancestors wins). Empty: nothing is placed, so only unscoped callers and SubNetwork claims reach an instance; not valid JSON: nothing is placed. Read on every request. |
+
 ### `energy-saving-rapp`
 
 | Variable | Default | Secret | Read in | What it does |

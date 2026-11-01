@@ -36,6 +36,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from .correlation import get_correlation_id
 from .db import Base
+from .tracing import current_traceparent
 
 log = logging.getLogger("smo.events")
 
@@ -62,6 +63,7 @@ class SmoEvent(Base):
     region: Mapped[str | None] = mapped_column(String)
     tenant: Mapped[str | None] = mapped_column(String)
     correlation_id: Mapped[str | None] = mapped_column(String)     # the request or worker task that published it (revision 0059, call flow 14c)
+    traceparent: Mapped[str | None] = mapped_column(String)        # the W3C trace it was published in (revision 0067, PR-CONV-S1.5)
 
 
 class SmoEventRelay(Base):
@@ -81,14 +83,16 @@ def event_type(what: str, change: str) -> str:
 
 
 def envelope(event_id: uuid.UUID, type_: str, source: str, subject: str | None, at: datetime.datetime, data: dict,
-             seq: int | None = None, region: str | None = None, tenant: str | None = None, correlation_id: str | None = None) -> dict:
+             seq: int | None = None, region: str | None = None, tenant: str | None = None, correlation_id: str | None = None,
+             traceparent: str | None = None) -> dict:
     """The CloudEvents 1.0 JSON form of an event; the extension attributes only when they are set. `correlationid` is the X-Correlation-ID of the request
-    or worker task that published it (the name smo-teiv gives the same attribute; call flow 14c)."""
+    or worker task that published it (the name smo-teiv gives the same attribute; call flow 14c); `traceparent` is the W3C trace it was published in
+    (the CloudEvents distributed-tracing extension; PR-CONV-S1.5)."""
     out: dict[str, Any] = {"specversion": SPEC_VERSION, "id": str(event_id), "source": source, "type": type_, "time": at.isoformat(),
                            "datacontenttype": "application/json", "data": data}
     if subject is not None:
         out["subject"] = subject
-    for name, value in (("smoseq", seq), ("smoregion", region), ("smotenant", tenant), ("correlationid", correlation_id)):
+    for name, value in (("smoseq", seq), ("smoregion", region), ("smotenant", tenant), ("correlationid", correlation_id), ("traceparent", traceparent)):
         if value is not None:
             out[name] = value
     return out
@@ -97,7 +101,7 @@ def envelope(event_id: uuid.UUID, type_: str, source: str, subject: str | None, 
 def view(row: SmoEvent) -> dict:
     """A stored event as its envelope."""
     at = row.time if row.time.tzinfo else row.time.replace(tzinfo=datetime.UTC)
-    return envelope(row.event_id, row.type, row.source, row.subject, at, row.data, row.seq, row.region, row.tenant, row.correlation_id)
+    return envelope(row.event_id, row.type, row.source, row.subject, at, row.data, row.seq, row.region, row.tenant, row.correlation_id, row.traceparent)
 
 
 class EventPublisher(Protocol):
@@ -118,7 +122,7 @@ class InMemoryPublisher:
         """Appends the envelope (its `smoseq` is its position, from 1) and wakes `wait`; `target` is not used."""
         with self._changed:
             self.events.append(envelope(uuid.uuid4(), type_, source, subject, datetime.datetime.now(datetime.UTC), data,
-                                        len(self.events) + 1, region, tenant, get_correlation_id()))
+                                        len(self.events) + 1, region, tenant, get_correlation_id(), current_traceparent()))
             self._changed.notify_all()
 
     def wait(self, after: int, timeout: float) -> list[dict]:
@@ -135,7 +139,7 @@ class NullPublisher:
         """Does nothing."""
 
 
-_tables: "weakref.WeakKeyDictionary[Engine, bool]" = weakref.WeakKeyDictionary()
+_tables: weakref.WeakKeyDictionary[Engine, bool] = weakref.WeakKeyDictionary()   # by the engine itself: an id() is reused once an engine is freed
 
 
 def _has_table(connection: Connection) -> bool:
@@ -161,7 +165,7 @@ class TablePublisher:
             MEMORY.publish(target, type_, source, subject, data, region, tenant)
             return
         row = {"event_id": uuid.uuid4(), "type": type_, "source": source, "subject": subject, "time": datetime.datetime.now(datetime.UTC), "data": data,
-               "region": region, "tenant": tenant, "correlation_id": get_correlation_id()}
+               "region": region, "tenant": tenant, "correlation_id": get_correlation_id(), "traceparent": current_traceparent()}
         seq = target.execute(insert(SmoEvent).values(**row).returning(SmoEvent.seq)).scalar_one()
         if bind.dialect.name == "postgresql":
             target.execute(text("SELECT pg_notify(:channel, :payload)"), {"channel": CHANNEL, "payload": str(seq)})

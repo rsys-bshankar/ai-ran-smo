@@ -52,7 +52,7 @@ from sqlalchemy import JSON, DateTime, Integer, String, Text, Uuid, delete, even
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
-from . import webhook
+from . import tracing, webhook
 from .correlation import correlation_scope, get_correlation_id
 from .db import Base
 
@@ -91,6 +91,8 @@ class NotificationOutbox(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
     # The id of the request or worker task that enqueued it (revision 0059), sent with the notification as X-Correlation-ID (call flow 14c).
     correlation_id: Mapped[str | None] = mapped_column(String)
+    # The W3C trace of the request or task that enqueued it (revision 0067, PR-CONV-S1.5), sent with the notification as `traceparent`.
+    traceparent: Mapped[str | None] = mapped_column(String)
 
 
 def enqueue(db: Session, destination: str | None, payload: dict, module: str | None = None,
@@ -110,7 +112,7 @@ def enqueue(db: Session, destination: str | None, payload: dict, module: str | N
     now = _now()
     row = NotificationOutbox(id=uuid.uuid4(), module=module or os.environ.get("MODULE", "unknown"), destination=destination,
                              payload=payload, method=method, status=PENDING, attempts=0, next_attempt_at=now, created_at=now,
-                             correlation_id=get_correlation_id())
+                             correlation_id=get_correlation_id(), traceparent=tracing.current_traceparent())
     db.add(row)
     db.info.setdefault(_PENDING_IDS_KEY, []).append(row.id)
     return row
@@ -153,12 +155,14 @@ def _send(destination: str, payload, method: str = "POST") -> tuple[bool, str | 
 
 
 def _send_row(row: NotificationOutbox) -> tuple[bool, str | None, bool]:
-    """Sends one claimed row under the correlation id it was enqueued with, so the delivery carries the id of what caused it, whichever process or
-    thread sends it (call flow 14c). A row from before revision 0059 has none and goes out under the sender's own."""
-    if not row.correlation_id:
-        return _send(row.destination, row.payload, row.method)
-    with correlation_scope(row.correlation_id):
-        return _send(row.destination, row.payload, row.method)
+    """Sends one claimed row under the correlation id and the trace it was enqueued with, so the delivery carries the id and the `traceparent` of
+    what caused it, whichever process or thread sends it (call flow 14c; revisions 0059 and 0067). A row from before either has none and goes out
+    under the sender's own correlation id (and no trace)."""
+    with tracing.trace_scope(tracing.parse_traceparent(row.traceparent)):
+        if not row.correlation_id:
+            return _send(row.destination, row.payload, row.method)
+        with correlation_scope(row.correlation_id):
+            return _send(row.destination, row.payload, row.method)
 
 
 def drain(engine, ids: list[uuid.UUID] | None = None, now: datetime.datetime | None = None, limit: int = 100) -> dict[str, int]:

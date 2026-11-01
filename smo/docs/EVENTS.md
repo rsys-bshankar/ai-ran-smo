@@ -21,6 +21,7 @@ A CloudEvents 1.0 event in its JSON form, plus three extension attributes. Schem
 | `smoseq` | Its position in the feed; a reader passes the last one it read as `after` |
 | `smoregion`, `smotenant` | Where the managed element the event is about is, when it is one's: a scoped reader is given only the events inside its claim |
 | `correlationid` | The `X-Correlation-ID` of the request or worker task (`task:<name>:<uuid>`) that published the event, when there was one (the name smo-teiv gives the same attribute; revision 0059, call flow 14c) |
+| `traceparent` | The W3C trace the event was published in, when there was one (the CloudEvents distributed-tracing extension; revision 0067, PR-CONV-S1.5). A ProvMnS notification carries the trace of the request that made the change |
 
 ## Types
 
@@ -91,7 +92,7 @@ A second sink beside the table: every event committed to `smo_event` also appear
   owner's principal Write on its own topics and nothing else (PR-CONV-S1.15). `smo.events.v1` is the event bus's; `smo.ves.in.v1` will be the VES input
   (SB-7.6, ADR 0006 slice 4). The broker is the one S3.23 will share with smo-teiv; smo-teiv's ingestion topic (`smo.teiv.…`) is TE&IV's alone (D6): the relay
   refuses a topic under `smo.teiv.`, and no module but TE&IV is given it.
-- **Position, duplicates, ordering.** The relay keeps its position in Postgres (`smo_event_relay`, revision 0066: `kafka:<topic>` → the highest `seq` the broker
+- **Position, duplicates, ordering.** The relay keeps its position in Postgres (`smo_event_relay`, revision 0068: `kafka:<topic>` → the highest `seq` the broker
   acknowledged without a gap), moved after the acknowledgement. A crash between the two, or a database restore (which rewinds the position), sends events
   again: **at least once**, and a consumer de-duplicates on the envelope `id`. The relay reads only events older than `SMO_KAFKA_RELAY_SETTLE_SECONDS` (3), so a
   transaction that took a lower `seq` but committed later is not skipped (the hazard of "At least once, in order" above); the cost is about 3 s of lag plus the

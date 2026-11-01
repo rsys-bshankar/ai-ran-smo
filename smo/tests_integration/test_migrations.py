@@ -22,11 +22,11 @@ MIGRATE = SMO_ROOT / "scripts" / "migrate.py"
 CHECK = SMO_ROOT / "scripts" / "check_migration_matches_models.py"
 ADMIN_URL = os.environ.get("SMO_TEST_POSTGRES_URL")
 needs_postgres = pytest.mark.skipif(not ADMIN_URL, reason="SMO_TEST_POSTGRES_URL not set")
-HEAD = "0066"         # raise this with every new revision: the tests below then check it is the head
+HEAD = "0068"         # raise this with every new revision: the tests below then check it is the head
 # The newest revision that alters a table, and that table: the lock tests hold it while migrating to that revision. Raise both with a revision that alters a
-# table (0065 only drops roles, so it cannot be blocked by a table lock; 0066 comments on smo_event, which takes its lock).
-LOCK_REVISION = "0066"
-LOCK_TABLE = "public.smo_event"
+# table (0065 only drops roles and 0066 only makes Echo's new schema, so neither can be blocked by a table lock; 0068 comments on smo_event, which takes its lock).
+LOCK_REVISION = "0068"
+LOCK_TABLE = "smo_event"
 
 
 def _scripts() -> ScriptDirectory:
@@ -367,7 +367,7 @@ def test_0065_drops_the_mlmr_role_with_its_grants_and_the_downgrade_recreates_it
         if not exists:
             connection.execute(text("CREATE ROLE smo_mlmr LOGIN"))
         connection.execute(text("GRANT SELECT ON public.alembic_version TO smo_mlmr"))
-    up = _run(MIGRATE, url, "--revision", "0065")
+    up = _run(MIGRATE, url, "--revision", "0065")                               # to 0065 itself: later revisions are not this test's
     assert up.returncode == 0 and "upgraded to 0065" in up.stdout, up.stderr
     with engine.connect() as connection:
         assert connection.execute(text("SELECT count(*) FROM pg_roles WHERE rolname IN ('smo_mlmr', 'smo_mllf')")).scalar_one() == 0

@@ -3,7 +3,7 @@
 > **Status: decided October 2026; slices 1–3 built on 1 November 2026 (plan task S1.10, `HISTORY.md` PR-CONV-S1.10 and MSG-3.4).** The design below was
 > written against `origin/main` at 2d54a8f and re-checked against bb197a2 (details corrected where the repository differs). The owner decided yes on all five
 > questions of section 8; the answers are recorded in section 9, "Decisions". **Built:** slice 1 (the `kafka` extra, `requirements/kafka.txt` with confluent-kafka
-> 2.16.0, the `WITH_KAFKA` build argument), slice 2 (`smo_shared/kafka_settings.py`, `kafka_relay.py`, revision 0066 `smo_event_relay`, the `kafka-relay` worker task
+> 2.16.0, the `WITH_KAFKA` build argument), slice 2 (`smo_shared/kafka_settings.py`, `kafka_relay.py`, revision 0068 `smo_event_relay`, the `kafka-relay` worker task
 > with the settle delay, the `event-purge` hold, the metrics) and slice 3 (the compose profile `kafka`, `scripts/kafka_roundtrip.py`, the CI job `compose-kafka`).
 > As built, differing from the text below: the relay runs once per worker tick (default 5 s) and drains batches for up to 15 s (section 3.2's fallback), not a
 > 20 s LISTEN loop; topics follow `smo.<owner>[.<stream>].v<N>` and the relay refuses `smo.teiv.*` (the broker S3.23 shares with smo-teiv); kafka-init creates

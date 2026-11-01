@@ -174,9 +174,10 @@ def test_the_edge_is_only_in_the_tls_profile_publishes_two_ports_and_is_hardened
     assert sorted(edge["secrets"]) == ["tls_cert", "tls_key"]
     assert compose["secrets"]["tls_cert"]["file"] == "./certs/server.crt" and compose["secrets"]["tls_key"]["file"] == "./certs/server.key"
     # the only services outside the default stack: the TLS edge, the NETCONF lab server (PR-SB-1.4, profile netconf-lab), the pooler,
-    # the traces and logs stack (PR-OBS-3, PR-OBS-6: profiles tracing and logging), and S1.10's stores (profiles objectstore, minio, kafka)
+    # the traces and logs stack (PR-OBS-3, PR-OBS-6: profiles tracing and logging), Echo (PR-CONV-S1.6, profile echo: no certificate either), and S1.10's stores
+    # (profiles objectstore, minio, kafka)
     assert sorted(name for name, svc in compose["services"].items() if "profiles" in svc) == [
-        "db-backup", "edge-tls", "fluent-bit", "grafana", "kafka", "kafka-init", "loki", "minio", "minio-init", "netconf-lab", "objectstore",
+        "db-backup", "echo", "edge-tls", "fluent-bit", "grafana", "kafka", "kafka-init", "loki", "minio", "minio-init", "netconf-lab", "objectstore",
         "objectstore-init", "oran-sim-du", "pgbouncer", "tempo"], \
         "the default stack must not need a certificate"
     assert compose["services"]["netconf-lab"]["profiles"] == ["netconf-lab"]

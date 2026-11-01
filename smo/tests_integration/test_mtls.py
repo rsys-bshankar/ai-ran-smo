@@ -386,7 +386,8 @@ def test_cert_manager_mode_makes_a_ca_chain_and_one_certificate_per_participant(
     assert ("Issuer", "smo-mtls-selfsigned") in kinds and ("Certificate", "smo-mtls-ca") in kinds and ("Issuer", "smo-mtls-ca") in kinds
     certificates = {d["metadata"]["name"]: d for d in docs if d["kind"] == "Certificate" and d["metadata"]["name"] != "smo-mtls-ca"}
     values = _values()
-    expected = {f"{n}-mtls" for n, s in values["modules"].items() if {**values["moduleDefaults"], **s}["mtls"] != "off"}
+    settings = {n: {**values["moduleDefaults"], **s} for n, s in values["modules"].items()}
+    expected = {f"{n}-mtls" for n, s in settings.items() if s["mtls"] != "off" and s["enabled"]}       # a module that is off (Echo) gets no certificate
     assert set(certificates) == expected
     sme = certificates["sme-mtls"]["spec"]
     assert sme["secretName"] == "sme-mtls" and set(sme["usages"]) == {"digital signature", "server auth", "client auth"}

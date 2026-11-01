@@ -18,7 +18,7 @@ plan task S0.5; recorded in `smo/HISTORY.md` PR-CONV-S0.16, follow-up).
 | `openapi/common/provmns-root.yaml` | The one TS 28.532 ProvMnS form `{apiRoot}/ProvMnS/{MnSVersion}/{URI-LDN-first-part}/{className}={id}` (D5) and **the only place the ProvMnS version is set** (`19.2.0`, the TS 28.532 OpenAPI the repository carries). Its path items are `$ref`s to `specs/5G_APIs/TS28532_ProvMnS.yaml` |
 | `openapi/common/file-data-reporting-root.yaml` | The TS 28.532 file data reporting MnS (v19.1.0) the same way, mounted by MDAF and RAN NF OAM |
 | `openapi/common/probes.yaml` | `/health`, `/live`, `/ready`, `/version` ([D] D-01) |
-| `openapi/modules/<module>.yaml` | One contract per module after the rewrite (ADR 0008): `so-smos`, `sa-smos`, `dme`, `mdaf`, `aimgf`, `rapp-mgmt`, `sme`, `teiv`, `ran-nf-oam`, and `nfo` (probes and pending APIs only) |
+| `openapi/modules/<module>.yaml` | One contract per module after the rewrite (ADR 0008): `so-smos`, `sa-smos`, `dme`, `mdaf`, `aimgf`, `rapp-mgmt`, `sme`, `teiv`, `ran-nf-oam`, `nfo` (probes and pending APIs only), and `echo` (the reference module of plan task S1.6: SubNetwork and ManagedElement through the shared ProvMnS router, nothing else) |
 | `yang/modules.txt` | The published 3GPP YANG modules the contracts and examples use, in `specs/MnS/yang-models` |
 | `db/01_common_shared_databases.sql`, `02_per_module_schemas.sql`, `03_roles_and_grants.sql` | Reference DDL, applied by the Contracts job to Postgres 18 with TimescaleDB (the real schema is the Alembic history, ADR 0001) |
 | `db/sample_documents_so_sa_rapp.json` | Rows as SO SMOS, AIMgF and rApp Management store them |

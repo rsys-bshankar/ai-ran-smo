@@ -27,7 +27,7 @@ from loader import load_app_module  # noqa: E402
 ALL_MODULES = [
     "r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam",
     "nfo", "focom", "aimgf", "ran-analytics", "mdaf",
-    "intent-service", "so-smos", "sa-smos", "mock-o1-adaptor",
+    "intent-service", "so-smos", "sa-smos", "mock-o1-adaptor", "echo",
     "samples/energy-saving-rapp", "samples/mobility-optimization-rapp", "samples/coverage-optimization-rapp",
     "samples/traffic-steering-rapp",
 ]
