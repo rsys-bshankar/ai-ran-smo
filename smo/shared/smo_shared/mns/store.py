@@ -21,9 +21,13 @@ The model is declared on its own `MnsBase`, not on `smo_shared.db.Base`: the tab
 revision that calls `create_moi_store(op, "<its schema>")` in `upgrade()` and `drop_moi_store(op, "<its schema>")` in `downgrade()`, and adds
 `moi_store` under its name in `migrations/table_owners.json`; its role's search path (`<schema>, public`) finds the table, as for every module table.
 Unit tests on SQLite call `create_all(engine)`.
+
+A module whose store needs another table name (SME's registry, `mns_registry`) maps it with `store_model("<table>")`, passes that class to
+`ProvMnS(model=...)`, and names the table in `create_moi_store(op, schema, table)` / `drop_moi_store(op, schema, table)`.
 """
 
 import datetime
+from typing import cast
 
 import sqlalchemy as sa
 from sqlalchemy import JSON, DateTime, Index, Integer, Text
@@ -45,11 +49,8 @@ class MnsBase(DeclarativeBase):
     """The declarative base of the ProvMnS store only (see the module description for why it is not `smo_shared.db.Base`)."""
 
 
-class ManagedObject(Versioned, MnsBase):
-    """One managed object instance (table `moi_store`); `row_version` is the `moi_version` column, `Versioned`'s optimistic-concurrency counter."""
-
-    __tablename__ = TABLE
-    __table_args__ = (Index(f"ix_{TABLE}_parent_dn", "parent_dn"), Index(f"ix_{TABLE}_object_class", "object_class"))
+class _StoreColumns:
+    """The columns of a store table (the module description lists them), declared once for `ManagedObject` and for every `store_model` table."""
 
     dn: Mapped[str] = mapped_column(_DN, primary_key=True)
     object_class: Mapped[str] = mapped_column(Text, nullable=False)
@@ -62,15 +63,41 @@ class ManagedObject(Versioned, MnsBase):
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now, onupdate=_now)
 
 
+def _indexes(table: str) -> tuple:
+    return Index(f"ix_{table}_parent_dn", "parent_dn"), Index(f"ix_{table}_object_class", "object_class")
+
+
+class ManagedObject(_StoreColumns, Versioned, MnsBase):
+    """One managed object instance (table `moi_store`); `row_version` is the `moi_version` column, `Versioned`'s optimistic-concurrency counter."""
+
+    __tablename__ = TABLE
+    __table_args__ = _indexes(TABLE)
+
+
+_MODELS: dict[str, type[ManagedObject]] = {TABLE: ManagedObject}
+
+
+def store_model(table: str) -> type[ManagedObject]:
+    """The mapped class of the store table `table`: `ManagedObject` for `moi_store`, else a class of the same columns on a table of that name (made
+    once per name). For a module whose ProvMnS store cannot be `moi_store` because the per-table tooling (`migrations/table_owners.json`) names each
+    table once in the database, as SME's registry store `mns_registry` beside Echo's `moi_store` (plan task S1.12)."""
+    if table not in _MODELS:
+        made = type(f"ManagedObject_{table}", (_StoreColumns, Versioned, MnsBase), {"__tablename__": table, "__table_args__": _indexes(table)})
+        _MODELS[table] = cast(type[ManagedObject], made)        # not a subclass of ManagedObject (another table), but the same columns
+    return _MODELS[table]
+
+
 def create_all(engine) -> None:
-    """Creates `moi_store` on `engine` (the SQLite unit tests; a real database gets it from a module's revision)."""
+    """Creates `moi_store`, and every `store_model` table made so far, on `engine` (the SQLite unit tests; a real database gets them from a module's
+    revision)."""
     MnsBase.metadata.create_all(engine)
 
 
-def create_moi_store(op, schema: str) -> None:
-    """The Alembic `upgrade()` step: `<schema>.moi_store` with its indexes, as the module description lists them (the GIN index on Postgres only)."""
+def create_moi_store(op, schema: str, table: str = TABLE) -> None:
+    """The Alembic `upgrade()` step: `<schema>.<table>` (`moi_store` unless named) with its indexes, as the module description lists them (the GIN
+    index on Postgres only)."""
     op.create_table(
-        TABLE,
+        table,
         sa.Column("dn", Text(collation="C"), primary_key=True),
         sa.Column("object_class", Text, nullable=False),
         sa.Column("moi_id", Text, nullable=False),
@@ -82,14 +109,14 @@ def create_moi_store(op, schema: str) -> None:
         sa.Column("updated_at", DateTime(timezone=True), nullable=False),
         schema=schema,
     )
-    op.create_index(f"ix_{TABLE}_parent_dn", TABLE, ["parent_dn"], schema=schema)
-    op.create_index(f"ix_{TABLE}_object_class", TABLE, ["object_class"], schema=schema)
-    op.create_index(f"ix_{TABLE}_attributes", TABLE, ["attributes"], schema=schema, postgresql_using="gin")
+    op.create_index(f"ix_{table}_parent_dn", table, ["parent_dn"], schema=schema)
+    op.create_index(f"ix_{table}_object_class", table, ["object_class"], schema=schema)
+    op.create_index(f"ix_{table}_attributes", table, ["attributes"], schema=schema, postgresql_using="gin")
 
 
-def drop_moi_store(op, schema: str) -> None:
-    """The Alembic `downgrade()` step: drops `<schema>.moi_store` and its indexes (what it held is lost)."""
-    op.drop_index(f"ix_{TABLE}_attributes", table_name=TABLE, schema=schema)
-    op.drop_index(f"ix_{TABLE}_object_class", table_name=TABLE, schema=schema)
-    op.drop_index(f"ix_{TABLE}_parent_dn", table_name=TABLE, schema=schema)
-    op.drop_table(TABLE, schema=schema)
+def drop_moi_store(op, schema: str, table: str = TABLE) -> None:
+    """The Alembic `downgrade()` step: drops `<schema>.<table>` and its indexes (what it held is lost)."""
+    op.drop_index(f"ix_{table}_attributes", table_name=table, schema=schema)
+    op.drop_index(f"ix_{table}_object_class", table_name=table, schema=schema)
+    op.drop_index(f"ix_{table}_parent_dn", table_name=table, schema=schema)
+    op.drop_table(table, schema=schema)

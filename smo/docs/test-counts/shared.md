@@ -9,7 +9,7 @@ CI runs `--check` and fails when this file no longer matches the code.
 
 | suite | files | test functions | collected tests |
 |---|---:|---:|---:|
-| `shared` | 64 | 856 | 1661 |
+| `shared` | 65 | 886 | 1709 |
 
 ## Per test file
 
@@ -42,6 +42,7 @@ Paths are relative to `smo/shared/`.
 | `tests/test_mns_checks.py` | 21 | 21 |
 | `tests/test_mns_dictionary.py` | 16 | 36 |
 | `tests/test_mns_exact.py` | 41 | 127 |
+| `tests/test_mns_mnsregistry.py` | 30 | 48 |
 | `tests/test_mns_patch.py` | 7 | 75 |
 | `tests/test_mns_properties.py` | 3 | 6 |
 | `tests/test_mns_registry.py` | 12 | 21 |

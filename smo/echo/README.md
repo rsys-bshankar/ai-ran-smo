@@ -5,9 +5,9 @@
 | | |
 |---|---|
 | Standards basis | 3GPP TS 28.532 ProvMnS (createMOI, getMOIAttributes, modifyMOIAttributes, deleteMOI), TS 28.623 generic NRM (SubNetwork, ManagedElement), TS 28.319 MSAC, ADR 0005 scope claims |
-| R1 route / port | none yet: not in R1 Termination's routing table until S1.7 / S1.8 (see 1.3); container :8000, `/ProvMnS/19.2.0/...` |
-| Depends on (over R1) | nothing: Echo calls no other module |
-| Called by | its tests; later every MnS consumer through R1 |
+| R1 route / port | no entry of its own: R1 Termination routes `/ProvMnS/19.2.0/...` of SubNetwork and ManagedElement to it by class, through SME's MnS registry (S1.8, see 1.3); container :8000 |
+| Depends on (over R1) | SME's MnS registry, once at start-up (its registration, through R1 with its own token); no other module |
+| Called by | every MnS consumer through R1 (by class name); its tests |
 | Database tables | `echo.moi_store` (revision 0066, `create_moi_store(op, "echo")`); shared: `smo_event`, `audit_log`, `audit_head`, `idempotency_key`, `module_identity` |
 | Unit tests | `tests/`, on SQLite and, with `SMO_TEST_POSTGRES_URL`, on Postgres (counts: [docs/test-counts/echo.md](../docs/test-counts/echo.md)) |
 | Status | Done (S1.6). Off by default in compose and in the chart (1.5) |
@@ -39,9 +39,12 @@ third class would add nothing the shared tests do not already cover.
                                                        └─ notifications ─▶ smo_event (event bus), audit_log
 ```
 
-Echo is not reached through R1 by class name yet. SME's MnS registry (S1.7) records which module serves which class. R1 Termination's routing by
-registry lookup (S1.8) then sends `/ProvMnS/.../SubNetwork=...` to Echo. **The last condition of milestone M1, a ProvMnS call through R1 answered by a
-module the registry names, waits for them.** Until then Echo's routes are reached directly, by its tests and by the interface gate's producer half.
+Echo is reached through R1 by class name. At start-up it registers itself in SME's MnS registry (S1.7, S1.12: `install_self_registration` of
+`smo_shared.mns.mns_registry`, an MnsInfo and a MgmtDataInfo naming SubNetwork and ManagedElement, through R1 with its own token, repeated in the
+background until it succeeds; `SMO_MNS_REGISTRATION=off` skips it, `SMO_MNS_ADDRESS` changes the address it registers). R1 Termination's routing by
+registry lookup (S1.8) then sends `/ProvMnS/19.2.0/SubNetwork=...` to Echo with no entry of its own in the gateway's table. That is milestone M1's
+last condition, proved by `tests_integration/test_m1_echo_through_r1.py`: the four operations through R1 by class name, and a registry read listing
+Echo.
 
 ### 1.4 Ownership
 
@@ -49,15 +52,16 @@ module the registry names, waits for them.** Until then Echo's routes are reache
 |---|---|
 | `echo.moi_store` (the instances of its two classes) | The router, the class registry, the checks → `smo_shared.mns` |
 | Its two settings, `ECHO_PLACEMENT` and `ECHO_MSAC_RULES` | TS 28.319 AccessRules as ProvMnS classes → S1.14 |
-| | Routing by class through R1 → S1.7, S1.8 |
+| | The MnS registry → SME; routing by class through R1 → R1 Termination |
 
 ### 1.5 Design decisions
 
 - **Nothing of its own.** `app/main.py` names the classes and the system DN, builds the checks from two settings and mounts `provmns_router`. A
   behaviour that would need Echo code belongs in `smo_shared.mns`.
 - **Off by default.** Compose profile `echo` (`docker compose --profile echo up echo`) and `modules.echo.enabled: false` in the chart. Echo is a
-  reference and test module with no operator function. Its write API would let anyone the gateway admits create objects nothing reads, and once S1.8
-  routes by class, a SubNetwork served by Echo would compete with the real producer of that class. It is switched on for tests and for demonstrating
+  reference and test module with no operator function. Its write API would let anyone the gateway admits create objects nothing reads, and since S1.8
+  routes by class, a SubNetwork served by Echo would compete with the real producer of that class (the registry's `mnsScope` is how two
+  producers of one class split the DNs). It is switched on for tests and for demonstrating
   the router.
 - **Settings read per request.** Placement and MSAC rules are environment variables read on every operation, so a test or an operator changes them
   without a restart. Both fail closed: placement that cannot be read places nothing (only unscoped and SubNetwork-scoped callers reach anything), and

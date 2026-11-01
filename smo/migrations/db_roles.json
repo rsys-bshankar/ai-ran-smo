@@ -91,7 +91,11 @@
   "shared": [
    "module_identity",
    "notification_outbox",
-   "idempotency_key"
+   "idempotency_key",
+   "smo_event",
+   "smo_event_relay",
+   "audit_log",
+   "audit_head"
   ]
  },
  "dme": {

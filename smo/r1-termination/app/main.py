@@ -48,7 +48,7 @@ from smo_shared.secretfile import read_secret
 from smo_shared.timeouts import introspect_timeout, upstream_timeout
 from smo_shared.webhook import forward_to_destination
 
-from . import operator_api
+from . import mns_routing, operator_api
 from .introspection_cache import DEFAULT_MAX_ENTRIES, NEGATIVE_SECONDS, Caller, IntrospectionCache
 
 log = logging.getLogger(__name__)
@@ -170,11 +170,13 @@ BOOTSTRAP_KEY = read_secret("R1_BOOTSTRAP_KEY")      # PR-SEC-9.3, read once at 
 @app.get("/bootstrap")
 def bootstrap(x_bootstrap_key: str | None = Header(default=None, description="The shared bootstrap key; required only when the gateway is run with `R1_BOOTSTRAP_KEY[_FILE]` (PR-SEC-9.3)")):
     """Foundational Platform LLD section 4.1: BootstrapInformation.apiEndpoints
-    ONLY ever contains service-apis (discovery) and published-apis
-    (registration) entries — never events-subscription. An rApp discovers
-    the subscription endpoint the normal way, via service discovery, once
-    it can reach service-apis. No auth (network-isolated), URI-stable
-    across all R1 Termination versions.
+    holds the service-apis (discovery) and published-apis (registration)
+    entries, never events-subscription: an rApp discovers the subscription
+    endpoint the normal way, via service discovery, once it can reach
+    service-apis. Since the converged design (plan task S1.8) it also names
+    SO SMOS (`so-smos`) and AIMgF (`aimgf`), each with the same token
+    endpoint. No auth (network-isolated), URI-stable across all R1
+    Termination versions.
 
     Inside the compose network the entries name SME directly (`http://sme:8000/...`). With `R1_PUBLIC_BASE_URL` set (PR-SEC-1.6) they
     name this gateway's public address instead: the API entries go through the gateway (`<base>/sme/...`, token required) and the
@@ -208,8 +210,21 @@ def bootstrap(x_bootstrap_key: str | None = Header(default=None, description="Th
                 "tokenEndPoint": {"uri": token},
                 "apiEndPoint": {"uri": f"{apis}/published-apis/v1"},
             },
+            *({"apiName": prefix.lstrip("/"), "tokenEndPoint": {"uri": token}, "apiEndPoint": {"uri": _bootstrap_entry(prefix)}}
+              for prefix in BOOTSTRAP_MODULES),
         ]
     }
+
+
+# PR-CONV-S1.8: the modules /bootstrap names besides SME's two APIs, for a consumer that starts from them before it can discover anything: SO SMOS
+# (intents and service orders) and AIMgF (models). TE&IV joins with S3.1.
+BOOTSTRAP_MODULES = ("/so-smos", "/aimgf")
+
+
+def _bootstrap_entry(prefix: str) -> str:
+    """The address /bootstrap gives for the module at `prefix`: through this gateway's public address when `R1_PUBLIC_BASE_URL` is set (a token
+    is needed), else the module's own inside the network, as SME's entries are."""
+    return f"{PUBLIC_BASE_URL}{prefix}" if PUBLIC_BASE_URL else ROUTES[prefix]
 
 
 class GatewayProblem(BaseModel):
@@ -250,6 +265,8 @@ async def proxy(full_path: str, request: Request):
     # unreachable database delays or fails no call. The row never holds the body. Reads are not recorded.
     response = await _proxy(full_path, request)
     _drop_revoked_tokens(request.method, full_path, response.status_code)
+    if full_path.startswith(mns_routing.PREFIX.lstrip("/") + "/"):
+        mns_routing.after_response(request.method, full_path.split("/", 1)[1], response.status_code)   # a registration through here is routed at once
     audited = getattr(request.state, "audit", None)          # set once the caller is known: an unauthenticated call is not recorded
     if audited is not None and request.method in roles.CHANGES and audit_enabled():
         invoker, role, refused, on_behalf_of = audited
@@ -321,8 +338,9 @@ async def _proxy(full_path: str, request: Request):
         # Every module's /metrics is for the scraper on the container network (PR-OBS-2.3), not for token holders.
         return JSONResponse(status_code=404, content={"title": "NO_ROUTE", "status": 404})
     dynamic = prefix == "/" + operator_api.PREFIX            # GUI-8.3: /rapps/{instanceId}/operator/..., the target comes from rApp Management
+    provmns = prefix == mns_routing.PREFIX                    # PR-CONV-S1.8: /ProvMnS/{version}/{LDN}, the target comes from the MnS registry
     backend = ROUTES.get(prefix)
-    if backend is None and not dynamic:
+    if backend is None and not dynamic and not provmns:
         return JSONResponse(status_code=404, content={"title": "NO_ROUTE", "status": 404})
 
     try:
@@ -401,16 +419,26 @@ async def _proxy(full_path: str, request: Request):
     body = await request.body()
     if dynamic:
         return await _forward_operator_api(request, rest_of_path, body, invoker_id, role, caller_scope)
+    if provmns:
+        try:
+            target = await mns_routing.resolve(rest_of_path, ROUTES["/sme"])
+        except mns_routing.Unroutable as refused:
+            response = _problem(refused.status, refused.title, refused.detail)
+            if refused.retry_after is not None:
+                response.headers["Retry-After"] = str(refused.retry_after)
+            return response
+    else:
+        target = f"{backend}/{rest_of_path}"
     forwarded_headers = _forwarded_headers(request, role, invoker_id, caller_scope)
     try:
         # PR-OBS-3: the caller's traceparent is replaced by this hop's own (the gateway's CLIENT span when spans are on, else the caller's unchanged)
         with tracing.span(f"{request.method} {prefix}", "client", {"http.request.method": request.method, "smo.target": prefix,
                                                                  "smo.correlation_id": get_correlation_id() or ""}) as client_span:
             forwarded_headers.update(tracing.inject_headers())
-            async with httpx.AsyncClient(timeout=upstream_timeout(), **mtls.client_kwargs(backend)) as client:
+            async with httpx.AsyncClient(timeout=upstream_timeout(), **mtls.client_kwargs(target)) as client:
                 upstream = await client.request(
                     request.method,
-                    f"{backend}/{rest_of_path}",
+                    target,
                     headers=forwarded_headers,
                     params=request.query_params,
                     content=body,

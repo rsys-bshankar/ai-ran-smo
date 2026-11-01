@@ -25,13 +25,14 @@ def _schemas() -> dict:
 
 
 def _enum(name: str) -> tuple[str, ...]:
-    """The enum of schema `name`, wherever it sits under `oneOf` / `anyOf` (ProbableCause nests it two levels down)."""
+    """The enum of schema `name`, wherever it sits under `anyOf` (ProbableCause nests it two levels down). The registry's document reads the file's
+    `oneOf` as `anyOf` (registry.openapi_to_jsonschema), so `anyOf` is the one keyword to follow."""
     pending = [_schemas()[name]]
     while pending:
         node = pending.pop()
         if "enum" in node:
             return tuple(value for value in node["enum"] if value is not None)
-        pending.extend(branch for keyword in ("oneOf", "anyOf") for branch in node.get(keyword, []))
+        pending.extend(node.get("anyOf", []))
     raise LookupError(f"{FILE} has no enum for {name}")
 
 

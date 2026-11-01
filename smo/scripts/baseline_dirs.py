@@ -54,7 +54,8 @@ def write(directory: Path, parts: dict[str, dict]) -> tuple[list[str], list[str]
 def read_at(ref: str, directory: str, legacy_file: str | None, cwd: Path) -> dict[str, dict] | None:
     """The baseline at git `ref` ({module: part}): the directory `directory` (a path from `cwd`), or, before the split, `legacy_file` read whole and
     returned as {"": its content} for the caller to split. None when neither exists at `ref`."""
-    listed = subprocess.run(["git", "ls-tree", "--name-only", f"{ref}:{directory}"], capture_output=True, text=True, cwd=cwd)
+    # --full-tree: run from a subdirectory (smo/), ls-tree would list only the entries under that prefix, which a tree object has none of
+    listed = subprocess.run(["git", "ls-tree", "--full-tree", "--name-only", f"{ref}:{directory}"], capture_output=True, text=True, cwd=cwd)
     if listed.returncode == 0:
         out = {}
         for name in listed.stdout.split():

@@ -64,12 +64,16 @@ _SCHEMA_REF = re.compile(r"^(?P<file>[^#]*)#(?P<pointer>/.*)$")
 
 def openapi_to_jsonschema(node: Any) -> Any:
     """A copy of an OpenAPI 3.0 schema tree in which `nullable: true` is JSON Schema: `null` added to `type` (and to `enum`), or, next to a `$ref` or
-    without a `type`, an `anyOf` with `{"type": "null"}`. Everything else is kept as it is."""
+    without a `type`, an `anyOf` with `{"type": "null"}`; and in which `oneOf` reads as `anyOf` (a node with both keeps its `oneOf`). The 3GPP files
+    write `oneOf` for "one of these shapes" with branches that overlap: TS 28.623 `ManagementData` is an enum list or a string list, so a list of the
+    enum's values matches both and JSON Schema's `oneOf` refuses it (plan task S1.12 found it registering an optimisation domain). Everything else is
+    kept as it is."""
     if isinstance(node, list):
         return [openapi_to_jsonschema(item) for item in node]
     if not isinstance(node, dict):
         return node
-    out = {key: openapi_to_jsonschema(value) for key, value in node.items() if key != "nullable"}
+    rename = "anyOf" not in node
+    out = {("anyOf" if rename and key == "oneOf" else key): openapi_to_jsonschema(value) for key, value in node.items() if key != "nullable"}
     if node.get("nullable") is not True:
         return out
     if "type" not in out:                   # a $ref (whose siblings OpenAPI 3.0 ignores), or a schema with no type of its own

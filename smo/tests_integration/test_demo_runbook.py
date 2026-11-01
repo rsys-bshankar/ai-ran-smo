@@ -72,7 +72,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     # step 4: bootstrap — provider/invoker registration, token, service-api publish, DME producer
     boot = mesh["r1-termination"].get("/bootstrap")
     assert boot.status_code == 200
-    assert {e["apiName"] for e in boot.json()["apiEndpoints"]} == {"service-apis", "published-apis"}
+    assert {e["apiName"] for e in boot.json()["apiEndpoints"]} == {"service-apis", "published-apis", "so-smos", "aimgf"}   # PR-CONV-S1.8
 
     prov = mesh["sme"].post("/provider-registrations", json={
         "apfId": "energy-saving-rapp", "providerDomainInfo": "Energy Saving rApp — demo provider domain",

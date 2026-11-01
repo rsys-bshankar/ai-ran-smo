@@ -159,7 +159,8 @@ curl -s http://localhost:8080/bootstrap | python3 -m json.tool
 
 The response's `apiEndpoints` name `service-apis` and `published-apis`,
 each with a `tokenEndPoint`/`apiEndPoint` pointing directly at SME (R1
-requires a bearer token on every other route). From here on, continue with
+requires a bearer token on every other route), and `so-smos` and `aimgf`,
+pointing at those two modules with the same token endpoint. From here on, continue with
 `docker compose exec r1-termination` — those URIs are container-internal.
 
 This package ships no `Files/Sme/` declarations, so `bootstrap-complete`

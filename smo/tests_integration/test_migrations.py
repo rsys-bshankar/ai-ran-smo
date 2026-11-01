@@ -49,12 +49,14 @@ def _branch_checker():
 
 
 def test_the_trunk_is_one_linear_chain_from_the_baseline_to_0068():
-    """Revisions 0001 to 0068 are one chain: each has exactly one parent, the one before it, and the root is 0001."""
+    """Revisions 0001 to 0068 are one chain: each has exactly one parent, the one before it, the root is 0001, and none declares a branch label.
+    (The labels it declares, not `branch_labels`: Alembic carries a branch's label down to every revision below it until a branch point, so with
+    one branch only, the `sme` of sme_0001, every trunk revision reports it.)"""
     scripts = _scripts()
     revision, seen = scripts.get_revision(TRUNK_END), []
     while revision is not None:
         seen.append(revision.revision)
-        assert not revision.branch_labels, revision.revision
+        assert not revision._orig_branch_labels, revision.revision
         parents = revision._normalized_down_revisions
         assert len(parents) <= 1, f"{revision.revision} merges {parents}"
         revision = scripts.get_revision(parents[0]) if parents else None

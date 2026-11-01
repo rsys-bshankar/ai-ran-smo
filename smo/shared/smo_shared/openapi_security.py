@@ -65,7 +65,8 @@ def _declare_error_responses(schema: dict) -> None:
     """Declares the error body every operation can answer with (RFC 7807 ProblemDetails inside FastAPI's `detail`, a plain string from
     the framework, or the list FastAPI's own validation produces) so the spec describes what the service really sends; found by the
     contract test (tests_integration/test_contract_schemathesis.py). A status an operation already documents is left as it is, except 422,
-    which handlers also use for ProblemDetails: its body is widened to the envelope."""
+    which handlers also use for ProblemDetails: its body is widened to the envelope, unless the operation says its error bodies are its own
+    (`x-smo-error-body`: the ProvMnS router's TS 28.532 errors, `smo_shared/mns/router.py`)."""
     components = schema.setdefault("components", {}).setdefault("schemas", {})
     components[ERROR_ENVELOPE] = {
         "title": ERROR_ENVELOPE, "type": "object", "required": ["detail"],
@@ -90,5 +91,5 @@ def _declare_error_responses(schema: dict) -> None:
             for status in STANDARD_ERROR_STATUSES:
                 if status not in responses:
                     responses[status] = {"description": "Error", "content": body}
-                elif status == "422":
+                elif status == "422" and "x-smo-error-body" not in operation:
                     responses[status] = {"description": responses[status].get("description", "Error"), "content": body}

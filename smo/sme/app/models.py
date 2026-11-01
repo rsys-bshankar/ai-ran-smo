@@ -1,6 +1,6 @@
 """SQLAlchemy tables of SME and the CAPIF event-type sets (`SERVICE_API_EVENTS`, `API_INVOKER_EVENTS`, `EVENT_TYPES`).
 
-What it is: the eight tables behind `app/main.py` (service registry and its authorization policy, provider and invoker registrations, issued tokens, used client
+What it is: the eight tables behind `app/main.py`, and the MnS registry's store `mns_registry` (`app/mns_registry.py`, plan task S1.12) (service registry and its authorization policy, provider and invoker registrations, issued tokens, used client
 assertions, trusted invokers, event subscriptions). `main.py` is the only code that reads or writes them; no other module touches them, and none of these tables
 references another module's. Design record: `sme/README.md` section 2.2 and the `HISTORY.md` entries cited on each class.
 
@@ -17,6 +17,7 @@ from sqlalchemy import ARRAY, Boolean, DateTime, ForeignKey, JSON, String, Uniqu
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from smo_shared.db import Base
+from smo_shared.mns.store import store_model
 
 
 class ServiceProfile(Base):
@@ -234,3 +235,9 @@ SERVICE_API_EVENTS = {"SERVICE_API_AVAILABLE", "SERVICE_API_UNAVAILABLE", "SERVI
 API_INVOKER_EVENTS = {"API_INVOKER_ONBOARDED", "API_INVOKER_OFFBOARDED", "API_INVOKER_UPDATED"}
 # Every event type a subscription may ask for: `subscribe_events` refuses anything outside this set.
 EVENT_TYPES = SERVICE_API_EVENTS | API_INVOKER_EVENTS
+
+
+# The MnS registry's store (plan task S1.12): the ProvMnS store of `smo_shared.mns` under the name `mns_registry` (app/mns_registry.py maps it on the
+# router's own base). A copy of it is put on the shared `Base`, as Echo does for its `moi_store`, so that scripts/check_migration_matches_models.py
+# checks it against the migrated schema and a unit test's `Base.metadata.create_all` makes it.
+MNS_REGISTRY = store_model("mns_registry").__table__.to_metadata(Base.metadata)
