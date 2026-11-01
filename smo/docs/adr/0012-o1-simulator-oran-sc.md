@@ -116,7 +116,7 @@ by the simulator's hostname, the `sourceName` of its PM events.
 | R2 RAN NF OAM makes an element of it | expected to fail | PR-CONV-S8.2 |
 | R3 operator registration and host-key pin | passes | |
 | a) A1 RAN NF OAM's NETCONF client connects (SSH, pinned key) and the simulator serves the 3GPP NRM modules | passes | |
-| a) A2 the same client reads the ManagedElement (GNBDUFunction, NRCellDU) with get-config | passes (the CI run is the proof; see `HISTORY.md` PR-CONV-S0.15) | |
+| a) A2 the same client reads the ManagedElement (GNBDUFunction, NRCellDU) with get-config | passes (`ManagedElement-002` / `GNBDUFunction-001` / `NRCellDU-001`, administrativeState LOCKED) | |
 | a) A3–A5 getMOIAttributes and modifyMOIAttributes on the NRCellDU through RAN NF OAM's ProvMnS, read back over NETCONF | expected to fail | PR-CONV-S3.3 |
 | b) B1 the simulator posts an alarm as `stndDefined` 3GPP-FaultSupervision | expected to fail (the simulator sends none, section 4) | PR-CONV-S3.15 |
 | b) B2 a simulator alarm in RAN NF OAM's alarm list | expected to fail | PR-CONV-S3.15 |

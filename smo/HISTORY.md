@@ -4937,7 +4937,8 @@ Closed from `OPEN_ITEMS.md` (`PR-CONV-S0.15`). The decision and the facts are [A
   V-19). Steps that today's code cannot do are XFAIL ("expected to fail until PR-CONV-S3.xx") and the job stays green; one that starts to pass is XPASS and
   fails the job. **Which of a), b) and c) pass today:**
   - **a) NETCONF: in part.** Passing: RAN NF OAM's NETCONF client (`app.netconf_ssh`) connects over SSH with the pinned key, the simulator serves
-    `_3gpp-common-managed-element`, `_3gpp-nr-nrm-gnbdufunction` and `_3gpp-nr-nrm-nrcelldu`, and get-config returns the ManagedElement (A1, A2).
+    `_3gpp-common-managed-element`, `_3gpp-nr-nrm-gnbdufunction` and `_3gpp-nr-nrm-nrcelldu`, and get-config returns the ManagedElement
+    (`ManagedElement-002` / `GNBDUFunction-001` / `NRCellDU-001`, LOCKED) (A1, A2). First CI run (PR #563): both simulators, every step as listed here.
     Expected to fail until **PR-CONV-S3.3**: getMOIAttributes and modifyMOIAttributes on the NRCellDU through RAN NF OAM's ProvMnS (no facade, no 3GPP
     YANG profile in `yang_payload.PROFILES`) and the read-back of the new value (A3–A5).
   - **b) VES stndDefined alarm: no.** Expected to fail until **PR-CONV-S3.15** (the listener does not map `stndDefined` 3GPP-FaultSupervision). Also found:
