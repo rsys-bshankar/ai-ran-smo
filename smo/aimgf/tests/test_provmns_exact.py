@@ -873,3 +873,130 @@ def test_the_registry_and_the_openapi_from_scratch(caplog, monkeypatch, db_sessi
     assert [(r.getMessage(), r.levelname) for r in projected] == [("aimgf provmns: projected 0 instances into an empty store", "INFO")]
     registered = [r for r in caplog.records if "pending S1.12" in r.msg]
     assert registered[0].getMessage() == f"aimgf provmns: MnS registry registration pending S1.12; would register {service.MNS_INFO}"
+
+
+# ---------------------------------------------------------------------------- third pass
+
+def test_a_producer_built_anew_is_aimgfs():
+    """`build`: the producer's event source, system DN and the checks' module name (the audit's and the metric's label)."""
+    mns = service.build(("ManagedElement",))
+    assert (mns.source, mns.system_dn, mns.checks.module) == ("/smo/aimgf", ROOT_DN, "aimgf")
+
+
+def test_the_middleware_hands_the_hooks_the_request_and_forgets_it():
+    """`RequestContext.dispatch`: the request it serves is `current_request` while the call runs, the call gets that request, and it is gone after."""
+    import asyncio
+    seen = []
+
+    async def call_next(request):
+        seen.append((request, current_request.get()))
+        return "answer"
+
+    request = object()
+    assert asyncio.run(service.RequestContext(app=None).dispatch(request, call_next)) == "answer"
+    assert seen == [(request, request)] and current_request.get() is None
+
+
+def test_document_declares_the_error_body_on_an_app_with_nothing_else():
+    """On an app whose schema has no components yet, `document` adds the error schema and puts exactly the TS 28.623 body on each status of a
+    ProvMnS path; another path is left as it is."""
+    from fastapi import FastAPI
+    app = FastAPI()
+    app.get("/ProvMnS/x")(lambda: {})
+    app.get("/other")(lambda: {})
+    service.document(app)
+    schema = app.openapi()
+    assert schema["components"] == {"schemas": {"ProvMnSErrorResponse": service.PROVMNS_ERROR_SCHEMA}}
+    responses = schema["paths"]["/ProvMnS/x"]["get"]["responses"]
+    body = {"description": "TS 28.623 error", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ProvMnSErrorResponse"}}}}
+    assert {status: responses[status] for status in service.PROVMNS_ERROR_STATUSES} == {status: body for status in service.PROVMNS_ERROR_STATUSES}
+    assert set(schema["paths"]["/other"]["get"]["responses"]) == {"200"}
+
+
+def test_a_start_up_without_a_store_logs_why(db_session_factory, monkeypatch, caplog):
+    """The warning of a start-up that could not project: its words and the exception with it."""
+    with db_session_factory() as db:
+        ManagedObject.__table__.drop(db.connection())
+        db.commit()
+    monkeypatch.setattr("smo_shared.db.SessionLocal", db_session_factory)
+    with caplog.at_level("WARNING", logger="app.provmns.service"):
+        service.start()
+    [record] = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert record.getMessage() == "aimgf provmns: start-up projection not done" and record.exc_info is not None
+
+
+def test_a_notification_id_is_in_ts_28623s_range_and_its_event_is_a_provmns_one(db_session_factory, monkeypatch):
+    """notificationId is 1 .. 2^53 - 1 (the lowest and highest draws), and the event's type is `org.oran.smo.provmns.<notificationType>` from
+    `/smo/aimgf`."""
+    draws = iter([0, 2**53 - 2])
+    monkeypatch.setattr("app.provmns.projection.secrets.randbelow", lambda bound: next(draws) if bound == 2**53 - 1 else 0)
+    with db_session_factory() as db:
+        projection._notify(db, "notifyMOICreation", "A=1", {})
+        projection._notify(db, "notifyMOIDeletion", "A=1", {})
+        db.flush()
+        rows = db.scalars(select(events.SmoEvent).where(events.SmoEvent.subject == "A=1").order_by(events.SmoEvent.seq)).all()
+    assert [r.data["notificationId"] for r in rows] == [1, 2**53 - 1]
+    assert [(r.type, r.source, r.data["notificationType"]) for r in rows] == [
+        ("org.oran.smo.provmns.notifyMOICreation", "/smo/aimgf", "notifyMOICreation"), ("org.oran.smo.provmns.notifyMOIDeletion", "/smo/aimgf", "notifyMOIDeletion")]
+
+
+def test_a_change_notification_names_only_what_changed(db_session_factory):
+    """An attribute whose value stays the same is not in the change notification; one whose value changes is, with both values."""
+    with db_session_factory() as db:
+        projection._write(db, "ManagedElement=Z", "ManagedElement", {"a": 1, "b": 2})
+        projection._write(db, "ManagedElement=Z", "ManagedElement", {"a": 1, "b": 3})
+        db.flush()
+        assert _events(db, "ManagedElement=Z")[-1]["attributeListValueChanges"] == [{"b": 3}, {"b": 2}]
+
+
+def test_a_container_already_there_is_left_and_one_missing_is_made_from_its_row(db_session_factory):
+    """`ensure_container`: an existing container is not written again (its attributes stay as they are); a missing UUID-named one is its row's
+    projection."""
+    with db_session_factory() as db:
+        projection.ensure_container(db, f"{ROOT_DN},MLTrainingFunction=default")
+        db.get(ManagedObject, f"{ROOT_DN},MLTrainingFunction=default").attributes = {"userLabel": "kept"}
+        db.flush()
+        projection.ensure_container(db, f"{ROOT_DN},MLTrainingFunction=default")
+        assert db.get(ManagedObject, f"{ROOT_DN},MLTrainingFunction=default").attributes == {"userLabel": "kept"}
+        f = m.MLTestingFunction(user_label="from its row")
+        db.add(f)
+        db.flush()
+        db.info.pop(projection._PENDING, None)
+        dn = f"{ROOT_DN},MLTestingFunction={f.ml_testing_function_id}"
+        projection.ensure_container(db, dn)
+        assert db.get(ManagedObject, dn).attributes == {"userLabel": "from its row"}
+
+
+def test_a_process_change_and_a_report_answer_with_what_aimgf_made_of_them(client, mlmr, db_session_factory):
+    """suspendProcess answers with the process SUSPENDED (its run's state, projected at once); an inference report naming its model by a short DN
+    answers with the model's full DN."""
+    model = mlmr.add_model()
+    register(db_session_factory, model)
+    request_dn = _provmns_request(client, db_session_factory, "MLTrainingFunction", "MLTrainingRequest", {"mLModelRef": f"M={model}"})
+    with db_session_factory() as db:
+        process_id = db.scalar(select(m.MLTrainingProcess.ml_training_process_id)
+                               .where(m.MLTrainingProcess.training_job_id == uuid.UUID(request_dn.rsplit("=", 1)[1])))
+    process_dn = f"{request_dn.rsplit(',', 1)[0]},MLTrainingProcess={process_id}"
+    assert _patch(client, process_dn, '{"suspendProcess": true}').json()["attributes"]["progressStatus"]["status"] == "SUSPENDED"
+    function_dn = f"{ROOT_DN},AIMLInferenceFunction={uuid.uuid4()}"
+    assert client.put(BASE + function_dn.replace(",", "/"), json={"id": function_dn.rsplit("=", 1)[1], "attributes": {}}).status_code == 201
+    report_dn = f"{function_dn},AIMLInferenceReport={uuid.uuid4()}"
+    answer = client.put(BASE + report_dn.replace(",", "/"), json={"id": report_dn.rsplit("=", 1)[1], "attributes": {"mLModelRefList": [f"M={model}"]}})
+    assert answer.json()["attributes"]["mLModelRefList"] == [f"{ROOT_DN},MLModelRepository=default,MLModel={model}"]
+
+
+def test_a_model_and_its_governance_instance_share_an_id_and_both_stay(db_session_factory, mlmr):
+    """A model and its governance instance are named by the same UUID; projecting one does not take the other for itself (each is looked up in
+    its own class), and a commit that touches both leaves both."""
+    model = mlmr.add_model()
+    register(db_session_factory, model)
+    with db_session_factory() as db:
+        db.add(m.ModelLifecycle(model_id=model, model_lifecycle_state="REGISTERED", runtime_lifecycle_state="NOT_DEPLOYED"))
+        db.commit()
+        from app.registry import models as rm
+        db.get(rm.MLModel, model).description = "changed"
+        db.get(m.ModelLifecycle, model).model_lifecycle_state = "TRAINING"
+        db.commit()
+        model_dn = f"{ROOT_DN},MLModelRepository=default,MLModel={model}"
+        assert db.get(ManagedObject, model_dn) is not None
+        assert db.get(ManagedObject, f"{model_dn},MLModelGovernance={model}").attributes["lifecycleState"] == "TRAINING"

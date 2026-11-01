@@ -19,7 +19,6 @@ from collections.abc import Iterable
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from smo_shared.mns import ClassRegistry, ProvMnS, PROVMNS_VERSION, provmns_router
-from smo_shared.mns.checks import RouterChecks
 
 from ..governance.statemachine import ModelLifecycleState, RuntimeLifecycleState
 from . import projection
@@ -79,7 +78,7 @@ def build(classes: Iterable[str] = CLASSES) -> ProvMnS:
     """AIMgF's ProvMnS: the registry above, the served classes with their hooks, the cross-cutting checks of S1.5 (claim scope, no instance placed,
     no MSAC, audit on); the projection validates against the registry of `mns` below."""
     registry = AimgfRegistry()
-    mns = ProvMnS(source=projection.SOURCE, system_dn=ROOT_DN, registry=registry, classes=classes, checks=RouterChecks(module="aimgf"))
+    mns = ProvMnS(source=projection.SOURCE, system_dn=ROOT_DN, registry=registry, classes=classes)    # its checks: RouterChecks of module "aimgf"
     for name in classes:
         mns.serve(name, HANDLERS[name])
     return mns
@@ -120,7 +119,7 @@ def document(app) -> None:
         schema = previous()
         schema.setdefault("components", {}).setdefault("schemas", {})[PROVMNS_ERROR] = PROVMNS_ERROR_SCHEMA
         body = {"application/json": {"schema": {"$ref": f"#/components/schemas/{PROVMNS_ERROR}"}}}
-        for path, operations in schema.get("paths", {}).items():
+        for path, operations in schema["paths"].items():
             if path.startswith("/ProvMnS/"):
                 for operation in operations.values():
                     for status in PROVMNS_ERROR_STATUSES:

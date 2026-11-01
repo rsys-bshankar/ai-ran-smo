@@ -3,16 +3,18 @@ in the same transaction, so a ProvMnS read sees what the jobs, the REST routes a
 
 AIMgF's tables stay the truth its jobs run on (a training run is a `training_job` row, its progress the `ml_training_process` row the runtime writes
 back, ...); `moi_store` is the ProvMnS face of them, written only here and by the router. One `Projector` per mapped table says which class its rows
-are, where they sit (tree.py), and how their attributes are read: the view the REST route already renders (`{id, attributes}` with the spec's names),
+are, where they sit (tree.py), and how their attributes are read: the attributes the REST route already renders (the spec's names),
 with each reference turned into the DN of the instance it names (TS 28.623 `Dn`), unset values left out, and every attribute that the class's schema
 does not declare or does not accept dropped (the views carry a few of this build's own, `createdAt` and the like). A projector may also name
 dependants: the instances whose attributes are read from its row (an MLTrainingProcess's `progressStatus` from its run, an MLModel's
 `usedByFunctionRefList` from the inference functions).
 
-How it runs, per session (two SQLAlchemy events on every `Session`, a no-op for one that writes no mapped row):
+How it runs, per session (two SQLAlchemy events on every `Session`, listened to when this module is imported; a session that writes no mapped
+row only flushes, as its commit would):
 
-  after_flush    collects the mapped rows the flush wrote or deleted
-  before_commit  flushes, then projects what was collected (upsert or delete the instance, then its dependants), until nothing is left;
+  after_flush    collects the mapped rows the flush wrote or deleted, and the rows that read them
+  before_commit  flushes, then projects what was collected (upsert, move or delete the instance), round after round until nothing is left,
+                 each row at most once per commit;
                  each change publishes its TS 28.532 notification (notifyMOICreation / AttributeValueChanges / Deletion) on the event bus,
                  with `sourceIndicator` RESOURCE_OPERATION: AIMgF changed it, not a management operation on it
 
@@ -48,7 +50,7 @@ from ..inference.nrm import _inference_function_view_for, _inference_report_view
 from ..loading.nrm import _loading_policy_view, _loading_process_view, _loading_request_view
 from ..emulation.nrm import _emulation_function_view
 from .mapping import serving_state_of
-from .tree import DEFAULT_CONTAINERS, DEFAULT_ID, ROOT_CLASS, ROOT_DN, ROOT_ID, child, container, last_id
+from .tree import DEFAULT_ID, ROOT_CLASS, ROOT_DN, ROOT_ID, child, container, last_id
 
 log = logging.getLogger(__name__)
 
@@ -88,14 +90,12 @@ def _repository(row_id) -> str:
     return container("MLModelRepository", row_id)
 
 
-def _model_parent(db: Session, model) -> str:
-    return _repository(model.ml_model_repository_id)
 
 
 def _governance_parent(db: Session, lifecycle) -> str | None:
     """The DN of the lifecycle's model, None when the registry has no such model (a lifecycle can outlive its model)."""
     model = db.get(rm.MLModel, lifecycle.model_id)
-    return None if model is None else child(_model_parent(db, model), "MLModel", model.model_id)
+    return None if model is None else child(_repository(model.ml_model_repository_id), "MLModel", model.model_id)
 
 
 def _training_job_function(db: Session, job_id) -> uuid.UUID | None:
@@ -111,7 +111,7 @@ def _update_request_function(db: Session, request_id) -> uuid.UUID | None:
 def _update_process_function(db: Session, process_id) -> uuid.UUID | None:
     """The function of update process `process_id`: its request's."""
     return db.scalar(select(m.MLUpdateRequest.ml_update_function_id)
-                     .join(m.MLUpdateProcess, m.MLUpdateProcess.ml_update_request_id == m.MLUpdateRequest.ml_update_request_id)
+                     .join(m.MLUpdateProcess)                    # on its request (the one foreign key between them)
                      .where(m.MLUpdateProcess.ml_update_process_id == process_id))
 
 
@@ -131,7 +131,7 @@ def _governance_view(db: Session, lifecycle) -> dict:
     return {"mLModelRef": str(lifecycle.model_id), "lifecycleState": lifecycle.model_lifecycle_state, "runtimeState": lifecycle.runtime_lifecycle_state,
             "servingState": serving_state_of(lifecycle.model_lifecycle_state, lifecycle.runtime_lifecycle_state), "owner": model.owner,
             "decisions": [{"event": d.decision, "decidedBy": d.decided_by, "decidedAt": d.decided_at.isoformat(),
-                           **({"reason": d.rationale} if d.rationale else {})} for d in decisions]}
+                           "reason": d.rationale} for d in decisions]}                 # no rationale: left out with the other unset values
 
 
 def _training_request_adjust(attributes: dict) -> dict:
@@ -148,7 +148,7 @@ def _as_uuids(values) -> list[uuid.UUID]:
     out = []
     for value in values or []:
         try:
-            out.append(value if isinstance(value, uuid.UUID) else uuid.UUID(str(value)))
+            out.append(uuid.UUID(str(value)))
         except ValueError:
             continue
     return out
@@ -157,7 +157,7 @@ def _as_uuids(values) -> list[uuid.UUID]:
 PROJECTORS: tuple[Projector, ...] = (
     Projector("MLModelRepository", rm.MLModelRepository, lambda db, r: ROOT_DN,
               lambda db, r: {}),
-    Projector("MLModel", rm.MLModel, _model_parent, _model_view,
+    Projector("MLModel", rm.MLModel, lambda db, mm: _repository(mm.ml_model_repository_id), _model_view,
               refs={"aIMLInferenceReportRefList": "AIMLInferenceReport", "usedByFunctionRefList": "AIMLInferenceFunction",
                     "sourceTrainedMLModelRef": "MLModel"},
               dependants=lambda db, r: [(m.ModelLifecycle, r.model_id)]),
@@ -283,15 +283,16 @@ def attributes_of(db: Session, registry, projector: Projector, row) -> dict:
         if name in attributes:
             attributes[name] = _ref(db, target, attributes[name])
     attributes = {name: _pruned(value) for name, value in projector.adjust(attributes).items() if value not in (None, [])}   # [] is unset
-    while True:                       # drop what the schema refuses (an undeclared name, a value it does not accept) until it accepts the rest
-        try:
-            registry.validate(projector.moi_class, attributes)
-            return attributes
-        except MnsError as exc:
-            bad = set(exc.bad_attributes or ()) & set(attributes)
-            if not bad:               # a refusal that names none of them (the schema as a whole): stored as read
-                return attributes
-            attributes = {name: value for name, value in attributes.items() if name not in bad}
+    return {name: value for name, value in attributes.items() if _accepted(registry, projector.moi_class, name, value)}
+
+
+def _accepted(registry, class_name: str, name: str, value: Any) -> bool:
+    """Whether the class's schema declares attribute `name` and accepts `value` for it."""
+    try:
+        registry.validate(class_name, {name: value})
+    except MnsError:
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------------- writing moi_store
@@ -329,12 +330,12 @@ def ensure_container(db: Session, dn: str) -> None:
     if dn == ROOT_DN:
         _write(db, ROOT_DN, ROOT_CLASS, {"userLabel": ROOT_ID})
         return
-    ensure_container(db, parent_of(dn) or ROOT_DN)
-    class_name, _, moi_id = dn.split(",")[-1].partition("=")
-    if moi_id == DEFAULT_ID and class_name in DEFAULT_CONTAINERS:
+    ensure_container(db, parent_of(dn))               # every container AIMgF places an instance in is under ROOT
+    class_name, moi_id = dn.split(",")[-1].split("=")
+    if moi_id == DEFAULT_ID:                          # only DEFAULT_CONTAINERS have a `default` instance (tree.py)
         _write(db, dn, class_name, {})
-    elif class_name in BY_CLASS and _as_uuids([moi_id]):
-        project_one(db, BY_CLASS[class_name], _as_uuids([moi_id])[0])
+    else:
+        project_one(db, BY_CLASS[class_name], uuid.UUID(moi_id))
 
 
 def _delete_subtree(db: Session, dn: str) -> list[ManagedObject]:
@@ -391,11 +392,13 @@ def registry():
 def flush_projection(session: Session) -> None:
     """before_commit: flushes, then projects what the flushes collected, round after round (a projection queues what it moved), until nothing is
     left. Does not commit. A session that wrote no mapped row only flushes, which its commit would do anyway."""
+    done: set = set()                 # a row is projected once per commit: what a round moves is queued for the next, and nothing comes back twice
     with session.no_autoflush:
         session.flush()
         while pending := session.info.pop(_PENDING, None):
-            for table, key in pending:
+            for table, key in pending - done:
                 project_one(session, BY_TABLE[table], key)
+            done.update(pending)
             session.flush()
 
 
