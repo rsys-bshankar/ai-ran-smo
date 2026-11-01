@@ -52,7 +52,7 @@ The repository is restructured in place, module by module (D1). Folders stay `sm
 
 The fourteen services after the rewrite: **SME, R1 Termination, TE&IV, RAN NF OAM, DME, MDAF, AIMgF, Onboarding, rApp Management, NFO, FOCOM,
 SO SMOS, SA SMOS, GUI BFF.** The mock O1 adaptor stays a test double (S0.15), not a service; the O-RAN-SC simulator `sim-o1-ofhmp-interfaces`
-replaces ntsim-ng, which O-RAN-SC deprecates in its N release (R16).
+replaces sim-o1-interface, which O-RAN-SC deprecates in its N release (R16); [ADR 0012](0012-o1-simulator-oran-sc.md) records the choice.
 
 ```mermaid
 flowchart TB

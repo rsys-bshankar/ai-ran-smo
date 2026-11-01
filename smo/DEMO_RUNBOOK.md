@@ -1707,6 +1707,33 @@ Things to try afterwards:
 The integration suite covers TS-01..TS-20 the same way:
 `tests_integration/test_traffic_steering_rapp.py`.
 
+## With the O-RAN-SC simulator (optional)
+
+The profile `oran-sim` adds simulated O-DUs (O-RAN-SC sim-o1-ofhmp-interfaces, m-release; [ADR 0012](docs/adr/0012-o1-simulator-oran-sc.md)) next to
+RAN NF OAM. The first start builds the simulator from its pinned source, which takes about ten minutes.
+
+```bash
+cd smo
+export RAN_NF_OAM_VES_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_hex(16))')   # switches RAN NF OAM's VES listener on
+export ORAN_SIM_NETCONF_PASSWORD='netconf!' ORAN_SIM_COUNT=2      # the simulator's built-in NETCONF password, given to RAN NF OAM as the credential `oransim`
+docker compose --profile oran-sim up -d --build oran-sim-du
+```
+
+Each simulator posts a VES `pnfRegistration` to RAN NF OAM at start and, every 60 s, a `stndDefined` `notifyFileReady` for a PM file it serves over
+SFTP. RAN NF OAM accepts both and acts on neither yet (registration is S8.2, file-ready PM is S3.16). Register an element the way an operator does, then
+read it over NETCONF; the CI job "O-RAN-SC simulator" does all of it and prints which steps pass and which are expected to fail until their PR-CONV row:
+
+```bash
+docker compose exec -T --index 1 oran-sim-du cat /var/log/pynts.log > /tmp/oran-sim-1.log    # the simulator's own log: every VES event it posted
+docker run --rm --network smo_default -e RAN_NF_OAM_VES_PASSWORD -e NETCONF_CRED_ORANSIM_PASSWORD="$ORAN_SIM_NETCONF_PASSWORD" \
+  -e PYTHONPATH=/work/smo/ran-nf-oam:/work/smo/shared -v "$PWD/..:/work" -v /tmp:/logs -w /work/smo python:3.11-slim sh -c '
+    pip install -q --require-hashes -r requirements/runtime.txt &&
+    python scripts/oran_sim_check.py --oam-url http://ran-nf-oam:8000 --sim-log /logs/oran-sim-1.log'
+```
+
+The check registers the simulator as element `<its hostname>` (`GET /ran-nf-oam/o1-adaptor-endpoints` lists it). Stop with
+`docker compose --profile oran-sim down`.
+
 ## Known rough edges for a live walkthrough
 
 - `smo/docs/call-flows/01-rapp-onboarding-to-deployment.md`'s diagram

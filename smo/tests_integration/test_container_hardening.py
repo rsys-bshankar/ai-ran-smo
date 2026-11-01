@@ -9,6 +9,12 @@ SMO_ROOT = Path(__file__).resolve().parent.parent
 DOCKERFILE = (SMO_ROOT / "Dockerfile").read_text()
 
 
+# The one service built here from someone else's source: the O-RAN-SC simulator of the profile `oran-sim` (ADR 0012 section 5). Its daemons (sshd, vsftpd,
+# netopeer2) run as root, so after cap_drop ALL it gets back exactly these capabilities, and its root filesystem holds sysrepo's datastores and the PM files.
+# It drops everything else and sets no-new-privileges like every service; nothing else may have an exception.
+THIRD_PARTY_BUILDS = {"oran-sim-du": ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETUID", "SETGID", "SYS_CHROOT", "AUDIT_WRITE", "NET_BIND_SERVICE", "NET_RAW"]}
+
+
 def _compose() -> dict:
     text = (SMO_ROOT / "docker-compose.yml").read_text()
     return yaml.safe_load(text)["services"]
@@ -53,7 +59,7 @@ def test_every_service_we_build_drops_every_capability_and_cannot_gain_privilege
 
 def test_every_service_we_build_has_a_read_only_root_filesystem_with_memory_scratch_space():
     """PR-SEC-13.2: nothing a service writes may land in the image layer. /tmp is a tmpfs; the writable places that must survive are volumes."""
-    built = {name: svc for name, svc in _compose().items() if "build" in svc or name == "edge-tls"}
+    built = {name: svc for name, svc in _compose().items() if ("build" in svc or name == "edge-tls") and name not in THIRD_PARTY_BUILDS}
     for name, svc in built.items():
         assert svc.get("read_only") is True, f"{name} can write to its root filesystem"
         assert svc.get("tmpfs") == ["/tmp"], f"{name} has no scratch space"
@@ -64,12 +70,13 @@ def test_every_service_we_build_has_a_read_only_root_filesystem_with_memory_scra
 
 
 def test_no_service_asks_for_more_privilege_than_the_default():
-    """No service is privileged, shares the host network, PID or IPC namespace, mounts the Docker socket or adds a capability."""
+    """No service is privileged, shares the host network, PID or IPC namespace, mounts the Docker socket or adds a capability; the O-RAN-SC simulator adds exactly
+    the capabilities THIRD_PARTY_BUILDS lists for it."""
     for name, svc in _compose().items():
         assert not svc.get("privileged"), name
         assert svc.get("network_mode") != "host" and svc.get("pid") != "host" and svc.get("ipc") != "host", name
         assert not any("docker.sock" in str(v) for v in svc.get("volumes", [])), name
-        assert not svc.get("cap_add"), name
+        assert svc.get("cap_add", []) == THIRD_PARTY_BUILDS.get(name, []), f"{name} adds capabilities {svc.get('cap_add')}"
 
 
 def test_postgres_is_left_with_its_defaults_because_its_entrypoint_drops_privileges_itself():

@@ -1,0 +1,73 @@
+name: O-RAN-SC simulator image
+
+# Builds the simulated O-DU of the O-RAN-SC O1 simulator (sim-o1-ofhmp-interfaces, "PyNTS") from its pinned m-release source and publishes it to GHCR as
+# ghcr.io/<owner>/<repo>/oran-sim-du:<tag>, the image the chart's optional `oranSim` component runs (smo/docs/adr/0012-o1-simulator-oran-sc.md, plan task S0.15).
+# Upstream publishes no container image and has no release tag (its Makefile builds the images on the developer's machine), so there is nothing to mirror:
+# this is the "build it from the tagged source in a mirror job" of S0.15. The source commit is the one docker-compose.yml names; the Dockerfile is
+# smo/oran-sim/Dockerfile, whose Ubuntu base comes from the GHCR mirror like every other pinned image. CI's job "O-RAN-SC simulator" builds the same
+# Dockerfile itself (docker compose --build) and does not need this image.
+# It runs by hand and on a push to main that changes the Dockerfile, its data or this file; never on a pull request, so a fork's change cannot reach the
+# token that writes packages. The package is private until the repository owner makes it public once in the GitHub UI. The job summary gives the digest of
+# what it pushed; the build is not reproducible bit for bit (apt, pip and the git tags upstream builds from are not pinned: ADR 0012 section 3), so each
+# run can push another digest under the same tag.
+on:
+  push:
+    branches: [main]
+    paths:
+      - smo/oran-sim/**
+      - .github/workflows/oran-sim-image.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oran-sim-image
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and publish the simulated O-DU image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write      # push ghcr.io/<owner>/<repo>/oran-sim-du with GITHUB_TOKEN
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # PR-OPS-12.3: the Ubuntu base comes from the GHCR mirror when it answers (smo/docs/MIRROR.md)
+      - name: Use the GHCR image mirror
+        working-directory: smo
+        env:
+          SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
+        run: python3 scripts/ci_mirror.py setup
+
+      - name: Log in to GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_ACTOR: ${{ github.actor }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
+
+      # The source and the tag are read from docker-compose.yml, so the image and the compose profile cannot drift apart
+      - name: Build and push
+        working-directory: smo
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          source=$(docker compose --profile oran-sim config --format json | jq -r '.services["oran-sim-du"].build.additional_contexts.pynts')
+          tag=$(docker compose --profile oran-sim config --format json | jq -r '.services["oran-sim-du"].image' | sed 's/.*://')
+          image="ghcr.io/${REPOSITORY,,}/oran-sim-du:$tag"
+          mapfile -t mirror < <(python3 scripts/ci_mirror.py build-contexts oran-sim)
+          docker build --build-context "pynts=$source" "${mirror[@]}" -t "$image" oran-sim
+          docker push "$image"
+          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$image")
+          {
+            echo "### Simulated O-DU image"
+            echo
+            echo "| Source | Image | Digest |"
+            echo "|---|---|---|"
+            echo "| \`$source\` | \`$image\` | \`${digest#*@}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"

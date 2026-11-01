@@ -1,0 +1,101 @@
+{{- /* The O-RAN-SC O1 simulator (plan task S0.15, ADR 0012), in step with docker-compose.yml's profile `oran-sim`: values.yaml `oranSim`. Off by default.
+       A headless Service gives each pod of the StatefulSet a stable name; the pod name is the simulator's hostname, the sourceName of its VES events. */}}
+{{- if .Values.oranSim.enabled }}
+{{- $ves := .Values.ranNfOam.vesPasswordSecretRef }}
+{{- if not $ves.name }}
+{{- fail "oranSim.enabled needs ranNfOam.vesPasswordSecretRef: the simulators post VES to RAN NF OAM's listener, which exists only with a password" }}
+{{- end }}
+{{- $oam := include "smo.module" (dict "root" $ "name" "ran-nf-oam") | fromYaml }}
+{{- $labels := include "smo.labels" (dict "root" .) }}
+---
+# The simulators' NETCONF and SFTP password: the image's built-in, public one (upstream's default), given to RAN NF OAM as the credential `oransim`
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Release.Name }}-oran-sim
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/name: oran-sim-du
+type: Opaque
+stringData:
+  netconf-password: "netconf!"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oran-sim-du
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/name: oran-sim-du
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/name: oran-sim-du
+  ports:
+    - { name: netconf-ssh, port: 830, targetPort: 830 }
+    - { name: netconf-tls, port: 6513, targetPort: 6513 }
+    - { name: sftp, port: 22, targetPort: 22 }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: oran-sim-du
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/name: oran-sim-du
+spec:
+  serviceName: oran-sim-du
+  replicas: {{ .Values.oranSim.count }}
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/name: oran-sim-du
+  template:
+    metadata:
+      labels:
+        {{- include "smo.podLabels" (dict "root" $) | nindent 8 }}
+        app.kubernetes.io/name: oran-sim-du
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: oran-sim-du
+          image: {{ printf "%s/%s:%s" .Values.image.registry .Values.oranSim.image .Values.oranSim.tag | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # root daemons (sshd, vsftpd, netopeer2, supervisord), with only the capabilities they need: the list and the reasons are in docker-compose.yml
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false        # sysrepo's datastores under /etc/sysrepo and the PM files in /ftp
+            capabilities:
+              drop: [ALL]
+              add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID, SYS_CHROOT, AUDIT_WRITE, NET_BIND_SERVICE, NET_RAW]
+          env:
+            - { name: VES_URL, value: "http://ran-nf-oam:{{ $oam.port }}/ves/eventListener/v7" }
+            - { name: VES_USERNAME, value: {{ (get $oam.env "RAN_NF_OAM_VES_USERNAME") | default "ves" | quote }} }
+            - name: VES_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ $ves.name | quote }}, key: {{ $ves.key | default "ves-password" | quote }} } }
+            - { name: NETCONF_USERNAME, value: netconf }
+            - name: NETCONF_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ printf "%s-oran-sim" .Release.Name | quote }}, key: netconf-password } }
+            - { name: SDNR_RESTCONF_URL, value: "" }
+            - { name: ENDPOINT_COUNT, value: "1" }
+          ports:
+            - { name: netconf-ssh, containerPort: 830 }
+            - { name: netconf-tls, containerPort: 6513 }
+            - { name: sftp, containerPort: 22 }
+          readinessProbe:
+            tcpSocket: { port: 830 }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.oranSim.resources | nindent 12 }}
+{{- end }}

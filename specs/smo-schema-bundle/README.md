@@ -121,7 +121,7 @@ All pass `pyang --strict` (pyang 2.7.1).
 | (none) | No `MTEF`, `mltf` or `mtef` name anywhere (the bundle had none in its files; the gate keeps it so) | MTEF is a retired name | R15 |
 | `openapi/modules/mdaf.yaml` | TS 28.561 v20.0.0 `NDTFunction`, `NDTJob`, `NDTReport` added (`$ref`s to `TS28561_NdtNrm.yaml`) | The twin what-if that gates NES and MRO actuation (call flows 35, 36); plan task S7.11 places the twin in RAN Analytics, now MDAF | D18, G20, S0.9 |
 | `openapi/modules/nfo.yaml` | Added: probes only, O2dms and R1GAP v14 section 5.5.3 in `x-smo-pending` | Call flow 34 places the rApp through NFO; neither API is in `specs/` | S0.9 |
-| (none) | No `ntsim` (ntsim-ng) anywhere; the bundle names no simulator, and the gate keeps it so (the move to sim-o1-ofhmp-interfaces is S0.15's) | The named simulator is being retired | R16 |
+| (none) | The retired simulator's name (the regular expression in `scripts/check_contract_bundle.py`'s `RETIRED`) nowhere; the bundle names no simulator, and the gate keeps it so (the simulator is sim-o1-ofhmp-interfaces, S0.15, ADR 0012) | The named simulator is being retired | R16 |
 
 ## The gate (CI job "Contracts")
 

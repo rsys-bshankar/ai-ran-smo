@@ -29,7 +29,7 @@ It is a test and demo double, not an SMO module, and does just enough NETCONF-sh
 | 3GPP TS 28.541 (default values only) | Per-IOC default attribute values (both protocols) for a handful of IOCs (see 2.2); `energySavingState` follows `energySavingControl` (CESManagementFunction) | No NRM modelling or value-range checking |
 | O1 vendor capability declaration (internal, [RAN NF OAM](../ran-nf-oam/README.md)) | `GET /capabilities` returns `{vendorName, supportedServices, supportedVendorModes}` | n/a |
 
-The real O-RAN-SC `sim-o1-interface` (`ntsim-ng`) is a YANG-validated NETCONF / SSH network simulator and is out of proportion with this single-stack build; only its role is substituted.
+A real YANG-validated NETCONF element is the O-RAN-SC simulator `sim-o1-ofhmp-interfaces` (the compose profile `oran-sim` and the chart's `oranSim`, [ADR 0012](../docs/adr/0012-o1-simulator-oran-sc.md)), run in the CI job "O-RAN-SC simulator"; it is out of proportion with the unit and in-process mesh tests, so this double stays for them.
 
 ### 1.3 Position in the platform
 

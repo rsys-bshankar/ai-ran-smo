@@ -1415,13 +1415,12 @@ real detail, and sets the task's status in the live plan to Done the same day (t
 
 Stage 0 ends at milestone M0 (week 2): decisions answered, three ADRs merged, the schema bundle corrected and complete, the contract gate required in CI, and the four sample use cases realised on paper.
 
-Done, in `HISTORY.md`: `PR-CONV-S0.1` to `PR-CONV-S0.12`, `PR-CONV-S0.16`, `PR-CONV-S0.17`.
+Done, in `HISTORY.md`: `PR-CONV-S0.1` to `PR-CONV-S0.12`, `PR-CONV-S0.15` to `PR-CONV-S0.17`.
 
 | ID | Task | Stage | Needs | Done when |
 |---|---|---|---|---|
 | PR-CONV-S0.13 | Integration spike: O-RAN-SC smo-teiv behind a 3GPP MnS and WG10 TE&IV R1 face (D19) | 0 | S0.1 | Written result: load, query latency and change events measured; the gap list turned into Stage 3 tasks |
 | PR-CONV-S0.14 | Obtain the WG10 Application Packaging and Onboarding v1.00 texts; check S4.1 against them | 0 | – | Texts on file; S4.1 marked normative or kept provisional with the differences listed |
-| PR-CONV-S0.15 | Choose the O1 simulator: O-RAN-SC sim-o1-ofhmp-interfaces in place of ntsim-ng | 0 | S0.8 | Simulator runs in compose and the chart; NETCONF, VES stndDefined and file-ready PM reach the SMO |
 
 ### Stage 1 — Shared MnS foundation
 
@@ -1473,7 +1472,7 @@ Stage 3 ends at milestone M3 (week 10): against ten simulated nodes (S0.15), a P
 |---|---|---|---|---|
 | PR-CONV-S3.1 | New `teiv/` module owning `common_teiv_nrm` (moi_store, topology edges, query API) | 3 | S1.6, S1.9 | RAN NF OAM's `/topology` and `/topology/graph` answers reproduced byte for byte by `teiv/` (golden tests) |
 | PR-CONV-S3.2 | Cell lock table, written only by SO SMOS | 3 | S3.1 | Role grants prove a second writer is refused |
-| PR-CONV-S3.3 | RAN NF OAM ProvMnS NRM facade on today's config jobs | 3 | S1.6 | Bundle examples applied to netconf-lab and to the O-RAN-SC simulator chosen in S0.15 |
+| PR-CONV-S3.3 | RAN NF OAM ProvMnS NRM facade on today's config jobs | 3 | S1.6 | Bundle examples applied to netconf-lab and to the O-RAN-SC simulator chosen in S0.15; the CI job "O-RAN-SC simulator" steps A3–A5 (getMOIAttributes, modifyMOIAttributes on the NRCellDU, read-back) pass and lose their expected-failure marking |
 | PR-CONV-S3.4 | RAN NF OAM writes NRM into TE&IV and stops serving topology | 3 | S3.1 | No topology code left in `ran-nf-oam/app/` and no caller of its old topology routes |
 | PR-CONV-S3.5 | Declarative YANG dialect mapper keyed by vendor and software version | 3 | S3.3 | Part 2 §3's two vendor examples pass from one canonical request |
 | PR-CONV-S3.6 | Persist NETCONF sessions and an O1 transaction audit log | 3 | S3.3 | A restarted pod resumes its sessions from the table |
@@ -1485,8 +1484,8 @@ Stage 3 ends at milestone M3 (week 10): against ten simulated nodes (S0.15), a P
 | PR-CONV-S3.12 | Freeze DME O1 action mediation (no new caller) | 3 | S0.8 | Guard test fails on a new caller of `/dme/actions` |
 | PR-CONV-S3.13 | Simulator lane: ten simulated O-DU/O-CU nodes in CI | 3 | S1.10 | M3 scenario runs in CI, not required for the first 20 runs |
 | PR-CONV-S3.14 | TS 28.541 SON functions in RAN NF OAM (G3, G4): CES, DES, DMRO, CCO and DLBO functions all writable; NRFreqRelation, CommonBeamformingFunction and NRSectorCarrier added; DMRO bounds and minimum interval enforced on write (amended by the S0.10 sign-off of 1 November 2026; the contract half is in `specs/smo-schema-bundle/openapi/modules/ran-nf-oam.yaml`, the code is open) | 3 | S3.3 | An out-of-bounds MRO write is refused; energySavingState changes are notified |
-| PR-CONV-S3.15 | Fault supervision per TS 28.111 (G9) | 3 | S1.13, S0.15 | Simulator alarms raised, acknowledged, cleared and rebuilt after a restart |
-| PR-CONV-S3.16 | TS 28.622 PerfMetricJob, ThresholdMonitor, TraceJob; file pull, streaming PM, MDT and RLF traces (G10) | 3 | S1.13, S0.15 | A job created over ProvMnS yields files and a stream from the simulator; a threshold crossing notifies |
+| PR-CONV-S3.15 | Fault supervision per TS 28.111 (G9) | 3 | S1.13, S0.15 | Simulator alarms raised, acknowledged, cleared and rebuilt after a restart; the CI job "O-RAN-SC simulator" steps B1 and B2 (a VES `stndDefined` alarm, in the alarm list) pass and lose their expected-failure marking. The m-release simulator sends no VES alarm (ADR 0012 section 4): this row also decides the alarm source |
+| PR-CONV-S3.16 | TS 28.622 PerfMetricJob, ThresholdMonitor, TraceJob; file pull, streaming PM, MDT and RLF traces (G10) | 3 | S1.13, S0.15 | A job created over ProvMnS yields files and a stream from the simulator; a threshold crossing notifies; the CI job "O-RAN-SC simulator" steps C3 and C4 (the simulator's file fetched over SFTP, its counters held) pass and lose their expected-failure marking |
 | PR-CONV-S3.17 | DME types per R1TD v05 as the rApp PM path (G11) | 3 | S3.16 | Two rApps consuming the same type share one collection job |
 | PR-CONV-S3.18 | Energy-efficiency KPIs per TS 28.554 §6.7.1 (G5) | 3 | S3.16 | KPIs computed from simulator counters match a hand calculation |
 
@@ -1576,7 +1575,7 @@ Stage 8 ends at milestone M8, release 1.0.0 (week 27): the Part 2 production cap
 | ID | Task | Stage | Needs | Done when |
 |---|---|---|---|---|
 | PR-CONV-S8.1 | O-RAN WG11 PKI: CMPv2 / EST enrolment, rotation, NETCONF over TLS | 8 | S3.6 | Certificate rotated on the simulator with no dropped session |
-| PR-CONV-S8.2 | Zero-touch provisioning in 8 steps (extends MGT-14) | 8 | S5.3, S3.4 | A fresh simulated node goes from power-on to UNLOCKED with no operator step |
+| PR-CONV-S8.2 | Zero-touch provisioning in 8 steps (extends MGT-14) | 8 | S5.3, S3.4 | A fresh simulated node goes from power-on to UNLOCKED with no operator step; the CI job "O-RAN-SC simulator" step R2 (an element made from the simulator's `pnfRegistration`) passes and loses its expected-failure marking |
 | PR-CONV-S8.3 | Self-observability: golden SLO metrics, alerts, runbooks, `traceparent` across Kafka | 8 | S5.8, S1.10 | One trace spans GUI → SO SMOS → rApp → RAN NF OAM → SA SMOS |
 | PR-CONV-S8.4 | Packaging: application and infrastructure charts, permissive profile, canary hook | 8 | D10, D12 | `helm upgrade --atomic` rolls back on a failed canary in the kind lane |
 | PR-CONV-S8.5 | Licence gate and SBOM file per image (extends SEC-12.1) | 8 | S1.11 | Gate required; third-party notices file generated |

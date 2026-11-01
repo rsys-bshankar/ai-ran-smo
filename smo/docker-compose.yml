@@ -342,6 +342,12 @@ services:
       R1_GATEWAY_URL: http://r1-termination:8000
       SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
       SAFEGUARD_REFUSAL_RETENTION_DAYS: ${SAFEGUARD_REFUSAL_RETENTION_DAYS:-0}
+      # SB-7: the VES listener (POST /ves/eventListener/v7) is on only with a password; empty (the default) it is off. The `oran-sim` profile's
+      # simulators post to it with this password (ADR 0012). On Kubernetes the chart takes it from a Secret (ranNfOam.vesPasswordSecretRef).
+      RAN_NF_OAM_VES_PASSWORD: ${RAN_NF_OAM_VES_PASSWORD:-}
+      # PR-SB-2: the NETCONF password of the endpoints registered with credentialRef `oransim`, the `oran-sim` profile's simulated O-DUs (their built-in
+      # `netconf!`); empty (the default), RAN NF OAM has no such credential
+      NETCONF_CRED_ORANSIM_PASSWORD: ${ORAN_SIM_NETCONF_PASSWORD:-}
 
   # PR-MSG-4: the same image, run as a worker. It does RAN NF OAM's periodic work (the wave advance of staged CM jobs, KPI schedules,
   # the refusal purge; ran-nf-oam/app/tasks.py), so no request process ever runs a timer. Run as many as you like: a task runs at most
@@ -832,6 +838,43 @@ services:
     volumes:
       - ./netconf-lab:/lab:ro
       - ./netconf-lab/pki:/pki                                  # the lab's throwaway CA and client certificate, written at start (git-ignored)
+
+  # ---------------------------------------------------------------- O-RAN-SC O1 simulator (profile `oran-sim`, plan task S0.15, ADR 0012)
+  # Simulated O-DUs (O-RAN-SC sim-o1-ofhmp-interfaces, "PyNTS", m-release): NETCONF on 830 with the 3GPP NRM, VES to RAN NF OAM's listener
+  # (pnfRegistration at start, a stndDefined notifyFileReady per PM file) and the PM files over SFTP (22; its FTP listens on IPv6 only, which this
+  # network does not have). Not part of the stack:
+  #   RAN_NF_OAM_VES_PASSWORD=<pw> ORAN_SIM_NETCONF_PASSWORD='netconf!' docker compose --profile oran-sim up -d --build
+  # RAN_NF_OAM_VES_PASSWORD switches RAN NF OAM's VES listener on, and the simulators post with it; ORAN_SIM_NETCONF_PASSWORD gives RAN NF OAM the simulators'
+  # NETCONF password as the credential `oransim` (it must be the image's built-in `netconf!`).
+  # ORAN_SIM_COUNT simulated O-DUs (default 2), each with its own address and hostname (the VES sourceName). Upstream publishes no image, so it
+  # is built here from the pinned m-release commit (oran-sim/Dockerfile; ORAN_SIM_SOURCE points elsewhere, a local clone for example). The
+  # netconf-lab profile and the mock O1 adaptor stay for the fast tests. Hardening: no-new-privileges and cap_drop ALL like every other
+  # service, then only the capabilities its root daemons need (ADR 0012 section 5): sshd and vsftpd change user and chroot (SETUID, SETGID,
+  # SYS_CHROOT, AUDIT_WRITE), bind ports below 1024 (NET_BIND_SERVICE: 22, 830, and 21 for FTP) and own the files they write (CHOWN, DAC_OVERRIDE, FOWNER);
+  # the simulator sends a DHCPDISCOVER on start-up and stops if it cannot (NET_RAW). Not privileged, no NET_ADMIN (upstream asks for both).
+  # The root filesystem is not read-only: sysrepo keeps its datastores under /etc/sysrepo and /dev/shm, and the PM files go to /ftp. No port on the host.
+  oran-sim-du:
+    profiles: ["oran-sim"]
+    build:
+      context: ./oran-sim
+      additional_contexts:
+        pynts: ${ORAN_SIM_SOURCE:-https://github.com/o-ran-sc/sim-o1-ofhmp-interfaces.git#12124176a491a873eb41423200c7f7add9ea99d4}
+    image: local/smo-oran-sim-du:m-release-1212417
+    deploy:
+      replicas: ${ORAN_SIM_COUNT:-2}
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID, SYS_CHROOT, AUDIT_WRITE, NET_BIND_SERVICE, NET_RAW]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      VES_URL: http://ran-nf-oam:8000/ves/eventListener/v7      # plain HTTP on the compose network; the simulator does not check a certificate either way
+      VES_USERNAME: ${RAN_NF_OAM_VES_USERNAME:-ves}
+      VES_PASSWORD: ${RAN_NF_OAM_VES_PASSWORD:-}
+      NETCONF_USERNAME: netconf
+      NETCONF_PASSWORD: "netconf!"          # the image's built-in, public password (upstream's): its NETCONF user and its SFTP user both have it (oran-sim/Dockerfile)
+      SDNR_RESTCONF_URL: ""                                       # no OpenDaylight here: nothing is sent to an SDN controller
+      ENDPOINT_COUNT: "1"
+    depends_on:
+      ran-nf-oam: { condition: service_started }
 
   # `docker compose --profile tls up -d` adds an HTTPS door in front of the GUI (:3443) and R1 Termination (:8443).
   # Run scripts/make_dev_certs.sh first. The default stack does not start it and needs no certificate.
