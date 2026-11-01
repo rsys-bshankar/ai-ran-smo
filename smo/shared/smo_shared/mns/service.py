@@ -118,7 +118,7 @@ class ProvMnS:
         """Keeps the event `source` (`/smo/<module>`), the `systemDN` of the notifications, the registry (the shared default when not given), the served
         classes and the cross-cutting checks (checks.py; by default: claim scope with no placement, no MSAC, audit on, the module named after `source`)."""
         self.source = source
-        self.checks = checks if checks is not None else RouterChecks(module=source.rsplit("/", 1)[-1])
+        self.checks = checks if checks is not None else RouterChecks(module=source.rpartition("/")[2])
         self.system_dn = system_dn
         self.registry = registry if registry is not None else default_registry()
         self.api_root = api_root.rstrip("/")

@@ -263,7 +263,7 @@ def test_paging_through_http(backend):
     everything = _flat(client, "SubNetwork=A", **params)
     assert len(everything) == 8
     pages, query = [], {**params, "limit": "3"}
-    while True:
+    for _ in range(10):                                   # a bounded walk: a next link that never ends fails here, not by hanging
         response = client.get(BASE + "SubNetwork=A", params=query, headers=FLAT)
         pages.append([item["objectInstance"] for item in response.json()])
         link = response.headers.get("link")

@@ -5072,6 +5072,88 @@ Closed from `OPEN_ITEMS.md` (`PR-CONV-S1.4`). `shared/smo_shared/mns/scope.py` a
   shared registry is already built, so the registry's own tests build fresh ones. Not mutated: `mns/store.py` (DDL, held on Postgres by
   `test_mns_store.py`) and `mns/lifecycle.py` (no-op hooks).
 
+
+### PR-CONV-S1.5 — the cross-cutting checks inside the router
+
+Closed from `OPEN_ITEMS.md` (`PR-CONV-S1.5`). `shared/smo_shared/mns/checks.py`, `smo_shared/msac.py`, the router and the service; tests
+`shared/tests/test_mns_checks.py`, `test_msac_and_axes.py`, `test_traceparent_carry.py`, and one per check in `echo/tests/test_echo.py`.
+
+- **One order, each step an object.** `RouterChecks(module, scope=ScopeStep(placement, authorizer), msac=MsacStep(provider), audit=True)` is passed to
+  `ProvMnS(checks=...)`. Every operation: (1) caller and scope, (2) MSAC, (3) `Idempotency-Key` (createMOI), (4) the audit row, (5) `traceparent`,
+  (6) the metric. Steps 1 and 2 run before anything else of the request, so a refusal says nothing about the class, the body or the version.
+- **Caller.** `Caller.from_headers` reads only what R1 Termination vouches for (`X-R1-Role`, `X-R1-Invoker-Id`, `X-R1-On-Behalf-Of`, `X-R1-Acting-User`
+  from an internal caller, `X-R1-Scope` through `scope.scope_of`, so the on-behalf and console-user claims narrow as everywhere else). Authentication
+  stays at the gateway (ADR 0005 section 1).
+- **Scope (ADR 0005 with D15).** `Placement` says where a DN is (`Target`: region, tenant, site cluster, the SubNetwork ids on the DN);
+  `PrefixPlacement` does it from DN-prefix rules (longest prefix wins). `Authorizer.permits(caller, operation, target)` decides; `ClaimAuthorizer` applies
+  `scope.permits`. A read outside reach is 404 `MOI_NOT_FOUND` (as for an absent DN); a write 403 `SCOPE_DENIED`; the instances a scoped read reaches
+  below its base are filtered row by row (the read then takes no SQL `LIMIT` shortcut); a delete whose subtree holds an instance outside reach is refused
+  whole. `smo_shared/scope.py` gained the axes `siteClusters` and `subNetworks` (ADR 0005 section 12): `subNetworks` is satisfied by any SubNetwork on
+  the DN, and `filter_statement` / `denied_condition` let no row through for a restricted axis the module keeps no column for.
+- **How S1.14 replaces the decision.** It writes an `AccessRuleAuthorizer` with the same `permits` method, reading TS 28.319 Identity, Role and AccessRule
+  as ProvMnS classes, and a module passes it in `ScopeStep(authorizer=...)`; the router, the service and the other steps do not change (`shared/README.md`).
+- **MSAC.** RAN NF OAM's AccessRule decision moved into `smo_shared/msac.py` (`Rule`, `selector_supported`, `selects`, `decide`: a DENY among the
+  matching rules refuses, otherwise one ALLOW is needed) and RAN NF OAM now calls it, so there is one implementation. The router's `MsacStep` asks a
+  provider for the caller's rules (None: not managed) and maps createMOI / getMOIAttributes / modifyMOIAttributes / deleteMOI to create / read / update /
+  delete. A write is 403 `MSAC_ACCESS_DENIED`, a read 404.
+- **Idempotency and audit are the existing code.** createMOI runs under `idempotency.run_idempotent` (a ProblemDetails refusal is turned into the
+  TS 28.532 body); modifyMOIAttributes takes no key, because no route of the platform applies one to a modify and a PATCH has `If-Match`. Each committed
+  write calls `audit.record` in its own transaction (actor, method, `/ProvMnS/<DN path>`, status, correlation id, operation and DN).
+- **traceparent (revision 0066).** `smo_event.traceparent` and `notification_outbox.traceparent`; the envelope's CloudEvents `traceparent`;
+  `tracing.current_traceparent()` and `trace_scope()`; the outbox sends each row under the trace it was written in, and every webhook call sends
+  `tracing.inject_headers()` with the correlation id. The router makes the request's header the current trace when no middleware did.
+- **Metric.** `smo_provmns_http_duration_seconds{module, class, operation, outcome}`: `class` is the URI's last class when served, else `other`, so a caller
+  cannot grow the series; `outcome` is `2xx` ... `5xx`.
+- **Found on the way.** `events._has_table` cached its answer by `id(engine)`; an id is reused once an engine is freed, so a test could be told a new SQLite
+  database had `smo_event` when it did not (rApp Management's suite failed one run in three, on main as well). It is now a `WeakKeyDictionary` on the engine.
+
+### PR-CONV-S1.3 — the Component-C dictionary
+
+Closed from `OPEN_ITEMS.md` (`PR-CONV-S1.3`). `shared/smo_shared/mns/dictionary/`; tests `shared/tests/test_mns_dictionary.py` and Echo's
+`test_settings.py`.
+
+- **TS 28.111, from the vendored file.** Every list is an enum of `specs/5G_APIs/TS28111_FaultNrm.yaml` read through the class registry's loader:
+  11 alarm (event) types, 6 perceived severities, **206** probable causes (Annex B), 3 trend indications, 2 ack states, 8 alarm notifications, the 30
+  members of AlarmRecord. `is_probable_cause` accepts any string or integer, as TS 28.111 does (vendor causes).
+- **TS 28.552 and TS 28.554, as data.** They exist only as specification text, so `ts28552.py` holds **39** counters (DRB 8, RRU 6, PEE 10, MM 9 for
+  handovers, RRC 6), each with its clause, unit and measured class, and `ts28554.py` **4** KPIs with formulas: §6.7.1 `EE.DataVolume` (bit/J, the PDCP
+  SDU volume in Mbit times 10^6 over `PEE.Energy` in kWh times 3.6·10^6), §6.2.2 DRB accessibility, §6.5.1 inter-gNB handover success rate, §6.3.1 DL UE
+  throughput. A golden test holds both lists, so a change is a reviewed diff.
+- **Lookup.** `counter(name)`, `counters(family)`, `kpi(name)`, `inputs(formula)`, `evaluate(kpi_or_formula, values)`: a restricted evaluator (Python's
+  `ast`, only `+ - * /`, unary signs, numbers and counter names; anything else a ValueError before evaluation).
+- **Not done, carried as `PR-CONV-S1.3a`:** the clauses and formulas were typed by hand and not checked against the Rel-19 text (not in `specs/`, and
+  the 3GPP archive was not reachable from where this was built); §6.7.5 / §6.7.6 are not in; RAN NF OAM and DME do not use it yet (the row's "done when").
+
+### PR-CONV-S1.6 — Echo, the reference ProvMnS module
+
+Closed from `OPEN_ITEMS.md` (`PR-CONV-S1.6`). `echo/` (`echo/README.md`, `echo/docs/lifecycle.md`).
+
+- **What it serves, and why.** TS 28.623 SubNetwork and ManagedElement through `provmns_router`, with no class, route or hook of its own: the generic
+  classes every NRM hangs from, with real containment (a ManagedElement under a SubNetwork or at the top, not under a ManagedElement) and the SubNetwork
+  the D15 axis reads. Two settings, read per request and failing closed: `ECHO_PLACEMENT` and `ECHO_MSAC_RULES`.
+- **Schema.** Revision `0065` makes schema `echo` and calls `create_moi_store(op, "echo")`; `migrations/db_roles.json` gives role `smo_echo` the schema
+  and the shared tables it writes, and `table_owners.json` lists `moi_store` under Echo only (D6). The traceparent columns are `0066`, after it, so the
+  migration lock tests hold a table the head revision alters (`smo_event`); main's AIMgF revision `0064` landed first and these were rebased onto it.
+- **Image.** The one Dockerfile gained a `specs` stage (`FROM scratch`) copied to `/srv/specs/5G_APIs`; compose, `release-images.yml`, the kind lanes and
+  `ci_mirror.py` pass `--build-context specs=../specs/5G_APIs`. Measured on the Echo image: 460,706,567 → 473,890,770 bytes, **+13.2 MB (+2.9 %)**; the layer
+  is 12.2 MB in 544 files. Every module image carries it (one Dockerfile; every module mounts the router from Stage 1 on).
+- **Deployment.** Compose profile `echo`, chart `modules.echo.enabled: false`: a reference and test module with no operator function, whose write API
+  nothing needs and which, once S1.8 routes by class, would compete with the real producer of SubNetwork. CI turns it on (the compose stack's
+  `--profile echo`, `ci/kind-values.yaml`) so its image and role are proved where every module's are. CI: the unit loop, the Postgres job (its suite on
+  the migrated database), coverage floor 100, `smo-mutation.yml` and `scripts/mutation_pilot.sh` (`echo/pyproject.toml`).
+- **The Wave 0 exit gate** (`echo/tests/test_echo.py`, every test on SQLite and on Postgres 18): every operation on both classes, both merge-patch and
+  both JSON-patch media types, containment, each scope type with a filter and paging, a notification on the event bus for every change and none for a
+  read, and one test per S1.5 check.
+- **Interfaces and contract.** `specs/smo-schema-bundle/openapi/modules/echo.yaml` names the probes and the ProvMnS route with `$ref`s to
+  `TS28623_GenericNrm.yaml`'s `SubNetwork-Single` and `ManagedElement-Single`; `check_contract_drift.py` counts the router's one route as the contract's
+  class operations (`router_classes`), so Echo's drift is 12 agreed, 0 and 0, and the interface gate passes it with no baseline entry (8 bundle operations).
+- **Measured (plan risk "JSONB ProvMnS store too slow").** Through Echo on Postgres 18, 10 SubNetworks with 1,000 ManagedElements, in process
+  (TestClient): createMOI p50 16 ms, p95 26 ms; getMOIAttributes of one instance p50 10 ms, p95 18 ms; of a SubNetwork's subtree (101 instances) p50 12 ms,
+  p95 19 ms; the same with a filter (15 match) p50 12 ms, p95 17 ms. No sign of the risk at this size; S8.9 measures again at scale.
+- **Not yet:** Echo is not reached through R1 by class name: SME's MnS registry (S1.7) and routing by registry lookup (S1.8) are milestone M1's last
+  condition.
+- **Mutation gate.** @@MUT@@
+
 ### PR-CONV-S2.1, S2.2, S2.3 — AIMgF absorbs MLMR and MLLF: code, tables and tests moved, packages by TS 28.105 capability
 
 Closed from `OPEN_ITEMS.md` (`PR-CONV-S2.1`, `PR-CONV-S2.2`, `PR-CONV-S2.3`), with `MLLF-IDENTITY`, which S2.2 superseded. Decision D4, with ADR 0010

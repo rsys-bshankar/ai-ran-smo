@@ -79,15 +79,15 @@ def _default_session_dependency() -> Callable:
     return get_session
 
 
-def _problem(exc: HTTPException, operation: str) -> JSONResponse:
-    """A refusal of `smo_shared.idempotency` (a ProblemDetails in an HTTPException) in the TS 28.532 error shape, so a ProvMnS caller reads one shape."""
+def _refusal(exc: HTTPException) -> MnsError:
+    """A refusal of `smo_shared.idempotency` (a ProblemDetails in an HTTPException) as an MnsError, so a ProvMnS caller reads the TS 28.532 shape."""
     detail = exc.detail if isinstance(exc.detail, dict) else {}
-    return _error(MnsError(exc.status_code, str(detail.get("title", "INVALID_REQUEST")), str(detail.get("detail") or "")), operation)
+    return MnsError(exc.status_code, str(detail.get("title", "INVALID_REQUEST")), str(detail.get("detail") or ""))
 
 
 def _class_label(mns: ProvMnS, ldn: str) -> str:
     """The `class` label of the metric: the URI's class when the producer serves it, else `other` (a caller cannot grow the series)."""
-    class_name = ldn.rsplit("/", 1)[-1].partition("=")[0]
+    class_name = ldn.rpartition("/")[2].partition("=")[0]
     return class_name if mns.served(class_name) else "other"
 
 
@@ -121,7 +121,7 @@ def provmns_router(mns: ProvMnS, get_session: Callable | None = None) -> APIRout
             except MnsError as exc:
                 response = _error(exc, "default")
             except HTTPException as exc:
-                response = _problem(exc, "default")
+                response = _error(_refusal(exc), "default")
         mns.checks.observe(_class_label(mns, ldn), "createMOI", response.status_code, started)
         return response
 

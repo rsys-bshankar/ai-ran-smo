@@ -30,7 +30,7 @@ def test_the_closed_lists_are_the_ts_28_319_ones():
 @pytest.mark.parametrize(("selector", "supported"), [
     ("/", False), ("", False), ("SubNetwork=A", False), ("/SubNetwork=A", True), ("/SubNetwork=A/", True), ("/SubNetwork=A/*", True),
     ("/*", True), ("/SubNetwork=*/ManagedElement=1", True), ("/SubNetwork=A//ManagedElement=1", False), ("/SubNetwork=A[@x]", False),
-    ("/SubNetwork=A/ManagedElement=1'", False), ("/1Class=A", False), ("/SubNetwork=", False), ("/SubNetwork=A@b", False), ('/S="x"', False),
+    ("/SubNetwork=A/ManagedElement=1'", False), ("/1Class=A", False), ("/SubNetwork=", False), ("/SubNetwork=A@b", False), ('/S="x"', False), ("/SubNetwork=A/x[y]/", False),
 ])
 def test_selector_supported(selector, supported):
     """Only `/Class=id` segments or `*`, an optional trailing `/`, are in the subset."""
@@ -48,6 +48,8 @@ def test_selector_supported(selector, supported):
     ("/SubNetwork=*/ManagedElement=1", "/SubNetwork=Z/ManagedElement=1", True),
     ("/SubNetwork=*/ManagedElement=1", "/SubNetwork=Z/ManagedElement=2", False),
     ("/SubNetwork=A.B", "/SubNetwork=AxB", False),
+    ("/SubNetwork=X", "/SubNetwork=X", True),
+    ("/SubNetwork=X/", "/SubNetwork=X", True),
 ])
 def test_selects(selector, target, selected):
     """A selector must match the whole DN path, `*` matching any run of characters and a regex character matching only itself."""

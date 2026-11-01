@@ -7,7 +7,7 @@
 # change no test notices ("survived", or "no tests": nothing runs that code) is a place where a bug could be introduced and every test would still pass. Coverage says
 # a line ran; this says whether a test would notice if it were wrong.
 #
-# Scope (smo/shared/pyproject.toml, [tool.mutmut] only_mutate): 17 modules of the shared library, chosen because a silent change in them is a security or integrity defect:
+# Scope (smo/shared/pyproject.toml, [tool.mutmut] only_mutate; the list grew below, 30 files with S1.3 / S1.5): the modules of the shared library chosen because a silent change in them is a security or integrity defect:
 # pagination, ratelimit, timeutil, roles (the gateway's role policy and enrollment-secret check), webhook (the SSRF guard), killswitch, invoker, bodylimit, secretfile,
 # versioning, identity, correlation, audit (the hash chain), idempotency, security_headers, errors and scope (tenant and region authorization). Tested by shared/tests and the
 # gateway's tests/test_roles.py and tests/test_scope.py.

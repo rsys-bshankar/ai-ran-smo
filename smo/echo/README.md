@@ -125,6 +125,7 @@ read outside the caller's reach is 404 `MOI_NOT_FOUND`.
 ### 2.8 Limits and open items
 
 - Not routed through R1 until S1.7 and S1.8 (1.3).
+- Measured once, in process on Postgres 18 with 1,000 ManagedElements under 10 SubNetworks: createMOI p95 26 ms, getMOIAttributes of one instance p95 18 ms, of a 101-instance subtree p95 19 ms (`HISTORY.md` PR-CONV-S1.6). The scale measurement is S8.9.
 - Placement is a setting, not data. Once S1.14 keeps TS 28.319 AccessRules as ProvMnS classes, the authorizer reads them instead (`../shared/README.md`, "How S1.14 plugs in").
 
 ## 3. Unit tests

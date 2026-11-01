@@ -34,11 +34,11 @@ CI runs `--check` and fails when this file no longer matches the code.
 | `sdk` | 15 | 183 | 212 |
 | `sdk-go` | 9 | 66 | — |
 | `sdk-java` | 8 | 58 | — |
-| `shared` | 61 | 818 | 1595 |
+| `shared` | 61 | 825 | 1605 |
 | `sme` | 5 | 122 | 140 |
 | `so-smos` | 3 | 28 | 44 |
 | `tests_integration` | 99 | 775 | 956 |
-| **total** | **437** | **5617** | **8374** (Python) |
+| **total** | **437** | **5624** | **8384** (Python) |
 
 ## Per test file
 
@@ -512,7 +512,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests/test_integrity_handlers.py` | 2 | 6 |
 | `tests/test_logconfig.py` | 22 | 33 |
 | `tests/test_metrics.py` | 17 | 19 |
-| `tests/test_mns_checks.py` | 13 | 13 |
+| `tests/test_mns_checks.py` | 20 | 20 |
 | `tests/test_mns_dictionary.py` | 15 | 35 |
 | `tests/test_mns_exact.py` | 41 | 127 |
 | `tests/test_mns_patch.py` | 7 | 75 |
@@ -522,7 +522,7 @@ Paths are relative to the suite's directory (`smo/<suite>/`; `tests_integration`
 | `tests/test_mns_scope.py` | 21 | 93 |
 | `tests/test_mns_store.py` | 2 | 2 |
 | `tests/test_module_identity.py` | 14 | 25 |
-| `tests/test_msac_and_axes.py` | 11 | 33 |
+| `tests/test_msac_and_axes.py` | 11 | 36 |
 | `tests/test_mtls.py` | 18 | 33 |
 | `tests/test_mutation_survivors.py` | 9 | 11 |
 | `tests/test_on_behalf_of.py` | 11 | 11 |

@@ -217,9 +217,9 @@ def test_problem_without_details():
     """A ProblemDetails refusal with no detail, or no ProblemDetails at all, still answers in the TS 28.532 shape."""
     from fastapi import HTTPException
 
-    from smo_shared.mns.router import _problem
-    assert json.loads(_problem(HTTPException(409, detail={"title": "X"}), "default").body) == {"status": "409", "type": "X", "reason": "", "title": "X"}
-    assert json.loads(_problem(HTTPException(500, detail="text"), "default").body)["type"] == "INVALID_REQUEST"
+    from smo_shared.mns.router import _refusal
+    assert _refusal(HTTPException(409, detail={"title": "X"})).body("default") == {"status": "409", "type": "X", "reason": "", "title": "X"}
+    assert _refusal(HTTPException(500, detail="text")).type == "INVALID_REQUEST"
 
 
 def test_traceparent_is_kept(monkeypatch):
@@ -252,3 +252,116 @@ def test_metric_labels():
     client.put(BASE + "Other=1", json={"id": "1"})
     client.get("/ProvMnS/19.2.0/SubNetwork=A")
     assert [count(*label) - first for label, first in zip(labels, before, strict=True)] == [1] * 6
+
+
+# ---------------------------------------------------------------------------- what each step is handed (the mutation gate's exact cases)
+
+class Recorder:
+    """An authorizer and an MSAC provider that record what they are asked: (caller's invoker, operation, DN) and the callers."""
+
+    def __init__(self):
+        self.asked: list[tuple] = []
+        self.callers: list = []
+
+    def permits(self, caller, operation, target):
+        self.asked.append((caller.invoker, operation, target.dn))
+        return True
+
+    def rules(self, caller):
+        self.callers.append(caller)
+        return None
+
+
+def test_each_operation_asks_the_steps_with_its_own_name():
+    """The authorizer is asked with the operation's ProvMnS name for the target, for every instance a scoped read returns and for every instance a
+    delete removes; the MSAC provider is handed the caller itself."""
+    backend = _sqlite()
+    seen = Recorder()
+    client = _app(backend, RouterChecks(module="mns-check", scope=ScopeStep(authorizer=seen), msac=MsacStep(provider=seen.rules)))
+    who = {"x-r1-role": "rapp", "x-r1-invoker-id": "r-1"}
+    client.put(BASE + "SubNetwork=A", json={"id": "A"}, headers=who)
+    client.put(BASE + "SubNetwork=A/ManagedElement=1", json={"id": "1"}, headers=who)
+    client.patch(BASE + "SubNetwork=A", json={"attributes": {"userLabel": "x"}}, headers={**who, "content-type": "application/merge-patch+json"})
+    seen.asked.clear()
+    scoped = {**who, "x-r1-scope": '{"regions": ["r"]}'}
+    client.get(BASE + "SubNetwork=A", params={"scope": '{"scopeType": "BASE_ALL"}'}, headers=scoped)
+    assert seen.asked == [("r-1", "getMOIAttributes", "SubNetwork=A")] * 2 + [("r-1", "getMOIAttributes", "SubNetwork=A,ManagedElement=1")]
+    seen.asked.clear()
+    assert client.delete(BASE + "SubNetwork=A", headers=who).status_code == 204
+    assert seen.asked == [("r-1", "deleteMOI", "SubNetwork=A"), ("r-1", "deleteMOI", "SubNetwork=A,ManagedElement=1"), ("r-1", "deleteMOI", "SubNetwork=A")]
+    assert {caller.invoker for caller in seen.callers} == {"r-1"}
+
+
+def test_writes_ask_with_their_names():
+    """createMOI, modifyMOIAttributes and deleteMOI each ask the authorizer under their own name."""
+    backend = _sqlite()
+    seen = Recorder()
+    client = _app(backend, RouterChecks(module="mns-check", scope=ScopeStep(authorizer=seen)))
+    client.put(BASE + "SubNetwork=A", json={"id": "A"})
+    client.patch(BASE + "SubNetwork=A", json={"attributes": {"userLabel": "x"}}, headers={"content-type": "application/merge-patch+json"})
+    client.delete(BASE + "SubNetwork=A")
+    assert [operation for _, operation, _ in seen.asked] == ["createMOI", "modifyMOIAttributes", "deleteMOI", "deleteMOI"]
+
+
+def test_msac_rules_filter_an_unscoped_callers_read_and_refuse_a_delete():
+    """A caller with no claim but with MSAC rules reads only what the rules allow (the read is restricted, not limited and returned as is), and may not
+    delete a subtree holding an instance the rules do not let it delete."""
+    backend = _sqlite()
+    rules = [msac.Rule("/SubNetwork=A", frozenset({"read", "delete"}), "ALLOW"), msac.Rule("/SubNetwork=A/ManagedElement=1", frozenset({"read"}), "ALLOW")]
+    provider = lambda caller: rules if caller is not None and caller.invoker == "m" else None   # noqa: E731
+    client = _app(backend, RouterChecks(module="mns-check", msac=MsacStep(provider=provider)))
+    build_tree(client)
+    flat = client.get(BASE + "SubNetwork=A", params={"scope": '{"scopeType": "BASE_ALL"}'},
+                      headers={"x-r1-invoker-id": "m", "accept": "application/vnd.3gpp.object-tree-flat+json"})
+    assert [r["objectInstance"] for r in flat.json()] == ["SubNetwork=A", "SubNetwork=A,ManagedElement=1"]
+    refused = client.delete(BASE + "SubNetwork=A", headers={"x-r1-invoker-id": "m"})
+    assert (refused.status_code, refused.json()["type"]) == (403, "SCOPE_DENIED")       # a subtree is refused as a whole, for either step
+
+
+def test_the_default_checks_are_named_after_the_source():
+    """Without checks of its own a producer's metric and audit name it by the last part of its source."""
+    assert ProvMnS(source="/smo/a/echo-x", system_dn="ManagementNode=x").checks.module == "echo-x"
+
+
+def test_the_metric_class_is_the_last_rdn_of_the_uri():
+    """The class label is the class of the URI's last RDN; a malformed RDN is labelled by its class part; the duration is the operation's own."""
+    backend = _sqlite()
+    client = _app(backend, RouterChecks(module="metric-class"))
+
+    def count(cls, outcome):
+        return REGISTRY.get_sample_value("smo_provmns_http_duration_seconds_count",
+                                         {"module": "metric-class", "class": cls, "operation": "createMOI", "outcome": outcome}) or 0
+
+    def total():
+        return sum(REGISTRY.get_sample_value("smo_provmns_http_duration_seconds_sum",
+                                             {"module": "metric-class", "class": c, "operation": "createMOI", "outcome": o}) or 0
+                   for c in ("SubNetwork", "ManagedElement") for o in ("2xx", "4xx"))
+    before = (count("SubNetwork", "2xx"), count("ManagedElement", "2xx"), count("SubNetwork", "4xx"), total())
+    client.put(BASE + "SubNetwork=A", json={"id": "A"})
+    client.put(BASE + "SubNetwork=A/ManagedElement=1", json={"id": "1"})
+    assert client.put(BASE + "SubNetwork=a=b", json={"id": "a"}).status_code == 400
+    after = (count("SubNetwork", "2xx"), count("ManagedElement", "2xx"), count("SubNetwork", "4xx"), total())
+    assert [a - b for a, b in zip(after[:3], before[:3], strict=True)] == [1, 1, 1]
+    assert 0 <= after[3] - before[3] < 30
+
+
+def test_the_caller_details_and_the_tenant_axis():
+    """An internal caller without a console user has none; the claim authorizer reads the target's tenant."""
+    assert Caller.from_headers({"X-R1-Role": "internal", "X-R1-Invoker-Id": "dme"}).acting_user is None
+    target = Target("SubNetwork=A", "r", "t", None, ("A",))
+    assert ClaimAuthorizer().permits(Caller(scope=claims.Scope(tenants=frozenset({"t"}))), "createMOI", target)
+
+
+def test_the_audit_row_keeps_the_correlation_id():
+    """The audit row of a write carries the correlation id of the request that made it."""
+    from smo_shared.correlation import _current_correlation_id
+    backend = _sqlite()
+    token = _current_correlation_id.set("corr-7")
+    try:
+        with backend.session() as db:
+            RouterChecks(module="x").record(db, Caller(invoker="i"), "deleteMOI", "SubNetwork=A", 204, {})
+            db.commit()
+    finally:
+        _current_correlation_id.reset(token)
+    with backend.session() as db:
+        assert db.scalars(select(audit.AuditEntry.correlation_id)).one() == "corr-7"
