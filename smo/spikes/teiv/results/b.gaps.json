@@ -1,0 +1,38 @@
+{
+ "mois": 13002,
+ "byClass": {
+  "ManagedElement": 334,
+  "GNBDUFunction": 334,
+  "GNBCUCPFunction": 334,
+  "NRSectorCarrier": 1000,
+  "CommonBeamformingFunction": 1000,
+  "NRCellDU": 1000,
+  "NRCellCU": 1000,
+  "NRCellRelation": 8000
+ },
+ "events": 14,
+ "gaps": {
+  "classes": {
+   "CommonBeamformingFunction": 1000,
+   "NRCellRelation": 8000
+  },
+  "attributes": {
+   "ManagedElement.vendorName": 334,
+   "ManagedElement.swVersion": 334,
+   "GNBDUFunction.gNBDUName": 334,
+   "GNBDUFunction.administrativeState": 334,
+   "GNBCUCPFunction.pLMNId": 334,
+   "NRSectorCarrier.bSChannelBwUL": 1000,
+   "NRSectorCarrier.txDirection": 1000,
+   "NRSectorCarrier.configuredMaxTxPower": 1000,
+   "NRCellDU.administrativeState": 1000,
+   "NRCellDU.operationalState": 1000,
+   "NRCellDU.cellState": 1000,
+   "NRCellDU.ssbFrequency": 1000,
+   "NRCellDU.pLMNInfoList": 1000
+  },
+  "relationships": {
+   "NRCellRelation (neighbour, NRCellCU -> adjacent NRCellDU / NRCellCU)": 8000
+  }
+ }
+}

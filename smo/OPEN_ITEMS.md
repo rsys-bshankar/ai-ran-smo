@@ -1415,11 +1415,10 @@ real detail, and sets the task's status in the live plan to Done the same day (t
 
 Stage 0 ends at milestone M0 (week 2): decisions answered, three ADRs merged, the schema bundle corrected and complete, the contract gate required in CI, and the four sample use cases realised on paper.
 
-Done, in `HISTORY.md`: `PR-CONV-S0.1` to `PR-CONV-S0.12`, `PR-CONV-S0.15` to `PR-CONV-S0.17`.
+Done, in `HISTORY.md`: `PR-CONV-S0.1` to `PR-CONV-S0.13`, `PR-CONV-S0.15` to `PR-CONV-S0.17`.
 
 | ID | Task | Stage | Needs | Done when |
 |---|---|---|---|---|
-| PR-CONV-S0.13 | Integration spike: O-RAN-SC smo-teiv behind a 3GPP MnS and WG10 TE&IV R1 face (D19) | 0 | S0.1 | Written result: load, query latency and change events measured; the gap list turned into Stage 3 tasks |
 | PR-CONV-S0.14 | Obtain the WG10 Application Packaging and Onboarding v1.00 texts; check S4.1 against them | 0 | – | Texts on file; S4.1 marked normative or kept provisional with the differences listed |
 
 ### Stage 1 — Shared MnS foundation
@@ -1470,10 +1469,10 @@ Stage 3 ends at milestone M3 (week 10): against ten simulated nodes (S0.15), a P
 
 | ID | Task | Stage | Needs | Done when |
 |---|---|---|---|---|
-| PR-CONV-S3.1 | New `teiv/` module owning `common_teiv_nrm` (moi_store, topology edges, query API) | 3 | S1.6, S1.9 | RAN NF OAM's `/topology` and `/topology/graph` answers reproduced byte for byte by `teiv/` (golden tests) |
+| PR-CONV-S3.1 | New `teiv/` module owning `common_teiv_nrm` (moi_store, topology edges, query API). *Amended by S0.13 (ADR 0013): built on O-RAN-SC smo-teiv 0.3.0; the module is the standards facade, the only producer of smo-teiv's ingestion events and the source of the TS 28.532 notifications; `moi_store` and `topology_edges` are smo-teiv's tables, written only by its ingestion (D6)* | 3 | S1.6, S1.9, S3.19, S3.23 | RAN NF OAM's `/topology` and `/topology/graph` answers reproduced byte for byte by `teiv/` (golden tests); no module but `teiv/` reaches smo-teiv's API, topic or database |
 | PR-CONV-S3.2 | Cell lock table, written only by SO SMOS | 3 | S3.1 | Role grants prove a second writer is refused |
 | PR-CONV-S3.3 | RAN NF OAM ProvMnS NRM facade on today's config jobs | 3 | S1.6 | Bundle examples applied to netconf-lab and to the O-RAN-SC simulator chosen in S0.15; the CI job "O-RAN-SC simulator" steps A3–A5 (getMOIAttributes, modifyMOIAttributes on the NRCellDU, read-back) pass and lose their expected-failure marking |
-| PR-CONV-S3.4 | RAN NF OAM writes NRM into TE&IV and stops serving topology | 3 | S3.1 | No topology code left in `ran-nf-oam/app/` and no caller of its old topology routes |
+| PR-CONV-S3.4 | RAN NF OAM writes NRM into TE&IV and stops serving topology. *Amended by S0.13 (ADR 0013 G6): its writes are TE&IV ProvMnS createMOI / modifyMOIAttributes / deleteMOI, which TE&IV turns into smo-teiv ingestion events* | 3 | S3.1 | No topology code left in `ran-nf-oam/app/` and no caller of its old topology routes; the oran-sim O-DUs' trees appear in TE&IV through those writes |
 | PR-CONV-S3.5 | Declarative YANG dialect mapper keyed by vendor and software version | 3 | S3.3 | Part 2 §3's two vendor examples pass from one canonical request |
 | PR-CONV-S3.6 | Persist NETCONF sessions and an O1 transaction audit log | 3 | S3.3 | A restarted pod resumes its sessions from the table |
 | PR-CONV-S3.7 | VES alarm storm control (5 s de-duplication, children folded under a parent) | 3 | S1.3 | A 500-alarm burst publishes one parent alarm with its children linked |
@@ -1488,6 +1487,12 @@ Stage 3 ends at milestone M3 (week 10): against ten simulated nodes (S0.15), a P
 | PR-CONV-S3.16 | TS 28.622 PerfMetricJob, ThresholdMonitor, TraceJob; file pull, streaming PM, MDT and RLF traces (G10) | 3 | S1.13, S0.15 | A job created over ProvMnS yields files and a stream from the simulator; a threshold crossing notifies; the CI job "O-RAN-SC simulator" steps C3 and C4 (the simulator's file fetched over SFTP, its counters held) pass and lose their expected-failure marking |
 | PR-CONV-S3.17 | DME types per R1TD v05 as the rApp PM path (G11) | 3 | S3.16 | Two rApps consuming the same type share one collection job |
 | PR-CONV-S3.18 | Energy-efficiency KPIs per TS 28.554 §6.7.1 (G5) | 3 | S3.16 | KPIs computed from simulator counters match a hand calculation |
+| PR-CONV-S3.19 | TE&IV ProvMnS read facade over smo-teiv (ADR 0013 G1, G8): getMOIAttributes with scope and filter, TS 28.541 class names and DNs mapped to smo-teiv's types and ids, the TS 28.532 filter translated, a read smo-teiv cannot express refused with the reason | 3 | S0.13, S1.6, S3.23 | The spike's Q1, Q3 and Q5 answered through `teiv/` in the TS 28.532 shape at p95 ≤ 150 ms at 1,000 cells; a neighbour read before S3.20 refused, not answered wrongly |
+| PR-CONV-S3.20 | TE&IV model extension for smo-teiv (ADR 0013 G2, G4): NRCellRelation and the NEIGHBOR_CELL relationship, CO_COVERAGE_OVERLAY, SubNetwork, CommonBeamformingFunction, NRFreqRelation and the S3.14 SON classes, as TE&IV-owned YANG generated into smo-teiv's schema with its own generator and offered upstream | 3 | S3.19 | The spike's Q2 and Q4 (neighbours, two-hop) at p95 ≤ 150 ms at 1,000 cells, or Apache AGE reconsidered under D7; carried without forking smo-teiv's code, or ADR 0013 section 9's fallback taken |
+| PR-CONV-S3.21 | The TS 28.541 attributes in TE&IV (ADR 0013 G3, G7): every attribute of the classes TE&IV holds (administrativeState, operationalState, cellState, pLMNInfoList, ...) and an object version for read-modify-write | 3 | S3.20 | getMOIAttributes returns the attributes RAN NF OAM wrote; a modify with a stale version is refused |
+| PR-CONV-S3.22 | TS 28.532 notifications from TE&IV (ADR 0013 G5): notifyMOICreation, notifyMOIAttributeValueChanges, notifyMOIDeletion raised on TE&IV's write path once smo-teiv shows the change, through NtfSubscriptionControl | 3 | S1.13, S3.19 | A changed NRCellDU notified to a subscriber within 150 ms p95 of the write, with old and new value |
+| PR-CONV-S3.23 | smo-teiv packaged for the stack (ADR 0013 section 8): built from the pinned tag in a mirror job like `oran-sim-image.yml`, its ingestion and exposure, Postgres and Kafka in compose and the chart, a memory budget, no unpinned base image | 3 | S1.10 | `docker compose config` and the chart render with TE&IV on; the images pinned in `deploy/mirror/images.txt` |
+| PR-CONV-S3.24 | The O-RAN WG10 TE&IV R1 API into `specs/` (ADR 0013 G9): version recorded in `specs/README.md` and `docs/STANDARDS.md`, its operations listed in the bundle's `teiv.yaml`, each mapped onto smo-teiv's API (the spike's `R1_OPERATIONS`) | 3 | S0.13 | `teiv.yaml` names no pending WG10 service; the Contracts job green |
 
 ### Stage 4 — rApp lifecycle and real O2
 

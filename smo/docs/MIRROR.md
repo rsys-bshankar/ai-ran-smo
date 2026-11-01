@@ -45,7 +45,7 @@ the digest (the other 14). The verification did its job and was not loosened; th
 
 ## The list
 
-18 packages (`<repo>` is the repository name, in lower case). The owner made all of them public (`OPS-12.2`) and checked that every digest-pinned source answers its pinned
+20 packages (`<repo>` is the repository name, in lower case). The owner made all of them public (`OPS-12.2`) and checked that every digest-pinned source answers its pinned
 digest at the mirror.
 
 | Package | Source images (tags) | Pinned by digest in the repository |
@@ -61,8 +61,10 @@ digest at the mirror.
 | `<repo>/mirror/alpine` | `alpine:3.22` | yes |
 | `<repo>/mirror/golang` | `golang:1.27.2-alpine` | yes |
 | `<repo>/mirror/maven` | `maven:3.9.11-eclipse-temurin-21-noble` | yes |
-| `<repo>/mirror/eclipse-temurin` | `eclipse-temurin:25-jre-noble` | yes |
+| `<repo>/mirror/eclipse-temurin` | `eclipse-temurin:25-jre-noble`, `eclipse-temurin:21-jre-noble` (the runtime of smo-teiv in the TE&IV spike, `spikes/teiv/Dockerfile`) | yes |
 | `<repo>/mirror/ubuntu` | `ubuntu:22.04` (the base of the O-RAN-SC simulator image, `oran-sim/Dockerfile`, ADR 0012) | yes |
+| `<repo>/mirror/postgis` | `postgis/postgis:13-3.4-alpine` (smo-teiv's database in the TE&IV spike, `spikes/teiv/Dockerfile.db`, ADR 0013) | yes |
+| `<repo>/mirror/kafka` | `apache/kafka:3.9.1` (smo-teiv's ingestion bus in the TE&IV spike, `spikes/teiv/docker-compose.yml`) | yes |
 | `<repo>/mirror/tempo` | `grafana/tempo:2.10.10` | yes |
 | `<repo>/mirror/loki` | `grafana/loki:3.7.9` | yes |
 | `<repo>/mirror/fluent-bit` | `fluent/fluent-bit:5.1.5` | yes |
@@ -144,6 +146,7 @@ What stays on its upstream registry, and why. The keys in backticks are the name
 - `workflow:release-images.yml`: release images are built from the upstream references on purpose, so a release stays reproducible without any package of this repository (the build is `docker buildx build`
   with no named contexts). Only CI uses the mirror.
 - `workflow:mirror-images.yml`: it fills the mirror, so it reads the sources from their own registries (and can meet the same pull limit; the script retries three times, and the workflow can be run again).
+- `workflow:teiv-spike.yml`: the TE&IV spike (plan task S0.13, ADR 0013) runs a compose file of its own, `spikes/teiv/docker-compose.yml`, beside the main stack. The main stack's override would add the main stack's services to that project, so the spike's file takes the mirror through the `SMO_IMAGE_*` variables `ci_mirror.py setup` exports (`image: ${SMO_IMAGE_KAFKA_3_9_1:-...}`, and named build contexts for its Dockerfiles' `FROM`), with the upstream pins as defaults. The main stack's commands in the same workflow use the override as everywhere.
 - `docker-run:ZAP_IMAGE`: the ZAP image is `ghcr.io/zaproxy/zaproxy:stable@sha256:...`, already on ghcr.io (no Docker Hub limit); `smo-dast.yml` pins it itself and the list does not copy it.
 - `helm:smo-upgrade-kind.yml`: the upgrade lanes install a previous release's chart and then this checkout's; the two charts' database image would differ in text if only one were mirrored, and a changed
   image restarts Postgres in the middle of the upgrade being tested. That lane's cluster pulls the database image from Docker Hub. Its `kind` node, and the module images it builds from this checkout and

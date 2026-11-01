@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The TE&IV spike's Maven settings (spikes/teiv/Dockerfile): every repository smo-teiv's POMs declare (repo.spring.io, maven.restlet.org,
+     a Netflix Artifactory, Sonatype snapshots, ...) is mirrored to Maven Central, so the build resolves from Central only. All of smo-teiv 0.3.0's
+     dependencies are there (shown by a build with the others unreachable); one source makes the build repeatable and keeps other hosts out of it. -->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+  <mirrors>
+    <mirror>
+      <id>central-only</id>
+      <name>Maven Central for every repository</name>
+      <url>https://repo.maven.apache.org/maven2</url>
+      <mirrorOf>*</mirrorOf>
+    </mirror>
+  </mirrors>
+</settings>

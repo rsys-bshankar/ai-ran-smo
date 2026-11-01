@@ -1,0 +1,90 @@
+# The TE&IV spike (plan task S0.13, ADR 0013): O-RAN-SC smo-teiv 0.3.0 with its Postgres and a single-node Kafka. Not part of the stack and not
+# the main docker-compose.yml: nothing of the SMO uses it. Run from smo/:
+#   docker compose -f spikes/teiv/docker-compose.yml up -d --build
+# smo-teiv is two processes of one image: `teiv-ingestion` consumes CloudEvents from the Kafka topic topology-inventory-ingestion and is the only
+# writer of the store (D6), `teiv-exposure` serves smo-teiv's own REST API on 127.0.0.1:31074 (spikes/teiv/load.py, measure.py and facade.py call it;
+# no module may, ADR 0011 / D19). Images: every one is pinned by digest and listed in deploy/mirror/images.txt; in CI the SMO_IMAGE_* variables
+# of scripts/ci_mirror.py setup point them at the GHCR mirror, and without them the upstream pins below are used. smo-teiv itself is built from
+# the 0.3.0 tag's commit (spikes/teiv/Dockerfile; TEIV_SOURCE points elsewhere, a local clone for example).
+name: teiv-spike
+
+x-teiv-build: &teiv_build
+  context: .
+  dockerfile: Dockerfile
+  additional_contexts:
+    teiv: ${TEIV_SOURCE:-https://github.com/o-ran-sc/smo-teiv.git#ee898469d2b9a3de5047ac6675f097ca72e97884}
+    "maven:3.9.11-eclipse-temurin-21-noble@sha256:6fdc855a6ed81d288ca7ca37ac6ff5e9308b612485c0801d70b25a858c83d237": docker-image://${SMO_IMAGE_MAVEN_3_9_11_ECLIPSE_TEMURIN_21_NOBLE:-maven:3.9.11-eclipse-temurin-21-noble@sha256:6fdc855a6ed81d288ca7ca37ac6ff5e9308b612485c0801d70b25a858c83d237}
+    "eclipse-temurin:21-jre-noble@sha256:161310cd5bd41fd549d19cf9f90b614897cb4a1532555c613b43b7e0628fe5d6": docker-image://${SMO_IMAGE_ECLIPSE_TEMURIN_21_JRE_NOBLE:-eclipse-temurin:21-jre-noble@sha256:161310cd5bd41fd549d19cf9f90b614897cb4a1532555c613b43b7e0628fe5d6}
+
+# What both smo-teiv processes read (application.yaml of 0.3.0): the database, and the ingestion topic made with one partition replica, since this
+# Kafka has one broker (upstream asks for three and would retry for ever).
+x-teiv-env: &teiv_env
+  SERVICE_DB_URL: jdbc:postgresql://teiv-db:5432/topology_exposure_db
+  SERVICE_DB_REPLICA_URL: jdbc:postgresql://teiv-db:5432/topology_exposure_db
+  SERVICE_DB_USER: topology_exposure_user
+  SERVICE_DB_PASSWORD: ${TEIV_SPIKE_DB_PASSWORD:-teiv-spike-only}
+  SPRING_APPLICATION_JSON: '{"kafka":{"server":{"bootstrap-server-host":"kafka","bootstrap-server-port":9092},"topology-ingestion":{"topic":{"replicas":1}}}}'
+  JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=75
+
+services:
+  teiv-db:
+    build:
+      context: .
+      dockerfile: Dockerfile.db
+      additional_contexts:
+        teiv: ${TEIV_SOURCE:-https://github.com/o-ran-sc/smo-teiv.git#ee898469d2b9a3de5047ac6675f097ca72e97884}
+        "postgis/postgis:13-3.4-alpine@sha256:3ce9b8f4d0711d33cc5fa5e6c00dcb7965fa41467f78c0f3bc7fc7bc2357d85b": docker-image://${SMO_IMAGE_POSTGIS_13_3_4_ALPINE:-postgis/postgis:13-3.4-alpine@sha256:3ce9b8f4d0711d33cc5fa5e6c00dcb7965fa41467f78c0f3bc7fc7bc2357d85b}
+    image: local/teiv-spike-db:0.3.0
+    environment:
+      POSTGRES_DB: topology_exposure_db
+      POSTGRES_USER: topology_exposure_user
+      POSTGRES_PASSWORD: ${TEIV_SPIKE_DB_PASSWORD:-teiv-spike-only}     # a throwaway spike database on the compose network, no port on the host
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U topology_exposure_user -d topology_exposure_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  kafka:
+    image: ${SMO_IMAGE_KAFKA_3_9_1:-apache/kafka:3.9.1@sha256:4ceccc577f03f51f6af8dbfda55194d0d892f4fa7913ffbded567ce3895622ed}
+    environment:
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+
+  teiv-ingestion:
+    build: *teiv_build
+    image: local/teiv-spike:0.3.0
+    environment:
+      <<: *teiv_env
+      SPRING_PROFILES_ACTIVE: ingestion
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      teiv-db: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+
+  teiv-exposure:
+    build: *teiv_build
+    image: local/teiv-spike:0.3.0
+    environment:
+      <<: *teiv_env
+      SPRING_PROFILES_ACTIVE: exposure,groups
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    ports: ["127.0.0.1:${TEIV_SPIKE_PORT:-31074}:8080"]
+    depends_on:
+      teiv-db: { condition: service_healthy }

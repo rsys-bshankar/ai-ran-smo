@@ -64,7 +64,8 @@ def _files(root: Path, *patterns: str) -> list[Path]:
 def _scanned() -> dict[str, list[Path]]:
     """The files that may reference an image, by kind: `yaml` (compose, chart values, workflows), `docker` (Dockerfiles), `script` (shell and Python)."""
     return {
-        "yaml": _files(SMO_ROOT, "docker-compose*.yml", "sdk-*/examples/**/docker-compose*.yml", "netconf-lab/*.yml", "deploy/**/*.yaml")
+        "yaml": _files(SMO_ROOT, "docker-compose*.yml", "sdk-*/examples/**/docker-compose*.yml", "netconf-lab/*.yml", "deploy/**/*.yaml",
+                       "spikes/**/docker-compose*.yml")
         + _files(REPO_ROOT / ".github", "workflows/*.yml"),
         "docker": _files(SMO_ROOT, "**/Dockerfile*"),
         # scripts/mirror_images.py and scripts/ci_mirror.py (and the tests) only talk about images; they pin none
