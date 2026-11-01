@@ -8,11 +8,28 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("pyang", reason="pyang is in requirements/contracts.txt: the Contracts job runs these tests")
+try:
+    import pyang  # noqa: F401  (only to know whether it is there: requirements/contracts.txt, which the Contracts job installs)
+    HAVE_PYANG = True
+except ImportError:
+    HAVE_PYANG = False
+
 MODEL = Path(__file__).resolve().parents[1] / "model"
-spec = importlib.util.spec_from_file_location("check_extension", MODEL / "check_extension.py")
-ce = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(ce)
+_loaded = {}
+
+
+def checker():
+    """teiv/model/check_extension.py, loaded on first use; skips the calling test, with the reason, where pyang is not installed. The tests are collected
+    the same everywhere (docs/test-counts/teiv.md): only their run needs pyang."""
+    if not HAVE_PYANG:
+        pytest.skip("pyang is in requirements/contracts.txt: the Contracts job runs these tests")
+    if "ce" not in _loaded:
+        spec = importlib.util.spec_from_file_location("check_extension", MODEL / "check_extension.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _loaded["ce"] = module
+    return _loaded["ce"]
+
 
 GOOD = """
 module smo-teiv-ext-test {
@@ -50,12 +67,13 @@ def write(tmp_path: Path, text: str, name: str = "smo-teiv-ext-test") -> Path:
 
 def findings(tmp_path: Path, text: str) -> list[str]:
     """The checker's findings on one module."""
+    ce = checker()
     return ce.check(ce.parse(write(tmp_path, text)))
 
 
 def test_teivs_own_extension_modules_pass():
     """The two extension modules of teiv/model/ break none of the rules E1 to E7."""
-    assert ce.main([]) == 0
+    assert checker().main([]) == 0
 
 
 def test_a_module_that_follows_the_rules_has_no_finding(tmp_path):
@@ -84,6 +102,7 @@ def test_each_broken_rule_is_reported(tmp_path, change, rule):
 
 def test_a_role_already_on_the_type_is_reported(tmp_path):
     """E7: a second relationship that gives NRCellDU the role a base module already gave it."""
+    ce = checker()
     base = write(tmp_path, GOOD.replace("smo-teiv-ext-test", "o-ran-smo-teiv-test").replace("urn:smo:", "urn:o-ran:"), "o-ran-smo-teiv-test")
     ext = write(tmp_path, GOOD.replace("THING_SERVES_NRCELLDU", "OTHER_SERVES_NRCELLDU"))
     found = ce.check_roles([ce.parse(ext)], [ce.parse(base)])

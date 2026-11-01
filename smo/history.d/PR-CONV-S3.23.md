@@ -9,6 +9,8 @@
   build; the five import modules come from smo-teiv's own committed schema, so nothing is downloaded from www.ietf.org or forge.3gpp.org.
   `.github/workflows/teiv-image.yml` builds and publishes `ghcr.io/<owner>/<repo>/smo-teiv:0.3.0-ext` and `smo-teiv-db:0.3.0-ext` on a push to main that
   changes them (or by hand), reading the source and tag from the compose profile, as `oran-sim-image.yml` does; the job summary gives the digests.
+  The release, the image scan and the kind and HA lanes leave the three smo-teiv services out of the images they build (`scripts/release_images.py`
+  `NOT_RELEASED`, as for the simulator): they need the named build context `teiv`, which only the profile and `teiv-image.yml` give.
 - **Compose profile `teiv`**: `teiv-db` (password from the secret file `teiv_db_password`, `init_secrets.sh`; volume `smo_teiv_pgdata`; run as `postgres`,
   uid 70, from the start, so no capability is needed, with a read-only root and tmpfs `/tmp` and `/var/run/postgresql`, the socket directory its entrypoint
   initialises through: `test_container_hardening.py` names that one extra scratch directory),
