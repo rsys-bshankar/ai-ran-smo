@@ -1408,7 +1408,7 @@ real detail, and sets the task's status in the live plan to Done the same day (t
 
 Stage 0 ends at milestone M0 (week 2): decisions answered, three ADRs merged, the schema bundle corrected and complete, the contract gate required in CI, and the four sample use cases realised on paper.
 
-Done, in `HISTORY.md`: `PR-CONV-S0.1` to `PR-CONV-S0.13`, `PR-CONV-S0.15` to `PR-CONV-S0.17`, `PR-CONV-S2.1` to `PR-CONV-S2.3`.
+Done, in `HISTORY.md`: `PR-CONV-S0.1` to `PR-CONV-S0.13`, `PR-CONV-S0.15` to `PR-CONV-S0.17`.
 
 | ID | Task | Stage | Needs | Done when |
 |---|---|---|---|---|
@@ -1439,6 +1439,8 @@ Done, in `HISTORY.md`: `PR-CONV-S1.1`, `PR-CONV-S1.2`, `PR-CONV-S1.4`.
 ### Stage 2 — AIMgF absorbs MLMR and MLLF
 
 Stage 2 ends at milestone M2 (week 5, in parallel with Stage 1): one AI/ML service, old `/mlmr/*` and `/mllf/*` routes deleted once every caller uses /aimgf/\*, and model artifacts in the object store.
+
+Done, in `HISTORY.md`: `PR-CONV-S2.1` to `PR-CONV-S2.3`.
 
 | ID | Task | Stage | Needs | Done when |
 |---|---|---|---|---|
