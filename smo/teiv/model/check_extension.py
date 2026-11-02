@@ -16,7 +16,8 @@ container, from a consumer's module, Annex E) and by classifiers (identities der
   E5  declares each biDirectionalTopologyRelationship directly under `module`, once per name, with `Top_Grp_Type` and the relationship mapping grouping,
       and exactly one `aSide` and one `bSide`, each on a `leaf` or `leaf-list` of type `instance-identifier`;
   E6  uses `or-teiv-yext:label` only inside `revision`, as x.y.z;
-  E7  gives every role a name unique on its type, across the extension and, with --models, smo-teiv's own modules.
+  E7  gives every role a name unique on its type, across the extension and, with --models, smo-teiv's own modules;
+  E8  gives every `enum` an explicit `value` (smo-teiv 0.3.0 refuses a user-defined schema otherwise: "enum 'NO' does not have a value", S3.25).
 
 The data model itself (DM v06's YANG) is not in specs/ yet: its source is the O-RAN repository gitlab.o-ran.org/wg10/teiv-dm, which this environment cannot
 reach. Until it is, smo-teiv 0.3.0's modules (its realisation of the DM, R004 v02.00 / R005 v04.00) stand in for it in E7. The parse is pyang's own
@@ -74,7 +75,7 @@ def roles(module) -> list[tuple[str, str, str]]:
 
 
 def check(module) -> list[str]:
-    """The findings of rules E1 to E6 on one extension module."""
+    """The findings of rules E1 to E6 and E8 on one extension module."""
     name, found = module.arg, []
     for s in _walk(module):
         if s.keyword in ("augment", "deviation"):
@@ -110,6 +111,9 @@ def check(module) -> list[str]:
                 kind = next((x.arg for x in leaf.substmts if x.keyword == "type"), None)
                 if kind != "instance-identifier":
                     found.append(f"{name}: E5 {rel.arg} {side} {leaf.arg} is of type {kind}, not instance-identifier")
+    for s in _walk(module):
+        if s.keyword == "enum" and not any(x.keyword == "value" for x in s.substmts):
+            found.append(f"{name}: E8 enum {s.arg} (line {s.pos.line}) has no value: smo-teiv refuses the schema")
     for s in _walk(module):
         if _kw(s) == "label" and (s.parent.keyword != "revision" or not LABEL.fullmatch(s.arg or "")):
             found.append(f"{name}: E6 label {s.arg!r} (line {s.pos.line}) not a revision's x.y.z")

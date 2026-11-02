@@ -50,8 +50,8 @@ module smo-teiv-ext-ran {
         description "A TS 28.541 boolean (pgsql-schema-generator 1.2.1 has no
             mapping for YANG boolean).";
         type enumeration {
-            enum true;
-            enum false;
+            enum true { value 0; }
+            enum false { value 1; }
         }
     }
 
@@ -95,9 +95,9 @@ module smo-teiv-ext-ran {
 
             leaf isESCoveredBy {
                 type enumeration {
-                    enum YES;
-                    enum NO;
-                    enum PARTIAL;
+                    enum YES { value 0; }
+                    enum NO { value 1; }
+                    enum PARTIAL { value 2; }
                 }
                 description "Whether the adjacent cell covers the source cell when
                     the source cell goes to energy saving (EnergySavingCoverage)";
@@ -214,16 +214,16 @@ module smo-teiv-ext-ran {
 
             leaf energySavingState {
                 type enumeration {
-                    enum isNotEnergySaving;
-                    enum isEnergySaving;
+                    enum isNotEnergySaving { value 0; }
+                    enum isEnergySaving { value 1; }
                 }
                 description "Energy saving state of the cell";
             }
 
             leaf energySavingControl {
                 type enumeration {
-                    enum toBeEnergySaving;
-                    enum toBeNotEnergySaving;
+                    enum toBeEnergySaving { value 0; }
+                    enum toBeNotEnergySaving { value 1; }
                 }
                 description "Energy saving activation or deactivation request";
             }
@@ -254,16 +254,16 @@ module smo-teiv-ext-ran {
 
             leaf energySavingState {
                 type enumeration {
-                    enum isNotEnergySaving;
-                    enum isEnergySaving;
+                    enum isNotEnergySaving { value 0; }
+                    enum isEnergySaving { value 1; }
                 }
                 description "Energy saving state of the cell";
             }
 
             leaf isProbingCapable {
                 type enumeration {
-                    enum yes;
-                    enum no;
+                    enum yes { value 0; }
+                    enum no { value 1; }
                 }
                 description "Whether the cell can probe before deactivating energy saving";
             }
