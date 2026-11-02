@@ -466,8 +466,9 @@ jobs:
             echo "services: {}" > .ci-mirror/docker-compose.teiv.yml
             echo "smo/teiv/ changed ($changed ...): smo-teiv is built from the tag in this job"
           else
-            teiv=ghcr.io/rsys-bshankar/ai-ran-smo/smo-teiv:0.3.0-ext@sha256:TEIV_IMAGE_DIGEST
-            teivdb=ghcr.io/rsys-bshankar/ai-ran-smo/smo-teiv-db:0.3.0-ext@sha256:TEIV_DB_IMAGE_DIGEST
+            # published by teiv-image.yml on main at 0e4504a (#581); update both when that workflow publishes again
+            teiv=ghcr.io/rsys-bshankar/ai-ran-smo/smo-teiv:0.3.0-ext@sha256:8c93bc0bec08af39a76a6cbf70c54dabf41fd848fd91ff11f6247a166fe10f18
+            teivdb=ghcr.io/rsys-bshankar/ai-ran-smo/smo-teiv-db:0.3.0-ext@sha256:f0e6670aaca7e5ec8afa587c6725733b73bf4abda8b12c93b6861f3d45fa5d49
             printf 'services:\n  teiv-db: { build: !reset null, image: %s }\n  teiv-ingestion: { build: !reset null, image: %s }\n  teiv-exposure: { build: !reset null, image: %s }\n' \
               "$teivdb" "$teiv" "$teiv" > .ci-mirror/docker-compose.teiv.yml
             echo "smo-teiv pulled: $teiv, $teivdb"
