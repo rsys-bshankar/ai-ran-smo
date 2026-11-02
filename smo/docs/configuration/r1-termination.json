@@ -22,5 +22,6 @@
   "RAN_NF_OAM_URL": "Base URL R1 Termination forwards `/ran-nf-oam/...` to (O1 management, alarms, CM and PM).",
   "RAPP_MGMT_URL": "Base URL R1 Termination forwards `/rapp-mgmt/...` to (rApp lifecycle).",
   "SA_SMOS_URL": "Base URL R1 Termination forwards `/sa-smos/...` to (service assurance).",
-  "SO_SMOS_URL": "Base URL R1 Termination forwards `/so-smos/...` to (service orchestration)."
+  "SO_SMOS_URL": "Base URL R1 Termination forwards `/so-smos/...` to (service orchestration).",
+  "TEIV_URL": "Base URL R1 Termination forwards `/teiv/...` to (TE&IV: the WG10 TE&IV R1 API; its ProvMnS classes are routed by class name through SME's MnS registry)."
 }

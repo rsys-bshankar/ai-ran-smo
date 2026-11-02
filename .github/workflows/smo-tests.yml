@@ -332,7 +332,7 @@ jobs:
           set -e
           for m in onboarding rapp-mgmt ran-nf-oam aimgf so-smos \
                    sme dme r1-termination nfo focom ran-analytics mdaf \
-                   intent-service sa-smos mock-o1-adaptor echo; do
+                   intent-service sa-smos mock-o1-adaptor echo teiv; do
             scripts/run_unit_suite.sh "$m" "$m" app ".:../shared"
           done
           scripts/run_unit_suite.sh sdk sdk smo_sdk ".:../shared"
@@ -435,11 +435,13 @@ jobs:
   compose-e2e:
     name: Full docker-compose stack runs end to end
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45      # a pull request that changes smo/teiv/ builds smo-teiv with Maven here (below)
     env:
-      COMPOSE_FILE: docker-compose.yml:.ci-mirror/docker-compose.mirror.yml
+      COMPOSE_FILE: docker-compose.yml:.ci-mirror/docker-compose.mirror.yml:.ci-mirror/docker-compose.teiv.yml
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2     # a pull request's merge commit and its first parent (the base): what the pull request changed under smo/teiv/
 
       # PR-OPS-12.3: third-party images come from the GHCR mirror (smo/docs/MIRROR.md); one that does not answer is pulled from its upstream registry, with a warning.
       # Kill switch: set the repository variable SMO_IMAGE_MIRROR to off.
@@ -448,6 +450,30 @@ jobs:
         env:
           SMO_IMAGE_MIRROR: ${{ vars.SMO_IMAGE_MIRROR }}
         run: python3 scripts/ci_mirror.py setup
+
+      # PR-CONV-S3.19: the profile teiv runs here (TE&IV and its role, below). smo-teiv's two images are not built in this job: they are pulled as
+      # teiv-image.yml published them on main, pinned by digest, through a CI-only override like the mirror's (build reset, image set). A pull request that
+      # changes smo/teiv/ (its merge commit against its first parent, the base) gets an empty override, so its model change is built and run here.
+      - name: smo-teiv's images, pulled by digest unless the pull request changes smo/teiv/
+        working-directory: smo
+        run: |
+          mkdir -p .ci-mirror
+          changed=""
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            changed=$(git diff --name-only HEAD^1 HEAD -- teiv/ | head -1)
+          fi
+          if [ -n "$changed" ]; then
+            echo "services: {}" > .ci-mirror/docker-compose.teiv.yml
+            echo "smo/teiv/ changed ($changed ...): smo-teiv is built from the tag in this job"
+          else
+            # published by teiv-image.yml on main at 0e4504a (#581); update both when that workflow publishes again
+            teiv=ghcr.io/rsys-bshankar/ai-ran-smo/smo-teiv:0.3.0-ext@sha256:8c93bc0bec08af39a76a6cbf70c54dabf41fd848fd91ff11f6247a166fe10f18
+            teivdb=ghcr.io/rsys-bshankar/ai-ran-smo/smo-teiv-db:0.3.0-ext@sha256:f0e6670aaca7e5ec8afa587c6725733b73bf4abda8b12c93b6861f3d45fa5d49
+            printf 'services:\n  teiv-db: { build: !reset null, image: %s }\n  teiv-ingestion: { build: !reset null, image: %s }\n  teiv-exposure: { build: !reset null, image: %s }\n' \
+              "$teivdb" "$teiv" "$teiv" > .ci-mirror/docker-compose.teiv.yml
+            echo "smo-teiv pulled: $teiv, $teivdb"
+          fi
+          cat .ci-mirror/docker-compose.teiv.yml
 
       - name: docker-compose.yml is structurally valid
         working-directory: smo
@@ -470,8 +496,9 @@ jobs:
           # No TLS terminator in front of the GUI in CI.
           GUI_COOKIE_SECURE: "false"
           SMO_BUILD_SHA: ${{ github.sha }}    # GET /version answers it (PR-OBS-8.1)
-        # profile echo: the reference ProvMnS module (PR-CONV-S1.6), off by default, runs here so its image (with specs/5G_APIs) and its role are proved
-        run: docker compose --profile echo up -d --build
+        # profile echo: the reference ProvMnS module (PR-CONV-S1.6), off by default, runs here so its image (with specs/5G_APIs) and its role are proved;
+        # profile teiv likewise for TE&IV (PR-CONV-S3.19), with smo-teiv and its database (pulled, step above) and the broker
+        run: docker compose --profile echo --profile teiv up -d --build
 
       # PR-OPS-1.5: the one-shot migrate service created the schema (the stack no longer mounts 001_init.sql into
       # Postgres) and the database is at the newest revision in the repository.

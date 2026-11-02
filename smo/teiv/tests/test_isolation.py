@@ -1,5 +1,5 @@
 """Tests of TE&IV's packaging of smo-teiv (plan task S3.23, D19, ADR 0013 section 9): in docker-compose.yml's profile `teiv` smo-teiv's database and API are on
-the internal network `teiv` only, which no service joins but smo-teiv's and the shared broker, they publish no port, and no other service names them or
+the internal network `teiv` only, which no service joins but smo-teiv's, TE&IV's and the shared broker, they publish no port, and no other service names them or
 TE&IV's topic; the Kafka relay refuses that topic; the compose profile and the chart's `teiv` values agree on images, topic, heaps and memory limits."""
 
 import re
@@ -31,17 +31,24 @@ def test_the_teiv_services_are_the_profile_and_on_the_internal_network_only():
         assert "ports" not in SERVICES[name]
 
 
-def test_no_service_but_smo_teivs_and_the_broker_joins_the_network():
-    """Only the broker is on both networks (the DME worker's relay reaches it on default, smo-teiv's ingestion on teiv)."""
+def test_no_service_but_smo_teivs_teiv_and_the_broker_joins_the_network():
+    """Only the broker and TE&IV are on both networks (the broker: the DME worker's relay on default, smo-teiv's ingestion on teiv; TE&IV: SME, R1
+    and Postgres on default, smo-teiv's API on teiv, D19's one door)."""
     on_teiv = {name for name, svc in SERVICES.items() if "teiv" in _networks(svc)}
-    assert on_teiv == TEIV | {"kafka"}
+    assert on_teiv == TEIV | {"kafka", "teiv"}
     assert _networks(SERVICES["kafka"]) == {"default", "teiv"} and "teiv" in SERVICES["kafka"]["profiles"]
+    assert _networks(SERVICES["teiv"]) == {"default", "teiv"} and SERVICES["teiv"]["profiles"] == ["teiv"] and "ports" not in SERVICES["teiv"]
 
 
 def test_no_other_service_names_smo_teivs_database_api_or_topic():
-    """No environment, command or entrypoint of a service outside the profile mentions teiv-db, teiv-exposure, smo.teiv.* or smo-teiv's API path."""
+    """No environment, command or entrypoint of a service outside the profile mentions teiv-db, teiv-exposure, smo.teiv.* or smo-teiv's API path; TE&IV
+    names smo-teiv's API only (TEIV_EXPOSURE_URL), never its database."""
     for name, svc in SERVICES.items():
         if name in TEIV:
+            continue
+        if name == "teiv":
+            env = SERVICES["teiv"]["environment"]
+            assert env["TEIV_EXPOSURE_URL"] == "http://teiv-exposure:8080" and "teiv-db" not in yaml.safe_dump(svc)
             continue
         text = yaml.safe_dump({k: svc.get(k) for k in ("environment", "command", "entrypoint", "healthcheck")})
         assert not NAMES.search(text), name

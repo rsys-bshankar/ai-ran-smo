@@ -461,7 +461,8 @@ the limit was smo-teiv's database (15.5 ms of Postgres CPU per Q2): a fresh trig
 references not selected, and three TE&IV workers brought it to 114 ms. **After a bulk load, `REINDEX SCHEMA teiv_data; ANALYZE;`**: the
 insert-then-decorate load leaves smo-teiv's GIN trigram indexes about five times their size (9.9 MB against 2.1 MB rebuilt, NRCellRelation's sourceIds)
 and a subtree read through them three times slower; `budget.py` runs it after its load, and `teiv/README.md` ("Operating") tells an operator to. The
-same reads through R1 Termination are measured by the "TE&IV load" workflow once TE&IV is a service of the stack (the wiring pull request that follows).
+same reads through R1 Termination by class name are the "TE&IV load" workflow's step "Q1 to Q5 through R1 Termination at 1,000 cells" (TE&IV, SME
+and R1 started on the loaded tree, an rApp's token; exit 1 for a p95 over 150 ms or a wrong answer): its numbers are the job summary.
 The integration suite reads Q1 to Q5 through R1 by class name on a fake smo-teiv (`tests_integration/test_teiv_through_r1.py`). The contract
 (`teiv.yaml`) now names `teiv` as its code module: teiv's contract drift is 0 / 0 (it was 56 contract-only operations), 84 agreed.
 

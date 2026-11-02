@@ -69,6 +69,7 @@ def test_route_table_covers_every_module():
         "/sme", "/dme", "/onboarding", "/rapp-mgmt",
         "/ran-nf-oam", "/nfo", "/focom", "/aimgf",
         "/ran-analytics", "/mdaf", "/intent-service", "/so-smos", "/sa-smos",
+        "/teiv",    # S3.19: the WG10 TE&IV R1 API (TE&IV's ProvMnS classes route by class name, not by this table)
     }   # a rApp's own operator API is the dynamic prefix /rapps/{instanceId}/operator (test_operator_api.py), not a route of this table
     assert set(ROUTES.keys()) == expected_prefixes
 

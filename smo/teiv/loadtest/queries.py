@@ -19,6 +19,7 @@ exits 1. Standard library and httpx.
 
 import argparse
 import json
+import os
 import platform
 import random
 import statistics
@@ -30,7 +31,9 @@ from urllib.parse import quote
 
 import httpx
 
-sys.path[:0] = [str(Path(__file__).resolve().parent)]
+SMO = Path(__file__).resolve().parents[2]
+sys.path[:0] = [str(SMO / "teiv"), str(SMO / "teiv" / "loadtest"), str(SMO / "shared")]      # tree.py imports TE&IV's app.ingest, as budget.py does
+os.environ.setdefault("SMO_DATABASE_URL", "sqlite://")      # app.* imports smo_shared, which wants one; nothing here touches a database
 import tree  # noqa: E402
 
 TARGET_MS = 150.0
