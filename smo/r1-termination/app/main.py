@@ -142,7 +142,7 @@ ROUTES = {
     "/intent-service": os.environ.get("INTENT_SERVICE_URL", "http://intent-service:8000"),
     "/so-smos": os.environ.get("SO_SMOS_URL", "http://so-smos:8000"),
     "/sa-smos": os.environ.get("SA_SMOS_URL", "http://sa-smos:8000"),
-    "/teiv": os.environ.get("TEIV_URL", "http://teiv:8000"),   # the WG10 TE&IV R1 API (/teiv/topology-inventory/v1); its ProvMnS classes route by class name
+    "/teiv": os.environ.get("TEIV_URL", "http://teiv:8000"),   # the WG10 TE&IV R1 API TE&IV serves; its ProvMnS classes route by class name
     # The sample rApps' own operator APIs are no longer routes of this table: a rApp instance registers the base URL of its operator API at rApp Management
     # and `/rapps/{instanceId}/operator/...` (operator_api.py, handled in `_proxy`) is resolved to it, so a rApp onboarded at run time is reachable without a change here.
 }
